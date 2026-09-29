@@ -161,3 +161,46 @@ func TestLiveOrgans(t *testing.T) {
 	}
 	t.Logf("report (%s):\n%s", time.Since(start).Round(time.Second), r.Result)
 }
+
+func TestLaunchPromptFileIsIgnoredAndTheInstructionIsOneLine(t *testing.T) {
+	repo := t.TempDir()
+	git := func(dir string, args ...string) string {
+		out, err := run(dir, "git", args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	git(repo, "init", "-q")
+	git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(repo, "worktree", "add", "-q", "-b", "wt/k-1", wt)
+
+	prompt := "You are responsible for k-1.\n- Run `ls`.\n"
+	for i := 0; i < 2; i++ { // twice: the exclude entry must not repeat
+		line, err := writeLaunchPrompt(repo, wt, "k-1", prompt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(line, "\n") || !strings.Contains(line, ".orchestra/prompt.md") {
+			t.Errorf("launch instruction = %q", line)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(wt, ".orchestra", "prompt.md")); string(b) != prompt {
+		t.Errorf("prompt file = %q", b)
+	}
+	if s := git(wt, "status", "--porcelain"); s != "" {
+		t.Errorf("the prompt file shows in git status: %q", s)
+	}
+	exclude, _ := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude"))
+	if n := strings.Count(string(exclude), "/.orchestra/"); n != 1 {
+		t.Errorf("exclude has %d entries:\n%s", n, exclude)
+	}
+}
+
+func TestShortArgsCutsLongArguments(t *testing.T) {
+	got := shortArgs([]string{"agent", "start", strings.Repeat("x", 100) + "\nmore"})
+	if len([]rune(got)) > 80 || strings.Contains(got, "\n") {
+		t.Errorf("got %q", got)
+	}
+}

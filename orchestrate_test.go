@@ -286,3 +286,64 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 		}
 	}
 }
+
+func TestQuestionsAreNeverDispatched(t *testing.T) {
+	raw := `[{"id":"q","title":"Decision for k-1: MIT or Apache?","status":"open","priority":1,"labels":["human"]},
+	         {"id":"k-2","title":"work","status":"open","priority":2,"labels":["api"]}]`
+	got, err := parseReady([]byte(raw))
+	if err != nil || len(got) != 1 || got[0].ID != "k-2" {
+		t.Errorf("got %+v %v; a human-labelled question must be skipped", got, err)
+	}
+}
+
+func TestOpenQuestionFromBdShow(t *testing.T) {
+	// The shape of 'bd show --json': dependencies carry their own status and labels.
+	raw := `[{"id":"k-1","status":"open","labels":["legal"],"dependencies":[
+	  {"id":"k-0","status":"closed","labels":["refactor"],"dependency_type":"blocks"},
+	  {"id":"q-1","title":"Decision for k-1: MIT or Apache?","status":"open","labels":["human"],"dependency_type":"blocks"}]}]`
+	tk, ok := parseTicket([]byte(raw))
+	if !ok || tk.Status != "open" {
+		t.Fatalf("parseTicket: %v %+v", ok, tk)
+	}
+	if q := openQuestion(tk); q == nil || q.ID != "q-1" {
+		t.Errorf("open question = %+v", q)
+	}
+	tk.Dependencies[1].Status = "closed" // answered
+	if q := openQuestion(tk); q != nil {
+		t.Errorf("an answered question should not block: %+v", q)
+	}
+	if _, ok := parseTicket([]byte("error: not found")); ok {
+		t.Error("unreadable output should not parse")
+	}
+}
+
+func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
+	cases := []struct {
+		status string
+		idle   time.Duration
+		wait   bool
+	}{
+		{"in_progress", time.Minute, true},              // probably waiting on its own background command
+		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
+		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
+	}
+	for _, c := range cases {
+		if got := keepWaiting(c.status, c.idle); got != c.wait {
+			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
+		}
+	}
+}
+
+func TestAskedTicketIsCountedAndShown(t *testing.T) {
+	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m = runEvents(m,
+		Event{Kind: EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
+		Event{Kind: EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
+	m.width, m.height = 80, 40
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"Needs you", "? 1", "? for you", "answer q-1: Decision for k-1"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view lacks %q:\n%s", want, v)
+		}
+	}
+}

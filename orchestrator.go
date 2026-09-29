@@ -33,6 +33,7 @@ const (
 	EvStop                 // the loop stopped and needs attention
 	EvDone                 // the loop finished normally
 	EvTriage               // the triage organ's verdict on a deferred ticket
+	EvAsked                // a ticket waits on the maintainer's answer to a question
 )
 
 type Event struct {
@@ -117,7 +118,7 @@ func (l *Logger) Raw(out string, err error) {
 // Notify only for finished tickets and anything that stops the loop.
 func notifiable(text string) bool {
 	for _, k := range []string{"closed", "deferred", "BLOCKED", "PAUSED", "DIRTY_TREE", "READY_EMPTY",
-		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT"} {
+		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED"} {
 		if strings.Contains(text, k) {
 			return true
 		}
@@ -261,6 +262,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	wt := worktreeOf(c.Repo, br)
 	if wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
+		o.refreshBranch(wt, br)
 	} else {
 		wt = filepath.Join(c.WTRoot, id)
 		run(c.Repo, "git", "worktree", "prune")
@@ -276,6 +278,21 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			return o.stop(exitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath), true
 		}
 		o.info("  worktree %s on %s", wt, br)
+		o.refreshBranch(wt, br)
+	}
+
+	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
+	// Herdr keeps unique. Rename it so the new worker can have the name; its tab stays as it is.
+	switch st := agentStatus(id); st {
+	case "gone":
+	case "working", "blocked":
+		return o.stop(exitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt), true
+	default:
+		if name := freeName(id); name == "" || agentRename(id, name) != nil {
+			return o.stop(exitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id), true
+		} else {
+			o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
+		}
 	}
 
 	tab, pane, err := tabCreate(c.Workspace, wt, id)
@@ -287,16 +304,32 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	o.status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
 	defer o.status(Status{})
 
+	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
+	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
+	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id)
+	launch := ""
+	if c.LaunchPrompt && c.AgentKind == "claude" {
+		var err error
+		if launch, err = writeLaunchPrompt(c.Repo, wt, id, prompt); err != nil {
+			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
+			launch = ""
+		}
+	}
+
 	// 'agent start' can report failure while the agent is still coming up (agent_not_ready keeps
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
 	// the agent is there before trying again.
 	ok := false
 	for attempt := 0; attempt < 10 && !ok; attempt++ {
-		err := agentStart(ctx, id, c.AgentKind, pane)
+		err := agentStart(ctx, id, c.AgentKind, pane, launch)
 		if ok = err == nil; ok {
 			break
 		}
 		o.log.Raw("", err)
+		if isArgumentRefused(err) && launch != "" {
+			launch = "" // start it plainly and paste the prompt instead
+			continue
+		}
 		if !sleep(ctx, 3*time.Second) {
 			return o.interrupted(), true
 		}
@@ -304,8 +337,9 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		case "idle", "done":
 			ok = true
 		case "working", "blocked", "unknown":
-			// Up but busy (a startup dialog, say): give it time rather than starting a second one.
-			ok = agentReady(ctx, id)
+			// Up but busy. With the prompt given at launch that means it started; otherwise (a
+			// startup dialog, say) give it time rather than starting a second one.
+			ok = launch != "" || agentReady(ctx, id)
 		}
 	}
 	if !ok {
@@ -315,7 +349,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	stopWatch := o.watch(ctx, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	defer stopWatch()
 
-	if !o.deliverPrompt(ctx, id, strings.ReplaceAll(o.prompt, "TICKET_ID", id)) {
+	if !o.promptTaken(ctx, id, prompt, launch != "") {
 		if ctx.Err() != nil {
 			return o.interrupted(), true
 		}
@@ -328,15 +362,27 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		return 0, false
 	}
 
-	// Wait until the worker settles. Never answer its prompts; stop if it stays blocked for 4 minutes.
-	var blockedSince time.Time
+	// Wait until the worker settles. Never answer its prompts; stop if it stays blocked for 4
+	// minutes. A worker waiting on its own background command looks idle too, so an idle worker
+	// whose ticket is still in progress gets idleGrace to resume before it counts as settled.
+	var blockedSince, idleSince time.Time
 	for {
 		if ctx.Err() != nil {
 			return o.interrupted(), true
 		}
 		st := agentStatus(id)
-		if st == "idle" || st == "done" || st == "gone" {
+		if st == "gone" {
 			break
+		}
+		if st == "idle" || st == "done" {
+			if idleSince.IsZero() {
+				idleSince = time.Now()
+			}
+			if !keepWaiting(ticketStatus(c.Repo, id), time.Since(idleSince)) {
+				break
+			}
+		} else {
+			idleSince = time.Time{}
 		}
 		if st == "blocked" {
 			if blockedSince.IsZero() {
@@ -354,8 +400,21 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	}
 	stopWatch()
 
-	// Beads, not the worker's own report, decides what happened.
-	switch s := ticketStatus(c.Repo, id); outcomeOf(s) {
+	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
+	// question is out of the queue until the maintainer answers; the run goes on without it.
+	info := ticketInfo(c.Repo, id)
+	if q := openQuestion(info); q != nil && info.Status != "closed" {
+		if info.Status != "open" {
+			run(c.Repo, "bd", "update", id, "--status", "open") // back in the queue once answered
+		}
+		o.markAside(id)
+		o.emit(Event{Kind: EvAsked, Ticket: id, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
+			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
+			id, q.ID, q.Title, q.ID, wt, tab)})
+		o.current = Status{}
+		return 0, false
+	}
+	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
 		commit := commitNaming(c.Repo, c.Base, br, id)
 		switch closedOutcomeOf(commit, dirtyTree(wt) != "") {
@@ -410,6 +469,51 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	}
 	o.current = Status{}
 	return 0, false
+}
+
+// idleGrace is how long an idle worker whose ticket is still in progress may take to resume
+// (typically it is waiting on its own background command) before the run pauses for it.
+const idleGrace = 10 * time.Minute
+
+func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
+	return ticketStatus == "in_progress" && idleFor < idleGrace
+}
+
+// promptTaken confirms the worker started on its prompt. Given at launch, it counts as taken once
+// the worker works, has claimed the ticket, or shows any action; otherwise (or if it did not take)
+// it is delivered by pasting.
+func (o *Orch) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
+	if atLaunch {
+		if agentWaitStarted(ctx, id) || ticketStatus(o.cfg.Repo, id) != "open" || lastActivity(agentScreen(id)) != "" {
+			return true
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		o.log.Raw("", fmt.Errorf("%s did not start on the prompt given at launch; pasting it", id))
+	}
+	return o.deliverPrompt(ctx, id, prompt)
+}
+
+// refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch
+// was cut; otherwise its merge could not fast-forward. A failed rebase is undone and reported.
+func (o *Orch) refreshBranch(wt, br string) {
+	c := o.cfg
+	if _, err := run(c.Repo, "git", "merge-base", "--is-ancestor", c.Base, br); err == nil {
+		return // already on top of Base
+	}
+	if d := dirtyTree(wt); d != "" {
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s; its merge will fail until it is rebased", wt, br, c.Base)})
+		return
+	}
+	out, err := run("", "git", "-C", wt, "rebase", c.Base)
+	o.log.Raw(out, err)
+	if err != nil {
+		run("", "git", "-C", wt, "rebase", "--abort")
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s; left as it was, so its merge will fail until it is rebased (worktree %s)", br, c.Base, wt)})
+		return
+	}
+	o.info("  rebased %s onto %s", br, c.Base)
 }
 
 // deliverPrompt sends the worker its prompt and confirms it started on it. 'herdr agent prompt'

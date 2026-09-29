@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -24,18 +25,56 @@ func runCtx(ctx context.Context, dir, name string, args ...string) (string, erro
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// shortArgs renders arguments for an error message, cutting long ones (a whole prompt, say).
+func shortArgs(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		a = strings.ReplaceAll(a, "\n", " ")
+		if r := []rune(a); len(r) > 60 {
+			a = string(r[:60]) + "…"
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
 }
 
 // ---- Beads ---------------------------------------------------------------------------
 
 type Ticket struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	Priority *int   `json:"priority"`
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Status       string   `json:"status"`
+	Priority     *int     `json:"priority"`
+	Labels       []string `json:"labels"`
+	Dependencies []Ticket `json:"dependencies"` // from bd show; each carries its status and labels
+}
+
+// humanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as
+// its own ticket that blocks theirs; the orchestrator never dispatches it.
+const humanLabel = "human"
+
+func hasLabel(t Ticket, label string) bool {
+	for _, l := range t.Labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+// openQuestion returns the unanswered question the ticket waits on, if any.
+func openQuestion(t Ticket) *Ticket {
+	for i, d := range t.Dependencies {
+		if d.Status != "closed" && hasLabel(d, humanLabel) {
+			return &t.Dependencies[i]
+		}
+	}
+	return nil
 }
 
 // unwrap accepts either bd JSON shape: the bare payload, or the v2 envelope {schema_version, data}.
@@ -60,7 +99,7 @@ func parseReady(raw []byte) ([]Ticket, error) {
 	}
 	var open []Ticket
 	for _, t := range all {
-		if t.Status == "open" {
+		if t.Status == "open" && !hasLabel(t, humanLabel) { // questions are for the maintainer
 			open = append(open, t)
 		}
 	}
@@ -94,6 +133,33 @@ func parseStatus(raw []byte) string {
 func readyTickets(repo string) ([]Ticket, error) {
 	out, _ := run(repo, "bd", "ready", "--json") // like the bash version, judge by the output
 	return parseReady([]byte(out))
+}
+
+// parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.
+func parseTicket(raw []byte) (Ticket, bool) {
+	data := unwrap(raw)
+	var list []Ticket
+	if json.Unmarshal(data, &list) == nil {
+		if len(list) > 0 && list[0].Status != "" {
+			return list[0], true
+		}
+		return Ticket{}, false
+	}
+	var t Ticket
+	if json.Unmarshal(data, &t) == nil && t.Status != "" {
+		return t, true
+	}
+	return Ticket{}, false
+}
+
+// ticketInfo returns the ticket with its dependencies; Status is "unknown" if it cannot be read.
+func ticketInfo(repo, id string) Ticket {
+	out, _ := run(repo, "bd", "show", id, "--json")
+	t, ok := parseTicket([]byte(out))
+	if !ok {
+		return Ticket{ID: id, Status: "unknown"}
+	}
+	return t
 }
 
 func ticketStatus(repo, id string) string {
@@ -137,9 +203,80 @@ func tabCreate(workspace, cwd, label string) (tab, pane string, err error) {
 
 func tabClose(tab string) { run("", "herdr", "tab", "close", tab) }
 
-func agentStart(ctx context.Context, name, kind, pane string) error {
-	_, err := runCtx(ctx, "", "herdr", "agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000")
+// agentStart starts an agent in the pane. A non-empty prompt is passed to the agent itself, so it
+// starts with the prompt already submitted. Herdr types the command into the pane's shell and
+// refuses arguments with line breaks, so the prompt must be one line.
+func agentStart(ctx context.Context, name, kind, pane, prompt string) error {
+	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
+	if prompt != "" {
+		args = append(args, "--", prompt)
+	}
+	_, err := runCtx(ctx, "", "herdr", args...)
 	return err
+}
+
+// isArgumentRefused reports Herdr refusing agent arguments it cannot pass through the shell; a
+// retry cannot succeed.
+func isArgumentRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid_agent_argument")
+}
+
+// writeLaunchPrompt puts the worker prompt in the worktree at .orchestra/prompt.md, kept out of git
+// through the repository's info/exclude (shared by all worktrees, never committed), and returns
+// the one-line instruction to start the worker with.
+func writeLaunchPrompt(repo, wt, ticket, prompt string) (string, error) {
+	common, err := run(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	exclude := filepath.Join(strings.TrimSpace(common), "info", "exclude")
+	b, _ := os.ReadFile(exclude)
+	if !strings.Contains(string(b), launchDir+"/") {
+		if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+			return "", err
+		}
+		f, err := os.OpenFile(exclude, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", err
+		}
+		prefix := ""
+		if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
+			prefix = "\n"
+		}
+		fmt.Fprintf(f, "%s# worker prompts written by orchestra\n/%s/\n", prefix, launchDir)
+		f.Close()
+	}
+	dir := filepath.Join(wt, launchDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Your instructions for ticket %s are in %s/prompt.md in this directory. Read that file and follow it exactly.", ticket, launchDir), nil
+}
+
+const launchDir = ".orchestra"
+
+func agentRename(name, to string) error {
+	_, err := run("", "herdr", "agent", "rename", name, to)
+	return err
+}
+
+// freeName returns an unused agent name for an earlier worker of ticket id: id-1, id-2, …,
+// within Herdr's 32-character limit, or "" if none is free.
+func freeName(id string) string {
+	for n := 1; n <= 20; n++ {
+		suffix := fmt.Sprintf("-%d", n)
+		base := id
+		if len(base)+len(suffix) > 32 {
+			base = base[:32-len(suffix)]
+		}
+		if agentStatus(base+suffix) == "gone" {
+			return base + suffix
+		}
+	}
+	return ""
 }
 
 // agentReady waits up to a minute for an agent that is already present to become idle.

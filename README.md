@@ -68,7 +68,19 @@ git switch -c batch/$(date +%F)
 WORKSPACE=<herdr workspace id> orchestra
 ```
 
-`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.claude/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`.
+`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.claude/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
+
+## Worker prompt
+
+Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.claude/worker-prompt.md` in the project), with every `TICKET_ID` replaced by its ticket. [`prompts/worker-prompt.md`](prompts/worker-prompt.md) is a reference to start from, not used by `orchestra` itself. Copy it into the project and replace the `<…>` placeholders with the project's own check commands. Each rule prevents a way a run goes wrong:
+
+- **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
+- **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.
+- **Checks in the foreground.** A worker waiting on a background command looks idle, and an idle worker with its ticket still open stops the run (`PAUSED`).
+- **Defer, don't wait.** A ticket that needs CI is deferred with a note, so the run moves on and triage and the report pick it up.
+- **Ask, don't wait.** A ticket that needs the maintainer's decision gets a question ticket labelled `human` that blocks it. The orchestrator never hands a question to a worker; it shows the ticket as **? for you**, and the run goes on. Answer with `bd human respond <question> --response "…"`, and the ticket returns to the queue with its branch rebased onto the current one.
+
+Claude workers are started with a one-line instruction to read `.orchestra/prompt.md` in their worktree, where `orchestra` writes the prompt (`.orchestra/` is kept out of git through the repository's `info/exclude`). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
 
 ## Exit codes
 

@@ -60,6 +60,8 @@ func renderEvent(ev Event) string {
 		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
 	case EvTriage:
 		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
+	case EvAsked:
+		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
 	case EvWarn:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+tildify(strings.TrimSpace(ev.Text))))
 	case EvStop:
@@ -84,6 +86,7 @@ type model struct {
 	closed      int
 	deferred    int
 	triaged     int
+	asked       int
 	width       int
 	height      int
 	rows        []ticketRow // every ticket picked up in this run, oldest first
@@ -136,6 +139,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if ev.Ticket != "" {
 				m.setRow(ev.Ticket, rowReview, "left for review, see the log")
 			}
+		case EvAsked:
+			m.asked++
+			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
 		case EvTriage:
 			m.triaged++
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
@@ -186,6 +192,7 @@ const (
 	rowDeferred
 	rowReview
 	rowStopped
+	rowAsked
 )
 
 type ticketRow struct {
@@ -232,6 +239,8 @@ func (r ticketRow) cells(width int) [3]string {
 		return [3]string{deferredStyle.Render(label), deferredStyle.Render(r.id), about}
 	case rowStopped:
 		return [3]string{stopStyle.Render("■ stopped"), stopStyle.Render(r.id), fit(r.title)}
+	case rowAsked:
+		return [3]string{stopStyle.Render("? for you"), stopStyle.Render(r.id), fit(r.note)}
 	}
 	return [3]string{pickedStyle.Render("▶ working"), pickedStyle.Render(r.id), fit(r.title)}
 }
@@ -324,6 +333,7 @@ func (m model) statsTable(w int) string {
 	rows := [][]string{
 		{"Completed", count(m.closed, "✓", closedStyle)},
 		{"Deferred", count(m.deferred, "↷", deferredStyle) + triagedNote(m.triaged)},
+		{"Needs you", count(m.asked, "?", stopStyle)},
 		{"Picked up", pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d max", m.cfg.Limit))},
 		{"In queue", queued},
 		{"Branch", m.cfg.Base},

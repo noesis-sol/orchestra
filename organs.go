@@ -222,7 +222,7 @@ Use only the evidence given; never invent tickets, commits or causes. Write Mark
 - First, one sentence: how the run ended and why.
 - ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few words, the commit hash.
 - ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the triage cause when a triage note gives one.
-- ## Needs you: concrete actions for the maintainer, most urgent first: a worker waiting in a tab (name the tab), a decision to make, an environment fix, whatever stopped the run.
+- ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run.
 
 Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write "Nothing." under a section with no entries. No preamble and no closing remarks.`
 

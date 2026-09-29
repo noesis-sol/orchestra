@@ -4,6 +4,33 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Questions for the maintainer. A worker that needs a decision asks it as its
+  own ticket, labelled `human`, that blocks the work ticket, and stops. The
+  orchestrator never dispatches a question, shows the ticket as "? for you"
+  with a "Needs you" count, and carries on; the report says how to answer.
+  `bd human respond <question>` answers it, and the ticket returns to the queue
+  by itself. `prompts/worker-prompt.md` has the commands.
+- `prompts/worker-prompt.md`, a reference worker prompt to copy into a project.
+
+### Changed
+
+- Claude workers start with their prompt instead of having it pasted in. The
+  prompt goes to `.orchestra/prompt.md` in the ticket's worktree (kept out of
+  git through the repository's `info/exclude`), and the worker is started with
+  a one-line instruction to follow it; Herdr can't pass line breaks.
+  `-prompt-at-launch=false` / `PROMPT_AT_LAUNCH=0` pastes it as before.
+- An idle worker whose ticket is still in progress gets 10 minutes to resume
+  before the run pauses: it is usually waiting on its own background command.
+- A returning ticket's branch is rebased onto the current branch before its
+  worker starts, so its merge can fast-forward.
+- A returning ticket's earlier worker is renamed (`<ticket>-1`, …) so the new
+  worker can take the ticket's name; its tab is left open.
+- Error messages in the log cut long arguments short.
+
 ## [0.1.1] - 2026-09-29
 
 ### Changed
@@ -49,5 +76,6 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[Unreleased]: https://github.com/noesis-sol/orchestra/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/noesis-sol/orchestra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/noesis-sol/orchestra/releases/tag/v0.1.0

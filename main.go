@@ -61,6 +61,7 @@ type Config struct {
 	Triage       bool   // triage organ on each deferred ticket
 	Review       bool   // reviewer organ when the loop stops
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
+	LaunchPrompt bool   // give Claude workers their prompt at launch instead of pasting it
 }
 
 func envInt(name string, def int, problems *[]string) int {
@@ -98,6 +99,7 @@ func loadConfig() (Config, []string) {
 	flag.BoolVar(&c.Triage, "triage", os.Getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
 	flag.BoolVar(&c.Review, "review", os.Getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
 	flag.StringVar(&c.OrganModel, "organ-model", os.Getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
+	flag.BoolVar(&c.LaunchPrompt, "prompt-at-launch", os.Getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
