@@ -154,6 +154,59 @@ func agentPrompt(ctx context.Context, name, prompt string) error {
 	return err
 }
 
+func agentSendKeys(name string, keys ...string) error {
+	_, err := run("", "herdr", append([]string{"agent", "send-keys", name}, keys...)...)
+	return err
+}
+
+// agentWaitStarted waits up to 20 seconds for an agent to start working (or block).
+func agentWaitStarted(ctx context.Context, name string) bool {
+	_, err := runCtx(ctx, "", "herdr", "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", "20000")
+	return err == nil
+}
+
+// inputHolds reports whether the agent's input box still holds the prompt, unsent. The box runs
+// from the last line starting with ❯ to the rule below it; a long paste shows only its last lines
+// there, or a "[Pasted text …]" placeholder, so any substantial line of the prompt counts.
+func inputHolds(screen, prompt string) bool {
+	lines := strings.Split(screen, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "❯") {
+			start = i
+		}
+	}
+	if start < 0 {
+		return false
+	}
+	var box []string
+	for i, l := range lines[start:] {
+		t := strings.TrimSpace(l)
+		if i > 0 && strings.HasPrefix(t, "─") {
+			break
+		}
+		box = append(box, t)
+	}
+	box[0] = strings.TrimSpace(strings.TrimPrefix(box[0], "❯"))
+	text := strings.Join(box, " ")
+	if strings.Contains(text, "[Pasted text") {
+		return true
+	}
+	for _, l := range strings.Split(prompt, "\n") {
+		r := []rune(strings.TrimSpace(l))
+		if len(r) < 20 {
+			continue // too short to tell apart from anything else on screen
+		}
+		if len(r) > 40 {
+			r = r[:40]
+		}
+		if strings.Contains(text, string(r)) {
+			return true
+		}
+	}
+	return false
+}
+
 // agentStatus returns idle, working, blocked, done or unknown, or "gone" if the agent cannot be read.
 func agentStatus(name string) string {
 	out, err := run("", "herdr", "agent", "get", name)
@@ -173,8 +226,13 @@ func agentStatus(name string) string {
 	return r.Result.Agent.AgentStatus
 }
 
+// agentScreen returns the end of the agent's terminal. Herdr can capture scrollback only while
+// the agent is idle, so while it works this falls back to the visible screen.
 func agentScreen(name string) string {
-	out, _ := run("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
+	out, err := run("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
+	if err != nil {
+		out, _ = run("", "herdr", "agent", "read", name, "--source", "visible")
+	}
 	return out
 }
 

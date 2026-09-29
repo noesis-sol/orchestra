@@ -315,7 +315,18 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	stopWatch := o.watch(ctx, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	defer stopWatch()
 
-	agentPrompt(ctx, id, strings.ReplaceAll(o.prompt, "TICKET_ID", id))
+	if !o.deliverPrompt(ctx, id, strings.ReplaceAll(o.prompt, "TICKET_ID", id)) {
+		if ctx.Err() != nil {
+			return o.interrupted(), true
+		}
+		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
+		deferTicket(c.Repo, id, "the worker never started on its prompt")
+		o.markAside(id)
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
+			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open", id, wt, tab)})
+		o.current = Status{}
+		return 0, false
+	}
 
 	// Wait until the worker settles. Never answer its prompts; stop if it stays blocked for 4 minutes.
 	var blockedSince time.Time
@@ -399,6 +410,37 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	}
 	o.current = Status{}
 	return 0, false
+}
+
+// deliverPrompt sends the worker its prompt and confirms it started on it. 'herdr agent prompt'
+// can paste the text without the Enter registering, leaving the worker idle with the prompt in
+// its input box; the worker then looks settled and its ticket would be deferred untouched.
+// Enter is pressed only when the box visibly holds the prompt (never on a dialog, where it would
+// pick an option), and the prompt is sent again only when the box is empty, so never twice.
+func (o *Orch) deliverPrompt(ctx context.Context, id, prompt string) bool {
+	for attempt := 1; attempt <= 2; attempt++ {
+		err := agentPrompt(ctx, id, prompt)
+		if err == nil {
+			return true // herdr saw the worker start
+		}
+		o.log.Raw("", err)
+		if ctx.Err() != nil {
+			return false
+		}
+		switch agentStatus(id) {
+		case "working", "blocked":
+			return true // it started; a block is handled by the settle loop
+		case "idle", "done":
+			if inputHolds(agentScreen(id), prompt) {
+				agentSendKeys(id, "enter")
+				return agentWaitStarted(ctx, id)
+			}
+			// The box is empty: the paste itself was lost, so send it again.
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // watch reports the worker's status and latest action every 2 seconds until the returned stop
