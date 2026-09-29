@@ -347,3 +347,37 @@ func TestAskedTicketIsCountedAndShown(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveTitleWrapsToAFewLines(t *testing.T) {
+	title := "Competing timelines on the same view and property fight each other every frame"
+	got := wrapLines(title, 30, titleLines)
+	if len(got) != 3 || strings.Join(got, " ") != title {
+		t.Errorf("wrapped = %q", got)
+	}
+	for _, l := range got {
+		if ansi.StringWidth(l) > 30 {
+			t.Errorf("line too wide: %q", l)
+		}
+	}
+	long := strings.Repeat("word ", 40)
+	cut := wrapLines(long, 30, titleLines)
+	if len(cut) != 3 || !strings.HasSuffix(cut[2], "…") {
+		t.Errorf("a long title should stop at 3 lines ending in …: %q", cut)
+	}
+	if got := wrapLines("Short title", 30, titleLines); len(got) != 1 {
+		t.Errorf("short title = %q", got)
+	}
+
+	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m.width, m.height = 66, 40
+	m.st = Status{Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
+		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)
+	}
+	for _, l := range strings.Split(m.View(), "\n") {
+		if ansi.StringWidth(l) > m.width {
+			t.Errorf("line %d wide: %q", ansi.StringWidth(l), ansi.Strip(l))
+		}
+	}
+}

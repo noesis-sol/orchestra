@@ -30,6 +30,10 @@ All notable changes to orchestra are documented here. The format follows
 - A returning ticket's earlier worker is renamed (`<ticket>-1`, …) so the new
   worker can take the ticket's name; its tab is left open.
 - Error messages in the log cut long arguments short.
+- The active ticket's title wraps onto up to three lines instead of being cut
+  off after one.
+- `prompts/worker-prompt.md` asks for ticket and question titles of at most 60
+  characters, with details in the description.
 
 ## [0.1.1] - 2026-09-29
 

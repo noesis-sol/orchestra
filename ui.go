@@ -307,8 +307,8 @@ func (m model) workerPanel(w int) string {
 		elapsed := time.Since(m.st.Started).Truncate(time.Second)
 		lines = append(lines, fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(m.st.Ticket),
 			agentStyle(m.st.Agent), dimStyle.Render(elapsed.String()))))
-		if m.st.Title != "" {
-			lines = append(lines, fit("  "+m.st.Title))
+		for _, l := range wrapLines(m.st.Title, inner-2, titleLines) {
+			lines = append(lines, "  "+l)
 		}
 		if m.st.Activity != "" {
 			lines = append(lines, fit("  "+dimStyle.Render(m.st.Activity)))
@@ -352,6 +352,26 @@ func (m model) statsTable(w int) string {
 		Rows(rows...).
 		Width(w).
 		Render()
+}
+
+// titleLines is how many lines the active ticket's title may take before it is cut short.
+const titleLines = 3
+
+// wrapLines word-wraps s to width and keeps at most max lines, ending the last with … if cut.
+func wrapLines(s string, width, max int) []string {
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" || width < 1 {
+		return nil
+	}
+	lines := strings.Split(ansi.Wrap(s, width, ""), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	if len(lines) > max {
+		rest := strings.Join(lines[max-1:], " ")
+		lines = append(lines[:max-1], ansi.Truncate(rest, width, "…"))
+	}
+	return lines
 }
 
 func triagedNote(n int) string {

@@ -8,7 +8,8 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - Run `<check command>` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
 - Commit only the files you changed for this ticket, with the ticket ID in the message. Never push.
-- File anything new you discover with `bd create`, linked to TICKET_ID.
+- File anything new you discover with `bd create`, linked to TICKET_ID. Keep every ticket title
+  short, at most 60 characters: a plain summary of the change. Details go in the description.
 
 ## Close
 - Close the ticket only when a full `<check command>` run passes after your last change AND
@@ -17,7 +18,7 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   local checks don't cover), finish everything else, add a note saying it awaits CI, and defer it.
 - If the ticket needs a decision only the maintainer can make, ask it as a question and stop; don't
   wait for an answer in this session. Commit any finished work first, then run
-  `bd create --type=task --labels human --deps blocks:TICKET_ID --title "Decision for TICKET_ID: <the question>" --description "<the context, the options and your recommendation>"`
+  `bd create --type=task --labels human --deps blocks:TICKET_ID --title "<the question, at most 60 characters>" --description "<the context, the options and your recommendation>"`
   and `bd update TICKET_ID --status open --append-notes "Waiting on <the question's ID>: <the question>"`.
   The ticket comes back to a worker once the question is answered.
 - If the ticket depends on an answered question, read the answer first with `bd show <the question's ID>`.
