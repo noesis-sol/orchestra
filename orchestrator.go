@@ -32,6 +32,7 @@ const (
 	EvWarn                 // a ticket needs review, but the loop continues
 	EvStop                 // the loop stopped and needs attention
 	EvDone                 // the loop finished normally
+	EvTriage               // the triage organ's verdict on a deferred ticket
 )
 
 type Event struct {
@@ -41,6 +42,7 @@ type Event struct {
 	Limit  int
 	Ticket string
 	Title  string // EvDispatch only
+	Queued int    // EvDispatch only: ready tickets behind this one
 	Detail string // short suffix for EvClosed / EvDeferred
 	Text   string // the full line written to the log file
 }
@@ -68,6 +70,7 @@ type Logger struct {
 	f       *os.File
 	notify  bool
 	project string
+	lines   []string // this run's lines, for the reviewer
 }
 
 func openLogger(path string, notify bool, project string) (*Logger, error) {
@@ -82,12 +85,21 @@ func openLogger(path string, notify bool, project string) (*Logger, error) {
 }
 
 func (l *Logger) Line(t time.Time, text string) {
+	line := t.Format("2006-01-02 15:04:05") + " " + text
 	l.mu.Lock()
-	fmt.Fprintf(l.f, "%s %s\n", t.Format("2006-01-02 15:04:05"), text)
+	fmt.Fprintln(l.f, line)
+	l.lines = append(l.lines, line)
 	l.mu.Unlock()
 	if l.notify && notifiable(text) {
 		go l.show(text)
 	}
+}
+
+// RunLines returns the lines logged in this run.
+func (l *Logger) RunLines() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.lines...)
 }
 
 // Raw appends tool output (git) to the log, as the bash version did.
@@ -105,7 +117,7 @@ func (l *Logger) Raw(out string, err error) {
 // Notify only for finished tickets and anything that stops the loop.
 func notifiable(text string) bool {
 	for _, k := range []string{"closed", "deferred", "BLOCKED", "PAUSED", "DIRTY_TREE", "READY_EMPTY",
-		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED"} {
+		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT"} {
 		if strings.Contains(text, k) {
 			return true
 		}
@@ -125,8 +137,21 @@ type Orch struct {
 	cfg    Config
 	log    *Logger
 	sink   Sink
-	prompt string // worker prompt with the TICKET_ID placeholder
+	sinkMu sync.Mutex // triage reports from its own goroutine
+	prompt string     // worker prompt with the TICKET_ID placeholder
 	count  int
+
+	started   time.Time
+	startHead string // Base's commit when the run started; the reviewer reads commits since
+	current   Status // the ticket being worked on; left set when the loop stops inside it
+	final     string // the stop or done line
+
+	organ      organ
+	organCtx   context.Context // cancelled when the maintainer skips the organs
+	triageQ    chan deferral
+	triageDone chan struct{}
+	mu         sync.Mutex
+	asideIDs   []string // tickets deferred or left unmerged in this run
 
 	// In the terminal UI, main reports Ctrl+C itself (it knows which tab was running).
 	reportInterrupt bool
@@ -135,7 +160,25 @@ type Orch struct {
 func (o *Orch) emit(ev Event) {
 	ev.Time = time.Now()
 	o.log.Line(ev.Time, ev.Text)
+	o.sinkMu.Lock()
+	defer o.sinkMu.Unlock()
+	if ev.Kind == EvStop || ev.Kind == EvDone {
+		o.final = ev.Text
+	}
 	o.sink.Event(ev)
+}
+
+func (o *Orch) status(st Status) {
+	o.sinkMu.Lock()
+	defer o.sinkMu.Unlock()
+	o.sink.Status(st)
+}
+
+// setSink switches output, e.g. to plain lines once the terminal view has closed.
+func (o *Orch) setSink(s Sink) {
+	o.sinkMu.Lock()
+	defer o.sinkMu.Unlock()
+	o.sink = s
 }
 
 func (o *Orch) info(format string, a ...any) {
@@ -169,6 +212,9 @@ func sleep(ctx context.Context, d time.Duration) bool {
 func (o *Orch) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
+	o.started = time.Now()
+	head, _ := run(c.Repo, "git", "rev-parse", c.Base)
+	o.startHead = strings.TrimSpace(head)
 	o.info("START orchestrate in %s on %s (done so far: %d, limit: %d, workspace: %s, agent: %s, worktrees: %s)",
 		c.Repo, c.Base, o.count, c.Limit, c.Workspace, c.AgentKind, c.WTRoot)
 
@@ -194,7 +240,7 @@ func (o *Orch) Run(ctx context.Context) int {
 		}
 		t := ready[0]
 		o.count++
-		o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
+		o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: len(ready) - 1,
 			Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
 
 		if code, stopped := o.work(ctx, t); stopped {
@@ -237,8 +283,9 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		return o.stop(exitTool, "TAB_FAILED for %s (is '%s' a valid workspace?)", id, c.Workspace), true
 	}
 	started := time.Now()
-	o.sink.Status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
-	defer o.sink.Status(Status{})
+	o.current = Status{Ticket: id, Title: t.Title, Tab: tab, Started: started}
+	o.status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
+	defer o.status(Status{})
 
 	// 'agent start' can report failure while the agent is still coming up (agent_not_ready keeps
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
@@ -302,9 +349,11 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		commit := commitNaming(c.Repo, c.Base, br, id)
 		switch closedOutcomeOf(commit, dirtyTree(wt) != "") {
 		case closedNoCommit:
+			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
 		case closedDirty:
+			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab)})
 		case closedMerge:
@@ -330,8 +379,10 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			}
 		}
 	case outcomeDeferred:
+		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
+		o.queueTriage(o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
@@ -341,9 +392,12 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	case outcomeUnfinished:
 		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		deferTicket(c.Repo, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
+		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
+		o.queueTriage(o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
 	}
+	o.current = Status{}
 	return 0, false
 }
 
@@ -363,7 +417,7 @@ func (o *Orch) watch(ctx context.Context, base Status) (stop func()) {
 			if ctx.Err() != nil {
 				return
 			}
-			o.sink.Status(s)
+			o.status(s)
 			select {
 			case <-ctx.Done():
 				return

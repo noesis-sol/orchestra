@@ -8,18 +8,35 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
+)
+
+// Exact colours rather than the 16 ANSI palette slots, which terminal themes remap (one theme
+// draws "cyan" as near-white). Each has a variant for light and for dark backgrounds.
+var (
+	cyan   = lipgloss.AdaptiveColor{Light: "#0E7490", Dark: "#22D3EE"}
+	green  = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#4ADE80"}
+	yellow = lipgloss.AdaptiveColor{Light: "#A16207", Dark: "#FACC15"}
+	red    = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"}
+	grey   = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
+	purple = lipgloss.AdaptiveColor{Light: "#6D28D9", Dark: "#A78BFA"}
 )
 
 var (
 	dimStyle      = lipgloss.NewStyle().Faint(true)
-	pickedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true) // cyan: picked up
-	closedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true) // green: completed
-	deferredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))            // yellow: set aside
-	stopStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true) // red: needs you
-	doneStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	home, _       = os.UserHomeDir()
+	pickedStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)  // picked up
+	closedStyle   = lipgloss.NewStyle().Foreground(green).Bold(true) // completed
+	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside
+	stopStyle     = lipgloss.NewStyle().Foreground(red).Bold(true)   // needs you
+	doneStyle     = lipgloss.NewStyle().Foreground(green)
+	organStyle    = lipgloss.NewStyle().Foreground(purple).Bold(true) // an organ's output
+	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
+			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)
+	home, _ = os.UserHomeDir()
 )
 
 // tildify shortens paths under the home directory for display; the log keeps full paths.
@@ -41,6 +58,8 @@ func renderEvent(ev Event) string {
 		return fmt.Sprintf("%s %s  %s", ts, closedStyle.Render("✓ "+ev.Ticket+" completed"), dimStyle.Render(ev.Detail))
 	case EvDeferred:
 		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
+	case EvTriage:
+		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case EvWarn:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+tildify(strings.TrimSpace(ev.Text))))
 	case EvStop:
@@ -64,16 +83,19 @@ type model struct {
 	n           int
 	closed      int
 	deferred    int
+	triaged     int
 	width       int
 	quitting    bool
 	interrupted bool
 	final       *Event // the stop or done event, printed by main after exit
+	queued      int    // ready tickets behind the current one; -1 until the first pickup
+	began       time.Time
 	cancel      func()
 }
 
 func newModel(cfg Config, cancel func()) model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, cancel: cancel}
+	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
 }
 
 func (m model) Init() tea.Cmd { return m.spin.Tick }
@@ -98,11 +120,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ev := Event(msg)
 		switch ev.Kind {
 		case EvDispatch:
-			m.n = ev.N
+			m.n, m.queued = ev.N, ev.Queued
 		case EvClosed:
 			m.closed++
 		case EvDeferred:
 			m.deferred++
+		case EvTriage:
+			m.triaged++
 		case EvStop, EvDone:
 			// main prints the last line after the program exits, since a Println queued just
 			// before Quit can be dropped. The short delay lets earlier lines flush.
@@ -123,23 +147,82 @@ func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
-	w := max(m.width, 20)
-	var b strings.Builder
+	w := max(m.width, 30)
+	hint := dimStyle.Render(ansi.Truncate("  ctrl+c stops · the worker keeps running", w, "…"))
+	return lipgloss.JoinVertical(lipgloss.Left, titleStyle.Render("Orchestrator"), m.statsTable(w), m.workerPanel(w), hint)
+}
+
+// workerPanel boxes the current ticket: ID, worker status and time, title, latest action.
+func (m model) workerPanel(w int) string {
+	inner := w - 4 // rounded border and one space of padding on each side
+	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
+	border := lipgloss.TerminalColor(grey)
+	var lines []string
 	if m.st.Ticket == "" {
-		b.WriteString(m.spin.View() + " " + dimStyle.Render("picking the next ticket…"))
+		lines = append(lines, fit(m.spin.View()+" "+dimStyle.Render("picking the next ticket…")))
 	} else {
+		border = cyan
+		if m.st.Agent == "blocked" {
+			border = red
+		}
 		elapsed := time.Since(m.st.Started).Truncate(time.Second)
-		line := fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(m.st.Ticket),
-			agentStyle(m.st.Agent), dimStyle.Render(fmt.Sprintf("%s · tab %s", elapsed, m.st.Tab)))
-		b.WriteString(ansi.Truncate(line, w, "…"))
+		lines = append(lines, fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(m.st.Ticket),
+			agentStyle(m.st.Agent), dimStyle.Render(elapsed.String()))))
+		if m.st.Title != "" {
+			lines = append(lines, fit("  "+m.st.Title))
+		}
 		if m.st.Activity != "" {
-			b.WriteString("\n  " + dimStyle.Render(ansi.Truncate(m.st.Activity, w-2, "…")))
+			lines = append(lines, fit("  "+dimStyle.Render(m.st.Activity)))
 		}
 	}
-	footer := fmt.Sprintf("%d completed · %d deferred · %d/%d · %s · ctrl+c stops (the worker keeps running)",
-		m.closed, m.deferred, m.n, m.cfg.Limit, m.cfg.Base)
-	b.WriteString("\n" + dimStyle.Render(ansi.Truncate(footer, w, "…")))
-	return b.String()
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
+		Padding(0, 1).Width(w - 2).Render(strings.Join(lines, "\n"))
+}
+
+// statsTable lists the run's totals, one per row, with the counts in their event colours.
+func (m model) statsTable(w int) string {
+	count := func(n int, mark string, style lipgloss.Style) string {
+		if n == 0 {
+			return dimStyle.Render("0")
+		}
+		return style.Render(fmt.Sprintf("%s %d", mark, n))
+	}
+	queued, tab := dimStyle.Render("—"), dimStyle.Render("—")
+	if m.queued >= 0 {
+		queued = fmt.Sprintf("%d ready", m.queued)
+	}
+	if m.st.Tab != "" {
+		tab = m.st.Tab
+	}
+	rows := [][]string{
+		{"Completed", count(m.closed, "✓", closedStyle)},
+		{"Deferred", count(m.deferred, "↷", deferredStyle) + triagedNote(m.triaged)},
+		{"Picked up", pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d max", m.cfg.Limit))},
+		{"In queue", queued},
+		{"Branch", m.cfg.Base},
+		{"Worker tab", tab},
+		{"Running", time.Since(m.began).Truncate(time.Second).String()},
+	}
+	return table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			s := lipgloss.NewStyle().Padding(0, 1)
+			if col == 0 {
+				return s.Faint(true).Width(12) // "Worker tab" plus padding; values get the rest
+			}
+			return s
+		}).
+		Rows(rows...).
+		Width(w).
+		Render()
+}
+
+func triagedNote(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return organStyle.Render(fmt.Sprintf(" · ◆ %d triaged", n))
 }
 
 func agentStyle(s string) string {
@@ -161,10 +244,41 @@ type teaSink struct{ p *tea.Program }
 func (s teaSink) Event(ev Event)   { s.p.Send(eventMsg(ev)) }
 func (s teaSink) Status(st Status) { s.p.Send(statusMsg(st)) }
 
-// plainSink prints the log lines as they are written, for pipes and non-interactive use.
-type plainSink struct{}
+// printSink prints each event as a line: styled for a terminal (after the live view has closed),
+// or as the plain log line for pipes and -plain.
+type printSink struct {
+	styled bool
+	width  int
+}
 
-func (plainSink) Event(ev Event) {
+func (p printSink) Event(ev Event) {
+	if p.styled {
+		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.width, 20), ""))
+		return
+	}
 	fmt.Printf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
-func (plainSink) Status(Status) {}
+func (printSink) Status(Status) {}
+
+// say prints a line of the orchestrator's own progress outside the event stream.
+func (p printSink) say(text string) {
+	if p.styled {
+		fmt.Println(organStyle.Render("◆ ") + dimStyle.Render(text))
+		return
+	}
+	fmt.Printf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
+}
+
+// report prints the reviewer's Markdown, rendered with Glamour on a terminal.
+func (p printSink) report(md string) {
+	if p.styled {
+		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.width-4, 40)))
+		if err == nil {
+			if out, err := r.Render(md); err == nil {
+				fmt.Print(out)
+				return
+			}
+		}
+	}
+	fmt.Println(md)
+}

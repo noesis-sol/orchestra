@@ -42,6 +42,9 @@ type Config struct {
 	WTRoot       string
 	LogPath      string
 	Plain        bool
+	Triage       bool   // triage organ on each deferred ticket
+	Review       bool   // reviewer organ when the loop stops
+	OrganModel   string // model for the organs; "" uses the claude CLI's default
 }
 
 func envInt(name string, def int, problems *[]string) int {
@@ -76,6 +79,9 @@ func loadConfig() (Config, []string) {
 	flag.StringVar(&c.WorkerPrompt, "prompt", envOr("WORKER_PROMPT", ".claude/worker-prompt.md"), "worker instructions with TICKET_ID as placeholder [WORKER_PROMPT]")
 	flag.BoolVar(&c.Notify, "notify", os.Getenv("NOTIFY") != "0", "macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
 	flag.StringVar(&c.WTRoot, "worktrees", os.Getenv("WT_ROOT"), "folder for the per-ticket worktrees, outside the repository (default: <repo>-worktrees next to it) [WT_ROOT]")
+	flag.BoolVar(&c.Triage, "triage", os.Getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
+	flag.BoolVar(&c.Review, "review", os.Getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
+	flag.StringVar(&c.OrganModel, "organ-model", os.Getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestrate [flags]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
@@ -163,14 +169,31 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	orch := &Orch{cfg: cfg, log: log, prompt: string(prompt)}
+	organCtx, cancelOrgans := context.WithCancel(context.Background())
+	defer cancelOrgans()
+	orch := &Orch{cfg: cfg, log: log, prompt: string(prompt),
+		organ: organ{bin: "claude", model: cfg.OrganModel}, organCtx: organCtx}
+	if off := organsOff("claude"); off != "" && (cfg.Triage || cfg.Review) {
+		log.Line(time.Now(), "organs off: "+off)
+		cfg.Triage, cfg.Review = false, false
+		orch.cfg = cfg
+	}
+	if cfg.Triage {
+		orch.startTriage()
+	}
 
+	width := 80
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		width = w
+	}
 	if cfg.Plain || !term.IsTerminal(int(os.Stdout.Fd())) {
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-		defer stop()
-		orch.sink = plainSink{}
+		orch.sink = printSink{}
 		orch.reportInterrupt = true
-		os.Exit(orch.Run(ctx))
+		code := orch.Run(ctx)
+		stop()
+		organPhase(orch, code, orch.final, printSink{}, cancelOrgans)
+		os.Exit(code)
 	}
 
 	p := tea.NewProgram(newModel(cfg, cancel))
@@ -184,20 +207,67 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orchestrate:", err)
 	}
-	if m, ok := final.(model); ok && m.interrupted {
+	out := printSink{styled: true, width: width}
+	m, _ := final.(model)
+	if m.interrupted {
 		// The loop may be in the middle of a command; log the stop and leave the worker to the user.
 		msg := "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"
 		if m.st.Ticket != "" {
 			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s was running; its tab %s and worktree are left open", m.st.Ticket, m.st.Tab)
 		}
-		ev := Event{Kind: EvStop, Text: msg}
-		ev.Time = time.Now()
+		ev := Event{Kind: EvStop, Text: msg, Time: time.Now()}
 		log.Line(ev.Time, msg)
-		fmt.Println(renderEvent(ev))
+		out.Event(ev)
+		// Let the loop notice the cancellation before the reviewer reads its state.
+		select {
+		case <-codes:
+		case <-time.After(15 * time.Second):
+		}
+		orch.setSink(out)
+		organPhase(orch, exitInterrupted, msg, out, cancelOrgans)
 		os.Exit(exitInterrupted)
 	}
-	if m, ok := final.(model); ok && m.final != nil {
-		fmt.Println(renderEvent(*m.final))
+	if m.final != nil {
+		out.Event(*m.final)
 	}
-	os.Exit(<-codes)
+	code := <-codes
+	orch.setSink(out)
+	organPhase(orch, code, orch.final, out, cancelOrgans)
+	os.Exit(code)
+}
+
+// organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
+// the run report. Ctrl+C skips whatever is left.
+func organPhase(orch *Orch, code int, final string, out printSink, cancelOrgans func()) {
+	c := orch.cfg
+	if !c.Triage && !c.Review {
+		return
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		cancelOrgans()
+	}()
+	if c.Triage {
+		out.say("finishing triage…")
+		orch.finishTriage(ctx)
+	}
+	if !c.Review || ctx.Err() != nil {
+		return
+	}
+	out.say("writing the run report with claude… (ctrl+c skips)")
+	report, path, err := orch.review(ctx, code, final)
+	if err != nil {
+		if ctx.Err() == nil {
+			msg := "REVIEW_FAILED: " + firstLine(err.Error())
+			orch.log.Line(time.Now(), msg)
+			out.say(msg)
+		}
+		return
+	}
+	fmt.Println()
+	out.report(report)
+	orch.log.Line(time.Now(), "REPORT written to "+path)
+	out.say("report saved to " + tildify(path))
 }
