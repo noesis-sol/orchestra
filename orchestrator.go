@@ -128,7 +128,7 @@ func notifiable(text string) bool {
 func (l *Logger) show(text string) {
 	msg := strings.NewReplacer(`\`, "", `"`, "'").Replace(text) // keep AppleScript quoting intact
 	exec.Command("osascript", "-e",
-		fmt.Sprintf(`display notification "%s" with title "Beads orchestrator: %s"`, msg, l.project)).Run()
+		fmt.Sprintf(`display notification "%s" with title "Orchestra: %s"`, msg, l.project)).Run()
 }
 
 // ---- Orchestrator --------------------------------------------------------------------
@@ -215,8 +215,8 @@ func (o *Orch) Run(ctx context.Context) int {
 	o.started = time.Now()
 	head, _ := run(c.Repo, "git", "rev-parse", c.Base)
 	o.startHead = strings.TrimSpace(head)
-	o.info("START orchestrate in %s on %s (done so far: %d, limit: %d, workspace: %s, agent: %s, worktrees: %s)",
-		c.Repo, c.Base, o.count, c.Limit, c.Workspace, c.AgentKind, c.WTRoot)
+	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, workspace: %s, agent: %s, worktrees: %s)",
+		buildVersion(), c.Repo, c.Base, o.count, c.Limit, c.Workspace, c.AgentKind, c.WTRoot)
 
 	for o.count < c.Limit {
 		if ctx.Err() != nil {
@@ -319,7 +319,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		if ctx.Err() != nil {
 			return o.interrupted(), true
 		}
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
+		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
 		deferTicket(c.Repo, id, "the worker never started on its prompt")
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
@@ -396,12 +396,12 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		o.queueTriage(o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
+		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
 		return o.stop(exitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt), true
 	case outcomeUnreadable:
 		return o.stop(exitTool, "STATUS_UNREADABLE for %s; stopping rather than guessing (worktree %s and tab %s left open)", id, wt, tab), true
 	case outcomeUnfinished:
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestrator: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
+		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		deferTicket(c.Repo, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(

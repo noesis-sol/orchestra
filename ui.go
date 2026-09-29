@@ -165,7 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // run's summary.
 func (m model) View() string {
 	w := max(m.width, 30)
-	title := titleStyle.Render("Orchestrator")
+	title := titleStyle.Render("Orchestra") + " " + dimStyle.Render(buildVersion())
 	if m.quitting {
 		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
 	}

@@ -1,4 +1,6 @@
-# orchestrate
+# orchestra
+
+[Changelog](CHANGELOG.md)
 
 Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket at a time. Each ticket goes to a coding agent in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are merged into the branch you started on. A Go rewrite of `orchestrate.sh`, with the same environment variables, log file and exit codes, and a live terminal view built with Bubble Tea.
 
@@ -7,7 +9,7 @@ Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket
 One dashboard, updated in place: nothing is printed above it while the loop runs.
 
 ```
- Orchestrator
+ Orchestra v0.1.0
 ╭────────────┬───────────────────────────────────────────────────╮
 │ Completed  │ ✓ 2                                               │
 │ Deferred   │ ↷ 1 · ◆ 1 triaged                                 │
@@ -53,10 +55,10 @@ Turn them off with `-triage=false` / `TRIAGE=0` and `-review=false` / `REVIEW=0`
 ## Install
 
 ```
-go build -o /usr/local/bin/orchestrate .
+go install github.com/noesis-sol/orchestra@latest
 ```
 
-Or `go install .` puts it in `$(go env GOPATH)/bin`, which then needs to be on your `PATH`.
+That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra .` works too. `orchestra -version` shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd`, `herdr`, `git` and, for the organs, `claude`.
 
 ## Run
 
@@ -64,10 +66,10 @@ From the main checkout (not a worktree), inside a Herdr pane, on the branch fini
 
 ```
 git switch -c batch/$(date +%F)
-WORKSPACE=<herdr workspace id> orchestrate
+WORKSPACE=<herdr workspace id> orchestra
 ```
 
-`orchestrate -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.claude/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`.
+`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.claude/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`.
 
 ## Exit codes
 

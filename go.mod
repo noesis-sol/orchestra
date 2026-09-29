@@ -1,4 +1,4 @@
-module orchestrate
+module github.com/noesis-sol/orchestra
 
 go 1.26.0
 

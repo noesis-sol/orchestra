@@ -74,7 +74,7 @@ func TestParseTriage(t *testing.T) {
 	if err != nil || tr.Cause != "environment" {
 		t.Fatalf("%v %+v", err, tr)
 	}
-	if n := tr.note(); n != "Triage (orchestrator): cause = environment (high confidence). visionOS runtime missing. Recommendation: Run xcodebuild -downloadPlatform visionOS." {
+	if n := tr.note(); n != "Triage (orchestra): cause = environment (high confidence). visionOS runtime missing. Recommendation: Run xcodebuild -downloadPlatform visionOS." {
 		t.Errorf("note = %q", n)
 	}
 	// Older CLIs return the JSON as the result text.
@@ -135,7 +135,7 @@ func TestLiveOrgans(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(repo, ".claude", "orchestrate.log"))
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], " START orchestrate") {
+		if strings.Contains(lines[i], " START orchestra") {
 			o.log.lines = lines[i:]
 			break
 		}

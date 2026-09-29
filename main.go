@@ -1,4 +1,4 @@
-// Command orchestrate works through a Beads backlog one ticket at a time, handing each ticket to a
+// Command orchestra works through a Beads backlog one ticket at a time, handing each ticket to a
 // coding agent in its own Herdr tab and git worktree.
 //
 // Each ticket gets branch wt/<ticket>, created from the current branch of the main checkout, in
@@ -9,7 +9,7 @@
 //
 // Run from anywhere inside the main checkout (not from a worktree), in a Herdr pane:
 //
-//	WORKSPACE=<herdr workspace id> orchestrate
+//	WORKSPACE=<herdr workspace id> orchestra
 //
 // Every event is shown in the terminal and appended to .claude/orchestrate.log.
 package main
@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 )
+
+// version can be set at build time with -ldflags "-X main.version=…". Otherwise Go's build info
+// supplies it: the tag for a build from a tagged commit or 'go install …@vX.Y.Z', a pseudo-version
+// for anything after it.
+var version = ""
+
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return "dev"
+}
 
 type Config struct {
 	Repo         string
@@ -82,13 +98,18 @@ func loadConfig() (Config, []string) {
 	flag.BoolVar(&c.Triage, "triage", os.Getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
 	flag.BoolVar(&c.Review, "review", os.Getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
 	flag.StringVar(&c.OrganModel, "organ-model", os.Getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestrate [flags]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("orchestra", buildVersion())
+		os.Exit(exitOK)
+	}
 
 	if out, err := run("", "git", "rev-parse", "--show-toplevel"); err == nil {
 		c.Repo = strings.TrimSpace(out)
@@ -96,7 +117,7 @@ func loadConfig() (Config, []string) {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
 	if c.Workspace == "" {
-		problems = append(problems, "WORKSPACE is not set. Find the ID with 'herdr workspace list', then run: WORKSPACE=<id> orchestrate")
+		problems = append(problems, "WORKSPACE is not set. Find the ID with 'herdr workspace list', then run: WORKSPACE=<id> orchestra")
 	}
 	if os.Getenv("HERDR_ENV") != "1" {
 		problems = append(problems, "Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane.")
@@ -147,7 +168,7 @@ func loadConfig() (Config, []string) {
 func main() {
 	cfg, problems := loadConfig()
 	if len(problems) > 0 {
-		fmt.Fprintln(os.Stderr, "orchestrate cannot start:")
+		fmt.Fprintln(os.Stderr, "orchestra cannot start:")
 		for _, p := range problems {
 			fmt.Fprintln(os.Stderr, "  - "+p)
 		}
@@ -159,7 +180,7 @@ func main() {
 	os.MkdirAll(filepath.Dir(cfg.LogPath), 0o755)
 	log, err := openLogger(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "orchestrate cannot open its log:", err)
+		fmt.Fprintln(os.Stderr, "orchestra cannot open its log:", err)
 		os.Exit(exitSetup)
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
@@ -205,7 +226,7 @@ func main() {
 	}()
 	final, err := p.Run()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "orchestrate:", err)
+		fmt.Fprintln(os.Stderr, "orchestra:", err)
 	}
 	out := printSink{styled: true, width: width}
 	m, _ := final.(model)

@@ -139,7 +139,7 @@ func parseTriage(r organResult) (Triage, error) {
 
 // note is what goes into the ticket: advice only, the status is untouched.
 func (t Triage) note() string {
-	return fmt.Sprintf("Triage (orchestrator): cause = %s (%s confidence). %s Recommendation: %s",
+	return fmt.Sprintf("Triage (orchestra): cause = %s (%s confidence). %s Recommendation: %s",
 		t.Cause, t.Confidence, strings.TrimSpace(t.Summary), strings.TrimSpace(t.Recommendation))
 }
 
@@ -257,7 +257,7 @@ func (o *Orch) review(ctx context.Context, code int, final string) (string, stri
 	if err != nil {
 		return "", "", err
 	}
-	report := fmt.Sprintf("# Orchestrator run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
+	report := fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
 		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(r.Result))
 	dir := filepath.Join(o.cfg.Repo, ".claude", "orchestrate-reports")
 	path := filepath.Join(dir, o.started.Format("2006-01-02-150405")+".md")
