@@ -34,6 +34,9 @@ All notable changes to orchestra are documented here. The format follows
   off after one.
 - `prompts/worker-prompt.md` asks for ticket and question titles of at most 60
   characters, with details in the description.
+- `prompts/worker-prompt.md`: a ticket that only CI can verify is closed once
+  the local checks pass, with an "Awaits CI" note, instead of deferred; the
+  batch's pull request runs every CI job.
 
 ## [0.1.1] - 2026-09-29
 

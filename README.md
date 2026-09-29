@@ -77,7 +77,7 @@ Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.claude/wor
 - **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
 - **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.
 - **Checks in the foreground.** A worker waiting on a background command looks idle, and an idle worker with its ticket still open stops the run (`PAUSED`).
-- **Defer, don't wait.** A ticket that needs CI is deferred with a note, so the run moves on and triage and the report pick it up.
+- **Close, and let the batch PR run CI.** A ticket whose change only CI can verify (a workflow, a platform the local checks don't cover) is closed once the local checks pass, with an "Awaits CI" note. The batch goes to the main branch through a pull request that runs every CI job, so each ticket needn't wait for its own.
 - **Ask, don't wait.** A ticket that needs the maintainer's decision gets a question ticket labelled `human` that blocks it. The orchestrator never hands a question to a worker; it shows the ticket as **? for you**, and the run goes on. Answer with `bd human respond <question> --response "…"`, and the ticket returns to the queue with its branch rebased onto the current one.
 
 Claude workers are started with a one-line instruction to read `.orchestra/prompt.md` in their worktree, where `orchestra` writes the prompt (`.orchestra/` is kept out of git through the repository's `info/exclude`). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.

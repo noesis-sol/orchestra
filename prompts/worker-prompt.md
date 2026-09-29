@@ -15,7 +15,9 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - Close the ticket only when a full `<check command>` run passes after your last change AND
   the tickets that depend on it have been reviewed.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
-  local checks don't cover), finish everything else, add a note saying it awaits CI, and defer it.
+  local checks don't cover), close the ticket once `<check command>` passes, with a note naming the
+  CI job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
+  before anything reaches the main branch.
 - If the ticket needs a decision only the maintainer can make, ask it as a question and stop; don't
   wait for an answer in this session. Commit any finished work first, then run
   `bd create --type=task --labels human --deps blocks:TICKET_ID --title "<the question, at most 60 characters>" --description "<the context, the options and your recommendation>"`
