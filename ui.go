@@ -317,12 +317,9 @@ func (m model) statsTable(w int) string {
 		}
 		return style.Render(fmt.Sprintf("%s %d", mark, n))
 	}
-	queued, tab := dimStyle.Render("—"), dimStyle.Render("—")
+	queued := dimStyle.Render("—")
 	if m.queued >= 0 {
 		queued = fmt.Sprintf("%d ready", m.queued)
-	}
-	if m.st.Tab != "" {
-		tab = m.st.Tab
 	}
 	rows := [][]string{
 		{"Completed", count(m.closed, "✓", closedStyle)},
@@ -330,7 +327,6 @@ func (m model) statsTable(w int) string {
 		{"Picked up", pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d max", m.cfg.Limit))},
 		{"In queue", queued},
 		{"Branch", m.cfg.Base},
-		{"Worker tab", tab},
 		{"Running", time.Since(m.began).Truncate(time.Second).String()},
 	}
 	return table.New().
@@ -339,7 +335,7 @@ func (m model) statsTable(w int) string {
 		StyleFunc(func(row, col int) lipgloss.Style {
 			s := lipgloss.NewStyle().Padding(0, 1)
 			if col == 0 {
-				return s.Faint(true).Width(12) // "Worker tab" plus padding; values get the rest
+				return s.Faint(true).Width(12) // lines up with the Tickets table's first column
 			}
 			return s
 		}).

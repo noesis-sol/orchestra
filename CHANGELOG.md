@@ -4,6 +4,14 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The dashboard's totals no longer show the worker's Herdr tab ID. The tab is
+  labelled with the ticket ID in Herdr, and the ID stays in the log and the
+  run report.
+
 ## [0.1.0] - 2026-09-29
 
 First release: a Go rewrite of `orchestrate.sh`, which works through a Beads
@@ -41,4 +49,5 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[Unreleased]: https://github.com/noesis-sol/orchestra/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/noesis-sol/orchestra/releases/tag/v0.1.0

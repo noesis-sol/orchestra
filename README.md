@@ -16,7 +16,6 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 │ Picked up  │ 4 of 40 max                                       │
 │ In queue   │ 12 ready                                          │
 │ Branch     │ batch/2026-09-28                                  │
-│ Worker tab │ w2B:tR                                            │
 │ Running    │ 18m40s                                            │
 ╰────────────┴───────────────────────────────────────────────────╯
 ╭────────────┬─────────────┬────────────────────────────────────╮
