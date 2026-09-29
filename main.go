@@ -219,6 +219,9 @@ func main() {
 		os.Exit(code)
 	}
 
+	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
+	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
+	fmt.Print("\x1b[H\x1b[2J")
 	p := tea.NewProgram(newModel(cfg, cancel))
 	orch.sink = teaSink{p}
 	codes := make(chan int, 1)

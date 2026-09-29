@@ -35,6 +35,8 @@ All notable changes to orchestra are documented here. The format follows
   (`START_FAILED`). The orchestrator now names it after its ticket and carries
   on. Workers started with their prompt get a 20-second start timeout, since
   a busy worker never looks ready for input.
+- The dashboard clears the screen when it starts, so it begins at the top;
+  earlier output stays in the terminal's scrollback. Plain mode doesn't clear.
 - The active ticket's title wraps onto up to three lines instead of being cut
   off after one.
 - `prompts/worker-prompt.md` asks for ticket and question titles of at most 60
