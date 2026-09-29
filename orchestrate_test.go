@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +212,77 @@ func TestInputHoldsOnlyAnUnsentPrompt(t *testing.T) {
 	for screen, want := range cases {
 		if got := inputHolds(screen, prompt); got != want {
 			t.Errorf("inputHolds(%q) = %v, want %v", screen, got, want)
+		}
+	}
+}
+
+func runEvents(m model, evs ...Event) model {
+	for _, ev := range evs {
+		next, _ := m.Update(eventMsg(ev))
+		m = next.(model)
+	}
+	return m
+}
+
+func TestTicketRowsFollowEachTicket(t *testing.T) {
+	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m = runEvents(m,
+		Event{Kind: EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
+		Event{Kind: EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
+		Event{Kind: EvDispatch, N: 2, Ticket: "kinieta-vzg", Title: "Competing timelines"},
+		Event{Kind: EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"},
+		Event{Kind: EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
+		Event{Kind: EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
+	)
+	if len(m.rows) != 3 || m.closed != 1 || m.deferred != 1 || m.triaged != 1 {
+		t.Fatalf("rows %+v closed %d deferred %d triaged %d", m.rows, m.closed, m.deferred, m.triaged)
+	}
+	m.width, m.height = 70, 40
+	view := ansi.Strip(m.View())
+	for _, want := range []string{
+		"✓ done", "kinieta-dwv", "ffd6ce4 merged", // completed: the commit, not the title
+		"↷ deferred", "◆ environment · high · prompt", // triage replaces the reason (cut to fit)
+		"▶ working", "Open the property model",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view lacks %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Reduce Motion: keep fades") {
+		t.Error("a completed ticket should show its commit, not its title")
+	}
+
+	m = runEvents(m, Event{Kind: EvStop, Text: "PAUSED: kinieta-kco"})
+	final := ansi.Strip(m.View())
+	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "ctrl+c stops") {
+		t.Errorf("final view should keep the summary and drop the live parts:\n%s", final)
+	}
+}
+
+func TestViewFitsThePaneHeight(t *testing.T) {
+	m := newModel(Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	for i := 0; i < 30; i++ {
+		id := fmt.Sprintf("kinieta-%03d", i)
+		m = runEvents(m, Event{Kind: EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
+			Event{Kind: EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
+	}
+	m.st = Status{Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+	for _, size := range [][2]int{{40, 30}, {66, 36}, {120, 50}} {
+		m.width, m.height = size[0], size[1]
+		lines := strings.Split(m.View(), "\n")
+		if len(lines) > m.height {
+			t.Errorf("%dx%d: view is %d lines", size[0], size[1], len(lines))
+		}
+		for _, l := range lines {
+			if ansi.StringWidth(l) > m.width {
+				t.Errorf("%dx%d: line %d wide: %q", size[0], size[1], ansi.StringWidth(l), ansi.Strip(l))
+			}
+		}
+		if !strings.Contains(ansi.Strip(m.View()), "+") {
+			t.Errorf("%dx%d: hidden tickets are not mentioned", size[0], size[1])
+		}
+		if size[0] == 66 {
+			t.Logf("preview %dx%d:\n%s", size[0], size[1], ansi.Strip(m.View()))
 		}
 	}
 }

@@ -85,6 +85,8 @@ type model struct {
 	deferred    int
 	triaged     int
 	width       int
+	height      int
+	rows        []ticketRow // every ticket picked up in this run, oldest first
 	quitting    bool
 	interrupted bool
 	final       *Event // the stop or done event, printed by main after exit
@@ -95,7 +97,7 @@ type model struct {
 
 func newModel(cfg Config, cancel func()) model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
+	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, height: 40, queued: -1, began: time.Now(), cancel: cancel}
 }
 
 func (m model) Init() tea.Cmd { return m.spin.Tick }
@@ -103,7 +105,7 @@ func (m model) Init() tea.Cmd { return m.spin.Tick }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			m.interrupted, m.quitting = true, true
@@ -117,25 +119,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.st = Status(msg)
 	case eventMsg:
+		// Events update the dashboard in place; nothing is printed above it. The full lines are
+		// in the log file.
 		ev := Event(msg)
 		switch ev.Kind {
 		case EvDispatch:
 			m.n, m.queued = ev.N, ev.Queued
+			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
 		case EvClosed:
 			m.closed++
+			m.setRow(ev.Ticket, rowDone, ev.Detail)
 		case EvDeferred:
 			m.deferred++
+			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
+		case EvWarn:
+			if ev.Ticket != "" {
+				m.setRow(ev.Ticket, rowReview, "left for review, see the log")
+			}
 		case EvTriage:
 			m.triaged++
+			if i := m.rowIndex(ev.Ticket); i >= 0 {
+				m.rows[i].triage = ev.Detail + " · " + ev.Title
+			}
 		case EvStop, EvDone:
-			// main prints the last line after the program exits, since a Println queued just
-			// before Quit can be dropped. The short delay lets earlier lines flush.
+			if ev.Kind == EvStop {
+				for i := range m.rows {
+					if m.rows[i].state == rowWorking {
+						m.rows[i].state = rowStopped
+					}
+				}
+			}
+			// main prints the last line after the program exits, below the final dashboard.
 			m.final, m.quitting = &ev, true
-			return m, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg { return tea.Quit() })
+			return m, tea.Quit
 		}
-		// Wrap here: a line the terminal soft-wraps makes Bubble Tea miscount the lines it must
-		// clear, leaving pieces of the status area behind.
-		return m, tea.Println(ansi.Wrap(renderEvent(ev), max(m.width, 20), ""))
 	case finishedMsg:
 		m.quitting = true
 		return m, tea.Quit
@@ -143,13 +160,126 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View is the whole display: title, totals, the tickets of this run, and the active ticket. When
+// the program quits it renders once more without the active ticket, which stays on screen as the
+// run's summary.
 func (m model) View() string {
+	w := max(m.width, 30)
+	title := titleStyle.Render("Orchestrator")
 	if m.quitting {
+		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
+	}
+	hint := dimStyle.Render(ansi.Truncate("  ctrl+c stops · the worker keeps running", w, "…"))
+	panel := m.workerPanel(w)
+	// Show as many recent tickets as fit: the rest of the view is ~22 lines.
+	fixed := 2 + lipgloss.Height(m.statsTable(w)) + lipgloss.Height(panel) + 1 + 4
+	return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, m.height-fixed), panel, hint)
+}
+
+// ---- Tickets table -------------------------------------------------------------------
+
+type rowState int
+
+const (
+	rowWorking rowState = iota
+	rowDone
+	rowDeferred
+	rowReview
+	rowStopped
+)
+
+type ticketRow struct {
+	id, title string
+	state     rowState
+	note      string // the merged commit, or why it was set aside
+	triage    string // the triage organ's verdict
+}
+
+func (m *model) rowIndex(id string) int {
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		if m.rows[i].id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *model) setRow(id string, state rowState, note string) {
+	i := m.rowIndex(id)
+	if i < 0 {
+		m.rows = append(m.rows, ticketRow{id: id})
+		i = len(m.rows) - 1
+	}
+	m.rows[i].state, m.rows[i].note = state, note
+}
+
+// cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
+// its title; a completed one only its merged commit; a set-aside one why, with triage's verdict.
+func (r ticketRow) cells(width int) [3]string {
+	fit := func(s string) string { return ansi.Truncate(s, max(width, 8), "…") }
+	switch r.state {
+	case rowDone:
+		return [3]string{closedStyle.Render("✓ done"), closedStyle.Render(r.id), dimStyle.Render(fit(r.note))}
+	case rowDeferred, rowReview:
+		label := "↷ deferred"
+		if r.state == rowReview {
+			label = "! review"
+		}
+		about := dimStyle.Render(fit(r.note))
+		if r.triage != "" {
+			about = organStyle.Render(fit("◆ " + r.triage))
+		}
+		return [3]string{deferredStyle.Render(label), deferredStyle.Render(r.id), about}
+	case rowStopped:
+		return [3]string{stopStyle.Render("■ stopped"), stopStyle.Render(r.id), fit(r.title)}
+	}
+	return [3]string{pickedStyle.Render("▶ working"), pickedStyle.Render(r.id), fit(r.title)}
+}
+
+// ticketsTable lists this run's tickets, newest last, in at most maxLines lines of screen.
+func (m model) ticketsTable(w, maxLines int) string {
+	if len(m.rows) == 0 {
 		return ""
 	}
-	w := max(m.width, 30)
-	hint := dimStyle.Render(ansi.Truncate("  ctrl+c stops · the worker keeps running", w, "…"))
-	return lipgloss.JoinVertical(lipgloss.Left, titleStyle.Render("Orchestrator"), m.statsTable(w), m.workerPanel(w), hint)
+	idWidth := 7
+	for _, r := range m.rows {
+		idWidth = max(idWidth, len(r.id))
+	}
+	aboutWidth := w - 2 - 12 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
+	rows := m.rows
+	hidden := 0
+	if limit := max(maxLines-4, 3); len(rows) > limit { // header, rule and borders take 4 lines
+		hidden = len(rows) - (limit - 1)
+		rows = rows[hidden:]
+	}
+	var data [][]string
+	if hidden > 0 {
+		more := ansi.Truncate("earlier tickets, see the log", max(aboutWidth, 8), "…")
+		data = append(data, []string{"", dimStyle.Render(fmt.Sprintf("+%d", hidden)), dimStyle.Render(more)})
+	}
+	for _, r := range rows {
+		c := r.cells(aboutWidth)
+		data = append(data, c[:])
+	}
+	return table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
+		Headers("Tickets", "", "").
+		StyleFunc(func(row, col int) lipgloss.Style {
+			s := lipgloss.NewStyle().Padding(0, 1)
+			switch {
+			case row == table.HeaderRow:
+				return s.Faint(true)
+			case col == 0:
+				return s.Width(12)
+			case col == 1:
+				return s.Width(idWidth + 2)
+			}
+			return s
+		}).
+		Rows(data...).
+		Width(w).
+		Render()
 }
 
 // workerPanel boxes the current ticket: ID, worker status and time, title, latest action.

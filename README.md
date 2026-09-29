@@ -4,38 +4,40 @@ Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket
 
 ## What you see
 
-```
-17:02:34 ▶ [1/40] kinieta-2e7  cancel()/pause() from a completion block still leaks inside nested sequences
-17:02:34   worktree ~/Projects/kinieta-worktrees/kinieta-2e7 on wt/kinieta-2e7
-17:09:06 ✓ kinieta-2e7 completed  04c8d47 merged into batch/2026-09-28
-17:09:07 ▶ [2/40] kinieta-jqm  Support visionOS
-17:14:35 ↷ kinieta-jqm deferred  by the worker
-17:14:43 ◆ kinieta-jqm triage: instructions · high  Work done in f596fa9; deferred only by the awaits-CI rule
+One dashboard, updated in place: nothing is printed above it while the loop runs.
 
+```
  Orchestrator
 ╭────────────┬───────────────────────────────────────────────────╮
-│ Completed  │ ✓ 1                                               │
+│ Completed  │ ✓ 2                                               │
 │ Deferred   │ ↷ 1 · ◆ 1 triaged                                 │
-│ Picked up  │ 3 of 40 max                                       │
-│ In queue   │ 17 ready                                          │
+│ Picked up  │ 4 of 40 max                                       │
+│ In queue   │ 12 ready                                          │
 │ Branch     │ batch/2026-09-28                                  │
-│ Worker tab │ w2B:t9                                            │
-│ Running    │ 12m0s                                             │
+│ Worker tab │ w2B:tR                                            │
+│ Running    │ 18m40s                                            │
 ╰────────────┴───────────────────────────────────────────────────╯
+╭────────────┬─────────────┬────────────────────────────────────╮
+│ Tickets    │             │                                    │
+├────────────┼─────────────┼────────────────────────────────────┤
+│ ✓ done     │ kinieta-dwv │ ffd6ce4 merged into batch/2026-09… │
+│ ↷ deferred │ kinieta-vzg │ ◆ environment · high · Prompt was… │
+│ ✓ done     │ kinieta-y6j │ 6097367 merged into batch/2026-09… │
+│ ▶ working  │ kinieta-kco │ Open the property model: Interpol… │
+╰────────────┴─────────────┴────────────────────────────────────╯
 ╭────────────────────────────────────────────────────────────────╮
-│ ⣾  kinieta-y6j  working  2m14s                                 │
-│   Warn in debug builds when a chain call is silently ignored   │
+│ ⣾  kinieta-kco  working  4m52s                                 │
+│   Open the property model: Interpolatable protocol and custom… │
 │   ⏺ Bash(scripts/ci-local.sh lint ios)                         │
 ╰────────────────────────────────────────────────────────────────╯
   ctrl+c stops · the worker keeps running
 ```
 
-- **Picked up** (cyan): the ticket ID and its title.
-- **Completed** (green): the ticket ID only, with the merged commit.
-- **Deferred** (yellow) and **stops** (red), such as `PAUSED` or `BLOCKED`, name the tab or worktree that needs you.
-- **Triage** (purple `◆`): the triage organ's verdict on a deferred ticket (see Organs).
-- **Live area** at the bottom: an **Orchestrator** title, the run's totals, and the active ticket, all sized to the pane. The ticket box has a cyan border while the worker runs, red when it's blocked, and grey between tickets. It updates every 2 seconds.
-- **Run report** when the loop stops (see Organs).
+- **Totals** for the run.
+- **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
+- **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 2 seconds.
+
+When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see Organs).
 
 Everything is also appended to `.claude/orchestrate.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view.
 
