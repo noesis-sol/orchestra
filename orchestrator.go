@@ -333,7 +333,18 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		if !sleep(ctx, 3*time.Second) {
 			return o.interrupted(), true
 		}
-		switch agentStatus(id) {
+		st := agentStatus(id)
+		if st == "gone" {
+			// A start that times out leaves the agent running unnamed in its pane, and a retry
+			// would find the pane busy: adopt that agent under the ticket's name instead.
+			if name, kind, pst := paneAgent(pane); pst != "gone" && name == "" && kind == c.AgentKind {
+				if agentRename(pane, id) == nil {
+					o.info("  %s's worker started without its name; named it", id)
+					st = pst
+				}
+			}
+		}
+		switch st {
 		case "idle", "done":
 			ok = true
 		case "working", "blocked", "unknown":

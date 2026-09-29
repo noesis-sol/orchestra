@@ -207,7 +207,13 @@ func tabClose(tab string) { run("", "herdr", "tab", "close", tab) }
 // starts with the prompt already submitted. Herdr types the command into the pane's shell and
 // refuses arguments with line breaks, so the prompt must be one line.
 func agentStart(ctx context.Context, name, kind, pane, prompt string) error {
-	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
+	// A worker given its prompt goes straight to work and never looks ready for input, so Herdr's
+	// wait for readiness can only time out; keep it short and check the pane instead.
+	timeout := "60000"
+	if prompt != "" {
+		timeout = "20000"
+	}
+	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", timeout}
 	if prompt != "" {
 		args = append(args, "--", prompt)
 	}
@@ -257,6 +263,36 @@ func writeLaunchPrompt(repo, wt, ticket, prompt string) (string, error) {
 }
 
 const launchDir = ".orchestra"
+
+// paneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
+// status "gone" if the pane holds no agent.
+func paneAgent(pane string) (name, kind, status string) {
+	out, err := run("", "herdr", "agent", "get", pane)
+	if err != nil {
+		return "", "", "gone"
+	}
+	return parsePaneAgent([]byte(out))
+}
+
+func parsePaneAgent(raw []byte) (name, kind, status string) {
+	var r struct {
+		Result struct {
+			Agent struct {
+				Name        *string `json:"name"`
+				Agent       string  `json:"agent"`
+				AgentStatus string  `json:"agent_status"`
+			} `json:"agent"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(raw, &r) != nil || r.Result.Agent.AgentStatus == "" {
+		return "", "", "gone"
+	}
+	a := r.Result.Agent
+	if a.Name != nil {
+		name = *a.Name
+	}
+	return name, a.Agent, a.AgentStatus
+}
 
 func agentRename(name, to string) error {
 	_, err := run("", "herdr", "agent", "rename", name, to)

@@ -381,3 +381,17 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePaneAgent(t *testing.T) {
+	unnamed := `{"id":"cli:agent:get","result":{"agent":{"name":null,"agent":"claude","agent_status":"working","pane_id":"w2B:p1D"}}}`
+	if n, k, s := parsePaneAgent([]byte(unnamed)); n != "" || k != "claude" || s != "working" {
+		t.Errorf("unnamed: %q %q %q", n, k, s)
+	}
+	named := `{"result":{"agent":{"name":"kinieta-9g6","agent":"claude","agent_status":"idle"}}}`
+	if n, _, s := parsePaneAgent([]byte(named)); n != "kinieta-9g6" || s != "idle" {
+		t.Errorf("named: %q %q", n, s)
+	}
+	if _, _, s := parsePaneAgent([]byte(`{"error":{"code":"agent_not_found"}}`)); s != "gone" {
+		t.Errorf("no agent: %q", s)
+	}
+}
