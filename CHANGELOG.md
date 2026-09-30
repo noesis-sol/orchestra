@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `skills/orchestra/SKILL.md`, an optional skill for coding agents: how to
+  check a project's state, launch and follow a run, find out why a ticket was
+  set aside or a run stopped, and finish a ticket by hand.
+
 - `orchestra init` sets up `.orchestra/` in a project: the worker prompt from
   the built-in template (`-check` fills in the check command) or moved from
   `.claude/worker-prompt.md`, a `.gitignore`, and a check of `bd`, `.beads`,

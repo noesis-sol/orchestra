@@ -102,6 +102,18 @@ Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/
 
 Claude workers are started with a one-line instruction to read `.orchestra/run/prompt.md` in their worktree, where `orchestra` writes the prompt (kept out of git through the repository's `info/exclude`, so it's ignored even on a branch cut before `.orchestra/.gitignore` was committed). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
 
+## Running orchestra through an agent
+
+Optional: [`skills/orchestra/SKILL.md`](skills/orchestra/SKILL.md) is a skill for coding agents such as Claude Code. It tells the agent how to:
+- find out where a project stands: whether `init` has run, which files the project uses, whether a run is active;
+- launch a run in a Herdr pane beside its own;
+- leave the checkout alone during a run;
+- read the log, the run report and the tickets' triage notes when something is set aside or a run stops;
+- finish a ticket by hand;
+- leave pushing, answering questions and worker dialogs to you.
+
+To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for every project, or `.claude/skills/orchestra/` in one project. Then ask the agent to "run orchestra", "set this project up for orchestra" or "why did the run stop?".
+
 ## Exit codes
 
 | Code | Meaning |
