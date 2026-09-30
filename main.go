@@ -95,7 +95,7 @@ func loadConfig() (Config, []string) {
 	var c Config
 	var problems []string
 
-	flag.StringVar(&c.Workspace, "workspace", os.Getenv("WORKSPACE"), "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list) [WORKSPACE]")
+	flag.StringVar(&c.Workspace, "workspace", "", "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list)")
 	flag.IntVar(&c.Limit, "limit", envInt("LIMIT", 40, &problems), "stop after this many tickets in total [LIMIT]")
 	flag.IntVar(&c.DoneSoFar, "done-so-far", envInt("DONE_SO_FAR", 0, &problems), "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	flag.StringVar(&c.AgentKind, "agent", envOr("AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")

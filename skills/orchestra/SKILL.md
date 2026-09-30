@@ -59,7 +59,7 @@ unless given `--force`; don't pass `--force` without the user's say-so. Afterwar
 Requirements, checked by `orchestra` at startup (it lists every problem, exit code 2):
 
 - inside a Herdr pane (`HERDR_ENV=1`). Worker tabs open in that pane's workspace, unless
-  `--workspace ID` / `WORKSPACE=ID` names another;
+  `--workspace ID` names another;
 - in the main checkout, on a branch, not a detached HEAD;
 - no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`.
 
