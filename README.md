@@ -96,6 +96,7 @@ orchestra
 With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:
 
 - **No ticket runs twice.** A ticket that's been handed out isn't picked again, even before its worker claims it.
+- **Free slots don't wait.** While workers run, `bd ready` is read every 30 seconds: a ticket that becomes ready meanwhile (an answered question, a worker's follow-up, a closed blocker) takes a free slot then, and the dashboard's **In queue** follows.
 - **Merges queue.** A finished ticket waits for its turn. If other tickets merged while it ran, its branch is rebased onto the current one, and the check command from `settings.json` runs again on the rebased code before it merges. A conflict (`MERGE_CONFLICT`) or a failing check (`CHECKS_FAILED`) leaves that ticket for review, and the run goes on. Tickets it blocks wait until it merges, in later runs too: it is labelled `unmerged` until then. Without a check command, a rebased ticket merges unchecked, and the log says so.
 - **One git writer at a time.** Worktree creation, rebases, merges and cleanup in the main repository take a lock, so workers don't trip over git's lock files.
 - **Stopping drains.** Something that stops the run (`PAUSED`, `BLOCKED`, a tool failure) is logged as `HOLD`. No new tickets start, the running ones finish and merge, and then the run ends with that reason. With one ticket at a time, nothing changes. Ctrl+C still stops at once.

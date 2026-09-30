@@ -103,7 +103,7 @@ type Dashboard struct {
 	interrupted bool
 	final       *dispatch.Event // the stop or done event, printed by main after exit
 	received    int             // events received, for ProgramSink.Handoff
-	queued      int             // ready tickets behind the current one; -1 until the first pickup
+	queued      int             // ready tickets waiting for a slot; -1 until the loop first says
 	began       time.Time
 	cancel      func()
 }
@@ -148,6 +148,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case dispatch.EvDispatch:
 			m.n, m.queued = ev.N, ev.Queued
 			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
+		case dispatch.EvQueue:
+			m.queued = ev.Queued
 		case dispatch.EvClosed:
 			m.closed++
 			m.setRow(ev.Ticket, rowDone, ev.Detail)
@@ -660,6 +662,9 @@ type Printer struct {
 }
 
 func (p Printer) Event(ev dispatch.Event) {
+	if ev.Kind == dispatch.EvQueue {
+		return // the dashboard's count, not a line
+	}
 	if p.Styled {
 		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
 		return

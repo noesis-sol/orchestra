@@ -634,3 +634,89 @@ func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
 		})
 	}
 }
+
+// eventually waits for cond, failing the test after a few seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Error(what)
+			return
+		}
+	}
+}
+
+// queueSizes returns the queue sizes the loop reported, in order.
+func (s *runSink) queueSizes() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var l []int
+	for _, ev := range s.events {
+		if ev.Kind == EvQueue {
+			l = append(l, ev.Queued)
+		}
+	}
+	return l
+}
+
+// A ticket that becomes ready while a worker runs goes to a free slot at the next poll, not once
+// the running ticket finishes.
+func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.Concurrency = 2
+	h.beads.add("A", "first", 1)
+	bStarted := make(chan struct{})
+	h.worker("A", func(w *fakeWorker) string {
+		w.claim()
+		w.beads.add("B", "follow-up", 2) // the worker files a follow-up
+		select {
+		case <-bStarted:
+		case <-time.After(5 * time.Second):
+			t.Error("B waited for A to finish")
+		}
+		return finishes("a.txt")(w)
+	})
+	h.worker("B", func(w *fakeWorker) string { close(bStarted); return finishes("b.txt")(w) })
+	o := h.loop()
+	o.wait.ready = 5 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+}
+
+// With every slot taken, each poll brings the dashboard's queue count up to date, without a line
+// in the log.
+func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.worker("A", func(w *fakeWorker) string {
+		w.claim()
+		w.beads.add("B", "second", 2)
+		w.beads.add("C", "third", 3)
+		eventually(t, "the queue count never reached 2", func() bool {
+			q := h.sink.queueSizes()
+			return len(q) > 0 && q[len(q)-1] == 2
+		})
+		return finishes("a.txt")(w)
+	})
+	h.worker("B", finishes("b.txt"))
+	h.worker("C", finishes("c.txt"))
+	o := h.loop()
+	o.wait.ready = 5 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.queueSizes(); len(got) != 1 || got[0] != 2 {
+		t.Errorf("queue sizes reported: %v, want [2]: dispatches carry the rest", got)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(h.logged()), "\n") {
+		if strings.Count(strings.TrimSpace(line), " ") < 2 {
+			t.Errorf("log line without text: %q", line)
+		}
+	}
+}

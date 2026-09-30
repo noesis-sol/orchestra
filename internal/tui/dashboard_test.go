@@ -292,3 +292,15 @@ func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
 		t.Errorf("handed off %s", got)
 	}
 }
+
+func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40}, func() {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First", Queued: 0},
+		dispatch.Event{Kind: dispatch.EvQueue, Queued: 3})
+	if m.queued != 3 {
+		t.Errorf("queued = %d, want 3", m.queued)
+	}
+	if len(m.rows) != 1 {
+		t.Errorf("a queue count should add no row: %d rows", len(m.rows))
+	}
+}

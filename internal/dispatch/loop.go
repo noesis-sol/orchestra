@@ -42,6 +42,7 @@ const (
 	EvTriage               // the triage organ's verdict on a deferred ticket
 	EvAsked                // a ticket waits on the maintainer's answer to a question
 	EvHold                 // something stopped the run; no new tickets while the running ones finish
+	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
 )
 
 type Event struct {
@@ -51,7 +52,7 @@ type Event struct {
 	Limit  int
 	Ticket string
 	Title  string // EvDispatch only
-	Queued int    // EvDispatch only: ready tickets behind this one
+	Queued int    // EvDispatch and EvQueue: ready tickets waiting for a slot
 	Detail string // short suffix for EvClosed / EvDeferred
 	Text   string // the full line written to the log file
 }
@@ -151,6 +152,7 @@ type Loop struct {
 	sinkMu sync.Mutex // triage reports from its own goroutine
 	prompt string     // worker prompt with the TICKET_ID placeholder
 	count  int
+	queued int // the queue size last reported, -1 before the first; Run's own
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -216,7 +218,9 @@ func (o *Loop) Final() string {
 
 func (o *Loop) emit(ev Event) {
 	ev.Time = time.Now()
-	o.log.Line(ev.Time, ev.Text)
+	if ev.Kind != EvQueue {
+		o.log.Line(ev.Time, ev.Text)
+	}
 	o.sinkMu.Lock()
 	defer o.sinkMu.Unlock()
 	if ev.Kind == EvStop || ev.Kind == EvDone {
@@ -310,6 +314,7 @@ type timing struct {
 	longRun    time.Duration // without a ticket limit, a worker going on longer is reported once: longRunning
 	idleGrace  time.Duration // idleGrace
 	settle     time.Duration // SettleWait
+	ready      time.Duration // between reads of bd ready while workers run: readyPoll
 }
 
 func orDefault(d, def time.Duration) time.Duration {
@@ -323,6 +328,11 @@ func orDefault(d, def time.Duration) time.Duration {
 func (o *Loop) pollEvery() time.Duration {
 	return orDefault(o.wait.poll, 3*time.Second)
 }
+
+// readyPoll is how often Run reads bd ready while workers run: tickets become ready mid-run (a
+// question answered, a follow-up a worker filed, a blocker closed), and a free slot shouldn't wait
+// for a running ticket to finish before picking them up.
+const readyPoll = 30 * time.Second
 
 // sleep waits for d, returning false if ctx is cancelled first.
 func sleep(ctx context.Context, d time.Duration) bool {
@@ -358,6 +368,9 @@ func (o *Loop) Run(ctx context.Context) int {
 
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
 	inflight := map[string]bool{}
+	o.queued = -1
+	poll := time.NewTicker(orDefault(o.wait.ready, readyPoll))
+	defer poll.Stop()
 	var stop *stopReason // the first reason decides the exit code
 	var alsoStopped []string
 	for {
@@ -373,10 +386,12 @@ func (o *Loop) Run(ctx context.Context) int {
 				break
 			}
 			if t == nil {
+				o.reportQueue(0)
 				break // nothing ready that isn't already running
 			}
 			o.count++
 			inflight[t.ID] = true
+			o.queued = queued
 			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued,
 				Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
 			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
@@ -404,6 +419,17 @@ func (o *Loop) Run(ctx context.Context) int {
 					"HOLD: %s; no new tickets while the %d running finish", r.stop.text, len(inflight))})
 			case !first:
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
+			}
+		case <-poll.C:
+			// With a free slot, the loop above reads bd ready again. With none, the queue count is
+			// brought up to date; a failed read waits for the next poll, as nothing depends on it.
+			if stop == nil && len(inflight) >= c.Concurrency && o.count < c.Limit {
+				if t, queued, err := o.pick(inflight); err == nil {
+					if t != nil {
+						queued++
+					}
+					o.reportQueue(queued)
+				}
 			}
 		case <-ctx.Done():
 			o.settle(results, inflight)
@@ -499,9 +525,28 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	if s != nil {
 		return nil, 0, s
 	}
-	ready, err := o.tickets.Ready()
+	t, queued, err := o.pick(running)
 	if err != nil {
 		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read 'bd ready --json'%s", because(err))
+	}
+	return t, queued, nil
+}
+
+// reportQueue tells the dashboard how many ready tickets wait for a slot, when that has changed.
+func (o *Loop) reportQueue(n int) {
+	if n == o.queued {
+		return
+	}
+	o.queued = n
+	o.emit(Event{Kind: EvQueue, Queued: n})
+}
+
+// pick reads bd ready and returns the highest-priority ticket that can start, with how many others
+// could.
+func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
+	ready, err := o.tickets.Ready()
+	if err != nil {
+		return nil, 0, err
 	}
 	// A ticket set aside in this run stays out of it, even if bd still lists it as ready (a defer
 	// that failed, say); otherwise it would be dispatched again at once, in a new tab each time. A
