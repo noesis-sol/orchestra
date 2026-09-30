@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -128,5 +129,33 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 	d := (Git{}).DirtyWorktree(dir)
 	if !strings.Contains(d, ".claude/settings.json") || !strings.Contains(d, ".beads/") {
 		t.Errorf("a worktree's check should count .claude/ and .beads/: %q", d)
+	}
+}
+
+// A worker committing in another worktree takes the repository's packed-refs.lock for a moment,
+// which a loaded machine can stretch past git's one-second wait: deleting a merged ticket's branch
+// must wait it out rather than fail and leave the ticket's tab open.
+func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--quiet", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "--allow-empty", "-m", "Start"},
+		{"branch", "wt/x-12"},
+	} {
+		if out, err := command.Output(repo, "git", args...); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	lock := filepath.Join(repo, ".git", "packed-refs.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(1500*time.Millisecond, func() { os.Remove(lock) })
+	if out, err := (Git{}).DeleteBranch(repo, "wt/x-12"); err != nil {
+		t.Fatalf("DeleteBranch: %v\n%s", err, out)
+	}
+	if (Git{}).HasBranch(repo, "wt/x-12") {
+		t.Error("wt/x-12 should be deleted")
 	}
 }

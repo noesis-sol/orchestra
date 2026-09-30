@@ -177,9 +177,11 @@ func (Git) RemoveWorktree(repo, path string) (string, error) {
 	return command.Output(repo, "git", "worktree", "remove", path)
 }
 
-// DeleteBranch deletes a branch that has been merged.
+// DeleteBranch deletes a branch that has been merged. Deleting a ref takes the repository's
+// packed-refs.lock, which a commit, rebase or merge in any worktree also takes for a moment; git
+// gives up after a second, too soon on a loaded machine while workers commit, so it waits longer.
 func (Git) DeleteBranch(repo, branch string) (string, error) {
-	return command.Output(repo, "git", "branch", "-d", branch)
+	return command.Output(repo, "git", "-c", "core.packedRefsTimeout=10000", "branch", "-d", branch)
 }
 
 // Rebase rebases the branch checked out in worktree onto onto.
