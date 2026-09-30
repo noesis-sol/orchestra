@@ -138,7 +138,15 @@ func (o *Loop) Run(ctx context.Context) int {
 			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
 		}
 		if len(inflight) == 0 {
-			break
+			// Held for the environment, the run may probe the machine and take tickets again.
+			if stop == nil || len(alsoStopped) > 0 {
+				break
+			}
+			if stop = o.probeEnvironment(ctx, stop, winding); stop != nil {
+				break
+			}
+			envSaid = false
+			continue
 		}
 		select {
 		case r := <-results:

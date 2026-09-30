@@ -33,3 +33,29 @@ func TestResolveEnvironmentHold(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveEnvironmentProbe(t *testing.T) {
+	cases := []struct {
+		json  string
+		probe time.Duration
+		fails bool
+	}{
+		{`{}`, 10 * time.Minute, false},
+		{`{"environment_hold": {"count": 3}}`, 10 * time.Minute, false},
+		{`{"environment_hold": {"probe": "30m"}}`, 30 * time.Minute, false},
+		{`{"environment_hold": {"probe": "0"}}`, 0, false}, // no probe
+		{`{"environment_hold": {"probe": "0s"}}`, 0, false},
+		{`{"environment_hold": {"probe": "-1m"}}`, 0, true},
+		{`{"environment_hold": {"probe": "soon"}}`, 0, true},
+	}
+	for _, c := range cases {
+		var s Settings
+		if err := json.Unmarshal([]byte(c.json), &s); err != nil {
+			t.Fatal(err)
+		}
+		probe, err := ResolveEnvironmentProbe(s)
+		if (err != nil) != c.fails || (!c.fails && probe != c.probe) {
+			t.Errorf("ResolveEnvironmentProbe(%s) = %s, %v", c.json, probe, err)
+		}
+	}
+}

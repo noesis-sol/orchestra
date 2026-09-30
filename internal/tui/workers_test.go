@@ -53,6 +53,16 @@ func TestDashboardHoldWithoutTicket(t *testing.T) {
 	}
 }
 
+func TestDashboardProbeEndsTheHold(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 1}, func() {}, func(bool) {})
+	m.width, m.height = 100, 30
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvHold, Text: "PROBE: the run holds for the environment; in 10m …"},
+		dispatch.Event{Kind: dispatch.EvProbed, Text: "PROBE_OK: a worker without a ticket ran a command 10m after the hold; taking tickets again"})
+	if v := ansi.Strip(m.View()); strings.Contains(v, "stopping") {
+		t.Errorf("a probe that ran its command should end the hold:\n%s", v)
+	}
+}
+
 func TestDashboardFitsShortPanes(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {}, func(bool) {})
 	for i := 0; i < 30; i++ {

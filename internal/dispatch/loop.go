@@ -100,12 +100,14 @@ type Loop struct {
 	triageDone   chan struct{}
 
 	// Holding for the environment, under mu: the tickets whose workers failed at once in a row, the
-	// tickets triage blamed on the environment in a row, and the reason once the run holds.
-	// envWake (buffered 1) tells Run.
+	// tickets triage blamed on the environment in a row, and the reason once the run holds, with
+	// why. envWake (buffered 1) tells Run. envProbed, Run's own: the machine was probed in this run.
 	fastFails   []string
 	envVerdicts []string
 	envStop     *stopReason
+	envWhy      string
 	envWake     chan struct{}
+	envProbed   bool
 
 	// Winding down, under drainMu: the maintainer asked to stop after the running tickets, and how
 	// they last asked either way. drainWake (buffered 1) tells Run. Its own lock, as the dashboard
@@ -191,6 +193,7 @@ type timing struct {
 	longRun    time.Duration // without a ticket limit, a worker going on longer is reported once: longRunning
 	idleGrace  time.Duration // idleGrace
 	settle     time.Duration // SettleWait
+	probe      time.Duration // how long the probe worker may take to run its command: probeLimit
 	ready      time.Duration // between reads of bd ready while workers run: readyPoll
 }
 
@@ -262,4 +265,7 @@ type Config struct {
 	// EnvHoldWindow is how soon after dispatch a worker that settles with its ticket unclaimed and
 	// unchanged counts as failing at once.
 	EnvHoldWindow time.Duration
+	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
+	// worker without a ticket is started to see whether commands run again; 0 for none.
+	EnvProbe time.Duration
 }

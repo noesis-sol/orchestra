@@ -83,6 +83,8 @@ func renderEvent(ev dispatch.Event) string {
 		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
 	case dispatch.EvDrain, dispatch.EvResume:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
+	case dispatch.EvProbed:
+		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
 	}
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
 }
@@ -189,6 +191,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
 			m.draining = ev.Kind == dispatch.EvDrain
+		case dispatch.EvProbed: // the machine works again after an environment hold
+			m.stopping = false
 		case dispatch.EvHold:
 			m.stopping = true
 			if ev.Ticket != "" { // a stop found before dispatching belongs to no ticket

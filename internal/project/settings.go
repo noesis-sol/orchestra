@@ -39,10 +39,13 @@ type Settings struct {
 
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
 // settled within Window of dispatch without claiming the ticket or changing anything, or that
-// triage blamed on the environment with high confidence, hold the run.
+// triage blamed on the environment with high confidence, hold the run. Probe after the hold, once
+// nothing runs, one worker without a ticket runs a command, and the run takes tickets again if it
+// does.
 type EnvironmentHold struct {
 	Count  *int   `json:"count,omitempty"`  // absent: DefaultEnvironmentHoldCount; 0 turns the hold off
 	Window string `json:"window,omitempty"` // a duration such as "2m"; empty: DefaultEnvironmentHoldWindow
+	Probe  string `json:"probe,omitempty"`  // a duration such as "10m"; empty: DefaultEnvironmentProbe; "0": no probe
 }
 
 const (
@@ -55,10 +58,11 @@ const (
 )
 
 // The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
-// within two minutes of dispatch.
+// within two minutes of dispatch, and a probe ten minutes after the running tickets finish.
 const (
 	DefaultEnvironmentHoldCount  = 2
 	DefaultEnvironmentHoldWindow = 2 * time.Minute
+	DefaultEnvironmentProbe      = 10 * time.Minute
 )
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
@@ -219,4 +223,21 @@ func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err er
 		}
 	}
 	return count, window, nil
+}
+
+// ResolveEnvironmentProbe picks how long after an environment hold, once no ticket runs, the run
+// probes the machine with one worker without a ticket; 0 for no probe.
+func ResolveEnvironmentProbe(s Settings) (time.Duration, error) {
+	h := s.EnvironmentHold
+	if h == nil || h.Probe == "" {
+		return DefaultEnvironmentProbe, nil
+	}
+	d, err := time.ParseDuration(h.Probe)
+	if h.Probe == "0" {
+		d, err = 0, nil
+	}
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s: environment_hold probe must be a duration such as 10m, or 0 for none (got '%s')", SettingsPath("."), h.Probe)
+	}
+	return d, nil
 }

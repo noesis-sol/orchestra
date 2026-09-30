@@ -25,6 +25,7 @@ const (
 	EvDrain                // the maintainer asked to stop after the running tickets
 	EvResume               // the maintainer took that back
 	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
+	EvProbed               // a probe found the machine working after an environment hold: tickets start again
 )
 
 type Event struct {
@@ -117,7 +118,7 @@ func (l *Log) Raw(out string, err error) {
 // anything that needs the maintainer or stops the loop, not progress, dispatches or triage.
 func notifies(k Kind) bool {
 	switch k {
-	case EvClosed, EvDeferred, EvWarn, EvStop, EvDone, EvAsked, EvHold:
+	case EvClosed, EvDeferred, EvWarn, EvStop, EvDone, EvAsked, EvHold, EvProbed:
 		return true
 	}
 	return false

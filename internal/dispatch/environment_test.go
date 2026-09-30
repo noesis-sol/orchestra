@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -165,5 +166,118 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 		if st := h.statusOf(id); st != "deferred" {
 			t.Errorf("%s is %s, want deferred", id, st)
 		}
+	}
+}
+
+// runsProbe is a probe worker on a machine that works again: it runs the command it was given.
+func runsProbe(w *fakeWorker) string {
+	if err := os.WriteFile(filepath.Join(w.wt, ".orchestra", "run", "probe"), []byte("ok\n"), 0o644); err != nil {
+		w.t.Error(err)
+	}
+	return "idle"
+}
+
+// probeTab is the tab the probe worker was started in, or "".
+func (h *harness) probeTab() string {
+	h.herdr.mu.Lock()
+	defer h.herdr.mu.Unlock()
+	for _, p := range h.herdr.panes {
+		if p.ticket == probeID {
+			return p.tab
+		}
+	}
+	return ""
+}
+
+func TestAProbeThatRunsItsCommandEndsTheHold(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.beads.add("C", "c", 3)
+	h.worker("A", givesUp, finishes("a.txt"))
+	h.worker("B", givesUp, finishes("b.txt"))
+	h.worker("C", finishes("c.txt"))
+	h.worker(probeID, runsProbe)
+
+	o, code := h.run()
+	if code != ExitOK {
+		t.Errorf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
+	}
+	if got := h.dispatched(); !equal(got, []string{"A", "B", "A", "B", "C"}) {
+		t.Errorf("dispatched %v, want A and B, then after the probe A, B and C", got)
+	}
+	for _, id := range []string{"A", "B", "C"} {
+		if st := h.statusOf(id); st != "closed" {
+			t.Errorf("%s is %s, want closed", id, st)
+		}
+	}
+	probing := "PROBE: the run holds for the environment; in 1ms one worker without a ticket runs a command, and if it does the run takes tickets again"
+	ok := "PROBE_OK: a worker without a ticket ran a command 1ms after the hold; taking tickets again"
+	if !strings.Contains(h.logged(), probing) || !h.alerts.has(ok) {
+		t.Errorf("no PROBE line, or no PROBE_OK notification:\n%s", h.logged())
+	}
+	if !strings.HasPrefix(o.Final(), "READY_EMPTY") {
+		t.Errorf("final line %q", o.Final())
+	}
+	if tab := h.probeTab(); tab == "" || !slices.Contains(h.herdr.tabsClosed(), tab) {
+		t.Errorf("probe tab %q not closed: %v", tab, h.herdr.tabsClosed())
+	}
+	if exists(filepath.Join(h.repo, ".orchestra", "run", "probe")) {
+		t.Error("the probe's file is left behind")
+	}
+}
+
+func TestAProbeThatRunsNoCommandEndsTheRun(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp)
+	h.worker("B", givesUp)
+	h.worker(probeID, givesUp)
+
+	o, code := h.run()
+	if code != ExitEnvironment {
+		t.Errorf("exit code %d, want %d:\n%s", code, ExitEnvironment, h.logged())
+	}
+	final := "ENVIRONMENT: the last 2 tickets (A, B) each settled within 1m of starting without being claimed or changed; " +
+		"a worker probing the machine 1ms later failed too: it stopped without running its command; see tab " + h.probeTab() +
+		"; check the machine, then restart"
+	if o.Final() != final {
+		t.Errorf("final line %q, want %q", o.Final(), final)
+	}
+	if closed := h.herdr.tabsClosed(); slices.Contains(closed, h.probeTab()) {
+		t.Errorf("the failed probe's tab was closed: %v", closed)
+	}
+	for _, id := range []string{"A", "B"} {
+		if st := h.statusOf(id); st != "open" {
+			t.Errorf("%s is %s, want open", id, st)
+		}
+	}
+}
+
+func TestTheMachineIsProbedOncePerRun(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp, givesUp)
+	h.worker("B", givesUp, givesUp)
+	h.worker(probeID, runsProbe) // a second probe would find no behaviour and fail the test
+
+	o, code := h.run()
+	if code != ExitEnvironment {
+		t.Errorf("exit code %d, want %d:\n%s", code, ExitEnvironment, h.logged())
+	}
+	if got := h.dispatched(); !equal(got, []string{"A", "B", "A", "B"}) {
+		t.Errorf("dispatched %v, want A and B twice", got)
+	}
+	final := "ENVIRONMENT: the last 2 tickets (A, B) each settled within 1m of starting without being claimed or changed; check the machine, then restart"
+	if o.Final() != final {
+		t.Errorf("final line %q, want %q", o.Final(), final)
 	}
 }

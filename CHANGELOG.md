@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- After a run holds for the environment, it probes the machine once the running
+  tickets finish: 10 minutes later one worker without a ticket is started in
+  the main checkout and asked to run a single command. If it does, the log and
+  a notification say `PROBE_OK: …; taking tickets again`, and the run goes on
+  with the reopened tickets. If not, the run ends with `ENVIRONMENT` (exit code
+  7) as before, the line saying how the probe failed and its tab left open. A
+  run probes once; a second hold ends it. `"environment_hold": {"probe": "30m"}`
+  in `.orchestra/settings.json` changes the wait, and `"probe": "0"` turns the
+  probe off.
 - **s** in the dashboard stops the run after its running tickets: a box asks
   `Stop after the running tickets?`, naming them, and **y** confirms (**n** or
   **Esc** closes it). No new ticket starts from any path; the running ones
