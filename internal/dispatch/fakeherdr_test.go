@@ -41,6 +41,7 @@ type fakeHerdr struct {
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
+	showsAs      map[string]string      // the status these tickets' workers show from their prompt on, instead of working
 	refuseArgs   bool                   // StartAgent takes no arguments
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
 }
@@ -48,7 +49,7 @@ type fakeHerdr struct {
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
-		launchSlow: map[string]bool{}, launchLost: map[string]bool{}}
+		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]string{}}
 }
 
 // agent returns the agent named name, or nil. The caller holds mu.
@@ -75,6 +76,9 @@ func (h *fakeHerdr) inPane(pane string) *fakeAgent {
 func (h *fakeHerdr) prompt(a *fakeAgent) {
 	p := h.panes[a.pane]
 	a.prompted, a.status = true, "working"
+	if st, ok := h.showsAs[p.ticket]; ok {
+		a.status = st
+	}
 	queue := h.behaviours[p.ticket]
 	if len(queue) == 0 {
 		h.t.Errorf("no behaviour left for a worker on %s", p.ticket)

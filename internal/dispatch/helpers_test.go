@@ -88,8 +88,8 @@ func (h *harness) loop() *Loop {
 		Namer: h.herdr, Agents: h.herdr, Reporter: h.reporter, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{},
 		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
 	o.SetSink(h.sink)
-	o.wait = timing{poll: time.Millisecond, startRetry: time.Millisecond, adopt: 5 * time.Second, blocked: 30 * time.Millisecond,
-		idleGrace: 30 * time.Millisecond, settle: 5 * time.Second}
+	o.wait = timing{poll: time.Millisecond, startRetry: time.Millisecond, adopt: patience, blocked: 30 * time.Millisecond,
+		idleGrace: 30 * time.Millisecond, settle: patience}
 	return o
 }
 
@@ -108,7 +108,7 @@ func (h *harness) logged() string { return read(h.t, h.logPath) }
 func (h *harness) waitHeld() {
 	select {
 	case <-h.sink.held:
-	case <-time.After(5 * time.Second):
+	case <-time.After(patience):
 		h.t.Error("no HOLD")
 	}
 }
@@ -128,10 +128,15 @@ func activeIDs(o *Loop) []string {
 
 func equal(a, b []string) bool { return strings.Join(a, "\n") == strings.Join(b, "\n") }
 
-// eventually waits for cond, failing the test after a few seconds.
+// patience is how long a test waits for something that should happen: a passing test never waits
+// it out, and a loaded machine (the race detector, many test binaries at once) can take tens of
+// seconds for what takes a second alone.
+const patience = 2 * time.Minute
+
+// eventually waits for cond, failing the test after patience.
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(time.Millisecond) {
+	for deadline := time.Now().Add(patience); !cond(); time.Sleep(time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Error(what)
 			return

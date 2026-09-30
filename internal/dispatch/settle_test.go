@@ -207,6 +207,7 @@ func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
 			h.beads.add("A", "first", 1)
 			h.beads.add("B", "second", 2)
 			h.worker("A", func(w *fakeWorker) string { w.claim(); return st })
+			h.herdr.showsAs["A"] = st // from the start: the limit may pass before the worker returns
 			o := h.loop()
 			o.wait.unknown = time.Hour
 			code := o.Run(context.Background())

@@ -142,6 +142,6 @@ func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 		t.Errorf("main:\n%s", log)
 	}
 	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab2", "tab3"}) {
-		t.Errorf("tabs closed: %v; the asking worker's tab1 should stay", got)
+		t.Errorf("tabs closed: %v; the asking worker's tab1 should stay\n%s\nlog:\n%s", got, h.sink.text(), h.logged())
 	}
 }

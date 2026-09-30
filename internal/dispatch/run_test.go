@@ -158,7 +158,7 @@ func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
 	go func() { o.FinishTriage(context.Background()); close(finished) }()
 	select {
 	case <-finished:
-	case <-time.After(5 * time.Second):
+	case <-time.After(patience):
 		t.Fatal("FinishTriage did not return")
 	}
 	if strings.Contains(sink.text(), "TRIAGE") {
@@ -283,7 +283,7 @@ func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 		if code != ExitInterrupted || o.Final() != want {
 			t.Errorf("exit %d, final %q, want %q", code, o.Final(), want)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(patience):
 		t.Fatal("Run did not return after Ctrl+C")
 	}
 	if got := activeIDs(o); !equal(got, []string{"A"}) {

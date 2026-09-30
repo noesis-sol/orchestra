@@ -81,7 +81,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 			Agents: noAgents{}, Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
 	o.SetSink(sink)
 	// Without the HOLD, A would wait forever; let it go so the test fails rather than hangs.
-	late := time.AfterFunc(5*time.Second, func() { sink.once.Do(func() { close(release) }) })
+	late := time.AfterFunc(patience, func() { sink.once.Do(func() { close(release) }) })
 	defer late.Stop()
 	if code := o.Run(context.Background()); code != ExitTool {
 		t.Errorf("exit code %d, want %d", code, ExitTool)
@@ -146,7 +146,7 @@ func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
 		w.beads.add("B", "follow-up", 2) // the worker files a follow-up
 		select {
 		case <-bStarted:
-		case <-time.After(5 * time.Second):
+		case <-time.After(patience):
 			t.Error("B waited for A to finish")
 		}
 		return finishes("a.txt")(w)
@@ -170,8 +170,10 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.worker("A", func(w *fakeWorker) string {
 		w.claim()
-		w.beads.add("B", "second", 2)
-		w.beads.add("C", "third", 3)
+		w.beads.mu.Lock() // both at once: a poll between them would report a queue of 1 first
+		w.beads.addLocked("B", "second", 2)
+		w.beads.addLocked("C", "third", 3)
+		w.beads.mu.Unlock()
 		eventually(t, "the queue count never reached 2", func() bool {
 			q := h.sink.queueSizes()
 			return len(q) > 0 && q[len(q)-1] == 2

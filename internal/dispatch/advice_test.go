@@ -116,14 +116,14 @@ func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
 		if code != ExitInterrupted {
 			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(patience):
 		t.Fatal("Run did not return after its settle wait")
 	}
 	o.FinishTriage(context.Background())
 	close(tk.release)
 	select {
 	case <-sink.gone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(patience):
 		t.Fatal("the worker did not return")
 	}
 }

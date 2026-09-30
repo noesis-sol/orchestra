@@ -37,6 +37,12 @@ func newFakeBeads() *fakeBeads {
 func (b *fakeBeads) add(id, title string, prio int, labels ...string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.addLocked(id, title, prio, labels...)
+}
+
+// addLocked adds a ticket. The caller holds mu: holding it across several makes them one change,
+// which a read of bd ready sees all of or none of.
+func (b *fakeBeads) addLocked(id, title string, prio int, labels ...string) {
 	b.tickets[id] = &Ticket{ID: id, Title: title, Status: "open", IssueType: "task", Priority: &prio, Labels: labels}
 	b.order = append(b.order, id)
 }

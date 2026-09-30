@@ -140,7 +140,7 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 	h.worker("C", func(w *fakeWorker) string {
 		select {
 		case <-h.sink.held:
-		case <-time.After(5 * time.Second):
+		case <-time.After(patience):
 			t.Error("no HOLD while C ran")
 		}
 		return finishes("c.txt")(w)
