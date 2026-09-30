@@ -610,6 +610,7 @@ func (okStarter) StartAgent(ctx context.Context, name, kind, pane string, args [
 	return nil
 }
 func (okStarter) IsArgumentRefused(err error) bool                { return false }
+func (okStarter) IsNameRefused(err error) bool                    { return false }
 func (okStarter) WaitReady(ctx context.Context, name string) bool { return true }
 
 type deferringTickets struct {
@@ -786,7 +787,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-	if stop := o.waitSettled(context.Background(), "A", "tab"); stop != nil {
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab"); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	if a.reads != 4 {
@@ -803,7 +804,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		script[i] = "unreadable"
 	}
 	o, a, _ := newSettleLoop(t, script...)
-	stop := o.waitSettled(context.Background(), "A", "tab")
+	stop := o.waitSettled(context.Background(), "A", "A", "tab")
 	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
 		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 	}

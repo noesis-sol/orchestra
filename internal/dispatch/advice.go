@@ -28,7 +28,7 @@ func (o *Loop) gatherDeferral(id, title, how, wt string) organ.Deferral {
 	commits := o.history.OneLineLog(wt, c.Base+"..HEAD")
 	stat := o.history.DiffStat(wt)
 	return organ.Deferral{ID: id, Title: title, How: how, Ticket: show,
-		Screen: lastLines(o.agents.Screen(id), 80),
+		Screen: lastLines(o.agents.Screen(o.agentName(id)), 80),
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
 			orNone(commits) + "\n\nDiff against its last commit:\n" + orNone(stat)}
 }
@@ -143,7 +143,7 @@ func (o *Loop) reviewInput(code int, final string) string {
 	for _, st := range o.activeList() {
 		show := o.tickets.Describe(st.Ticket)
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
-			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(st.Ticket), 60))
+			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(o.agentName(st.Ticket)), 60))
 	}
 	ready, _ := o.tickets.Ready()
 	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",

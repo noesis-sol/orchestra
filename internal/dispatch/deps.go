@@ -32,15 +32,18 @@ type Starter interface {
 	LaunchInPane(pane, kind string, args []string) error                          // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
 	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
+	IsNameRefused(err error) bool                                                 // Herdr won't take this agent name
 	WaitReady(ctx context.Context, name string) bool
 }
 
-// Namer finds and names agents, which is how the loop refers to a worker (by its ticket).
+// Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
+// its ticket).
 type Namer interface {
-	AdoptAgent(ctx context.Context, pane, kind, name string) (string, bool) // name the agent that appears in the pane
-	PaneAgent(pane string) (name, kind, status string)                      // status as Agents.Status gives it
+	AgentName(id string) string                                              // the agent name for ticket id's worker
+	AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) // name the agent that appears in the pane
+	PaneAgent(pane string) (name, kind, status string)                       // status as Agents.Status gives it
 	RenameAgent(name, to string) error
-	FreeName(id string) string // an unused name for an earlier worker of ticket id
+	FreeName(name string) string // an unused name for an earlier worker that holds name
 }
 
 // Agents watches and nudges a running worker by name.

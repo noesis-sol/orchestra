@@ -3,6 +3,7 @@ package herdr
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -52,4 +53,72 @@ func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
 	if got := CurrentWorkspace(os.Getenv); got != "" {
 		t.Errorf("outside Herdr there is no current workspace, got %q", got)
 	}
+}
+
+func TestAgentName(t *testing.T) {
+	cases := map[string]string{
+		"orchestra-aix":                    "orchestra-aix",
+		"CalendarView-bl0":                 "calendarview-bl0",
+		"CalendarView-bl0.1":               "calendarview-bl0_1",
+		"orchestra-abc.1.2":                "orchestra-abc_1_2",
+		"9lives-x1":                        "t9lives-x1",
+		"_x":                               "t_x",
+		"":                                 "t",
+		"émile-q2":                         "t_mile-q2",
+		"a2345678901234567890123456789012": "a2345678901234567890123456789012",
+	}
+	for id, want := range cases {
+		if got := AgentName(id); got != want {
+			t.Errorf("AgentName(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestAgentNameIsAlwaysValid(t *testing.T) {
+	for _, id := range []string{"CalendarView-bl0.12.3", "platform-backend-services-a3f.12.3", "Ω", "x y/z:w", strings.Repeat("A", 100)} {
+		name := AgentName(id)
+		if !validName(name) {
+			t.Errorf("AgentName(%q) = %q, which Herdr would refuse", id, name)
+		}
+		if AgentName(name) != name {
+			t.Errorf("AgentName(%q) = %q changes a valid name", name, AgentName(name))
+		}
+	}
+}
+
+func TestLongAgentNamesDoNotCollide(t *testing.T) {
+	a, b := "platform-backend-services-a3f.12.3", "platform-backend-services-a3f.12.4" // 34 characters, alike for 33
+	na, nb := AgentName(a), AgentName(b)
+	if len(na) != 32 || len(nb) != 32 {
+		t.Errorf("names should use the whole 32 characters: %q %q", na, nb)
+	}
+	if na == nb {
+		t.Errorf("%q and %q both became %q", a, b, na)
+	}
+	if !strings.HasPrefix(na, "platform-backend-services") {
+		t.Errorf("a cut name should keep the start of the ID: %q", na)
+	}
+}
+
+func TestIsNameRefused(t *testing.T) {
+	var term Terminal
+	if !term.IsNameRefused(errors.New(`herdr agent start X.1: exit status 1: {"error":{"code":"invalid_agent_name"}}`)) {
+		t.Error("invalid_agent_name should count as refused")
+	}
+	if term.IsNameRefused(errors.New("agent_not_ready")) || term.IsNameRefused(nil) {
+		t.Error("only invalid_agent_name counts as refused")
+	}
+}
+
+// validName is Herdr's rule for agent names.
+func validName(s string) bool {
+	if len(s) < 1 || len(s) > 32 || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }

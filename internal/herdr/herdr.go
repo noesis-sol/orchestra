@@ -4,6 +4,8 @@ package herdr
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -65,6 +67,43 @@ func (t Terminal) IsArgumentRefused(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid_agent_argument")
 }
 
+// IsNameRefused reports Herdr refusing an agent name; a retry under the same name cannot succeed.
+func (t Terminal) IsNameRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid_agent_name")
+}
+
+// maxName is the longest agent name Herdr accepts.
+const maxName = 32
+
+// AgentName returns the Herdr agent name for ticket id. Herdr takes names of 1-32 characters from
+// [a-z0-9_-] starting with a letter, while bd IDs can hold capitals (a prefix taken from the folder
+// name) and dots (every child ID), and can be longer. Capitals are lowered, anything else becomes
+// '_', a name not starting with a letter gets a 't' in front, and a name that is too long is cut
+// and ends in a hash of the whole ID, so two long IDs sharing a start still get different names.
+func AgentName(id string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(id) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	name := b.String()
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		name = "t" + name
+	}
+	if len(name) > maxName {
+		sum := sha256.Sum256([]byte(id))
+		hash := hex.EncodeToString(sum[:3])
+		name = name[:maxName-len(hash)-1] + "-" + hash
+	}
+	return name
+}
+
+// AgentName returns the Herdr agent name for ticket id; see the function AgentName.
+func (t Terminal) AgentName(id string) string { return AgentName(id) }
+
 // LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
 // returns at once. Each argument must be one line.
 func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
@@ -82,22 +121,24 @@ func shellQuote(s string) string {
 }
 
 // AdoptAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it
-// name, and returns its status.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, bool) {
+// name, and returns its status. The error says why it could not, such as Herdr refusing the name.
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
 		if n, k, st := t.PaneAgent(pane); st != "gone" && k == kind {
-			if n != name && t.RenameAgent(pane, name) != nil {
-				return st, false
+			if n != name {
+				if err := t.RenameAgent(pane, name); err != nil {
+					return st, err
+				}
 			}
-			return st, true
+			return st, nil
 		}
 		if time.Now().After(deadline) {
-			return "", false
+			return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
 		}
 		select {
 		case <-ctx.Done():
-			return "", false
+			return "", ctx.Err()
 		case <-time.After(time.Second):
 		}
 	}
@@ -150,14 +191,14 @@ func (t Terminal) RenameAgent(name, to string) error {
 	return err
 }
 
-// FreeName returns an unused agent name for an earlier worker of ticket id: id-1, id-2, …,
+// FreeName returns an unused agent name for an earlier worker that holds name: name-1, name-2, …,
 // within Herdr's 32-character limit, or "" if none is free.
-func (t Terminal) FreeName(id string) string {
+func (t Terminal) FreeName(name string) string {
 	for n := 1; n <= 20; n++ {
 		suffix := fmt.Sprintf("-%d", n)
-		base := id
-		if len(base)+len(suffix) > 32 {
-			base = base[:32-len(suffix)]
+		base := name
+		if len(base)+len(suffix) > maxName {
+			base = base[:maxName-len(suffix)]
 		}
 		if st, _ := t.Status(base + suffix); st == "gone" { // not "unreadable": that name may be taken
 			return base + suffix

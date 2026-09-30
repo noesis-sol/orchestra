@@ -94,8 +94,11 @@ of starting the worker with it). `orchestra -h` lists them all.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
 - **Follow it** in its pane, or with `tail -f` on the log. With several at once, the dashboard shows
   a box per worker (one line each in a short pane). Each worker is an agent named after its
-  ticket, in a tab with that label: `herdr agent get <ticket>`,
-  `herdr agent read <ticket> --source visible` (its scrollback can only be read while it is idle).
+  ticket, in a tab labelled with the ticket: `herdr agent get <name>`,
+  `herdr agent read <name> --source visible` (its scrollback can only be read while it is idle).
+  The name is the ticket ID lowercased, with anything other than letters, digits, `-` and `_`
+  turned into `_` (`CalendarView-bl0.1` → `calendarview-bl0_1`); an ID over 32 characters is cut
+  and ends in a short hash.
 - **Don't type into a worker's tab or press keys on its dialogs** unless the user asks; Enter on a
   dialog picks an option (on Claude Code's trust dialog, "No, exit").
 

@@ -590,9 +590,12 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return s
 	}
 
+	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
+	agent := o.agentName(id)
+
 	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
 	// Herdr keeps unique. Rename it so the new worker can have the name; its tab stays as it is.
-	st, err := o.readStatus(ctx, id, 5)
+	st, err := o.readStatus(ctx, agent, 5)
 	if ctx.Err() != nil {
 		return errInterrupted
 	}
@@ -603,7 +606,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	case "working", "blocked":
 		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
-		if name := o.namer.FreeName(id); name == "" || o.namer.RenameAgent(id, name) != nil {
+		if name := o.namer.FreeName(agent); name == "" || o.namer.RenameAgent(agent, name) != nil {
 			return halt(ExitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id)
 		} else {
 			o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
@@ -644,17 +647,24 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// With its prompt in a file, the worker is started by typing the command into the tab and
 	// named once Herdr recognises it. Herdr's own start waits for the agent to look ready for
 	// input, which a worker that goes straight to work never does, so it could only time out.
+	// A name Herdr refuses would be refused on every retry, so that ends the attempt at once.
+	nameRefused := func(err error) *stopReason {
+		return halt(ExitTool, "START_FAILED for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err)
+	}
 	ok := false
 	if launch != "" {
 		err := o.starter.LaunchInPane(pane, c.AgentKind, append(report[:len(report):len(report)], launch))
 		if err == nil {
-			_, ok = o.namer.AdoptAgent(ctx, pane, c.AgentKind, id)
+			_, err = o.namer.AdoptAgent(ctx, pane, c.AgentKind, agent)
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		if !ok {
-			o.log.Raw("", fmt.Errorf("%s's worker was not recognised after starting it from its prompt file (%v); starting it with herdr agent start and pasting the prompt", id, err))
+		if ok = err == nil; !ok {
+			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); starting it with herdr agent start and pasting the prompt", id, agent, err))
+			if o.starter.IsNameRefused(err) {
+				return nameRefused(err)
+			}
 			launch = ""
 		}
 	}
@@ -667,11 +677,14 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if launch != "" {
 			args = append(args, launch)
 		}
-		err := o.starter.StartAgent(ctx, id, c.AgentKind, pane, args)
+		err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
 		if ok = err == nil; ok {
 			break
 		}
 		o.log.Raw("", err)
+		if o.starter.IsNameRefused(err) {
+			return nameRefused(err)
+		}
 		if o.starter.IsArgumentRefused(err) && len(args) > 0 {
 			// Start it plainly: paste the prompt instead, and do without reports if need be.
 			if launch != "" {
@@ -684,7 +697,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if !sleep(ctx, 3*time.Second) {
 			return errInterrupted
 		}
-		st, err := o.agents.Status(id)
+		st, err := o.agents.Status(agent)
 		if err != nil {
 			o.log.Raw("", err)
 		}
@@ -692,9 +705,14 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 			// A start that times out leaves the agent running unnamed in its pane, and a retry
 			// would find the pane busy: adopt that agent under the ticket's name instead.
 			if name, kind, pst := o.namer.PaneAgent(pane); pst != "gone" && name == "" && kind == c.AgentKind {
-				if o.namer.RenameAgent(pane, id) == nil {
-					o.info("  %s's worker started without its name; named it", id)
+				if err := o.namer.RenameAgent(pane, agent); err == nil {
+					o.info("  %s's worker started without its name; named it %s", id, agent)
 					st = pst
+				} else {
+					o.log.Raw("", err)
+					if o.starter.IsNameRefused(err) {
+						return nameRefused(err)
+					}
 				}
 			}
 		}
@@ -704,7 +722,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		case "working", "blocked", "unknown":
 			// Up but busy. With the prompt given at launch that means it started; otherwise (a
 			// startup dialog, say) give it time rather than starting a second one.
-			ok = launch != "" || o.starter.WaitReady(ctx, id)
+			ok = launch != "" || o.starter.WaitReady(ctx, agent)
 		}
 	}
 	if !ok {
@@ -714,7 +732,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	stopWatch := o.watch(ctx, wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	defer stopWatch()
 
-	if !o.promptTaken(ctx, id, prompt, launch != "") {
+	if !o.promptTaken(ctx, id, agent, prompt, launch != "") {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
@@ -730,7 +748,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return nil
 	}
 
-	if stop := o.waitSettled(ctx, id, tab); stop != nil {
+	if stop := o.waitSettled(ctx, id, agent, tab); stop != nil {
 		return stop
 	}
 	stopWatch()
@@ -933,14 +951,14 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 // whose ticket is still in progress gets idleGrace to resume before it counts as settled. A
 // status Herdr fails to read says nothing about the worker, so the wait goes on through
 // maxFailedReads of them in a row before the run stops.
-func (o *Loop) waitSettled(ctx context.Context, id, tab string) *stopReason {
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReason {
 	var blockedSince, idleSince time.Time
 	failed := 0
 	for {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		st, err := o.agents.Status(id)
+		st, err := o.agents.Status(agent)
 		if err != nil {
 			if failed++; failed == 1 {
 				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
@@ -991,11 +1009,20 @@ func (o *Loop) waitSettled(ctx context.Context, id, tab string) *stopReason {
 // worker.
 const maxFailedReads = 20
 
+// agentName is the Herdr name of ticket id's worker; without a Namer (in tests), the ID itself.
+func (o *Loop) agentName(id string) string {
+	if o.namer == nil {
+		return id
+	}
+	return o.namer.AgentName(id)
+}
+
 // readStatus reads the worker's status, trying up to tries times while Herdr fails to answer and
-// logging each failure. "unreadable" and the last error if it never answers.
-func (o *Loop) readStatus(ctx context.Context, id string, tries int) (string, error) {
+// logging each failure. "unreadable" and the last error if it never answers. agent is the
+// worker's Herdr name.
+func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (string, error) {
 	for try := 1; ; try++ {
-		st, err := o.agents.Status(id)
+		st, err := o.agents.Status(agent)
 		if err == nil || try == tries {
 			return st, err
 		}
@@ -1017,9 +1044,9 @@ func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
 // promptTaken confirms the worker started on its prompt. Given at launch, it counts as taken once
 // the worker works, has claimed the ticket, or shows any action; otherwise (or if it did not take)
 // it is delivered by pasting.
-func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
+func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if o.agents.WaitStarted(ctx, id) || o.claimed(id) || lastActivity(o.agents.Screen(id)) != "" {
+		if o.agents.WaitStarted(ctx, agent) || o.claimed(id) || lastActivity(o.agents.Screen(agent)) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -1027,7 +1054,7 @@ func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool
 		}
 		o.log.Raw("", fmt.Errorf("%s did not start on the prompt given at launch; pasting it", id))
 	}
-	return o.deliverPrompt(ctx, id, prompt)
+	return o.deliverPrompt(ctx, agent, prompt)
 }
 
 // claimed reports whether the worker has taken its ticket out of "open". A status bd can't give
@@ -1095,9 +1122,9 @@ func (o *Loop) refreshBranch(wt, br string) {
 // its input box; the worker then looks settled and its ticket would be deferred untouched.
 // Enter is pressed only when the box visibly holds the prompt (never on a dialog, where it would
 // pick an option), and the prompt is sent again only when the box is empty, so never twice.
-func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
+func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 	for attempt := 1; attempt <= 2; attempt++ {
-		err := o.agents.Prompt(ctx, id, prompt)
+		err := o.agents.Prompt(ctx, agent, prompt)
 		if err == nil {
 			return true // herdr saw the worker start
 		}
@@ -1105,14 +1132,14 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		st, _ := o.readStatus(ctx, id, 5)
+		st, _ := o.readStatus(ctx, agent, 5)
 		switch st {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
-			if inputHolds(o.agents.Screen(id), prompt) {
-				o.agents.SendKeys(id, "enter")
-				return o.agents.WaitStarted(ctx, id)
+			if inputHolds(o.agents.Screen(agent), prompt) {
+				o.agents.SendKeys(agent, "enter")
+				return o.agents.WaitStarted(ctx, agent)
 			}
 			// The box is empty: the paste itself was lost, so send it again.
 		default:
@@ -1127,14 +1154,15 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 func (o *Loop) watch(ctx context.Context, wt string, base Status) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
+	agent := o.agentName(base.Ticket)
 	go func() {
 		defer close(done)
 		tick := time.NewTicker(2 * time.Second)
 		defer tick.Stop()
 		for {
 			s := base
-			s.Agent, _ = o.agents.Status(s.Ticket) // the settle loop logs failures
-			s.Activity = lastActivity(o.agents.Screen(s.Ticket))
+			s.Agent, _ = o.agents.Status(agent) // the settle loop logs failures
+			s.Activity = lastActivity(o.agents.Screen(agent))
 			if o.reporter != nil && s.Agent == "working" {
 				if u, ok := o.reporter.LastToolUse(wt); ok {
 					s.Doing = Doing(u, o.cfg.Check)
