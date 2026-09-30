@@ -641,13 +641,13 @@ func (o *Loop) prepareWorktree(id, br string) (string, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
+	o.worktrees.Prune(c.Repo) // forget a worktree whose folder was deleted, so it isn't reused
 	if wt := o.worktrees.WorktreeOf(c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
 		o.refreshBranch(wt, br)
 		return wt, nil
 	}
 	wt := filepath.Join(c.WTRoot, id)
-	o.worktrees.Prune(c.Repo)
 	var out string
 	var err error
 	if o.worktrees.HasBranch(c.Repo, br) {

@@ -29,13 +29,21 @@ func (Git) CurrentBranch(repo string) string {
 }
 
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from
-// 'git worktree list --porcelain'.
+// 'git worktree list --porcelain'. A worktree git marks prunable (its folder is gone) doesn't count.
 func parseWorktreeOf(porcelain, branch string) string {
-	path := ""
-	for _, line := range strings.Split(porcelain, "\n") {
-		if p, ok := strings.CutPrefix(line, "worktree "); ok {
-			path = p
-		} else if line == "branch refs/heads/"+branch {
+	for _, entry := range strings.Split(porcelain, "\n\n") {
+		path, found := "", false
+		for _, line := range strings.Split(entry, "\n") {
+			if p, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = p
+			} else if line == "branch refs/heads/"+branch {
+				found = true
+			} else if line == "prunable" || strings.HasPrefix(line, "prunable ") {
+				found = false
+				break
+			}
+		}
+		if found {
 			return path
 		}
 	}

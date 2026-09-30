@@ -288,3 +288,25 @@ func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	old := f.ticket(t, "k-1", "a.txt", "a\n")
+	if err := os.RemoveAll(old); err != nil {
+		t.Fatal(err)
+	}
+	f.orch.cfg.WTRoot = t.TempDir()
+	wt, s := f.orch.prepareWorktree("k-1", "wt/k-1")
+	if s != nil {
+		t.Fatal(s.text)
+	}
+	if want := filepath.Join(f.orch.cfg.WTRoot, "k-1"); wt != want {
+		t.Errorf("worktree = %q, want a fresh one at %q", wt, want)
+	}
+	if got := read(t, filepath.Join(wt, "a.txt")); got != "a\n" {
+		t.Errorf("the fresh worktree should be on the existing branch, a.txt = %q", got)
+	}
+	if br := strings.TrimSpace(f.git(wt, "branch", "--show-current")); br != "wt/k-1" {
+		t.Errorf("branch = %q", br)
+	}
+}
