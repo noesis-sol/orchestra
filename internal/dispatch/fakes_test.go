@@ -70,12 +70,17 @@ func (b *fakeBeads) Ready() ([]Ticket, error) {
 		if t.Status != "open" || t.IssueType == "epic" || HasLabel(*t, HumanLabel) {
 			continue
 		}
-		blocked := false
+		blocked, blockers := false, 0
 		for _, l := range b.links[id] {
-			blocked = blocked || l.typ == "blocks" && b.tickets[l.on].Status != "closed"
+			if l.typ == "blocks" {
+				blocked = blocked || b.tickets[l.on].Status != "closed"
+				blockers++
+			}
 		}
 		if !blocked {
-			ready = append(ready, *t)
+			r := *t
+			r.DependencyCount = &blockers
+			ready = append(ready, r)
 		}
 	}
 	sort.SliceStable(ready, func(i, j int) bool { return *ready[i].Priority < *ready[j].Priority })

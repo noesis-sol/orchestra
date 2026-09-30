@@ -12,6 +12,10 @@ type Ticket struct {
 	// DependencyType is how a dependency links to the ticket (blocks, related, parent-child,
 	// discovered-from); set only on the entries of Dependencies.
 	DependencyType string `json:"dependency_type"`
+	// DependencyCount is how many tickets block this one, closed or not, as bd ready counts them
+	// (bd show counts every link); nil when bd doesn't say. It changes when a blocks link is added
+	// or removed.
+	DependencyCount *int `json:"dependency_count"`
 }
 
 // HumanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as

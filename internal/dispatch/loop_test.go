@@ -401,6 +401,67 @@ func TestDependentWaitsWhenItsDependenciesCannotBeRead(t *testing.T) {
 	}
 }
 
+// countingTickets counts bd show calls.
+type countingTickets struct {
+	fakeTickets
+	shows map[string]int
+}
+
+func (c countingTickets) Show(id string) (Ticket, error) {
+	c.shows[id]++
+	return c.fakeTickets.Show(id)
+}
+
+func TestBlockersAreReadOncePerRun(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	one, none := 1, 0
+	tk := aBlocksB()
+	tk.ready = []Ticket{{ID: "k-b", Status: "open", DependencyCount: &one}, {ID: "k-c", Status: "open", DependencyCount: &none}}
+	counting := countingTickets{tk, map[string]int{}}
+	f.orch.tickets = counting
+	running := map[string]bool{"k-a": true}
+	for range 3 {
+		if got := f.next(t, running); got != "k-c" {
+			t.Fatalf("next = %q, want k-c while k-a has not merged", got)
+		}
+	}
+	if counting.shows["k-b"] != 1 || counting.shows["k-c"] != 1 {
+		t.Errorf("bd show calls = %v, want one each", counting.shows)
+	}
+
+	// A new blocker changes bd ready's count, so k-b's blockers are read again.
+	delete(running, "k-a") // merged
+	running["k-d"] = true
+	two := 2
+	b := tk.shown["k-b"]
+	b.Dependencies = append(b.Dependencies, Ticket{ID: "k-d", Status: "closed", DependencyType: "blocks"})
+	tk.shown["k-b"] = b
+	tk.ready[0].DependencyCount = &two
+	if got := f.next(t, running); got != "k-c" {
+		t.Errorf("next = %q, want k-c while k-d has not merged", got)
+	}
+	if counting.shows["k-b"] != 2 || counting.shows["k-c"] != 1 {
+		t.Errorf("bd show calls = %v, want k-b read again", counting.shows)
+	}
+	if ev := f.sink.text(); !strings.Contains(ev, "k-b waits: waiting for k-d to merge") {
+		t.Errorf("events:\n%s", ev)
+	}
+}
+
+func TestBlockersAreReadEachTimeWithoutACount(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	counting := countingTickets{aBlocksB(), map[string]int{}}
+	f.orch.tickets = counting
+	for range 2 {
+		if got := f.next(t, map[string]bool{"k-a": true}); got != "" {
+			t.Fatalf("next = %q, want k-b held", got)
+		}
+	}
+	if counting.shows["k-b"] != 2 {
+		t.Errorf("bd show calls = %v, want k-b read each time", counting.shows)
+	}
+}
+
 func TestOutcomes(t *testing.T) {
 	for status, want := range map[string]outcome{
 		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,

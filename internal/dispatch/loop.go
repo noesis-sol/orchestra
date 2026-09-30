@@ -178,11 +178,12 @@ type Loop struct {
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
 	mu        sync.Mutex
-	asideIDs  []string          // tickets deferred or left unmerged in this run
-	unmerged  map[string]string // tickets closed but left unmerged, in this run or an earlier one, with why
-	labelled  map[string]bool   // tickets carrying UnmergedLabel, which a merge removes
-	holdSaid  map[string]string // why each held ticket waits, as last said
-	askedIDs  map[string]bool   // tickets set aside in this run to wait on a question
+	asideIDs  []string              // tickets deferred or left unmerged in this run
+	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why
+	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
+	holdSaid  map[string]string     // why each held ticket waits, as last said
+	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
+	askedIDs  map[string]bool       // tickets set aside in this run to wait on a question
 
 	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
 	// after that finds it closed rather than a closed channel.
@@ -546,7 +547,7 @@ func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool) (*Ti
 func (o *Loop) held(t Ticket, running map[string]bool) bool {
 	why := ""
 	if len(running) > 0 || o.anyUnmerged() {
-		why = o.waitsFor(t.ID, running)
+		why = o.waitsFor(t, running)
 	}
 	o.mu.Lock()
 	said := o.holdSaid[t.ID]
@@ -561,27 +562,61 @@ func (o *Loop) held(t Ticket, running map[string]bool) bool {
 	return why != ""
 }
 
-// waitsFor returns why ticket id can't start yet, or "" if nothing blocking it is unmerged.
-func (o *Loop) waitsFor(id string, running map[string]bool) string {
-	info, err := o.tickets.Show(id)
+// waitsFor returns why ready ticket t can't start yet, or "" if nothing blocking it is unmerged.
+func (o *Loop) waitsFor(t Ticket, running map[string]bool) string {
+	ids, ok := o.blockersOf(t)
+	if !ok {
+		return "its dependencies could not be read"
+	}
+	for _, id := range ids {
+		if running[id] {
+			return fmt.Sprintf("waiting for %s to merge", id)
+		}
+		if why := o.unmergedWhy(id); why != "" {
+			return fmt.Sprintf("%s closed but not merged (%s)", id, why)
+		}
+	}
+	return ""
+}
+
+// blockLinks are the tickets blocking a ready ticket, read when bd ready counted count of them.
+type blockLinks struct {
+	count int
+	ids   []string
+}
+
+// blockersOf returns the IDs of the tickets blocking ready ticket t, or false if bd show can't say.
+// They are read once per run: bd ready's count of t's blockers changes whenever a blocks link is
+// added or removed, and only then are they read again. Without a count they are read every time.
+func (o *Loop) blockersOf(t Ticket) ([]string, bool) {
+	o.mu.Lock()
+	b, seen := o.blockers[t.ID]
+	o.mu.Unlock()
+	if seen && t.DependencyCount != nil && b.count == *t.DependencyCount {
+		return b.ids, true
+	}
+	info, err := o.tickets.Show(t.ID)
 	if err != nil || info.Status == "unknown" {
 		if err != nil {
 			o.log.Raw("", err)
 		}
-		return "its dependencies could not be read"
+		return nil, false
 	}
+	var ids []string
 	for _, d := range info.Dependencies {
-		if d.DependencyType != "blocks" {
-			continue
-		}
-		if running[d.ID] {
-			return fmt.Sprintf("waiting for %s to merge", d.ID)
-		}
-		if why := o.unmergedWhy(d.ID); why != "" {
-			return fmt.Sprintf("%s closed but not merged (%s)", d.ID, why)
+		if d.DependencyType == "blocks" {
+			ids = append(ids, d.ID)
 		}
 	}
-	return ""
+	if t.DependencyCount != nil {
+		o.mu.Lock()
+		if o.blockers == nil {
+			o.blockers = map[string]blockLinks{}
+		}
+		o.blockers[t.ID] = blockLinks{count: *t.DependencyCount, ids: ids}
+		o.mu.Unlock()
+	}
+	return ids, true
 }
 
 // earlierRun is why a ticket left unmerged by an earlier run is still unmerged.
