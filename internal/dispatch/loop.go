@@ -754,9 +754,25 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	}
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
-	wt, s := o.prepareWorktree(id, br)
+	wt, conflicts, s := o.prepareWorktree(id, br)
 	if s != nil {
 		return s
+	}
+	if conflicts {
+		// A worker is told not to rebase, so it would work on a stale base and its merge would end
+		// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.
+		o.appendNotes(id, fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), then bring it back with: bd undefer %s",
+			br, c.Base, wt, c.Base, id))
+		if err := o.deferAside(id, fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt)); err != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  DEFER_FAILED: %s conflicts with %s, and bd could not defer %s%s; kept out of this run, rebase it in %s",
+				br, c.Base, id, because(err), wt)})
+			return nil
+		}
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its branch conflicts with " + c.Base, Text: fmt.Sprintf(
+			"  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; rebase it in %s, then bd undefer %s",
+			br, c.Base, id, wt, id)})
+		return nil
 	}
 
 	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
@@ -1011,18 +1027,18 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 }
 
 // prepareWorktree creates the ticket's worktree, or reuses the one left by an earlier attempt and
-// brings its branch up to date, holding the repository lock.
-func (o *Loop) prepareWorktree(id, br string) (string, *stopReason) {
+// brings its branch up to date, holding the repository lock. conflicts reports a branch that could
+// not be rebased onto Base.
+func (o *Loop) prepareWorktree(id, br string) (wt string, conflicts bool, stop *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
 	o.worktrees.Prune(c.Repo) // forget a worktree whose folder was deleted, so it isn't reused
 	if wt := o.worktrees.WorktreeOf(c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
-		o.refreshBranch(wt, br)
-		return wt, nil
+		return wt, !o.refreshBranch(wt, br), nil
 	}
-	wt := filepath.Join(c.WTRoot, id)
+	wt = filepath.Join(c.WTRoot, id)
 	var out string
 	var err error
 	if o.worktrees.HasBranch(c.Repo, br) {
@@ -1032,11 +1048,10 @@ func (o *Loop) prepareWorktree(id, br string) (string, *stopReason) {
 	}
 	o.log.Raw(out, err)
 	if err != nil {
-		return "", halt(ExitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath)
+		return "", false, halt(ExitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath)
 	}
 	o.info("  worktree %s on %s", wt, br)
-	o.refreshBranch(wt, br)
-	return wt, nil
+	return wt, !o.refreshBranch(wt, br), nil
 }
 
 // merge brings a finished ticket's branch onto Base, one ticket at a time. When other tickets
@@ -1288,24 +1303,25 @@ func because(err error) string {
 }
 
 // refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch
-// was cut; otherwise its merge could not fast-forward. A failed rebase is undone and reported.
-func (o *Loop) refreshBranch(wt, br string) {
+// was cut, so its worker starts from current code. A failed rebase is undone and it returns false:
+// the branch conflicts with Base.
+func (o *Loop) refreshBranch(wt, br string) bool {
 	c := o.cfg
 	if o.merger.IsAncestor(c.Repo, c.Base, br) {
-		return // already on top of Base
+		return true // already on top of Base
 	}
 	if d := o.checkout.DirtyTree(wt); d != "" {
-		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s; its merge will fail until it is rebased", wt, br, c.Base)})
-		return
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base)})
+		return true
 	}
 	out, err := o.merger.Rebase(wt, c.Base)
 	o.log.Raw(out, err)
 	if err != nil {
 		o.merger.AbortRebase(wt)
-		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s; left as it was, so its merge will fail until it is rebased (worktree %s)", br, c.Base, wt)})
-		return
+		return false
 	}
 	o.info("  rebased %s onto %s", br, c.Base)
+	return true
 }
 
 // deliverPrompt sends the worker its prompt and confirms it started on it. 'herdr agent prompt'

@@ -515,9 +515,9 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.orch.cfg.WTRoot = t.TempDir()
-	wt, s := f.orch.prepareWorktree("k-1", "wt/k-1")
-	if s != nil {
-		t.Fatal(s.text)
+	wt, conflicts, s := f.orch.prepareWorktree("k-1", "wt/k-1")
+	if s != nil || conflicts {
+		t.Fatalf("stop %v, conflicts %v", s, conflicts)
 	}
 	if want := filepath.Join(f.orch.cfg.WTRoot, "k-1"); wt != want {
 		t.Errorf("worktree = %q, want a fresh one at %q", wt, want)

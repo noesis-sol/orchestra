@@ -148,7 +148,10 @@ Lines about single tickets, which don't stop the run:
   rebase it in its worktree, resolve, run the checks, merge by hand. The ticket stays closed.
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user.
-- `REBASE_FAILED`, `REBASE_SKIPPED`: a returning ticket's branch couldn't be brought up to date.
+- `REBASE_FAILED`: a returning ticket's branch conflicts with the base branch, so it was deferred
+  without starting a worker. Rebase it in its worktree, resolve, then `bd undefer <id>`.
+- `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, so its branch wasn't
+  rebased before its worker started; it is rebased when it merges.
 
 ## Where to look
 

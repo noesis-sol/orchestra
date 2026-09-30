@@ -246,6 +246,48 @@ func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 	}
 }
 
+// A returning ticket whose branch conflicts with main gets no worker, which could only work on a
+// stale base and end in MERGE_CONFLICT: it is deferred with a note on how to rebase it.
+func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.git(h.repo, "branch", "wt/A")
+	h.git(h.repo, "checkout", "-q", "wt/A")
+	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("A\n"), 0o644)
+	h.git(h.repo, "add", ".")
+	h.git(h.repo, "commit", "-q", "-m", "A: earlier attempt")
+	h.git(h.repo, "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("main\n"), 0o644)
+	h.git(h.repo, "add", ".")
+	h.git(h.repo, "commit", "-q", "-m", "main moves on")
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A", finishes("a.txt"))
+	h.worker("B", finishes("b.txt"))
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "REBASE_FAILED: wt/A conflicts with main -> A deferred without starting a worker") {
+		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
+	}
+	if st, _ := h.beads.Status("A"); st != "deferred" {
+		t.Errorf("A is %s, want deferred", st)
+	}
+	if n := h.beads.notesOf("A"); !strings.Contains(n, "git rebase main") || !strings.Contains(n, "bd undefer A") {
+		t.Errorf("notes: %q", n)
+	}
+	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab1"}) {
+		t.Errorf("tabs closed: %v; only B's worker should have had a tab", got)
+	}
+	if log := h.mainLog(); strings.Contains(log, "A:") || !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+	if got := h.git(h.worktree("A"), "status", "--porcelain"); got != "" {
+		t.Errorf("A's worktree should be left clean, with the rebase undone:\n%s", got)
+	}
+}
+
 // With two workers, one stopping the run holds it: nothing new starts, and the other finishes and
 // merges.
 func TestHoldLetsTheRunningWorkerFinish(t *testing.T) {
