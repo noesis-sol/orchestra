@@ -42,28 +42,72 @@ func orNone(s string) string {
 
 // StartTriage runs triage in the background, one ticket at a time, so the loop never waits for it.
 func (o *Loop) StartTriage() {
-	o.triageQ = make(chan organ.Deferral, 64)
+	o.triageMu.Lock()
+	o.triageOn = true
+	o.triageWake = make(chan struct{}, 1)
 	o.triageDone = make(chan struct{})
+	o.triageMu.Unlock()
 	go func() {
 		defer close(o.triageDone)
-		for d := range o.triageQ {
-			o.triage(d)
+		for {
+			d, ok, finished := o.nextTriage()
+			switch {
+			case ok:
+				o.triage(d)
+			case finished:
+				return
+			default:
+				<-o.triageWake
+			}
 		}
 	}()
 }
 
-func (o *Loop) queueTriage(d organ.Deferral) {
-	if o.triageQ != nil {
-		o.triageQ <- d
+// nextTriage takes the oldest queued deferral; finished says nothing more will be queued.
+func (o *Loop) nextTriage() (d organ.Deferral, ok, finished bool) {
+	o.triageMu.Lock()
+	defer o.triageMu.Unlock()
+	if len(o.triageQ) > 0 {
+		d, o.triageQ = o.triageQ[0], o.triageQ[1:]
+		return d, true, false
+	}
+	return d, false, o.triageClosed
+}
+
+// queueTriage hands a deferral to triage without waiting. It does nothing without triage, after
+// Ctrl+C, or once FinishTriage has run: a worker may still be settling when the run ends.
+func (o *Loop) queueTriage(ctx context.Context, d organ.Deferral) {
+	if ctx.Err() != nil {
+		return
+	}
+	o.triageMu.Lock()
+	defer o.triageMu.Unlock()
+	if !o.triageOn || o.triageClosed {
+		return
+	}
+	o.triageQ = append(o.triageQ, d)
+	o.wakeTriage()
+}
+
+// wakeTriage tells the triage goroutine there is news. The caller holds triageMu.
+func (o *Loop) wakeTriage() {
+	select {
+	case o.triageWake <- struct{}{}:
+	default: // already told
 	}
 }
 
-// FinishTriage waits for queued triage to finish, or for ctx to be cancelled.
+// FinishTriage waits for queued triage to finish, or for ctx to be cancelled. Nothing is queued
+// after it.
 func (o *Loop) FinishTriage(ctx context.Context) {
-	if o.triageQ == nil {
+	o.triageMu.Lock()
+	if !o.triageOn {
+		o.triageMu.Unlock()
 		return
 	}
-	close(o.triageQ)
+	o.triageClosed = true
+	o.wakeTriage()
+	o.triageMu.Unlock()
 	select {
 	case <-o.triageDone:
 	case <-ctx.Done():

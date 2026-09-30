@@ -323,10 +323,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Line(ev.Time, msg)
 		sink.Event(ev)
-		// Let the loop notice the cancellation before the reviewer reads its state.
+		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
+		// Run itself gives its workers up to SettleWait.
 		select {
 		case <-codes:
-		case <-time.After(15 * time.Second):
+		case <-time.After(dispatch.SettleWait + 5*time.Second):
 		}
 		orch.SetSink(sink)
 		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)

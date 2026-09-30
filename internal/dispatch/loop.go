@@ -164,23 +164,34 @@ type Loop struct {
 	mergeMu sync.Mutex
 	active  map[string]Status // tickets being worked on; left set for those still running at the end
 
-	tickets    Tickets
-	notes      Notes
-	tabs       Tabs
-	starter    Starter
-	namer      Namer
-	agents     Agents
-	reporter   Reporter
-	checkout   Checkout
-	worktrees  Worktrees
-	merger     Merger
-	history    History
-	organ      organ.Client
-	organCtx   context.Context // cancelled when the maintainer skips the organs
-	triageQ    chan organ.Deferral
-	triageDone chan struct{}
-	mu         sync.Mutex
-	asideIDs   []string // tickets deferred or left unmerged in this run
+	tickets   Tickets
+	notes     Notes
+	tabs      Tabs
+	starter   Starter
+	namer     Namer
+	agents    Agents
+	reporter  Reporter
+	checkout  Checkout
+	worktrees Worktrees
+	merger    Merger
+	history   History
+	organ     organ.Client
+	organCtx  context.Context // cancelled when the maintainer skips the organs
+	mu        sync.Mutex
+	asideIDs  []string // tickets deferred or left unmerged in this run
+
+	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
+	// after that finds it closed rather than a closed channel.
+	triageMu     sync.Mutex
+	triageOn     bool // StartTriage was called
+	triageClosed bool // FinishTriage was called
+	triageQ      []organ.Deferral
+	triageWake   chan struct{} // buffered 1: something was queued, or the queue closed
+	triageDone   chan struct{}
+
+	// settleWait bounds how long Run waits after Ctrl+C for its workers to return; 0 means
+	// SettleWait.
+	settleWait time.Duration
 
 	// ReportInterrupt logs Ctrl+C from the loop itself; in the terminal UI the command does it (it
 	// knows which tabs were running).
@@ -292,6 +303,12 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// result is what a worker returns to Run.
+type result struct {
+	id   string
+	stop *stopReason
+}
+
 // Run works through bd ready with up to Concurrency workers at a time and returns the exit code.
 func (o *Loop) Run(ctx context.Context) int {
 	c := o.cfg
@@ -301,11 +318,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
 		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
 
-	type result struct {
-		id   string
-		stop *stopReason
-	}
-	results := make(chan result, c.Concurrency) // buffered: a worker finishing after Ctrl+C never blocks
+	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
 	inflight := map[string]bool{}
 	var stop *stopReason // the first reason decides the exit code
 	var alsoStopped []string
@@ -351,6 +364,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
 		case <-ctx.Done():
+			o.settle(results, inflight)
 			return o.interrupted()
 		}
 	}
@@ -369,6 +383,29 @@ func (o *Loop) Run(ctx context.Context) int {
 		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count)})
 	}
 	return ExitOK
+}
+
+// SettleWait is how long Run waits after Ctrl+C for its workers to return, so what follows (triage,
+// the run report) reads a loop that has stopped changing. A worker notices the cancellation within
+// seconds unless a command it runs hangs.
+const SettleWait = 10 * time.Second
+
+// settle waits for the workers in flight to return, or for SettleWait.
+func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
+	wait := o.settleWait
+	if wait == 0 {
+		wait = SettleWait
+	}
+	timeout := time.NewTimer(wait)
+	defer timeout.Stop()
+	for len(inflight) > 0 {
+		select {
+		case r := <-results:
+			delete(inflight, r.id)
+		case <-timeout.C:
+			return
+		}
+	}
 }
 
 // next returns the highest-priority ready ticket not already running, with how many others are
@@ -634,7 +671,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
-		o.queueTriage(o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
+		o.queueTriage(ctx, o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.notes.AppendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
@@ -647,7 +684,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
-		o.queueTriage(o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
+		o.queueTriage(ctx, o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/git"
+	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
 // recordSink keeps events for assertions.
@@ -425,5 +426,154 @@ func TestEveryWorkersStopReasonIsReported(t *testing.T) {
 		if !strings.Contains(logged, want) {
 			t.Errorf("log lacks %q:\n%s", want, logged)
 		}
+	}
+}
+
+// Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
+// (Describe) until release is closed.
+
+type okStarter struct{}
+
+func (okStarter) LaunchInPane(pane, kind string, args []string) error { return nil }
+func (okStarter) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
+	return nil
+}
+func (okStarter) IsArgumentRefused(err error) bool                { return false }
+func (okStarter) WaitReady(ctx context.Context, name string) bool { return true }
+
+type deferringTickets struct {
+	entered, release chan struct{}
+	once             *sync.Once
+}
+
+func (d deferringTickets) Ready() ([]Ticket, error) { return []Ticket{{ID: "A", Title: "a"}}, nil }
+func (deferringTickets) Show(id string) Ticket      { return Ticket{ID: id, Status: "deferred"} }
+func (deferringTickets) Status(id string) string    { return "deferred" }
+func (d deferringTickets) Describe(id string) string {
+	d.once.Do(func() { close(d.entered) })
+	<-d.release
+	return id
+}
+
+type quietHistory struct{}
+
+func (quietHistory) ShortStatus(worktree string) string { return "" }
+func (quietHistory) OneLineLog(dir, revs string) string { return "" }
+func (quietHistory) DiffStat(worktree string) string    { return "" }
+func (quietHistory) Subjects(repo, revs string) string  { return "" }
+
+// goneSink records events and closes gone when a worker's status is removed, its last act.
+type goneSink struct {
+	recordSink
+	gone chan struct{}
+	once sync.Once
+}
+
+func (g *goneSink) Status(st Status) {
+	if st.Gone {
+		g.once.Do(func() { close(g.gone) })
+	}
+}
+
+func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
+	t.Helper()
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk := deferringTickets{entered: make(chan struct{}), release: make(chan struct{}), once: &sync.Once{}}
+	sink := &goneSink{gone: make(chan struct{})}
+	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 1, Concurrency: 1, WTRoot: "wts", LogPath: "log",
+		AgentKind: "claude"}, log, "", Deps{Tickets: tk, Tabs: noTabs{}, Starter: okStarter{}, Agents: noAgents{},
+		Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}, History: quietHistory{},
+		Advisor: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
+	o.SetSink(sink)
+	o.StartTriage()
+	return o, tk, sink
+}
+
+// Ctrl+C while a worker gathers a deferral for triage: Run waits for the worker before returning,
+// so triage closes and the reviewer reads the loop only once it has stopped changing.
+func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
+	o, tk, sink := newDeferringLoop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	codes := make(chan int, 1)
+	go func() { codes <- o.Run(ctx) }()
+	<-tk.entered
+	cancel()
+	select {
+	case <-codes:
+		t.Fatal("Run returned while its worker was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(tk.release)
+	if code := <-codes; code != ExitInterrupted {
+		t.Errorf("exit code %d, want %d", code, ExitInterrupted)
+	}
+	select {
+	case <-sink.gone:
+	default:
+		t.Error("Run returned before its worker did")
+	}
+	finished := make(chan struct{})
+	go func() { o.FinishTriage(context.Background()); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FinishTriage did not return")
+	}
+	if strings.Contains(sink.text(), "TRIAGE") {
+		t.Errorf("a deferral after Ctrl+C should not be triaged:\n%s", sink.text())
+	}
+}
+
+// A worker that outlasts the wait finds triage closed when it gets there, and neither panics nor
+// blocks.
+func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
+	o, tk, sink := newDeferringLoop(t)
+	o.settleWait = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	codes := make(chan int, 1)
+	go func() { codes <- o.Run(ctx) }()
+	<-tk.entered
+	cancel()
+	select {
+	case code := <-codes:
+		if code != ExitInterrupted {
+			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after its settle wait")
+	}
+	o.FinishTriage(context.Background())
+	close(tk.release)
+	select {
+	case <-sink.gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not return")
+	}
+}
+
+func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := &Loop{log: log, sink: &recordSink{}, organ: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
+		organCtx: context.Background()}
+	o.queueTriage(context.Background(), organ.Deferral{ID: "before-start"}) // triage off: nothing happens
+	o.StartTriage()
+	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
+	o.FinishTriage(context.Background())
+	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
+	o.FinishTriage(context.Background()) // a second call returns too
+	got := o.sink.(*recordSink).text()
+	if !strings.Contains(got, "TRIAGE_FAILED for A") || strings.Contains(got, " B:") || strings.Contains(got, "before-start") {
+		t.Errorf("A should be triaged (and fail, without claude), B and before-start dropped:\n%s", got)
+	}
+	if len(o.triageQ) != 0 {
+		t.Errorf("queue = %v", o.triageQ)
 	}
 }
