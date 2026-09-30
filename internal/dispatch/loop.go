@@ -400,7 +400,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		}
 	}()
 
-	// One worktree per ticket. A ticket that comes back (organ.Deferral ended) resumes its old branch.
+	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
 	wt, s := o.prepareWorktree(id, br)
 	if s != nil {
 		return s

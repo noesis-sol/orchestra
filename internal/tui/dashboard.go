@@ -78,7 +78,7 @@ func renderEvent(ev dispatch.Event) string {
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
 }
 
-// ---- Bubble Tea Dashboard ----------------------------------------------------------------
+// ---- Bubble Tea model ----------------------------------------------------------------
 
 type eventMsg dispatch.Event
 type statusMsg dispatch.Status
@@ -204,7 +204,7 @@ func (m Dashboard) View() string {
 	stats := m.statsTable(w)
 
 	// The view must fit the pane: Bubble Tea can't redraw one taller than the terminal. Give
-	// way project.Step by step: one line per worker instead of a box each, then no tickets table, then
+	// way step by step: one line per worker instead of a box each, then no tickets table, then
 	// the totals on one line, then cut.
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {

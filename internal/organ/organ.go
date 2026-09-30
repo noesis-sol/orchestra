@@ -78,15 +78,15 @@ func Section(title, body string) string {
 	return "## " + title + "\n\n" + body + "\n\n"
 }
 
-// ---- Verdict --------------------------------------------------------------------------
+// ---- Triage --------------------------------------------------------------------------
 
 const triageSystem = `You triage tickets that an automated coding pipeline set aside. An orchestrator hands each Beads ticket to a coding agent (a "worker") in its own git worktree; when the worker cannot finish, the ticket is deferred. Decide where the cause lies:
 
 - environment: the machine, tools or services the worker ran on. Examples: a missing SDK, simulator or platform; a permission prompt or safety check that failed or refused commands; network, credentials, flaky infrastructure.
-- instructions: the worker prompt or the ticket's wording. Examples: unclear or contradictory acceptance criteria, missing information, a decision only a human can make, a rule that forced Deferral (such as "awaits CI").
+- instructions: the worker prompt or the ticket's wording. Examples: unclear or contradictory acceptance criteria, missing information, a decision only a human can make, a rule that forced deferral (such as "awaits CI").
 - problem: the task itself. Examples: too large for one ticket, blocked on a design question or on other work, failing tests the worker could not fix.
 
-Use only the evidence given. Recommend the single most useful next project.Step for the maintainer, concretely (a command to run, a question to answer, how to split or reword the ticket). summary is at most 15 words. recommendation is at most 3 sentences.`
+Use only the evidence given. Recommend the single most useful next step for the maintainer, concretely (a command to run, a question to answer, how to split or reword the ticket). summary is at most 15 words. recommendation is at most 3 sentences.`
 
 const triageSchema = `{"type":"object","properties":{"cause":{"type":"string","enum":["environment","instructions","problem"]},"confidence":{"type":"string","enum":["high","medium","low"]},"summary":{"type":"string"},"recommendation":{"type":"string"}},"required":["cause","confidence","summary","recommendation"]}`
 
@@ -146,7 +146,7 @@ Use only the evidence given; never invent tickets, commits or causes. Write Mark
 - ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the triage cause when a triage note gives one.
 - ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run.
 
-Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write "Nothing." under a Section with no entries. No preamble and no closing remarks.`
+Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write "Nothing." under a section with no entries. No preamble and no closing remarks.`
 
 // Unavailable explains why the organs can't run, or returns "".
 func Unavailable(bin string) string {
