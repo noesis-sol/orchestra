@@ -4,6 +4,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -207,8 +208,8 @@ type Loop struct {
 
 	wait timing // how long it waits on things; tests shorten it
 
-	// ReportInterrupt logs Ctrl+C from the loop itself; in the terminal UI the command does it (it
-	// knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
+	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
+	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
 	ReportInterrupt bool
 }
 
@@ -308,12 +309,33 @@ func (o *Loop) activeList() []Status {
 // workers were left running.
 func (o *Loop) Running() []Status { return o.activeList() }
 
-func (o *Loop) interrupted() int {
+// Interrupted is the cause a run's context is cancelled with to say what stopped the run, as in
+// "by SIGTERM". Without it the loop reports Ctrl+C.
+type Interrupted string
+
+func (i Interrupted) Error() string { return "stopped " + string(i) }
+
+func (o *Loop) interrupted(ctx context.Context) int {
 	if !o.ReportInterrupt {
 		return ExitInterrupted
 	}
-	o.emit(Event{Kind: EvStop, Text: "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"})
+	why := Interrupted("with Ctrl+C")
+	errors.As(context.Cause(ctx), &why)
+	o.emit(Event{Kind: EvStop, Text: InterruptLine(string(why), o.activeList())})
 	return ExitInterrupted
+}
+
+// InterruptLine is the INTERRUPTED line for a run stopped the way why says, naming the workers
+// left running.
+func InterruptLine(why string, running []Status) string {
+	if len(running) == 0 {
+		return "INTERRUPTED: stopped " + why + "; a running worker keeps its tab and worktree"
+	}
+	var names []string
+	for _, st := range running {
+		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
+	}
+	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
 }
 
 // timing is how long the loop waits on things. A zero field means the default.
@@ -445,12 +467,12 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 		case <-ctx.Done():
 			o.settle(results, inflight)
-			return o.interrupted()
+			return o.interrupted(ctx)
 		}
 	}
 	switch {
 	case ctx.Err() != nil:
-		return o.interrupted()
+		return o.interrupted(ctx)
 	case stop != nil:
 		text := stop.text
 		for _, t := range alsoStopped {

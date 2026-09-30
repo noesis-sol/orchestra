@@ -122,7 +122,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error; for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
-| `INTERRUPTED` | 130 | the user pressed Ctrl+C | The worker keeps running. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
+| `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. |
 
 Lines about single tickets, which don't stop the run:

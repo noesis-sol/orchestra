@@ -14,6 +14,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -365,19 +366,30 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		}
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
-		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+		ctx, cancelRun := context.WithCancelCause(ctx)
+		stopWatching := watchSignals(func(s os.Signal) {
+			why := "by " + signalName(s)
+			if s == os.Interrupt {
+				why = "with Ctrl+C"
+			}
+			cancelRun(dispatch.Interrupted(why))
+		})
 		orch.SetSink(tui.Printer{})
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
-		stop()
-		organPhase(orch, cfg, log, code, orch.Final(), tui.Printer{}, cancelOrgans)
+		if !leaving(stopWatching()) {
+			organPhase(orch, cfg, log, code, orch.Final(), tui.Printer{}, cancelOrgans)
+		}
 		return status(code)
 	}
 
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
-	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
+	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
+	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout),
+		tea.WithoutSignalHandler())
+	stopWatching := watchSignals(func(os.Signal) { p.Quit() })
 	progSink := tui.NewProgramSink(p)
 	orch.SetSink(progSink)
 	codes := make(chan int, 1)
@@ -386,6 +398,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
+	sig := stopWatching()
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
@@ -396,10 +409,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	}
 	// From here the loop's events are printed, starting with any the dashboard never received.
 	progSink.Handoff(sink, m.Received())
-	if why := stoppedBy(m, err, len(codes) > 0); why != "" {
+	if why := stoppedBy(m, err, len(codes) > 0, sig); why != "" {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		cancel()
-		msg := interruptLine(why, orch.Running())
+		msg := dispatch.InterruptLine(why, orch.Running())
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Alert(ev.Time, msg)
 		sink.Event(ev)
@@ -409,7 +422,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		case <-codes:
 		case <-time.After(dispatch.SettleWait + 5*time.Second):
 		}
-		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
+		if !leaving(sig) {
+			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
+		}
 		return exitStatus(dispatch.ExitInterrupted)
 	}
 	code := <-codes
@@ -418,37 +433,72 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 }
 
 // stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by
-// itself: Ctrl+C in the dashboard, or a signal or failure that closed the dashboard (err is what
-// its program returned) while the loop was still running. It is "" when the loop ended the run.
-func stoppedBy(m tui.Dashboard, err error, loopDone bool) string {
+// itself: Ctrl+C in the dashboard, a signal (sig, nil if none came) that closed it, or the
+// dashboard failing (err is what its program returned) while the loop was still running. It is ""
+// when the loop ended the run.
+func stoppedBy(m tui.Dashboard, err error, loopDone bool, sig os.Signal) string {
 	switch {
 	case m.Interrupted():
 		return "with Ctrl+C"
 	case m.Final() != nil || loopDone:
 		return ""
-	case errors.Is(err, tea.ErrInterrupted):
-		return "by SIGINT"
+	case sig != nil:
+		return "by " + signalName(sig)
 	case err != nil:
 		return "because the dashboard failed"
 	default:
-		// The dashboard quits by itself only on the loop's last event, so this is Bubble Tea's
-		// SIGTERM handler.
-		return "by SIGTERM"
+		// The dashboard quits by itself only on the loop's last event, so this shouldn't happen.
+		return "because the dashboard closed"
 	}
 }
 
-// interruptLine is the INTERRUPTED line for a run stopped the way why says, naming the workers
-// left running.
-func interruptLine(why string, running []dispatch.Status) string {
-	if len(running) == 0 {
-		return "INTERRUPTED: stopped " + why + "; a running worker keeps its tab and worktree"
+// stopSignals stop a run the way Ctrl+C does: SIGINT, kill's SIGTERM, and SIGHUP from closing the
+// terminal or Herdr pane.
+var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
+
+// watchSignals calls onStop, once and from another goroutine, when orchestra receives one of
+// stopSignals. The function it returns stops watching and returns the signal that came, or nil;
+// from then on the signals have their default effect again.
+func watchSignals(onStop func(os.Signal)) (stop func() os.Signal) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, stopSignals...)
+	got := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case s := <-sigs:
+			got <- s // before onStop, so whatever onStop makes happen finds it
+			onStop(s)
+		case <-done:
+		}
+	}()
+	return func() os.Signal {
+		signal.Stop(sigs)
+		close(done)
+		select {
+		case s := <-got:
+			return s
+		default:
+			return nil
+		}
 	}
-	var names []string
-	for _, st := range running {
-		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
-	}
-	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
 }
+
+func signalName(s os.Signal) string {
+	switch s {
+	case os.Interrupt:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	case syscall.SIGHUP:
+		return "SIGHUP"
+	}
+	return s.String()
+}
+
+// leaving reports whether sig asks orchestra to go away rather than stop the run: SIGTERM, or
+// SIGHUP when nobody is left to read the report. The organ phase is skipped then.
+func leaving(sig os.Signal) bool { return sig == syscall.SIGTERM || sig == syscall.SIGHUP }
 
 // organs is what organPhase needs from the loop.
 type organs interface {
@@ -458,12 +508,12 @@ type organs interface {
 }
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
-// the run report. Ctrl+C skips whatever is left.
+// the run report. Ctrl+C, or another of stopSignals, skips whatever is left.
 func organPhase(orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
 	if !c.Triage && !c.Review {
 		return
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
 	go func() {
 		<-ctx.Done()

@@ -382,15 +382,16 @@ func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 	defer close(release)
 	o := h.loop()
 	o.ReportInterrupt = true
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	codes := make(chan int, 1)
 	go func() { codes <- o.Run(ctx) }()
 	<-started
-	cancel()
+	cancel(Interrupted("by SIGHUP"))
 	select {
 	case code := <-codes:
-		if code != ExitInterrupted || !strings.HasPrefix(o.Final(), "INTERRUPTED") {
-			t.Errorf("exit %d, final %q", code, o.Final())
+		want := "INTERRUPTED: stopped by SIGHUP while A (tab " + o.Running()[0].Tab + ") were running; their tabs and worktrees are left open"
+		if code != ExitInterrupted || o.Final() != want {
+			t.Errorf("exit %d, final %q, want %q", code, o.Final(), want)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after Ctrl+C")
@@ -805,5 +806,15 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 		if strings.Count(strings.TrimSpace(line), " ") < 2 {
 			t.Errorf("log line without text: %q", line)
 		}
+	}
+}
+
+func TestInterruptLineNamesTheWorkersLeftRunning(t *testing.T) {
+	if got := InterruptLine("with Ctrl+C", nil); got != "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree" {
+		t.Errorf("no workers: %q", got)
+	}
+	got := InterruptLine("by SIGTERM", []Status{{Ticket: "a-1", Tab: "w1:2"}, {Ticket: "a-2", Tab: "w1:3"}})
+	if got != "INTERRUPTED: stopped by SIGTERM while a-1 (tab w1:2), a-2 (tab w1:3) were running; their tabs and worktrees are left open" {
+		t.Errorf("two workers: %q", got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -123,41 +124,30 @@ func closedDashboard(t *testing.T, send func(*tea.Program, *tui.ProgramSink)) (t
 func TestAnyEarlyEndOfTheDashboardStopsTheLoop(t *testing.T) {
 	cancelled := false
 	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if why := stoppedBy(m.(tui.Dashboard), nil, false); why != "with Ctrl+C" || !cancelled {
+	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil); why != "with Ctrl+C" || !cancelled {
 		t.Errorf("Ctrl+C: stopped %q, cancelled %v", why, cancelled)
 	}
 
 	ended, err := closedDashboard(t, func(_ *tea.Program, s *tui.ProgramSink) {
 		s.Event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY after 1 tickets"})
 	})
-	if why := stoppedBy(ended, err, false); why != "" {
+	if why := stoppedBy(ended, err, false, syscall.SIGTERM); why != "" {
 		t.Errorf("the loop's last event: stopped %q, want the loop's own end", why)
 	}
 
-	// Bubble Tea turns SIGTERM into the QuitMsg that Quit sends.
+	// A stop signal quits the dashboard the way Quit does.
 	quit, err := closedDashboard(t, func(p *tea.Program, _ *tui.ProgramSink) { p.Quit() })
-	if why := stoppedBy(quit, err, false); why != "by SIGTERM" {
-		t.Errorf("quit while the loop runs: stopped %q", why)
+	for sig, want := range map[os.Signal]string{syscall.SIGTERM: "by SIGTERM", syscall.SIGHUP: "by SIGHUP", os.Interrupt: "by SIGINT"} {
+		if why := stoppedBy(quit, err, false, sig); why != want {
+			t.Errorf("%v while the loop runs: stopped %q, want %q", sig, why, want)
+		}
 	}
-	if why := stoppedBy(quit, err, true); why != "" {
+	if why := stoppedBy(quit, err, true, syscall.SIGHUP); why != "" {
 		t.Errorf("quit after the loop ended: stopped %q", why)
 	}
 
-	if why := stoppedBy(tui.Dashboard{}, tea.ErrInterrupted, false); why != "by SIGINT" {
-		t.Errorf("SIGINT: stopped %q", why)
-	}
-	if why := stoppedBy(tui.Dashboard{}, errors.New("could not open a new TTY"), false); why != "because the dashboard failed" {
+	if why := stoppedBy(tui.Dashboard{}, errors.New("could not open a new TTY"), false, nil); why != "because the dashboard failed" {
 		t.Errorf("failed dashboard: stopped %q", why)
-	}
-}
-
-func TestInterruptLineNamesTheWorkersLeftRunning(t *testing.T) {
-	if got := interruptLine("with Ctrl+C", nil); got != "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree" {
-		t.Errorf("no workers: %q", got)
-	}
-	got := interruptLine("by SIGTERM", []dispatch.Status{{Ticket: "a-1", Tab: "w1:2"}, {Ticket: "a-2", Tab: "w1:3"}})
-	if got != "INTERRUPTED: stopped by SIGTERM while a-1 (tab w1:2), a-2 (tab w1:3) were running; their tabs and worktrees are left open" {
-		t.Errorf("two workers: %q", got)
 	}
 }
 

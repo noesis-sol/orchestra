@@ -45,7 +45,7 @@ Everything is also appended to `.orchestra/orchestra.log` in plain text, so `tai
 Organs are LLM-powered steps. The orchestrator gathers the evidence itself and passes it to `claude -p` with every built-in tool and MCP server disabled (`--tools "" --strict-mcp-config`), from outside the project. An organ can only read what it's given and answer. Organs advise: the orchestrator writes their output down, and no organ changes a ticket's status. A call is about 1,500 input tokens and takes 5–15 seconds.
 
 - **Triage**, for each deferred ticket. The evidence is the ticket (`bd show`), the end of the worker's terminal, and its worktree's changes and commits. The model decides whether the cause lies in the **environment** (the machine, tools or services), the **instructions** (the worker prompt or the ticket's wording), or the **problem** itself. It adds a recommendation to the ticket's notes, and a purple `◆` line appears in the terminal. Triage runs in the background, one ticket at a time, so the loop doesn't wait.
-- **Reviewer**, when the loop stops for any reason. It waits for pending triage, then reads the run's log lines, the commits merged during the run, the tickets set aside (with their triage notes) and the ticket that was running. It writes a short report in three sections: **Finished**, **Set aside** and **Needs you**. The report is shown in the terminal, rendered with Glamour, and saved to `.orchestra/reports/<start time>.md`. Pressing Ctrl+C while it's writing skips it.
+- **Reviewer**, when the loop stops for any reason. It waits for pending triage, then reads the run's log lines, the commits merged during the run, the tickets set aside (with their triage notes) and the ticket that was running. It writes a short report in three sections: **Finished**, **Set aside** and **Needs you**. The report is shown in the terminal, rendered with Glamour, and saved to `.orchestra/reports/<start time>.md`. Pressing Ctrl+C while it's writing skips it. A run stopped by SIGTERM or SIGHUP (closing its terminal or Herdr pane) skips the reviewer.
 
 Turn them off with `-triage=false` / `TRIAGE=0` and `-review=false` / `REVIEW=0`, and pick their model with `-organ-model` / `ORGAN_MODEL` (default: the `claude` CLI's). If `claude` isn't installed, organs switch off and the log says so.
 
@@ -153,7 +153,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 | 4 | Herdr, Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |
 | 6 | a finished ticket's branch does not fast-forward (it should have been rebased first) |
-| 130 | stopped with Ctrl+C; the running worker keeps its tab and worktree |
+| 130 | stopped with Ctrl+C, SIGTERM or SIGHUP; the running worker keeps its tab and worktree |
 
 After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
 
