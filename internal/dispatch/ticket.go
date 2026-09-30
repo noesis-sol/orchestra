@@ -8,6 +8,9 @@ type Ticket struct {
 	Priority     *int     `json:"priority"`
 	Labels       []string `json:"labels"`
 	Dependencies []Ticket `json:"dependencies"` // from bd show; each carries its status and labels
+	// DependencyType is how a dependency links to the ticket (blocks, related, parent-child,
+	// discovered-from); set only on the entries of Dependencies.
+	DependencyType string `json:"dependency_type"`
 }
 
 // HumanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as
@@ -24,10 +27,11 @@ func HasLabel(t Ticket, label string) bool {
 	return false
 }
 
-// OpenQuestion returns the unanswered question the ticket waits on, if any.
+// OpenQuestion returns the unanswered question the ticket waits on, if any. Only a blocks link
+// counts: a related or parent-child link to a question doesn't hold the ticket out of bd ready.
 func OpenQuestion(t Ticket) *Ticket {
 	for i, d := range t.Dependencies {
-		if d.Status != "closed" && HasLabel(d, HumanLabel) {
+		if d.DependencyType == "blocks" && d.Status != "closed" && HasLabel(d, HumanLabel) {
 			return &t.Dependencies[i]
 		}
 	}

@@ -93,3 +93,18 @@ func TestOpenQuestionFromBdShow(t *testing.T) {
 		t.Error("unreadable output should not parse")
 	}
 }
+
+func TestOnlyABlocksLinkIsAQuestion(t *testing.T) {
+	// A related or parent-child link to an open question doesn't block, so bd ready still
+	// returns the ticket; it must be handled by its own status, not reported as ASKED.
+	raw := `[{"id":"k-1","status":"deferred","labels":["api"],"dependencies":[
+	  {"id":"q-1","title":"Decision for k-0: MIT or Apache?","status":"open","labels":["human"],"dependency_type":"related"},
+	  {"id":"q-2","title":"Epic question","status":"open","labels":["human"],"dependency_type":"parent-child"}]}]`
+	tk, ok := parseTicket([]byte(raw))
+	if !ok || tk.Dependencies[0].DependencyType != "related" {
+		t.Fatalf("parseTicket: %v %+v", ok, tk)
+	}
+	if q := dispatch.OpenQuestion(tk); q != nil {
+		t.Errorf("a non-blocking link was taken for an open question: %+v", q)
+	}
+}
