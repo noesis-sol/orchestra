@@ -17,6 +17,8 @@ type Footprint struct {
 	Files []string // paths in the repository, sorted
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
 	Areas []string // area:<name> labels
+	// Predicted says Files are the predictor's guess for a ticket naming nothing (PredictedKey).
+	Predicted bool
 }
 
 // AreaPrefix starts a label naming the part of the project a ticket works on: tickets carrying
@@ -27,6 +29,10 @@ const AreaPrefix = "area:"
 // paths separated by commas or spaces (bd update <id> --set-metadata files=a.go,b.go).
 const FilesKey = "files"
 
+// PredictedKey is the metadata key caching the files the predictor organ expects a ticket naming
+// nothing to change, kept apart from the maintainer's FilesKey.
+const PredictedKey = "predicted_files"
+
 func (f Footprint) Empty() bool { return len(f.Files)+len(f.Funcs)+len(f.Areas) == 0 }
 
 // String lists the footprint for the log: functions, files, then areas.
@@ -34,7 +40,11 @@ func (f Footprint) String() string {
 	if f.Empty() {
 		return "nothing named"
 	}
-	return strings.Join(slices.Concat(f.Funcs, f.Files, f.Areas), ", ")
+	s := strings.Join(slices.Concat(f.Funcs, f.Files, f.Areas), ", ")
+	if f.Predicted {
+		s += " (predicted)"
+	}
+	return s
 }
 
 var (
@@ -145,9 +155,9 @@ func funcName(s string) string {
 }
 
 // TicketFootprint is where ticket t works: the files and functions named in its title and text,
-// its area labels and the files its metadata lists. Paths are checked against the repository's
-// files (git ls-files), nil when they aren't known. With nothing named it is empty, and the ticket
-// runs beside anything.
+// its area labels and the files its metadata lists; with none of these, the files predicted for it
+// (PredictedKey). Paths are checked against the repository's files (git ls-files), nil when they
+// aren't known. With nothing named or predicted it is empty, and the ticket runs beside anything.
 func TicketFootprint(t Ticket, tracked []string) Footprint {
 	return ticketFootprint(t, newRepoFiles(tracked))
 }
@@ -184,7 +194,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 			}
 		}
 	}
-	for _, f := range metadataFiles(t.Metadata) {
+	for _, f := range metadataList(t.Metadata, FilesKey) {
 		for _, p := range repo.resolve(f, true) {
 			files[p] = true
 		}
@@ -197,7 +207,21 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	}
 	fp.Files, fp.Funcs = sortedKeys(files), sortedKeys(funcs)
 	sort.Strings(fp.Areas)
+	if fp.Empty() {
+		return predictedFootprint(metadataList(t.Metadata, PredictedKey), repo)
+	}
 	return fp
+}
+
+// predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it.
+func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
+	files := map[string]bool{}
+	for _, f := range predicted {
+		for _, p := range repo.resolve(f, false) {
+			files[p] = true
+		}
+	}
+	return Footprint{Files: sortedKeys(files), Predicted: len(files) > 0}
 }
 
 func sortedKeys(m map[string]bool) []string {
@@ -209,10 +233,10 @@ func sortedKeys(m map[string]bool) []string {
 	return l
 }
 
-// metadataFiles reads the FilesKey entry of a ticket's metadata: a list of paths, or one string of
-// them separated by commas or spaces. bd gives the metadata as an object or as one encoded in a
-// string.
-func metadataFiles(raw json.RawMessage) []string {
+// metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, or
+// one string of them separated by commas or spaces. bd gives the metadata as an object or as one
+// encoded in a string.
+func metadataList(raw json.RawMessage, key string) []string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		raw = json.RawMessage(s)
@@ -222,10 +246,10 @@ func metadataFiles(raw json.RawMessage) []string {
 		return nil
 	}
 	var list []string
-	if json.Unmarshal(meta[FilesKey], &list) == nil {
+	if json.Unmarshal(meta[key], &list) == nil {
 		return list
 	}
-	if json.Unmarshal(meta[FilesKey], &s) == nil {
+	if json.Unmarshal(meta[key], &s) == nil {
 		return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' })
 	}
 	return nil
@@ -289,12 +313,24 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 // readFiles lists the repository's files for the footprints of the tickets about to be compared.
 func (o *Loop) readFiles() { o.files = newRepoFiles(o.checkout.TrackedFiles(o.cfg.Repo)) }
 
+// footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the
+// prediction made in this run when bd hasn't handed back the one cached on the ticket.
+func (o *Loop) footprintOf(t Ticket) Footprint {
+	fp := ticketFootprint(t, o.files)
+	if fp.Empty() {
+		if files := o.prediction(t.ID); len(files) > 0 {
+			fp = predictedFootprint(files, o.files)
+		}
+	}
+	return fp
+}
+
 // startFootprint records a dispatched ticket's footprint, and logs it.
 func (o *Loop) startFootprint(t Ticket) {
 	if !o.footprintOn() {
 		return
 	}
-	fp := ticketFootprint(t, o.files)
+	fp := o.footprintOf(t)
 	o.mu.Lock()
 	if o.footprints == nil {
 		o.footprints = map[string]*runFootprint{}
@@ -379,7 +415,7 @@ func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 	if HasLabel(t, SoloLabel) {
 		return false
 	}
-	fp := ticketFootprint(t, o.files)
+	fp := o.footprintOf(t)
 	why := ""
 	if !fp.Empty() {
 		o.mu.Lock()

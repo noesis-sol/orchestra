@@ -70,6 +70,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	if s := o.loadUnmerged(); s != nil {
 		return o.stop(s.code, "%s", s.text)
 	}
+	defer o.startPredicting()()
 
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
 	inflight := map[string]bool{}
@@ -290,6 +291,9 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 			o.readEdits()
 			overlaps = func(t Ticket) bool { return o.overlapsRunning(t, running) }
 		}
+	}
+	if o.footprintOn() {
+		o.queuePredictions(ready, skip)
 	}
 	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) || overlaps(t) }, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,

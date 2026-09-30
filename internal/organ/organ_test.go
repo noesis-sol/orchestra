@@ -2,6 +2,8 @@ package organ
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +92,47 @@ func TestTriageInputCarriesTheEvidence(t *testing.T) {
 		"## Ticket (bd show)", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n(none)"} {
 		if !strings.Contains(in, want) {
 			t.Errorf("triage input lacks %q:\n%s", want, in)
+		}
+	}
+}
+
+func TestParsePredictionKeepsRepositoryFiles(t *testing.T) {
+	tracked := []string{"a.go", "internal/b.go", "c.go"}
+	r := Result{Structured: []byte(`{"files":["./internal/b.go","nowhere.go","a.go","internal/b.go"]}`)}
+	if got, err := parsePrediction(r, tracked); err != nil || strings.Join(got, ",") != "internal/b.go,a.go" {
+		t.Errorf("got %v, %v", got, err)
+	}
+	if got, err := parsePrediction(Result{Result: `{"files":["c.go"]}`}, tracked); err != nil || strings.Join(got, ",") != "c.go" {
+		t.Errorf("result fallback: %v, %v", got, err)
+	}
+	if got, err := parsePrediction(Result{Structured: []byte(`{"files":[]}`)}, tracked); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("no clue: %v, %v", got, err)
+	}
+	if _, err := parsePrediction(Result{Result: "a.go"}, tracked); err == nil {
+		t.Error("unreadable output should be an error")
+	}
+	var many []string
+	for i := 0; i < 20; i++ {
+		many = append(many, fmt.Sprintf("f%d.go", i))
+	}
+	all, _ := json.Marshal(map[string][]string{"files": many})
+	if got, _ := parsePrediction(Result{Structured: all}, many); len(got) != MaxPredicted {
+		t.Errorf("kept %d files, want %d", len(got), MaxPredicted)
+	}
+}
+
+func TestPredictFilesAsksWithTheTicketAndTheFiles(t *testing.T) {
+	bin, record := fakeClaude(t, `{"type":"result","is_error":false,"structured_output":{"files":["internal/b.go"]}}`)
+	got, err := Client{Bin: bin}.PredictFiles(context.Background(), Footprint{ID: "k-2", Title: "Faster picks",
+		Ticket: "k-2 · Faster picks", Files: []string{"a.go", "internal/b.go"}})
+	if err != nil || strings.Join(got, ",") != "internal/b.go" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	b, _ := os.ReadFile(record)
+	for _, want := range []string{"ticket k-2 (Faster picks)", "## Ticket (bd show)\n\nk-2 · Faster picks",
+		"## Repository files (git ls-files)\n\na.go\ninternal/b.go", "[--json-schema]"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("claude was not given %q:\n%s", want, b)
 		}
 	}
 }

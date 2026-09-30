@@ -18,6 +18,12 @@ All notable changes to orchestra are documented here. The format follows
   takes it back (`DRAIN cancelled`). Ctrl+C still stops at once. SIGUSR1 does
   the same without the question, for `-plain` and scripts. Before, the only way
   to end a run from the dashboard was Ctrl+C, which left finished work unmerged.
+- A ready ticket that names no files, functions or area labels has its files
+  predicted by a new organ, in the background, from the ticket and `git
+  ls-files`; the guess is cached as `predicted_files` metadata and keeps it
+  apart from running tickets that touch those files. Dispatch never waits for
+  it. Off without `claude`, with one ticket at a time, and with `"footprint":
+  false`.
 - `orchestra plan` proposes blocks links between open tickets that touch the
   same code, so they run one after the other: two tickets that name the same
   function, or, when either names none, the same file of at most 200 lines. The

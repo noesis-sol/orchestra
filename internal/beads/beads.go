@@ -245,3 +245,9 @@ func (b Tracker) RemoveLabel(id, label string) error {
 	_, err := command.Output(b.Repo, "bd", "label", "remove", id, label)
 	return err
 }
+
+// SetMetadata sets one key of the ticket's metadata, keeping the others.
+func (b Tracker) SetMetadata(id, key, value string) error {
+	_, err := command.Output(b.Repo, "bd", "update", id, "--set-metadata", key+"="+value)
+	return err
+}

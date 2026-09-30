@@ -94,16 +94,17 @@ var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  
 // brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
 type brokenBd []Ticket
 
-func (b brokenBd) Ready() ([]Ticket, error)            { return b, nil }
-func (brokenBd) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "unknown"}, errBd }
-func (brokenBd) Status(id string) (string, error)      { return "unknown", errBd }
-func (brokenBd) Describe(id string) string             { return id }
-func (brokenBd) AppendNotes(id, note string) error     { return errBd }
-func (brokenBd) Defer(id, reason string) error         { return errBd }
-func (brokenBd) Reopen(id string) error                { return errBd }
-func (brokenBd) AddLabel(id, label string) error       { return errBd }
-func (brokenBd) RemoveLabel(id, label string) error    { return errBd }
-func (brokenBd) Closed(label string) ([]Ticket, error) { return nil, nil } // so the run gets as far as the workers
+func (b brokenBd) Ready() ([]Ticket, error)              { return b, nil }
+func (brokenBd) Show(id string) (Ticket, error)          { return Ticket{ID: id, Status: "unknown"}, errBd }
+func (brokenBd) Status(id string) (string, error)        { return "unknown", errBd }
+func (brokenBd) Describe(id string) string               { return id }
+func (brokenBd) AppendNotes(id, note string) error       { return errBd }
+func (brokenBd) Defer(id, reason string) error           { return errBd }
+func (brokenBd) Reopen(id string) error                  { return errBd }
+func (brokenBd) AddLabel(id, label string) error         { return errBd }
+func (brokenBd) RemoveLabel(id, label string) error      { return errBd }
+func (brokenBd) SetMetadata(id, key, value string) error { return errBd }
+func (brokenBd) Closed(label string) ([]Ticket, error)   { return nil, nil } // so the run gets as far as the workers
 
 type okTabs struct{}
 

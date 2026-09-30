@@ -106,8 +106,9 @@ Tickets are also kept apart by footprint: a ready ticket that names the same fun
 of the two names no functions, the same file) as a running ticket, shares an `area:<name>` label with
 it, or names a file its worker has edited, waits for a later slot while the next ticket takes this
 one. Naming files and functions in a ticket's description helps; so does `bd update <id>
---set-metadata files=a.go,b.go` or an `area:<name>` label. `"footprint": false` in `settings.json`
-turns it off.
+--set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
+predictor organ guesses its files in the background and caches them as `predicted_files` metadata.
+`"footprint": false` in `settings.json` turns it off.
 
 After a batch of tickets is filed, `orchestra plan` proposes blocks links between open tickets that
 name the same function (or, when one names none, the same small file), the higher-priority ticket
@@ -177,7 +178,9 @@ Lines about single tickets, which don't stop the run:
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
   it does. Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.
-- `<id> footprint: …` (at dispatch) and `skipping <id>: touches <file or function>, like running
+- `<id> footprint predicted: …` and `<id> footprint not predicted: …`: the predictor organ guessed the
+  files of a ticket naming none, or couldn't. Normal; a ticket never waits for its prediction.
+- `<id> footprint: …` (at dispatch, `(predicted)` for a guess) and `skipping <id>: touches <file or function>, like running
   <other>`: the ticket overlaps a running one, so a later ticket took the slot. Normal; it starts once
   nothing running overlaps it.
 - `LIKELY_CONFLICT: <a> and <b> both edit <file>`: two running workers changed the same file, so the

@@ -103,3 +103,13 @@ func TestPlanLinksIgnoresAreasAndTicketsNamingNothing(t *testing.T) {
 		t.Errorf("links %q, want none", linkList(got))
 	}
 }
+
+// A predicted footprint is a guess: it keeps tickets apart while they run, but doesn't order them.
+func TestPlanLinksIgnoresPredictedFiles(t *testing.T) {
+	a := planTicket("a", 1, "", "Make it faster.")
+	b := planTicket("b", 2, "", "Change internal/dispatch/run.go.")
+	a.Metadata = []byte(`{"predicted_files": "internal/dispatch/run.go"}`)
+	if got := PlanLinks([]Ticket{a, b}, nil, trackedHere, linesOf(50, nil)); len(got) != 0 {
+		t.Errorf("links %q, want none", linkList(got))
+	}
+}

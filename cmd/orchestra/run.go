@@ -359,6 +359,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
+	organsOff := organ.Unavailable("claude")
+	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, herdr.Terminal{}, git.Git{}
 	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
 		Tickets:   tracker,
@@ -375,8 +377,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
 		AdviceCtx: organCtx,
 	})
-	if off := organ.Unavailable("claude"); off != "" && (cfg.Triage || cfg.Review) {
-		log.Line(time.Now(), "organs off: "+off)
+	if organsOff != "" && (cfg.Triage || cfg.Review || cfg.Concurrency > 1 && !cfg.NoFootprint) {
+		log.Line(time.Now(), "organs off: "+organsOff)
 		cfg.Triage, cfg.Review = false, false
 	}
 	if cfg.Triage {

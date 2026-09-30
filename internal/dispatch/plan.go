@@ -20,7 +20,7 @@ const SmallFileLines = 200
 // one after the other instead of side by side: the higher-priority ticket (then the older one)
 // goes first. Two tickets are linked when both name functions and one of them is the same, or,
 // when either names none, they name the same small file (lines gives a repository file's line
-// count, 0 for one that doesn't exist yet). Area labels alone don't link tickets, and a pair
+// count, 0 for one that doesn't exist yet). Area labels and predicted files don't link tickets, and a pair
 // already ordered by existing links, directly or through other tickets, gets none; each ticket is
 // linked to the nearest one before it first, so tickets touching one function form a chain.
 func PlanLinks(open []Ticket, existing []Link, tracked []string, lines func(path string) int) []Link {
@@ -31,7 +31,11 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, lines func(path
 	repo := newRepoFiles(tracked)
 	fps := make([]Footprint, len(ts))
 	for i, t := range ts {
-		fps[i] = ticketFootprint(t, repo)
+		// A predicted footprint is a guess: good enough to keep two tickets apart for a while, not
+		// to order them for good.
+		if fps[i] = ticketFootprint(t, repo); fps[i].Predicted {
+			fps[i] = Footprint{}
+		}
 	}
 	small := map[string]bool{}
 	isSmall := func(p string) bool {

@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -162,6 +163,30 @@ func (b *fakeBeads) RemoveLabel(id, label string) error {
 		t.Labels = kept
 	}
 	return nil
+}
+
+// SetMetadata sets one key of the ticket's metadata, as bd update --set-metadata does.
+func (b *fakeBeads) SetMetadata(id, key, value string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, ok := b.tickets[id]
+	if !ok {
+		return fmt.Errorf("bd update %s: no such issue", id)
+	}
+	meta := map[string]any{}
+	json.Unmarshal(t.Metadata, &meta)
+	meta[key] = value
+	t.Metadata, _ = json.Marshal(meta)
+	return nil
+}
+
+// metadata returns one key of the ticket's metadata, or "".
+func (b *fakeBeads) metadata(id, key string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var meta map[string]string
+	json.Unmarshal(b.tickets[id].Metadata, &meta)
+	return meta[key]
 }
 
 // ---- Workers -------------------------------------------------------------------------

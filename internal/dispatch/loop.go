@@ -81,6 +81,15 @@ type Loop struct {
 	skipSaid   map[string]string
 	warned     map[string]bool
 
+	// Predicting footprints, under predictMu: whether the predictor runs, its queue, the tickets
+	// queued in this run and the predictions made. predictWake (buffered 1) says one was queued.
+	predictMu   sync.Mutex
+	predictOn   bool
+	predictQ    []Ticket
+	predictSeen map[string]bool
+	predicted   map[string][]string
+	predictWake chan struct{}
+
 	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
 	// after that finds it closed rather than a closed channel.
 	triageMu     sync.Mutex
@@ -246,6 +255,7 @@ type Config struct {
 	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
 	Version      string        // orchestra's version, for the log
 	NoFootprint  bool          // start tickets side by side even when their footprints overlap
+	Predict      bool          // have the predictor organ guess the files of ready tickets naming none
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.
 	EnvHoldCount int

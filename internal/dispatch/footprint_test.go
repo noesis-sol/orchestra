@@ -68,6 +68,25 @@ func TestTicketFootprintFromLabelsAndMetadata(t *testing.T) {
 	}
 }
 
+// The predicted files count only for a ticket naming nothing else.
+func TestTicketFootprintFallsBackOnPredictedFiles(t *testing.T) {
+	predicted := []byte(`{"predicted_files": "internal/dispatch/run.go,internal/nowhere/z.go", "files": []}`)
+	fp := TicketFootprint(Ticket{Title: "Say hello", Metadata: predicted}, trackedHere)
+	if !slices.Equal(fp.Files, []string{"internal/dispatch/run.go"}) || !fp.Predicted {
+		t.Errorf("predicted: %+v", fp)
+	}
+	if got := fp.String(); got != "internal/dispatch/run.go (predicted)" {
+		t.Errorf("String() = %q", got)
+	}
+	fp = TicketFootprint(Ticket{Description: "Change README.md.", Metadata: predicted}, trackedHere)
+	if !slices.Equal(fp.Files, []string{"README.md"}) || fp.Predicted {
+		t.Errorf("a ticket naming a file: %+v", fp)
+	}
+	if fp := TicketFootprint(Ticket{Labels: []string{"area:tui"}, Metadata: predicted}, trackedHere); len(fp.Files) > 0 || fp.Predicted {
+		t.Errorf("a ticket with an area: %+v", fp)
+	}
+}
+
 func TestSharedComparesFunctionsWhenBothNameThem(t *testing.T) {
 	merge := Footprint{Files: []string{"merge.go"}, Funcs: []string{"Loop.merge"}}
 	cases := []struct {

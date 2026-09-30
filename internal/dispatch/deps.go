@@ -22,6 +22,7 @@ type Notes interface {
 	Reopen(id string) error
 	AddLabel(id, label string) error
 	RemoveLabel(id, label string) error
+	SetMetadata(id, key, value string) error
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
