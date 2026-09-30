@@ -1,0 +1,471 @@
+package dispatch
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/command"
+)
+
+// In-memory stand-ins for Beads and Herdr, so a whole run can be driven by a test. Git is real,
+// in a temporary repository.
+
+// ---- Beads ---------------------------------------------------------------------------
+
+type fakeLink struct{ on, typ string }
+
+// fakeBeads is a small tracker: tickets with a status, a priority, labels and links. Ready
+// follows bd ready: open tickets whose blockers are closed, leaving out epics and questions.
+type fakeBeads struct {
+	mu      sync.Mutex
+	tickets map[string]*Ticket
+	links   map[string][]fakeLink
+	order   []string
+	notes   map[string][]string
+}
+
+func newFakeBeads() *fakeBeads {
+	return &fakeBeads{tickets: map[string]*Ticket{}, links: map[string][]fakeLink{}, notes: map[string][]string{}}
+}
+
+func (b *fakeBeads) add(id, title string, prio int, labels ...string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tickets[id] = &Ticket{ID: id, Title: title, Status: "open", IssueType: "task", Priority: &prio, Labels: labels}
+	b.order = append(b.order, id)
+}
+
+// link makes id depend on on.
+func (b *fakeBeads) link(id, on, typ string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.links[id] = append(b.links[id], fakeLink{on, typ})
+}
+
+func (b *fakeBeads) set(id, status string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tickets[id].Status = status
+}
+
+func (b *fakeBeads) notesOf(id string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Join(b.notes[id], "\n")
+}
+
+func (b *fakeBeads) Ready() ([]Ticket, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var ready []Ticket
+	for _, id := range b.order {
+		t := b.tickets[id]
+		if t.Status != "open" || t.IssueType == "epic" || HasLabel(*t, HumanLabel) {
+			continue
+		}
+		blocked := false
+		for _, l := range b.links[id] {
+			blocked = blocked || l.typ == "blocks" && b.tickets[l.on].Status != "closed"
+		}
+		if !blocked {
+			ready = append(ready, *t)
+		}
+	}
+	sort.SliceStable(ready, func(i, j int) bool { return *ready[i].Priority < *ready[j].Priority })
+	return ready, nil
+}
+
+func (b *fakeBeads) Show(id string) (Ticket, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, ok := b.tickets[id]
+	if !ok {
+		return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: no such issue", id)
+	}
+	show := *t
+	for _, l := range b.links[id] {
+		d := *b.tickets[l.on]
+		d.DependencyType = l.typ
+		show.Dependencies = append(show.Dependencies, d)
+	}
+	return show, nil
+}
+
+func (b *fakeBeads) Status(id string) (string, error) {
+	t, err := b.Show(id)
+	return t.Status, err
+}
+
+func (b *fakeBeads) Describe(id string) string {
+	t, _ := b.Show(id)
+	return fmt.Sprintf("%s: %s [%s]", id, t.Title, t.Status)
+}
+
+func (b *fakeBeads) AppendNotes(id, note string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.notes[id] = append(b.notes[id], note)
+	return nil
+}
+
+func (b *fakeBeads) Defer(id, reason string) error {
+	b.set(id, "deferred")
+	return b.AppendNotes(id, "deferred: "+reason)
+}
+
+func (b *fakeBeads) Reopen(id string) error {
+	b.set(id, "open")
+	return nil
+}
+
+// ---- Workers -------------------------------------------------------------------------
+
+// behaviour is what a worker does once it has its prompt; it returns the status its agent then
+// settles in (idle, blocked, …). The agent is working until it returns.
+type behaviour func(w *fakeWorker) string
+
+// fakeWorker is a worker on one ticket, in its worktree.
+type fakeWorker struct {
+	t     *testing.T
+	id    string
+	wt    string
+	beads *fakeBeads
+}
+
+func (w *fakeWorker) claim()   { w.beads.set(w.id, "in_progress") }
+func (w *fakeWorker) close()   { w.beads.set(w.id, "closed") }
+func (w *fakeWorker) deferIt() { w.beads.set(w.id, "deferred") }
+
+// commit adds file to the ticket's branch in a commit naming the ticket.
+func (w *fakeWorker) commit(file string) {
+	if err := os.WriteFile(filepath.Join(w.wt, file), []byte(w.id+"\n"), 0o644); err != nil {
+		w.t.Error(err)
+	}
+	for _, args := range [][]string{{"add", file}, {"commit", "-q", "-m", w.id + ": add " + file}} {
+		if out, err := command.Output(w.wt, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
+			w.t.Errorf("git %v in %s: %v\n%s", args, w.wt, err, out)
+		}
+	}
+}
+
+// ask files a question for the maintainer that blocks the ticket.
+func (w *fakeWorker) ask(q, title string) {
+	w.beads.add(q, title, 2, HumanLabel)
+	w.beads.link(w.id, q, "blocks")
+}
+
+// finishes claims the ticket, commits file and closes it.
+func finishes(file string) behaviour {
+	return func(w *fakeWorker) string {
+		w.claim()
+		w.commit(file)
+		w.close()
+		return "idle"
+	}
+}
+
+// ---- Herdr ---------------------------------------------------------------------------
+
+type fakePane struct{ ticket, wt, tab string }
+
+type fakeAgent struct {
+	name, kind, pane, status string
+	prompted                 bool
+}
+
+var errRefused = errors.New("herdr: unknown argument")
+
+// fakeHerdr is the terminal: tabs, the agents in their panes, and the workers they run. An agent
+// runs the next behaviour given for its ticket once it has its prompt.
+type fakeHerdr struct {
+	t     *testing.T
+	beads *fakeBeads
+
+	mu         sync.Mutex
+	tabs       int
+	panes      map[string]fakePane
+	agents     []*fakeAgent // gone ones are removed
+	closed     []string     // tabs closed
+	pasted     []string     // tickets whose prompt was pasted
+	behaviours map[string][]behaviour
+	running    sync.WaitGroup
+
+	launchFails  map[string]bool // LaunchInPane fails for these tickets
+	promptFails  map[string]bool // pasting the prompt never submits it
+	startUnnamed map[string]bool // the first StartAgent times out, leaving the agent unnamed in its pane
+	refuseArgs   bool            // StartAgent takes no arguments
+}
+
+func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
+	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
+		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{}}
+}
+
+// agent returns the agent named name, or nil. The caller holds mu.
+func (h *fakeHerdr) agent(name string) *fakeAgent {
+	for _, a := range h.agents {
+		if a.name != "" && a.name == name {
+			return a
+		}
+	}
+	return nil
+}
+
+// inPane returns the agent in pane, or nil. The caller holds mu.
+func (h *fakeHerdr) inPane(pane string) *fakeAgent {
+	for _, a := range h.agents {
+		if a.pane == pane {
+			return a
+		}
+	}
+	return nil
+}
+
+// prompt starts the agent on its ticket's next behaviour. The caller holds mu.
+func (h *fakeHerdr) prompt(a *fakeAgent) {
+	p := h.panes[a.pane]
+	a.prompted, a.status = true, "working"
+	queue := h.behaviours[p.ticket]
+	if len(queue) == 0 {
+		h.t.Errorf("no behaviour left for a worker on %s", p.ticket)
+		a.status = "idle"
+		return
+	}
+	b := queue[0]
+	h.behaviours[p.ticket] = queue[1:]
+	h.running.Add(1)
+	go func() {
+		defer h.running.Done()
+		st := b(&fakeWorker{t: h.t, id: p.ticket, wt: p.wt, beads: h.beads})
+		h.mu.Lock()
+		a.status = st
+		h.mu.Unlock()
+	}()
+}
+
+func (h *fakeHerdr) tabsClosed() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.closed...)
+}
+
+func (h *fakeHerdr) pastedTo() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.pasted...)
+}
+
+// Tabs
+
+func (h *fakeHerdr) CreateTab(workspace, cwd, label string) (string, string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tabs++
+	tab, pane := fmt.Sprintf("tab%d", h.tabs), fmt.Sprintf("pane%d", h.tabs)
+	h.panes[pane] = fakePane{ticket: label, wt: cwd, tab: tab}
+	return tab, pane, nil
+}
+
+func (h *fakeHerdr) CloseTab(tab string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = append(h.closed, tab)
+	var left []*fakeAgent
+	for _, a := range h.agents {
+		if h.panes[a.pane].tab != tab {
+			left = append(left, a)
+		}
+	}
+	h.agents = left
+}
+
+// Starter
+
+func (h *fakeHerdr) LaunchInPane(pane, kind string, args []string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.launchFails[h.panes[pane].ticket] {
+		return errors.New("herdr pane run: failed")
+	}
+	a := &fakeAgent{kind: kind, pane: pane}
+	h.agents = append(h.agents, a)
+	h.prompt(a) // the prompt is its launch argument
+	return nil
+}
+
+func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.refuseArgs && len(args) > 0 {
+		return errRefused
+	}
+	if ticket := h.panes[pane].ticket; h.startUnnamed[ticket] {
+		delete(h.startUnnamed, ticket)
+		h.agents = append(h.agents, &fakeAgent{kind: kind, pane: pane, status: "idle"})
+		return errors.New("herdr agent start: agent_not_ready")
+	}
+	if h.agent(name) != nil || h.inPane(pane) != nil {
+		return fmt.Errorf("herdr agent start: %s or %s is taken", name, pane)
+	}
+	h.agents = append(h.agents, &fakeAgent{name: name, kind: kind, pane: pane, status: "idle"})
+	return nil
+}
+
+func (h *fakeHerdr) IsArgumentRefused(err error) bool                { return errors.Is(err, errRefused) }
+func (h *fakeHerdr) IsNameRefused(err error) bool                    { return false }
+func (h *fakeHerdr) WaitReady(ctx context.Context, name string) bool { return true }
+
+// Namer
+
+// AgentName keeps the ticket ID: the scenarios' IDs are names Herdr takes as they are.
+func (h *fakeHerdr) AgentName(id string) string { return id }
+
+func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.inPane(pane)
+	if a == nil || a.name != "" || h.agent(name) != nil {
+		return "", fmt.Errorf("herdr: no unnamed agent in %s to name %s", pane, name)
+	}
+	a.name = name
+	return name, nil
+}
+
+func (h *fakeHerdr) PaneAgent(pane string) (string, string, string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a := h.inPane(pane); a != nil {
+		return a.name, a.kind, a.status
+	}
+	return "", "", "gone"
+}
+
+// RenameAgent renames the agent called name, or the one in the pane called name.
+func (h *fakeHerdr) RenameAgent(name, to string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.agent(name)
+	if a == nil {
+		a = h.inPane(name)
+	}
+	if a == nil || h.agent(to) != nil {
+		return fmt.Errorf("herdr agent rename %s %s: refused", name, to)
+	}
+	a.name = to
+	return nil
+}
+
+func (h *fakeHerdr) FreeName(id string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i := 1; ; i++ {
+		if name := fmt.Sprintf("%s-%d", id, i); h.agent(name) == nil {
+			return name
+		}
+	}
+}
+
+// Agents
+
+func (h *fakeHerdr) Status(name string) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a := h.agent(name); a != nil {
+		return a.status, nil
+	}
+	return "gone", nil
+}
+
+func (h *fakeHerdr) Screen(name string) string { return "" }
+
+func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.agent(name)
+	if a == nil {
+		return fmt.Errorf("herdr agent prompt: no agent %s", name)
+	}
+	h.pasted = append(h.pasted, h.panes[a.pane].ticket)
+	if h.promptFails[h.panes[a.pane].ticket] {
+		return errors.New("herdr agent prompt: the agent did not start")
+	}
+	h.prompt(a)
+	return nil
+}
+
+func (h *fakeHerdr) SendKeys(name string, keys ...string) error { return nil }
+
+func (h *fakeHerdr) WaitStarted(ctx context.Context, name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.agent(name)
+	return a != nil && a.prompted
+}
+
+// ---- Reports -------------------------------------------------------------------------
+
+// fakeReporter turns reporting on with arguments; workers report nothing.
+type fakeReporter struct{}
+
+func (fakeReporter) ReportArgs(worktree string) ([]string, error) {
+	return []string{"--settings", filepath.Join(worktree, "hooks.json")}, nil
+}
+func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
+
+// ---- Sink ----------------------------------------------------------------------------
+
+// runSink records events and closes held on the first HOLD.
+type runSink struct {
+	mu     sync.Mutex
+	events []Event
+	gone   []string
+	held   chan struct{}
+	once   sync.Once
+}
+
+func (s *runSink) Event(ev Event) {
+	s.mu.Lock()
+	s.events = append(s.events, ev)
+	s.mu.Unlock()
+	if ev.Kind == EvHold {
+		s.once.Do(func() { close(s.held) })
+	}
+}
+
+func (s *runSink) Status(st Status) {
+	if st.Gone {
+		s.mu.Lock()
+		s.gone = append(s.gone, st.Ticket)
+		s.mu.Unlock()
+	}
+}
+
+// of returns "<ticket> <text>" for each event of kind k, in order.
+func (s *runSink) of(k Kind) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var l []string
+	for _, ev := range s.events {
+		if ev.Kind == k {
+			l = append(l, strings.TrimSpace(ev.Ticket+" "+ev.Text))
+		}
+	}
+	return l
+}
+
+func (s *runSink) text() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var b strings.Builder
+	for _, ev := range s.events {
+		b.WriteString(ev.Text + "\n")
+	}
+	return b.String()
+}

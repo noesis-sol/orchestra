@@ -432,7 +432,7 @@ func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
 	}
 	for _, c := range cases {
-		if got := keepWaiting(c.status, c.idle); got != c.wait {
+		if got := keepWaiting(c.status, c.idle, idleGrace); got != c.wait {
 			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
 		}
 	}
@@ -706,7 +706,7 @@ func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
 // blocks.
 func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
 	o, tk, sink := newDeferringLoop(t)
-	o.settleWait = 50 * time.Millisecond
+	o.wait.settle = 50 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	codes := make(chan int, 1)
@@ -781,7 +781,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 		t.Fatal(err)
 	}
 	a := &scriptedAgents{script: script}
-	return &Loop{log: log, sink: &recordSink{}, agents: a, tickets: readyTickets{}, poll: time.Millisecond}, a, logPath
+	return &Loop{log: log, sink: &recordSink{}, agents: a, tickets: readyTickets{}, wait: timing{poll: time.Millisecond}}, a, logPath
 }
 
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.

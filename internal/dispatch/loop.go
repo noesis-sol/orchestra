@@ -192,11 +192,7 @@ type Loop struct {
 	triageWake   chan struct{} // buffered 1: something was queued, or the queue closed
 	triageDone   chan struct{}
 
-	// settleWait bounds how long Run waits after Ctrl+C for its workers to return; 0 means
-	// SettleWait.
-	settleWait time.Duration
-	// poll is how often a worker's status is read while waiting on it; 0 means every 3 seconds.
-	poll time.Duration
+	wait timing // how long it waits on things; tests shorten it
 
 	// ReportInterrupt logs Ctrl+C from the loop itself; in the terminal UI the command does it (it
 	// knows which tabs were running).
@@ -298,12 +294,25 @@ func (o *Loop) interrupted() int {
 	return ExitInterrupted
 }
 
+// timing is how long the loop waits on things. A zero field means the default.
+type timing struct {
+	poll       time.Duration // between reads of a worker's status: 3 seconds
+	startRetry time.Duration // after a failed start, before looking for the agent: 3 seconds
+	blocked    time.Duration // a worker blocked for longer stops the run: blockedLimit
+	idleGrace  time.Duration // idleGrace
+	settle     time.Duration // SettleWait
+}
+
+func orDefault(d, def time.Duration) time.Duration {
+	if d == 0 {
+		return def
+	}
+	return d
+}
+
 // pollEvery is how often a worker's status is read while waiting on it.
 func (o *Loop) pollEvery() time.Duration {
-	if o.poll == 0 {
-		return 3 * time.Second
-	}
-	return o.poll
+	return orDefault(o.wait.poll, 3*time.Second)
 }
 
 // sleep waits for d, returning false if ctx is cancelled first.
@@ -409,11 +418,7 @@ const SettleWait = 10 * time.Second
 
 // settle waits for the workers in flight to return, or for SettleWait.
 func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
-	wait := o.settleWait
-	if wait == 0 {
-		wait = SettleWait
-	}
-	timeout := time.NewTimer(wait)
+	timeout := time.NewTimer(orDefault(o.wait.settle, SettleWait))
 	defer timeout.Stop()
 	for len(inflight) > 0 {
 		select {
@@ -694,7 +699,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 			}
 			continue
 		}
-		if !sleep(ctx, 3*time.Second) {
+		if !sleep(ctx, orDefault(o.wait.startRetry, 3*time.Second)) {
 			return errInterrupted
 		}
 		st, err := o.agents.Status(agent)
@@ -983,7 +988,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReas
 			if err != nil {
 				o.log.Raw("", err)
 			}
-			if !keepWaiting(ts, time.Since(idleSince)) {
+			if !keepWaiting(ts, time.Since(idleSince), orDefault(o.wait.idleGrace, idleGrace)) {
 				return nil
 			}
 		} else {
@@ -993,7 +998,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReas
 			if blockedSince.IsZero() {
 				blockedSince = time.Now()
 			}
-			if time.Since(blockedSince) > 4*time.Minute {
+			if time.Since(blockedSince) > orDefault(o.wait.blocked, blockedLimit) {
 				return halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
 			}
 		} else {
@@ -1004,6 +1009,9 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReas
 		}
 	}
 }
+
+// blockedLimit is how long a worker may stay blocked before the run stops for it.
+const blockedLimit = 4 * time.Minute
 
 // maxFailedReads is how many failed status reads in a row (a minute's worth) stop the wait on a
 // worker.
@@ -1037,8 +1045,8 @@ func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (string,
 // (typically it is waiting on its own background command) before the run pauses for it.
 const idleGrace = 10 * time.Minute
 
-func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
-	return ticketStatus == "in_progress" && idleFor < idleGrace
+func keepWaiting(ticketStatus string, idleFor, grace time.Duration) bool {
+	return ticketStatus == "in_progress" && idleFor < grace
 }
 
 // promptTaken confirms the worker started on its prompt. Given at launch, it counts as taken once
