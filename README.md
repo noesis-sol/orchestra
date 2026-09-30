@@ -52,10 +52,10 @@ Turn them off with `-triage=false` / `TRIAGE=0` and `-review=false` / `REVIEW=0`
 ## Install
 
 ```
-go install github.com/noesis-sol/orchestra@latest
+go install github.com/noesis-sol/orchestra/cmd/orchestra@latest
 ```
 
-That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra .` works too. `orchestra -version` shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd`, `herdr`, `git` and, for the organs, `claude`.
+That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra ./cmd/orchestra` works too. `orchestra -version` shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd`, `herdr`, `git` and, for the organs, `claude`.
 
 ## Set up a project
 
@@ -107,7 +107,7 @@ Start at 1, and raise it once the checks run cleanly side by side.
 
 ## Worker prompt
 
-Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. `orchestra init` writes it from [`prompts/worker-prompt.md`](prompts/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
+Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. `orchestra init` writes it from [`prompts/worker-prompt.md`](cmd/orchestra/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
 
 - **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
 - **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.

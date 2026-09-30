@@ -35,7 +35,7 @@ const (
 	runExcludeEntry = "/" + orchDir + "/" + runName + "/"
 )
 
-//go:embed prompts/worker-prompt.md
+//go:embed worker-prompt.md
 var promptTemplate string
 
 // layout is where a project's orchestra files are.
