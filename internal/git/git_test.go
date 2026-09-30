@@ -1,6 +1,10 @@
 package git
 
-import "testing"
+import (
+	"os/exec"
+	"strings"
+	"testing"
+)
 
 func TestParseWorktreeOf(t *testing.T) {
 	porcelain := "worktree /repo\nHEAD 111\nbranch refs/heads/main\n\n" +
@@ -19,5 +23,68 @@ func TestParseWorktreeOfSkipsPrunable(t *testing.T) {
 		"worktree /wt/gone\nHEAD 222\nbranch refs/heads/wt/gone\nprunable gitdir file points to non-existent location\n"
 	if got := parseWorktreeOf(porcelain, "wt/gone"); got != "" {
 		t.Errorf("a worktree whose folder is gone must not be reused, got %q", got)
+	}
+}
+
+func TestNamesIDMatchesOnlyTheWholeID(t *testing.T) {
+	for _, tc := range []struct {
+		msg  string
+		want bool
+	}{
+		{"x-12: Fix the loop", true},
+		{"Fix the loop (x-12).", true},
+		{"wt/x-12", true},
+		{"x-123: Fix the loop", false},
+		{"x-12.1: Fix the child", false},
+		{"x-12-a: Fix the follow-up", false},
+		{"ax-12: Fix another project", false},
+		{"x-12.1 and then x-12", true},
+		{"x.12: Fix", false},
+	} {
+		if got := namesID(tc.msg, "x-12"); got != tc.want {
+			t.Errorf("namesID(%q, x-12) = %v, want %v", tc.msg, got, tc.want)
+		}
+	}
+	if namesID("x-abc1: Fix", "x-abc.1") || !namesID("x-abc.1: Fix", "x-abc.1") {
+		t.Error("the . in a hierarchical ID must match only a .")
+	}
+}
+
+// commit makes an empty commit with message msg in repo.
+func commit(t *testing.T, repo, msg string) {
+	t.Helper()
+	if out, err := exec.Command("git", "-C", repo, "commit", "--quiet", "--allow-empty", "-m", msg).CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+}
+
+func TestCommitNamingIgnoresLongerIDs(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--quiet", "-b", "main"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	commit(t, repo, "Start")
+	if out, err := exec.Command("git", "-C", repo, "checkout", "--quiet", "-b", "wt/x-12").CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %v: %s", err, out)
+	}
+	commit(t, repo, "x-123: Fix a follow-up")
+	commit(t, repo, "x-12.1: Fix the child")
+	g := Git{}
+	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12"); got != "" {
+		t.Errorf("commits naming x-123 and x-12.1 must not count as naming x-12, got %q", got)
+	}
+	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12.1"); !strings.HasSuffix(got, " x-12.1: Fix the child") {
+		t.Errorf("got %q", got)
+	}
+	commit(t, repo, "x-12: Fix the loop\n\nAlso see x-123.")
+	commit(t, repo, "Tidy up after x-12.1")
+	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
+		t.Errorf("got %q, want the commit naming x-12", got)
 	}
 }

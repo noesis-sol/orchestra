@@ -71,12 +71,52 @@ func (g Git) CommitNaming(repo, base, branch, ticket string) string {
 // CommitNamingOn returns the latest commit reachable from rev (or in a range such as a..b) whose
 // message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
 func (Git) CommitNamingOn(repo, rev, ticket string) string {
-	out, _ := command.Output(repo, "git", "log", "--oneline", "-1", "--grep="+ticket, rev)
-	c := strings.TrimSpace(out)
-	if r := []rune(c); len(r) > 70 {
-		c = string(r[:70])
+	out, _ := command.Output(repo, "git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev)
+	return latestNaming(out, ticket)
+}
+
+// latestNaming picks, from 'git log --format=%h %s%x00%B%x1e' newest first, the first commit
+// whose message names ticket as a whole ID, as "<hash> <subject>" cut to 70 characters, or "".
+func latestNaming(log, ticket string) string {
+	for _, record := range strings.Split(log, "\x1e") {
+		line, body, _ := strings.Cut(strings.TrimLeft(record, "\n"), "\x00")
+		if !namesID(body, ticket) {
+			continue
+		}
+		if r := []rune(line); len(r) > 70 {
+			line = string(r[:70])
+		}
+		return line
 	}
-	return c
+	return ""
+}
+
+// namesID reports whether msg names id as a whole ID: not inside a longer one such as id3, xid,
+// id-x or the child id.1.
+func namesID(msg, id string) bool {
+	if id == "" {
+		return false
+	}
+	for i := 0; ; {
+		j := strings.Index(msg[i:], id)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(id)
+		before := start == 0 || !isIDChar(msg[start-1]) && msg[start-1] != '-' && msg[start-1] != '.'
+		after := end == len(msg) || !isIDChar(msg[end]) &&
+			!((msg[end] == '-' || msg[end] == '.') && end+1 < len(msg) && isIDChar(msg[end+1]))
+		if before && after {
+			return true
+		}
+		i = start + 1
+	}
+}
+
+// isIDChar reports whether c is a letter, digit or underscore, the characters an ID's parts are
+// made of.
+func isIDChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
 
 // IsAncestor reports whether ancestor is an ancestor of rev (or the same commit).
