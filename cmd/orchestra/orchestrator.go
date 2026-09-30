@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 )
@@ -295,7 +296,7 @@ func (o *Orch) Run(ctx context.Context) int {
 			inflight[t.ID] = true
 			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued,
 				Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
-			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
+			go func(t beads.Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
 		}
 		if len(inflight) == 0 {
 			break
@@ -330,7 +331,7 @@ func (o *Orch) Run(ctx context.Context) int {
 // next returns the highest-priority ready ticket not already running, with how many others are
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; the check waits for any merge in progress.
-func (o *Orch) next(running map[string]bool) (*Ticket, int, *stopReason) {
+func (o *Orch) next(running map[string]bool) (*beads.Ticket, int, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	dirty, branch := git.DirtyTree(c.Repo), git.CurrentBranch(c.Repo)
@@ -341,7 +342,7 @@ func (o *Orch) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	if branch != c.Base {
 		return nil, 0, halt(exitDirty, "DIRTY_TREE: %s is no longer on %s; stopping. Check it out again to continue.", c.Repo, c.Base)
 	}
-	ready, err := readyTickets(c.Repo)
+	ready, err := beads.Ready(c.Repo)
 	if err != nil {
 		return nil, 0, halt(exitTool, "READY_UNREADABLE: could not parse 'bd ready --json'")
 	}
@@ -351,8 +352,8 @@ func (o *Orch) next(running map[string]bool) (*Ticket, int, *stopReason) {
 
 // pickNext returns the first ticket (ready is in priority order) that isn't running, and how many
 // other ready tickets aren't running.
-func pickNext(ready []Ticket, running map[string]bool) (*Ticket, int) {
-	var free []Ticket
+func pickNext(ready []beads.Ticket, running map[string]bool) (*beads.Ticket, int) {
+	var free []beads.Ticket
 	for _, t := range ready {
 		if !running[t.ID] {
 			free = append(free, t)
@@ -366,7 +367,7 @@ func pickNext(ready []Ticket, running map[string]bool) (*Ticket, int) {
 
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
 // ticket then stays listed as active (still being worked on).
-func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
+func (o *Orch) work(ctx context.Context, t beads.Ticket) (stop *stopReason) {
 	c := o.cfg
 	id, br := t.ID, "wt/"+t.ID
 	defer func() {
@@ -481,8 +482,8 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
-		deferTicket(c.Repo, id, "the worker never started on its prompt")
+		beads.AppendNotes(c.Repo, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
+		beads.Defer(c.Repo, id, "the worker never started on its prompt")
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
 			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open", id, wt, tab)})
@@ -505,7 +506,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 			if idleSince.IsZero() {
 				idleSince = time.Now()
 			}
-			if !keepWaiting(ticketStatus(c.Repo, id), time.Since(idleSince)) {
+			if !keepWaiting(beads.Status(c.Repo, id), time.Since(idleSince)) {
 				break
 			}
 		} else {
@@ -529,8 +530,8 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
 	// question is out of the queue until the maintainer answers; the run goes on without it.
-	info := ticketInfo(c.Repo, id)
-	if q := openQuestion(info); q != nil && info.Status != "closed" {
+	info := beads.Show(c.Repo, id)
+	if q := beads.OpenQuestion(info); q != nil && info.Status != "closed" {
 		if info.Status != "open" {
 			command.Output(c.Repo, "bd", "update", id, "--status", "open") // back in the queue once answered
 		}
@@ -564,13 +565,13 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		o.queueTriage(o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
+		beads.AppendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
 		return halt(exitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
 		return halt(exitTool, "STATUS_UNREADABLE for %s; stopping rather than guessing (worktree %s and tab %s left open)", id, wt, tab)
 	case outcomeUnfinished:
-		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
-		deferTicket(c.Repo, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
+		beads.AppendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
+		beads.Defer(c.Repo, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
@@ -711,7 +712,7 @@ func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
 // it is delivered by pasting.
 func (o *Orch) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if agentWaitStarted(ctx, id) || ticketStatus(o.cfg.Repo, id) != "open" || lastActivity(agentScreen(id)) != "" {
+		if agentWaitStarted(ctx, id) || beads.Status(o.cfg.Repo, id) != "open" || lastActivity(agentScreen(id)) != "" {
 			return true
 		}
 		if ctx.Err() != nil {

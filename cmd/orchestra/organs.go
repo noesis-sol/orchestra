@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
@@ -205,7 +206,7 @@ func (o *Orch) triage(d deferral) {
 		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
 		return
 	}
-	appendNotes(o.cfg.Repo, d.ID, t.note())
+	beads.AppendNotes(o.cfg.Repo, d.ID, t.note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
 }
@@ -243,7 +244,7 @@ func (o *Orch) reviewInput(code int, final string) string {
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(agentScreen(st.Ticket), 60))
 	}
-	ready, _ := readyTickets(c.Repo)
+	ready, _ := beads.Ready(c.Repo)
 	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
 		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, exitMeaning(code), final) +
 		section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
