@@ -122,6 +122,7 @@ const (
 type Step struct {
 	Kind          StepKind
 	Label, Detail string
+	Template      bool // the worker prompt was written from the template, for the project to adjust
 }
 
 // Choice is what init sets up: the check command and the default number of tickets at once.
@@ -130,16 +131,21 @@ type Choice struct {
 	Concurrent int
 	CheckFrom  string // where the check command came from, for the summary
 	Unasked    bool   // concurrent fell back to 1 without asking
+	Replaced   int    // the out-of-range concurrency in settings that init replaced, or 0
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
-// prompt when the settings have none.
+// prompt when the settings have none. A concurrency outside 1 to MaxConcurrency, which every run
+// would reject, is replaced by 1.
 func DefaultChoice(s Settings, prompt string) Choice {
 	c := Choice{Check: s.Check, Concurrent: s.Concurrency, CheckFrom: "settings"}
 	if c.Check == "" {
 		if c.Check = DetectCheck(prompt); c.Check != "" {
 			c.CheckFrom = "found in the worker prompt"
 		}
+	}
+	if c.Concurrent < 0 || c.Concurrent > MaxConcurrency {
+		c.Replaced, c.Concurrent = c.Concurrent, 0
 	}
 	if c.Concurrent == 0 {
 		c.Concurrent, c.Unasked = 1, true
@@ -175,17 +181,17 @@ func Init(repo, check string, force bool) ([]Step, error) {
 	rel := Dir + "/" + promptName
 	switch {
 	case fileExists(prompt) && !force:
-		done = append(done, Step{StepKept, "worker prompt", rel + " is there; left as it is (--force replaces it with the template)"})
+		done = append(done, Step{Kind: StepKept, Label: "worker prompt", Detail: rel + " is there; left as it is (--force replaces it with the template)"})
 	case !fileExists(prompt) && fileExists(legacy) && !force:
 		if err := movePrompt(repo, legacy, prompt); err != nil {
 			return done, err
 		}
-		done = append(done, Step{StepDone, "worker prompt", "moved " + legacyPrompt + " to " + rel})
+		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "moved " + legacyPrompt + " to " + rel})
 	default:
 		if err := os.WriteFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{StepDone, "worker prompt", "wrote " + rel + " from the template"})
+		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "wrote " + rel + " from the template", Template: true})
 	}
 
 	gi := filepath.Join(dir, ".gitignore")
@@ -193,15 +199,15 @@ func Init(repo, check string, force bool) ([]Step, error) {
 		if err := os.WriteFile(gi, []byte(orchGitignore), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{StepDone, ".gitignore", "the log, reports and per-ticket files stay out of git"})
+		done = append(done, Step{Kind: StepDone, Label: ".gitignore", Detail: "the log, reports and per-ticket files stay out of git"})
 	} else {
-		done = append(done, Step{StepKept, ".gitignore", Dir + "/.gitignore is there"})
+		done = append(done, Step{Kind: StepKept, Label: ".gitignore", Detail: Dir + "/.gitignore is there"})
 	}
 	if err := EnsureRunExcluded(repo); err != nil {
 		return done, err
 	}
 	if fileExists(filepath.Join(repo, legacyLog)) || fileExists(filepath.Join(repo, legacyReports)) {
-		done = append(done, Step{StepKept, "history", "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
+		done = append(done, Step{Kind: StepKept, Label: "history", Detail: "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
 	}
 	return done, nil
 }
@@ -214,6 +220,9 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 		return Step{}, err
 	}
 	detail := fmt.Sprintf("%d at the same time", c.Concurrent)
+	if c.Replaced != 0 {
+		detail += fmt.Sprintf(" (settings had %d, outside 1 to %d)", c.Replaced, MaxConcurrency)
+	}
 	if c.Unasked {
 		detail += " (not asked: no terminal; --concurrent sets it)"
 	}
@@ -226,13 +235,13 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 		detail += " · no check command: a rebased ticket merges unchecked (--check sets one)"
 	}
 	kind := StepDone
-	if c.Concurrent > 1 || c.Check == "" {
+	if c.Concurrent > 1 || c.Check == "" || c.Replaced != 0 {
 		kind = StepCaution
 	}
 	if c.Concurrent > 1 {
 		detail += fmt.Sprintf(" · with %d at once, the checks must cope with running side by side", c.Concurrent)
 	}
-	return Step{kind, "settings", detail}, nil
+	return Step{Kind: kind, Label: "settings", Detail: detail}, nil
 }
 
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
@@ -262,9 +271,9 @@ func Prerequisites(repo string) []Step {
 	var steps []Step
 	mark := func(ok bool, what, fix string) {
 		if ok {
-			steps = append(steps, Step{StepDone, what, ""})
+			steps = append(steps, Step{Kind: StepDone, Label: what})
 		} else {
-			steps = append(steps, Step{StepMissing, what, fix})
+			steps = append(steps, Step{Kind: StepMissing, Label: what, Detail: fix})
 		}
 	}
 	has := func(cmd string) bool { _, err := exec.LookPath(cmd); return err == nil }
@@ -288,7 +297,7 @@ func NextSteps(repo string, steps []Step, pre []Step) []string {
 	switch {
 	case strings.Contains(string(prompt), "<check command>") || strings.Contains(string(prompt), "<What it runs"):
 		next = append(next, "Fill in the <…> placeholders in "+Dir+"/"+promptName+".")
-	case len(steps) > 0 && strings.HasPrefix(steps[0].Detail, "wrote"):
+	case wroteTemplate(steps):
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
 	}
 	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
@@ -296,6 +305,15 @@ func NextSteps(repo string, steps []Step, pre []Step) []string {
 	}
 	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
 	return next
+}
+
+func wroteTemplate(steps []Step) bool {
+	for _, s := range steps {
+		if s.Template {
+			return true
+		}
+	}
+	return false
 }
 
 // WriteLaunchPrompt puts the worker prompt in the worktree at .orchestra/run/prompt.md, which

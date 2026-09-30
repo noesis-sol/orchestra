@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -52,13 +53,43 @@ func LoadSettings(repo string) (s Settings, ok bool, err error) {
 	return s, true, nil
 }
 
-// SaveSettings writes the project's settings.json.
+// SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know.
 func SaveSettings(repo string, s Settings) error {
-	b, err := json.MarshalIndent(s, "", "  ")
+	merged := map[string]json.RawMessage{}
+	b, err := os.ReadFile(SettingsPath(repo))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		if err := json.Unmarshal(b, &merged); err != nil {
+			return fmt.Errorf("%s: %w", SettingsPath(repo), err)
+		}
+	}
+	for _, k := range settingsKeys() {
+		delete(merged, k) // an empty omitempty field clears the key
+	}
+	b, err = json.Marshal(s)
 	if err != nil {
 		return err
 	}
+	if err := json.Unmarshal(b, &merged); err != nil {
+		return err
+	}
+	if b, err = json.MarshalIndent(merged, "", "  "); err != nil {
+		return err
+	}
 	return os.WriteFile(SettingsPath(repo), append(b, '\n'), 0o644)
+}
+
+// settingsKeys are the JSON keys of Settings' fields.
+func settingsKeys() []string {
+	t := reflect.TypeFor[Settings]()
+	var keys []string
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		keys = append(keys, name)
+	}
+	return keys
 }
 
 // ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT), else the

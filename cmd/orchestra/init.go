@@ -62,7 +62,7 @@ func runInit(dir string, args []string) int {
 	promptText, _ := os.ReadFile(project.Locate(repo).Prompt)
 	choice := project.DefaultChoice(existing, string(promptText))
 	if checkGiven {
-		choice.Check, choice.CheckFrom = *check, "--check"
+		choice.Check, choice.CheckFrom = strings.TrimSpace(*check), "--check"
 	}
 	if concurrentGiven {
 		choice.Concurrent, choice.Unasked = concurrent, false

@@ -216,6 +216,19 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	if c.Check != "make check" || c.Concurrent != 3 || c.Unasked {
 		t.Errorf("settings win: %+v", c)
 	}
+	// A concurrency every run would reject is replaced, and the summary says so.
+	for _, n := range []int{-1, MaxConcurrency + 4} {
+		c = DefaultChoice(Settings{Check: "make check", Concurrency: n}, "")
+		if c.Concurrent != 1 || !c.Unasked || c.Replaced != n {
+			t.Errorf("concurrent %d: %+v", n, c)
+		}
+	}
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	st, _ := ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 20}, ""))
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
+		t.Errorf("replaced concurrency: %+v", st)
+	}
 }
 
 func TestApplySettingsSavesAndExplains(t *testing.T) {
@@ -252,6 +265,26 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	}
 }
 
+func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	os.WriteFile(SettingsPath(repo), []byte(`{"check": "make check", "ticket_limit": "2h", "future": {"a": [1, 2]}}`), 0o644)
+	if err := SaveSettings(repo, Settings{Concurrency: 2}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(SettingsPath(repo))
+	var m map[string]any
+	json.Unmarshal(raw, &m)
+	if len(m) != 2 || m["concurrent"] != float64(2) || m["future"] == nil {
+		t.Errorf("known keys follow Settings, unknown ones stay: %s", raw)
+	}
+	// Broken JSON is not overwritten.
+	os.WriteFile(SettingsPath(repo), []byte(`{"concurrent": `), 0o644)
+	if err := SaveSettings(repo, Settings{Concurrency: 2}); err == nil {
+		t.Error("saved over a settings.json it could not read")
+	}
+}
+
 func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	repo, git := gitRepo(t)
 	steps, _ := Init(repo, "make check", false)
@@ -262,6 +295,9 @@ func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	}
 	if strings.Contains(joined, "placeholders") {
 		t.Errorf("--check filled the placeholders: %q", next)
+	}
+	if !strings.Contains(joined, "Read .orchestra/worker-prompt.md") {
+		t.Errorf("a prompt written from the template is to be read: %q", next)
 	}
 	git(repo, "add", ".orchestra")
 	git(repo, "commit", "-q", "-m", "setup")

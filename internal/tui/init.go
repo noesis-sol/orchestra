@@ -87,15 +87,17 @@ func (u InitScreen) Steps(steps []project.Step) {
 func (u InitScreen) Prerequisites(pre []project.Step) {
 	var marks []string
 	var missing []project.Step
+	lead := closedStyle.Render("✓")
 	for _, p := range pre {
 		if p.Kind == project.StepMissing {
 			marks = append(marks, stopStyle.Render("✗ "+p.Label))
 			missing = append(missing, p)
+			lead = stopStyle.Render("✗")
 		} else {
 			marks = append(marks, closedStyle.Render("✓ ")+p.Label)
 		}
 	}
-	fmt.Fprintf(u.out, "  %s %s%s\n", closedStyle.Render("✓"), initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
+	fmt.Fprintf(u.out, "  %s %s%s\n", lead, initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
 	for _, p := range missing {
 		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", 19), stopStyle.Render(p.Label+": "+p.Detail))
 	}
@@ -140,7 +142,7 @@ func concurrencyOptions(current int) []huh.Option[int] {
 		8: "a big machine, and tickets that rarely touch the same files",
 	}
 	values := []int{1, 2, 3, 4, 6, 8}
-	if _, ok := notes[current]; !ok && current > 0 {
+	if _, ok := notes[current]; !ok && current > 0 && current <= project.MaxConcurrency {
 		values = append(values, current)
 		notes[current] = "the current setting"
 	}
