@@ -93,6 +93,10 @@ going that long after dispatch; `0` for none, overriding `settings.json`), `--ch
 `ORCHESTRA_CHECK_TIMEOUT` (the check's time limit, overriding `settings.json`). `orchestra -h` lists
 them all.
 
+With several at once, a ticket labelled `solo` runs with no other beside it. Suggest the label
+(`bd label add <id> solo`) for a ticket that restructures code most tickets touch, such as splitting
+a shared file: run next to other work, it guarantees merge conflicts.
+
 ## While it runs
 
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and
@@ -147,6 +151,9 @@ Lines about single tickets, which don't stop the run:
   when a run starts and finds it merged by hand. If the ticket needs no merge after all, remove it:
   `bd label remove <id> unmerged`.
 - `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
+- `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
+  ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
+  it does. Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
 - `LONG_RUNNING`: a worker is still going after 2 hours and no ticket limit is set; the run keeps
   waiting. Look at its tab for a hung command.

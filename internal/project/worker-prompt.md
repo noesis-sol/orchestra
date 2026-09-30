@@ -10,6 +10,8 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - Commit only the files you changed for this ticket, with the ticket ID in the message. Never push.
 - File anything new you discover with `bd create`, linked to TICKET_ID. Keep every ticket title
   short, at most 60 characters: a plain summary of the change. Details go in the description.
+  Give a follow-up that restructures code most tickets touch (splitting or moving a shared file)
+  `--labels solo`, so it runs with no other ticket beside it.
 
 ## Close
 - Close the ticket only when a full `<check command>` run passes after your last change.

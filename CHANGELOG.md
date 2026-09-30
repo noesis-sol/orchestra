@@ -8,6 +8,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Tickets labelled `solo` run alone, for work that restructures code every
+  other ticket touches (splitting a shared file, say) and would conflict with
+  anything beside it. One starts only when no other ticket is running, and
+  nothing new starts while it runs (logged once: `waiting for solo ticket <id>
+  to finish`). One next in priority while others run holds back new starts
+  behind it, so it isn't starved, and starts as soon as they finish (`solo
+  ticket <id> is next: …`). Its dispatch line says `dispatching solo`, and the
+  dashboard's title line shows `solo <id> next` or `solo <id> running`. With
+  one ticket at a time nothing changes. The worker prompt asks for the label on
+  a follow-up that restructures shared code.
 - `"check_timeout"` in `.orchestra/settings.json`: how long the check command
   may run on a rebased ticket, such as `"5m"` or `"45m"` (default 30 minutes,
   which was fixed before). The merge queue waits on the check, so a hung one

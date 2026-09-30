@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -816,5 +818,183 @@ func TestInterruptLineNamesTheWorkersLeftRunning(t *testing.T) {
 	got := InterruptLine("by SIGTERM", []Status{{Ticket: "a-1", Tab: "w1:2"}, {Ticket: "a-2", Tab: "w1:3"}})
 	if got != "INTERRUPTED: stopped by SIGTERM while a-1 (tab w1:2), a-2 (tab w1:3) were running; their tabs and worktrees are left open" {
 		t.Errorf("two workers: %q", got)
+	}
+}
+
+// overlap records which workers run at once.
+type overlap struct {
+	mu      sync.Mutex
+	running map[string]bool
+	beside  map[string][]string // each ticket, with the ones found running when it started
+}
+
+// runs wraps b to record id's worker as running while it works.
+func (v *overlap) runs(id string, b behaviour) behaviour {
+	return func(w *fakeWorker) string {
+		v.mu.Lock()
+		if v.running == nil {
+			v.running, v.beside = map[string]bool{}, map[string][]string{}
+		}
+		for other := range v.running {
+			v.beside[id] = append(v.beside[id], other)
+			v.beside[other] = append(v.beside[other], id)
+		}
+		v.running[id] = true
+		v.mu.Unlock()
+		defer func() {
+			v.mu.Lock()
+			delete(v.running, id)
+			v.mu.Unlock()
+		}()
+		return b(w)
+	}
+}
+
+func (v *overlap) of(id string) []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.beside[id]
+}
+
+// dispatched returns the tickets dispatched, in order.
+func (s *runSink) dispatched() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var l []string
+	for _, ev := range s.events {
+		if ev.Kind == EvDispatch {
+			l = append(l, ev.Ticket)
+		}
+	}
+	return l
+}
+
+// soloStates returns the solo states the loop reported to the dashboard, in order, leaving out
+// repeats.
+func (s *runSink) soloStates() []SoloState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var l []SoloState
+	for _, ev := range s.events {
+		if (ev.Kind == EvDispatch || ev.Kind == EvQueue) && (len(l) == 0 || l[len(l)-1] != ev.Solo) {
+			l = append(l, ev.Solo)
+		}
+	}
+	return l
+}
+
+// A solo ticket runs alone: with free slots and tickets ready, nothing starts beside it, and the
+// wait is logged once.
+func TestSoloTicketNeverRunsAlongsideAnother(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.Concurrency = 3
+	h.beads.add("S", "split the loop", 1, SoloLabel)
+	h.beads.add("A", "first", 2)
+	h.beads.add("B", "second", 3)
+	var v overlap
+	h.worker("S", v.runs("S", func(w *fakeWorker) string {
+		eventually(t, "the loop never said A and B wait for S", func() bool {
+			return strings.Contains(h.sink.text(), "waiting for solo ticket S to finish")
+		})
+		time.Sleep(20 * time.Millisecond) // a few more polls
+		return finishes("s.txt")(w)
+	}))
+	h.worker("A", v.runs("A", finishes("a.txt")))
+	h.worker("B", v.runs("B", finishes("b.txt")))
+	o := h.loop()
+	o.wait.ready = 5 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := v.of("S"); len(got) != 0 {
+		t.Errorf("S ran beside %v", got)
+	}
+	if got := h.sink.dispatched(); !equal(got, []string{"S", "A", "B"}) {
+		t.Errorf("dispatched %v", got)
+	}
+	if n := strings.Count(h.logged(), "waiting for solo ticket S to finish"); n != 1 {
+		t.Errorf("the wait was logged %d times, want once:\n%s", n, h.logged())
+	}
+	if d := h.sink.of(EvDispatch); len(d) == 0 || d[0] != "S [1/10] S dispatching solo: split the loop" {
+		t.Errorf("dispatches:\n%s", strings.Join(d, "\n"))
+	}
+	if got, want := h.sink.soloStates(), []SoloState{{Ticket: "S"}, {}}; !slices.Equal(got, want) {
+		t.Errorf("solo states %v, want %v", got, want)
+	}
+}
+
+// A solo ticket next in priority while others run holds back the tickets behind it, and starts
+// once the running ones finish.
+func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.Concurrency = 3
+	h.beads.add("A", "first", 1)
+	h.beads.add("S", "split the loop", 2, SoloLabel)
+	h.beads.add("B", "second", 3)
+	var v overlap
+	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+		eventually(t, "the loop never said S is next", func() bool {
+			return strings.Contains(h.sink.text(), "solo ticket S is next")
+		})
+		time.Sleep(20 * time.Millisecond) // a few more polls
+		return finishes("a.txt")(w)
+	}))
+	h.worker("S", v.runs("S", finishes("s.txt")))
+	h.worker("B", v.runs("B", finishes("b.txt")))
+	o := h.loop()
+	o.wait.ready = 5 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	for _, id := range []string{"A", "S", "B"} {
+		if got := v.of(id); len(got) != 0 {
+			t.Errorf("%s ran beside %v", id, got)
+		}
+	}
+	if got := h.sink.dispatched(); !equal(got, []string{"A", "S", "B"}) {
+		t.Errorf("dispatched %v", got)
+	}
+	if n := strings.Count(h.logged(), "solo ticket S is next: no new tickets start until the running ones finish"); n != 1 {
+		t.Errorf("the hold was logged %d times, want once:\n%s", n, h.logged())
+	}
+	if got, want := h.sink.soloStates(), []SoloState{{}, {Ticket: "S", Next: true}, {Ticket: "S"}, {}}; !slices.Equal(got, want) {
+		t.Errorf("solo states %v, want %v", got, want)
+	}
+}
+
+// With one worker at a time a solo label changes nothing: tickets run in priority order, and
+// nothing is said about waiting.
+func TestSoloTicketWithOneWorkerChangesNothing(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.beads.add("S", "split the loop", 2, SoloLabel)
+	h.beads.add("B", "second", 3)
+	h.worker("A", func(w *fakeWorker) string {
+		time.Sleep(20 * time.Millisecond) // a few polls with S next
+		return finishes("a.txt")(w)
+	})
+	h.worker("S", func(w *fakeWorker) string {
+		time.Sleep(20 * time.Millisecond) // a few polls with S running
+		return finishes("s.txt")(w)
+	})
+	h.worker("B", finishes("b.txt"))
+	o := h.loop()
+	o.wait.ready = 5 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.dispatched(); !equal(got, []string{"A", "S", "B"}) {
+		t.Errorf("dispatched %v", got)
+	}
+	if log := h.logged(); strings.Contains(log, "waiting for solo") || strings.Contains(log, "is next") {
+		t.Errorf("a solo wait was logged with one worker:\n%s", log)
+	}
+	for _, s := range h.sink.soloStates() {
+		if s.Next {
+			t.Errorf("the dashboard was told a solo ticket waits: %v", h.sink.soloStates())
+		}
 	}
 }

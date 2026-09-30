@@ -47,3 +47,7 @@ func OpenQuestion(t Ticket) *Ticket {
 // runs still hold the tickets it blocks: bd ready counts a closed blocker as done. The loop removes
 // it once the ticket merges.
 const UnmergedLabel = "unmerged"
+
+// SoloLabel marks a ticket that runs alone, as one restructuring code every other ticket touches
+// does: it starts only once nothing else runs, and nothing else starts while it runs.
+const SoloLabel = "solo"

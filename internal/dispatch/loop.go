@@ -52,10 +52,18 @@ type Event struct {
 	N      int
 	Limit  int
 	Ticket string
-	Title  string // EvDispatch only
-	Queued int    // EvDispatch and EvQueue: ready tickets waiting for a slot
-	Detail string // short suffix for EvClosed / EvDeferred
-	Text   string // the full line written to the log file
+	Title  string    // EvDispatch only
+	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
+	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
+	Detail string    // short suffix for EvClosed / EvDeferred
+	Text   string    // the full line written to the log file
+}
+
+// SoloState is the ticket labelled SoloLabel that runs alone, or, with Next, the one next in line
+// that waits for the running tickets to finish. The zero value is none.
+type SoloState struct {
+	Ticket string
+	Next   bool
 }
 
 // Status describes a ticket being worked on. Gone removes it from the display.
@@ -163,6 +171,13 @@ type Loop struct {
 	prompt string     // worker prompt with the TICKET_ID placeholder
 	count  int
 	queued int // the queue size last reported, -1 before the first; Run's own
+
+	// Tickets labelled SoloLabel, Run's own: the one running, the one next in line waiting for the
+	// running tickets to finish, the state last reported and the wait last logged.
+	solo      string
+	soloNext  string
+	soloShown SoloState
+	soloSaid  string
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -420,14 +435,18 @@ func (o *Loop) Run(ctx context.Context) int {
 				break
 			}
 			if t == nil {
-				o.reportQueue(0)
-				break // nothing ready that isn't already running
+				o.reportQueue(queued)
+				break // nothing ready that isn't already running, or it waits for a solo ticket
 			}
 			o.count++
 			inflight[t.ID] = true
-			o.queued = queued
-			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued,
-				Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
+			how := "dispatching"
+			if HasLabel(*t, SoloLabel) {
+				o.solo, how = t.ID, "dispatching solo"
+			}
+			o.queued, o.soloShown = queued, o.soloState()
+			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued, Solo: o.soloShown,
+				Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
 			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
 		}
 		if len(inflight) == 0 {
@@ -436,6 +455,9 @@ func (o *Loop) Run(ctx context.Context) int {
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
+			if r.id == o.solo {
+				o.solo = ""
+			}
 			if r.stop == nil || r.stop == errInterrupted {
 				continue
 			}
@@ -566,17 +588,30 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	return t, queued, nil
 }
 
-// reportQueue tells the dashboard how many ready tickets wait for a slot, when that has changed.
+// reportQueue tells the dashboard how many ready tickets wait for a slot, and which solo ticket
+// runs or is next, when that has changed.
 func (o *Loop) reportQueue(n int) {
-	if n == o.queued {
+	solo := o.soloState()
+	if n == o.queued && solo == o.soloShown {
 		return
 	}
-	o.queued = n
-	o.emit(Event{Kind: EvQueue, Queued: n})
+	o.queued, o.soloShown = n, solo
+	o.emit(Event{Kind: EvQueue, Queued: n, Solo: solo})
+}
+
+// soloState is the solo ticket running, or else the one next in line.
+func (o *Loop) soloState() SoloState {
+	switch {
+	case o.solo != "":
+		return SoloState{Ticket: o.solo}
+	case o.soloNext != "":
+		return SoloState{Ticket: o.soloNext, Next: true}
+	}
+	return SoloState{}
 }
 
 // pick reads bd ready and returns the highest-priority ticket that can start, with how many others
-// could.
+// could; with none, how many wait for a solo ticket. It says once why they wait.
 func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	ready, err := o.tickets.Ready()
 	if err != nil {
@@ -593,7 +628,25 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	for id := range running {
 		skip[id] = true
 	}
-	t, queued := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) })
+	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) }, len(running), o.solo)
+	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
+	// with one worker) the tickets wait for a slot as they would anyway.
+	slot := len(running) < o.cfg.Concurrency
+	if !slot {
+		next = ""
+	}
+	o.soloNext = next
+	why := ""
+	switch {
+	case slot && t == nil && queued > 0 && o.solo != "":
+		why = fmt.Sprintf("waiting for solo ticket %s to finish", o.solo)
+	case next != "":
+		why = fmt.Sprintf("solo ticket %s is next: no new tickets start until the running ones finish, then it runs alone", next)
+	}
+	if why != "" && why != o.soloSaid {
+		o.info("  %s", why)
+	}
+	o.soloSaid = why
 	return t, queued, nil
 }
 
@@ -612,18 +665,26 @@ func (o *Loop) checkoutUnready(held string) *stopReason {
 }
 
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
-// how many other ready tickets aren't either.
-func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool) (*Ticket, int) {
+// how many other ready tickets aren't either. A ticket labelled SoloLabel runs alone: while solo
+// (the one running, or "") runs nothing starts, and one first in line starts only once none of
+// the running tickets are left, holding back the tickets behind it until then so it isn't
+// starved; next names it. With no ticket to start, queued is how many wait.
+func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string) (t *Ticket, queued int, next string) {
 	var free []Ticket
 	for _, t := range ready {
 		if !skip[t.ID] && !held(t) {
 			free = append(free, t)
 		}
 	}
-	if len(free) == 0 {
-		return nil, 0
+	switch {
+	case len(free) == 0:
+		return nil, 0, ""
+	case solo != "":
+		return nil, len(free), ""
+	case HasLabel(free[0], SoloLabel) && running > 0:
+		return nil, len(free), free[0].ID
 	}
-	return &free[0], len(free) - 1
+	return &free[0], len(free) - 1, ""
 }
 
 // held reports whether a ready ticket must wait for a ticket blocking it, saying why once. Workers

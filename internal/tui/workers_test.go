@@ -92,3 +92,25 @@ func TestTriageLineIsPurpleDiamondWithCause(t *testing.T) {
 		t.Errorf("line = %q", line)
 	}
 }
+
+// The title line says which solo ticket runs alone, or waits to, and forgets it once it is done.
+func TestDashboardShowsTheSoloTicket(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
+	m.width, m.height = 120, 30
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-a", Title: "A ticket"},
+		dispatch.Event{Kind: dispatch.EvQueue, Queued: 2, Solo: dispatch.SoloState{Ticket: "k-s", Next: true}})
+	if v := ansi.Strip(m.titleLine(m.width)); !strings.Contains(v, "solo k-s next") {
+		t.Errorf("title line %q should say k-s waits to run alone", v)
+	}
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-s", Title: "Split", Queued: 1, Solo: dispatch.SoloState{Ticket: "k-s"}})
+	if v := ansi.Strip(m.titleLine(m.width)); !strings.Contains(v, "solo k-s running") {
+		t.Errorf("title line %q should say k-s runs alone", v)
+	}
+	if line := ansi.Strip(renderEvent(dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Limit: 40, Ticket: "k-s", Title: "Split", Solo: dispatch.SoloState{Ticket: "k-s"}})); !strings.Contains(line, "k-s solo  Split") {
+		t.Errorf("dispatch line %q should mark k-s solo", line)
+	}
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 1})
+	if v := ansi.Strip(m.titleLine(m.width)); strings.Contains(v, "solo") {
+		t.Errorf("title line %q should drop the solo ticket once it is done", v)
+	}
+}

@@ -278,15 +278,42 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
 	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
 	none := func(Ticket) bool { return false }
-	if tk, q := pickNext(ready, map[string]bool{"a": true}, none); tk == nil || tk.ID != "b" || q != 2 {
+	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, none, 1, ""); tk == nil || tk.ID != "b" || q != 2 {
 		t.Errorf("got %v, %d", tk, q)
 	}
-	if tk, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true, "d": true}, none); tk != nil {
+	if tk, _, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true, "d": true}, none, 4, ""); tk != nil {
 		t.Errorf("everything is running, got %v", tk)
 	}
 	heldB := func(t Ticket) bool { return t.ID == "b" }
-	if tk, q := pickNext(ready, map[string]bool{"a": true}, heldB); tk == nil || tk.ID != "c" || q != 1 {
+	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, heldB, 1, ""); tk == nil || tk.ID != "c" || q != 1 {
 		t.Errorf("b is held, got %v, %d", tk, q)
+	}
+}
+
+// A solo ticket runs alone: nothing starts beside it, and one first in line holds back the tickets
+// behind it until nothing runs.
+func TestPickNextRunsASoloTicketAlone(t *testing.T) {
+	solo := []string{SoloLabel}
+	none := func(Ticket) bool { return false }
+	ready := []Ticket{{ID: "a"}, {ID: "b"}}
+	if tk, q, next := pickNext(ready, map[string]bool{"s": true}, none, 1, "s"); tk != nil || q != 2 || next != "" {
+		t.Errorf("s runs solo, got %v, %d, %q", tk, q, next)
+	}
+	ready = []Ticket{{ID: "s", Labels: solo}, {ID: "a"}, {ID: "b"}}
+	if tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, ""); tk != nil || q != 3 || next != "s" {
+		t.Errorf("s is next and r runs, got %v, %d, %q", tk, q, next)
+	}
+	if tk, q, next := pickNext(ready, nil, none, 0, ""); tk == nil || tk.ID != "s" || q != 2 || next != "" {
+		t.Errorf("nothing runs, got %v, %d, %q", tk, q, next)
+	}
+	ready = []Ticket{{ID: "a"}, {ID: "s", Labels: solo}}
+	if tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, ""); tk == nil || tk.ID != "a" || q != 1 || next != "" {
+		t.Errorf("a comes before s, got %v, %d, %q", tk, q, next)
+	}
+	heldS := func(t Ticket) bool { return t.ID == "s" }
+	ready = []Ticket{{ID: "s", Labels: solo}, {ID: "a"}}
+	if tk, _, next := pickNext(ready, map[string]bool{"r": true}, heldS, 1, ""); tk == nil || tk.ID != "a" || next != "" {
+		t.Errorf("a held s holds nothing back, got %v, %q", tk, next)
 	}
 }
 

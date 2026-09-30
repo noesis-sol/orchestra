@@ -59,8 +59,12 @@ func renderEvent(ev dispatch.Event) string {
 	ts := dimStyle.Render(ev.Time.Format("15:04:05"))
 	switch ev.Kind {
 	case dispatch.EvDispatch:
-		return fmt.Sprintf("%s %s %s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
-			pickedStyle.Render(ev.Ticket), ev.Title)
+		solo := ""
+		if ev.Solo.Ticket == ev.Ticket && !ev.Solo.Next {
+			solo = dimStyle.Render(" solo")
+		}
+		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
+			pickedStyle.Render(ev.Ticket), solo, ev.Title)
 	case dispatch.EvClosed:
 		return fmt.Sprintf("%s %s  %s", ts, closedStyle.Render("✓ "+ev.Ticket+" completed"), dimStyle.Render(ev.Detail))
 	case dispatch.EvDeferred:
@@ -104,6 +108,7 @@ type Dashboard struct {
 	final       *dispatch.Event // the stop or done event, printed by main after exit
 	received    int             // events received, for ProgramSink.Handoff
 	queued      int             // ready tickets waiting for a slot; -1 until the loop first says
+	solo        dispatch.SoloState
 	began       time.Time
 	cancel      func()
 }
@@ -146,10 +151,10 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.received++
 		switch ev.Kind {
 		case dispatch.EvDispatch:
-			m.queued = ev.Queued
+			m.queued, m.solo = ev.Queued, ev.Solo
 			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
 		case dispatch.EvQueue:
-			m.queued = ev.Queued
+			m.queued, m.solo = ev.Queued, ev.Solo
 		case dispatch.EvClosed:
 			m.closed++
 			m.setRow(ev.Ticket, rowDone, ev.Detail)
@@ -182,7 +187,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			// main prints the last line after the program exits, below the final dashboard.
-			m.final, m.quitting = &ev, true
+			m.final, m.quitting, m.solo = &ev, true, dispatch.SoloState{}
 			return m, tea.Quit
 		}
 	case Finished:
@@ -566,11 +571,17 @@ func shortVersion(v string) string {
 	return base + "-dev " + hash + dirty
 }
 
-// titleLine is the Orchestra pill, the version, the branch and how long the run has gone, and
-// whether it is stopping.
+// titleLine is the Orchestra pill, the version, the branch and how long the run has gone, the
+// solo ticket running alone or next, and whether the run is stopping.
 func (m Dashboard) titleLine(w int) string {
 	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + "   " +
 		dimStyle.Render(fmt.Sprintf("%s · %s", m.cfg.Base, time.Since(m.began).Truncate(time.Second)))
+	switch {
+	case m.solo.Next:
+		line += deferredStyle.Render("  · solo " + m.solo.Ticket + " next")
+	case m.solo.Ticket != "":
+		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
+	}
 	if m.stopping {
 		line += stopStyle.Render("  · stopping")
 	}
