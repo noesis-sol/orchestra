@@ -195,7 +195,7 @@ type Loop struct {
 	wait timing // how long it waits on things; tests shorten it
 
 	// ReportInterrupt logs Ctrl+C from the loop itself; in the terminal UI the command does it (it
-	// knows which tabs were running).
+	// knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
 	ReportInterrupt bool
 }
 
@@ -285,6 +285,10 @@ func (o *Loop) activeList() []Status {
 	sort.Slice(l, func(i, j int) bool { return l[i].Started.Before(l[j].Started) })
 	return l
 }
+
+// Running returns the tickets being worked on, oldest first: after an interrupt, those whose
+// workers were left running.
+func (o *Loop) Running() []Status { return o.activeList() }
 
 func (o *Loop) interrupted() int {
 	if !o.ReportInterrupt {

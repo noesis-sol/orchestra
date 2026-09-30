@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -101,6 +102,7 @@ type Dashboard struct {
 	quitting    bool
 	interrupted bool
 	final       *dispatch.Event // the stop or done event, printed by main after exit
+	received    int             // events received, for ProgramSink.Handoff
 	queued      int             // ready tickets behind the current one; -1 until the first pickup
 	began       time.Time
 	cancel      func()
@@ -141,6 +143,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Events update the dashboard in place; nothing is printed above it. The full lines are
 		// in the log file.
 		ev := dispatch.Event(msg)
+		m.received++
 		switch ev.Kind {
 		case dispatch.EvDispatch:
 			m.n, m.queued = ev.N, ev.Queued
@@ -604,14 +607,50 @@ func agentStyle(s string) string {
 
 // ---- Sinks ---------------------------------------------------------------------------
 
-// ProgramSink sends the loop's events and statuses to the dashboard.
-type ProgramSink struct{ p *tea.Program }
+// ProgramSink sends the loop's events and statuses to the dashboard until Handoff passes them to
+// another sink. A program that has exited drops what it is sent, so the sink keeps every event it
+// sent: Handoff passes on those the dashboard never received.
+type ProgramSink struct {
+	p    *tea.Program
+	mu   sync.Mutex
+	sent []dispatch.Event
+	next dispatch.Sink // set by Handoff
+}
 
 // NewProgramSink returns a sink for the dashboard program p.
-func NewProgramSink(p *tea.Program) ProgramSink { return ProgramSink{p} }
+func NewProgramSink(p *tea.Program) *ProgramSink { return &ProgramSink{p: p} }
 
-func (s ProgramSink) Event(ev dispatch.Event)   { s.p.Send(eventMsg(ev)) }
-func (s ProgramSink) Status(st dispatch.Status) { s.p.Send(statusMsg(st)) }
+func (s *ProgramSink) Event(ev dispatch.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.next != nil {
+		s.next.Event(ev)
+		return
+	}
+	s.sent = append(s.sent, ev)
+	s.p.Send(eventMsg(ev)) // returns once received, or once the program has exited
+}
+
+func (s *ProgramSink) Status(st dispatch.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.next != nil {
+		s.next.Status(st)
+		return
+	}
+	s.p.Send(statusMsg(st))
+}
+
+// Handoff sends next the events after the first received (the final dashboard's Received) and,
+// from then on, everything. Call it once the program has exited.
+func (s *ProgramSink) Handoff(next dispatch.Sink, received int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ev := range s.sent[min(received, len(s.sent)):] {
+		next.Event(ev)
+	}
+	s.sent, s.next = nil, next
+}
 
 // Printer prints each event as a line: styled for a terminal (after the live view has closed),
 // or as the plain log line for pipes and -plain.
@@ -657,3 +696,6 @@ func (m Dashboard) Interrupted() bool { return m.interrupted }
 
 // Final is the event the run ended with, or nil.
 func (m Dashboard) Final() *dispatch.Event { return m.final }
+
+// Received is the number of the loop's events the dashboard received.
+func (m Dashboard) Received() int { return m.received }

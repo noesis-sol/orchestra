@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -237,5 +239,56 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 	m.active["kinieta-ce1"] = status
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(view, "▶ working") {
 		t.Errorf("a blocked worker should show blocked:\n%s", view)
+	}
+}
+
+// recorder is a sink that keeps the events' texts.
+type recorder struct{ texts []string }
+
+func (r *recorder) Event(ev dispatch.Event) { r.texts = append(r.texts, ev.Text) }
+func (*recorder) Status(dispatch.Status)    {}
+
+// runDashboard starts a dashboard program without a terminal and returns it with its sink and the
+// channel its final model arrives on.
+func runDashboard(t *testing.T) (*tea.Program, *ProgramSink, chan Dashboard) {
+	t.Helper()
+	p := tea.NewProgram(NewDashboard(dispatch.Config{Limit: 40}, func() {}),
+		tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
+	final := make(chan Dashboard, 1)
+	go func() {
+		m, _ := p.Run()
+		d, _ := m.(Dashboard)
+		final <- d
+	}()
+	return p, NewProgramSink(p), final
+}
+
+func TestHandoffPassesOnWhatTheClosedDashboardMissed(t *testing.T) {
+	_, sink, final := runDashboard(t)
+	sink.Event(dispatch.Event{Kind: dispatch.EvInfo, Text: "START"})
+	sink.Event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY"}) // closes the dashboard
+	m := <-final
+	sink.Event(dispatch.Event{Kind: dispatch.EvTriage, Text: "TRIAGE a-1"}) // sent to the exited program
+	var r recorder
+	sink.Handoff(&r, m.Received())
+	sink.Event(dispatch.Event{Kind: dispatch.EvTriage, Text: "TRIAGE a-2"})
+	if m.Received() != 2 || m.Final() == nil || m.Final().Text != "READY_EMPTY" {
+		t.Errorf("dashboard received %d, final %v", m.Received(), m.Final())
+	}
+	if got := strings.Join(r.texts, ","); got != "TRIAGE a-1,TRIAGE a-2" {
+		t.Errorf("handed off %s, want the two triage lines", got)
+	}
+}
+
+func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
+	p := tea.NewProgram(NewDashboard(dispatch.Config{}, func() {}), tea.WithInput(nil), tea.WithOutput(io.Discard))
+	p.Kill() // as good as a program that never started: it drops what it is sent
+	sink := NewProgramSink(p)
+	sink.Event(dispatch.Event{Text: "START"})
+	sink.Event(dispatch.Event{Text: "DISPATCH a-1"})
+	var r recorder
+	sink.Handoff(&r, Dashboard{}.Received())
+	if got := strings.Join(r.texts, ","); got != "START,DISPATCH a-1" {
+		t.Errorf("handed off %s", got)
 	}
 }

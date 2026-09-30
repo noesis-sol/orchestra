@@ -298,7 +298,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
 	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
-	orch.SetSink(tui.NewProgramSink(p))
+	progSink := tui.NewProgramSink(p)
+	orch.SetSink(progSink)
 	codes := make(chan int, 1)
 	go func() {
 		codes <- orch.Run(ctx)
@@ -310,16 +311,15 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	}
 	sink := tui.Printer{Styled: true, Width: width}
 	m, _ := final.(tui.Dashboard)
-	if m.Interrupted() {
+	if m.Final() != nil {
+		sink.Event(*m.Final())
+	}
+	// From here the loop's events are printed, starting with any the dashboard never received.
+	progSink.Handoff(sink, m.Received())
+	if why := stoppedBy(m, err, len(codes) > 0); why != "" {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
-		msg := "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"
-		if running := m.Running(); len(running) > 0 {
-			var names []string
-			for _, st := range running {
-				names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
-			}
-			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s were running; their tabs and worktrees are left open", strings.Join(names, ", "))
-		}
+		cancel()
+		msg := interruptLine(why, orch.Running())
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Line(ev.Time, msg)
 		sink.Event(ev)
@@ -329,17 +329,45 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		case <-codes:
 		case <-time.After(dispatch.SettleWait + 5*time.Second):
 		}
-		orch.SetSink(sink)
 		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
 		return exitStatus(dispatch.ExitInterrupted)
 	}
-	if m.Final() != nil {
-		sink.Event(*m.Final())
-	}
 	code := <-codes
-	orch.SetSink(sink)
 	organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
 	return status(code)
+}
+
+// stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by
+// itself: Ctrl+C in the dashboard, or a signal or failure that closed the dashboard (err is what
+// its program returned) while the loop was still running. It is "" when the loop ended the run.
+func stoppedBy(m tui.Dashboard, err error, loopDone bool) string {
+	switch {
+	case m.Interrupted():
+		return "with Ctrl+C"
+	case m.Final() != nil || loopDone:
+		return ""
+	case errors.Is(err, tea.ErrInterrupted):
+		return "by SIGINT"
+	case err != nil:
+		return "because the dashboard failed"
+	default:
+		// The dashboard quits by itself only on the loop's last event, so this is Bubble Tea's
+		// SIGTERM handler.
+		return "by SIGTERM"
+	}
+}
+
+// interruptLine is the INTERRUPTED line for a run stopped the way why says, naming the workers
+// left running.
+func interruptLine(why string, running []dispatch.Status) string {
+	if len(running) == 0 {
+		return "INTERRUPTED: stopped " + why + "; a running worker keeps its tab and worktree"
+	}
+	var names []string
+	for _, st := range running {
+		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
+	}
+	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
 }
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
