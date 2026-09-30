@@ -521,7 +521,7 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 	for _, r := range m.rows {
 		idWidth = max(idWidth, len(r.id))
 	}
-	aboutWidth := w - 2 - 12 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
+	aboutWidth := w - 2 - 13 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
 	rows := m.rows
 	hidden := 0
 	if limit := max(maxLines-4, 3); len(rows) > limit { // header, rule and borders take 4 lines
@@ -536,7 +536,9 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 	for _, r := range rows {
 		c := r.cells(aboutWidth)
 		if st, ok := m.active[r.id]; ok && r.state == rowWorking {
-			if d := doingLabel(st); d == "testing" {
+			if d := doingLabel(st); d == "resolving" {
+				c[0] = deferredStyle.Render("⟳ resolving")
+			} else if d == "testing" {
 				c[0] = testingStyle.Render("▶ testing")
 			} else if d == "editing" || d == "reading" {
 				c[0] = pickedStyle.Render("▶ " + d)
@@ -554,7 +556,7 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 			case row == table.HeaderRow:
 				return s.Faint(true)
 			case col == 0:
-				return s.Width(12)
+				return s.Width(13)
 			case col == 1:
 				return s.Width(idWidth + 2)
 			}
@@ -706,6 +708,9 @@ func (m Dashboard) titleLine(w int) string {
 
 // doingLabel is the worker's status, made precise by what it reported doing when it is working.
 func doingLabel(st dispatch.Status) string {
+	if st.Resolving {
+		return "resolving"
+	}
 	if st.Agent == "working" && st.Doing != "" {
 		return st.Doing
 	}

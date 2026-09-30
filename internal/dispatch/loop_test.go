@@ -78,6 +78,10 @@ func (upToDate) CommitNaming(repo, base, branch, ticket string) string { return 
 func (upToDate) CommitNamingOn(repo, rev, ticket string) string        { return "" }
 func (upToDate) Rebase(worktree, onto string) (string, error)          { return "", nil }
 func (upToDate) AbortRebase(worktree string)                           {}
+func (upToDate) ConflictedFiles(worktree string) []string              { return nil }
+func (upToDate) RebaseInProgress(worktree string) bool                 { return false }
+func (upToDate) CountCommits(repo, revs string) int                    { return 0 }
+func (upToDate) ResetBranch(worktree, rev string) (string, error)      { return "", nil }
 func (upToDate) FastForward(repo, branch string) (string, error)       { return "", nil }
 
 type noAgents struct{}

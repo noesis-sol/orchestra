@@ -4,7 +4,9 @@ package git
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -203,6 +205,45 @@ func (Git) Rebase(worktree, onto string) (string, error) {
 // AbortRebase gives up a rebase in progress in worktree.
 func (Git) AbortRebase(worktree string) {
 	command.Output("", "git", "-C", worktree, "rebase", "--abort")
+}
+
+// ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or nil.
+func (Git) ConflictedFiles(worktree string) []string {
+	out, _ := command.Output("", "git", "-C", worktree, "diff", "--name-only", "--diff-filter=U")
+	return strings.Fields(out)
+}
+
+// RebaseInProgress reports whether a rebase has stopped in worktree and not been finished or
+// aborted. A git call that fails counts as one in progress: it can't be shown to be over.
+func (Git) RebaseInProgress(worktree string) bool {
+	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
+		out, err := command.Output("", "git", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
+		if err != nil {
+			return true
+		}
+		if _, err := os.Stat(strings.TrimSpace(out)); !errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+	}
+	return false
+}
+
+// CountCommits counts the commits in revs, such as base..branch, or returns -1 if git can't.
+func (Git) CountCommits(repo, revs string) int {
+	out, err := command.Output(repo, "git", "rev-list", "--count", revs)
+	if err != nil {
+		return -1
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// ResetBranch moves the branch checked out in worktree to rev, with its files.
+func (Git) ResetBranch(worktree, rev string) (string, error) {
+	return command.Output("", "git", "-C", worktree, "reset", "--hard", "--quiet", rev)
 }
 
 // FastForward merges branch into the checked-out branch of repo, only if that is a fast-forward.

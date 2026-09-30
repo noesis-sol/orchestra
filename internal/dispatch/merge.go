@@ -33,12 +33,15 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 
 // merge brings a finished ticket's branch onto Base, one ticket at a time. When other tickets
 // merged while it ran, the branch is rebased first and, since the rebased code is untested, the
-// project's check command runs again before it merges. A conflict or a failing check leaves the
-// ticket for review and the run goes on.
+// project's check command runs again before it merges. A rebase that stops on conflicts is handed
+// back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
+// the merge queue meanwhile. A conflict left unresolved or a failing check leaves the ticket for
+// review and the run goes on.
 func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	c := o.cfg
 	o.mergeMu.Lock()
-	defer o.mergeMu.Unlock()
+	defer o.mergeMu.Unlock() // held on every return; a hand-back lets go of it and takes it again
+	handedBack := 0
 	// Only merges move Base during a run, and they queue here; a second pass covers a commit made
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
@@ -79,16 +82,39 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		}
 
 		// Base moved on while the ticket ran: rebase it, still under the lock.
+		r := rebaseStop{id: id, br: br, wt: wt, tab: tab, onto: o.checkout.Head(c.Repo, c.Base), head: o.checkout.Head(c.Repo, br)}
+		r.own = o.merger.CountCommits(c.Repo, r.onto+".."+br)
 		out, err := o.merger.Rebase(wt, c.Base)
 		o.log.Raw(out, err)
 		if err != nil {
-			o.merger.AbortRebase(wt)
+			r.files = o.merger.ConflictedFiles(wt)
+			if why := o.whyNotHandBack(r, handedBack); why != "" {
+				o.merger.AbortRebase(wt)
+				o.repoMu.Unlock()
+				o.leaveConflict(r, "not handed back to its worker: "+why)
+				return nil
+			}
 			o.repoMu.Unlock()
-			o.leaveUnmerged(id, "MERGE_CONFLICT")
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran; worktree %s and tab %s left for review (rebase onto %s, check, merge)",
-				id, br, c.Base, wt, tab, c.Base)})
-			return nil
+			handedBack++
+			// The worker takes minutes: let the other finished tickets merge meanwhile, and queue
+			// behind them again to check its work and merge.
+			o.mergeMu.Unlock()
+			why, stop := o.handBack(ctx, r)
+			o.mergeMu.Lock()
+			if stop != nil {
+				return stop // Ctrl+C: the rebase is left as it is, as the INTERRUPTED line says
+			}
+			if why != "" {
+				o.repoMu.Lock()
+				undone := o.undoResolution(r)
+				o.repoMu.Unlock()
+				o.appendNotes(id, fmt.Sprintf("Orchestra: %s conflicted with %s in %s; its worker was asked to resolve the rebase, but %s, so %s was set aside for review; %s.",
+					br, c.Base, strings.Join(r.files, ", "), why, id, undone))
+				o.leaveConflict(r, fmt.Sprintf("handed back to its worker, but %s; %s", why, undone))
+				return nil
+			}
+			attempt-- // resolved and checked: merge, or rebase again if Base moved meanwhile
+			continue
 		}
 		o.repoMu.Unlock()
 		o.info("  rebased %s onto %s, which moved on while it ran", br, c.Base)
@@ -117,6 +143,16 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
+}
+
+// leaveConflict sets aside a ticket whose branch conflicts with Base, saying why it was not
+// resolved.
+func (o *Loop) leaveConflict(r rebaseStop, why string) {
+	c := o.cfg
+	o.leaveUnmerged(r.id, "MERGE_CONFLICT")
+	o.emit(Event{Kind: EvWarn, Ticket: r.id, Text: fmt.Sprintf(
+		"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); worktree %s and tab %s left for review (rebase onto %s, check, merge)",
+		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
 }
 
 // errCheckTimedOut is runCheck's error for a check stopped at its time limit.

@@ -32,6 +32,13 @@ type Settings struct {
 	// Footprint false starts tickets side by side even when they name the same files or functions.
 	// Absent or true: a ticket whose footprint overlaps a running ticket's waits for a later slot.
 	Footprint *bool `json:"footprint,omitempty"`
+	// ResolveConflicts false sets a finished ticket whose branch conflicts with work merged while it
+	// ran aside for review at once. Absent or true: its worker is asked to resolve the rebase first,
+	// when there is a check command to check the resolution with.
+	ResolveConflicts *bool `json:"resolve_conflicts,omitempty"`
+	// ResolveTimeout is how long the worker may take to resolve it, as a duration such as "20m".
+	// Empty: DefaultResolveTimeout.
+	ResolveTimeout string `json:"resolve_timeout,omitempty"`
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
@@ -55,6 +62,9 @@ const (
 	DefaultCheckTimeout = 30 * time.Minute
 	// DefaultCheckTimeoutText is DefaultCheckTimeout as settings.json writes it.
 	DefaultCheckTimeoutText = "30m"
+	// DefaultResolveTimeout is how long a worker may take to resolve its rebase's conflicts when
+	// settings.json sets no limit.
+	DefaultResolveTimeout = 20 * time.Minute
 )
 
 // The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
@@ -186,6 +196,23 @@ func ParseCheckTimeout(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("must be a positive duration such as 5m (got '%s')", v)
 	}
 	return d, nil
+}
+
+// ResolveConflictResolution picks whether a run hands a finished ticket's rebase conflicts back to
+// its worker, and for how long: --resolve-conflicts when given, else the project's setting, else on;
+// the time limit is the project's, else DefaultResolveTimeout.
+func ResolveConflictResolution(flagValue, given bool, s Settings) (on bool, limit time.Duration, err error) {
+	on = flagValue
+	if !given {
+		on = s.ResolveConflicts == nil || *s.ResolveConflicts
+	}
+	if s.ResolveTimeout == "" {
+		return on, DefaultResolveTimeout, nil
+	}
+	if limit, err = time.ParseDuration(s.ResolveTimeout); err != nil || limit <= 0 {
+		return false, 0, fmt.Errorf("%s: resolve_timeout must be a positive duration such as 20m (got '%s')", SettingsPath("."), s.ResolveTimeout)
+	}
+	return on, limit, nil
 }
 
 // ResolveExcludeTypes picks the issue types a run leaves out of bd ready: the project's setting,

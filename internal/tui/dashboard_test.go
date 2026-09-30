@@ -242,6 +242,17 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 	}
 }
 
+func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Resolving: true}}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "⟳ resolving") || !strings.Contains(view, "kinieta-ce1  resolving") {
+		t.Errorf("a worker resolving its rebase should show resolving:\n%s", view)
+	}
+}
+
 // recorder is a sink that keeps the events' texts.
 type recorder struct{ texts []string }
 

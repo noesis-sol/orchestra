@@ -8,6 +8,19 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A finished ticket whose rebase onto work merged while it ran stops on
+  conflicts goes back to its own worker instead of straight to review: the
+  rebase is left stopped in its worktree, and the worker, still idle in its tab,
+  is asked to resolve it, run the check command and finish the rebase, and
+  nothing else. The log says `RESOLVING: …` and the dashboard `⟳ resolving`;
+  other finished tickets merge meanwhile. Orchestra then checks the result
+  itself (rebase finished, worktree clean, only the ticket's own commits, check
+  passing) and merges it. A worker that times out (20 minutes,
+  `"resolve_timeout"`), leaves the rebase unfinished, commits anything else or
+  fails the check has its branch put back, and the ticket is set aside with
+  `MERGE_CONFLICT` as before, saying what was tried. Without a check command, or
+  with the worker gone, nothing is handed back. `"resolve_conflicts": false` in
+  `.orchestra/settings.json` or `--resolve-conflicts=false` turns it off.
 - After a run holds for the environment, it probes the machine once the running
   tickets finish: 10 minutes later one worker without a ticket is started in
   the main checkout and asked to run a single command. If it does, the log and

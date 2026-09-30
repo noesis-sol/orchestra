@@ -129,6 +129,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
 	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout, "stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m (default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
 	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"), "work on this ticket and its subtickets only, each parent after its children; nothing else is started [ORCHESTRA_TICKET]")
+	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true, "when a finished ticket's rebase onto work merged while it ran stops on conflicts, ask its worker to resolve them before setting it aside; needs a check command (default: .orchestra/settings.json, else on)")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
@@ -231,6 +232,11 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.CheckTimeout = d
+		}
+		if on, d, err := project.ResolveConflictResolution(c.ResolveConflicts, set["resolve-conflicts"], settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.ResolveConflicts, c.ResolveTimeout = on, d
 		}
 		if n, d, err := project.ResolveEnvironmentHold(settings); err != nil {
 			problems = append(problems, err.Error()+".")

@@ -100,6 +100,10 @@ type Merger interface {
 	CommitNamingOn(repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
 	Rebase(worktree, onto string) (string, error)
 	AbortRebase(worktree string)
+	ConflictedFiles(worktree string) []string // files a stopped rebase left unmerged
+	RebaseInProgress(worktree string) bool    // a rebase stopped and neither finished nor aborted
+	CountCommits(repo, revs string) int       // -1 if git can't count them
+	ResetBranch(worktree, rev string) (string, error)
 	FastForward(repo, branch string) (string, error)
 }
 

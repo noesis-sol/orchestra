@@ -39,6 +39,11 @@ func InterruptLine(why string, running []Status) string {
 	}
 	var names []string
 	for _, st := range running {
+		if st.Resolving {
+			// Its worker may still finish the rebase; either way it is resumed by hand.
+			names = append(names, fmt.Sprintf("%s (tab %s, resolving conflicts: its rebase is left in progress: finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
+			continue
+		}
 		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
 	}
 	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))

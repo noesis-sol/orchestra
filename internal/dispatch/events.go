@@ -50,7 +50,10 @@ type Status struct {
 	Agent    string // Herdr agent status
 	Activity string // the worker's latest action line
 	Doing    string // what a working worker is doing, from its reports: testing, editing, reading or ""
-	Gone     bool
+	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
+	// worker, and is left in progress until the worker finishes it.
+	Resolving bool
+	Gone      bool
 }
 
 // Sink receives events and live status; the terminal UI and the plain printer implement it.

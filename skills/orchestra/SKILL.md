@@ -210,8 +210,20 @@ Lines about single tickets, which don't stop the run:
 - `rebased … onto …, which moved on while it ran` and `'<check>' passes on the rebased …`: other
   tickets merged first; the branch was rebased and re-checked before merging. Normal with several
   at once.
+- `RESOLVING: wt/<id> conflicts with <base> in <files>; handed back to its worker`: the rebase
+  stopped on conflicts and the ticket's own worker was asked to resolve it (the dashboard shows
+  `⟳ resolving`). Normal; other tickets merge meanwhile. Leave its tab alone: orchestra checks the
+  result itself (rebase finished, worktree clean, only the ticket's commits, check passing) and
+  merges it, or sets it aside with `MERGE_CONFLICT`.
 - `MERGE_CONFLICT`: closed, but its branch conflicts with work merged while it ran. Not merged:
-  rebase it in its worktree, resolve, run the checks, merge by hand. The ticket stays closed.
+  rebase it in its worktree, resolve, run the checks, merge by hand. The ticket stays closed. The
+  parenthesis says why its worker didn't resolve it: `not handed back to its worker: …` (no check
+  command, worker gone or busy, turned off) or `handed back to its worker, but …` (it timed out,
+  left the rebase unfinished, made a commit of its own, or the check failed; its branch was put
+  back as the ticket closed it, and `bd show <id>` has the same note).
+- `INTERRUPTED: … (tab …, resolving conflicts: its rebase is left in progress …)`: the run stopped
+  during a hand-back. The worker may still finish the rebase in its tab; once `git status` in its
+  worktree shows no rebase, run the check there and merge the branch by hand (see below).
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
   means the check hung or ran past `check_timeout` and was stopped: a hang, or a limit set too low,

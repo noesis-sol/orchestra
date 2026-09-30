@@ -269,6 +269,11 @@ type Config struct {
 	// EnvHoldWindow is how soon after dispatch a worker that settles with its ticket unclaimed and
 	// unchanged counts as failing at once.
 	EnvHoldWindow time.Duration
+	// ResolveConflicts hands a finished ticket whose branch conflicts with Base back to its worker
+	// to resolve the rebase, rather than setting it aside at once. It needs Check.
+	ResolveConflicts bool
+	// ResolveTimeout is how long the worker may take to resolve it; 0 for DefaultResolveTimeout.
+	ResolveTimeout time.Duration
 	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
 	// worker without a ticket is started to see whether commands run again; 0 for none.
 	EnvProbe time.Duration
