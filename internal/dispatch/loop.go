@@ -178,7 +178,9 @@ type Loop struct {
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
 	mu        sync.Mutex
-	asideIDs  []string // tickets deferred or left unmerged in this run
+	asideIDs  []string          // tickets deferred or left unmerged in this run
+	unmerged  map[string]string // tickets closed but left unmerged in this run, with why
+	holdSaid  map[string]string // why each held ticket waits, as last said
 
 	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
 	// after that finds it closed rather than a closed channel.
@@ -436,7 +438,7 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	if err != nil {
 		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not parse 'bd ready --json'")
 	}
-	t, queued := pickNext(ready, running)
+	t, queued := pickNext(ready, running, func(t Ticket) bool { return o.held(t, running) })
 	return t, queued, nil
 }
 
@@ -454,12 +456,12 @@ func (o *Loop) checkoutUnready(held string) *stopReason {
 	return nil
 }
 
-// pickNext returns the first ticket (ready is in priority order) that isn't running, and how many
-// other ready tickets aren't running.
-func pickNext(ready []Ticket, running map[string]bool) (*Ticket, int) {
+// pickNext returns the first ticket (ready is in priority order) that isn't running or held, and
+// how many other ready tickets aren't either.
+func pickNext(ready []Ticket, running map[string]bool, held func(Ticket) bool) (*Ticket, int) {
 	var free []Ticket
 	for _, t := range ready {
-		if !running[t.ID] {
+		if !running[t.ID] && !held(t) {
 			free = append(free, t)
 		}
 	}
@@ -467,6 +469,76 @@ func pickNext(ready []Ticket, running map[string]bool) (*Ticket, int) {
 		return nil, 0
 	}
 	return &free[0], len(free) - 1
+}
+
+// held reports whether a ready ticket must wait for a ticket blocking it, saying why once. Workers
+// close their ticket before it merges, and bd ready counts a closed blocker as done, but until the
+// blocker merges its code is not on Base, which the ticket's worktree is cut from.
+func (o *Loop) held(t Ticket, running map[string]bool) bool {
+	why := ""
+	if len(running) > 0 || o.anyUnmerged() {
+		why = o.waitsFor(t.ID, running)
+	}
+	o.mu.Lock()
+	said := o.holdSaid[t.ID]
+	if o.holdSaid == nil {
+		o.holdSaid = map[string]string{}
+	}
+	o.holdSaid[t.ID] = why
+	o.mu.Unlock()
+	if why != "" && why != said {
+		o.info("  %s waits: %s", t.ID, why)
+	}
+	return why != ""
+}
+
+// waitsFor returns why ticket id can't start yet, or "" if nothing blocking it is unmerged.
+func (o *Loop) waitsFor(id string, running map[string]bool) string {
+	info := o.tickets.Show(id)
+	if info.Status == "unknown" {
+		return "its dependencies could not be read"
+	}
+	for _, d := range info.Dependencies {
+		if d.DependencyType != "blocks" {
+			continue
+		}
+		if running[d.ID] {
+			return fmt.Sprintf("waiting for %s to merge", d.ID)
+		}
+		if why := o.unmergedWhy(d.ID); why != "" {
+			return fmt.Sprintf("%s closed but not merged (%s)", d.ID, why)
+		}
+	}
+	return ""
+}
+
+// leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it.
+func (o *Loop) leaveUnmerged(id, why string) {
+	o.markAside(id)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.unmerged == nil {
+		o.unmerged = map[string]string{}
+	}
+	o.unmerged[id] = why
+}
+
+func (o *Loop) merged(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.unmerged, id)
+}
+
+func (o *Loop) unmergedWhy(id string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.unmerged[id]
+}
+
+func (o *Loop) anyUnmerged() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.unmerged) > 0
 }
 
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
@@ -642,20 +714,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
-		commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
-		switch closedOutcomeOf(commit, o.checkout.DirtyTree(wt) != "") {
-		case closedNoCommit:
-			o.markAside(id)
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
-		case closedDirty:
-			o.markAside(id)
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab)})
-		case closedMerge:
-			if s := o.merge(ctx, id, br, wt, tab); s != nil {
-				return s
-			}
+		if s := o.finish(ctx, id, br, wt, tab); s != nil {
+			return s
 		}
 	case outcomeDeferred:
 		o.markAside(id)
@@ -675,6 +735,26 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
 		o.queueTriage(ctx, o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
+	}
+	return nil
+}
+
+// finish merges a closed ticket, or leaves it for review without a commit naming it or with
+// uncommitted changes.
+func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
+	c := o.cfg
+	commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
+	switch closedOutcomeOf(commit, o.checkout.DirtyTree(wt) != "") {
+	case closedNoCommit:
+		o.leaveUnmerged(id, "CLOSED_WITHOUT_COMMIT")
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
+	case closedDirty:
+		o.leaveUnmerged(id, "CLOSED_WITHOUT_COMMIT")
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab)})
+	case closedMerge:
+		return o.merge(ctx, id, br, wt, tab)
 	}
 	return nil
 }
@@ -723,6 +803,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		if o.merger.IsAncestor(c.Repo, c.Base, br) {
 			if s := o.checkoutUnready(fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
 				o.repoMu.Unlock()
+				o.leaveUnmerged(id, "DIRTY_TREE")
 				return s
 			}
 			commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
@@ -730,8 +811,10 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			o.log.Raw(out, err)
 			if err != nil {
 				o.repoMu.Unlock()
+				o.leaveUnmerged(id, "MERGE_FAILED")
 				return halt(ExitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
+			o.merged(id)
 			out, err = o.worktrees.RemoveWorktree(c.Repo, wt)
 			o.log.Raw(out, err)
 			if err == nil {
@@ -757,7 +840,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		if err != nil {
 			o.merger.AbortRebase(wt)
 			o.repoMu.Unlock()
-			o.markAside(id)
+			o.leaveUnmerged(id, "MERGE_CONFLICT")
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran; worktree %s and tab %s left for review (rebase onto %s, check, merge)",
 				id, br, c.Base, wt, tab, c.Base)})
@@ -773,7 +856,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
-			o.markAside(id)
+			o.leaveUnmerged(id, "CHECKS_FAILED")
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' fails on %s rebased onto %s; worktree %s and tab %s left for review (output is in %s)",
 				id, c.Check, br, c.Base, wt, tab, c.LogPath)})
@@ -782,7 +865,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		o.info("  '%s' passes on the rebased %s", c.Check, br)
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
-	o.markAside(id)
+	o.leaveUnmerged(id, "MERGE_CONFLICT")
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil

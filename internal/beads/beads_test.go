@@ -92,6 +92,9 @@ func TestOpenQuestionFromBdShow(t *testing.T) {
 	if !ok || tk.Status != "open" {
 		t.Fatalf("parseTicket: %v %+v", ok, tk)
 	}
+	if d := tk.Dependencies[0]; d.ID != "k-0" || d.DependencyType != "blocks" {
+		t.Errorf("dependency = %+v, want k-0 blocking", d)
+	}
 	if q := dispatch.OpenQuestion(tk); q == nil || q.ID != "q-1" {
 		t.Errorf("open question = %+v", q)
 	}

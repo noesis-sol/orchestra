@@ -236,13 +236,156 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 	}
 }
 
-func TestPickNextSkipsRunningTickets(t *testing.T) {
-	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	if tk, q := pickNext(ready, map[string]bool{"a": true}); tk == nil || tk.ID != "b" || q != 1 {
+func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
+	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
+	none := func(Ticket) bool { return false }
+	if tk, q := pickNext(ready, map[string]bool{"a": true}, none); tk == nil || tk.ID != "b" || q != 2 {
 		t.Errorf("got %v, %d", tk, q)
 	}
-	if tk, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true}); tk != nil {
+	if tk, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true, "d": true}, none); tk != nil {
 		t.Errorf("everything is running, got %v", tk)
+	}
+	heldB := func(t Ticket) bool { return t.ID == "b" }
+	if tk, q := pickNext(ready, map[string]bool{"a": true}, heldB); tk == nil || tk.ID != "c" || q != 1 {
+		t.Errorf("b is held, got %v, %d", tk, q)
+	}
+}
+
+// fakeTickets stands in for Beads: a ready queue, and each ticket's dependencies for Show.
+type fakeTickets struct {
+	ready []Ticket
+	shown map[string]Ticket
+}
+
+func (f fakeTickets) Ready() ([]Ticket, error) { return f.ready, nil }
+func (f fakeTickets) Show(id string) Ticket {
+	if t, ok := f.shown[id]; ok {
+		return t
+	}
+	return Ticket{ID: id, Status: "unknown"}
+}
+func (f fakeTickets) Status(id string) string   { return f.Show(id).Status }
+func (f fakeTickets) Describe(id string) string { return id }
+
+// aBlocksB is Beads with A closed (so bd ready lists B, which A blocks) and C ready on its own.
+func aBlocksB() fakeTickets {
+	b := Ticket{ID: "k-b", Status: "open", Dependencies: []Ticket{
+		{ID: "k-x", Status: "open", DependencyType: "related"},
+		{ID: "k-a", Status: "closed", DependencyType: "blocks"},
+	}}
+	return fakeTickets{ready: []Ticket{{ID: "k-b", Status: "open"}},
+		shown: map[string]Ticket{"k-b": b, "k-c": {ID: "k-c", Status: "open"}}}
+}
+
+func (f *mergeFixture) next(t *testing.T, running map[string]bool) string {
+	t.Helper()
+	tk, _, s := f.orch.next(running)
+	if s != nil {
+		t.Fatal(s.text)
+	}
+	if tk == nil {
+		return ""
+	}
+	return tk.ID
+}
+
+func TestDependentWaitsWhileItsBlockerIsInFlight(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	tk := aBlocksB()
+	tk.ready = append(tk.ready, Ticket{ID: "k-c", Status: "open"})
+	f.orch.tickets = tk
+	running := map[string]bool{"k-a": true} // closed, waiting in the merge queue
+	if got := f.next(t, running); got != "k-c" {
+		t.Errorf("next = %q, want k-c while k-a has not merged", got)
+	}
+	running["k-c"] = true
+	if got := f.next(t, running); got != "" {
+		t.Errorf("next = %q, want nothing", got)
+	}
+	if ev := f.sink.text(); strings.Count(ev, "k-b waits: waiting for k-a to merge") != 1 {
+		t.Errorf("the wait should be said once; events:\n%s", ev)
+	}
+	delete(running, "k-a") // merged
+	if got := f.next(t, running); got != "k-b" {
+		t.Errorf("next = %q, want k-b once k-a merged", got)
+	}
+}
+
+func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
+	cases := []struct {
+		name  string
+		check string
+		setup func(f *mergeFixture) string // makes k-a's branch, returns its worktree
+		why   string
+	}{
+		{"conflict", "true", func(f *mergeFixture) string {
+			wt := f.ticket(t, "k-a", "shared.txt", "line 1 from the ticket\n")
+			f.onMain(t, "shared.txt", "line 1 from main\n")
+			return wt
+		}, "MERGE_CONFLICT"},
+		{"checks fail", "exit 3", func(f *mergeFixture) string {
+			wt := f.ticket(t, "k-a", "a.txt", "a\n")
+			f.onMain(t, "b.txt", "b\n")
+			return wt
+		}, "CHECKS_FAILED"},
+		{"no commit", "true", func(f *mergeFixture) string {
+			wt := filepath.Join(t.TempDir(), "k-a")
+			f.git(f.repo, "worktree", "add", "-q", "-b", "wt/k-a", wt, "main")
+			return wt
+		}, "CLOSED_WITHOUT_COMMIT"},
+		{"dirty", "true", func(f *mergeFixture) string {
+			wt := f.ticket(t, "k-a", "a.txt", "a\n")
+			os.WriteFile(filepath.Join(wt, "a.txt"), []byte("unfinished\n"), 0o644)
+			return wt
+		}, "CLOSED_WITHOUT_COMMIT"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newMergeFixture(t, c.check)
+			f.orch.tickets = aBlocksB()
+			wt := c.setup(f)
+			if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil {
+				t.Fatal(s.text)
+			}
+			if got := f.next(t, nil); got != "" {
+				t.Errorf("next = %q, want k-b held while k-a is unmerged", got)
+			}
+			if ev := f.sink.text(); !strings.Contains(ev, "k-b waits: k-a closed but not merged ("+c.why+")") {
+				t.Errorf("events:\n%s", ev)
+			}
+		})
+	}
+}
+
+func TestDependentStartsOnceItsBlockerMerges(t *testing.T) {
+	f := newMergeFixture(t, "exit 3")
+	f.orch.tickets = aBlocksB()
+	wt := f.ticket(t, "k-a", "a.txt", "a\n")
+	f.onMain(t, "b.txt", "b\n")
+	f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab") // CHECKS_FAILED
+	if got := f.next(t, nil); got != "" {
+		t.Fatalf("next = %q, want k-b held", got)
+	}
+	f.orch.cfg.Check = "true" // fixed by hand, and merged
+	if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil {
+		t.Fatal(s.text)
+	}
+	if !strings.Contains(f.sink.text(), "k-a closed") {
+		t.Fatalf("k-a did not merge; events:\n%s", f.sink.text())
+	}
+	if got := f.next(t, nil); got != "k-b" {
+		t.Errorf("next = %q, want k-b once k-a merged", got)
+	}
+}
+
+func TestDependentWaitsWhenItsDependenciesCannotBeRead(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	f.orch.tickets = fakeTickets{ready: []Ticket{{ID: "k-b", Status: "open"}}}
+	if got := f.next(t, map[string]bool{"k-a": true}); got != "" {
+		t.Errorf("next = %q, want k-b held", got)
+	}
+	if got := f.next(t, nil); got != "k-b" {
+		t.Errorf("next = %q, want k-b: with nothing running or unmerged there is nothing to wait for", got)
 	}
 }
 
