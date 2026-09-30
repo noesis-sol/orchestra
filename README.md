@@ -176,4 +176,21 @@ staticcheck ./...
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
+The run loop, `internal/dispatch`, has one file per concern, its tests in the `_test.go` file of the same name:
+
+| File | What's in it |
+| --- | --- |
+| `loop.go` | the `Loop` type, `Config`, exit codes, timings and shared helpers |
+| `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts (tests in `run_test.go` and `schedule_test.go`) |
+| `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
+| `work.go` | one ticket from start to outcome: asked, deferred, paused or closed |
+| `settle.go` | waiting for a worker to settle, reading its status, the dashboard watcher |
+| `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup |
+| `holds.go` | tickets held for an unmerged blocker, the `unmerged` label, tickets set aside, deferred or waiting on a question |
+| `events.go` | the log file, notifications, events and status sent to the dashboard |
+| `advice.go` | triage and the run review |
+| `deps.go` | the interfaces to Beads, Herdr, git and workers' reports |
+
+The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`.
+
 [Changelog](CHANGELOG.md)
