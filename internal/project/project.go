@@ -137,6 +137,9 @@ type Choice struct {
 	// ReplacedTimeout is the check_timeout in settings that every run would reject, which init
 	// dropped, or "".
 	ReplacedTimeout string
+	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
+	// when init could neither ask nor take --changelog-union.
+	Union, UnionUnasked bool
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
@@ -316,8 +319,15 @@ func NextSteps(repo string, steps []Step, pre []Step) []string {
 	case wroteTemplate(steps):
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
 	}
+	var commit []string
 	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
-		next = append(next, "Commit "+Dir+"/.")
+		commit = append(commit, Dir+"/")
+	}
+	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", attributesName); strings.TrimSpace(out) != "" {
+		commit = append(commit, attributesName)
+	}
+	if len(commit) > 0 {
+		next = append(next, "Commit "+strings.Join(commit, " and ")+".")
 	}
 	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
 	return next

@@ -7,6 +7,12 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   While iterating, run only the checks you need, e.g. `<a quicker subset>`.
 - Run `<check command>` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
+- Other tickets run beside yours and merge first, so don't add where they all add:
+  - put new tests in a new test file named after the feature, not at the end of an existing one;
+  - add new struct fields, constants and helpers next to the code they belong to, not at the end
+    of a list;
+  - add a changelog entry as new lines, without rewording or moving the others: with
+    `CHANGELOG.md merge=union` in .gitattributes, git keeps both tickets' lines.
 - Commit only the files you changed for this ticket, with the ticket ID in the message. Never push.
 - File anything new you discover with `bd create`, linked to TICKET_ID. Keep every ticket title
   short, at most 60 characters: a plain summary of the change. Details go in the description.

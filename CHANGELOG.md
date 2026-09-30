@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Fewer rebase conflicts between tickets that run side by side. The worker
+  prompt asks for new tests in a new file named after the feature, new struct
+  fields, constants and helpers next to the code they belong to rather than at
+  the end of a list, and changelog entries as new lines. Where the project keeps
+  a `CHANGELOG.md`, `orchestra init` offers to add `CHANGELOG.md merge=union` to
+  `.gitattributes` (or takes `--changelog-union`), so git keeps both tickets'
+  entries instead of stopping on a conflict; orchestra's own repository has it.
 - Tickets labelled `solo` run alone, for work that restructures code every
   other ticket touches (splitting a shared file, say) and would conflict with
   anything beside it. One starts only when no other ticket is running, and

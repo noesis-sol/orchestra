@@ -57,8 +57,11 @@ for the check command if you don't know it (the command that runs lint, build an
 many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
 interactively and would default to 1. `--check-timeout 5m` sets the check's time limit (default
 30m): a few times the check's usual running time. More than 1 needs checks that can run side by side; say so.
+Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge=union` to
+`.gitattributes` (so tickets that each add an entry at the same spot don't conflict) and pass
+`--changelog-union` or `--changelog-union=false`; without either, `init` leaves it alone.
 Without `--check`, fill in the `<…>` placeholders in the prompt. It never replaces an existing prompt
-unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` if they agree.
+unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` (and `.gitattributes`, if it changed) if they agree.
 
 ## Launching a run
 

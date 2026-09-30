@@ -155,7 +155,7 @@ func concurrencyOptions(current int) []huh.Option[int] {
 
 // AskInit asks for what the flags didn't give, starting from the current choice, reading the
 // answers from in and drawing the form on out.
-func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent bool) error {
+func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -187,6 +187,16 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeou
 			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent.").
 			Options(concurrencyOptions(c.Concurrent)...).
 			Value(&c.Concurrent))
+	}
+	if askUnion {
+		fields = append(fields, huh.NewConfirm().
+			Title("Merge CHANGELOG.md by union").
+			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each "+
+				"add an entry at the same spot, and git stops the second one's rebase on a conflict; with "+
+				"this line it keeps both sides' lines instead.").
+			Affirmative("Add it").
+			Negative("No").
+			Value(&c.Union))
 	}
 	if len(fields) == 0 {
 		return nil
