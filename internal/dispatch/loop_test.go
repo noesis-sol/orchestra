@@ -48,11 +48,11 @@ func (readyTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
 
 type cleanCheckout struct{}
 
-func (cleanCheckout) DirtyTree(dir string) string       { return "" }
-func (cleanCheckout) DirtyWorktree(dir string) string   { return "" }
-func (cleanCheckout) CurrentBranch(repo string) string  { return "main" }
-func (cleanCheckout) Head(repo, rev string) string      { return "abc" }
-func (cleanCheckout) TrackedFiles(repo string) []string { return nil }
+func (cleanCheckout) DirtyTree(dir string) (string, error)      { return "", nil }
+func (cleanCheckout) DirtyWorktree(dir string) string           { return "" }
+func (cleanCheckout) CurrentBranch(repo string) (string, error) { return "main", nil }
+func (cleanCheckout) Head(repo, rev string) string              { return "abc" }
+func (cleanCheckout) TrackedFiles(repo string) []string         { return nil }
 
 // newWorktrees creates every worktree.
 type newWorktrees struct{}

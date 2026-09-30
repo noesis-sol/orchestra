@@ -262,7 +262,9 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if c.Base = (git.Git{}).CurrentBranch(c.Repo); c.Base == "" {
+		if base, err := (git.Git{}).CurrentBranch(c.Repo); err != nil {
+			problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
+		} else if c.Base = base; c.Base == "" {
 			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
 		}
 

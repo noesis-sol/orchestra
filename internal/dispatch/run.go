@@ -329,13 +329,38 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 // Base. held, when set, says what is left for review. The caller holds repoMu.
 func (o *Loop) checkoutUnready(held string) *stopReason {
 	c := o.cfg
-	if o.checkout.DirtyTree(c.Repo) != "" {
+	dirty, branch, err := o.readCheckout()
+	if err != nil {
+		return halt(ExitTool, "GIT_FAILED: could not read the state of %s%s; stopping%s", c.Repo, because(err), held)
+	}
+	if dirty != "" {
 		return halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
 	}
-	if o.checkout.CurrentBranch(c.Repo) != c.Base {
+	if branch != c.Base {
 		return halt(ExitDirty, "DIRTY_TREE: %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
 	}
 	return nil
+}
+
+// gitTries is how many times readCheckout asks git before giving up: a git call can fail for a
+// moment on a busy machine, and that says nothing about the checkout.
+const gitTries = 3
+
+// readCheckout returns the main checkout's uncommitted changes and its branch, or git's error.
+func (o *Loop) readCheckout() (dirty, branch string, err error) {
+	c := o.cfg
+	for try := 1; ; try++ {
+		if dirty, err = o.checkout.DirtyTree(c.Repo); err == nil {
+			if branch, err = o.checkout.CurrentBranch(c.Repo); err == nil {
+				return dirty, branch, nil
+			}
+		}
+		if try == gitTries {
+			return "", "", err
+		}
+		o.log.Raw("", err)
+		time.Sleep(o.pollEvery())
+	}
 }
 
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and

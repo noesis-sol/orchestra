@@ -3,6 +3,8 @@
 package git
 
 import (
+	"errors"
+	"os/exec"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -13,13 +15,14 @@ import (
 type Git struct{}
 
 // DirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
-// (agent settings, tracker data, and orchestra's own files). A failed git call counts as dirty.
-func (Git) DirtyTree(dir string) string {
+// (agent settings, tracker data, and orchestra's own files). It returns git's error when git can't
+// tell, which is not the same as dirty.
+func (Git) DirtyTree(dir string) (string, error) {
 	out, err := command.Output("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return strings.TrimSpace(out)
+	return strings.TrimSpace(out), nil
 }
 
 // DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
@@ -33,10 +36,18 @@ func (Git) DirtyWorktree(dir string) string {
 	return strings.TrimSpace(out)
 }
 
-// CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD.
-func (Git) CurrentBranch(repo string) string {
-	out, _ := command.Output(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
-	return strings.TrimSpace(out)
+// CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD. It returns git's
+// error when git can't tell, which is not the same as detached.
+func (Git) CurrentBranch(repo string) (string, error) {
+	out, err := command.Output(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 { // --quiet: HEAD is not a branch
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from

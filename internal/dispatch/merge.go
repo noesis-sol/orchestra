@@ -46,7 +46,8 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		if o.merger.IsAncestor(c.Repo, c.Base, br) {
 			if s := o.checkoutUnready(fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
 				o.repoMu.Unlock()
-				o.leaveUnmerged(id, "DIRTY_TREE")
+				why, _, _ := strings.Cut(s.text, ":")
+				o.leaveUnmerged(id, why) // DIRTY_TREE or GIT_FAILED
 				return s
 			}
 			commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)

@@ -73,9 +73,9 @@ type Reporter interface {
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	DirtyTree(dir string) string     // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
-	DirtyWorktree(dir string) string // uncommitted work in a ticket's worktree outside .orchestra/run/
-	CurrentBranch(repo string) string
+	DirtyTree(dir string) (string, error)      // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
+	DirtyWorktree(dir string) string           // uncommitted work in a ticket's worktree outside .orchestra/run/
+	CurrentBranch(repo string) (string, error) // "" on a detached HEAD
 	Head(repo, rev string) string
 	TrackedFiles(repo string) []string // git ls-files; nil when git can't list them
 }

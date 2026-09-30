@@ -123,7 +123,7 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 
 	write(".claude/settings.json", "{\"model\": \"opus\"}\n")
 	write(".beads/config.yaml", "prefix: t\n")
-	if d := (Git{}).DirtyTree(dir); d != "" {
+	if d, err := (Git{}).DirtyTree(dir); d != "" || err != nil {
 		t.Errorf("the main checkout's check should leave out .claude/ and .beads/: %q", d)
 	}
 	d := (Git{}).DirtyWorktree(dir)
