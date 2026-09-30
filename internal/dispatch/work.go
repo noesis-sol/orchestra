@@ -29,6 +29,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	if s != nil {
 		return s
 	}
+	o.footprintWorktree(id, wt)
 	if conflicts {
 		// A worker is told not to rebase, so it would work on a stale base and its merge would end
 		// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.

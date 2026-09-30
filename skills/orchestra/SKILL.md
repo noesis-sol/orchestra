@@ -100,6 +100,13 @@ With several at once, a ticket labelled `solo` runs with no other beside it. Sug
 (`bd label add <id> solo`) for a ticket that restructures code most tickets touch, such as splitting
 a shared file: run next to other work, it guarantees merge conflicts.
 
+Tickets are also kept apart by footprint: a ready ticket that names the same function (or, when one
+of the two names no functions, the same file) as a running ticket, shares an `area:<name>` label with
+it, or names a file its worker has edited, waits for a later slot while the next ticket takes this
+one. Naming files and functions in a ticket's description helps; so does `bd update <id>
+--set-metadata files=a.go,b.go` or an `area:<name>` label. `"footprint": false` in `settings.json`
+turns it off.
+
 ## While it runs
 
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and
@@ -157,6 +164,11 @@ Lines about single tickets, which don't stop the run:
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
   it does. Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.
+- `<id> footprint: …` (at dispatch) and `skipping <id>: touches <file or function>, like running
+  <other>`: the ticket overlaps a running one, so a later ticket took the slot. Normal; it starts once
+  nothing running overlaps it.
+- `LIKELY_CONFLICT: <a> and <b> both edit <file>`: two running workers changed the same file, so the
+  second to merge may end in `MERGE_CONFLICT`. Nothing to do yet; watch for it at merge.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
 - `LONG_RUNNING`: a worker is still going after 2 hours and no ticket limit is set; the run keeps
   waiting. Look at its tab for a hung command.

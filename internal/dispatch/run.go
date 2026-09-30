@@ -103,6 +103,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			o.queued, o.soloShown = queued, o.soloState()
 			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued, Solo: o.soloShown,
 				Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
+			o.startFootprint(*t)
 			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
 		}
 		if len(inflight) == 0 {
@@ -111,6 +112,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
+			o.endFootprint(r.id)
 			if r.id == o.solo {
 				o.solo = ""
 			}
@@ -133,6 +135,9 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
 		case <-poll.C:
+			if o.footprintOn() && len(inflight) > 1 {
+				o.readEdits() // warns when two workers edit the same file
+			}
 			// With a free slot, the loop above reads bd ready again. With none, the queue count is
 			// brought up to date; a failed read waits for the next poll, as nothing depends on it.
 			if stop == nil && len(inflight) >= c.Concurrency && o.count < c.Limit {
@@ -241,10 +246,20 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	for id := range running {
 		skip[id] = true
 	}
-	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) }, len(running), o.solo)
+	// With a free slot, a ticket whose footprint overlaps a running ticket's is skipped for the next
+	// one that doesn't; with none free, the tickets wait for a slot anyway.
+	slot := len(running) < o.cfg.Concurrency
+	overlaps := func(Ticket) bool { return false }
+	if slot && o.footprintOn() {
+		o.readFiles()
+		if len(running) > 0 {
+			o.readEdits()
+			overlaps = func(t Ticket) bool { return o.overlapsRunning(t, running) }
+		}
+	}
+	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) || overlaps(t) }, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway.
-	slot := len(running) < o.cfg.Concurrency
 	if !slot {
 		next = ""
 	}

@@ -29,6 +29,9 @@ type Settings struct {
 	// ExcludeTypes are the issue types never taken from bd ready, such as epics, whose children
 	// are the work. Absent: DefaultExcludeTypes; [] takes every type.
 	ExcludeTypes *[]string `json:"exclude_types,omitempty"`
+	// Footprint false starts tickets side by side even when they name the same files or functions.
+	// Absent or true: a ticket whose footprint overlaps a running ticket's waits for a later slot.
+	Footprint *bool `json:"footprint,omitempty"`
 }
 
 const (

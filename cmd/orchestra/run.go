@@ -213,6 +213,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			problems = append(problems, "Unreadable settings: "+err.Error())
 		}
 		c.Check = settings.Check
+		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {

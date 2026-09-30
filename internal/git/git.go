@@ -142,6 +142,21 @@ func (Git) Head(repo, rev string) string {
 	return strings.TrimSpace(out)
 }
 
+// TrackedFiles lists the files git tracks in repo, or nil if git can't.
+func (Git) TrackedFiles(repo string) []string {
+	out, err := command.Output(repo, "git", "ls-files", "-z")
+	if err != nil {
+		return nil
+	}
+	files := []string{}
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
 // Prune forgets worktrees whose folders are gone.
 func (Git) Prune(repo string) {
 	command.Output(repo, "git", "worktree", "prune")

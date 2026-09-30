@@ -67,6 +67,7 @@ type Agents interface {
 type Reporter interface {
 	ReportArgs(worktree string) ([]string, error) // agent arguments that turn reporting on
 	LastToolUse(worktree string) (ToolUse, bool)  // false when the worker reported nothing
+	EditedFiles(worktree string) []string         // repository files the worker has edited so far
 }
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
@@ -75,6 +76,7 @@ type Checkout interface {
 	DirtyWorktree(dir string) string // uncommitted work in a ticket's worktree outside .orchestra/run/
 	CurrentBranch(repo string) string
 	Head(repo, rev string) string
+	TrackedFiles(repo string) []string // git ls-files; nil when git can't list them
 }
 
 // Worktrees manages the per-ticket worktrees and their branches.

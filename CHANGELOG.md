@@ -8,6 +8,19 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Tickets that touch the same code no longer run side by side. A ticket's
+  footprint is what its text names (paths such as `internal/dispatch/merge.go`
+  or `run.go`, checked against `git ls-files`, and functions such as
+  `Loop.merge` or `refreshBranch()`), its `area:<name>` labels and its `files`
+  metadata; a running ticket's also grows with every file its worker edits,
+  which Claude workers now report through their hooks. A free slot goes to the
+  highest-priority ready ticket that overlaps no running ticket (the same
+  function when both name functions, else the same file, or the same area),
+  logged once as `skipping <id>: touches Loop.merge, like running <other>`, and
+  stays empty if every ready ticket overlaps. Each dispatch logs the ticket's
+  footprint, and two running workers editing the same file are reported once
+  as `LIKELY_CONFLICT`. Tickets naming nothing run as before. `"footprint":
+  false` in `.orchestra/settings.json` turns it off.
 - Fewer rebase conflicts between tickets that run side by side. The worker
   prompt asks for new tests in a new file named after the feature, new struct
   fields, constants and helpers next to the code they belong to rather than at

@@ -1,5 +1,7 @@
 package dispatch
 
+import "encoding/json"
+
 // Ticket is a Beads issue as the loop sees it: status, priority, labels and what it depends on.
 type Ticket struct {
 	ID           string   `json:"id"`
@@ -16,6 +18,13 @@ type Ticket struct {
 	// (bd show counts every link); nil when bd doesn't say. It changes when a blocks link is added
 	// or removed.
 	DependencyCount *int `json:"dependency_count"`
+
+	// The ticket's text and custom metadata, which say where it works (its Footprint).
+	Description        string          `json:"description"`
+	Design             string          `json:"design"`
+	AcceptanceCriteria string          `json:"acceptance_criteria"`
+	Notes              string          `json:"notes"`
+	Metadata           json.RawMessage `json:"metadata"` // an object, or one encoded as a string
 }
 
 // HumanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as

@@ -73,6 +73,13 @@ type Loop struct {
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
 	askedIDs  map[string]bool       // tickets set aside in this run to wait on a question
 
+	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
+	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
+	footprints map[string]*runFootprint
+	files      *repoFiles
+	skipSaid   map[string]string
+	warned     map[string]bool
+
 	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
 	// after that finds it closed rather than a closed channel.
 	triageMu     sync.Mutex
@@ -220,4 +227,5 @@ type Config struct {
 	Check        string        // the project's check command, from .orchestra/settings.json
 	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
 	Version      string        // orchestra's version, for the log
+	NoFootprint  bool          // start tickets side by side even when their footprints overlap
 }

@@ -219,6 +219,7 @@ func (fakeReporter) ReportArgs(worktree string) ([]string, error) {
 	return []string{"--settings", filepath.Join(worktree, "hooks.json")}, nil
 }
 func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
+func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
 
 // ---- Notifications -------------------------------------------------------------------
 
