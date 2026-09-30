@@ -58,7 +58,8 @@ unless given `--force`; don't pass `--force` without the user's say-so. Afterwar
 
 Requirements, checked by `orchestra` at startup (it lists every problem, exit code 2):
 
-- inside a Herdr pane (`HERDR_ENV=1`), with `WORKSPACE` set: this pane's is `$HERDR_WORKSPACE_ID`;
+- inside a Herdr pane (`HERDR_ENV=1`). Worker tabs open in that pane's workspace, unless
+  `--workspace ID` / `WORKSPACE=ID` names another;
 - in the main checkout, on a branch, not a detached HEAD;
 - no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`.
 
@@ -72,7 +73,7 @@ beside yours and keep your own pane free:
 ```
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')
-herdr pane run "$P" "WORKSPACE=$HERDR_WORKSPACE_ID orchestra"
+herdr pane run "$P" "orchestra"
 herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY" --timeout 60000
 herdr pane read "$P" --source visible
 ```

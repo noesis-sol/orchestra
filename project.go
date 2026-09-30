@@ -374,10 +374,6 @@ func nextSteps(repo string, steps []step, pre []step) []string {
 	if out, _ := run(repo, "git", "status", "--porcelain", "--", orchDir, legacyPrompt); strings.TrimSpace(out) != "" {
 		next = append(next, "Commit "+orchDir+"/.")
 	}
-	ws := os.Getenv("HERDR_WORKSPACE_ID")
-	if ws == "" {
-		ws = "<herdr workspace id>"
-	}
-	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\n"+"WORKSPACE="+ws+" orchestra")
+	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
 	return next
 }

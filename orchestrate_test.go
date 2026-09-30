@@ -421,3 +421,15 @@ func TestWordWrapKeepsHyphenatedWords(t *testing.T) {
 		t.Errorf("a long word should be cut: %q", long)
 	}
 }
+
+func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
+	t.Setenv("HERDR_WORKSPACE_ID", "w9Z")
+	if got := currentWorkspace(); got != "w9Z" {
+		t.Errorf("got %q", got)
+	}
+	t.Setenv("HERDR_WORKSPACE_ID", "")
+	t.Setenv("HERDR_ENV", "")
+	if got := currentWorkspace(); got != "" {
+		t.Errorf("outside Herdr there is no current workspace, got %q", got)
+	}
+}

@@ -9,7 +9,9 @@
 //
 // Run from anywhere inside the main checkout (not from a worktree), in a Herdr pane:
 //
-//	WORKSPACE=<herdr workspace id> orchestra
+//	orchestra
+//
+// Worker tabs open in the pane's own Herdr workspace unless --workspace says otherwise.
 //
 // Every event is shown in the terminal and appended to .orchestra/orchestra.log. Set a project up
 // with 'orchestra init'.
@@ -93,7 +95,7 @@ func loadConfig() (Config, []string) {
 	var c Config
 	var problems []string
 
-	flag.StringVar(&c.Workspace, "workspace", os.Getenv("WORKSPACE"), "Herdr workspace for the worker tabs (list IDs with: herdr workspace list) [WORKSPACE]")
+	flag.StringVar(&c.Workspace, "workspace", os.Getenv("WORKSPACE"), "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list) [WORKSPACE]")
 	flag.IntVar(&c.Limit, "limit", envInt("LIMIT", 40, &problems), "stop after this many tickets in total [LIMIT]")
 	flag.IntVar(&c.DoneSoFar, "done-so-far", envInt("DONE_SO_FAR", 0, &problems), "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	flag.StringVar(&c.AgentKind, "agent", envOr("AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")
@@ -110,7 +112,7 @@ func loadConfig() (Config, []string) {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -126,7 +128,10 @@ func loadConfig() (Config, []string) {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
 	if c.Workspace == "" {
-		problems = append(problems, "WORKSPACE is not set. Find the ID with 'herdr workspace list', then run: WORKSPACE=<id> orchestra")
+		c.Workspace = currentWorkspace()
+	}
+	if c.Workspace == "" && os.Getenv("HERDR_ENV") == "1" {
+		problems = append(problems, "Could not tell which Herdr workspace this pane is in. Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
 	}
 	if os.Getenv("HERDR_ENV") != "1" {
 		problems = append(problems, "Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane.")
