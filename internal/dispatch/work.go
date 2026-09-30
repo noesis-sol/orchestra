@@ -47,6 +47,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return nil
 	}
 
+	head := o.checkout.Head(c.Repo, br) // a worker that commits moves it
+
 	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
 	agent := o.agentName(id)
 
@@ -233,6 +235,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
 	// question is out of the queue until the maintainer answers; the run goes on without it.
 	info, showErr := o.tickets.Show(id)
+	fast := false // the worker failed at once, as one its environment fails does
+	defer func() { o.settledFast(id, fast) }()
 	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
 		o.markAside(id)
 		o.setAsked(id, true)
@@ -265,6 +269,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	case outcomeUnreadable:
 		return halt(ExitTool, "STATUS_UNREADABLE for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab)
 	case outcomeUnfinished:
+		fast = o.failedAtOnce(s, started, br, head, wt)
 		o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		if err := o.deferAside(id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

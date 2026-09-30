@@ -78,7 +78,22 @@ func (o *Loop) Run(ctx context.Context) int {
 	defer poll.Stop()
 	var stop *stopReason // the first reason decides the exit code
 	var alsoStopped []string
+	envSaid := false
 	for {
+		// Workers failing at once, whichever ticket they have, hold the run: said once, before
+		// another ticket starts.
+		if s := o.environmentStop(); s != nil && !envSaid {
+			envSaid = true
+			if stop == nil {
+				stop = s
+			} else {
+				alsoStopped = append(alsoStopped, s.text)
+			}
+			if len(inflight) > 0 {
+				o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
+					"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+			}
+		}
 		// Start tickets while there are free slots, unless something has stopped the run.
 		for stop == nil && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
 			t, queued, s := o.next(inflight)
@@ -134,6 +149,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			case !first:
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
+		case <-o.envWake: // the hold is picked up above
 		case <-poll.C:
 			if o.footprintOn() && len(inflight) > 1 {
 				o.readEdits() // warns when two workers edit the same file

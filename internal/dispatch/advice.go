@@ -123,6 +123,7 @@ func (o *Loop) triage(d organ.Deferral) {
 	o.appendNotes(d.ID, t.Note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
+	o.triaged(d.ID, t.Cause, t.Confidence, t.Summary)
 }
 
 // FirstLine returns the first line of s, trimmed: enough of an error for a one-line message.
@@ -191,6 +192,8 @@ func exitMeaning(code int) string {
 		return "the main checkout had uncommitted changes or left its branch"
 	case ExitMerge:
 		return "a finished ticket's branch did not fast-forward"
+	case ExitEnvironment:
+		return "workers kept failing at once, whichever ticket they had: the environment, not the tickets"
 	case ExitInterrupted:
 		return "stopped with Ctrl+C"
 	}

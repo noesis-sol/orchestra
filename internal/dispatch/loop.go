@@ -21,6 +21,7 @@ const (
 	ExitTool        = 4   // Herdr, Beads or git failure
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
+	ExitEnvironment = 7   // workers kept failing at once, whichever ticket they had: the machine, not the tickets
 	ExitInterrupted = 130 // stopped with Ctrl+C
 )
 
@@ -89,6 +90,14 @@ type Loop struct {
 	triageWake   chan struct{} // buffered 1: something was queued, or the queue closed
 	triageDone   chan struct{}
 
+	// Holding for the environment, under mu: the tickets whose workers failed at once in a row, the
+	// tickets triage blamed on the environment in a row, and the reason once the run holds.
+	// envWake (buffered 1) tells Run.
+	fastFails   []string
+	envVerdicts []string
+	envStop     *stopReason
+	envWake     chan struct{}
+
 	wait timing // how long it waits on things; tests shorten it
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
@@ -99,7 +108,8 @@ type Loop struct {
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, reporter: d.Reporter,
-		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx}
+		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
+		envWake: make(chan struct{}, 1)}
 }
 
 // Final is the line the run ended with.
@@ -228,4 +238,10 @@ type Config struct {
 	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
 	Version      string        // orchestra's version, for the log
 	NoFootprint  bool          // start tickets side by side even when their footprints overlap
+	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
+	// environment with high confidence, hold the run; 0 turns it off.
+	EnvHoldCount int
+	// EnvHoldWindow is how soon after dispatch a worker that settles with its ticket unclaimed and
+	// unchanged counts as failing at once.
+	EnvHoldWindow time.Duration
 }

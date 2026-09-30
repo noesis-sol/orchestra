@@ -229,6 +229,11 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		} else {
 			c.CheckTimeout = d
 		}
+		if n, d, err := project.ResolveEnvironmentHold(settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.EnvHoldCount, c.EnvHoldWindow = n, d
+		}
 		if types, err := project.ResolveExcludeTypes(settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {

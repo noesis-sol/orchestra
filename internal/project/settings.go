@@ -32,6 +32,17 @@ type Settings struct {
 	// Footprint false starts tickets side by side even when they name the same files or functions.
 	// Absent or true: a ticket whose footprint overlaps a running ticket's waits for a later slot.
 	Footprint *bool `json:"footprint,omitempty"`
+	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
+	// ticket they have. Absent: DefaultEnvironmentHold.
+	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
+}
+
+// EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
+// settled within Window of dispatch without claiming the ticket or changing anything, or that
+// triage blamed on the environment with high confidence, hold the run.
+type EnvironmentHold struct {
+	Count  *int   `json:"count,omitempty"`  // absent: DefaultEnvironmentHoldCount; 0 turns the hold off
+	Window string `json:"window,omitempty"` // a duration such as "2m"; empty: DefaultEnvironmentHoldWindow
 }
 
 const (
@@ -41,6 +52,13 @@ const (
 	DefaultCheckTimeout = 30 * time.Minute
 	// DefaultCheckTimeoutText is DefaultCheckTimeout as settings.json writes it.
 	DefaultCheckTimeoutText = "30m"
+)
+
+// The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
+// within two minutes of dispatch.
+const (
+	DefaultEnvironmentHoldCount  = 2
+	DefaultEnvironmentHoldWindow = 2 * time.Minute
 )
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
@@ -180,4 +198,25 @@ func ResolveExcludeTypes(s Settings) ([]string, error) {
 		types = append(types, t)
 	}
 	return types, nil
+}
+
+// ResolveEnvironmentHold picks a run's environment hold from the project's settings: how many
+// tickets in a row (0: off) and how soon after dispatch a worker failing counts as failing at once.
+func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err error) {
+	count, window = DefaultEnvironmentHoldCount, DefaultEnvironmentHoldWindow
+	h := s.EnvironmentHold
+	if h == nil {
+		return count, window, nil
+	}
+	if h.Count != nil {
+		if count = *h.Count; count < 0 {
+			return 0, 0, fmt.Errorf("%s: environment_hold count must be 0 (off) or more (got %d)", SettingsPath("."), count)
+		}
+	}
+	if h.Window != "" {
+		if window, err = time.ParseDuration(h.Window); err != nil || window <= 0 {
+			return 0, 0, fmt.Errorf("%s: environment_hold window must be a positive duration such as 2m (got '%s')", SettingsPath("."), h.Window)
+		}
+	}
+	return count, window, nil
 }

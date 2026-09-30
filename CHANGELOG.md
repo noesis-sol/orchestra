@@ -8,6 +8,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A run holds when the machine, not the tickets, fails its workers: when 2
+  tickets in a row had workers that settled within 2 minutes of dispatch
+  without claiming the ticket or changing anything, or were blamed on the
+  environment with high confidence by triage. No new tickets start, the running
+  ones finish, and the run ends with `ENVIRONMENT: …; check the machine, then
+  restart` (exit code 7), logged and notified once. Tickets whose workers failed
+  at once are reopened rather than left deferred, keeping their notes. Before,
+  a safety classifier that was down for a few minutes had every worker give up,
+  and each ticket was deferred in turn. `"environment_hold": {"count": 2,
+  "window": "2m"}` in `.orchestra/settings.json` sets the thresholds; `"count":
+  0` turns it off.
 - Tickets that touch the same code no longer run side by side. A ticket's
   footprint is what its text names (paths such as `internal/dispatch/merge.go`
   or `run.go`, checked against `git ls-files`, and functions such as

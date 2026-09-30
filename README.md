@@ -69,7 +69,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 
 ```
 .orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
-.orchestra/settings.json      committed: the check command and its time limit, how many tickets run at once, an optional ticket limit, the issue types never dispatched, and whether tickets are kept apart by footprint
+.orchestra/settings.json      committed: the check command and its time limit, how many tickets run at once, an optional ticket limit, the issue types never dispatched, whether tickets are kept apart by footprint, and when failing workers hold the run
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
@@ -103,6 +103,7 @@ With `concurrent` above 1, up to that many workers run side by side, each in its
 - **Some tickets run alone.** A ticket labelled `solo` (`bd label add <id> solo`), such as one splitting a file every other ticket touches, would conflict with whatever runs beside it. It starts only when no other ticket is running, and nothing new starts while it runs: free slots wait, and the log says once `waiting for solo ticket <id> to finish`. When it is next in priority while others run, nothing new starts behind it, so it isn't starved; the log says `solo ticket <id> is next`, and it starts as soon as the running ones finish. The dashboard's title line shows `solo <id> next` or `solo <id> running`. Holds and questions work as for any ticket, and with one ticket at a time the label changes nothing.
 - **Tickets that touch the same code don't run together.** Each ticket has a **footprint**: the files and functions its title, description, design, acceptance criteria and notes name (`internal/dispatch/merge.go:120`, `run.go`, `Loop.merge`, `refreshBranch()`, a camel-case name in backticks such as `waitSettled`), its `area:<name>` labels, and the files its `files` metadata lists (`bd update <id> --set-metadata files=a.go,b.go`). Names are checked against `git ls-files`: a bare file name means every file of that name, and a path that isn't there counts only in a folder that is (a file the ticket adds). Two tickets overlap when they share an area label, a function (when both name functions), or else a file. A running ticket's footprint also grows with every file its worker edits (Claude workers report each Edit and Write through their hooks, in `.orchestra/run/edits`), compared file by file. A free slot goes to the highest-priority ready ticket that overlaps no running ticket; one that does is skipped, not waited for, and the log says once `skipping <id>: touches Loop.merge, like running <other>`. If every ready ticket overlaps, the slot stays empty until something finishes. A ticket naming nothing runs beside anything, as before; a `solo` ticket waits for every running ticket anyway. The dispatch log shows each ticket's footprint (`<id> footprint: …`). When two running workers edit the same file, the log and a notification say once `LIKELY_CONFLICT: <a> and <b> both edit <file>`. `"footprint": false` in `settings.json` turns all of this off.
 - **One git writer at a time.** Worktree creation, rebases, merges and cleanup in the main repository take a lock, so workers don't trip over git's lock files.
+- **A failing machine holds the run.** Sometimes the environment fails every worker the same way, whichever ticket it has: a safety classifier that is down refuses every command, say, and each worker gives up at once. Setting each ticket aside in turn would burn through the queue, so the run holds for the environment instead when 2 tickets in a row either had workers that settled within 2 minutes of dispatch without claiming the ticket, committing or leaving changes, or were blamed on the environment with high confidence by [triage](#organs). The log and a notification say once `ENVIRONMENT: the last 2 tickets (<a>, <b>) each settled within 2m of starting without being claimed or changed; check the machine, then restart`: no new tickets start, the running ones finish, and the run ends with exit code 7. Tickets whose workers failed at once did nothing, so they are reopened rather than left deferred, with their notes kept; tickets triage blamed, whose workers had started on them, stay deferred with the verdict in their notes. One such failure alone changes nothing. `"environment_hold": {"count": 3, "window": "90s"}` in `settings.json` changes the thresholds, and `{"count": 0}` turns it off.
 - **Stopping drains.** Something that stops the run (`PAUSED`, `BLOCKED`, a tool failure) is logged as `HOLD`. No new tickets start, the running ones finish and merge, and then the run ends with that reason. With one ticket at a time, nothing changes. Ctrl+C still stops at once.
 
 What `orchestra` can't make safe for you:
@@ -156,6 +157,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 | 4 | Herdr, Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |
 | 6 | a finished ticket's branch does not fast-forward (it should have been rebased first) |
+| 7 | workers kept failing at once, whichever ticket they had: the environment, not the tickets (`ENVIRONMENT`) |
 | 130 | stopped with Ctrl+C, SIGTERM or SIGHUP; the running worker keeps its tab and worktree |
 
 After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
@@ -191,6 +193,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `holds.go` | tickets held for an unmerged blocker, the `unmerged` label, tickets set aside, deferred or waiting on a question |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `events.go` | the log file, notifications, events and status sent to the dashboard |
+| `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing |
 | `advice.go` | triage and the run review |
 | `deps.go` | the interfaces to Beads, Herdr, git and workers' reports |
 

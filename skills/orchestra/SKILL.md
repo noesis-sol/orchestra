@@ -42,7 +42,9 @@ and optionally `ticket_limit`, how long a worker may go on before the run stops 
 `--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_timeout`, how long the check
 command may run on a rebased ticket before it is stopped and the ticket set aside (`"5m"`, default
 30m; `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it), and `exclude_types`, the issue
-types never dispatched (default `["epic"]`; `[]` dispatches every type).
+types never dispatched (default `["epic"]`; `[]` dispatches every type), and `environment_hold`,
+when workers failing the same way hold the run (default `{"count": 2, "window": "2m"}`; `"count": 0`
+turns it off).
 
 ## Setting a project up
 
@@ -138,6 +140,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
 | `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its agent's status undetectable. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, merge by hand (below). |
+| `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error; for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |

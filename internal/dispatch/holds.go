@@ -235,3 +235,15 @@ func (o *Loop) markAside(id string) {
 	}
 	o.asideIDs = append(o.asideIDs, id)
 }
+
+// unmarkAside takes a ticket back out of those set aside in this run.
+func (o *Loop) unmarkAside(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for i, x := range o.asideIDs {
+		if x == id {
+			o.asideIDs = append(o.asideIDs[:i:i], o.asideIDs[i+1:]...)
+			return
+		}
+	}
+}
