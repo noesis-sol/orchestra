@@ -196,21 +196,3 @@ func exitMeaning(code int) string {
 	}
 	return "unknown"
 }
-
-// setAside lists tickets deferred or left unmerged in this run, in order, without repeats.
-func (o *Loop) setAside() []string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return append([]string(nil), o.asideIDs...)
-}
-
-func (o *Loop) markAside(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	for _, x := range o.asideIDs {
-		if x == id {
-			return
-		}
-	}
-	o.asideIDs = append(o.asideIDs, id)
-}

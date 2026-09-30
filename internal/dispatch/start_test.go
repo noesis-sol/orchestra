@@ -3,8 +3,13 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/noesis-sol/orchestra/internal/herdr"
 )
 
 // refusingHerdr is Herdr refusing every agent name: the start, the adoption and the rename.
@@ -63,5 +68,231 @@ func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 		} else if len(h.starts) != 1 || h.starts[0] != "agent-for-Cal-bl0.1" {
 			t.Errorf("started as %v, want once as agent-for-Cal-bl0.1", h.starts)
 		}
+	}
+}
+
+func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	old := f.ticket(t, "k-1", "a.txt", "a\n")
+	if err := os.RemoveAll(old); err != nil {
+		t.Fatal(err)
+	}
+	f.orch.cfg.WTRoot = t.TempDir()
+	wt, conflicts, s := f.orch.prepareWorktree("k-1", "wt/k-1")
+	if s != nil || conflicts {
+		t.Fatalf("stop %v, conflicts %v", s, conflicts)
+	}
+	if want := filepath.Join(f.orch.cfg.WTRoot, "k-1"); wt != want {
+		t.Errorf("worktree = %q, want a fresh one at %q", wt, want)
+	}
+	if got := read(t, filepath.Join(wt, "a.txt")); got != "a\n" {
+		t.Errorf("the fresh worktree should be on the existing branch, a.txt = %q", got)
+	}
+	if br := strings.TrimSpace(f.git(wt, "branch", "--show-current")); br != "wt/k-1" {
+		t.Errorf("branch = %q", br)
+	}
+}
+
+func TestAnUnreadableStatusIsNotAClaim(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(Config{}, log, "", Deps{Tickets: brokenBd{}})
+	if o.claimed("A") {
+		t.Error("an unreadable status was taken for a claim")
+	}
+	if !strings.Contains(read(t, logPath), "database is locked") {
+		t.Error("the cause was not logged")
+	}
+}
+
+// A returning ticket whose branch conflicts with main gets no worker, which could only work on a
+// stale base and end in MERGE_CONFLICT: it is deferred with a note on how to rebase it.
+func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.git(h.repo, "branch", "wt/A")
+	h.git(h.repo, "checkout", "-q", "wt/A")
+	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("A\n"), 0o644)
+	h.git(h.repo, "add", ".")
+	h.git(h.repo, "commit", "-q", "-m", "A: earlier attempt")
+	h.git(h.repo, "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("main\n"), 0o644)
+	h.git(h.repo, "add", ".")
+	h.git(h.repo, "commit", "-q", "-m", "main moves on")
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A", finishes("a.txt"))
+	h.worker("B", finishes("b.txt"))
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "REBASE_FAILED: wt/A conflicts with main -> A deferred without starting a worker") {
+		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
+	}
+	if st, _ := h.beads.Status("A"); st != "deferred" {
+		t.Errorf("A is %s, want deferred", st)
+	}
+	if n := h.beads.notesOf("A"); !strings.Contains(n, "git rebase main") || !strings.Contains(n, "bd undefer A") {
+		t.Errorf("notes: %q", n)
+	}
+	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab1"}) {
+		t.Errorf("tabs closed: %v; only B's worker should have had a tab", got)
+	}
+	if log := h.mainLog(); strings.Contains(log, "A:") || !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+	if got := h.git(h.worktree("A"), "status", "--porcelain"); got != "" {
+		t.Errorf("A's worktree should be left clean, with the rebase undone:\n%s", got)
+	}
+}
+
+// Started from its prompt file the worker never shows up, and Herdr's start refuses the reporting
+// arguments: it is started plainly and the prompt pasted.
+func TestStartFallsBackToPastingThePrompt(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.reporter = fakeReporter{}
+	h.herdr.launchFails["A"] = true
+	h.herdr.refuseArgs = true
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
+		t.Errorf("pasted to %v", got)
+	}
+	logged := h.logged()
+	for _, want := range []string{"could not be started from its prompt file", errRefused.Error()} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log lacks %q:\n%s", want, logged)
+		}
+	}
+	if !strings.Contains(h.mainLog(), "A: add a.txt") {
+		t.Error("A should be merged")
+	}
+}
+
+// A worker launched from its prompt file that Herdr sees only after the adoption gave up is
+// adopted: no second worker is started in its pane, and the prompt it was launched with is not
+// pasted to it again.
+func TestStartAdoptsAWorkerSlowToAppear(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.herdr.launchSlow["A"] = true
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.herdr.startsFor(); len(got) != 0 {
+		t.Errorf("herdr agent start was asked for %v; want no second worker", got)
+	}
+	if got := h.herdr.pastedTo(); len(got) != 0 {
+		t.Errorf("pasted to %v; the worker had its prompt at launch", got)
+	}
+	if !strings.Contains(h.sink.text(), "A's worker was slow to start; named it A") {
+		t.Errorf("events:\n%s", h.sink.text())
+	}
+	if !strings.Contains(h.mainLog(), "A: add a.txt") {
+		t.Error("A should be merged")
+	}
+}
+
+// A launch that leaves the pane empty for good falls back to Herdr's start and a pasted prompt.
+func TestStartFallsBackWhenTheLaunchedWorkerNeverAppears(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.herdr.launchLost["A"] = true
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o := h.loop()
+	o.wait.adopt = 20 * time.Millisecond
+	if code := o.Run(context.Background()); code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.herdr.startsFor(); !equal(got, []string{"A"}) {
+		t.Errorf("herdr agent start was asked for %v; want A once", got)
+	}
+	if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
+		t.Errorf("pasted to %v", got)
+	}
+	if !strings.Contains(h.mainLog(), "A: add a.txt") {
+		t.Error("A should be merged")
+	}
+}
+
+// A start that times out leaves the agent in its pane without a name: it is adopted, not started
+// twice.
+func TestStartAdoptsAnAgentLeftUnnamed(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.LaunchPrompt = false
+	h.herdr.startUnnamed["A"] = true
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if !strings.Contains(h.sink.text(), "A's worker started without its name; named it") {
+		t.Errorf("events:\n%s", h.sink.text())
+	}
+	if !strings.Contains(h.mainLog(), "A: add a.txt") {
+		t.Error("A should be merged")
+	}
+}
+
+// A ticket ID longer than Herdr's 32-character name limit still gets a worker, under the cut name
+// herdr.AgentName gives it, whether the worker is launched with its prompt or started and pasted to.
+func TestLongTicketIDRunsUnderACutName(t *testing.T) {
+	t.Parallel()
+	const id = "platform-backend-services-core-a3f.12.34" // 40 characters
+	for _, launch := range []bool{true, false} {
+		h := newHarness(t)
+		h.cfg.LaunchPrompt = launch
+		h.herdr.agentName = herdr.AgentName
+		h.beads.add(id, "long", 1)
+		h.worker(id, finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("launch=%v: exit %d, final %q\n%s", launch, code, o.Final(), h.sink.text())
+		}
+		if !strings.Contains(h.mainLog(), id+": add a.txt") {
+			t.Errorf("launch=%v: %s should be merged:\n%s", launch, id, h.mainLog())
+		}
+	}
+}
+
+// A prompt that never takes defers the ticket for a retry, and the run goes on without it.
+func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.LaunchPrompt = false
+	h.herdr.promptFails["A"] = true
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("B", finishes("b.txt"))
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.HasPrefix(got[0], "A   PROMPT_FAILED: A's worker never started on its prompt -> deferred") {
+		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
+	}
+	if got := h.herdr.pastedTo(); !equal(got, []string{"A", "A", "B"}) {
+		t.Errorf("pasted to %v: A's prompt should be sent twice, never more", got)
+	}
+	if st, _ := h.beads.Status("A"); st != "deferred" || !strings.Contains(h.beads.notesOf("A"), "never started on its prompt") {
+		t.Errorf("A is %s, notes %q", st, h.beads.notesOf("A"))
+	}
+	if !strings.Contains(h.mainLog(), "B: add b.txt") {
+		t.Error("B should be merged")
 	}
 }

@@ -99,3 +99,53 @@ func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
 		t.Errorf("reports folder under a file: saved to %q, err %v", path, err)
 	}
 }
+
+// A worker that outlasts the wait finds triage closed when it gets there, and neither panics nor
+// blocks.
+func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
+	o, tk, sink := newDeferringLoop(t)
+	o.wait.settle = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	codes := make(chan int, 1)
+	go func() { codes <- o.Run(ctx) }()
+	<-tk.entered
+	cancel()
+	select {
+	case code := <-codes:
+		if code != ExitInterrupted {
+			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after its settle wait")
+	}
+	o.FinishTriage(context.Background())
+	close(tk.release)
+	select {
+	case <-sink.gone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not return")
+	}
+}
+
+func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := &Loop{log: log, sink: &recordSink{}, organ: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
+		organCtx: context.Background()}
+	o.queueTriage(context.Background(), organ.Deferral{ID: "before-start"}) // triage off: nothing happens
+	o.StartTriage()
+	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
+	o.FinishTriage(context.Background())
+	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
+	o.FinishTriage(context.Background()) // a second call returns too
+	got := o.sink.(*recordSink).text()
+	if !strings.Contains(got, "TRIAGE_FAILED for A") || strings.Contains(got, " B:") || strings.Contains(got, "before-start") {
+		t.Errorf("A should be triaged (and fail, without claude), B and before-start dropped:\n%s", got)
+	}
+	if len(o.triageQ) != 0 {
+		t.Errorf("queue = %v", o.triageQ)
+	}
+}
