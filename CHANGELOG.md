@@ -145,6 +145,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The built-in worker prompt tells workers never to stop processes by name or
+  pattern (`pkill -f dispatch.test` from one worker ended another's check with
+  `signal: terminated`), only the ones they started, by PID.
 - The dashboard's totals strip drops its "Picked up" column (N of LIMIT), and
   the one-line form its `picked N/LIMIT` count: the tickets table lists every
   ticket picked up. The `[3/40]` count in the log lines is unchanged.

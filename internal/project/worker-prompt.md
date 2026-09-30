@@ -7,6 +7,8 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   While iterating, run only the checks you need, e.g. `<a quicker subset>`.
 - Run `<check command>` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
+- Other workers run the same programs and tests on this machine. Never stop processes by name or
+  pattern (`pkill`, `killall`, `pkill -f`); stop only those you started, by their PID.
 - Other tickets run beside yours and merge first, so don't add where they all add:
   - put new tests in a new test file named after the feature, not at the end of an existing one;
   - add new struct fields, constants and helpers next to the code they belong to, not at the end
