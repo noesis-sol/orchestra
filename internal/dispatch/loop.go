@@ -192,6 +192,8 @@ type Loop struct {
 	// settleWait bounds how long Run waits after Ctrl+C for its workers to return; 0 means
 	// SettleWait.
 	settleWait time.Duration
+	// poll is how often a worker's status is read while waiting on it; 0 means every 3 seconds.
+	poll time.Duration
 
 	// ReportInterrupt logs Ctrl+C from the loop itself; in the terminal UI the command does it (it
 	// knows which tabs were running).
@@ -291,6 +293,14 @@ func (o *Loop) interrupted() int {
 	}
 	o.emit(Event{Kind: EvStop, Text: "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"})
 	return ExitInterrupted
+}
+
+// pollEvery is how often a worker's status is read while waiting on it.
+func (o *Loop) pollEvery() time.Duration {
+	if o.poll == 0 {
+		return 3 * time.Second
+	}
+	return o.poll
 }
 
 // sleep waits for d, returning false if ctx is cancelled first.
@@ -474,8 +484,14 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 
 	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
 	// Herdr keeps unique. Rename it so the new worker can have the name; its tab stays as it is.
-	switch st := o.agents.Status(id); st {
+	st, err := o.readStatus(ctx, id, 5)
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	switch st {
 	case "gone":
+	case "unreadable":
+		return halt(ExitTool, "HERDR_FAILED: cannot tell whether an earlier worker for %s is still in its tab: %v", id, err)
 	case "working", "blocked":
 		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
@@ -560,7 +576,10 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if !sleep(ctx, 3*time.Second) {
 			return errInterrupted
 		}
-		st := o.agents.Status(id)
+		st, err := o.agents.Status(id)
+		if err != nil {
+			o.log.Raw("", err)
+		}
 		if st == "gone" {
 			// A start that times out leaves the agent running unnamed in its pane, and a retry
 			// would find the pane busy: adopt that agent under the ticket's name instead.
@@ -599,41 +618,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return nil
 	}
 
-	// Wait until the worker settles. Never answer its prompts; stop if it stays blocked for 4
-	// minutes. A worker waiting on its own background command looks idle too, so an idle worker
-	// whose ticket is still in progress gets idleGrace to resume before it counts as settled.
-	var blockedSince, idleSince time.Time
-	for {
-		if ctx.Err() != nil {
-			return errInterrupted
-		}
-		st := o.agents.Status(id)
-		if st == "gone" {
-			break
-		}
-		if st == "idle" || st == "done" {
-			if idleSince.IsZero() {
-				idleSince = time.Now()
-			}
-			if !keepWaiting(o.tickets.Status(id), time.Since(idleSince)) {
-				break
-			}
-		} else {
-			idleSince = time.Time{}
-		}
-		if st == "blocked" {
-			if blockedSince.IsZero() {
-				blockedSince = time.Now()
-			}
-			if time.Since(blockedSince) > 4*time.Minute {
-				return halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
-			}
-		} else {
-			blockedSince = time.Time{}
-		}
-		if !sleep(ctx, 3*time.Second) {
-			return errInterrupted
-		}
+	if stop := o.waitSettled(ctx, id, tab); stop != nil {
+		return stop
 	}
 	stopWatch()
 
@@ -810,6 +796,80 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 	return err
 }
 
+// waitSettled waits until the worker settles. Never answer its prompts; stop if it stays blocked for 4
+// minutes. A worker waiting on its own background command looks idle too, so an idle worker
+// whose ticket is still in progress gets idleGrace to resume before it counts as settled. A
+// status Herdr fails to read says nothing about the worker, so the wait goes on through
+// maxFailedReads of them in a row before the run stops.
+func (o *Loop) waitSettled(ctx context.Context, id, tab string) *stopReason {
+	var blockedSince, idleSince time.Time
+	failed := 0
+	for {
+		if ctx.Err() != nil {
+			return errInterrupted
+		}
+		st, err := o.agents.Status(id)
+		if err != nil {
+			if failed++; failed == 1 {
+				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
+			}
+			if failed >= maxFailedReads {
+				return halt(ExitTool, "HERDR_FAILED: the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err)
+			}
+			if !sleep(ctx, o.pollEvery()) {
+				return errInterrupted
+			}
+			continue
+		}
+		failed = 0
+		if st == "gone" {
+			return nil
+		}
+		if st == "idle" || st == "done" {
+			if idleSince.IsZero() {
+				idleSince = time.Now()
+			}
+			if !keepWaiting(o.tickets.Status(id), time.Since(idleSince)) {
+				return nil
+			}
+		} else {
+			idleSince = time.Time{}
+		}
+		if st == "blocked" {
+			if blockedSince.IsZero() {
+				blockedSince = time.Now()
+			}
+			if time.Since(blockedSince) > 4*time.Minute {
+				return halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
+			}
+		} else {
+			blockedSince = time.Time{}
+		}
+		if !sleep(ctx, o.pollEvery()) {
+			return errInterrupted
+		}
+	}
+}
+
+// maxFailedReads is how many failed status reads in a row (a minute's worth) stop the wait on a
+// worker.
+const maxFailedReads = 20
+
+// readStatus reads the worker's status, trying up to tries times while Herdr fails to answer and
+// logging each failure. "unreadable" and the last error if it never answers.
+func (o *Loop) readStatus(ctx context.Context, id string, tries int) (string, error) {
+	for try := 1; ; try++ {
+		st, err := o.agents.Status(id)
+		if err == nil || try == tries {
+			return st, err
+		}
+		o.log.Raw("", err)
+		if !sleep(ctx, o.pollEvery()) {
+			return st, err
+		}
+	}
+}
+
 // idleGrace is how long an idle worker whose ticket is still in progress may take to resume
 // (typically it is waiting on its own background command) before the run pauses for it.
 const idleGrace = 10 * time.Minute
@@ -870,7 +930,8 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		switch o.agents.Status(id) {
+		st, _ := o.readStatus(ctx, id, 5)
+		switch st {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
@@ -897,7 +958,7 @@ func (o *Loop) watch(ctx context.Context, wt string, base Status) (stop func()) 
 		defer tick.Stop()
 		for {
 			s := base
-			s.Agent = o.agents.Status(s.Ticket)
+			s.Agent, _ = o.agents.Status(s.Ticket) // the settle loop logs failures
 			s.Activity = lastActivity(o.agents.Screen(s.Ticket))
 			if o.reporter != nil && s.Agent == "working" {
 				if u, ok := o.reporter.LastToolUse(wt); ok {

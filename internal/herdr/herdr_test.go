@@ -1,23 +1,35 @@
 package herdr
 
 import (
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
-func TestParsePaneAgent(t *testing.T) {
+func TestReadAgent(t *testing.T) {
 	unnamed := `{"id":"cli:agent:get","result":{"agent":{"name":null,"agent":"claude","agent_status":"working","pane_id":"w2B:p1D"}}}`
-	if n, k, s := parsePaneAgent([]byte(unnamed)); n != "" || k != "claude" || s != "working" {
-		t.Errorf("unnamed: %q %q %q", n, k, s)
+	if n, k, s, err := readAgent(unnamed, nil); n != "" || k != "claude" || s != "working" || err != nil {
+		t.Errorf("unnamed: %q %q %q %v", n, k, s, err)
 	}
 	named := `{"result":{"agent":{"name":"kinieta-9g6","agent":"claude","agent_status":"idle"}}}`
-	if n, _, s := parsePaneAgent([]byte(named)); n != "kinieta-9g6" || s != "idle" {
-		t.Errorf("named: %q %q", n, s)
+	if n, _, s, err := readAgent(named, nil); n != "kinieta-9g6" || s != "idle" || err != nil {
+		t.Errorf("named: %q %q %v", n, s, err)
 	}
-	if _, _, s := parsePaneAgent([]byte(`{"error":{"code":"agent_not_found"}}`)); s != "gone" {
-		t.Errorf("no agent: %q", s)
+	failed := errors.New("exit status 1")
+	notFound := `{"error":{"code":"agent_not_found","message":"agent target x not found"},"id":"cli:agent:get"}`
+	if _, _, s, err := readAgent(notFound, failed); s != "gone" || err != nil {
+		t.Errorf("no agent: %q %v", s, err)
+	}
+	// A failed call that doesn't say the agent is missing tells nothing about it.
+	for _, out := range []string{"", `{"error":{"code":"server_busy"}}`} {
+		if _, k, s, err := readAgent(out, failed); s != "unreadable" || k != "" || err != failed {
+			t.Errorf("failed call with %q: %q %q %v", out, k, s, err)
+		}
+	}
+	if _, _, s, err := readAgent("not json", nil); s != "unreadable" || err == nil {
+		t.Errorf("garbled output: %q %v", s, err)
 	}
 }
 

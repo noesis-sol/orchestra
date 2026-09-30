@@ -104,16 +104,16 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (stri
 }
 
 // PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
-// status "gone" if the pane holds no agent.
+// status "gone" if the pane holds no agent and "unreadable" if Herdr could not be asked.
 func (t Terminal) PaneAgent(pane string) (name, kind, status string) {
-	out, err := command.Output("", "herdr", "agent", "get", pane)
-	if err != nil {
-		return "", "", "gone"
-	}
-	return parsePaneAgent([]byte(out))
+	name, kind, status, _ = readAgent(command.Output("", "herdr", "agent", "get", pane))
+	return name, kind, status
 }
 
-func parsePaneAgent(raw []byte) (name, kind, status string) {
+// readAgent reads the output of 'herdr agent get': the agent's name, kind and status. Herdr answers
+// a missing agent with agent_not_found (and fails), which is "gone"; any other failure (Herdr busy
+// or restarting, say) says nothing about the agent, so it is "unreadable" with the error.
+func readAgent(out string, err error) (name, kind, status string, _ error) {
 	var r struct {
 		Result struct {
 			Agent struct {
@@ -122,15 +122,26 @@ func parsePaneAgent(raw []byte) (name, kind, status string) {
 				AgentStatus string  `json:"agent_status"`
 			} `json:"agent"`
 		} `json:"result"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
-	if json.Unmarshal(raw, &r) != nil || r.Result.Agent.AgentStatus == "" {
-		return "", "", "gone"
+	jerr := json.Unmarshal([]byte(out), &r)
+	switch {
+	case jerr == nil && r.Error.Code == "agent_not_found":
+		return "", "", "gone", nil
+	case err != nil:
+		return "", "", "unreadable", err
+	case jerr != nil:
+		return "", "", "unreadable", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
+	case r.Result.Agent.AgentStatus == "":
+		return "", "", "gone", nil
 	}
 	a := r.Result.Agent
 	if a.Name != nil {
 		name = *a.Name
 	}
-	return name, a.Agent, a.AgentStatus
+	return name, a.Agent, a.AgentStatus, nil
 }
 
 // RenameAgent gives the agent (by name or pane) a new name.
@@ -148,7 +159,7 @@ func (t Terminal) FreeName(id string) string {
 		if len(base)+len(suffix) > 32 {
 			base = base[:32-len(suffix)]
 		}
-		if t.Status(base+suffix) == "gone" {
+		if st, _ := t.Status(base + suffix); st == "gone" { // not "unreadable": that name may be taken
 			return base + suffix
 		}
 	}
@@ -179,23 +190,11 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 	return err == nil
 }
 
-// Status returns idle, working, blocked, done or unknown, or "gone" if the agent cannot be read.
-func (t Terminal) Status(name string) string {
-	out, err := command.Output("", "herdr", "agent", "get", name)
-	if err != nil {
-		return "gone"
-	}
-	var r struct {
-		Result struct {
-			Agent struct {
-				AgentStatus string `json:"agent_status"`
-			} `json:"agent"`
-		} `json:"result"`
-	}
-	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Agent.AgentStatus == "" {
-		return "gone"
-	}
-	return r.Result.Agent.AgentStatus
+// Status returns idle, working, blocked, done or unknown, or "gone" if Herdr has no such agent. If
+// Herdr cannot be asked it returns "unreadable" and the error: the agent may well be there.
+func (t Terminal) Status(name string) (string, error) {
+	_, _, st, err := readAgent(command.Output("", "herdr", "agent", "get", name))
+	return st, err
 }
 
 // Screen returns the end of the agent's terminal. Herdr can capture scrollback only while

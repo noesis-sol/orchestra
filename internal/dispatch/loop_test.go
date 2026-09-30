@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -352,7 +353,7 @@ func (upToDate) FastForward(repo, branch string) (string, error)       { return 
 
 type noAgents struct{}
 
-func (noAgents) Status(name string) string                             { return "gone" }
+func (noAgents) Status(name string) (string, error)                    { return "gone", nil }
 func (noAgents) Screen(name string) string                             { return "" }
 func (noAgents) Prompt(ctx context.Context, name, prompt string) error { return nil }
 func (noAgents) SendKeys(name string, keys ...string) error            { return nil }
@@ -575,5 +576,66 @@ func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
 	}
 	if len(o.triageQ) != 0 {
 		t.Errorf("queue = %v", o.triageQ)
+	}
+}
+
+// scriptedAgents reports the statuses in its script in turn, then gone; "unreadable" fails as a
+// Herdr call does.
+type scriptedAgents struct {
+	noAgents
+	script []string
+	reads  int
+}
+
+func (a *scriptedAgents) Status(name string) (string, error) {
+	a.reads++
+	if len(a.script) == 0 {
+		return "gone", nil
+	}
+	st := a.script[0]
+	a.script = a.script[1:]
+	if st == "unreadable" {
+		return st, errors.New("herdr agent get: server busy")
+	}
+	return st, nil
+}
+
+func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, string) {
+	t.Helper()
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &scriptedAgents{script: script}
+	return &Loop{log: log, sink: &recordSink{}, agents: a, tickets: readyTickets{}, poll: time.Millisecond}, a, logPath
+}
+
+// A status Herdr fails to read once says nothing about the worker: the wait goes on.
+func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
+	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
+	if stop := o.waitSettled(context.Background(), "A", "tab"); stop != nil {
+		t.Fatalf("stopped: %s", stop.text)
+	}
+	if a.reads != 4 {
+		t.Errorf("read the status %d times, want 4: the wait should last until the worker is gone", a.reads)
+	}
+	if logged := read(t, logPath); !strings.Contains(logged, "server busy") {
+		t.Errorf("the failed read should be logged:\n%s", logged)
+	}
+}
+
+func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
+	script := make([]string, maxFailedReads+5)
+	for i := range script {
+		script[i] = "unreadable"
+	}
+	o, a, _ := newSettleLoop(t, script...)
+	stop := o.waitSettled(context.Background(), "A", "tab")
+	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
+		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
+	}
+	if a.reads != maxFailedReads {
+		t.Errorf("read the status %d times, want %d", a.reads, maxFailedReads)
 	}
 }

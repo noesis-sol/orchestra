@@ -38,14 +38,16 @@ type Starter interface {
 // Namer finds and names agents, which is how the loop refers to a worker (by its ticket).
 type Namer interface {
 	AdoptAgent(ctx context.Context, pane, kind, name string) (string, bool) // name the agent that appears in the pane
-	PaneAgent(pane string) (name, kind, status string)
+	PaneAgent(pane string) (name, kind, status string)                      // status as Agents.Status gives it
 	RenameAgent(name, to string) error
 	FreeName(id string) string // an unused name for an earlier worker of ticket id
 }
 
 // Agents watches and nudges a running worker by name.
 type Agents interface {
-	Status(name string) string // idle, working, blocked, done, unknown, or gone
+	// Status is idle, working, blocked, done, unknown, or gone (no such agent); if the terminal
+	// cannot be asked it is "unreadable", with the error, and says nothing about the agent.
+	Status(name string) (string, error)
 	Screen(name string) string
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(name string, keys ...string) error
