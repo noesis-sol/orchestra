@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,6 +57,32 @@ func TestRunVersionHelpAndBadFlags(t *testing.T) {
 	}
 	if err, _, _ := runIn(t, dir, nil, "init", "-h"); err != nil {
 		t.Errorf("init -h: %v", err)
+	}
+}
+
+func TestRunRefusesPositionalArguments(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-c", "2", "init"}, "init comes before its flags"},
+		{[]string{"-plain", "init", "--check", "make test"}, "init comes before its flags"},
+		{[]string{"foo"}, `unexpected argument "foo"`},
+	} {
+		err, _, stderr := runIn(t, dir, nil, tc.args...)
+		if exitOf(err) != 2 || !strings.Contains(stderr, tc.want) || strings.Contains(stderr, "cannot start") {
+			t.Errorf("%q: exit %d, stderr:\n%s", tc.args, exitOf(err), stderr)
+		}
+	}
+
+	// 'orchestra init foo' sets nothing up.
+	repo, _ := gitRepo(t)
+	if err, _, _ := runIn(t, repo, nil, "init", "foo"); exitOf(err) != 2 {
+		t.Errorf("init foo: exit %d", exitOf(err))
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".orchestra")); !os.IsNotExist(err) {
+		t.Errorf("init foo created .orchestra/: %v", err)
 	}
 }
 

@@ -36,6 +36,10 @@ func runInit(dir string, args []string) int {
 		}
 		return dispatch.ExitSetup
 	}
+	if rest := fs.Args(); len(rest) > 0 {
+		fmt.Fprintf(os.Stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
+		return dispatch.ExitSetup
+	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	checkGiven, concurrentGiven := given["check"], given["concurrent"] || given["c"]

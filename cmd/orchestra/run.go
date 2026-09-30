@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -74,9 +75,13 @@ type options struct {
 	showVersion  bool
 }
 
+// errUnexpectedArgs is loadConfig's error for positional arguments: a run takes none.
+var errUnexpectedArgs = errors.New("unexpected arguments")
+
 // loadConfig reads the flags in args (defaulting to the environment variables orchestrate.sh used)
 // and collects every setup problem, so they can be reported together. The error is the flag
-// package's: flag.ErrHelp after -h, or a malformed flag.
+// package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
+// argument such as 'init' after a flag; both have been reported to output.
 func loadConfig(args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
 	var c options
 	var problems []string
@@ -106,6 +111,14 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		if rest[0] == "init" {
+			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--concurrent N] [--force]")
+		} else {
+			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
+		}
+		return c, nil, errUnexpectedArgs
 	}
 	c.showVersion = *showVersion
 	if c.showVersion {
