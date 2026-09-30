@@ -152,9 +152,13 @@ func (t Terminal) PaneAgent(pane string) (name, kind, status string) {
 }
 
 // readAgent reads the output of 'herdr agent get': the agent's name, kind and status. Herdr answers
-// a missing agent with agent_not_found (and fails), which is "gone"; any other failure (Herdr busy
-// or restarting, say) says nothing about the agent, so it is "unreadable" with the error.
+// a missing agent with agent_not_found on stderr (and fails), which is "gone"; any other failure
+// (Herdr busy or restarting, say) says nothing about the agent, so it is "unreadable" with the
+// error.
 func readAgent(out string, err error) (name, kind, status string, _ error) {
+	if err != nil && strings.Contains(err.Error(), `"code":"agent_not_found"`) { // stderr is in err
+		return "", "", "gone", nil
+	}
 	var r struct {
 		Result struct {
 			Agent struct {

@@ -23,6 +23,15 @@ func TestReadAgent(t *testing.T) {
 	if _, _, s, err := readAgent(notFound, failed); s != "gone" || err != nil {
 		t.Errorf("no agent: %q %v", s, err)
 	}
+	// What Herdr really does: the answer goes to stderr, which command.Output puts in the error.
+	onStderr := errors.New(`herdr agent get x: exit status 1: ` + notFound)
+	if _, _, s, err := readAgent("", onStderr); s != "gone" || err != nil {
+		t.Errorf("no agent, answered on stderr: %q %v", s, err)
+	}
+	busy := errors.New(`herdr agent get x: exit status 1: {"error":{"code":"server_busy"}}`)
+	if _, _, s, err := readAgent("", busy); s != "unreadable" || err != busy {
+		t.Errorf("Herdr busy, answered on stderr: %q %v", s, err)
+	}
 	// A failed call that doesn't say the agent is missing tells nothing about it.
 	for _, out := range []string{"", `{"error":{"code":"server_busy"}}`} {
 		if _, k, s, err := readAgent(out, failed); s != "unreadable" || k != "" || err != failed {
