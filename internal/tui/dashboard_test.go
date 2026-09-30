@@ -304,3 +304,22 @@ func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
 		t.Errorf("a queue count should add no row: %d rows", len(m.rows))
 	}
 }
+
+func TestPlainPrinterWritesLogLinesToOut(t *testing.T) {
+	var b strings.Builder
+	p := Printer{Out: &b}
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.Local)
+	p.Event(dispatch.Event{Kind: dispatch.EvQueue, Text: "3 ready", Time: at})
+	p.Event(dispatch.Event{Text: "MERGED orchestra-1", Time: at})
+	p.Say("finishing triage…")
+	p.Report("# Run report")
+	out := b.String()
+	if strings.Contains(out, "3 ready") {
+		t.Errorf("the queue count was printed:\n%s", out)
+	}
+	for _, want := range []string{"2026-09-30 12:00:00 MERGED orchestra-1\n", " finishing triage…\n", "\n\n# Run report\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,10 +16,9 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 	repo, _ := gitRepo(t)
 	os.MkdirAll(filepath.Join(repo, project.Dir), 0o755)
 	os.WriteFile(project.SettingsPath(repo), []byte(`{"concurrent": 20, "notes": "ours"}`), 0o644)
-	var code int
-	out := stdoutOf(t, func() { code = runInit(repo, []string{"--check", "  make check \n"}) })
-	if code != dispatch.ExitOK {
-		t.Fatalf("exit = %d:\n%s", code, out)
+	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "  make check \n")
+	if err != nil || !strings.Contains(stdout, "Sets this project up for orchestra") {
+		t.Fatalf("init: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(read(t, project.SettingsPath(repo))), &m); err != nil {
@@ -35,16 +35,16 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 
 func TestInitSavesTheCheckTimeout(t *testing.T) {
 	repo, _ := gitRepo(t)
-	var code int
-	out := stdoutOf(t, func() { code = runInit(repo, []string{"--check", "make check", "--check-timeout", "90s", "-c", "1"}) })
-	if code != dispatch.ExitOK {
-		t.Fatalf("exit = %d:\n%s", code, out)
+	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "make check", "--check-timeout", "90s", "-c", "1")
+	if err != nil || !strings.Contains(stdout, "check: make check, stopped after 1m30s") {
+		t.Fatalf("init: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
 	s, _, _ := project.LoadSettings(repo)
 	if d, err := project.ResolveCheckTimeout(0, false, s); s.CheckTimeout != "1m30s" || err != nil || d != 90*time.Second {
 		t.Errorf("settings = %+v, a run gets %s, %v", s, d, err)
 	}
-	if code := runInit(repo, []string{"--check-timeout", "0"}); code != dispatch.ExitSetup {
-		t.Errorf("--check-timeout 0: exit = %d", code)
+	_, stderr, err = runIn(t, repo, nil, "init", "--check-timeout", "0")
+	if exitOf(err) != dispatch.ExitSetup || !strings.Contains(stderr, "--check-timeout must be a positive duration") {
+		t.Errorf("--check-timeout 0: exit = %d, stderr:\n%s", exitOf(err), stderr)
 	}
 }

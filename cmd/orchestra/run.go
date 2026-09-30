@@ -306,7 +306,7 @@ func status(code int) error {
 // run is orchestra: 'orchestra init …' or a run. It returns nil or an exitStatus.
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(".", args[2:]))
+		return status(runInit(".", args[2:], stdin, stdout, stderr))
 	}
 	cfg, problems, err := loadConfig(args[1:], getenv, stderr)
 	switch {
@@ -387,11 +387,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 			}
 			cancelRun(dispatch.Interrupted(why))
 		})
-		orch.SetSink(tui.Printer{})
+		sink := tui.Printer{Out: stdout}
+		orch.SetSink(sink)
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
 		if !leaving(stopWatching()) {
-			organPhase(orch, cfg, log, code, orch.Final(), tui.Printer{}, cancelOrgans)
+			organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
 		}
 		return status(code)
 	}
@@ -415,7 +416,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
-	sink := tui.Printer{Styled: true, Width: width}
+	sink := tui.Printer{Out: stdout, Styled: true, Width: width}
 	m, _ := final.(tui.Dashboard)
 	if m.Final() != nil {
 		sink.Event(*m.Final())
@@ -549,7 +550,6 @@ func organPhase(orch organs, c options, log *dispatch.Log, code int, final strin
 		}
 		return
 	}
-	fmt.Println()
 	out.Report(report)
 	path, err := orch.SaveReport(report)
 	if err != nil {

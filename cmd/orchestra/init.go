@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -14,9 +15,11 @@ import (
 )
 
 // runInit sets up .orchestra/ in the repository around dir, asking what it needs when run in a
-// terminal, and returns the exit code.
-func runInit(dir string, args []string) int {
+// terminal, and returns the exit code. It reads the form's answers from stdin and prints to stdout
+// and stderr.
+func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	check := fs.String("check", "", "the project's check command (lint, build, tests)")
 	checkTimeout := fs.Duration("check-timeout", 0, "how long the check command may run on a rebased ticket, e.g. 5m (asked when omitted; default "+project.DefaultCheckTimeoutText+")")
 	force := fs.Bool("force", false, "replace an existing .orchestra/worker-prompt.md with the template")
@@ -38,30 +41,30 @@ func runInit(dir string, args []string) int {
 		return dispatch.ExitSetup
 	}
 	if rest := fs.Args(); len(rest) > 0 {
-		fmt.Fprintf(os.Stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
+		fmt.Fprintf(stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
 		return dispatch.ExitSetup
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	checkGiven, timeoutGiven, concurrentGiven := given["check"], given["check-timeout"], given["concurrent"] || given["c"]
 	if timeoutGiven && *checkTimeout <= 0 {
-		fmt.Fprintln(os.Stderr, "orchestra init: --check-timeout must be a positive duration such as 5m")
+		fmt.Fprintln(stderr, "orchestra init: --check-timeout must be a positive duration such as 5m")
 		return dispatch.ExitSetup
 	}
 	if concurrentGiven && (concurrent < 1 || concurrent > project.MaxConcurrency) {
-		fmt.Fprintf(os.Stderr, "orchestra init: --concurrent must be between 1 and %d\n", project.MaxConcurrency)
+		fmt.Fprintf(stderr, "orchestra init: --concurrent must be between 1 and %d\n", project.MaxConcurrency)
 		return dispatch.ExitSetup
 	}
 
 	out, err := command.Output(dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "orchestra init: not inside a git repository")
+		fmt.Fprintln(stderr, "orchestra init: not inside a git repository")
 		return dispatch.ExitSetup
 	}
 	repo := strings.TrimSpace(out)
 	existing, _, err := project.LoadSettings(repo)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "orchestra init:", err)
+		fmt.Fprintln(stderr, "orchestra init:", err)
 		return dispatch.ExitSetup
 	}
 	promptText, _ := os.ReadFile(project.Locate(repo).Prompt)
@@ -76,11 +79,10 @@ func runInit(dir string, args []string) int {
 		choice.CheckTimeout, choice.ReplacedTimeout = dispatch.ShortDuration(*checkTimeout), ""
 	}
 
-	ui := tui.NewInitScreen(os.Stdout)
+	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
-	interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
-	if interactive && !(checkGiven && timeoutGiven && concurrentGiven) {
-		if err := tui.AskInit(&choice, !checkGiven, !timeoutGiven, !concurrentGiven); err != nil {
+	if isTerminal(stdin) && isTerminal(stdout) && !(checkGiven && timeoutGiven && concurrentGiven) {
+		if err := tui.AskInit(stdin, stdout, &choice, !checkGiven, !timeoutGiven, !concurrentGiven); err != nil {
 			ui.Cancelled()
 			return dispatch.ExitSetup
 		}
@@ -94,7 +96,7 @@ func runInit(dir string, args []string) int {
 	}
 	if err != nil {
 		ui.Steps(steps)
-		fmt.Fprintln(os.Stderr, "orchestra init:", err)
+		fmt.Fprintln(stderr, "orchestra init:", err)
 		return dispatch.ExitSetup
 	}
 	pre := project.Prerequisites(repo)
@@ -107,4 +109,10 @@ func runInit(dir string, args []string) int {
 	}
 	ui.SignOff(ready)
 	return dispatch.ExitOK
+}
+
+// isTerminal reports whether f is a terminal.
+func isTerminal(f any) bool {
+	fd, ok := f.(interface{ Fd() uintptr })
+	return ok && term.IsTerminal(int(fd.Fd()))
 }

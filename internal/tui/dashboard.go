@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -645,9 +646,10 @@ func (s *ProgramSink) Handoff(next dispatch.Sink, received int) {
 	s.sent, s.next = nil, next
 }
 
-// Printer prints each event as a line: styled for a terminal (after the live view has closed),
-// or as the plain log line for pipes and -plain.
+// Printer prints each event as a line to Out: styled for a terminal (after the live view has
+// closed), or as the plain log line for pipes and -plain.
 type Printer struct {
+	Out    io.Writer
 	Styled bool // colours and the rendered report, for a terminal
 	Width  int
 }
@@ -657,34 +659,35 @@ func (p Printer) Event(ev dispatch.Event) {
 		return // the dashboard's count, not a line
 	}
 	if p.Styled {
-		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
+		fmt.Fprintln(p.Out, ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
 		return
 	}
-	fmt.Printf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
+	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
 func (Printer) Status(dispatch.Status) {}
 
 // Say prints a line of the orchestrator's own progress outside the event stream.
 func (p Printer) Say(text string) {
 	if p.Styled {
-		fmt.Println(organStyle.Render("◆ ") + dimStyle.Render(text))
+		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+dimStyle.Render(text))
 		return
 	}
-	fmt.Printf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
+	fmt.Fprintf(p.Out, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
 }
 
-// Report prints the reviewer's Markdown, rendered with Glamour on a terminal.
+// Report prints the reviewer's Markdown after a blank line, rendered with Glamour on a terminal.
 func (p Printer) Report(md string) {
+	fmt.Fprintln(p.Out)
 	if p.Styled {
 		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
 		if err == nil {
 			if out, err := r.Render(md); err == nil {
-				fmt.Print(out)
+				fmt.Fprint(p.Out, out)
 				return
 			}
 		}
 	}
-	fmt.Println(md)
+	fmt.Fprintln(p.Out, md)
 }
 
 // Interrupted reports whether the run was stopped with Ctrl+C.

@@ -153,8 +153,9 @@ func concurrencyOptions(current int) []huh.Option[int] {
 	return opts
 }
 
-// AskInit asks for what the flags didn't give, starting from the current choice.
-func AskInit(c *project.Choice, askCheck, askTimeout, askConcurrent bool) error {
+// AskInit asks for what the flags didn't give, starting from the current choice, reading the
+// answers from in and drawing the form on out.
+func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -191,7 +192,7 @@ func AskInit(c *project.Choice, askCheck, askTimeout, askConcurrent bool) error 
 		return nil
 	}
 	before := c.Check
-	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).Run(); err != nil {
+	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out).Run(); err != nil {
 		return err
 	}
 	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)

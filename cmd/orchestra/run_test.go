@@ -165,26 +165,6 @@ func (f fakeOrgans) SaveReport(string) (string, error) {
 	return "/reports/r.md", nil
 }
 
-// stdoutOf returns what f prints to standard output.
-func stdoutOf(t *testing.T, f func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = orig }()
-	done := make(chan string)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
-	f()
-	w.Close()
-	return <-done
-}
-
 func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
 	for _, tc := range []struct {
 		saveErr         error
@@ -198,10 +178,9 @@ func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out := stdoutOf(t, func() {
-			organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, log, dispatch.ExitOK, "", tui.Printer{}, func() {})
-		})
-		if !strings.Contains(out, "ALL MERGED") || !strings.Contains(out, tc.printed) {
+		var b strings.Builder
+		organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, log, dispatch.ExitOK, "", tui.Printer{Out: &b}, func() {})
+		if out := b.String(); !strings.Contains(out, "ALL MERGED") || !strings.Contains(out, tc.printed) {
 			t.Errorf("save error %v: printed\n%s", tc.saveErr, out)
 		}
 		if lines := strings.Join(log.RunLines(), "\n"); !strings.Contains(lines, tc.logged) {
