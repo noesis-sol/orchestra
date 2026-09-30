@@ -52,6 +52,41 @@ type Agents interface {
 	WaitStarted(ctx context.Context, name string) bool
 }
 
+// Checkout is what the loop checks about the main checkout and worktrees (git).
+type Checkout interface {
+	DirtyTree(dir string) string // uncommitted work outside .claude/, .beads/, .orchestra/
+	CurrentBranch(repo string) string
+	Head(repo, rev string) string
+}
+
+// Worktrees manages the per-ticket worktrees and their branches.
+type Worktrees interface {
+	WorktreeOf(repo, branch string) string
+	HasBranch(repo, branch string) bool
+	Prune(repo string)
+	AddWorktree(repo, path, branch string) (string, error)
+	NewWorktree(repo, path, branch, base string) (string, error)
+	RemoveWorktree(repo, path string) (string, error)
+	DeleteBranch(repo, branch string) (string, error)
+}
+
+// Merger brings finished branches onto the base branch.
+type Merger interface {
+	IsAncestor(repo, ancestor, rev string) bool
+	CommitNaming(repo, base, branch, ticket string) string
+	Rebase(worktree, onto string) (string, error)
+	AbortRebase(worktree string)
+	FastForward(repo, branch string) (string, error)
+}
+
+// History is what the organs read about the work.
+type History interface {
+	ShortStatus(worktree string) string
+	OneLineLog(dir, revs string) string
+	DiffStat(worktree string) string
+	Subjects(repo, revs string) string
+}
+
 // Deps are the loop's connections to the tracker, the terminal, git and the organs.
 type Deps struct {
 	Tickets   Tickets
@@ -60,6 +95,10 @@ type Deps struct {
 	Starter   Starter
 	Namer     Namer
 	Agents    Agents
+	Checkout  Checkout
+	Worktrees Worktrees
+	Merger    Merger
+	History   History
 	Advisor   organ.Client
 	AdviceCtx context.Context // cancelled when the maintainer skips triage and the report
 }

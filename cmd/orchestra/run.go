@@ -164,7 +164,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if c.Base = git.CurrentBranch(c.Repo); c.Base == "" {
+		if c.Base = (git.Git{}).CurrentBranch(c.Repo); c.Base == "" {
 			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
 		}
 
@@ -239,7 +239,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
-	tracker, terminal := beads.Tracker{Repo: cfg.Repo}, herdr.Terminal{}
+	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo}, herdr.Terminal{}, git.Git{}
 	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
@@ -247,6 +247,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		Starter:   terminal,
 		Namer:     terminal,
 		Agents:    terminal,
+		Checkout:  repo,
+		Worktrees: repo,
+		Merger:    repo,
+		History:   repo,
 		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
 		AdviceCtx: organCtx,
 	})

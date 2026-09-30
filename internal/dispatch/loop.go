@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -170,6 +168,10 @@ type Loop struct {
 	starter    Starter
 	namer      Namer
 	agents     Agents
+	checkout   Checkout
+	worktrees  Worktrees
+	merger     Merger
+	history    History
 	organ      organ.Client
 	organCtx   context.Context // cancelled when the maintainer skips the organs
 	triageQ    chan organ.Deferral
@@ -184,7 +186,8 @@ type Loop struct {
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
-	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, organ: d.Advisor, organCtx: d.AdviceCtx}
+	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
+		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx}
 }
 
 // Final is the line the run ended with.
@@ -291,8 +294,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
-	head, _ := command.Output(c.Repo, "git", "rev-parse", c.Base)
-	o.startHead = strings.TrimSpace(head)
+	o.startHead = o.checkout.Head(c.Repo, c.Base)
 	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
 		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
 
@@ -356,7 +358,7 @@ func (o *Loop) Run(ctx context.Context) int {
 func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
-	dirty, branch := git.DirtyTree(c.Repo), git.CurrentBranch(c.Repo)
+	dirty, branch := o.checkout.DirtyTree(c.Repo), o.checkout.CurrentBranch(c.Repo)
 	o.repoMu.Unlock()
 	if dirty != "" {
 		return nil, 0, halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping. Inspect with: git status", c.Repo)
@@ -565,8 +567,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
-		commit := git.CommitNaming(c.Repo, c.Base, br, id)
-		switch closedOutcomeOf(commit, git.DirtyTree(wt) != "") {
+		commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
+		switch closedOutcomeOf(commit, o.checkout.DirtyTree(wt) != "") {
 		case closedNoCommit:
 			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -608,19 +610,19 @@ func (o *Loop) prepareWorktree(id, br string) (string, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
-	if wt := git.WorktreeOf(c.Repo, br); wt != "" {
+	if wt := o.worktrees.WorktreeOf(c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
 		o.refreshBranch(wt, br)
 		return wt, nil
 	}
 	wt := filepath.Join(c.WTRoot, id)
-	command.Output(c.Repo, "git", "worktree", "prune")
+	o.worktrees.Prune(c.Repo)
 	var out string
 	var err error
-	if git.HasBranch(c.Repo, br) {
-		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
+	if o.worktrees.HasBranch(c.Repo, br) {
+		out, err = o.worktrees.AddWorktree(c.Repo, wt, br)
 	} else {
-		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
+		out, err = o.worktrees.NewWorktree(c.Repo, wt, br, c.Base)
 	}
 	o.log.Raw(out, err)
 	if err != nil {
@@ -643,18 +645,18 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
 		o.repoMu.Lock()
-		if git.IsAncestor(c.Repo, c.Base, br) {
-			commit := git.CommitNaming(c.Repo, c.Base, br, id)
-			out, err := command.Output(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
+		if o.merger.IsAncestor(c.Repo, c.Base, br) {
+			commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
+			out, err := o.merger.FastForward(c.Repo, br)
 			o.log.Raw(out, err)
 			if err != nil {
 				o.repoMu.Unlock()
 				return halt(ExitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
-			out, err = command.Output(c.Repo, "git", "worktree", "remove", wt)
+			out, err = o.worktrees.RemoveWorktree(c.Repo, wt)
 			o.log.Raw(out, err)
 			if err == nil {
-				out, err = command.Output(c.Repo, "git", "branch", "-d", br)
+				out, err = o.worktrees.DeleteBranch(c.Repo, br)
 				o.log.Raw(out, err)
 			}
 			o.repoMu.Unlock()
@@ -671,10 +673,10 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		}
 
 		// Base moved on while the ticket ran: rebase it, still under the lock.
-		out, err := command.Output("", "git", "-C", wt, "rebase", c.Base)
+		out, err := o.merger.Rebase(wt, c.Base)
 		o.log.Raw(out, err)
 		if err != nil {
-			command.Output("", "git", "-C", wt, "rebase", "--abort")
+			o.merger.AbortRebase(wt)
 			o.repoMu.Unlock()
 			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -749,17 +751,17 @@ func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool
 // was cut; otherwise its merge could not fast-forward. A failed rebase is undone and reported.
 func (o *Loop) refreshBranch(wt, br string) {
 	c := o.cfg
-	if _, err := command.Output(c.Repo, "git", "merge-base", "--is-ancestor", c.Base, br); err == nil {
+	if o.merger.IsAncestor(c.Repo, c.Base, br) {
 		return // already on top of Base
 	}
-	if d := git.DirtyTree(wt); d != "" {
+	if d := o.checkout.DirtyTree(wt); d != "" {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s; its merge will fail until it is rebased", wt, br, c.Base)})
 		return
 	}
-	out, err := command.Output("", "git", "-C", wt, "rebase", c.Base)
+	out, err := o.merger.Rebase(wt, c.Base)
 	o.log.Raw(out, err)
 	if err != nil {
-		command.Output("", "git", "-C", wt, "rebase", "--abort")
+		o.merger.AbortRebase(wt)
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s; left as it was, so its merge will fail until it is rebased (worktree %s)", br, c.Base, wt)})
 		return
 	}

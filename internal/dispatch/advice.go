@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -25,9 +24,9 @@ func lastLines(s string, n int) string {
 func (o *Loop) gatherDeferral(id, title, how, wt string) organ.Deferral {
 	c := o.cfg
 	show := o.tickets.Describe(id)
-	status, _ := command.Output("", "git", "-C", wt, "status", "--short")
-	commits, _ := command.Output("", "git", "-C", wt, "log", "--oneline", c.Base+"..HEAD")
-	stat, _ := command.Output("", "git", "-C", wt, "diff", "--stat", "HEAD")
+	status := o.history.ShortStatus(wt)
+	commits := o.history.OneLineLog(wt, c.Base+"..HEAD")
+	stat := o.history.DiffStat(wt)
 	return organ.Deferral{ID: id, Title: title, How: how, Ticket: show,
 		Screen: lastLines(o.agents.Screen(id), 80),
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
@@ -90,7 +89,7 @@ func firstLine(s string) string {
 // reviewInput gathers the evidence for the reviewer.
 func (o *Loop) reviewInput(code int, final string) string {
 	c := o.cfg
-	commits, _ := command.Output(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
+	commits := o.history.Subjects(c.Repo, o.startHead+".."+c.Base)
 	var setAside strings.Builder
 	for _, id := range o.setAside() {
 		show := o.tickets.Describe(id)

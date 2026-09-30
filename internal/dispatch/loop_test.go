@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/git"
 )
 
 // recordSink keeps events for assertions.
@@ -48,18 +50,19 @@ type mergeFixture struct {
 
 func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
-	repo, git := gitRepo(t)
-	git(repo, "branch", "-M", "main")
+	repo, run := gitRepo(t)
+	run(repo, "branch", "-M", "main")
 	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
-	git(repo, "add", ".")
-	git(repo, "commit", "-q", "-m", "shared file")
+	run(repo, "add", ".")
+	run(repo, "commit", "-q", "-m", "shared file")
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{}}
-	return &mergeFixture{repo: repo, git: git, orch: o, sink: sink}
+	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{},
+		checkout: git.Git{}, worktrees: git.Git{}, merger: git.Git{}, history: git.Git{}}
+	return &mergeFixture{repo: repo, git: run, orch: o, sink: sink}
 }
 
 // ticket makes wt/<id> in its own worktree with one commit writing file.
