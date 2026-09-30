@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/git"
+	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -474,6 +475,27 @@ func TestStartAdoptsAnAgentLeftUnnamed(t *testing.T) {
 	}
 	if !strings.Contains(h.mainLog(), "A: add a.txt") {
 		t.Error("A should be merged")
+	}
+}
+
+// A ticket ID longer than Herdr's 32-character name limit still gets a worker, under the cut name
+// herdr.AgentName gives it, whether the worker is launched with its prompt or started and pasted to.
+func TestLongTicketIDRunsUnderACutName(t *testing.T) {
+	t.Parallel()
+	const id = "platform-backend-services-core-a3f.12.34" // 40 characters
+	for _, launch := range []bool{true, false} {
+		h := newHarness(t)
+		h.cfg.LaunchPrompt = launch
+		h.herdr.agentName = herdr.AgentName
+		h.beads.add(id, "long", 1)
+		h.worker(id, finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("launch=%v: exit %d, final %q\n%s", launch, code, o.Final(), h.sink.text())
+		}
+		if !strings.Contains(h.mainLog(), id+": add a.txt") {
+			t.Errorf("launch=%v: %s should be merged:\n%s", launch, id, h.mainLog())
+		}
 	}
 }
 

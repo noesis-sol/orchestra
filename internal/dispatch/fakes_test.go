@@ -240,12 +240,13 @@ type fakeHerdr struct {
 	behaviours map[string][]behaviour
 	running    sync.WaitGroup
 
-	launchFails  map[string]bool // LaunchInPane fails for these tickets
-	promptFails  map[string]bool // pasting the prompt never submits it
-	startUnnamed map[string]bool // the first StartAgent times out, leaving the agent unnamed in its pane
-	launchSlow   map[string]bool // the worker LaunchInPane starts appears only after the adoption gives up
-	launchLost   map[string]bool // LaunchInPane succeeds, but no worker ever appears
-	refuseArgs   bool            // StartAgent takes no arguments
+	launchFails  map[string]bool        // LaunchInPane fails for these tickets
+	promptFails  map[string]bool        // pasting the prompt never submits it
+	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
+	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
+	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
+	refuseArgs   bool                   // StartAgent takes no arguments
+	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
 }
 
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
@@ -359,6 +360,9 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.starts = append(h.starts, h.panes[pane].ticket)
+	if err := errLongName(name); err != nil {
+		return err
+	}
 	if h.refuseArgs && len(args) > 0 {
 		return errRefused
 	}
@@ -380,12 +384,29 @@ func (h *fakeHerdr) WaitReady(ctx context.Context, name string) bool { return tr
 
 // Namer
 
-// AgentName keeps the ticket ID: the scenarios' IDs are names Herdr takes as they are.
-func (h *fakeHerdr) AgentName(id string) string { return id }
+// AgentName keeps the ticket ID unless agentName is set: most scenarios' IDs are names Herdr takes
+// as they are.
+func (h *fakeHerdr) AgentName(id string) string {
+	if h.agentName != nil {
+		return h.agentName(id)
+	}
+	return id
+}
+
+// errLongName is Herdr refusing a name over its 32-character limit.
+func errLongName(name string) error {
+	if len(name) > 32 {
+		return fmt.Errorf(`herdr: {"error":{"code":"invalid_agent_name","message":"%s is longer than 32 characters"}}`, name)
+	}
+	return nil
+}
 
 func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := errLongName(name); err != nil {
+		return "", err
+	}
 	a := h.inPane(pane)
 	if a == nil || a.late {
 		return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
@@ -412,6 +433,9 @@ func (h *fakeHerdr) PaneAgent(pane string) (string, string, string) {
 func (h *fakeHerdr) RenameAgent(name, to string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := errLongName(to); err != nil {
+		return err
+	}
 	a := h.agent(name)
 	if a == nil {
 		a = h.inPane(name)
