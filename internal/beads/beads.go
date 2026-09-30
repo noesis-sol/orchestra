@@ -25,7 +25,11 @@ func unwrap(raw []byte) []byte {
 	return raw
 }
 
+// epicType is the issue type of an epic: its children are the work, so it is never dispatched.
+const epicType = "epic"
+
 // parseReady returns the open tickets from 'bd ready --json', highest priority (lowest number) first.
+// Questions for the maintainer and epics are left out.
 func parseReady(raw []byte) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
 	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
@@ -33,7 +37,7 @@ func parseReady(raw []byte) ([]dispatch.Ticket, error) {
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == "open" && !dispatch.HasLabel(t, dispatch.HumanLabel) { // questions are for the maintainer
+		if t.Status == "open" && t.IssueType != epicType && !dispatch.HasLabel(t, dispatch.HumanLabel) {
 			open = append(open, t)
 		}
 	}
@@ -70,9 +74,11 @@ type Tracker struct {
 }
 
 // Ready returns the open tickets bd considers ready, highest priority first; questions for the
-// maintainer are left out.
+// maintainer and epics are left out. bd filters them and parseReady filters again, and the query
+// has no limit, so work behind more than bd's default 100 ready entries is still seen.
 func (b Tracker) Ready() ([]dispatch.Ticket, error) {
-	out, _ := command.Output(b.Repo, "bd", "ready", "--json") // like the bash version, judge by the output
+	out, _ := command.Output(b.Repo, "bd", "ready", "--json", "--limit", "0", // like the bash version, judge by the output
+		"--exclude-type", epicType, "--exclude-label", dispatch.HumanLabel)
 	return parseReady([]byte(out))
 }
 

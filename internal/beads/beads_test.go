@@ -47,6 +47,16 @@ func TestParseReadyAcceptsTheEnvelopeAndEmptyResults(t *testing.T) {
 	}
 }
 
+func TestEpicsAreNeverDispatched(t *testing.T) {
+	// bd ready returns an open, unblocked epic alongside its children; the children are the work.
+	raw := `[{"id":"k-1","title":"Payments","status":"open","priority":1,"issue_type":"epic"},
+	         {"id":"k-1.1","title":"work","status":"open","priority":2,"issue_type":"task"}]`
+	got, err := parseReady([]byte(raw))
+	if err != nil || len(got) != 1 || got[0].ID != "k-1.1" {
+		t.Errorf("got %+v %v; an epic must be skipped", got, err)
+	}
+}
+
 func TestParseStatus(t *testing.T) {
 	cases := map[string]string{
 		`[{"id":"x","status":"closed"}]`:               "closed",

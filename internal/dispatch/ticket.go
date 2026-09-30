@@ -5,6 +5,7 @@ type Ticket struct {
 	ID           string   `json:"id"`
 	Title        string   `json:"title"`
 	Status       string   `json:"status"`
+	IssueType    string   `json:"issue_type"` // task, bug, feature, epic, …
 	Priority     *int     `json:"priority"`
 	Labels       []string `json:"labels"`
 	Dependencies []Ticket `json:"dependencies"` // from bd show; each carries its status and labels
