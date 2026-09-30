@@ -239,10 +239,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
-	tracker := beads.Tracker{Repo: cfg.Repo}
+	tracker, terminal := beads.Tracker{Repo: cfg.Repo}, herdr.Terminal{}
 	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
+		Tabs:      terminal,
+		Starter:   terminal,
+		Namer:     terminal,
+		Agents:    terminal,
 		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
 		AdviceCtx: organCtx,
 	})

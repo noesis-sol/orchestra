@@ -15,7 +15,6 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
-	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -167,6 +166,10 @@ type Loop struct {
 
 	tickets    Tickets
 	notes      Notes
+	tabs       Tabs
+	starter    Starter
+	namer      Namer
+	agents     Agents
 	organ      organ.Client
 	organCtx   context.Context // cancelled when the maintainer skips the organs
 	triageQ    chan organ.Deferral
@@ -181,7 +184,7 @@ type Loop struct {
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
-	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, organ: d.Advisor, organCtx: d.AdviceCtx}
+	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, organ: d.Advisor, organCtx: d.AdviceCtx}
 }
 
 // Final is the line the run ended with.
@@ -272,9 +275,6 @@ func (o *Loop) interrupted() int {
 	o.emit(Event{Kind: EvStop, Text: "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"})
 	return ExitInterrupted
 }
-
-// closeTab closes a worker's tab; a variable so tests can replace it.
-var closeTab = herdr.CloseTab
 
 // sleep waits for d, returning false if ctx is cancelled first.
 func sleep(ctx context.Context, d time.Duration) bool {
@@ -406,19 +406,19 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 
 	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
 	// Herdr keeps unique. Rename it so the new worker can have the name; its tab stays as it is.
-	switch st := herdr.Status(id); st {
+	switch st := o.agents.Status(id); st {
 	case "gone":
 	case "working", "blocked":
 		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
-		if name := herdr.FreeName(id); name == "" || herdr.RenameAgent(id, name) != nil {
+		if name := o.namer.FreeName(id); name == "" || o.namer.RenameAgent(id, name) != nil {
 			return halt(ExitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id)
 		} else {
 			o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 		}
 	}
 
-	tab, pane, err := herdr.CreateTab(c.Workspace, wt, id)
+	tab, pane, err := o.tabs.CreateTab(c.Workspace, wt, id)
 	if err != nil {
 		return halt(ExitTool, "TAB_FAILED for %s (is '%s' a valid workspace?)", id, c.Workspace)
 	}
@@ -444,9 +444,9 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// input, which a worker that goes straight to work never does, so it could only time out.
 	ok := false
 	if launch != "" {
-		err := herdr.LaunchInPane(pane, c.AgentKind, launch)
+		err := o.starter.LaunchInPane(pane, c.AgentKind, launch)
 		if err == nil {
-			_, ok = herdr.AdoptAgent(ctx, pane, c.AgentKind, id)
+			_, ok = o.namer.AdoptAgent(ctx, pane, c.AgentKind, id)
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
@@ -461,24 +461,24 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
 	// the agent is there before trying again.
 	for attempt := 0; attempt < 10 && !ok; attempt++ {
-		err := herdr.StartAgent(ctx, id, c.AgentKind, pane, launch)
+		err := o.starter.StartAgent(ctx, id, c.AgentKind, pane, launch)
 		if ok = err == nil; ok {
 			break
 		}
 		o.log.Raw("", err)
-		if herdr.IsArgumentRefused(err) && launch != "" {
+		if o.starter.IsArgumentRefused(err) && launch != "" {
 			launch = "" // start it plainly and paste the prompt instead
 			continue
 		}
 		if !sleep(ctx, 3*time.Second) {
 			return errInterrupted
 		}
-		st := herdr.Status(id)
+		st := o.agents.Status(id)
 		if st == "gone" {
 			// A start that times out leaves the agent running unnamed in its pane, and a retry
 			// would find the pane busy: adopt that agent under the ticket's name instead.
-			if name, kind, pst := herdr.PaneAgent(pane); pst != "gone" && name == "" && kind == c.AgentKind {
-				if herdr.RenameAgent(pane, id) == nil {
+			if name, kind, pst := o.namer.PaneAgent(pane); pst != "gone" && name == "" && kind == c.AgentKind {
+				if o.namer.RenameAgent(pane, id) == nil {
 					o.info("  %s's worker started without its name; named it", id)
 					st = pst
 				}
@@ -490,7 +490,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		case "working", "blocked", "unknown":
 			// Up but busy. With the prompt given at launch that means it started; otherwise (a
 			// startup dialog, say) give it time rather than starting a second one.
-			ok = launch != "" || herdr.WaitReady(ctx, id)
+			ok = launch != "" || o.starter.WaitReady(ctx, id)
 		}
 	}
 	if !ok {
@@ -520,7 +520,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		st := herdr.Status(id)
+		st := o.agents.Status(id)
 		if st == "gone" {
 			break
 		}
@@ -660,7 +660,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			o.repoMu.Unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			if err == nil {
-				closeTab(tab)
+				o.tabs.CloseTab(tab)
 				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
 			} else {
@@ -734,7 +734,7 @@ func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
 // it is delivered by pasting.
 func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if herdr.WaitStarted(ctx, id) || o.tickets.Status(id) != "open" || lastActivity(herdr.Screen(id)) != "" {
+		if o.agents.WaitStarted(ctx, id) || o.tickets.Status(id) != "open" || lastActivity(o.agents.Screen(id)) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -773,7 +773,7 @@ func (o *Loop) refreshBranch(wt, br string) {
 // pick an option), and the prompt is sent again only when the box is empty, so never twice.
 func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 	for attempt := 1; attempt <= 2; attempt++ {
-		err := herdr.Prompt(ctx, id, prompt)
+		err := o.agents.Prompt(ctx, id, prompt)
 		if err == nil {
 			return true // herdr saw the worker start
 		}
@@ -781,13 +781,13 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		switch herdr.Status(id) {
+		switch o.agents.Status(id) {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
-			if inputHolds(herdr.Screen(id), prompt) {
-				herdr.SendKeys(id, "enter")
-				return herdr.WaitStarted(ctx, id)
+			if inputHolds(o.agents.Screen(id), prompt) {
+				o.agents.SendKeys(id, "enter")
+				return o.agents.WaitStarted(ctx, id)
 			}
 			// The box is empty: the paste itself was lost, so send it again.
 		default:
@@ -808,8 +808,8 @@ func (o *Loop) watch(ctx context.Context, base Status) (stop func()) {
 		defer tick.Stop()
 		for {
 			s := base
-			s.Agent = herdr.Status(s.Ticket)
-			s.Activity = lastActivity(herdr.Screen(s.Ticket))
+			s.Agent = o.agents.Status(s.Ticket)
+			s.Activity = lastActivity(o.agents.Screen(s.Ticket))
 			if ctx.Err() != nil {
 				return
 			}

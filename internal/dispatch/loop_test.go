@@ -29,6 +29,14 @@ func (r *recordSink) text() string {
 	return b.String()
 }
 
+// noTabs stands in for Herdr's tabs: merging closes the worker's tab.
+type noTabs struct{}
+
+func (noTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+	return "tab", "pane", nil
+}
+func (noTabs) CloseTab(tab string) {}
+
 // mergeFixture is a repository on main with a ticket branch in its own worktree, and an Loop set
 // up to merge it.
 type mergeFixture struct {
@@ -40,7 +48,6 @@ type mergeFixture struct {
 
 func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
-	closeTab = func(string) {}
 	repo, git := gitRepo(t)
 	git(repo, "branch", "-M", "main")
 	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
@@ -51,7 +58,7 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink}
+	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{}}
 	return &mergeFixture{repo: repo, git: git, orch: o, sink: sink}
 }
 
