@@ -41,7 +41,7 @@ const (
 	EvDone                 // the loop finished normally
 	EvTriage               // the triage organ's verdict on a deferred ticket
 	EvAsked                // a ticket waits on the maintainer's answer to a question
-	EvHold                 // a ticket stopped the run; no new tickets while the running ones finish
+	EvHold                 // something stopped the run; no new tickets while the running ones finish
 )
 
 type Event struct {
@@ -338,6 +338,10 @@ func (o *Loop) Run(ctx context.Context) int {
 			t, queued, s := o.next(inflight)
 			if s != nil {
 				stop = s
+				if len(inflight) > 0 {
+					o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
+						"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+				}
 				break
 			}
 			if t == nil {

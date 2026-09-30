@@ -89,7 +89,7 @@ type Dashboard struct {
 	cfg         dispatch.Config
 	spin        spinner.Model
 	active      map[string]dispatch.Status // running workers, by ticket
-	stopping    bool                       // a ticket stopped the run; the running ones are finishing
+	stopping    bool                       // something stopped the run; the running ones are finishing
 	n           int
 	closed      int
 	deferred    int
@@ -165,7 +165,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case dispatch.EvHold:
 			m.stopping = true
-			m.setRow(ev.Ticket, rowStopped, "")
+			if ev.Ticket != "" { // a stop found before dispatching belongs to no ticket
+				m.setRow(ev.Ticket, rowStopped, "")
+			}
 		case dispatch.EvStop, dispatch.EvDone:
 			if ev.Kind == dispatch.EvStop {
 				for i := range m.rows {

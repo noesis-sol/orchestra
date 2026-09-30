@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -637,5 +638,53 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 	}
 	if a.reads != maxFailedReads {
 		t.Errorf("read the status %d times, want %d", a.reads, maxFailedReads)
+	}
+}
+
+// onceReady lists A once; every later 'bd ready' fails.
+type onceReady struct {
+	readyTickets
+	calls *atomic.Int32
+}
+
+func (o onceReady) Ready() ([]Ticket, error) {
+	if o.calls.Add(1) == 1 {
+		return []Ticket{{ID: "A"}}, nil
+	}
+	return nil, fmt.Errorf("bd ready failed")
+}
+
+func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	sink := &holdSink{release: release}
+	// A is dispatched and runs until the HOLD is out; filling the second slot finds bd ready unreadable.
+	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 10, Concurrency: 2, WTRoot: "wts", LogPath: "log"},
+		log, "", Deps{Tickets: onceReady{calls: new(atomic.Int32)}, Tabs: gatedTabs{gated: "A", release: release},
+			Agents: noAgents{}, Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
+	o.SetSink(sink)
+	// Without the HOLD, A would wait forever; let it go so the test fails rather than hangs.
+	late := time.AfterFunc(5*time.Second, func() { sink.once.Do(func() { close(release) }) })
+	defer late.Stop()
+	if code := o.Run(context.Background()); code != ExitTool {
+		t.Errorf("exit code %d, want %d", code, ExitTool)
+	}
+
+	var holds []string
+	for _, ev := range sink.events {
+		if ev.Kind == EvHold {
+			holds = append(holds, ev.Ticket+"|"+ev.Text)
+		}
+	}
+	want := "|HOLD: READY_UNREADABLE: could not parse 'bd ready --json'; no new tickets while the 1 running finish"
+	if len(holds) == 0 || holds[0] != want {
+		t.Errorf("HOLD events:\n%s\nwant first:\n%s", strings.Join(holds, "\n"), want)
+	}
+	if logged := read(t, logPath); !strings.Contains(logged, want[1:]) {
+		t.Errorf("log lacks %q:\n%s", want[1:], logged)
 	}
 }

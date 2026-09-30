@@ -40,6 +40,19 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 	}
 }
 
+func TestDashboardHoldWithoutTicket(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() {})
+	m.width, m.height = 100, 30
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-0", Title: "A ticket"},
+		dispatch.Event{Kind: dispatch.EvHold, Text: "HOLD: DIRTY_TREE: …; no new tickets while the 1 running finish"})
+	if !strings.Contains(ansi.Strip(m.View()), "stopping") {
+		t.Error("a hold found before dispatching should show the run as stopping")
+	}
+	if len(m.rows) != 1 {
+		t.Errorf("%d ticket rows, want 1: a hold with no ticket adds none", len(m.rows))
+	}
+}
+
 func TestDashboardFitsShortPanes(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {})
 	for i := 0; i < 30; i++ {
