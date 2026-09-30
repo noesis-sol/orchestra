@@ -8,6 +8,10 @@ import (
 )
 
 // Without process groups, cancelling cmd kills only cmd itself.
-func inGroup(cmd *exec.Cmd, grace time.Duration) {}
+type group struct{}
 
-func killGroup(cmd *exec.Cmd) {}
+func inGroup(cmd *exec.Cmd, grace time.Duration) *group { return &group{} }
+
+func (g *group) wait() {}
+
+func (g *group) stop() {}

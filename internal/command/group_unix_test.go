@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -74,4 +75,91 @@ func TestGroupOutputReportsFailure(t *testing.T) {
 	if _, err := GroupOutput(context.Background(), time.Second, t.TempDir(), "sh", "-c", "exit 3"); err == nil {
 		t.Error("a failing command should fail")
 	}
+}
+
+func TestGroupOutputKillsALeftoverHoldingTheOutputOnceTheCommandExits(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Now()
+	out, err := GroupOutput(context.Background(), 5*time.Second, dir, "sh", "-c", `sleep 30 & echo $! > pid; echo ok`)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("returned after %s, want soon after the command exits", took)
+	}
+	if err != nil || strings.TrimSpace(string(out)) != "ok" {
+		t.Errorf("got %q, %v", out, err)
+	}
+	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
+		syscall.Kill(pid, syscall.SIGKILL)
+		t.Errorf("child %d still runs", pid)
+	}
+}
+
+// awaitExitWithin runs awaitExit on cmd's process, failing if it takes longer than d.
+func awaitExitWithin(t *testing.T, cmd *exec.Cmd, d time.Duration) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- awaitExit(cmd.Process.Pid) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(d):
+		cmd.Process.Kill()
+		t.Fatalf("awaitExit still waits after %s", d)
+	}
+}
+
+func TestAwaitExitLeavesTheCommandUnreaped(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "sleep 0.2; exit 3")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	awaitExitWithin(t, cmd, 5*time.Second)
+	if err := cmd.Wait(); cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 3 {
+		t.Errorf("Wait after awaitExit: %v, want exit status 3", err)
+	}
+}
+
+func TestAwaitExitReturnsForACommandThatAlreadyExited(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // a zombie by now
+	awaitExitWithin(t, cmd, 5*time.Second)
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("Wait after awaitExit: %v", err)
+	}
+}
+
+func TestCancelSignalsNothingOnceTheCommandHasExited(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), "true")
+	g := inGroup(cmd, time.Second)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	g.wait()
+	if err := cmd.Cancel(); !errors.Is(err, os.ErrProcessDone) {
+		t.Errorf("Cancel after the command exited: %v, want os.ErrProcessDone", err)
+	}
+	if g.kill != nil {
+		t.Error("Cancel armed a SIGKILL after the command exited")
+	}
+	cmd.Wait()
+}
+
+func TestTheSIGKILLStopsOnceTheCommandExits(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), "sleep", "30")
+	g := inGroup(cmd, time.Hour)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+	g.wait() // the SIGTERM ends sleep
+	if g.kill.Stop() {
+		t.Error("the SIGKILL was still armed after the command exited")
+	}
+	cmd.Wait()
 }
