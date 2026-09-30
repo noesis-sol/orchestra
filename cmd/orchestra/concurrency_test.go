@@ -44,7 +44,7 @@ type mergeFixture struct {
 
 func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
-	tabClose = func(string) {}
+	closeTab = func(string) {}
 	repo, git := gitRepo(t)
 	git(repo, "branch", "-M", "main")
 	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)

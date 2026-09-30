@@ -379,3 +379,16 @@ func nextSteps(repo string, steps []step, pre []step) []string {
 	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
 	return next
 }
+
+// writeLaunchPrompt puts the worker prompt in the worktree at .orchestra/run/prompt.md, which
+// ensureRunExcluded keeps out of git, and returns the one-line instruction to start the worker with.
+func writeLaunchPrompt(wt, ticket, prompt string) (string, error) {
+	dir := filepath.Join(wt, orchDir, runName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. Read that file and follow it exactly.", ticket, orchDir, runName), nil
+}

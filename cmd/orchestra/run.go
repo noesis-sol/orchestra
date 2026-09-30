@@ -16,6 +16,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
+	"github.com/noesis-sol/orchestra/internal/herdr"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
@@ -121,7 +122,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (Co
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
 	if c.Workspace == "" {
-		c.Workspace = currentWorkspace(getenv)
+		c.Workspace = herdr.CurrentWorkspace(getenv)
 	}
 	if c.Workspace == "" && getenv("HERDR_ENV") == "1" {
 		problems = append(problems, "Could not tell which Herdr workspace this pane is in. Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
