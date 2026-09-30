@@ -15,6 +15,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // Exit codes, unchanged from orchestrate.sh.
@@ -415,7 +416,7 @@ func (o *Orch) work(ctx context.Context, t beads.Ticket) (stop *stopReason) {
 	launch := ""
 	if c.LaunchPrompt && c.AgentKind == "claude" {
 		var err error
-		if launch, err = writeLaunchPrompt(wt, id, prompt); err != nil {
+		if launch, err = project.WriteLaunchPrompt(wt, id, prompt); err != nil {
 			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
 			launch = ""
 		}

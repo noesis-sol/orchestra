@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/term"
 )
 
@@ -47,16 +48,16 @@ func (u initUI) cancelled() {
 }
 
 // steps prints each step: ✓ done, • already there, ! done with something to watch.
-func (u initUI) steps(steps []step) {
+func (u initUI) steps(steps []project.Step) {
 	for _, s := range steps {
-		mark := map[stepKind]string{
-			stepDone:    closedStyle.Render("✓"),
-			stepKept:    dimStyle.Render("•"),
-			stepMissing: stopStyle.Render("✗"),
-			stepCaution: deferredStyle.Render("!"),
-		}[s.kind]
-		detail := s.detail
-		if s.kind == stepCaution {
+		mark := map[project.StepKind]string{
+			project.StepDone:    closedStyle.Render("✓"),
+			project.StepKept:    dimStyle.Render("•"),
+			project.StepMissing: stopStyle.Render("✗"),
+			project.StepCaution: deferredStyle.Render("!"),
+		}[s.Kind]
+		detail := s.Detail
+		if s.Kind == project.StepCaution {
 			detail = deferredStyle.Render(detail)
 		} else {
 			detail = dimStyle.Render(detail)
@@ -65,7 +66,7 @@ func (u initUI) steps(steps []step) {
 		indent := 2 + 2 + 15
 		lines := wrapLines(ansi.Strip(detail), max(u.width-indent, 20), 6)
 		for i, l := range lines {
-			if s.kind == stepCaution {
+			if s.Kind == project.StepCaution {
 				lines[i] = deferredStyle.Render(l)
 			} else {
 				lines[i] = dimStyle.Render(l)
@@ -75,7 +76,7 @@ func (u initUI) steps(steps []step) {
 		if len(lines) > 0 {
 			first = lines[0]
 		}
-		fmt.Fprintf(u.out, "  %s %s%s\n", mark, initLabel.Render(s.label), first)
+		fmt.Fprintf(u.out, "  %s %s%s\n", mark, initLabel.Render(s.Label), first)
 		for _, l := range lines[min(1, len(lines)):] {
 			fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", indent), l)
 		}
@@ -83,20 +84,20 @@ func (u initUI) steps(steps []step) {
 }
 
 // prerequisites prints what orchestra needs on one line, then a line per missing one.
-func (u initUI) prerequisites(pre []step) {
+func (u initUI) prerequisites(pre []project.Step) {
 	var marks []string
-	var missing []step
+	var missing []project.Step
 	for _, p := range pre {
-		if p.kind == stepMissing {
-			marks = append(marks, stopStyle.Render("✗ "+p.label))
+		if p.Kind == project.StepMissing {
+			marks = append(marks, stopStyle.Render("✗ "+p.Label))
 			missing = append(missing, p)
 		} else {
-			marks = append(marks, closedStyle.Render("✓ ")+p.label)
+			marks = append(marks, closedStyle.Render("✓ ")+p.Label)
 		}
 	}
 	fmt.Fprintf(u.out, "  %s %s%s\n", closedStyle.Render("✓"), initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
 	for _, p := range missing {
-		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", 19), stopStyle.Render(p.label+": "+p.detail))
+		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", 19), stopStyle.Render(p.Label+": "+p.Detail))
 	}
 }
 
@@ -151,7 +152,7 @@ func concurrencyOptions(current int) []huh.Option[int] {
 }
 
 // askInit asks for what the flags didn't give, starting from the current choice.
-func askInit(c *initChoice, askCheck, askConcurrent bool) error {
+func askInit(c *project.Choice, askCheck, askConcurrent bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -177,10 +178,10 @@ func askInit(c *initChoice, askCheck, askConcurrent bool) error {
 	}
 	c.Check = strings.TrimSpace(c.Check)
 	if askCheck && c.Check != before {
-		c.checkFrom = "the form"
+		c.CheckFrom = "the form"
 	}
 	if askConcurrent {
-		c.unasked = false
+		c.Unasked = false
 	}
 	return nil
 }

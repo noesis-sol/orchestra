@@ -1,4 +1,4 @@
-package main
+package project
 
 import (
 	"encoding/json"
@@ -19,15 +19,16 @@ type Settings struct {
 }
 
 const (
-	settingsName   = "settings.json"
-	maxConcurrency = 16
+	SettingsName   = "settings.json"
+	MaxConcurrency = 16
 )
 
-func settingsPath(repo string) string { return filepath.Join(repo, orchDir, settingsName) }
+// SettingsPath is where the project's settings.json is.
+func SettingsPath(repo string) string { return filepath.Join(repo, Dir, SettingsName) }
 
-// loadSettings reads the project's settings; ok is false if there are none.
-func loadSettings(repo string) (s Settings, ok bool, err error) {
-	b, err := os.ReadFile(settingsPath(repo))
+// LoadSettings reads the project's settings; ok is false if there are none.
+func LoadSettings(repo string) (s Settings, ok bool, err error) {
+	b, err := os.ReadFile(SettingsPath(repo))
 	if errors.Is(err, os.ErrNotExist) {
 		return Settings{}, false, nil
 	}
@@ -35,22 +36,23 @@ func loadSettings(repo string) (s Settings, ok bool, err error) {
 		return Settings{}, false, err
 	}
 	if err := json.Unmarshal(b, &s); err != nil {
-		return Settings{}, false, fmt.Errorf("%s: %w", settingsPath(repo), err)
+		return Settings{}, false, fmt.Errorf("%s: %w", SettingsPath(repo), err)
 	}
 	return s, true, nil
 }
 
-func saveSettings(repo string, s Settings) error {
+// SaveSettings writes the project's settings.json.
+func SaveSettings(repo string, s Settings) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath(repo), append(b, '\n'), 0o644)
+	return os.WriteFile(SettingsPath(repo), append(b, '\n'), 0o644)
 }
 
-// resolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT), else the
+// ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT), else the
 // project's setting, else 1.
-func resolveConcurrency(flagValue int, s Settings) (int, error) {
+func ResolveConcurrency(flagValue int, s Settings) (int, error) {
 	n := flagValue
 	if n == 0 {
 		n = s.Concurrency
@@ -58,8 +60,8 @@ func resolveConcurrency(flagValue int, s Settings) (int, error) {
 	if n == 0 {
 		n = 1
 	}
-	if n < 1 || n > maxConcurrency {
-		return 0, fmt.Errorf("--concurrent must be between 1 and %d (got %d)", maxConcurrency, n)
+	if n < 1 || n > MaxConcurrency {
+		return 0, fmt.Errorf("--concurrent must be between 1 and %d (got %d)", MaxConcurrency, n)
 	}
 	return n, nil
 }

@@ -201,7 +201,7 @@ func (m model) View() string {
 	stats := m.statsTable(w)
 
 	// The view must fit the pane: Bubble Tea can't redraw one taller than the terminal. Give
-	// way step by step: one line per worker instead of a box each, then no tickets table, then
+	// way project.Step by step: one line per worker instead of a box each, then no tickets table, then
 	// the totals on one line, then cut.
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {

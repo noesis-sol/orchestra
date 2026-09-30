@@ -1,6 +1,7 @@
-package main
+package project
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func read(t *testing.T, p string) string {
 
 func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	repo, git := gitRepo(t)
-	steps, err := initProject(repo, "make check", false)
+	steps, err := Init(repo, "make check", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,11 +69,11 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 
 	// A second run leaves the prompt alone; -force replaces it.
 	os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644)
-	initProject(repo, "", false)
+	Init(repo, "", false)
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "mine TICKET_ID" {
 		t.Errorf("init overwrote an existing prompt: %q", got)
 	}
-	initProject(repo, "", true)
+	Init(repo, "", true)
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != promptTemplate {
 		t.Error("-force should restore the template")
 	}
@@ -88,14 +89,14 @@ func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	exclude := filepath.Join(repo, ".git", "info", "exclude")
 	os.WriteFile(exclude, []byte("# mine\n*.tmp\n# worker prompts written by orchestra\n/.orchestra/\n"), 0o644)
 
-	if layout := projectLayout(repo); !layout.Legacy {
-		t.Error("before init the legacy layout should be used")
+	if Layout := Locate(repo); !Layout.Legacy {
+		t.Error("before init the legacy Layout should be used")
 	}
-	steps, err := initProject(repo, "", false)
+	steps, err := Init(repo, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(steps[0].detail, "moved") {
+	if !strings.Contains(steps[0].Detail, "moved") {
 		t.Errorf("steps = %+v", steps)
 	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "legacy TICKET_ID" {
@@ -109,8 +110,8 @@ func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	if strings.Contains(ex, "\n/.orchestra/\n") || strings.Count(ex, runExcludeEntry) != 1 || !strings.Contains(ex, "*.tmp") {
 		t.Errorf("exclude = %q", ex)
 	}
-	if layout := projectLayout(repo); layout.Legacy || !strings.HasSuffix(layout.Log, ".orchestra/orchestra.log") {
-		t.Errorf("after init the .orchestra layout should be used: %+v", layout)
+	if Layout := Locate(repo); Layout.Legacy || !strings.HasSuffix(Layout.Log, ".orchestra/orchestra.log") {
+		t.Errorf("after init the .orchestra Layout should be used: %+v", Layout)
 	}
 }
 
@@ -118,11 +119,11 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 	repo, git := gitRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	git(repo, "worktree", "add", "-q", "-b", "wt/k-1", wt)
-	if err := ensureRunExcluded(repo); err != nil {
+	if err := EnsureRunExcluded(repo); err != nil {
 		t.Fatal(err)
 	}
-	ensureRunExcluded(repo) // idempotent
-	line, err := writeLaunchPrompt(wt, "k-1", "You are responsible for k-1.\n- Run `ls`.\n")
+	EnsureRunExcluded(repo) // idempotent
+	line, err := WriteLaunchPrompt(wt, "k-1", "You are responsible for k-1.\n- Run `ls`.\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,4 +138,82 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 	}
 	// An ignored file doesn't stop the worktree from being removed after a merge.
 	git(repo, "worktree", "remove", wt)
+}
+
+func TestConcurrencyPrecedence(t *testing.T) {
+	cases := []struct {
+		flag, setting, want int
+		fails               bool
+	}{
+		{0, 0, 1, false}, {0, 3, 3, false}, {2, 3, 2, false}, {17, 0, 0, true}, {-1, 0, 0, true},
+	}
+	for _, c := range cases {
+		got, err := ResolveConcurrency(c.flag, Settings{Concurrency: c.setting})
+		if (err != nil) != c.fails || (!c.fails && got != c.want) {
+			t.Errorf("resolveConcurrency(%d, %d) = %d, %v", c.flag, c.setting, got, err)
+		}
+	}
+}
+
+func TestDetectCheckAndDefaultChoice(t *testing.T) {
+	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
+	if got := DetectCheck(kinieta); got != "scripts/ci-local.sh" {
+		t.Errorf("detectCheck = %q", got)
+	}
+	if got := DetectCheck(promptTemplate); got != "" {
+		t.Errorf("the template's placeholder is not a check command: %q", got)
+	}
+	c := DefaultChoice(Settings{}, kinieta)
+	if c.Check != "scripts/ci-local.sh" || c.CheckFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.Unasked {
+		t.Errorf("from the prompt: %+v", c)
+	}
+	c = DefaultChoice(Settings{Check: "make check", Concurrency: 3}, kinieta)
+	if c.Check != "make check" || c.Concurrent != 3 || c.Unasked {
+		t.Errorf("settings win: %+v", c)
+	}
+}
+
+func TestApplySettingsSavesAndExplains(t *testing.T) {
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	st, err := ApplySettings(repo, Choice{Check: "make check", Concurrent: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(SettingsPath(repo))
+	var m map[string]any
+	json.Unmarshal(raw, &m)
+	if m["concurrent"] != float64(3) || m["check"] != "make check" {
+		t.Errorf("settings.json = %s", raw)
+	}
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "side by side") {
+		t.Errorf("more than 1 should come with a caution: %+v", st)
+	}
+	st, _ = ApplySettings(repo, Choice{Concurrent: 1, Unasked: true})
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "merges unchecked") || !strings.Contains(st.Detail, "not asked") {
+		t.Errorf("no check, not asked: %+v", st)
+	}
+	st, _ = ApplySettings(repo, Choice{Check: "make check", Concurrent: 1})
+	if st.Kind != StepDone {
+		t.Errorf("one at a time with a check is plain done: %+v", st)
+	}
+}
+
+func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
+	repo, git := gitRepo(t)
+	steps, _ := Init(repo, "make check", false)
+	next := NextSteps(repo, steps, Prerequisites(repo))
+	joined := strings.Join(next, "\n")
+	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
+		t.Errorf("fresh init: %q", next)
+	}
+	if strings.Contains(joined, "placeholders") {
+		t.Errorf("--check filled the placeholders: %q", next)
+	}
+	git(repo, "add", ".orchestra")
+	git(repo, "commit", "-q", "-m", "setup")
+	steps, _ = Init(repo, "", false)
+	if joined := strings.Join(NextSteps(repo, steps, nil), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
+		t.Errorf("nothing to commit or read on a second run: %q", joined)
+	}
 }

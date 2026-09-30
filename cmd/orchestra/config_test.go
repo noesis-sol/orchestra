@@ -124,7 +124,7 @@ func TestConfigLegacyLayout(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, ".claude", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644)
 	c, p := loadWith(t)
 	if len(p) > 0 || !strings.HasSuffix(c.LogPath, ".claude/orchestrate.log") || !strings.HasSuffix(c.ReportsDir, ".claude/orchestrate-reports") {
-		t.Errorf("legacy layout: %s %s %v", c.LogPath, c.ReportsDir, p)
+		t.Errorf("legacy project.Layout: %s %s %v", c.LogPath, c.ReportsDir, p)
 	}
 }
 

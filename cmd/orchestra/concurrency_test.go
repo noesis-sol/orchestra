@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -193,84 +192,6 @@ func TestPickNextSkipsRunningTickets(t *testing.T) {
 	}
 	if tk, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true}); tk != nil {
 		t.Errorf("everything is running, got %v", tk)
-	}
-}
-
-func TestConcurrencyPrecedence(t *testing.T) {
-	cases := []struct {
-		flag, setting, want int
-		fails               bool
-	}{
-		{0, 0, 1, false}, {0, 3, 3, false}, {2, 3, 2, false}, {17, 0, 0, true}, {-1, 0, 0, true},
-	}
-	for _, c := range cases {
-		got, err := resolveConcurrency(c.flag, Settings{Concurrency: c.setting})
-		if (err != nil) != c.fails || (!c.fails && got != c.want) {
-			t.Errorf("resolveConcurrency(%d, %d) = %d, %v", c.flag, c.setting, got, err)
-		}
-	}
-}
-
-func TestDetectCheckAndDefaultChoice(t *testing.T) {
-	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
-	if got := detectCheck(kinieta); got != "scripts/ci-local.sh" {
-		t.Errorf("detectCheck = %q", got)
-	}
-	if got := detectCheck(promptTemplate); got != "" {
-		t.Errorf("the template's placeholder is not a check command: %q", got)
-	}
-	c := defaultChoice(Settings{}, kinieta)
-	if c.Check != "scripts/ci-local.sh" || c.checkFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.unasked {
-		t.Errorf("from the prompt: %+v", c)
-	}
-	c = defaultChoice(Settings{Check: "make check", Concurrency: 3}, kinieta)
-	if c.Check != "make check" || c.Concurrent != 3 || c.unasked {
-		t.Errorf("settings win: %+v", c)
-	}
-}
-
-func TestApplySettingsSavesAndExplains(t *testing.T) {
-	repo := t.TempDir()
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	st, err := applySettings(repo, initChoice{Check: "make check", Concurrent: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(settingsPath(repo))
-	var m map[string]any
-	json.Unmarshal(raw, &m)
-	if m["concurrent"] != float64(3) || m["check"] != "make check" {
-		t.Errorf("settings.json = %s", raw)
-	}
-	if st.kind != stepCaution || !strings.Contains(st.detail, "side by side") {
-		t.Errorf("more than 1 should come with a caution: %+v", st)
-	}
-	st, _ = applySettings(repo, initChoice{Concurrent: 1, unasked: true})
-	if st.kind != stepCaution || !strings.Contains(st.detail, "merges unchecked") || !strings.Contains(st.detail, "not asked") {
-		t.Errorf("no check, not asked: %+v", st)
-	}
-	st, _ = applySettings(repo, initChoice{Check: "make check", Concurrent: 1})
-	if st.kind != stepDone {
-		t.Errorf("one at a time with a check is plain done: %+v", st)
-	}
-}
-
-func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
-	repo, git := gitRepo(t)
-	steps, _ := initProject(repo, "make check", false)
-	next := nextSteps(repo, steps, prerequisites(repo))
-	joined := strings.Join(next, "\n")
-	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
-		t.Errorf("fresh init: %q", next)
-	}
-	if strings.Contains(joined, "placeholders") {
-		t.Errorf("--check filled the placeholders: %q", next)
-	}
-	git(repo, "add", ".orchestra")
-	git(repo, "commit", "-q", "-m", "setup")
-	steps, _ = initProject(repo, "", false)
-	if joined := strings.Join(nextSteps(repo, steps, nil), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
-		t.Errorf("nothing to commit or read on a second run: %q", joined)
 	}
 }
 

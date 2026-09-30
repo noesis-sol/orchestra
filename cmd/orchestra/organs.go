@@ -98,7 +98,7 @@ const triageSystem = `You triage tickets that an automated coding pipeline set a
 - instructions: the worker prompt or the ticket's wording. Examples: unclear or contradictory acceptance criteria, missing information, a decision only a human can make, a rule that forced deferral (such as "awaits CI").
 - problem: the task itself. Examples: too large for one ticket, blocked on a design question or on other work, failing tests the worker could not fix.
 
-Use only the evidence given. Recommend the single most useful next step for the maintainer, concretely (a command to run, a question to answer, how to split or reword the ticket). summary is at most 15 words. recommendation is at most 3 sentences.`
+Use only the evidence given. Recommend the single most useful next project.Step for the maintainer, concretely (a command to run, a question to answer, how to split or reword the ticket). summary is at most 15 words. recommendation is at most 3 sentences.`
 
 const triageSchema = `{"type":"object","properties":{"cause":{"type":"string","enum":["environment","instructions","problem"]},"confidence":{"type":"string","enum":["high","medium","low"]},"summary":{"type":"string"},"recommendation":{"type":"string"}},"required":["cause","confidence","summary","recommendation"]}`
 

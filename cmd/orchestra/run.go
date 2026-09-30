@@ -17,6 +17,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/project"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
@@ -137,19 +138,19 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (Co
 	}
 
 	if c.Repo != "" {
-		lay := projectLayout(c.Repo)
+		lay := project.Locate(c.Repo)
 		if c.WorkerPrompt == "" {
 			c.WorkerPrompt = lay.Prompt
 		} else if !filepath.IsAbs(c.WorkerPrompt) {
 			c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 		}
 		c.LogPath, c.ReportsDir = lay.Log, lay.Reports
-		settings, _, err := loadSettings(c.Repo)
+		settings, _, err := project.LoadSettings(c.Repo)
 		if err != nil {
 			problems = append(problems, "Unreadable settings: "+err.Error())
 		}
 		c.Check = settings.Check
-		if n, err := resolveConcurrency(c.Concurrency, settings); err != nil {
+		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.Concurrency = n
@@ -231,8 +232,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(exitSetup)
 	}
-	if err := ensureRunExcluded(cfg.Repo); err != nil {
-		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", orchDir, runName, err))
+	if err := project.EnsureRunExcluded(cfg.Repo); err != nil {
+		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
 		fmt.Fprintln(stderr, err)
