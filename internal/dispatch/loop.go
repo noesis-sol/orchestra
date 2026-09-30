@@ -181,6 +181,7 @@ type Loop struct {
 	asideIDs  []string          // tickets deferred or left unmerged in this run
 	unmerged  map[string]string // tickets closed but left unmerged in this run, with why
 	holdSaid  map[string]string // why each held ticket waits, as last said
+	askedIDs  map[string]bool   // tickets set aside in this run to wait on a question
 
 	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
 	// after that finds it closed rather than a closed channel.
@@ -436,9 +437,20 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	}
 	ready, err := o.tickets.Ready()
 	if err != nil {
-		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not parse 'bd ready --json'")
+		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read 'bd ready --json'%s", because(err))
 	}
-	t, queued := pickNext(ready, running, func(t Ticket) bool { return o.held(t, running) })
+	// A ticket set aside in this run stays out of it, even if bd still lists it as ready (a defer
+	// that failed, say); otherwise it would be dispatched again at once, in a new tab each time. A
+	// ticket waiting on a question is the exception: bd keeps it out of ready until the question is
+	// answered, and then it comes back.
+	skip := map[string]bool{}
+	for _, id := range o.setAside() {
+		skip[id] = !o.isAsked(id)
+	}
+	for id := range running {
+		skip[id] = true
+	}
+	t, queued := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) })
 	return t, queued, nil
 }
 
@@ -456,12 +468,12 @@ func (o *Loop) checkoutUnready(held string) *stopReason {
 	return nil
 }
 
-// pickNext returns the first ticket (ready is in priority order) that isn't running or held, and
+// pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
 // how many other ready tickets aren't either.
-func pickNext(ready []Ticket, running map[string]bool, held func(Ticket) bool) (*Ticket, int) {
+func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool) (*Ticket, int) {
 	var free []Ticket
 	for _, t := range ready {
-		if !running[t.ID] && !held(t) {
+		if !skip[t.ID] && !held(t) {
 			free = append(free, t)
 		}
 	}
@@ -494,8 +506,11 @@ func (o *Loop) held(t Ticket, running map[string]bool) bool {
 
 // waitsFor returns why ticket id can't start yet, or "" if nothing blocking it is unmerged.
 func (o *Loop) waitsFor(id string, running map[string]bool) string {
-	info := o.tickets.Show(id)
-	if info.Status == "unknown" {
+	info, err := o.tickets.Show(id)
+	if err != nil || info.Status == "unknown" {
+		if err != nil {
+			o.log.Raw("", err)
+		}
 		return "its dependencies could not be read"
 	}
 	for _, d := range info.Dependencies {
@@ -535,6 +550,22 @@ func (o *Loop) unmergedWhy(id string) string {
 	return o.unmerged[id]
 }
 
+// setAsked records whether ticket id is set aside waiting on a question.
+func (o *Loop) setAsked(id string, asked bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.askedIDs == nil {
+		o.askedIDs = map[string]bool{}
+	}
+	o.askedIDs[id] = asked
+}
+
+func (o *Loop) isAsked(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.askedIDs[id]
+}
+
 func (o *Loop) anyUnmerged() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -551,6 +582,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 			o.clearActive(id)
 		}
 	}()
+	o.setAsked(id, false) // back from a question: set aside again, it stays out
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
 	wt, s := o.prepareWorktree(id, br)
@@ -686,9 +718,13 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		o.notes.AppendNotes(id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
-		o.notes.Defer(id, "the worker never started on its prompt")
-		o.markAside(id)
+		o.appendNotes(id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
+		if err := o.deferAside(id, "the worker never started on its prompt"); err != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  DEFER_FAILED: %s's worker never started on its prompt, and bd could not defer it%s; kept out of this run, worktree %s and tab %s left open",
+				id, because(err), wt, tab)})
+			return nil
+		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
 			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open", id, wt, tab)})
 		return nil
@@ -701,12 +737,17 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
 	// question is out of the queue until the maintainer answers; the run goes on without it.
-	info := o.tickets.Show(id)
+	info, showErr := o.tickets.Show(id)
 	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
-		if info.Status != "open" {
-			o.notes.Reopen(id) // back in the queue once answered
-		}
 		o.markAside(id)
+		o.setAsked(id, true)
+		if info.Status != "open" { // back in the queue once answered
+			if err := o.notes.Reopen(id); err != nil {
+				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+					"  REOPEN_FAILED: %s stays %s, so it won't come back once %s is answered%s; reopen it with: bd update %s --status open",
+					id, info.Status, q.ID, because(err), id)})
+			}
+		}
 		o.emit(Event{Kind: EvAsked, Ticket: id, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
 			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
 			id, q.ID, q.Title, q.ID, wt, tab)})
@@ -724,14 +765,18 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		o.queueTriage(ctx, o.gatherDeferral(id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
-		o.notes.AppendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
+		o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
 		return halt(ExitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
-		return halt(ExitTool, "STATUS_UNREADABLE for %s; stopping rather than guessing (worktree %s and tab %s left open)", id, wt, tab)
+		return halt(ExitTool, "STATUS_UNREADABLE for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab)
 	case outcomeUnfinished:
-		o.notes.AppendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
-		o.notes.Defer(id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
-		o.markAside(id)
+		o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
+		if err := o.deferAside(id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)); err != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; kept out of this run, worktree %s and tab %s left for review",
+				id, s, because(err), wt, tab)})
+			return nil
+		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
 		o.queueTriage(ctx, o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
@@ -916,7 +961,11 @@ func (o *Loop) waitSettled(ctx context.Context, id, tab string) *stopReason {
 			if idleSince.IsZero() {
 				idleSince = time.Now()
 			}
-			if !keepWaiting(o.tickets.Status(id), time.Since(idleSince)) {
+			ts, err := o.tickets.Status(id)
+			if err != nil {
+				o.log.Raw("", err)
+			}
+			if !keepWaiting(ts, time.Since(idleSince)) {
 				return nil
 			}
 		} else {
@@ -970,7 +1019,7 @@ func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
 // it is delivered by pasting.
 func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if o.agents.WaitStarted(ctx, id) || o.tickets.Status(id) != "open" || lastActivity(o.agents.Screen(id)) != "" {
+		if o.agents.WaitStarted(ctx, id) || o.claimed(id) || lastActivity(o.agents.Screen(id)) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -979,6 +1028,45 @@ func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool
 		o.log.Raw("", fmt.Errorf("%s did not start on the prompt given at launch; pasting it", id))
 	}
 	return o.deliverPrompt(ctx, id, prompt)
+}
+
+// claimed reports whether the worker has taken its ticket out of "open". A status bd can't give
+// doesn't count.
+func (o *Loop) claimed(id string) bool {
+	st, err := o.tickets.Status(id)
+	if err != nil {
+		o.log.Raw("", err)
+		return false
+	}
+	return st != "open"
+}
+
+// appendNotes adds a note to the ticket, logging a failure: a lost note doesn't stop the run.
+func (o *Loop) appendNotes(id, note string) {
+	if err := o.notes.AppendNotes(id, note); err != nil {
+		o.log.Raw("", err)
+	}
+}
+
+// deferAside defers the ticket and keeps it out of the rest of the run, which matters most when
+// bd fails to defer it: it would still be ready and dispatched again at once. The error is logged
+// and returned so the caller can warn.
+func (o *Loop) deferAside(id, reason string) error {
+	o.markAside(id)
+	err := o.notes.Defer(id, reason)
+	if err != nil {
+		o.log.Raw("", err)
+	}
+	return err
+}
+
+// because renders a tracker error for a log line, with bd's stderr on one line: ": <cause>", or
+// "" without an error.
+func because(err error) string {
+	if err == nil {
+		return ""
+	}
+	return ": " + strings.Join(strings.Fields(err.Error()), " ")
 }
 
 // refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch

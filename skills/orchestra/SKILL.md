@@ -112,7 +112,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
-| `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | The raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
+| `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error; for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C | The worker keeps running. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. |
 
@@ -128,6 +128,10 @@ Lines about single tickets, which don't stop the run:
   the queue, and its branch is rebased onto the current one when it is picked up.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
+- `DEFER_FAILED`: bd couldn't defer the ticket (its error is on the line), so it is still ready;
+  the run leaves it alone. Once bd works again, defer it: `bd defer <id>`.
+- `REOPEN_FAILED`: a ticket waiting on a question couldn't be put back in the queue, so it won't
+  return once answered. Reopen it with the command on the line.
 - `rebased … onto …, which moved on while it ran` and `'<check>' passes on the rebased …`: other
   tickets merged first; the branch was rebased and re-checked before merging. Normal with several
   at once.

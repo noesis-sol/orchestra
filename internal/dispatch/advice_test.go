@@ -70,9 +70,9 @@ func TestLiveOrgans(t *testing.T) {
 // can't use it).
 type liveTickets struct{ repo string }
 
-func (l liveTickets) Ready() ([]Ticket, error) { return nil, nil }
-func (l liveTickets) Show(id string) Ticket    { return Ticket{ID: id} }
-func (l liveTickets) Status(id string) string  { return "unknown" }
+func (l liveTickets) Ready() ([]Ticket, error)         { return nil, nil }
+func (l liveTickets) Show(id string) (Ticket, error)   { return Ticket{ID: id}, nil }
+func (l liveTickets) Status(id string) (string, error) { return "unknown", nil }
 func (l liveTickets) Describe(id string) string {
 	out, _ := command.Output(l.repo, "bd", "show", id)
 	return out

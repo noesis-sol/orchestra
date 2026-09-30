@@ -258,13 +258,16 @@ type fakeTickets struct {
 }
 
 func (f fakeTickets) Ready() ([]Ticket, error) { return f.ready, nil }
-func (f fakeTickets) Show(id string) Ticket {
+func (f fakeTickets) Show(id string) (Ticket, error) {
 	if t, ok := f.shown[id]; ok {
-		return t
+		return t, nil
 	}
-	return Ticket{ID: id, Status: "unknown"}
+	return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: not found", id)
 }
-func (f fakeTickets) Status(id string) string   { return f.Show(id).Status }
+func (f fakeTickets) Status(id string) (string, error) {
+	t, err := f.Show(id)
+	return t.Status, err
+}
 func (f fakeTickets) Describe(id string) string { return id }
 
 // aBlocksB is Beads with A closed (so bd ready lists B, which A blocks) and C ready on its own.
@@ -461,10 +464,10 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 
 type readyTickets []Ticket
 
-func (r readyTickets) Ready() ([]Ticket, error) { return r, nil }
-func (readyTickets) Show(id string) Ticket      { return Ticket{ID: id, Status: "open"} }
-func (readyTickets) Status(id string) string    { return "open" }
-func (readyTickets) Describe(id string) string  { return id }
+func (r readyTickets) Ready() ([]Ticket, error)       { return r, nil }
+func (readyTickets) Show(id string) (Ticket, error)   { return Ticket{ID: id, Status: "open"}, nil }
+func (readyTickets) Status(id string) (string, error) { return "open", nil }
+func (readyTickets) Describe(id string) string        { return id }
 
 type cleanCheckout struct{}
 
@@ -574,6 +577,29 @@ func TestEveryWorkersStopReasonIsReported(t *testing.T) {
 	}
 }
 
+// Fakes for a run whose workers start, against a bd that fails.
+
+// errBd is what the fakes' bd says when it fails.
+var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  (another bd holds it)")
+
+// brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
+type brokenBd []Ticket
+
+func (b brokenBd) Ready() ([]Ticket, error)        { return b, nil }
+func (brokenBd) Show(id string) (Ticket, error)    { return Ticket{ID: id, Status: "unknown"}, errBd }
+func (brokenBd) Status(id string) (string, error)  { return "unknown", errBd }
+func (brokenBd) Describe(id string) string         { return id }
+func (brokenBd) AppendNotes(id, note string) error { return errBd }
+func (brokenBd) Defer(id, reason string) error     { return errBd }
+func (brokenBd) Reopen(id string) error            { return errBd }
+
+type okTabs struct{}
+
+func (okTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+	return "tab-" + label, "pane-" + label, nil
+}
+func (okTabs) CloseTab(tab string) {}
+
 // Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
 // (Describe) until release is closed.
 
@@ -592,8 +618,10 @@ type deferringTickets struct {
 }
 
 func (d deferringTickets) Ready() ([]Ticket, error) { return []Ticket{{ID: "A", Title: "a"}}, nil }
-func (deferringTickets) Show(id string) Ticket      { return Ticket{ID: id, Status: "deferred"} }
-func (deferringTickets) Status(id string) string    { return "deferred" }
+func (deferringTickets) Show(id string) (Ticket, error) {
+	return Ticket{ID: id, Status: "deferred"}, nil
+}
+func (deferringTickets) Status(id string) (string, error) { return "deferred", nil }
 func (d deferringTickets) Describe(id string) string {
 	d.once.Do(func() { close(d.entered) })
 	<-d.release
@@ -823,11 +851,143 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 			holds = append(holds, ev.Ticket+"|"+ev.Text)
 		}
 	}
-	want := "|HOLD: READY_UNREADABLE: could not parse 'bd ready --json'; no new tickets while the 1 running finish"
+	want := "|HOLD: READY_UNREADABLE: could not read 'bd ready --json': bd ready failed; no new tickets while the 1 running finish"
 	if len(holds) == 0 || holds[0] != want {
 		t.Errorf("HOLD events:\n%s\nwant first:\n%s", strings.Join(holds, "\n"), want)
 	}
 	if logged := read(t, logPath); !strings.Contains(logged, want[1:]) {
 		t.Errorf("log lacks %q:\n%s", want[1:], logged)
+	}
+}
+
+// promptAgents take their prompt (or refuse it, with promptErr) and are gone once they have.
+type promptAgents struct{ promptErr error }
+
+func (promptAgents) Status(name string) (string, error) { return "gone", nil }
+func (promptAgents) Screen(name string) string          { return "" }
+func (a promptAgents) Prompt(ctx context.Context, name, prompt string) error {
+	return a.promptErr
+}
+func (promptAgents) SendKeys(name string, keys ...string) error        { return nil }
+func (promptAgents) WaitStarted(ctx context.Context, name string) bool { return false }
+
+func brokenBdRun(t *testing.T, agents Agents) (*Loop, *recordSink, string, int) {
+	t.Helper()
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bd := brokenBd{{ID: "A", Title: "a"}}
+	sink := &recordSink{}
+	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 5, Concurrency: 1, WTRoot: "wts", LogPath: "log", AgentKind: "claude"},
+		log, "", Deps{Tickets: bd, Notes: bd, Tabs: okTabs{}, Starter: okStarter{}, Agents: agents,
+			Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
+	o.SetSink(sink)
+	code := o.Run(context.Background())
+	return o, sink, read(t, logPath), code
+}
+
+func TestAFailedDeferKeepsTheTicketOutOfTheRun(t *testing.T) {
+	// The worker never takes its prompt, and bd can't defer the ticket, so bd still lists it as
+	// ready: it must not be dispatched again in this run.
+	o, sink, logged, code := brokenBdRun(t, promptAgents{promptErr: fmt.Errorf("paste lost")})
+	if code != ExitOK {
+		t.Errorf("exit code %d, want %d", code, ExitOK)
+	}
+	var dispatched, deferred int
+	var warned bool
+	for _, ev := range sink.events {
+		switch ev.Kind {
+		case EvDispatch:
+			dispatched++
+		case EvDeferred:
+			deferred++
+		case EvWarn:
+			warned = ev.Ticket == "A" && strings.Contains(ev.Text, "DEFER_FAILED") &&
+				strings.Contains(ev.Text, "database is locked (another bd holds it)")
+		}
+	}
+	if dispatched != 1 {
+		t.Errorf("A dispatched %d times, want once:\n%s", dispatched, sink.text())
+	}
+	if deferred != 0 || !warned {
+		t.Errorf("want a DEFER_FAILED warning with bd's error and no 'deferred' line:\n%s", sink.text())
+	}
+	if !strings.HasPrefix(o.Final(), "READY_EMPTY") {
+		t.Errorf("final line %q", o.Final())
+	}
+	if !strings.Contains(logged, "database is locked") {
+		t.Errorf("log lacks bd's error:\n%s", logged)
+	}
+}
+
+func TestStatusUnreadableSaysWhy(t *testing.T) {
+	o, _, logged, code := brokenBdRun(t, promptAgents{})
+	if code != ExitTool {
+		t.Errorf("exit code %d, want %d", code, ExitTool)
+	}
+	want := "STATUS_UNREADABLE for A: bd defer A: exit status 1: Error: database is locked (another bd holds it); stopping"
+	if !strings.HasPrefix(o.Final(), want) {
+		t.Errorf("final line %q, want it to start with %q", o.Final(), want)
+	}
+	if !strings.Contains(logged, want) {
+		t.Errorf("log lacks %q:\n%s", want, logged)
+	}
+}
+
+// unreadableReady can't list the ready queue.
+type unreadableReady struct{ brokenBd }
+
+func (unreadableReady) Ready() ([]Ticket, error) { return nil, errBd }
+
+func TestReadyUnreadableSaysWhy(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: unreadableReady{}, Checkout: cleanCheckout{}})
+	_, _, s := o.next(nil)
+	want := "READY_UNREADABLE: could not read 'bd ready --json': bd defer A: exit status 1: Error: database is locked (another bd holds it)"
+	if s == nil || s.text != want {
+		t.Errorf("got %+v, want %q", s, want)
+	}
+}
+
+// A ticket set aside in this run stays out of it, except one that waited on a question: bd lists
+// it as ready again only once the question is answered, and then it comes back. Set aside again
+// after that, it stays out.
+func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := readyTickets{{ID: "deferred"}, {ID: "answered"}, {ID: "fresh"}}
+	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: ready, Checkout: cleanCheckout{}})
+	o.SetSink(&recordSink{})
+	o.markAside("deferred")
+	o.markAside("answered")
+	o.setAsked("answered", true)
+	if tk, _, s := o.next(nil); s != nil || tk == nil || tk.ID != "answered" {
+		t.Fatalf("got %v (%v), want the ticket whose question was answered", tk, s)
+	}
+	o.setAsked("answered", false) // dispatched again, then set aside for another reason
+	if tk, _, s := o.next(nil); s != nil || tk == nil || tk.ID != "fresh" {
+		t.Fatalf("got %v (%v), want the fresh ticket", tk, s)
+	}
+}
+
+func TestAnUnreadableStatusIsNotAClaim(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(Config{}, log, "", Deps{Tickets: brokenBd{}})
+	if o.claimed("A") {
+		t.Error("an unreadable status was taken for a claim")
+	}
+	if !strings.Contains(read(t, logPath), "database is locked") {
+		t.Error("the cause was not logged")
 	}
 }

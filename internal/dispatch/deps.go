@@ -8,17 +8,17 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready() ([]Ticket, error)  // open, ready tickets, highest priority first
-	Show(id string) Ticket     // with dependencies; Status "unknown" if unreadable
-	Status(id string) string   // "unknown" if unreadable
-	Describe(id string) string // as a person reads it, for the organs' evidence
+	Ready() ([]Ticket, error)         // open, ready tickets, highest priority first
+	Show(id string) (Ticket, error)   // with dependencies; Status "unknown" and the cause if unreadable
+	Status(id string) (string, error) // "unknown" and the cause if unreadable
+	Describe(id string) string        // as a person reads it, for the organs' evidence
 }
 
 // Notes is what the loop writes to the tracker.
 type Notes interface {
-	AppendNotes(id, note string)
-	Defer(id, reason string)
-	Reopen(id string)
+	AppendNotes(id, note string) error
+	Defer(id, reason string) error
+	Reopen(id string) error
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).

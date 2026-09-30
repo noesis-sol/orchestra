@@ -5,7 +5,9 @@ package beads
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -75,11 +77,19 @@ type Tracker struct {
 
 // Ready returns the open tickets bd considers ready, highest priority first; questions for the
 // maintainer and epics are left out. bd filters them and parseReady filters again, and the query
-// has no limit, so work behind more than bd's default 100 ready entries is still seen.
+// has no limit, so work behind more than bd's default 100 ready entries is still seen. Like the
+// bash version it judges by the output; when that can't be read, the error carries bd's stderr.
 func (b Tracker) Ready() ([]dispatch.Ticket, error) {
-	out, _ := command.Output(b.Repo, "bd", "ready", "--json", "--limit", "0", // like the bash version, judge by the output
+	out, runErr := command.Output(b.Repo, "bd", "ready", "--json", "--limit", "0",
 		"--exclude-type", epicType, "--exclude-label", dispatch.HumanLabel)
-	return parseReady([]byte(out))
+	ready, err := parseReady([]byte(out))
+	switch {
+	case err != nil && runErr != nil:
+		return nil, runErr
+	case err != nil:
+		return nil, fmt.Errorf("could not parse 'bd ready --json': %w", err)
+	}
+	return ready, nil
 }
 
 // parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.
@@ -99,30 +109,49 @@ func parseTicket(raw []byte) (dispatch.Ticket, bool) {
 	return dispatch.Ticket{}, false
 }
 
-// Show returns the ticket with its dependencies; Status is "unknown" if it cannot be read.
-func (b Tracker) Show(id string) dispatch.Ticket {
-	out, _ := command.Output(b.Repo, "bd", "show", id, "--json")
+// Show returns the ticket with its dependencies. If it cannot be read, Status is "unknown" and the
+// error says why.
+func (b Tracker) Show(id string) (dispatch.Ticket, error) {
+	out, err := command.Output(b.Repo, "bd", "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	if !ok {
-		return dispatch.Ticket{ID: id, Status: "unknown"}
+		return dispatch.Ticket{ID: id, Status: "unknown"}, unreadable(id, out, err)
 	}
-	return t
+	return t, nil
 }
 
-// Status returns the ticket's status, or "unknown" if it cannot be read.
-func (b Tracker) Status(id string) string {
-	out, _ := command.Output(b.Repo, "bd", "show", id, "--json")
-	return parseStatus([]byte(out))
+// Status returns the ticket's status. If it cannot be read, it is "unknown" and the error says why.
+func (b Tracker) Status(id string) (string, error) {
+	out, err := command.Output(b.Repo, "bd", "show", id, "--json")
+	if s := parseStatus([]byte(out)); s != "unknown" {
+		return s, nil
+	}
+	return "unknown", unreadable(id, out, err)
+}
+
+// unreadable says why 'bd show --json' gave no status: bd failed (the error carries its stderr), or
+// its output held none.
+func unreadable(id, out string, err error) error {
+	if err != nil {
+		return err
+	}
+	out = strings.TrimSpace(out)
+	if r := []rune(out); len(r) > 200 {
+		out = string(r[:200]) + "…"
+	}
+	return fmt.Errorf("'bd show %s --json' gave no status: %q", id, out)
 }
 
 // AppendNotes adds a note to the ticket.
-func (b Tracker) AppendNotes(id, note string) {
-	command.Output(b.Repo, "bd", "update", id, "--append-notes", note)
+func (b Tracker) AppendNotes(id, note string) error {
+	_, err := command.Output(b.Repo, "bd", "update", id, "--append-notes", note)
+	return err
 }
 
 // Defer sets the ticket aside, with the reason.
-func (b Tracker) Defer(id, reason string) {
-	command.Output(b.Repo, "bd", "defer", id, "--reason="+reason)
+func (b Tracker) Defer(id, reason string) error {
+	_, err := command.Output(b.Repo, "bd", "defer", id, "--reason="+reason)
+	return err
 }
 
 // Describe returns 'bd show' for the ticket, as a person reads it.
@@ -132,6 +161,7 @@ func (b Tracker) Describe(id string) string {
 }
 
 // Reopen puts the ticket back in the queue.
-func (b Tracker) Reopen(id string) {
-	command.Output(b.Repo, "bd", "update", id, "--status", "open")
+func (b Tracker) Reopen(id string) error {
+	_, err := command.Output(b.Repo, "bd", "update", id, "--status", "open")
+	return err
 }

@@ -120,7 +120,7 @@ func (o *Loop) triage(d organ.Deferral) {
 		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
 		return
 	}
-	o.notes.AppendNotes(d.ID, t.Note())
+	o.appendNotes(d.ID, t.Note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
 }
