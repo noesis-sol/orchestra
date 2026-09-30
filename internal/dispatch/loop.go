@@ -303,6 +303,7 @@ func (o *Loop) interrupted() int {
 type timing struct {
 	poll       time.Duration // between reads of a worker's status: 3 seconds
 	startRetry time.Duration // after a failed start, before looking for the agent: 3 seconds
+	adopt      time.Duration // watching a pane for a worker slow to start: lateAdopt
 	blocked    time.Duration // a worker blocked for longer stops the run: blockedLimit
 	idleGrace  time.Duration // idleGrace
 	settle     time.Duration // SettleWait
@@ -423,6 +424,49 @@ func (o *Loop) Run(ctx context.Context) int {
 // the run report) reads a loop that has stopped changing. A worker notices the cancellation within
 // seconds unless a command it runs hangs.
 const SettleWait = 10 * time.Second
+
+// lateAdopt is how long, after Herdr's own adoption gave up, the loop keeps watching a pane the
+// worker was launched in: 2 minutes.
+const lateAdopt = 2 * time.Minute
+
+// adoptLate watches a pane a worker was launched in for its agent, and names it agent once one of
+// the configured kind is there. When it gives up, held says what the pane holds ("" for nothing).
+// The error is a rename Herdr refused, or the context ending.
+func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, adopted bool, err error) {
+	deadline := time.Now().Add(orDefault(o.wait.adopt, lateAdopt))
+	for {
+		name, kind, st := o.namer.PaneAgent(pane)
+		switch {
+		case st == "gone":
+			held = ""
+		case st == "unreadable":
+			held = "Herdr could not say what the pane holds"
+		case kind != o.cfg.AgentKind:
+			held = fmt.Sprintf("the pane holds a %s agent", kind)
+		case name == agent:
+			return "", true, nil
+		default:
+			err := o.namer.RenameAgent(pane, agent)
+			if err == nil {
+				return "", true, nil
+			}
+			if o.starter.IsNameRefused(err) {
+				return "", false, err
+			}
+			why := fmt.Sprintf("the %s agent in the pane could not be renamed: %v", kind, err)
+			if why != held {
+				o.log.Raw("", err)
+			}
+			held = why
+		}
+		if time.Now().After(deadline) {
+			return held, false, nil
+		}
+		if !sleep(ctx, o.pollEvery()) {
+			return held, false, ctx.Err()
+		}
+	}
+}
 
 // settle waits for the workers in flight to return, or for SettleWait.
 func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
@@ -744,17 +788,36 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	ok := false
 	if launch != "" {
 		err := o.starter.LaunchInPane(pane, c.AgentKind, append(report[:len(report):len(report)], launch))
-		if err == nil {
+		typed := err == nil
+		if typed {
 			_, err = o.namer.AdoptAgent(ctx, pane, c.AgentKind, agent)
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		if ok = err == nil; !ok {
-			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); starting it with herdr agent start and pasting the prompt", id, agent, err))
+		if o.starter.IsNameRefused(err) {
+			return nameRefused(err)
+		}
+		if ok = err == nil; !ok && typed {
+			// The typed command may still be starting (a slow first start, many MCP servers), and
+			// a second agent started in its pane would take the prompt twice: watch the pane for
+			// longer, and start another only once it is plainly empty.
+			o.log.Raw("", fmt.Errorf("%s's worker was not named %s after it was launched (%v); watching its tab for longer", id, agent, err))
+			held, adopted, err := o.adoptLate(ctx, pane, agent)
+			if ctx.Err() != nil {
+				return errInterrupted
+			}
 			if o.starter.IsNameRefused(err) {
 				return nameRefused(err)
 			}
+			if ok = adopted; ok {
+				o.info("  %s's worker was slow to start; named it %s", id, agent)
+			} else if held != "" {
+				return halt(ExitTool, "START_FAILED for %s in tab %s: the worker launched there could not be named %s (%s); stopping rather than starting a second one in it", id, tab, agent, held)
+			}
+		}
+		if !ok {
+			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); starting it with herdr agent start and pasting the prompt", id, agent, err))
 			launch = ""
 		}
 	}

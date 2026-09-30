@@ -83,6 +83,10 @@ All notable changes to orchestra are documented here. The format follows
   minutes. It remains the fallback, and a worker whose start timed out is
   adopted (named after its ticket) instead of failing the run with
   `START_FAILED`.
+- A worker launched with its prompt that Herdr takes over a minute to
+  recognise is still adopted, for up to two more minutes, instead of a second
+  one being started in its tab and the prompt pasted into it again. The
+  fallback start happens only once the tab plainly holds no agent.
 - The dashboard clears the screen when it starts, so it begins at the top;
   earlier output stays in the terminal's scrollback. Plain mode doesn't clear.
 - The active ticket's title wraps onto up to three lines instead of being cut

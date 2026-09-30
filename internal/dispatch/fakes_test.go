@@ -214,6 +214,7 @@ type fakePane struct{ ticket, wt, tab string }
 type fakeAgent struct {
 	name, kind, pane, status string
 	prompted                 bool
+	late                     bool // Herdr doesn't see it yet: adoption gives up, and the next pane read misses it
 }
 
 var errRefused = errors.New("herdr: unknown argument")
@@ -230,18 +231,22 @@ type fakeHerdr struct {
 	agents     []*fakeAgent // gone ones are removed
 	closed     []string     // tabs closed
 	pasted     []string     // tickets whose prompt was pasted
+	starts     []string     // tickets StartAgent was asked to start a worker for
 	behaviours map[string][]behaviour
 	running    sync.WaitGroup
 
 	launchFails  map[string]bool // LaunchInPane fails for these tickets
 	promptFails  map[string]bool // pasting the prompt never submits it
 	startUnnamed map[string]bool // the first StartAgent times out, leaving the agent unnamed in its pane
+	launchSlow   map[string]bool // the worker LaunchInPane starts appears only after the adoption gives up
+	launchLost   map[string]bool // LaunchInPane succeeds, but no worker ever appears
 	refuseArgs   bool            // StartAgent takes no arguments
 }
 
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
-		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{}}
+		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
+		launchSlow: map[string]bool{}, launchLost: map[string]bool{}}
 }
 
 // agent returns the agent named name, or nil. The caller holds mu.
@@ -292,6 +297,12 @@ func (h *fakeHerdr) tabsClosed() []string {
 	return append([]string(nil), h.closed...)
 }
 
+func (h *fakeHerdr) startsFor() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.starts...)
+}
+
 func (h *fakeHerdr) pastedTo() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -330,7 +341,10 @@ func (h *fakeHerdr) LaunchInPane(pane, kind string, args []string) error {
 	if h.launchFails[h.panes[pane].ticket] {
 		return errors.New("herdr pane run: failed")
 	}
-	a := &fakeAgent{kind: kind, pane: pane}
+	if h.launchLost[h.panes[pane].ticket] {
+		return nil
+	}
+	a := &fakeAgent{kind: kind, pane: pane, late: h.launchSlow[h.panes[pane].ticket]}
 	h.agents = append(h.agents, a)
 	h.prompt(a) // the prompt is its launch argument
 	return nil
@@ -339,6 +353,7 @@ func (h *fakeHerdr) LaunchInPane(pane, kind string, args []string) error {
 func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.starts = append(h.starts, h.panes[pane].ticket)
 	if h.refuseArgs && len(args) > 0 {
 		return errRefused
 	}
@@ -367,7 +382,10 @@ func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (st
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	a := h.inPane(pane)
-	if a == nil || a.name != "" || h.agent(name) != nil {
+	if a == nil || a.late {
+		return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
+	}
+	if a.name != "" || h.agent(name) != nil {
 		return "", fmt.Errorf("herdr: no unnamed agent in %s to name %s", pane, name)
 	}
 	a.name = name
@@ -377,8 +395,10 @@ func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (st
 func (h *fakeHerdr) PaneAgent(pane string) (string, string, string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if a := h.inPane(pane); a != nil {
+	if a := h.inPane(pane); a != nil && !a.late {
 		return a.name, a.kind, a.status
+	} else if a != nil {
+		a.late = false // there next time
 	}
 	return "", "", "gone"
 }
