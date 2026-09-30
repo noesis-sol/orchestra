@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,15 +45,14 @@ func samePath(a, b string) bool {
 	return real(a) == real(b)
 }
 
-// loadWith runs loadConfig with these command-line arguments.
+// loadWith runs loadConfig with these command-line arguments and the process's environment.
 func loadWith(t *testing.T, args ...string) (Config, []string) {
 	t.Helper()
-	flag.CommandLine = flag.NewFlagSet("orchestra", flag.ContinueOnError)
-	flag.CommandLine.SetOutput(new(strings.Builder))
-	old := os.Args
-	os.Args = append([]string{"orchestra"}, args...)
-	t.Cleanup(func() { os.Args = old })
-	return loadConfig()
+	c, problems, err := loadConfig(args, os.Getenv, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, problems
 }
 
 func TestConfigConcurrencyPrecedence(t *testing.T) {

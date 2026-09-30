@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -426,12 +427,12 @@ func TestWordWrapKeepsHyphenatedWords(t *testing.T) {
 
 func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
 	t.Setenv("HERDR_WORKSPACE_ID", "w9Z")
-	if got := currentWorkspace(); got != "w9Z" {
+	if got := currentWorkspace(os.Getenv); got != "w9Z" {
 		t.Errorf("got %q", got)
 	}
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("HERDR_ENV", "")
-	if got := currentWorkspace(); got != "" {
+	if got := currentWorkspace(os.Getenv); got != "" {
 		t.Errorf("outside Herdr there is no current workspace, got %q", got)
 	}
 }

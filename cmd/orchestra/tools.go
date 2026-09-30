@@ -405,11 +405,11 @@ func lastActivity(screen string) string {
 
 // currentWorkspace returns the Herdr workspace orchestra runs in: from HERDR_WORKSPACE_ID, which
 // Herdr sets in its panes, or else from Herdr itself. "" if neither knows.
-func currentWorkspace() string {
-	if ws := os.Getenv("HERDR_WORKSPACE_ID"); ws != "" {
+func currentWorkspace(getenv func(string) string) string {
+	if ws := getenv("HERDR_WORKSPACE_ID"); ws != "" {
 		return ws
 	}
-	if os.Getenv("HERDR_ENV") != "1" {
+	if getenv("HERDR_ENV") != "1" {
 		return ""
 	}
 	out, err := command.Output("", "herdr", "pane", "current", "--current")
