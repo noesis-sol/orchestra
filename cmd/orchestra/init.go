@@ -18,16 +18,17 @@ import (
 func runInit(dir string, args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	check := fs.String("check", "", "the project's check command (lint, build, tests)")
+	checkTimeout := fs.Duration("check-timeout", 0, "how long the check command may run on a rebased ticket, e.g. 5m (asked when omitted; default "+project.DefaultCheckTimeoutText+")")
 	force := fs.Bool("force", false, "replace an existing .orchestra/worker-prompt.md with the template")
 	var concurrent int
 	fs.IntVar(&concurrent, "concurrent", 0, "tickets to run at the same time by default (asked when omitted)")
 	fs.IntVar(&concurrent, "c", 0, "shorthand for --concurrent")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\n"+
+		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n\n"+
 			"Set up .orchestra/ in this repository: the worker prompt (from the built-in template, or moved\n"+
-			"from .claude/worker-prompt.md), settings.json (the check command and how many tickets run at\n"+
-			"the same time), a .gitignore for the log, reports and per-ticket files, and a check of what\n"+
-			"orchestra needs. In a terminal it asks for anything the flags don't give.\n\n")
+			"from .claude/worker-prompt.md), settings.json (the check command, its time limit and how many\n"+
+			"tickets run at the same time), a .gitignore for the log, reports and per-ticket files, and a\n"+
+			"check of what orchestra needs. In a terminal it asks for anything the flags don't give.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -42,7 +43,11 @@ func runInit(dir string, args []string) int {
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
-	checkGiven, concurrentGiven := given["check"], given["concurrent"] || given["c"]
+	checkGiven, timeoutGiven, concurrentGiven := given["check"], given["check-timeout"], given["concurrent"] || given["c"]
+	if timeoutGiven && *checkTimeout <= 0 {
+		fmt.Fprintln(os.Stderr, "orchestra init: --check-timeout must be a positive duration such as 5m")
+		return dispatch.ExitSetup
+	}
 	if concurrentGiven && (concurrent < 1 || concurrent > project.MaxConcurrency) {
 		fmt.Fprintf(os.Stderr, "orchestra init: --concurrent must be between 1 and %d\n", project.MaxConcurrency)
 		return dispatch.ExitSetup
@@ -67,12 +72,15 @@ func runInit(dir string, args []string) int {
 	if concurrentGiven {
 		choice.Concurrent, choice.Unasked = concurrent, false
 	}
+	if timeoutGiven {
+		choice.CheckTimeout, choice.ReplacedTimeout = dispatch.ShortDuration(*checkTimeout), ""
+	}
 
 	ui := tui.NewInitScreen(os.Stdout)
 	ui.Header(repo)
 	interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
-	if interactive && !(checkGiven && concurrentGiven) {
-		if err := tui.AskInit(&choice, !checkGiven, !concurrentGiven); err != nil {
+	if interactive && !(checkGiven && timeoutGiven && concurrentGiven) {
+		if err := tui.AskInit(&choice, !checkGiven, !timeoutGiven, !concurrentGiven); err != nil {
 			ui.Cancelled()
 			return dispatch.ExitSetup
 		}

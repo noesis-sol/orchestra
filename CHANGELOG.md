@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `"check_timeout"` in `.orchestra/settings.json`: how long the check command
+  may run on a rebased ticket, such as `"5m"` or `"45m"` (default 30 minutes,
+  which was fixed before). The merge queue waits on the check, so a hung one
+  held every finished ticket; a project with a quick check can now stop it
+  sooner. `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it for a run,
+  and `orchestra init` asks for it (or takes `--check-timeout`). A check
+  stopped at the limit is reported as `CHECKS_FAILED: … '<check>' did not
+  finish within 5m on …` instead of a bare failure, and the `START` line
+  records the limit.
 - `"exclude_types"` in `.orchestra/settings.json`: the issue types a run never
   takes from `bd ready`, such as `["epic", "decision", "milestone"]`. Without
   it, epics alone are left out; `[]` dispatches every type.

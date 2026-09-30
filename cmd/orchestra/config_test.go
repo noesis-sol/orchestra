@@ -26,7 +26,7 @@ func configFixture(t *testing.T, settings string) string {
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
-		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "WORKSPACE"} {
+		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("HERDR_ENV", "1")
@@ -114,6 +114,39 @@ func TestConfigTicketLimitPrecedence(t *testing.T) {
 	os.Remove(".orchestra/settings.json")
 	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
 		t.Errorf("no settings: %s %v", c.TicketLimit, p)
+	}
+}
+
+func TestConfigCheckTimeoutPrecedence(t *testing.T) {
+	configFixture(t, `{"concurrent": 1, "check_timeout": "5m"}`)
+	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 5*time.Minute {
+		t.Errorf("settings: %s %v", c.CheckTimeout, p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "10m")
+	if c, _ := loadWith(t); c.CheckTimeout != 10*time.Minute {
+		t.Errorf("the environment overrides settings: %s", c.CheckTimeout)
+	}
+	if c, _ := loadWith(t, "--check-timeout", "45m"); c.CheckTimeout != 45*time.Minute {
+		t.Errorf("--check-timeout overrides the environment: %s", c.CheckTimeout)
+	}
+	if _, p := loadWith(t, "--check-timeout", "0"); len(p) != 1 || !strings.Contains(p[0], "--check-timeout must be a positive duration") {
+		t.Errorf("zero: %v", p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "0")
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ORCHESTRA_CHECK_TIMEOUT must be a positive duration") {
+		t.Errorf("zero variable: %v", p)
+	}
+	if c, p := loadWith(t, "--check-timeout", "2m"); len(p) > 0 || c.CheckTimeout != 2*time.Minute {
+		t.Errorf("the flag over an invalid variable: %s %v", c.CheckTimeout, p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "")
+	os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "check_timeout must be a positive duration") {
+		t.Errorf("invalid setting: %v", p)
+	}
+	os.Remove(".orchestra/settings.json")
+	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 30*time.Minute {
+		t.Errorf("no settings: %s %v", c.CheckTimeout, p)
 	}
 }
 

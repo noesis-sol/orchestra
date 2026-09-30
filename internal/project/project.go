@@ -125,20 +125,28 @@ type Step struct {
 	Template      bool // the worker prompt was written from the template, for the project to adjust
 }
 
-// Choice is what init sets up: the check command and the default number of tickets at once.
+// Choice is what init sets up: the check command, its time limit and the default number of
+// tickets at once.
 type Choice struct {
-	Check      string
-	Concurrent int
-	CheckFrom  string // where the check command came from, for the summary
-	Unasked    bool   // concurrent fell back to 1 without asking
-	Replaced   int    // the out-of-range concurrency in settings that init replaced, or 0
+	Check        string
+	CheckTimeout string // as in settings.json; "" for DefaultCheckTimeout
+	Concurrent   int
+	CheckFrom    string // where the check command came from, for the summary
+	Unasked      bool   // concurrent fell back to 1 without asking
+	Replaced     int    // the out-of-range concurrency in settings that init replaced, or 0
+	// ReplacedTimeout is the check_timeout in settings that every run would reject, which init
+	// dropped, or "".
+	ReplacedTimeout string
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
 // prompt when the settings have none. A concurrency outside 1 to MaxConcurrency, which every run
-// would reject, is replaced by 1.
+// would reject, is replaced by 1; a check_timeout every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
-	c := Choice{Check: s.Check, Concurrent: s.Concurrency, CheckFrom: "settings"}
+	c := Choice{Check: s.Check, CheckTimeout: s.CheckTimeout, Concurrent: s.Concurrency, CheckFrom: "settings"}
+	if _, err := ParseCheckTimeout(c.CheckTimeout); c.CheckTimeout != "" && err != nil {
+		c.ReplacedTimeout, c.CheckTimeout = c.CheckTimeout, ""
+	}
 	if c.Check == "" {
 		if c.Check = DetectCheck(prompt); c.Check != "" {
 			c.CheckFrom = "found in the worker prompt"
@@ -215,7 +223,7 @@ func Init(repo, check string, force bool) ([]Step, error) {
 // ApplySettings saves the choice to .orchestra/settings.json.
 func ApplySettings(repo string, c Choice) (Step, error) {
 	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about
-	s.Check, s.Concurrency = c.Check, c.Concurrent
+	s.Check, s.CheckTimeout, s.Concurrency = c.Check, c.CheckTimeout, c.Concurrent
 	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
 	}
@@ -231,11 +239,19 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 		if c.CheckFrom == "found in the worker prompt" {
 			detail += " (found in the worker prompt)"
 		}
+		limit := c.CheckTimeout
+		if limit == "" {
+			limit = DefaultCheckTimeoutText
+		}
+		detail += ", stopped after " + limit
 	} else {
 		detail += " · no check command: a rebased ticket merges unchecked (--check sets one)"
 	}
+	if c.ReplacedTimeout != "" {
+		detail += fmt.Sprintf(" (settings had check_timeout '%s', not a positive duration)", c.ReplacedTimeout)
+	}
 	kind := StepDone
-	if c.Concurrent > 1 || c.Check == "" || c.Replaced != 0 {
+	if c.Concurrent > 1 || c.Check == "" || c.Replaced != 0 || c.ReplacedTimeout != "" {
 		kind = StepCaution
 	}
 	if c.Concurrent > 1 {

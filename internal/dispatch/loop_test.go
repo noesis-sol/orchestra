@@ -157,6 +157,44 @@ func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
 	}
 }
 
+// A hung check is stopped at the check timeout and its ticket set aside, which frees the merge
+// queue for the next finished ticket.
+func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
+	f := newMergeFixture(t, "if test -f a.txt; then sleep 60; fi") // hangs on k-1 only
+	f.orch.cfg.CheckTimeout = 300 * time.Millisecond
+	hung := f.ticket(t, "k-1", "a.txt", "a\n")
+	next := f.ticket(t, "k-2", "c.txt", "c\n")
+	f.onMain(t, "b.txt", "b\n")
+	start := time.Now()
+	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", hung, "tab"); s != nil {
+		t.Fatal(s.text)
+	}
+	// The check's process group gets its grace period (5s) and WaitDelay (10s) at most.
+	if took := time.Since(start); took > f.orch.cfg.CheckTimeout+15*time.Second {
+		t.Errorf("the check was stopped after %s", took)
+	}
+	ev := f.sink.text()
+	if !strings.Contains(ev, "CHECKS_FAILED: k-1 closed, but 'if test -f a.txt; then sleep 60; fi' did not finish within 300ms on wt/k-1") {
+		t.Errorf("events:\n%s", ev)
+	}
+	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+		t.Errorf("set aside = %v", got)
+	}
+	if s := f.orch.merge(context.Background(), "k-2", "wt/k-2", next, "tab"); s != nil {
+		t.Fatal(s.text)
+	}
+	if !strings.Contains(f.sink.text(), "k-2 closed") {
+		t.Errorf("k-2 did not merge; events:\n%s", f.sink.text())
+	}
+}
+
+func TestMergeCheckTimeoutDefaultsTo30Minutes(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	if got := f.orch.checkTimeout(); got != 30*time.Minute {
+		t.Errorf("checkTimeout = %s", got)
+	}
+}
+
 func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
 	f := newMergeFixture(t, "")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
@@ -1194,8 +1232,8 @@ func TestShortDuration(t *testing.T) {
 		2 * time.Hour: "2h", 90 * time.Minute: "1h30m", 45 * time.Minute: "45m", 30 * time.Second: "30s",
 		50 * time.Millisecond: "50ms", time.Hour + 30*time.Second: "1h0m30s",
 	} {
-		if got := shortDuration(d); got != want {
-			t.Errorf("shortDuration(%s) = %q, want %q", d, got, want)
+		if got := ShortDuration(d); got != want {
+			t.Errorf("ShortDuration(%s) = %q, want %q", d, got, want)
 		}
 	}
 }

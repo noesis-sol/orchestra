@@ -39,7 +39,9 @@ Where the project's orchestra files are:
 `.orchestra/settings.json` holds the check command and `concurrent`, how many tickets run at the
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
-`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), and `exclude_types`, the issue
+`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_timeout`, how long the check
+command may run on a rebased ticket before it is stopped and the ticket set aside (`"5m"`, default
+30m; `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it), and `exclude_types`, the issue
 types never dispatched (default `["epic"]`; `[]` dispatches every type).
 
 ## Setting a project up
@@ -53,7 +55,8 @@ It writes `.orchestra/worker-prompt.md` from the built-in template (or moves an 
 missing (`bd`, `bd init`, `herdr`, `claude`), and writes `.orchestra/settings.json`. Ask the user
 for the check command if you don't know it (the command that runs lint, build and tests) and how
 many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
-interactively and would default to 1. More than 1 needs checks that can run side by side; say so.
+interactively and would default to 1. `--check-timeout 5m` sets the check's time limit (default
+30m): a few times the check's usual running time. More than 1 needs checks that can run side by side; say so.
 Without `--check`, fill in the `<…>` placeholders in the prompt. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` if they agree.
 
@@ -86,7 +89,9 @@ time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
 `DONE_SO_FAR` (count earlier tickets toward the limit), `TRIAGE=0` / `REVIEW=0` (no organs),
 `ORGAN_MODEL`, `NOTIFY=0` (no macOS notifications), `PROMPT_AT_LAUNCH=0` (paste the prompt instead
 of starting the worker with it), `--ticket-limit 2h` / `TICKET_LIMIT` (stop when a worker is still
-going that long after dispatch; `0` for none, overriding `settings.json`). `orchestra -h` lists them all.
+going that long after dispatch; `0` for none, overriding `settings.json`), `--check-timeout 5m` /
+`ORCHESTRA_CHECK_TIMEOUT` (the check's time limit, overriding `settings.json`). `orchestra -h` lists
+them all.
 
 ## While it runs
 
@@ -155,7 +160,9 @@ Lines about single tickets, which don't stop the run:
 - `MERGE_CONFLICT`: closed, but its branch conflicts with work merged while it ran. Not merged:
   rebase it in its worktree, resolve, run the checks, merge by hand. The ticket stays closed.
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
-  Not merged: fix in its worktree or reopen the ticket, with the user.
+  Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
+  means the check hung or ran past `check_timeout` and was stopped: a hang, or a limit set too low,
+  rather than a failing test.
 - `REBASE_FAILED`: a returning ticket's branch conflicts with the base branch, so it was deferred
   without starting a worker. Rebase it in its worktree, resolve, then `bd undefer <id>`.
 - `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, so its branch wasn't

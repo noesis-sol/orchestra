@@ -392,10 +392,10 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.startHead = o.checkout.Head(c.Repo, c.Base)
 	ticketLimit := "none"
 	if c.TicketLimit > 0 {
-		ticketLimit = shortDuration(c.TicketLimit)
+		ticketLimit = ShortDuration(c.TicketLimit)
 	}
-	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, workspace: %s, agent: %s, worktrees: %s)",
-		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, ticketLimit, c.Workspace, c.AgentKind, c.WTRoot)
+	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
+		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
 	if s := o.loadUnmerged(); s != nil {
 		return o.stop(s.code, "%s", s.text)
 	}
@@ -1209,9 +1209,13 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 				return errInterrupted
 			}
 			o.leaveUnmerged(id, "CHECKS_FAILED")
+			how := "fails"
+			if errors.Is(err, errCheckTimedOut) {
+				how = "did not finish within " + ShortDuration(o.checkTimeout())
+			}
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  CHECKS_FAILED: %s closed, but '%s' fails on %s rebased onto %s; worktree %s and tab %s left for review (output is in %s)",
-				id, c.Check, br, c.Base, wt, tab, c.LogPath)})
+				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; worktree %s and tab %s left for review (output is in %s)",
+				id, c.Check, how, br, c.Base, wt, tab, c.LogPath)})
 			return nil
 		}
 		o.info("  '%s' passes on the rebased %s", c.Check, br)
@@ -1223,12 +1227,25 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	return nil
 }
 
+// errCheckTimedOut is runCheck's error for a check stopped at its time limit.
+var errCheckTimedOut = errors.New("check timed out")
+
+// checkTimeout is how long the check command may run.
+func (o *Loop) checkTimeout() time.Duration {
+	return orDefault(o.cfg.CheckTimeout, project.DefaultCheckTimeout)
+}
+
 // runCheck runs the project's check command in the worktree, logging the end of its output if it
-// fails. It gives up after 30 minutes, stopping everything the check started.
+// fails. It gives up after checkTimeout, stopping everything the check started, and returns
+// errCheckTimedOut then.
 func (o *Loop) runCheck(ctx context.Context, wt string) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	limit := o.checkTimeout()
+	checkCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	out, err := command.GroupOutput(ctx, 5*time.Second, wt, "sh", "-c", o.cfg.Check)
+	out, err := command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", o.cfg.Check)
+	if err != nil && ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, ShortDuration(limit), err)
+	}
 	if err != nil {
 		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
 	}
@@ -1305,13 +1322,13 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			unknownSince = time.Time{}
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
-			o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, shortDuration(limit), wt))
-			return halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, shortDuration(limit), tab, wt)
+			o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
+			return halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
 		}
 		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
 			warned = true
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)", id, st, shortDuration(long), tab)})
+				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)", id, st, ShortDuration(long), tab)})
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return errInterrupted
@@ -1319,8 +1336,8 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 	}
 }
 
-// shortDuration is d as a person would write it: 2h, 1h30m, 45m.
-func shortDuration(d time.Duration) string {
+// ShortDuration is d as a person would write it: 2h, 1h30m, 45m.
+func ShortDuration(d time.Duration) string {
 	s := d.String()
 	if strings.HasSuffix(s, "m0s") {
 		s = s[:len(s)-2]
@@ -1604,5 +1621,6 @@ type Config struct {
 	Concurrency  int           // tickets worked on at the same time
 	TicketLimit  time.Duration // a worker still going this long after dispatch stops the run; 0 for none
 	Check        string        // the project's check command, from .orchestra/settings.json
+	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
 	Version      string        // orchestra's version, for the log
 }

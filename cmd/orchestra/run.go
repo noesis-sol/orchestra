@@ -60,15 +60,18 @@ func envInt(getenv func(string) string, name string, def int) (int, string) {
 	return n, ""
 }
 
-// envDuration reads a duration variable such as 2h; given is false when it is unset. Like envInt,
-// anything else is returned as a problem.
-func envDuration(getenv func(string) string, name string) (d time.Duration, given bool, problem string) {
+// envDuration reads a duration variable such as 2h, which may be 0 unless positive is set; given is
+// false when it is unset. Like envInt, anything else is returned as a problem.
+func envDuration(getenv func(string) string, name string, positive bool) (d time.Duration, given bool, problem string) {
 	v := getenv(name)
 	if v == "" {
 		return 0, false, ""
 	}
 	d, err := time.ParseDuration(v)
-	if err != nil || d < 0 {
+	switch {
+	case positive && (err != nil || d <= 0):
+		return 0, false, fmt.Sprintf("%s must be a positive duration such as 5m (got '%s').", name, v)
+	case err != nil || d < 0:
 		return 0, false, fmt.Sprintf("%s must be a duration such as 2h, or 0 for none (got '%s').", name, v)
 	}
 	return d, true, ""
@@ -122,13 +125,15 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
-	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT")
+	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT", false)
 	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit, "stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none (default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
+	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
+	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout, "stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m (default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -137,7 +142,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		if rest[0] == "init" {
-			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--concurrent N] [--force]")
+			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
 		} else {
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}
@@ -170,6 +175,9 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	}
 	if !set["ticket-limit"] && ticketLimitProblem != "" {
 		problems = append(problems, ticketLimitProblem)
+	}
+	if !set["check-timeout"] && checkTimeoutProblem != "" {
+		problems = append(problems, checkTimeoutProblem)
 	}
 
 	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
@@ -214,6 +222,11 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.TicketLimit = d
+		}
+		if d, err := project.ResolveCheckTimeout(c.CheckTimeout, set["check-timeout"] || checkTimeoutGiven, settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.CheckTimeout = d
 		}
 		if types, err := project.ResolveExcludeTypes(settings); err != nil {
 			problems = append(problems, err.Error()+".")

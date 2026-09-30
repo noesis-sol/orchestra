@@ -176,6 +176,30 @@ func TestTicketLimitPrecedence(t *testing.T) {
 	}
 }
 
+func TestCheckTimeoutPrecedence(t *testing.T) {
+	cases := []struct {
+		flag    time.Duration
+		given   bool
+		setting string
+		want    time.Duration
+		fails   bool
+	}{
+		{0, false, "", 30 * time.Minute, false}, {0, false, "5m", 5 * time.Minute, false},
+		{45 * time.Minute, true, "5m", 45 * time.Minute, false},
+		{0, true, "5m", 0, true}, {-time.Minute, true, "", 0, true},
+		{0, false, "0", 0, true}, {0, false, "-5m", 0, true}, {0, false, "five minutes", 0, true},
+	}
+	for _, c := range cases {
+		got, err := ResolveCheckTimeout(c.flag, c.given, Settings{CheckTimeout: c.setting})
+		if (err != nil) != c.fails || (!c.fails && got != c.want) {
+			t.Errorf("ResolveCheckTimeout(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
+		}
+	}
+	if d, err := ParseCheckTimeout(DefaultCheckTimeoutText); err != nil || d != DefaultCheckTimeout {
+		t.Errorf("DefaultCheckTimeoutText = %q, DefaultCheckTimeout = %s", DefaultCheckTimeoutText, DefaultCheckTimeout)
+	}
+}
+
 func TestExcludeTypes(t *testing.T) {
 	list := func(types ...string) *[]string { return &types }
 	cases := []struct {
@@ -223,26 +247,43 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 			t.Errorf("concurrent %d: %+v", n, c)
 		}
 	}
+	// So is a check time limit every run would reject; a valid one is kept.
+	if c = DefaultChoice(Settings{CheckTimeout: "45m"}, ""); c.CheckTimeout != "45m" || c.ReplacedTimeout != "" {
+		t.Errorf("check timeout 45m: %+v", c)
+	}
+	if c = DefaultChoice(Settings{CheckTimeout: "soon"}, ""); c.CheckTimeout != "" || c.ReplacedTimeout != "soon" {
+		t.Errorf("check timeout soon: %+v", c)
+	}
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
 	st, _ := ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 20}, ""))
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
 		t.Errorf("replaced concurrency: %+v", st)
 	}
+	st, _ = ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 1, CheckTimeout: "0"}, ""))
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
+		t.Errorf("replaced check timeout: %+v", st)
+	}
+	if s, _, _ := LoadSettings(repo); s.CheckTimeout != "" {
+		t.Errorf("the invalid check_timeout was kept: %+v", s)
+	}
 }
 
 func TestApplySettingsSavesAndExplains(t *testing.T) {
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	st, err := ApplySettings(repo, Choice{Check: "make check", Concurrent: 3})
+	st, err := ApplySettings(repo, Choice{Check: "make check", CheckTimeout: "5m", Concurrent: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(SettingsPath(repo))
 	var m map[string]any
 	json.Unmarshal(raw, &m)
-	if m["concurrent"] != float64(3) || m["check"] != "make check" {
+	if m["concurrent"] != float64(3) || m["check"] != "make check" || m["check_timeout"] != "5m" {
 		t.Errorf("settings.json = %s", raw)
+	}
+	if !strings.Contains(st.Detail, "check: make check, stopped after 5m") {
+		t.Errorf("the time limit should be in the summary: %+v", st)
 	}
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "side by side") {
 		t.Errorf("more than 1 should come with a caution: %+v", st)

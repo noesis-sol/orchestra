@@ -154,7 +154,7 @@ func concurrencyOptions(current int) []huh.Option[int] {
 }
 
 // AskInit asks for what the flags didn't give, starting from the current choice.
-func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
+func AskInit(c *project.Choice, askCheck, askTimeout, askConcurrent bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -163,6 +163,22 @@ func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
 				"it again on a ticket rebased onto work merged meanwhile. Empty for none.").
 			Placeholder("e.g. make check").
 			Value(&c.Check))
+	}
+	if askTimeout {
+		if c.CheckTimeout == "" {
+			c.CheckTimeout = project.DefaultCheckTimeoutText
+		}
+		fields = append(fields, huh.NewInput().
+			Title("Check time limit").
+			Description("How long orchestra lets the check command run on a rebased ticket before it stops it "+
+				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override "+
+				"it with --check-timeout.").
+			Placeholder("e.g. 5m, 45m").
+			Validate(func(v string) error {
+				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
+				return err
+			}).
+			Value(&c.CheckTimeout))
 	}
 	if askConcurrent {
 		fields = append(fields, huh.NewSelect[int]().
@@ -178,7 +194,7 @@ func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
 	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).Run(); err != nil {
 		return err
 	}
-	c.Check = strings.TrimSpace(c.Check)
+	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)
 	if askCheck && c.Check != before {
 		c.CheckFrom = "the form"
 	}

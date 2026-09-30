@@ -22,6 +22,10 @@ type Settings struct {
 	// TicketLimit is how long a ticket's worker may go on, from dispatch, before the run stops for
 	// it, as a duration such as "2h", unless --ticket-limit says otherwise. Empty or "0": no limit.
 	TicketLimit string `json:"ticket_limit,omitempty"`
+	// CheckTimeout is how long the check command may run on a rebased ticket before orchestra stops
+	// it and sets the ticket aside, as a duration such as "5m", unless --check-timeout says
+	// otherwise. Empty: DefaultCheckTimeout.
+	CheckTimeout string `json:"check_timeout,omitempty"`
 	// ExcludeTypes are the issue types never taken from bd ready, such as epics, whose children
 	// are the work. Absent: DefaultExcludeTypes; [] takes every type.
 	ExcludeTypes *[]string `json:"exclude_types,omitempty"`
@@ -30,6 +34,10 @@ type Settings struct {
 const (
 	SettingsName   = "settings.json"
 	MaxConcurrency = 16
+	// DefaultCheckTimeout is how long the check command may run when settings.json sets no limit.
+	DefaultCheckTimeout = 30 * time.Minute
+	// DefaultCheckTimeoutText is DefaultCheckTimeout as settings.json writes it.
+	DefaultCheckTimeoutText = "30m"
 )
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
@@ -123,6 +131,34 @@ func ResolveTicketLimit(flagValue time.Duration, given bool, s Settings) (time.D
 	d, err := time.ParseDuration(s.TicketLimit)
 	if err != nil || d < 0 {
 		return 0, fmt.Errorf("%s: ticket_limit must be a duration such as 2h, or 0 for none (got '%s')", SettingsPath("."), s.TicketLimit)
+	}
+	return d, nil
+}
+
+// ResolveCheckTimeout picks how long a run's check command may run: --check-timeout (or
+// ORCHESTRA_CHECK_TIMEOUT) when given, else the project's setting, else DefaultCheckTimeout.
+func ResolveCheckTimeout(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
+	if given {
+		if flagValue <= 0 {
+			return 0, fmt.Errorf("--check-timeout must be a positive duration such as 5m (got %s)", flagValue)
+		}
+		return flagValue, nil
+	}
+	if s.CheckTimeout == "" {
+		return DefaultCheckTimeout, nil
+	}
+	d, err := ParseCheckTimeout(s.CheckTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("%s: check_timeout %w", SettingsPath("."), err)
+	}
+	return d, nil
+}
+
+// ParseCheckTimeout reads a check time limit such as "5m", which must be positive.
+func ParseCheckTimeout(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("must be a positive duration such as 5m (got '%s')", v)
 	}
 	return d, nil
 }
