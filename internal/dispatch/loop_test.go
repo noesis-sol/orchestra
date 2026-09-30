@@ -863,7 +863,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab"); stop != nil {
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now()); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	if a.reads != 4 {
@@ -880,7 +880,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		script[i] = "unreadable"
 	}
 	o, a, _ := newSettleLoop(t, script...)
-	stop := o.waitSettled(context.Background(), "A", "A", "tab")
+	stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now())
 	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
 		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 	}
@@ -1132,5 +1132,41 @@ func TestLabelFailureIsWarned(t *testing.T) {
 	}
 	if got := f.next(t, nil); got != "" {
 		t.Errorf("next = %q, want k-b held in this run all the same", got)
+	}
+}
+
+// Without a ticket limit, a worker going on for long is reported once, and the wait goes on.
+func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
+	script := make([]string, 60)
+	for i := range script {
+		script[i] = "working"
+	}
+	o, _, logPath := newSettleLoop(t, script...)
+	o.wait.longRun = 5 * time.Millisecond
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now()); stop != nil {
+		t.Fatalf("stopped: %s", stop.text)
+	}
+	var warned []string
+	for _, ev := range o.sink.(*recordSink).events {
+		if ev.Kind == EvWarn {
+			warned = append(warned, ev.Text)
+		}
+	}
+	if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 5ms in tab tab") || !notifiable(warned[0]) {
+		t.Errorf("warnings: %q", warned)
+	}
+	if !strings.Contains(read(t, logPath), "LONG_RUNNING") {
+		t.Error("the warning should be logged")
+	}
+}
+
+func TestShortDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		2 * time.Hour: "2h", 90 * time.Minute: "1h30m", 45 * time.Minute: "45m", 30 * time.Second: "30s",
+		50 * time.Millisecond: "50ms", time.Hour + 30*time.Second: "1h0m30s",
+	} {
+		if got := shortDuration(d); got != want {
+			t.Errorf("shortDuration(%s) = %q, want %q", d, got, want)
+		}
 	}
 }

@@ -69,7 +69,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 
 ```
 .orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
-.orchestra/settings.json      committed: the check command and how many tickets run at once
+.orchestra/settings.json      committed: the check command, how many tickets run at once, and an optional ticket limit
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
@@ -87,7 +87,9 @@ git switch -c batch/$(date +%F)
 orchestra
 ```
 
-`--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). Worker tabs open in the Herdr workspace `orchestra` runs in; `--workspace ID` puts them in another, for example a separate space for workers. `orchestra -h` lists the flags. Most default to the environment variable `orchestrate.sh` used: `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`); a relative `WORKER_PROMPT` or `WT_ROOT`, or their flags, is relative to the repository. The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
+`--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). Worker tabs open in the Herdr workspace `orchestra` runs in; `--workspace ID` puts them in another, for example a separate space for workers. `orchestra -h` lists the flags. Most default to the environment variable `orchestrate.sh` used: `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`); a relative `WORKER_PROMPT` or `WT_ROOT`, or their flags, is relative to the repository. The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
+
+`--ticket-limit 2h` (or `TICKET_LIMIT=2h`, or `"ticket_limit": "2h"` in `settings.json`) stops the run, like `PAUSED`, when a worker is still going that long after its ticket was dispatched: a hung command or a stuck agent would otherwise hold its slot for good. The ticket gets a note, and its tab and worktree are left open. `0` turns a limit from `settings.json` off for a run. Without a limit, a worker still going after 2 hours is logged and notified once (`LONG_RUNNING`), and the run keeps waiting. Whatever the limit, a worker whose status Herdr can't tell (`unknown`) for 5 minutes stops the run (`UNKNOWN >5min`), as one blocked on a dialog for 4 does. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
 
 ## Several tickets at once
 
@@ -137,7 +139,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 |---|---|
 | 0 | nothing left in `bd ready`, or the limit was reached |
 | 2 | setup problem found before starting (all problems are listed) |
-| 3 | a worker stayed blocked for more than 4 minutes, or went idle with its ticket still `in_progress` |
+| 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |
 | 6 | a finished ticket's branch does not fast-forward (it should have been rebased first) |

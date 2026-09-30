@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -25,7 +26,7 @@ func configFixture(t *testing.T, settings string) string {
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
-		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "WORKSPACE"} {
+		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "WORKSPACE"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("HERDR_ENV", "1")
@@ -80,6 +81,39 @@ func TestConfigConcurrencyPrecedence(t *testing.T) {
 	os.Remove(".orchestra/settings.json")
 	if c, _ := loadWith(t); c.Concurrency != 1 {
 		t.Errorf("no settings: %d", c.Concurrency)
+	}
+}
+
+func TestConfigTicketLimitPrecedence(t *testing.T) {
+	configFixture(t, `{"concurrent": 1, "ticket_limit": "2h"}`)
+	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 2*time.Hour {
+		t.Errorf("settings: %s %v", c.TicketLimit, p)
+	}
+	t.Setenv("TICKET_LIMIT", "90m")
+	if c, _ := loadWith(t); c.TicketLimit != 90*time.Minute {
+		t.Errorf("the environment overrides settings: %s", c.TicketLimit)
+	}
+	if c, _ := loadWith(t, "--ticket-limit", "0"); c.TicketLimit != 0 {
+		t.Errorf("--ticket-limit 0 turns it off: %s", c.TicketLimit)
+	}
+	if _, p := loadWith(t, "--ticket-limit", "-1h"); len(p) != 1 || !strings.Contains(p[0], "--ticket-limit must not be negative") {
+		t.Errorf("negative: %v", p)
+	}
+	t.Setenv("TICKET_LIMIT", "soon")
+	if c, p := loadWith(t, "--ticket-limit", "3h"); len(p) > 0 || c.TicketLimit != 3*time.Hour {
+		t.Errorf("the flag over an invalid variable: %s %v", c.TicketLimit, p)
+	}
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "TICKET_LIMIT must be a duration") {
+		t.Errorf("invalid variable: %v", p)
+	}
+	t.Setenv("TICKET_LIMIT", "")
+	os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ticket_limit must be a duration") {
+		t.Errorf("invalid setting: %v", p)
+	}
+	os.Remove(".orchestra/settings.json")
+	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
+		t.Errorf("no settings: %s %v", c.TicketLimit, p)
 	}
 }
 

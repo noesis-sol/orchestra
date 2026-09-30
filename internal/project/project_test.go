@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -155,6 +156,26 @@ func TestConcurrencyPrecedence(t *testing.T) {
 	}
 }
 
+func TestTicketLimitPrecedence(t *testing.T) {
+	cases := []struct {
+		flag    time.Duration
+		given   bool
+		setting string
+		want    time.Duration
+		fails   bool
+	}{
+		{0, false, "", 0, false}, {0, false, "2h", 2 * time.Hour, false}, {0, false, "0", 0, false},
+		{time.Hour, true, "2h", time.Hour, false}, {0, true, "2h", 0, false},
+		{-time.Hour, true, "", 0, true}, {0, false, "two hours", 0, true}, {0, false, "-1h", 0, true},
+	}
+	for _, c := range cases {
+		got, err := ResolveTicketLimit(c.flag, c.given, Settings{TicketLimit: c.setting})
+		if (err != nil) != c.fails || (!c.fails && got != c.want) {
+			t.Errorf("ResolveTicketLimit(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
+		}
+	}
+}
+
 func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
 	if got := DetectCheck(kinieta); got != "scripts/ci-local.sh" {
@@ -196,6 +217,12 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	st, _ = ApplySettings(repo, Choice{Check: "make check", Concurrent: 1})
 	if st.Kind != StepDone {
 		t.Errorf("one at a time with a check is plain done: %+v", st)
+	}
+	// Settings init doesn't ask about are kept.
+	SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h"})
+	ApplySettings(repo, Choice{Check: "make test", Concurrent: 2})
+	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 {
+		t.Errorf("after init: %+v", s)
 	}
 }
 

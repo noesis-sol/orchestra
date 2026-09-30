@@ -578,3 +578,59 @@ func TestReopenedUnmergedTicketLosesItsLabelWhenItMerges(t *testing.T) {
 		t.Errorf("main:\n%s", log)
 	}
 }
+
+// A worker whose status Herdr can't tell stops the run once it has stayed that way too long.
+func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.worker("A", func(w *fakeWorker) string { w.claim(); return "unknown" })
+	o := h.loop()
+	o.wait.unknown = 30 * time.Millisecond
+	code := o.Run(context.Background())
+	want := "UNKNOWN >5min: Herdr can't tell what the worker in tab tab1 (A) is doing; it needs attention"
+	if code != ExitStuck || o.Final() != want {
+		t.Fatalf("exit %d, final %q", code, o.Final())
+	}
+	if !notifiable(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
+		t.Error("the stop should be logged and notified")
+	}
+	if got := activeIDs(o); !equal(got, []string{"A"}) {
+		t.Errorf("active: %v", got)
+	}
+}
+
+// A worker still going after the ticket limit, whatever Herdr says it is doing, stops the run like
+// a paused one: noted on the ticket, its tab and worktree left open.
+func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
+	t.Parallel()
+	for _, st := range []string{"working", "unknown"} {
+		t.Run(st, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			h.cfg.TicketLimit = 50 * time.Millisecond
+			h.beads.add("A", "first", 1)
+			h.beads.add("B", "second", 2)
+			h.worker("A", func(w *fakeWorker) string { w.claim(); return st })
+			o := h.loop()
+			o.wait.unknown = time.Hour
+			code := o.Run(context.Background())
+			want := "TICKET_LIMIT: A still " + st + " after 50ms in tab tab1 (worktree " + h.worktree("A") + "); stopping so it can be looked at"
+			if code != ExitStuck || o.Final() != want {
+				t.Fatalf("exit %d, final %q, want %q", code, o.Final(), want)
+			}
+			if !notifiable(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
+				t.Error("the stop should be logged and notified")
+			}
+			if got := h.sink.of(EvDispatch); len(got) != 1 {
+				t.Errorf("nothing should start after the stop:\n%s", strings.Join(got, "\n"))
+			}
+			if !strings.Contains(h.beads.notesOf("A"), "after the 50ms ticket limit") {
+				t.Errorf("notes: %q", h.beads.notesOf("A"))
+			}
+			if len(h.herdr.tabsClosed()) != 0 || !exists(h.worktree("A")) {
+				t.Error("the worker's tab and worktree should be left open")
+			}
+		})
+	}
+}

@@ -37,7 +37,9 @@ Where the project's orchestra files are:
 
 `-prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
 `.orchestra/settings.json` holds the check command and `concurrent`, how many tickets run at the
-same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run).
+same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
+and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
+`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none).
 
 ## Setting a project up
 
@@ -82,7 +84,8 @@ Useful settings (environment variable or flag): `--concurrent N` / `-c N` (ticke
 time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
 `DONE_SO_FAR` (count earlier tickets toward the limit), `TRIAGE=0` / `REVIEW=0` (no organs),
 `ORGAN_MODEL`, `NOTIFY=0` (no macOS notifications), `PROMPT_AT_LAUNCH=0` (paste the prompt instead
-of starting the worker with it). `orchestra -h` lists them all.
+of starting the worker with it), `--ticket-limit 2h` / `TICKET_LIMIT` (stop when a worker is still
+going that long after dispatch; `0` for none, overriding `settings.json`). `orchestra -h` lists them all.
 
 ## While it runs
 
@@ -113,6 +116,8 @@ then the tickets. The final log line and the exit code say why the run ended:
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
+| `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its agent's status undetectable. Tell the user what you see. |
+| `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, merge by hand (below). |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error; for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
@@ -137,6 +142,8 @@ Lines about single tickets, which don't stop the run:
   `bd label remove <id> unmerged`.
 - `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
+- `LONG_RUNNING`: a worker is still going after 2 hours and no ticket limit is set; the run keeps
+  waiting. Look at its tab for a hung command.
 - `DEFER_FAILED`: bd couldn't defer the ticket (its error is on the line), so it is still ready;
   the run leaves it alone. Once bd works again, defer it: `bd defer <id>`.
 - `REOPEN_FAILED`: a ticket waiting on a question couldn't be put back in the queue, so it won't

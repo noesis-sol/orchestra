@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Settings is .orchestra/settings.json: how 'orchestra init' set the project up. It is committed,
@@ -16,6 +17,9 @@ type Settings struct {
 	Check string `json:"check,omitempty"`
 	// Concurrency is how many tickets run at the same time unless --concurrent says otherwise.
 	Concurrency int `json:"concurrent"`
+	// TicketLimit is how long a ticket's worker may go on, from dispatch, before the run stops for
+	// it, as a duration such as "2h", unless --ticket-limit says otherwise. Empty or "0": no limit.
+	TicketLimit string `json:"ticket_limit,omitempty"`
 }
 
 const (
@@ -64,4 +68,23 @@ func ResolveConcurrency(flagValue int, s Settings) (int, error) {
 		return 0, fmt.Errorf("--concurrent must be between 1 and %d (got %d)", MaxConcurrency, n)
 	}
 	return n, nil
+}
+
+// ResolveTicketLimit picks a run's ticket limit: --ticket-limit (or TICKET_LIMIT) when given, else
+// the project's setting, else none (0).
+func ResolveTicketLimit(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
+	if given {
+		if flagValue < 0 {
+			return 0, fmt.Errorf("--ticket-limit must not be negative (got %s)", flagValue)
+		}
+		return flagValue, nil
+	}
+	if s.TicketLimit == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s.TicketLimit)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%s: ticket_limit must be a duration such as 2h, or 0 for none (got '%s')", SettingsPath("."), s.TicketLimit)
+	}
+	return d, nil
 }

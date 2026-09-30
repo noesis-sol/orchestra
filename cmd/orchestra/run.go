@@ -59,6 +59,20 @@ func envInt(getenv func(string) string, name string, def int) (int, string) {
 	return n, ""
 }
 
+// envDuration reads a duration variable such as 2h; given is false when it is unset. Like envInt,
+// anything else is returned as a problem.
+func envDuration(getenv func(string) string, name string) (d time.Duration, given bool, problem string) {
+	v := getenv(name)
+	if v == "" {
+		return 0, false, ""
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, false, fmt.Sprintf("%s must be a duration such as 2h, or 0 for none (got '%s').", name, v)
+	}
+	return d, true, ""
+}
+
 func envOr(getenv func(string) string, name, def string) string {
 	if v := getenv(name); v != "" {
 		return v
@@ -106,13 +120,15 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
+	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT")
+	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit, "stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none (default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
+		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
@@ -149,6 +165,9 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		} else if v.isSet && v.value < 0 {
 			problems = append(problems, fmt.Sprintf("-%s must be a whole number (got %d).", v.flag, v.value))
 		}
+	}
+	if !set["ticket-limit"] && ticketLimitProblem != "" {
+		problems = append(problems, ticketLimitProblem)
 	}
 
 	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
@@ -188,6 +207,11 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.Concurrency = n
+		}
+		if d, err := project.ResolveTicketLimit(c.TicketLimit, set["ticket-limit"] || ticketLimitGiven, settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.TicketLimit = d
 		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")

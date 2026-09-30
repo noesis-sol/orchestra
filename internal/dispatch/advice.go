@@ -176,7 +176,7 @@ func exitMeaning(code int) string {
 	case ExitOK:
 		return "the queue was empty or the limit was reached"
 	case ExitStuck:
-		return "a worker was blocked or paused and needs an answer"
+		return "a worker was blocked, paused or ran past its time limit and needs attention"
 	case ExitTool:
 		return "a Herdr, Beads or git command failed"
 	case ExitDirty:

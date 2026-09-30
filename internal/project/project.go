@@ -208,7 +208,9 @@ func Init(repo, check string, force bool) ([]Step, error) {
 
 // ApplySettings saves the choice to .orchestra/settings.json.
 func ApplySettings(repo string, c Choice) (Step, error) {
-	if err := SaveSettings(repo, Settings{Check: c.Check, Concurrency: c.Concurrent}); err != nil {
+	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about
+	s.Check, s.Concurrency = c.Check, c.Concurrent
+	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
 	}
 	detail := fmt.Sprintf("%d at the same time", c.Concurrent)

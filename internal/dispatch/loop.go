@@ -22,7 +22,7 @@ import (
 const (
 	ExitOK          = 0   // nothing left in bd ready, or LIMIT reached
 	ExitSetup       = 2   // setup problem found before starting
-	ExitStuck       = 3   // a worker stayed blocked >4 min, or went idle with its ticket in_progress
+	ExitStuck       = 3   // a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past the ticket limit
 	ExitTool        = 4   // Herdr, Beads or git failure
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
@@ -128,7 +128,7 @@ func (l *Log) Raw(out string, err error) {
 // Notify only for finished tickets and anything that stops the loop.
 func notifiable(text string) bool {
 	for _, k := range []string{"closed", "deferred", "BLOCKED", "PAUSED", "DIRTY_TREE", "READY_EMPTY",
-		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED", "HOLD", "CONFLICT"} {
+		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED", "HOLD", "CONFLICT", "UNKNOWN", "TICKET_LIMIT", "LONG_RUNNING"} {
 		if strings.Contains(text, k) {
 			return true
 		}
@@ -306,6 +306,8 @@ type timing struct {
 	startRetry time.Duration // after a failed start, before looking for the agent: 3 seconds
 	adopt      time.Duration // watching a pane for a worker slow to start: lateAdopt
 	blocked    time.Duration // a worker blocked for longer stops the run: blockedLimit
+	unknown    time.Duration // a worker whose status stays unknown for longer stops the run: unknownLimit
+	longRun    time.Duration // without a ticket limit, a worker going on longer is reported once: longRunning
 	idleGrace  time.Duration // idleGrace
 	settle     time.Duration // SettleWait
 }
@@ -344,8 +346,12 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.count = c.DoneSoFar
 	o.started = time.Now()
 	o.startHead = o.checkout.Head(c.Repo, c.Base)
-	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
-		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
+	ticketLimit := "none"
+	if c.TicketLimit > 0 {
+		ticketLimit = shortDuration(c.TicketLimit)
+	}
+	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, workspace: %s, agent: %s, worktrees: %s)",
+		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, ticketLimit, c.Workspace, c.AgentKind, c.WTRoot)
 	if s := o.loadUnmerged(); s != nil {
 		return o.stop(s.code, "%s", s.text)
 	}
@@ -952,7 +958,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return nil
 	}
 
-	if stop := o.waitSettled(ctx, id, agent, tab); stop != nil {
+	if stop := o.waitSettled(ctx, id, agent, tab, wt, started); stop != nil {
 		return stop
 	}
 	stopWatch()
@@ -1150,13 +1156,16 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 }
 
 // waitSettled waits until the worker settles. Never answer its prompts; stop if it stays blocked for 4
-// minutes. A worker waiting on its own background command looks idle too, so an idle worker
-// whose ticket is still in progress gets idleGrace to resume before it counts as settled. A
-// status Herdr fails to read says nothing about the worker, so the wait goes on through
-// maxFailedReads of them in a row before the run stops.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReason {
-	var blockedSince, idleSince time.Time
+// minutes, or in a status Herdr can't tell (unknown) for 5. A worker waiting on its own background
+// command looks idle too, so an idle worker whose ticket is still in progress gets idleGrace to
+// resume before it counts as settled. A status Herdr fails to read says nothing about the worker,
+// so the wait goes on through maxFailedReads of them in a row before the run stops. A worker still
+// going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still going
+// after longRunning is reported once.
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started time.Time) *stopReason {
+	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
+	warned := false
 	for {
 		if ctx.Err() != nil {
 			return errInterrupted
@@ -1202,14 +1211,52 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab string) *stopReas
 		} else {
 			blockedSince = time.Time{}
 		}
+		if st == "unknown" {
+			if unknownSince.IsZero() {
+				unknownSince = time.Now()
+			}
+			if time.Since(unknownSince) > orDefault(o.wait.unknown, unknownLimit) {
+				return halt(ExitStuck, "UNKNOWN >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+			}
+		} else {
+			unknownSince = time.Time{}
+		}
+		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
+			o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, shortDuration(limit), wt))
+			return halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, shortDuration(limit), tab, wt)
+		}
+		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
+			warned = true
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)", id, st, shortDuration(long), tab)})
+		}
 		if !sleep(ctx, o.pollEvery()) {
 			return errInterrupted
 		}
 	}
 }
 
+// shortDuration is d as a person would write it: 2h, 1h30m, 45m.
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
+	}
+	return s
+}
+
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
 const blockedLimit = 4 * time.Minute
+
+// unknownLimit is how long a worker's status may stay unknown (Herdr can't tell what it is doing)
+// before the run stops for it.
+const unknownLimit = 5 * time.Minute
+
+// longRunning is how long a worker may go on, without a ticket limit, before the run reports it.
+const longRunning = 2 * time.Hour
 
 // maxFailedReads is how many failed status reads in a row (a minute's worth) stop the wait on a
 // worker.
@@ -1446,8 +1493,9 @@ type Config struct {
 	WTRoot       string
 	LogPath      string
 	ReportsDir   string
-	LaunchPrompt bool   // give Claude workers their prompt at launch instead of pasting it
-	Concurrency  int    // tickets worked on at the same time
-	Check        string // the project's check command, from .orchestra/settings.json
-	Version      string // orchestra's version, for the log
+	LaunchPrompt bool          // give Claude workers their prompt at launch instead of pasting it
+	Concurrency  int           // tickets worked on at the same time
+	TicketLimit  time.Duration // a worker still going this long after dispatch stops the run; 0 for none
+	Check        string        // the project's check command, from .orchestra/settings.json
+	Version      string        // orchestra's version, for the log
 }
