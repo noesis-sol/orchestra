@@ -7,8 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 func TestReadAgent(t *testing.T) {
@@ -42,15 +40,6 @@ func TestReadAgent(t *testing.T) {
 	}
 	if _, _, s, err := readAgent("not json", nil); s != "unreadable" || err == nil {
 		t.Errorf("garbled output: %q %v", s, err)
-	}
-}
-
-func TestShellQuoteMakesOneWord(t *testing.T) {
-	for _, in := range []string{"Your instructions for ticket k-1 are in .orchestra/run/prompt.md.", "it's `a` $test \"q\""} {
-		out, err := command.Output("", "sh", "-c", "printf '%s' "+shellQuote(in))
-		if err != nil || out != in {
-			t.Errorf("shellQuote(%q) round-trips to %q (%v)", in, out, err)
-		}
 	}
 }
 

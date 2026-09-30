@@ -480,7 +480,7 @@ func organPhase(orch organs, c options, log *dispatch.Log, code int, final strin
 	report, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
-			msg := "REVIEW_FAILED: " + firstLine(err.Error())
+			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
 			log.Alert(time.Now(), msg)
 			out.Say(msg)
 		}
@@ -490,7 +490,7 @@ func organPhase(orch organs, c options, log *dispatch.Log, code int, final strin
 	out.Report(report)
 	path, err := orch.SaveReport(report)
 	if err != nil {
-		msg := "report not saved: " + firstLine(err.Error())
+		msg := "report not saved: " + dispatch.FirstLine(err.Error())
 		log.Line(time.Now(), msg)
 		out.Say(msg)
 		return

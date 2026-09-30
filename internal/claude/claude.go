@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -46,7 +46,7 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 // whole output. Each write goes through a temporary file, so a reader never sees half of one.
 func hookSettings(activity string) map[string]any {
 	write := func(from string) string {
-		return "f=" + shellQuote(activity) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
+		return "f=" + command.ShellQuote(activity) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
 	event := func(name string) string {
 		return "cat >/dev/null; " + write(`printf '{"hook_event_name":"`+name+`"}'`)
@@ -85,9 +85,4 @@ func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 		return dispatch.ToolUse{}, false
 	}
 	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command}, true
-}
-
-// shellQuote quotes s as one word for a POSIX shell.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

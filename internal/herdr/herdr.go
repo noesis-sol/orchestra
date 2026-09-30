@@ -107,15 +107,10 @@ func (t Terminal) AgentName(id string) string { return AgentName(id) }
 func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
 	line := kind
 	for _, a := range args {
-		line += " " + shellQuote(a)
+		line += " " + command.ShellQuote(a)
 	}
 	_, err := command.Output("", "herdr", "pane", "run", pane, line)
 	return err
-}
-
-// shellQuote quotes s as one word for a POSIX shell.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // AdoptAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it

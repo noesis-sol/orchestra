@@ -117,7 +117,7 @@ func (o *Loop) FinishTriage(ctx context.Context) {
 func (o *Loop) triage(d organ.Deferral) {
 	t, err := o.organ.Triage(o.organCtx, d)
 	if err != nil {
-		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
+		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})
 		return
 	}
 	o.appendNotes(d.ID, t.Note())
@@ -125,7 +125,8 @@ func (o *Loop) triage(d organ.Deferral) {
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
 }
 
-func firstLine(s string) string {
+// FirstLine returns the first line of s, trimmed: enough of an error for a one-line message.
+func FirstLine(s string) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
 	return s
 }

@@ -66,23 +66,6 @@ func parseClosed(raw []byte) ([]dispatch.Ticket, error) {
 	return closed, nil
 }
 
-// parseStatus returns the status from 'bd show --json', or "unknown" if it cannot be read.
-func parseStatus(raw []byte) string {
-	data := unwrap(raw)
-	var list []dispatch.Ticket
-	if json.Unmarshal(data, &list) == nil {
-		if len(list) > 0 && list[0].Status != "" {
-			return list[0].Status
-		}
-		return "unknown"
-	}
-	var t dispatch.Ticket
-	if json.Unmarshal(data, &t) == nil && t.Status != "" {
-		return t.Status
-	}
-	return "unknown"
-}
-
 // Tracker is Beads for one repository, as the loop uses it.
 type Tracker struct {
 	Repo         string
@@ -154,11 +137,8 @@ func (b Tracker) Show(id string) (dispatch.Ticket, error) {
 
 // Status returns the ticket's status. If it cannot be read, it is "unknown" and the error says why.
 func (b Tracker) Status(id string) (string, error) {
-	out, err := command.Output(b.Repo, "bd", "show", id, "--json")
-	if s := parseStatus([]byte(out)); s != "unknown" {
-		return s, nil
-	}
-	return "unknown", unreadable(id, out, err)
+	t, err := b.Show(id)
+	return t.Status, err
 }
 
 // unreadable says why 'bd show --json' gave no status: bd failed (the error carries its stderr), or

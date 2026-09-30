@@ -62,3 +62,8 @@ func shortArgs(args []string) string {
 	}
 	return strings.Join(out, " ")
 }
+
+// ShellQuote quotes s as one word for a POSIX shell.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
