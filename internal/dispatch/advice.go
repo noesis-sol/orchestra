@@ -1,4 +1,4 @@
-package main
+package dispatch
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func lastLines(s string, n int) string {
 }
 
 // gatherDeferral collects the evidence for one deferred ticket.
-func (o *Orch) gatherDeferral(id, title, how, wt string) organ.Deferral {
+func (o *Loop) gatherDeferral(id, title, how, wt string) organ.Deferral {
 	c := o.cfg
 	show, _ := command.Output(c.Repo, "bd", "show", id)
 	status, _ := command.Output("", "git", "-C", wt, "status", "--short")
@@ -43,8 +43,8 @@ func orNone(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// startTriage runs triage in the background, one ticket at a time, so the loop never waits for it.
-func (o *Orch) startTriage() {
+// StartTriage runs triage in the background, one ticket at a time, so the loop never waits for it.
+func (o *Loop) StartTriage() {
 	o.triageQ = make(chan organ.Deferral, 64)
 	o.triageDone = make(chan struct{})
 	go func() {
@@ -55,14 +55,14 @@ func (o *Orch) startTriage() {
 	}()
 }
 
-func (o *Orch) queueTriage(d organ.Deferral) {
+func (o *Loop) queueTriage(d organ.Deferral) {
 	if o.triageQ != nil {
 		o.triageQ <- d
 	}
 }
 
-// finishTriage waits for queued triage to finish, or for ctx to be cancelled.
-func (o *Orch) finishTriage(ctx context.Context) {
+// FinishTriage waits for queued triage to finish, or for ctx to be cancelled.
+func (o *Loop) FinishTriage(ctx context.Context) {
 	if o.triageQ == nil {
 		return
 	}
@@ -73,7 +73,7 @@ func (o *Orch) finishTriage(ctx context.Context) {
 	}
 }
 
-func (o *Orch) triage(d organ.Deferral) {
+func (o *Loop) triage(d organ.Deferral) {
 	t, err := o.organ.Triage(o.organCtx, d)
 	if err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
@@ -90,7 +90,7 @@ func firstLine(s string) string {
 }
 
 // reviewInput gathers the evidence for the reviewer.
-func (o *Orch) reviewInput(code int, final string) string {
+func (o *Loop) reviewInput(code int, final string) string {
 	c := o.cfg
 	commits, _ := command.Output(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
 	var setAside strings.Builder
@@ -114,8 +114,8 @@ func (o *Orch) reviewInput(code int, final string) string {
 		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready)))
 }
 
-// review writes the run report and returns it with the path it was saved to.
-func (o *Orch) review(ctx context.Context, code int, final string) (string, string, error) {
+// Review writes the run report and returns it with the path it was saved to.
+func (o *Loop) Review(ctx context.Context, code int, final string) (string, string, error) {
 	result, err := o.organ.Review(ctx, o.reviewInput(code, final))
 	if err != nil {
 		return "", "", err
@@ -132,30 +132,30 @@ func (o *Orch) review(ctx context.Context, code int, final string) (string, stri
 
 func exitMeaning(code int) string {
 	switch code {
-	case exitOK:
+	case ExitOK:
 		return "the queue was empty or the limit was reached"
-	case exitStuck:
+	case ExitStuck:
 		return "a worker was blocked or paused and needs an answer"
-	case exitTool:
+	case ExitTool:
 		return "a Herdr, Beads or git command failed"
-	case exitDirty:
+	case ExitDirty:
 		return "the main checkout had uncommitted changes or left its branch"
-	case exitMerge:
+	case ExitMerge:
 		return "a finished ticket's branch did not fast-forward"
-	case exitInterrupted:
+	case ExitInterrupted:
 		return "stopped with Ctrl+C"
 	}
 	return "unknown"
 }
 
 // setAside lists tickets deferred or left unmerged in this run, in order, without repeats.
-func (o *Orch) setAside() []string {
+func (o *Loop) setAside() []string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return append([]string(nil), o.asideIDs...)
 }
 
-func (o *Orch) markAside(id string) {
+func (o *Loop) markAside(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for _, x := range o.asideIDs {

@@ -1,4 +1,4 @@
-package main
+package dispatch
 
 import (
 	"context"
@@ -9,12 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
 func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
-	o := &Orch{}
+	o := &Loop{}
 	for _, id := range []string{"a", "b", "a", "c"} {
 		o.markAside(id)
 	}
@@ -29,14 +28,6 @@ func TestLastLines(t *testing.T) {
 	}
 }
 
-func TestTriageLineIsPurpleDiamondWithCause(t *testing.T) {
-	at := time.Date(2026, 9, 28, 17, 0, 0, 0, time.Local)
-	line := ansi.Strip(renderEvent(Event{Time: at, Kind: EvTriage, Ticket: "kinieta-jqm", Detail: "environment · high", Title: "visionOS runtime missing"}))
-	if line != "17:00:00 ◆ kinieta-jqm triage: environment · high  visionOS runtime missing" {
-		t.Errorf("line = %q", line)
-	}
-}
-
 // TestLiveOrgans calls the real claude on a real repository without writing anything:
 //
 //	ORGAN_LIVE=1 LIVE_REPO=~/Projects/kinieta LIVE_BASE=<branch> LIVE_START=<commit> \
@@ -46,8 +37,8 @@ func TestLiveOrgans(t *testing.T) {
 		t.Skip("set ORGAN_LIVE=1 to call the real claude")
 	}
 	repo, id := os.Getenv("LIVE_REPO"), os.Getenv("LIVE_TICKET")
-	o := &Orch{cfg: Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, organ: organ.Client{Bin: "claude"},
-		startHead: os.Getenv("LIVE_START"), started: time.Now().Add(-time.Hour), log: &Logger{}}
+	o := &Loop{cfg: Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, organ: organ.Client{Bin: "claude"},
+		startHead: os.Getenv("LIVE_START"), started: time.Now().Add(-time.Hour), log: &Log{}}
 	b, _ := os.ReadFile(filepath.Join(repo, ".claude", "orchestrate.log"))
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -67,7 +58,7 @@ func TestLiveOrgans(t *testing.T) {
 
 	o.markAside(id)
 	start = time.Now()
-	report, err := o.organ.Review(context.Background(), o.reviewInput(exitOK, "(live test: the run is still going)"))
+	report, err := o.organ.Review(context.Background(), o.reviewInput(ExitOK, "(live test: the run is still going)"))
 	if err != nil {
 		t.Fatal(err)
 	}

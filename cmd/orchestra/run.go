@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -39,28 +40,6 @@ func buildVersion() string {
 	return "dev"
 }
 
-type Config struct {
-	Repo         string
-	Base         string // branch finished tickets are merged into
-	Workspace    string
-	Limit        int
-	DoneSoFar    int
-	AgentKind    string
-	WorkerPrompt string
-	Notify       bool
-	WTRoot       string
-	LogPath      string
-	ReportsDir   string
-	Plain        bool
-	Triage       bool   // triage organ on each deferred ticket
-	Review       bool   // reviewer organ when the loop stops
-	OrganModel   string // model for the organs; "" uses the claude CLI's default
-	LaunchPrompt bool   // give Claude workers their prompt at launch instead of pasting it
-	Concurrency  int    // tickets worked on at the same time
-	Check        string // the project's check command, from .orchestra/settings.json
-	showVersion  bool
-}
-
 func envInt(getenv func(string) string, name string, def int, problems *[]string) int {
 	v := getenv(name)
 	if v == "" {
@@ -80,11 +59,23 @@ func envOr(getenv func(string) string, name, def string) string {
 	return def
 }
 
+// options is a run's configuration: the loop's, and what only the command uses.
+type options struct {
+	dispatch.Config
+	WorkerPrompt string
+	Notify       bool
+	Plain        bool
+	Triage       bool   // triage organ on each deferred ticket
+	Review       bool   // reviewer organ when the loop stops
+	OrganModel   string // model for the organs; "" uses the claude CLI's default
+	showVersion  bool
+}
+
 // loadConfig reads the flags in args (defaulting to the environment variables orchestrate.sh used)
 // and collects every setup problem, so they can be reported together. The error is the flag
 // package's: flag.ErrHelp after -h, or a malformed flag.
-func loadConfig(args []string, getenv func(string) string, output io.Writer) (Config, []string, error) {
-	var c Config
+func loadConfig(args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
+	var c options
 	var problems []string
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
 	fs.SetOutput(output)
@@ -196,7 +187,7 @@ func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)
 
 // status turns an exit code into run's result: nil for 0.
 func status(code int) error {
-	if code == exitOK {
+	if code == dispatch.ExitOK {
 		return nil
 	}
 	return exitStatus(code)
@@ -212,7 +203,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	case err == flag.ErrHelp:
 		return nil
 	case err != nil:
-		return exitStatus(exitSetup)
+		return exitStatus(dispatch.ExitSetup)
 	case cfg.showVersion:
 		fmt.Fprintln(stdout, "orchestra", buildVersion())
 		return nil
@@ -222,38 +213,37 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		for _, p := range problems {
 			fmt.Fprintln(stderr, "  - "+p)
 		}
-		return exitStatus(exitSetup)
+		return exitStatus(dispatch.ExitSetup)
 	}
 
 	prompt, _ := os.ReadFile(cfg.WorkerPrompt)
 	os.MkdirAll(cfg.WTRoot, 0o755)
 	os.MkdirAll(filepath.Dir(cfg.LogPath), 0o755)
-	log, err := openLogger(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
+	log, err := dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
-		return exitStatus(exitSetup)
+		return exitStatus(dispatch.ExitSetup)
 	}
 	if err := project.EnsureRunExcluded(cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
 		fmt.Fprintln(stderr, err)
-		return exitStatus(exitSetup)
+		return exitStatus(dispatch.ExitSetup)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
-	orch := &Orch{cfg: cfg, log: log, prompt: string(prompt),
-		organ: organ.Client{Bin: "claude", Model: cfg.OrganModel}, organCtx: organCtx}
+	cfg.Version = buildVersion()
+	orch := dispatch.New(cfg.Config, log, string(prompt), organ.Client{Bin: "claude", Model: cfg.OrganModel}, organCtx)
 	if off := organ.Unavailable("claude"); off != "" && (cfg.Triage || cfg.Review) {
 		log.Line(time.Now(), "organs off: "+off)
 		cfg.Triage, cfg.Review = false, false
-		orch.cfg = cfg
 	}
 	if cfg.Triage {
-		orch.startTriage()
+		orch.StartTriage()
 	}
 
 	width := 80
@@ -265,19 +255,19 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-		orch.sink = printSink{}
-		orch.reportInterrupt = true
+		orch.SetSink(printSink{})
+		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
 		stop()
-		organPhase(orch, code, orch.final, printSink{}, cancelOrgans)
+		organPhase(orch, cfg, log, code, orch.Final(), printSink{}, cancelOrgans)
 		return status(code)
 	}
 
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
-	p := tea.NewProgram(newModel(cfg, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
-	orch.sink = teaSink{p}
+	p := tea.NewProgram(newModel(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
+	orch.SetSink(teaSink{p})
 	codes := make(chan int, 1)
 	go func() {
 		codes <- orch.Run(ctx)
@@ -299,7 +289,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 			}
 			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s were running; their tabs and worktrees are left open", strings.Join(names, ", "))
 		}
-		ev := Event{Kind: EvStop, Text: msg, Time: time.Now()}
+		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Line(ev.Time, msg)
 		sink.Event(ev)
 		// Let the loop notice the cancellation before the reviewer reads its state.
@@ -307,23 +297,22 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		case <-codes:
 		case <-time.After(15 * time.Second):
 		}
-		orch.setSink(sink)
-		organPhase(orch, exitInterrupted, msg, sink, cancelOrgans)
-		return exitStatus(exitInterrupted)
+		orch.SetSink(sink)
+		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
+		return exitStatus(dispatch.ExitInterrupted)
 	}
 	if m.final != nil {
 		sink.Event(*m.final)
 	}
 	code := <-codes
-	orch.setSink(sink)
-	organPhase(orch, code, orch.final, sink, cancelOrgans)
+	orch.SetSink(sink)
+	organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
 	return status(code)
 }
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
 // the run report. Ctrl+C skips whatever is left.
-func organPhase(orch *Orch, code int, final string, out printSink, cancelOrgans func()) {
-	c := orch.cfg
+func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, final string, out printSink, cancelOrgans func()) {
 	if !c.Triage && !c.Review {
 		return
 	}
@@ -335,23 +324,23 @@ func organPhase(orch *Orch, code int, final string, out printSink, cancelOrgans 
 	}()
 	if c.Triage {
 		out.say("finishing triage…")
-		orch.finishTriage(ctx)
+		orch.FinishTriage(ctx)
 	}
 	if !c.Review || ctx.Err() != nil {
 		return
 	}
 	out.say("writing the run report with claude… (ctrl+c skips)")
-	report, path, err := orch.review(ctx, code, final)
+	report, path, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + firstLine(err.Error())
-			orch.log.Line(time.Now(), msg)
+			log.Line(time.Now(), msg)
 			out.say(msg)
 		}
 		return
 	}
 	fmt.Println()
 	out.report(report)
-	orch.log.Line(time.Now(), "REPORT written to "+path)
+	log.Line(time.Now(), "REPORT written to "+path)
 	out.say("report saved to " + tildify(path))
 }

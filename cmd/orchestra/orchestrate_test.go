@@ -9,48 +9,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
-
-func TestOutcomes(t *testing.T) {
-	for status, want := range map[string]outcome{
-		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,
-		"unknown": outcomeUnreadable, "open": outcomeUnfinished, "blocked": outcomeUnfinished,
-	} {
-		if got := outcomeOf(status); got != want {
-			t.Errorf("outcomeOf(%q) = %v, want %v", status, got, want)
-		}
-	}
-	if closedOutcomeOf("", false) != closedNoCommit || closedOutcomeOf("", true) != closedNoCommit {
-		t.Error("a closed ticket without a commit must not merge")
-	}
-	if closedOutcomeOf("abc123 fix", true) != closedDirty {
-		t.Error("a dirty worktree must not merge")
-	}
-	if closedOutcomeOf("abc123 fix", false) != closedMerge {
-		t.Error("a commit and a clean worktree should merge")
-	}
-}
 
 func TestRenderEventShowsTitleOnPickupAndOnlyTheIDOnCompletion(t *testing.T) {
 	at := time.Date(2026, 9, 28, 16, 6, 27, 0, time.Local)
-	picked := ansi.Strip(renderEvent(Event{Time: at, Kind: EvDispatch, N: 3, Limit: 40,
+	picked := ansi.Strip(renderEvent(dispatch.Event{Time: at, Kind: dispatch.EvDispatch, N: 3, Limit: 40,
 		Ticket: "kinieta-dg4", Title: "Decide whether the next release is pushed to CocoaPods trunk"}))
 	if picked != "16:06:27 ▶ [3/40] kinieta-dg4  Decide whether the next release is pushed to CocoaPods trunk" {
 		t.Errorf("picked = %q", picked)
 	}
-	done := ansi.Strip(renderEvent(Event{Time: at, Kind: EvClosed, Ticket: "kinieta-2e7",
+	done := ansi.Strip(renderEvent(dispatch.Event{Time: at, Kind: dispatch.EvClosed, Ticket: "kinieta-2e7",
 		Title: "should not appear", Detail: "04c8d47 merged into batch"}))
 	if done != "16:06:27 ✓ kinieta-2e7 completed  04c8d47 merged into batch" {
 		t.Errorf("completed = %q", done)
-	}
-}
-
-func TestNotifiable(t *testing.T) {
-	if !notifiable("  kinieta-x closed (abc); merged") || !notifiable("PAUSED: x") {
-		t.Error("closed and PAUSED should notify")
-	}
-	if notifiable("[1/40] kinieta-x dispatching: Title") || notifiable("  worktree /a on wt/x") {
-		t.Error("dispatch and worktree lines should not notify")
 	}
 }
 
@@ -60,25 +32,25 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	// Exact colours are sent as 38;2;R;G;B. Palette slots (38;5;N or 3N) are remapped by themes.
 	for name, line := range map[string]string{
-		"picked":    renderEvent(Event{Kind: EvDispatch, N: 1, Limit: 40, Ticket: "kinieta-jqm", Title: "Support visionOS"}),
-		"completed": renderEvent(Event{Kind: EvClosed, Ticket: "kinieta-jqm", Detail: "abc merged"}),
+		"picked":    renderEvent(dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Limit: 40, Ticket: "kinieta-jqm", Title: "Support visionOS"}),
+		"completed": renderEvent(dispatch.Event{Kind: dispatch.EvClosed, Ticket: "kinieta-jqm", Detail: "abc merged"}),
 	} {
 		if !strings.Contains(line, "38;2;") || strings.Contains(line, "38;5;") {
 			t.Errorf("%s line does not use an exact colour: %q", name, line)
 		}
 	}
-	picked := renderEvent(Event{Kind: EvDispatch, Ticket: "x"})
-	done := renderEvent(Event{Kind: EvClosed, Ticket: "x"})
+	picked := renderEvent(dispatch.Event{Kind: dispatch.EvDispatch, Ticket: "x"})
+	done := renderEvent(dispatch.Event{Kind: dispatch.EvClosed, Ticket: "x"})
 	if picked[strings.Index(picked, "38;2;"):][:16] == done[strings.Index(done, "38;2;"):][:16] {
 		t.Error("picked and completed lines should differ in colour")
 	}
 }
 
 func TestViewFitsThePaneWidth(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := newModel(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
 	m.n, m.closed, m.deferred, m.queued = 3, 2, 1, 17
 	m.began = time.Now().Add(-12 * time.Minute)
-	m.active = map[string]Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
+	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
 		Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
 		Activity: "⏺ Bash(scripts/ci-local.sh lint ios && git status --short && git diff --stat)"}}
 	m.height = 40
@@ -101,7 +73,7 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 	}
 }
 
-func runEvents(m model, evs ...Event) model {
+func runEvents(m model, evs ...dispatch.Event) model {
 	for _, ev := range evs {
 		next, _ := m.Update(eventMsg(ev))
 		m = next.(model)
@@ -110,14 +82,14 @@ func runEvents(m model, evs ...Event) model {
 }
 
 func TestTicketRowsFollowEachTicket(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m = runEvents(m,
-		Event{Kind: EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
-		Event{Kind: EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
-		Event{Kind: EvDispatch, N: 2, Ticket: "kinieta-vzg", Title: "Competing timelines"},
-		Event{Kind: EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"},
-		Event{Kind: EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
-		Event{Kind: EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
+		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "kinieta-vzg", Title: "Competing timelines"},
+		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"},
+		dispatch.Event{Kind: dispatch.EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
 	)
 	if len(m.rows) != 3 || m.closed != 1 || m.deferred != 1 || m.triaged != 1 {
 		t.Fatalf("rows %+v closed %d deferred %d triaged %d", m.rows, m.closed, m.deferred, m.triaged)
@@ -137,7 +109,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 		t.Error("a completed ticket should show its commit, not its title")
 	}
 
-	m = runEvents(m, Event{Kind: EvStop, Text: "PAUSED: kinieta-kco"})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvStop, Text: "PAUSED: kinieta-kco"})
 	final := ansi.Strip(m.View())
 	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "ctrl+c stops") {
 		t.Errorf("final view should keep the summary and drop the live parts:\n%s", final)
@@ -145,13 +117,13 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := newModel(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
-		m = runEvents(m, Event{Kind: EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
-			Event{Kind: EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
+		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
+			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
 	}
-	m.active = map[string]Status{"x": {Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
+	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
 	for _, size := range [][2]int{{40, 30}, {66, 36}, {120, 50}} {
 		m.width, m.height = size[0], size[1]
 		lines := strings.Split(m.View(), "\n")
@@ -172,28 +144,11 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 	}
 }
 
-func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
-	cases := []struct {
-		status string
-		idle   time.Duration
-		wait   bool
-	}{
-		{"in_progress", time.Minute, true},              // probably waiting on its own background command
-		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
-		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
-	}
-	for _, c := range cases {
-		if got := keepWaiting(c.status, c.idle); got != c.wait {
-			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
-		}
-	}
-}
-
 func TestAskedTicketIsCountedAndShown(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m = runEvents(m,
-		Event{Kind: EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
-		Event{Kind: EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
+		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
 	m.width, m.height = 80, 40
 	v := ansi.Strip(m.View())
 	for _, want := range []string{"Needs you", "? 1", "? for you", "answer q-1: Decision for k-1"} {
@@ -223,9 +178,9 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		t.Errorf("short title = %q", got)
 	}
 
-	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
+	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m.width, m.height = 66, 40
-	m.active = map[string]Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
+	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
 		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)

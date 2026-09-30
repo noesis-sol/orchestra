@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/term"
 )
@@ -30,28 +31,28 @@ func runInit(dir string, args []string) int {
 	}
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
-			return exitOK
+			return dispatch.ExitOK
 		}
-		return exitSetup
+		return dispatch.ExitSetup
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	checkGiven, concurrentGiven := given["check"], given["concurrent"] || given["c"]
 	if concurrentGiven && (concurrent < 1 || concurrent > project.MaxConcurrency) {
 		fmt.Fprintf(os.Stderr, "orchestra init: --concurrent must be between 1 and %d\n", project.MaxConcurrency)
-		return exitSetup
+		return dispatch.ExitSetup
 	}
 
 	out, err := command.Output(dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orchestra init: not inside a git repository")
-		return exitSetup
+		return dispatch.ExitSetup
 	}
 	repo := strings.TrimSpace(out)
 	existing, _, err := project.LoadSettings(repo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orchestra init:", err)
-		return exitSetup
+		return dispatch.ExitSetup
 	}
 	promptText, _ := os.ReadFile(project.Locate(repo).Prompt)
 	choice := project.DefaultChoice(existing, string(promptText))
@@ -68,7 +69,7 @@ func runInit(dir string, args []string) int {
 	if interactive && !(checkGiven && concurrentGiven) {
 		if err := askInit(&choice, !checkGiven, !concurrentGiven); err != nil {
 			ui.cancelled()
-			return exitSetup
+			return dispatch.ExitSetup
 		}
 	}
 
@@ -81,7 +82,7 @@ func runInit(dir string, args []string) int {
 	if err != nil {
 		ui.steps(steps)
 		fmt.Fprintln(os.Stderr, "orchestra init:", err)
-		return exitSetup
+		return dispatch.ExitSetup
 	}
 	pre := project.Prerequisites(repo)
 	ui.steps(steps)
@@ -92,5 +93,5 @@ func runInit(dir string, args []string) int {
 		ready = ready && p.Kind != project.StepMissing
 	}
 	ui.signOff(ready)
-	return exitOK
+	return dispatch.ExitOK
 }

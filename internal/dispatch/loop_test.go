@@ -1,4 +1,4 @@
-package main
+package dispatch
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/beads"
 )
 
@@ -32,12 +31,12 @@ func (r *recordSink) text() string {
 	return b.String()
 }
 
-// mergeFixture is a repository on main with a ticket branch in its own worktree, and an Orch set
+// mergeFixture is a repository on main with a ticket branch in its own worktree, and an Loop set
 // up to merge it.
 type mergeFixture struct {
 	repo string
 	git  func(dir string, args ...string) string
-	orch *Orch
+	orch *Loop
 	sink *recordSink
 }
 
@@ -49,12 +48,12 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
 	git(repo, "add", ".")
 	git(repo, "commit", "-q", "-m", "shared file")
-	log, err := openLogger(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Orch{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink}
+	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink}
 	return &mergeFixture{repo: repo, git: git, orch: o, sink: sink}
 }
 
@@ -195,64 +194,48 @@ func TestPickNextSkipsRunningTickets(t *testing.T) {
 	}
 }
 
-func TestDashboardShowsSeveralWorkers(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
-	m.active = map[string]Status{}
-	for i, title := range []string{"Competing timelines on the same view and property fight each other every frame",
-		"Open the property model", "Warn in debug builds when a chain call is silently ignored"} {
-		id := fmt.Sprintf("kinieta-%d", i)
-		m.active[id] = Status{Ticket: id, Title: title, Started: time.Now().Add(-time.Duration(i) * time.Minute), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
-	}
-	m.width, m.height = 66, 40
-	v := m.View()
-	if lines := strings.Split(v, "\n"); len(lines) > m.height {
-		t.Errorf("view is %d lines", len(lines))
-	}
-	for _, l := range strings.Split(v, "\n") {
-		if ansi.StringWidth(l) > m.width {
-			t.Errorf("line %d wide", ansi.StringWidth(l))
+func TestOutcomes(t *testing.T) {
+	for status, want := range map[string]outcome{
+		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,
+		"unknown": outcomeUnreadable, "open": outcomeUnfinished, "blocked": outcomeUnfinished,
+	} {
+		if got := outcomeOf(status); got != want {
+			t.Errorf("outcomeOf(%q) = %v, want %v", status, got, want)
 		}
 	}
-	plain := ansi.Strip(v)
-	for _, want := range []string{"kinieta-0", "kinieta-1", "kinieta-2", "workers 3/3"} {
-		if !strings.Contains(plain, want) {
-			t.Errorf("view lacks %q", want)
-		}
+	if closedOutcomeOf("", false) != closedNoCommit || closedOutcomeOf("", true) != closedNoCommit {
+		t.Error("a closed ticket without a commit must not merge")
 	}
-	m = runEvents(m, Event{Kind: EvHold, Ticket: "kinieta-0", Text: "HOLD: PAUSED: kinieta-0 …"})
-	if !strings.Contains(ansi.Strip(m.View()), "stopping") {
-		t.Error("a hold should show the run as stopping")
+	if closedOutcomeOf("abc123 fix", true) != closedDirty {
+		t.Error("a dirty worktree must not merge")
+	}
+	if closedOutcomeOf("abc123 fix", false) != closedMerge {
+		t.Error("a commit and a clean worktree should merge")
 	}
 }
 
-func TestDashboardFitsShortPanes(t *testing.T) {
-	m := newModel(Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {})
-	for i := 0; i < 30; i++ {
-		id := fmt.Sprintf("kinieta-%03d", i)
-		m = runEvents(m, Event{Kind: EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},
-			Event{Kind: EvClosed, Ticket: id, Detail: "abc1234 merged"})
+func TestNotifiable(t *testing.T) {
+	if !notifiable("  kinieta-x closed (abc); merged") || !notifiable("PAUSED: x") {
+		t.Error("closed and PAUSED should notify")
 	}
-	m.active = map[string]Status{}
-	for i := 0; i < 3; i++ {
-		id := fmt.Sprintf("kinieta-w%d", i)
-		m.active[id] = Status{Ticket: id, Title: "Competing timelines on the same view and property fight each other every frame",
-			Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+	if notifiable("[1/40] kinieta-x dispatching: Title") || notifiable("  worktree /a on wt/x") {
+		t.Error("dispatch and worktree lines should not notify")
 	}
-	for _, size := range [][2]int{{140, 16}, {66, 12}, {40, 8}, {66, 24}, {120, 50}} {
-		m.width, m.height = size[0], size[1]
-		v := m.View()
-		lines := strings.Split(v, "\n")
-		if len(lines) > m.height {
-			t.Errorf("%dx%d: view is %d lines", size[0], size[1], len(lines))
-		}
-		for _, l := range lines {
-			if ansi.StringWidth(l) > m.width {
-				t.Errorf("%dx%d: line %d wide", size[0], size[1], ansi.StringWidth(l))
-			}
-		}
-		plain := ansi.Strip(v)
-		if !strings.Contains(plain, "kinieta-w0") || (m.width >= 60 && !strings.Contains(plain, "3 of 3") && !strings.Contains(plain, "3/3")) {
-			t.Errorf("%dx%d: workers not shown:\n%s", size[0], size[1], plain)
+}
+
+func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
+	cases := []struct {
+		status string
+		idle   time.Duration
+		wait   bool
+	}{
+		{"in_progress", time.Minute, true},              // probably waiting on its own background command
+		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
+		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
+	}
+	for _, c := range cases {
+		if got := keepWaiting(c.status, c.idle); got != c.wait {
+			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
 		}
 	}
 }

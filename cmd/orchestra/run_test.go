@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // runIn calls run with these arguments and environment, from dir, and returns its result and output.
@@ -57,10 +59,10 @@ func TestRunVersionHelpAndBadFlags(t *testing.T) {
 }
 
 func TestMainExitStatusMapping(t *testing.T) {
-	if status(exitOK) != nil {
+	if status(dispatch.ExitOK) != nil {
 		t.Error("0 is success")
 	}
-	if exitOf(status(exitStuck)) != 3 || exitOf(status(exitInterrupted)) != 130 {
+	if exitOf(status(dispatch.ExitStuck)) != 3 || exitOf(status(dispatch.ExitInterrupted)) != 130 {
 		t.Error("codes should survive as exit statuses")
 	}
 }

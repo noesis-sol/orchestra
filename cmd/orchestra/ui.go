@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // Exact colours rather than the 16 ANSI palette slots, which terminal themes remap (one theme
@@ -49,27 +50,27 @@ func tildify(s string) string {
 }
 
 // renderEvent formats one event as a permanent line above the live status area.
-func renderEvent(ev Event) string {
+func renderEvent(ev dispatch.Event) string {
 	ts := dimStyle.Render(ev.Time.Format("15:04:05"))
 	switch ev.Kind {
-	case EvDispatch:
+	case dispatch.EvDispatch:
 		return fmt.Sprintf("%s %s %s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
 			pickedStyle.Render(ev.Ticket), ev.Title)
-	case EvClosed:
+	case dispatch.EvClosed:
 		return fmt.Sprintf("%s %s  %s", ts, closedStyle.Render("✓ "+ev.Ticket+" completed"), dimStyle.Render(ev.Detail))
-	case EvDeferred:
+	case dispatch.EvDeferred:
 		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
-	case EvTriage:
+	case dispatch.EvTriage:
 		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
-	case EvAsked:
+	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
-	case EvHold:
+	case dispatch.EvHold:
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+tildify(ev.Text)))
-	case EvWarn:
+	case dispatch.EvWarn:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+tildify(strings.TrimSpace(ev.Text))))
-	case EvStop:
+	case dispatch.EvStop:
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+tildify(ev.Text)))
-	case EvDone:
+	case dispatch.EvDone:
 		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
 	}
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(tildify(ev.Text)))
@@ -77,15 +78,15 @@ func renderEvent(ev Event) string {
 
 // ---- Bubble Tea model ----------------------------------------------------------------
 
-type eventMsg Event
-type statusMsg Status
+type eventMsg dispatch.Event
+type statusMsg dispatch.Status
 type finishedMsg struct{}
 
 type model struct {
-	cfg         Config
+	cfg         dispatch.Config
 	spin        spinner.Model
-	active      map[string]Status // running workers, by ticket
-	stopping    bool              // a ticket stopped the run; the running ones are finishing
+	active      map[string]dispatch.Status // running workers, by ticket
+	stopping    bool                       // a ticket stopped the run; the running ones are finishing
 	n           int
 	closed      int
 	deferred    int
@@ -96,13 +97,13 @@ type model struct {
 	rows        []ticketRow // every ticket picked up in this run, oldest first
 	quitting    bool
 	interrupted bool
-	final       *Event // the stop or done event, printed by main after exit
-	queued      int    // ready tickets behind the current one; -1 until the first pickup
+	final       *dispatch.Event // the stop or done event, printed by main after exit
+	queued      int             // ready tickets behind the current one; -1 until the first pickup
 	began       time.Time
 	cancel      func()
 }
 
-func newModel(cfg Config, cancel func()) model {
+func newModel(cfg dispatch.Config, cancel func()) model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
 	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
 }
@@ -124,9 +125,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case statusMsg:
-		st := Status(msg)
+		st := dispatch.Status(msg)
 		if m.active == nil {
-			m.active = map[string]Status{}
+			m.active = map[string]dispatch.Status{}
 		}
 		if st.Gone {
 			delete(m.active, st.Ticket)
@@ -136,34 +137,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		// Events update the dashboard in place; nothing is printed above it. The full lines are
 		// in the log file.
-		ev := Event(msg)
+		ev := dispatch.Event(msg)
 		switch ev.Kind {
-		case EvDispatch:
+		case dispatch.EvDispatch:
 			m.n, m.queued = ev.N, ev.Queued
 			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
-		case EvClosed:
+		case dispatch.EvClosed:
 			m.closed++
 			m.setRow(ev.Ticket, rowDone, ev.Detail)
-		case EvDeferred:
+		case dispatch.EvDeferred:
 			m.deferred++
 			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
-		case EvWarn:
+		case dispatch.EvWarn:
 			if ev.Ticket != "" {
 				m.setRow(ev.Ticket, rowReview, "left for review, see the log")
 			}
-		case EvAsked:
+		case dispatch.EvAsked:
 			m.asked++
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
-		case EvTriage:
+		case dispatch.EvTriage:
 			m.triaged++
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
 				m.rows[i].triage = ev.Detail + " · " + ev.Title
 			}
-		case EvHold:
+		case dispatch.EvHold:
 			m.stopping = true
 			m.setRow(ev.Ticket, rowStopped, "")
-		case EvStop, EvDone:
-			if ev.Kind == EvStop {
+		case dispatch.EvStop, dispatch.EvDone:
+			if ev.Kind == dispatch.EvStop {
 				for i := range m.rows {
 					if m.rows[i].state == rowWorking {
 						m.rows[i].state = rowStopped
@@ -266,8 +267,8 @@ func (m model) statsLine(w int) string {
 }
 
 // activeList returns the running workers, oldest first.
-func (m model) activeList() []Status {
-	var l []Status
+func (m model) activeList() []dispatch.Status {
+	var l []dispatch.Status
 	for _, st := range m.active {
 		l = append(l, st)
 	}
@@ -297,7 +298,7 @@ func (m model) workerPanels(w int) string {
 }
 
 // workerPanel boxes one running ticket: ID, worker status and time, title, latest action.
-func (m model) workerPanel(w int, st Status, titleMax int) string {
+func (m model) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	border := lipgloss.TerminalColor(cyan)
@@ -583,8 +584,8 @@ func agentStyle(s string) string {
 
 type teaSink struct{ p *tea.Program }
 
-func (s teaSink) Event(ev Event)   { s.p.Send(eventMsg(ev)) }
-func (s teaSink) Status(st Status) { s.p.Send(statusMsg(st)) }
+func (s teaSink) Event(ev dispatch.Event)   { s.p.Send(eventMsg(ev)) }
+func (s teaSink) Status(st dispatch.Status) { s.p.Send(statusMsg(st)) }
 
 // printSink prints each event as a line: styled for a terminal (after the live view has closed),
 // or as the plain log line for pipes and -plain.
@@ -593,14 +594,14 @@ type printSink struct {
 	width  int
 }
 
-func (p printSink) Event(ev Event) {
+func (p printSink) Event(ev dispatch.Event) {
 	if p.styled {
 		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.width, 20), ""))
 		return
 	}
 	fmt.Printf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
-func (printSink) Status(Status) {}
+func (printSink) Status(dispatch.Status) {}
 
 // say prints a line of the orchestrator's own progress outside the event stream.
 func (p printSink) say(text string) {

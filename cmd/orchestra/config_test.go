@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // configFixture is a repository set up for orchestra (.orchestra/ with a prompt, Beads) inside a
@@ -46,7 +48,7 @@ func samePath(a, b string) bool {
 }
 
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
-func loadWith(t *testing.T, args ...string) (Config, []string) {
+func loadWith(t *testing.T, args ...string) (options, []string) {
 	t.Helper()
 	c, problems, err := loadConfig(args, os.Getenv, io.Discard)
 	if err != nil {
@@ -144,8 +146,8 @@ func TestConfigSetupProblems(t *testing.T) {
 			t.Errorf("problems lack %q:\n%s", want, joined)
 		}
 	}
-	if exitSetup != 2 {
-		t.Errorf("setup problems exit with %d", exitSetup)
+	if dispatch.ExitSetup != 2 {
+		t.Errorf("setup problems exit with %d", dispatch.ExitSetup)
 	}
 }
 
@@ -168,8 +170,8 @@ func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
 // The exit codes are part of orchestra's interface (scripts and the skill rely on them).
 func TestExitCodes(t *testing.T) {
 	for name, pair := range map[string][2]int{
-		"ok": {exitOK, 0}, "setup": {exitSetup, 2}, "stuck": {exitStuck, 3}, "tool": {exitTool, 4},
-		"dirty": {exitDirty, 5}, "merge": {exitMerge, 6}, "interrupted": {exitInterrupted, 130},
+		"ok": {dispatch.ExitOK, 0}, "setup": {dispatch.ExitSetup, 2}, "stuck": {dispatch.ExitStuck, 3}, "tool": {dispatch.ExitTool, 4},
+		"dirty": {dispatch.ExitDirty, 5}, "merge": {dispatch.ExitMerge, 6}, "interrupted": {dispatch.ExitInterrupted, 130},
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("%s = %d, want %d", name, pair[0], pair[1])
