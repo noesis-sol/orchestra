@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -62,6 +63,8 @@ func renderEvent(ev Event) string {
 		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
+	case EvHold:
+		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+tildify(ev.Text)))
 	case EvWarn:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+tildify(strings.TrimSpace(ev.Text))))
 	case EvStop:
@@ -81,7 +84,8 @@ type finishedMsg struct{}
 type model struct {
 	cfg         Config
 	spin        spinner.Model
-	st          Status
+	active      map[string]Status // running workers, by ticket
+	stopping    bool              // a ticket stopped the run; the running ones are finishing
 	n           int
 	closed      int
 	deferred    int
@@ -100,7 +104,7 @@ type model struct {
 
 func newModel(cfg Config, cancel func()) model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, height: 40, queued: -1, began: time.Now(), cancel: cancel}
+	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
 }
 
 func (m model) Init() tea.Cmd { return m.spin.Tick }
@@ -120,7 +124,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case statusMsg:
-		m.st = Status(msg)
+		st := Status(msg)
+		if m.active == nil {
+			m.active = map[string]Status{}
+		}
+		if st.Gone {
+			delete(m.active, st.Ticket)
+		} else {
+			m.active[st.Ticket] = st
+		}
 	case eventMsg:
 		// Events update the dashboard in place; nothing is printed above it. The full lines are
 		// in the log file.
@@ -147,6 +159,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
 				m.rows[i].triage = ev.Detail + " · " + ev.Title
 			}
+		case EvHold:
+			m.stopping = true
+			m.setRow(ev.Ticket, rowStopped, "")
 		case EvStop, EvDone:
 			if ev.Kind == EvStop {
 				for i := range m.rows {
@@ -175,11 +190,130 @@ func (m model) View() string {
 	if m.quitting {
 		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
 	}
-	hint := dimStyle.Render(ansi.Truncate("  ctrl+c stops · the worker keeps running", w, "…"))
-	panel := m.workerPanel(w)
-	// Show as many recent tickets as fit: the rest of the view is ~22 lines.
-	fixed := 2 + lipgloss.Height(m.statsTable(w)) + lipgloss.Height(panel) + 1 + 4
-	return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, m.height-fixed), panel, hint)
+	if m.height == 0 {
+		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
+	}
+	hint := "  ctrl+c stops · the worker keeps running"
+	if m.cfg.Concurrency > 1 {
+		hint = "  ctrl+c stops · the workers keep running"
+	}
+	hint = dimStyle.Render(ansi.Truncate(hint, w, "…"))
+	stats := m.statsTable(w)
+
+	// The view must fit the pane: Bubble Tea can't redraw one taller than the terminal. Give
+	// way step by step: one line per worker instead of a box each, then no tickets table, then
+	// the totals on one line, then cut.
+	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
+	compose := func(stats, panels string) string {
+		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
+		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - 1
+		parts := []string{title, stats}
+		if room >= 7 {
+			parts = append(parts, m.ticketsTable(w, room))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, append(parts, panels, hint)...)
+	}
+	if v := compose(stats, m.workerPanels(w)); fits(v) {
+		return v
+	}
+	if v := compose(stats, m.workerList(w)); fits(v) {
+		return v
+	}
+	v := lipgloss.JoinVertical(lipgloss.Left, title, m.statsLine(w), m.workerList(w), hint)
+	if lines := strings.Split(v, "\n"); len(lines) > m.height && m.height > 0 {
+		v = strings.Join(lines[:m.height], "\n")
+	}
+	return v
+}
+
+// workerList is the compact form of the worker boxes: one box, one line per running worker.
+func (m model) workerList(w int) string {
+	running := m.activeList()
+	if len(running) == 0 {
+		return m.workerPanels(w)
+	}
+	inner := w - 4
+	var lines []string
+	for _, st := range running {
+		elapsed := time.Since(st.Started).Truncate(time.Second)
+		lines = append(lines, ansi.Truncate(fmt.Sprintf("%s %s  %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
+			agentStyle(st.Agent), dimStyle.Render(elapsed.String()), st.Title), inner, "…"))
+	}
+	border := lipgloss.TerminalColor(cyan)
+	for _, st := range running {
+		if st.Agent == "blocked" {
+			border = red
+		}
+	}
+	return box(w, border, strings.Join(lines, "\n"))
+}
+
+// statsLine is the totals on one line, for a pane too short for the table.
+func (m model) statsLine(w int) string {
+	parts := []string{
+		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
+		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
+		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
+		m.workersCell(),
+		dimStyle.Render(fmt.Sprintf("%d of %d · %s · %s", m.n, m.cfg.Limit, m.cfg.Base, time.Since(m.began).Truncate(time.Second))),
+	}
+	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render("  ·  ")), w, "…")
+}
+
+// activeList returns the running workers, oldest first.
+func (m model) activeList() []Status {
+	var l []Status
+	for _, st := range m.active {
+		l = append(l, st)
+	}
+	sort.Slice(l, func(i, j int) bool { return l[i].Started.Before(l[j].Started) })
+	return l
+}
+
+// workerPanels stacks a box per running worker, or one box saying what the loop is doing.
+func (m model) workerPanels(w int) string {
+	running := m.activeList()
+	if len(running) == 0 {
+		msg := "picking the next ticket…"
+		if m.stopping {
+			msg = "stopping…"
+		}
+		return box(w, grey, m.spin.View()+" "+dimStyle.Render(msg))
+	}
+	lines := titleLines
+	if len(running) > 1 {
+		lines = 2 // keep several boxes within the pane
+	}
+	var boxes []string
+	for _, st := range running {
+		boxes = append(boxes, m.workerPanel(w, st, lines))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, boxes...)
+}
+
+// workerPanel boxes one running ticket: ID, worker status and time, title, latest action.
+func (m model) workerPanel(w int, st Status, titleMax int) string {
+	inner := w - 4 // rounded border and one space of padding on each side
+	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
+	border := lipgloss.TerminalColor(cyan)
+	if st.Agent == "blocked" {
+		border = red
+	}
+	elapsed := time.Since(st.Started).Truncate(time.Second)
+	lines := []string{fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
+		agentStyle(st.Agent), dimStyle.Render(elapsed.String())))}
+	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
+		lines = append(lines, "  "+l)
+	}
+	if st.Activity != "" {
+		lines = append(lines, fit("  "+dimStyle.Render(st.Activity)))
+	}
+	return box(w, border, strings.Join(lines, "\n"))
+}
+
+func box(w int, border lipgloss.TerminalColor, content string) string {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
+		Padding(0, 1).Width(w - 2).Render(content)
 }
 
 // ---- Tickets table -------------------------------------------------------------------
@@ -291,33 +425,6 @@ func (m model) ticketsTable(w, maxLines int) string {
 		Render()
 }
 
-// workerPanel boxes the current ticket: ID, worker status and time, title, latest action.
-func (m model) workerPanel(w int) string {
-	inner := w - 4 // rounded border and one space of padding on each side
-	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
-	border := lipgloss.TerminalColor(grey)
-	var lines []string
-	if m.st.Ticket == "" {
-		lines = append(lines, fit(m.spin.View()+" "+dimStyle.Render("picking the next ticket…")))
-	} else {
-		border = cyan
-		if m.st.Agent == "blocked" {
-			border = red
-		}
-		elapsed := time.Since(m.st.Started).Truncate(time.Second)
-		lines = append(lines, fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(m.st.Ticket),
-			agentStyle(m.st.Agent), dimStyle.Render(elapsed.String()))))
-		for _, l := range wrapLines(m.st.Title, inner-2, titleLines) {
-			lines = append(lines, "  "+l)
-		}
-		if m.st.Activity != "" {
-			lines = append(lines, fit("  "+dimStyle.Render(m.st.Activity)))
-		}
-	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
-		Padding(0, 1).Width(w - 2).Render(strings.Join(lines, "\n"))
-}
-
 // statsTable lists the run's totals, one per row, with the counts in their event colours.
 func (m model) statsTable(w int) string {
 	count := func(n int, mark string, style lipgloss.Style) string {
@@ -334,6 +441,7 @@ func (m model) statsTable(w int) string {
 		{"Completed", count(m.closed, "✓", closedStyle)},
 		{"Deferred", count(m.deferred, "↷", deferredStyle) + triagedNote(m.triaged)},
 		{"Needs you", count(m.asked, "?", stopStyle)},
+		{"Workers", m.workersCell()},
 		{"Picked up", pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d max", m.cfg.Limit))},
 		{"In queue", queued},
 		{"Branch", m.cfg.Base},
@@ -372,6 +480,15 @@ func wrapLines(s string, width, max int) []string {
 		lines = append(lines[:max-1], ansi.Truncate(rest, width, "…"))
 	}
 	return lines
+}
+
+// workersCell says how many workers run out of how many may, and whether the run is stopping.
+func (m model) workersCell() string {
+	cell := pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" running of %d", max(m.cfg.Concurrency, 1)))
+	if m.stopping {
+		cell += stopStyle.Render(" · stopping")
+	}
+	return cell
 }
 
 func triagedNote(n int) string {

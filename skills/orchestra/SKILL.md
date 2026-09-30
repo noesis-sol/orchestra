@@ -36,19 +36,23 @@ Where the project's orchestra files are:
 | neither | not set up | run `orchestra init` | | |
 
 `-prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
+`.orchestra/settings.json` holds the check command and `concurrent`, how many tickets run at the
+same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run).
 
 ## Setting a project up
 
 ```
-orchestra init -check "<the project's check command>"
+orchestra init --check "<the project's check command>" --concurrent 1
 ```
 
 It writes `.orchestra/worker-prompt.md` from the built-in template (or moves an existing
 `.claude/worker-prompt.md`, staged with `git mv`), adds `.orchestra/.gitignore`, and reports what is
-missing (`bd`, `bd init`, `herdr`, `claude`). Ask the user for the check command if you don't know
-it: the command that runs lint, build and tests. Without `-check`, fill in the `<…>` placeholders in
-the prompt. It never replaces an existing prompt unless given `-force`; don't pass `-force` without
-the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` if they agree.
+missing (`bd`, `bd init`, `herdr`, `claude`), and writes `.orchestra/settings.json`. Ask the user
+for the check command if you don't know it (the command that runs lint, build and tests) and how
+many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
+interactively and would default to 1. More than 1 needs checks that can run side by side; say so.
+Without `--check`, fill in the `<…>` placeholders in the prompt. It never replaces an existing prompt
+unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` if they agree.
 
 ## Launching a run
 
@@ -73,7 +77,8 @@ herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY" --tim
 herdr pane read "$P" --source visible
 ```
 
-Useful settings (environment variable or flag): `LIMIT` (tickets per run, default 40),
+Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
+time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
 `DONE_SO_FAR` (count earlier tickets toward the limit), `TRIAGE=0` / `REVIEW=0` (no organs),
 `ORGAN_MODEL`, `NOTIFY=0` (no macOS notifications), `PROMPT_AT_LAUNCH=0` (paste the prompt instead
 of starting the worker with it). `orchestra -h` lists them all.
@@ -85,7 +90,8 @@ of starting the worker with it). `orchestra -h` lists them all.
   makes the running ticket's merge fail (`MERGE_FAILED`). Beads changes (`bd update`, `bd create`)
   are fine.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
-- **Follow it** in its pane, or with `tail -f` on the log. Each worker is an agent named after its
+- **Follow it** in its pane, or with `tail -f` on the log. With several at once, the dashboard shows
+  a box per worker (one line each in a short pane). Each worker is an agent named after its
   ticket, in a tab with that label: `herdr agent get <ticket>`,
   `herdr agent read <ticket> --source visible` (its scrollback can only be read while it is idle).
 - **Don't type into a worker's tab or press keys on its dialogs** unless the user asks; Enter on a
@@ -99,9 +105,10 @@ then the tickets. The final log line and the exit code say why the run ended:
 | Last line | Exit | Meaning | What to do |
 |---|---|---|---|
 | `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached | Read the report; the next step is usually the batch PR. |
+| any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
-| `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward | The base moved during the run: rebase the worktree, check, merge by hand. |
+| `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE` | 4 | Herdr, Beads or git failed | The raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C | The worker keeps running. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
@@ -119,6 +126,13 @@ Lines about single tickets, which don't stop the run:
   the queue, and its branch is rebased onto the current one when it is picked up.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
+- `rebased … onto …, which moved on while it ran` and `'<check>' passes on the rebased …`: other
+  tickets merged first; the branch was rebased and re-checked before merging. Normal with several
+  at once.
+- `MERGE_CONFLICT`: closed, but its branch conflicts with work merged while it ran. Not merged:
+  rebase it in its worktree, resolve, run the checks, merge by hand. The ticket stays closed.
+- `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
+  Not merged: fix in its worktree or reopen the ticket, with the user.
 - `REBASE_FAILED`, `REBASE_SKIPPED`: a returning ticket's branch couldn't be brought up to date.
 
 ## Where to look
@@ -154,4 +168,5 @@ without the merge. A worktree with work in it is the user's call.
 - `git push` and anything else that leaves the machine, such as opening or merging pull requests,
   unless they asked for it.
 - Answers to questions (`human` tickets) and to dialogs in worker tabs.
-- `orchestra init -force`, and installing `orchestra` where it needs `sudo`.
+- `orchestra init --force`, raising `concurrent` above 1, and installing `orchestra` where it needs
+  `sudo`.

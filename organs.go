@@ -235,11 +235,11 @@ func (o *Orch) reviewInput(code int, final string) string {
 		show, _ := run(c.Repo, "bd", "show", id)
 		setAside.WriteString(show + "\n")
 	}
-	stopped := ""
-	if o.current.Ticket != "" {
-		show, _ := run(c.Repo, "bd", "show", o.current.Ticket)
-		stopped = fmt.Sprintf("%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s",
-			o.current.Ticket, o.current.Tab, show, lastLines(agentScreen(o.current.Ticket), 60))
+	var stopped strings.Builder
+	for _, st := range o.activeList() {
+		show, _ := run(c.Repo, "bd", "show", st.Ticket)
+		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
+			st.Ticket, st.Tab, show, lastLines(agentScreen(st.Ticket), 60))
 	}
 	ready, _ := readyTickets(c.Repo)
 	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
@@ -247,7 +247,7 @@ func (o *Orch) reviewInput(code int, final string) string {
 		section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		section("Commits merged into "+c.Base+" in this run", commits) +
 		section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
-		section("Ticket in progress when the run stopped", stopped) +
+		section("Tickets in progress when the run stopped", stopped.String()) +
 		section("Tickets still ready", fmt.Sprintf("%d", len(ready)))
 }
 

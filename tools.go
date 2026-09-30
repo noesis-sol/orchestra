@@ -202,7 +202,8 @@ func tabCreate(workspace, cwd, label string) (tab, pane string, err error) {
 	return r.Result.Tab.TabID, r.Result.RootPane.PaneID, nil
 }
 
-func tabClose(tab string) { run("", "herdr", "tab", "close", tab) }
+// tabClose closes a Herdr tab; a variable so tests can replace it.
+var tabClose = func(tab string) { run("", "herdr", "tab", "close", tab) }
 
 // agentStart starts an agent in the pane. A non-empty prompt is passed to the agent itself, so it
 // starts with the prompt already submitted. Herdr types the command into the pane's shell and

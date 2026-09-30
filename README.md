@@ -64,20 +64,21 @@ That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. F
 In the project's repository:
 
 ```
-orchestra init -check "scripts/ci-local.sh"
+orchestra init --check "scripts/ci-local.sh"
 ```
 
 This creates `.orchestra/`, where everything `orchestra` owns in a project lives:
 
 ```
 .orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
+.orchestra/settings.json      committed: the check command and how many tickets run at once
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
 .orchestra/run/               per-ticket files in each worktree (the worker's launch prompt)
 ```
 
-`-check` fills the project's check command (lint, build and tests) into the template; without it, fill in the `<…>` placeholders yourself. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `-force`. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` afterwards.
+`--check` fills the project's check command (lint, build and tests) into the template and saves it in `settings.json`; without it, fill in the `<…>` placeholders yourself. `init` asks how many tickets to run at the same time by default; `--concurrent N` (or `-c N`) answers it without asking, which is what an agent or a script should use. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `--force`, and keeps existing settings unless `--check` or `--concurrent` change them. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` afterwards.
 
 ## Run
 
@@ -88,7 +89,23 @@ git switch -c batch/$(date +%F)
 WORKSPACE=<herdr workspace id> orchestra
 ```
 
-`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
+`--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). `orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
+
+## Several tickets at once
+
+With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:
+
+- **No ticket runs twice.** A ticket that's been handed out isn't picked again, even before its worker claims it.
+- **Merges queue.** A finished ticket waits for its turn. If other tickets merged while it ran, its branch is rebased onto the current one, and the check command from `settings.json` runs again on the rebased code before it merges. A conflict (`MERGE_CONFLICT`) or a failing check (`CHECKS_FAILED`) leaves that ticket for review, and the run goes on. Without a check command, a rebased ticket merges unchecked, and the log says so.
+- **One git writer at a time.** Worktree creation, rebases, merges and cleanup in the main repository take a lock, so workers don't trip over git's lock files.
+- **Stopping drains.** Something that stops the run (`PAUSED`, `BLOCKED`, a tool failure) is logged as `HOLD`. No new tickets start, the running ones finish and merge, and then the run ends with that reason. With one ticket at a time, nothing changes. Ctrl+C still stops at once.
+
+What `orchestra` can't make safe for you:
+
+- **Checks that collide.** Every worker runs the project's checks. Tests that share one named simulator, a port or a database can fail when two run at once.
+- **Files every ticket touches.** If most tickets add to the same spot, like a CHANGELOG's `[Unreleased]` list, rebases conflict. A `.gitattributes` line such as `CHANGELOG.md merge=union` keeps both sides' lines for list-like files.
+
+Start at 1, and raise it once the checks run cleanly side by side.
 
 ## Worker prompt
 
@@ -123,7 +140,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 | 3 | a worker stayed blocked for more than 4 minutes, or went idle with its ticket still `in_progress` |
 | 4 | Herdr, Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |
-| 6 | a finished ticket's branch does not fast-forward |
+| 6 | a finished ticket's branch does not fast-forward (it should have been rebased first) |
 | 130 | stopped with Ctrl+C; the running worker keeps its tab and worktree |
 
 After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.

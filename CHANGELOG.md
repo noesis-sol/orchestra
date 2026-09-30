@@ -8,6 +8,19 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Several tickets at once. `.orchestra/settings.json` (written by `init`, which
+  asks) holds the default; `--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT`
+  overrides it for a run. Tickets are never handed out twice; finished tickets
+  merge one at a time, rebased and re-checked with the settings' check command
+  when others merged meanwhile (`MERGE_CONFLICT` and `CHECKS_FAILED` leave them
+  for review); git writes to the main repository take a lock; a stop is logged
+  as `HOLD` and lets the running tickets finish. The dashboard shows a box per
+  worker and a Workers row, and gives way in short panes (one line per worker,
+  then no tickets table, then totals on one line).
+- `.orchestra/settings.json`: the check command and the default number of
+  tickets at the same time. `orchestra init` flags are now `--check`,
+  `--concurrent` / `-c` and `--force`.
+
 - `skills/orchestra/SKILL.md`, an optional skill for coding agents: how to
   check a project's state, launch and follow a run, find out why a ticket was
   set aside or a run stopped, and finish a ticket by hand.

@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // A project keeps everything orchestra owns in .orchestra/:
@@ -111,11 +113,15 @@ func runInit(dir string, args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	check := fs.String("check", "", "the project's check command (lint, build, tests), filled into the prompt")
 	force := fs.Bool("force", false, "replace an existing .orchestra/worker-prompt.md with the template")
+	var concurrent int
+	fs.IntVar(&concurrent, "concurrent", 0, "tickets to run at the same time by default (asked when omitted)")
+	fs.IntVar(&concurrent, "c", 0, "shorthand for --concurrent")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra init [-check \"<command>\"] [-force]\n\n"+
+		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\n"+
 			"Set up .orchestra/ in this repository: the worker prompt (from the built-in template, or moved\n"+
-			"from .claude/worker-prompt.md), a .gitignore for the log, reports and per-ticket files, and a\n"+
-			"check of what orchestra needs.\n\n")
+			"from .claude/worker-prompt.md), settings.json (the check command and how many tickets run at\n"+
+			"the same time), a .gitignore for the log, reports and per-ticket files, and a check of what\n"+
+			"orchestra needs.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -139,16 +145,25 @@ func runInit(dir string, args []string) int {
 		fmt.Fprintln(os.Stderr, "orchestra init:", err)
 		return exitSetup
 	}
+	interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+	settingsLines, err := configureSettings(repo, *check, concurrent, interactive, os.Stdin, os.Stdout)
+	for _, l := range settingsLines {
+		fmt.Println(l)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "orchestra init:", err)
+		return exitSetup
+	}
 	for _, l := range prerequisites(repo) {
 		fmt.Println(l)
 	}
 	fmt.Printf("\nNext:\n")
 	if *check == "" && !strings.Contains(strings.Join(lines, "\n"), "moved") {
-		fmt.Printf("  1. Fill in the <…> placeholders in %s/%s (or run init again with -check -force).\n", orchDir, promptName)
+		fmt.Printf("  1. Fill in the <…> placeholders in %s/%s (or run init again with --check and --force).\n", orchDir, promptName)
 	} else {
 		fmt.Printf("  1. Read %s/%s and adjust it to the project.\n", orchDir, promptName)
 	}
-	fmt.Printf("  2. Commit %s/.\n", orchDir)
+	fmt.Printf("  2. Commit %s/ (the prompt, settings.json and .gitignore).\n", orchDir)
 	fmt.Printf("  3. From a Herdr pane, on the branch finished tickets should land on: WORKSPACE=<id> orchestra\n")
 	return exitOK
 }

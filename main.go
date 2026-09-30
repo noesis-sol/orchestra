@@ -64,6 +64,8 @@ type Config struct {
 	Review       bool   // reviewer organ when the loop stops
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
 	LaunchPrompt bool   // give Claude workers their prompt at launch instead of pasting it
+	Concurrency  int    // tickets worked on at the same time
+	Check        string // the project's check command, from .orchestra/settings.json
 }
 
 func envInt(name string, def int, problems *[]string) int {
@@ -101,11 +103,14 @@ func loadConfig() (Config, []string) {
 	flag.BoolVar(&c.Triage, "triage", os.Getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
 	flag.BoolVar(&c.Review, "review", os.Getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
 	flag.StringVar(&c.OrganModel, "organ-model", os.Getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
+	concurrent := envInt("ORCHESTRA_CONCURRENT", 0, &problems)
+	flag.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
+	flag.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
 	flag.BoolVar(&c.LaunchPrompt, "prompt-at-launch", os.Getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n       orchestra init [-check \"<command>\"] [-force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -140,6 +145,16 @@ func loadConfig() (Config, []string) {
 			c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 		}
 		c.LogPath, c.ReportsDir = lay.Log, lay.Reports
+		settings, _, err := loadSettings(c.Repo)
+		if err != nil {
+			problems = append(problems, "Unreadable settings: "+err.Error())
+		}
+		c.Check = settings.Check
+		if n, err := resolveConcurrency(c.Concurrency, settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.Concurrency = n
+		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
 		} else if !strings.Contains(string(b), "TICKET_ID") {
@@ -247,10 +262,14 @@ func main() {
 	out := printSink{styled: true, width: width}
 	m, _ := final.(model)
 	if m.interrupted {
-		// The loop may be in the middle of a command; log the stop and leave the worker to the user.
+		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		msg := "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"
-		if m.st.Ticket != "" {
-			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s was running; its tab %s and worktree are left open", m.st.Ticket, m.st.Tab)
+		if running := m.activeList(); len(running) > 0 {
+			var names []string
+			for _, st := range running {
+				names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
+			}
+			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s were running; their tabs and worktrees are left open", strings.Join(names, ", "))
 		}
 		ev := Event{Kind: EvStop, Text: msg, Time: time.Now()}
 		log.Line(ev.Time, msg)

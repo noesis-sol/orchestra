@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ const (
 	EvDone                 // the loop finished normally
 	EvTriage               // the triage organ's verdict on a deferred ticket
 	EvAsked                // a ticket waits on the maintainer's answer to a question
+	EvHold                 // a ticket stopped the run; no new tickets while the running ones finish
 )
 
 type Event struct {
@@ -48,7 +50,7 @@ type Event struct {
 	Text   string // the full line written to the log file
 }
 
-// Status describes the ticket being worked on; the zero value means none.
+// Status describes a ticket being worked on. Gone removes it from the display.
 type Status struct {
 	Ticket   string
 	Title    string
@@ -56,6 +58,7 @@ type Status struct {
 	Started  time.Time
 	Agent    string // Herdr agent status
 	Activity string // the worker's latest action line
+	Gone     bool
 }
 
 // Sink receives events and live status; the terminal UI and the plain printer implement it.
@@ -118,7 +121,7 @@ func (l *Logger) Raw(out string, err error) {
 // Notify only for finished tickets and anything that stops the loop.
 func notifiable(text string) bool {
 	for _, k := range []string{"closed", "deferred", "BLOCKED", "PAUSED", "DIRTY_TREE", "READY_EMPTY",
-		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED"} {
+		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED", "HOLD", "CONFLICT"} {
 		if strings.Contains(text, k) {
 			return true
 		}
@@ -144,8 +147,15 @@ type Orch struct {
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
-	current   Status // the ticket being worked on; left set when the loop stops inside it
 	final     string // the stop or done line
+
+	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
+	// deletions): workers run side by side, and git's lock files allow one writer at a time.
+	repoMu sync.Mutex
+	// mergeMu is the merge queue: a finished ticket holds it through rebase, check and merge, so
+	// Base doesn't move while its rebased code is checked. Worktree creation isn't held up.
+	mergeMu sync.Mutex
+	active  map[string]Status // tickets being worked on; left set for those still running at the end
 
 	organ      organ
 	organCtx   context.Context // cancelled when the maintainer skips the organs
@@ -191,6 +201,47 @@ func (o *Orch) stop(code int, format string, a ...any) int {
 	return code
 }
 
+// stopReason ends the run: a ticket hit something that needs the maintainer, or a tool failed.
+// With several workers, no new tickets start and the running ones finish first.
+type stopReason struct {
+	code int
+	text string
+}
+
+// errInterrupted is returned by a worker when Ctrl+C cancelled the run.
+var errInterrupted = &stopReason{code: exitInterrupted}
+
+func halt(code int, format string, a ...any) *stopReason {
+	return &stopReason{code: code, text: fmt.Sprintf(format, a...)}
+}
+
+func (o *Orch) setActive(st Status) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.active == nil {
+		o.active = map[string]Status{}
+	}
+	o.active[st.Ticket] = st
+}
+
+func (o *Orch) clearActive(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.active, id)
+}
+
+// activeList returns the tickets being worked on, oldest first.
+func (o *Orch) activeList() []Status {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	var l []Status
+	for _, st := range o.active {
+		l = append(l, st)
+	}
+	sort.Slice(l, func(i, j int) bool { return l[i].Started.Before(l[j].Started) })
+	return l
+}
+
 func (o *Orch) interrupted() int {
 	if !o.reportInterrupt {
 		return exitInterrupted
@@ -209,76 +260,122 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// Run works through bd ready one ticket at a time and returns the exit code.
+// Run works through bd ready with up to Concurrency workers at a time and returns the exit code.
 func (o *Orch) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
 	head, _ := run(c.Repo, "git", "rev-parse", c.Base)
 	o.startHead = strings.TrimSpace(head)
-	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, workspace: %s, agent: %s, worktrees: %s)",
-		buildVersion(), c.Repo, c.Base, o.count, c.Limit, c.Workspace, c.AgentKind, c.WTRoot)
+	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
+		buildVersion(), c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
 
-	for o.count < c.Limit {
-		if ctx.Err() != nil {
+	type result struct {
+		id   string
+		stop *stopReason
+	}
+	results := make(chan result, c.Concurrency) // buffered: a worker finishing after Ctrl+C never blocks
+	inflight := map[string]bool{}
+	var stop *stopReason
+	for {
+		// Start tickets while there are free slots, unless something has stopped the run.
+		for stop == nil && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
+			t, queued, s := o.next(inflight)
+			if s != nil {
+				stop = s
+				break
+			}
+			if t == nil {
+				break // nothing ready that isn't already running
+			}
+			o.count++
+			inflight[t.ID] = true
+			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued,
+				Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
+			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
+		}
+		if len(inflight) == 0 {
+			break
+		}
+		select {
+		case r := <-results:
+			delete(inflight, r.id)
+			if r.stop != nil && r.stop != errInterrupted && stop == nil {
+				stop = r.stop
+				if len(inflight) > 0 {
+					o.emit(Event{Kind: EvHold, Ticket: r.id, Text: fmt.Sprintf(
+						"HOLD: %s; no new tickets while the %d running finish", stop.text, len(inflight))})
+				}
+			}
+		case <-ctx.Done():
 			return o.interrupted()
 		}
-		// Finished tickets are fast-forwarded into the main checkout: it must be clean and still on Base.
-		if dirtyTree(c.Repo) != "" {
-			return o.stop(exitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping. Inspect with: git status", c.Repo)
-		}
-		if currentBranch(c.Repo) != c.Base {
-			return o.stop(exitDirty, "DIRTY_TREE: %s is no longer on %s; stopping. Check it out again to continue.", c.Repo, c.Base)
-		}
-
-		ready, err := readyTickets(c.Repo)
-		if err != nil {
-			return o.stop(exitTool, "READY_UNREADABLE: could not parse 'bd ready --json'")
-		}
-		if len(ready) == 0 {
-			o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count)})
-			return exitOK
-		}
-		t := ready[0]
-		o.count++
-		o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: len(ready) - 1,
-			Text: fmt.Sprintf("[%d/%d] %s dispatching: %s", o.count, c.Limit, t.ID, t.Title)})
-
-		if code, stopped := o.work(ctx, t); stopped {
-			return code
-		}
 	}
-	o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)})
+	switch {
+	case ctx.Err() != nil:
+		return o.interrupted()
+	case stop != nil:
+		return o.stop(stop.code, "%s", stop.text)
+	case o.count >= c.Limit:
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)})
+	default:
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count)})
+	}
 	return exitOK
 }
 
-// work runs one ticket from worktree to merge. It returns stopped=true with an exit code when
-// the loop must stop.
-func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
+// next returns the highest-priority ready ticket not already running, with how many others are
+// ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
+// are fast-forwarded into it; the check waits for any merge in progress.
+func (o *Orch) next(running map[string]bool) (*Ticket, int, *stopReason) {
+	c := o.cfg
+	o.repoMu.Lock()
+	dirty, branch := dirtyTree(c.Repo), currentBranch(c.Repo)
+	o.repoMu.Unlock()
+	if dirty != "" {
+		return nil, 0, halt(exitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping. Inspect with: git status", c.Repo)
+	}
+	if branch != c.Base {
+		return nil, 0, halt(exitDirty, "DIRTY_TREE: %s is no longer on %s; stopping. Check it out again to continue.", c.Repo, c.Base)
+	}
+	ready, err := readyTickets(c.Repo)
+	if err != nil {
+		return nil, 0, halt(exitTool, "READY_UNREADABLE: could not parse 'bd ready --json'")
+	}
+	t, queued := pickNext(ready, running)
+	return t, queued, nil
+}
+
+// pickNext returns the first ticket (ready is in priority order) that isn't running, and how many
+// other ready tickets aren't running.
+func pickNext(ready []Ticket, running map[string]bool) (*Ticket, int) {
+	var free []Ticket
+	for _, t := range ready {
+		if !running[t.ID] {
+			free = append(free, t)
+		}
+	}
+	if len(free) == 0 {
+		return nil, 0
+	}
+	return &free[0], len(free) - 1
+}
+
+// work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
+// ticket then stays listed as active (still being worked on).
+func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	c := o.cfg
 	id, br := t.ID, "wt/"+t.ID
+	defer func() {
+		if stop == nil {
+			o.clearActive(id)
+		}
+	}()
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
-	wt := worktreeOf(c.Repo, br)
-	if wt != "" {
-		o.info("  reusing worktree %s (%s)", wt, br)
-		o.refreshBranch(wt, br)
-	} else {
-		wt = filepath.Join(c.WTRoot, id)
-		run(c.Repo, "git", "worktree", "prune")
-		var out string
-		var err error
-		if hasBranch(c.Repo, br) {
-			out, err = run(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
-		} else {
-			out, err = run(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
-		}
-		o.log.Raw(out, err)
-		if err != nil {
-			return o.stop(exitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath), true
-		}
-		o.info("  worktree %s on %s", wt, br)
-		o.refreshBranch(wt, br)
+	wt, s := o.prepareWorktree(id, br)
+	if s != nil {
+		return s
 	}
 
 	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
@@ -286,10 +383,10 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	switch st := agentStatus(id); st {
 	case "gone":
 	case "working", "blocked":
-		return o.stop(exitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt), true
+		return halt(exitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
 		if name := freeName(id); name == "" || agentRename(id, name) != nil {
-			return o.stop(exitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id), true
+			return halt(exitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id)
 		} else {
 			o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 		}
@@ -297,12 +394,12 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 
 	tab, pane, err := tabCreate(c.Workspace, wt, id)
 	if err != nil {
-		return o.stop(exitTool, "TAB_FAILED for %s (is '%s' a valid workspace?)", id, c.Workspace), true
+		return halt(exitTool, "TAB_FAILED for %s (is '%s' a valid workspace?)", id, c.Workspace)
 	}
 	started := time.Now()
-	o.current = Status{Ticket: id, Title: t.Title, Tab: tab, Started: started}
+	o.setActive(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	o.status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
-	defer o.status(Status{})
+	defer o.status(Status{Ticket: id, Gone: true})
 
 	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
@@ -326,7 +423,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			_, ok = adoptPaneAgent(ctx, pane, c.AgentKind, id)
 		}
 		if ctx.Err() != nil {
-			return o.interrupted(), true
+			return errInterrupted
 		}
 		if !ok {
 			o.log.Raw("", fmt.Errorf("%s's worker was not recognised after starting it from its prompt file (%v); starting it with herdr agent start and pasting the prompt", id, err))
@@ -348,7 +445,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			continue
 		}
 		if !sleep(ctx, 3*time.Second) {
-			return o.interrupted(), true
+			return errInterrupted
 		}
 		st := agentStatus(id)
 		if st == "gone" {
@@ -371,7 +468,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		}
 	}
 	if !ok {
-		return o.stop(exitTool, "START_FAILED for %s in tab %s", id, tab), true
+		return halt(exitTool, "START_FAILED for %s in tab %s", id, tab)
 	}
 
 	stopWatch := o.watch(ctx, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
@@ -379,15 +476,14 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 
 	if !o.promptTaken(ctx, id, prompt, launch != "") {
 		if ctx.Err() != nil {
-			return o.interrupted(), true
+			return errInterrupted
 		}
 		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
 		deferTicket(c.Repo, id, "the worker never started on its prompt")
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
 			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open", id, wt, tab)})
-		o.current = Status{}
-		return 0, false
+		return nil
 	}
 
 	// Wait until the worker settles. Never answer its prompts; stop if it stays blocked for 4
@@ -396,7 +492,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	var blockedSince, idleSince time.Time
 	for {
 		if ctx.Err() != nil {
-			return o.interrupted(), true
+			return errInterrupted
 		}
 		st := agentStatus(id)
 		if st == "gone" {
@@ -417,13 +513,13 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 				blockedSince = time.Now()
 			}
 			if time.Since(blockedSince) > 4*time.Minute {
-				return o.stop(exitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id), true
+				return halt(exitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
 			}
 		} else {
 			blockedSince = time.Time{}
 		}
 		if !sleep(ctx, 3*time.Second) {
-			return o.interrupted(), true
+			return errInterrupted
 		}
 	}
 	stopWatch()
@@ -439,8 +535,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		o.emit(Event{Kind: EvAsked, Ticket: id, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
 			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
 			id, q.ID, q.Title, q.ID, wt, tab)})
-		o.current = Status{}
-		return 0, false
+		return nil
 	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
@@ -455,25 +550,8 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab)})
 		case closedMerge:
-			out, err := run(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
-			o.log.Raw(out, err)
-			if err != nil {
-				return o.stop(exitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab), true
-			}
-			hash, _, _ := strings.Cut(commit, " ")
-			out, err = run(c.Repo, "git", "worktree", "remove", wt)
-			o.log.Raw(out, err)
-			if err == nil {
-				out, err = run(c.Repo, "git", "branch", "-d", br)
-				o.log.Raw(out, err)
-			}
-			if err == nil {
-				tabClose(tab)
-				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
-					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
-			} else {
-				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged; cleanup failed, tab " + tab + " left open", Text: fmt.Sprintf(
-					"  %s closed (%s); merged into %s, but CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open", id, commit, c.Base, wt, br, c.LogPath, tab)})
+			if s := o.merge(ctx, id, br, wt, tab); s != nil {
+				return s
 			}
 		}
 	case outcomeDeferred:
@@ -484,9 +562,9 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
-		return o.stop(exitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt), true
+		return halt(exitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
-		return o.stop(exitTool, "STATUS_UNREADABLE for %s; stopping rather than guessing (worktree %s and tab %s left open)", id, wt, tab), true
+		return halt(exitTool, "STATUS_UNREADABLE for %s; stopping rather than guessing (worktree %s and tab %s left open)", id, wt, tab)
 	case outcomeUnfinished:
 		appendNotes(c.Repo, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		deferTicket(c.Repo, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt))
@@ -495,8 +573,131 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
 		o.queueTriage(o.gatherDeferral(id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
 	}
-	o.current = Status{}
-	return 0, false
+	return nil
+}
+
+// prepareWorktree creates the ticket's worktree, or reuses the one left by an earlier attempt and
+// brings its branch up to date, holding the repository lock.
+func (o *Orch) prepareWorktree(id, br string) (string, *stopReason) {
+	c := o.cfg
+	o.repoMu.Lock()
+	defer o.repoMu.Unlock()
+	if wt := worktreeOf(c.Repo, br); wt != "" {
+		o.info("  reusing worktree %s (%s)", wt, br)
+		o.refreshBranch(wt, br)
+		return wt, nil
+	}
+	wt := filepath.Join(c.WTRoot, id)
+	run(c.Repo, "git", "worktree", "prune")
+	var out string
+	var err error
+	if hasBranch(c.Repo, br) {
+		out, err = run(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
+	} else {
+		out, err = run(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
+	}
+	o.log.Raw(out, err)
+	if err != nil {
+		return "", halt(exitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath)
+	}
+	o.info("  worktree %s on %s", wt, br)
+	o.refreshBranch(wt, br)
+	return wt, nil
+}
+
+// merge brings a finished ticket's branch onto Base, one ticket at a time. When other tickets
+// merged while it ran, the branch is rebased first and, since the rebased code is untested, the
+// project's check command runs again before it merges. A conflict or a failing check leaves the
+// ticket for review and the run goes on.
+func (o *Orch) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
+	c := o.cfg
+	o.mergeMu.Lock()
+	defer o.mergeMu.Unlock()
+	// Only merges move Base during a run, and they queue here; a second pass covers a commit made
+	// by hand while the checks ran.
+	for attempt := 0; attempt < 3; attempt++ {
+		o.repoMu.Lock()
+		if isAncestor(c.Repo, c.Base, br) {
+			commit := commitNaming(c.Repo, c.Base, br, id)
+			out, err := run(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
+			o.log.Raw(out, err)
+			if err != nil {
+				o.repoMu.Unlock()
+				return halt(exitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
+			}
+			out, err = run(c.Repo, "git", "worktree", "remove", wt)
+			o.log.Raw(out, err)
+			if err == nil {
+				out, err = run(c.Repo, "git", "branch", "-d", br)
+				o.log.Raw(out, err)
+			}
+			o.repoMu.Unlock()
+			hash, _, _ := strings.Cut(commit, " ")
+			if err == nil {
+				tabClose(tab)
+				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
+					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
+			} else {
+				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged; cleanup failed, tab " + tab + " left open", Text: fmt.Sprintf(
+					"  %s closed (%s); merged into %s, but CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open", id, commit, c.Base, wt, br, c.LogPath, tab)})
+			}
+			return nil
+		}
+
+		// Base moved on while the ticket ran: rebase it, still under the lock.
+		out, err := run("", "git", "-C", wt, "rebase", c.Base)
+		o.log.Raw(out, err)
+		if err != nil {
+			run("", "git", "-C", wt, "rebase", "--abort")
+			o.repoMu.Unlock()
+			o.markAside(id)
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran; worktree %s and tab %s left for review (rebase onto %s, check, merge)",
+				id, br, c.Base, wt, tab, c.Base)})
+			return nil
+		}
+		o.repoMu.Unlock()
+		o.info("  rebased %s onto %s, which moved on while it ran", br, c.Base)
+		if c.Check == "" {
+			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)
+			continue
+		}
+		if err := o.runCheck(ctx, wt); err != nil {
+			if ctx.Err() != nil {
+				return errInterrupted
+			}
+			o.markAside(id)
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  CHECKS_FAILED: %s closed, but '%s' fails on %s rebased onto %s; worktree %s and tab %s left for review (output is in %s)",
+				id, c.Check, br, c.Base, wt, tab, c.LogPath)})
+			return nil
+		}
+		o.info("  '%s' passes on the rebased %s", c.Check, br)
+		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
+	}
+	o.markAside(id)
+	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); worktree %s and tab %s left for review", id, c.Base, wt, tab)})
+	return nil
+}
+
+// runCheck runs the project's check command in the worktree, logging the end of its output if it
+// fails. It gives up after 30 minutes.
+func (o *Orch) runCheck(ctx context.Context, wt string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", o.cfg.Check)
+	cmd.Dir = wt
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
+	}
+	return err
+}
+
+func isAncestor(repo, ancestor, rev string) bool {
+	_, err := run(repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
+	return err == nil
 }
 
 // idleGrace is how long an idle worker whose ticket is still in progress may take to resume

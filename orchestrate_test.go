@@ -168,9 +168,10 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 	m := newModel(Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
 	m.n, m.closed, m.deferred, m.queued = 3, 2, 1, 17
 	m.began = time.Now().Add(-12 * time.Minute)
-	m.st = Status{Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
+	m.active = map[string]Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
 		Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
-		Activity: "⏺ Bash(scripts/ci-local.sh lint ios && git status --short && git diff --stat)"}
+		Activity: "⏺ Bash(scripts/ci-local.sh lint ios && git status --short && git diff --stat)"}}
+	m.height = 40
 	for _, w := range []int{30, 45, 66, 120} {
 		m.width = w
 		view := m.View()
@@ -183,7 +184,7 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 			t.Logf("preview at %d columns:\n%s", w, ansi.Strip(view))
 		}
 	}
-	m.st = Status{}
+	m.active = nil
 	m.width = 66
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "picking the next ticket") {
 		t.Errorf("idle view: %s", v)
@@ -266,7 +267,7 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 		m = runEvents(m, Event{Kind: EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
 			Event{Kind: EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
 	}
-	m.st = Status{Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+	m.active = map[string]Status{"x": {Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
 	for _, size := range [][2]int{{40, 30}, {66, 36}, {120, 50}} {
 		m.width, m.height = size[0], size[1]
 		lines := strings.Split(m.View(), "\n")
@@ -370,7 +371,7 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 
 	m := newModel(Config{Limit: 40, Base: "batch"}, func() {})
 	m.width, m.height = 66, 40
-	m.st = Status{Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}
+	m.active = map[string]Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
 		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)
