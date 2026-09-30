@@ -292,7 +292,7 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 		}
 	}
 	plain := ansi.Strip(v)
-	for _, want := range []string{"kinieta-0", "kinieta-1", "kinieta-2", "3 running of 3"} {
+	for _, want := range []string{"kinieta-0", "kinieta-1", "kinieta-2", "workers 3/3"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("view lacks %q", want)
 		}
@@ -329,7 +329,7 @@ func TestDashboardFitsShortPanes(t *testing.T) {
 			}
 		}
 		plain := ansi.Strip(v)
-		if !strings.Contains(plain, "kinieta-w0") || !strings.Contains(plain, "running of") {
+		if !strings.Contains(plain, "kinieta-w0") || (m.width >= 60 && !strings.Contains(plain, "3 of 3") && !strings.Contains(plain, "3/3")) {
 			t.Errorf("%dx%d: workers not shown:\n%s", size[0], size[1], plain)
 		}
 	}

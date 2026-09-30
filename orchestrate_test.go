@@ -433,3 +433,16 @@ func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
 		t.Errorf("outside Herdr there is no current workspace, got %q", got)
 	}
 }
+
+func TestShortVersion(t *testing.T) {
+	for in, want := range map[string]string{
+		"v0.1.2-0.20260930072042-09ffc8431bb5+dirty": "v0.1.2-dev 09ffc84+dirty",
+		"v0.1.2-0.20260930072042-09ffc8431bb5":       "v0.1.2-dev 09ffc84",
+		"v0.2.0":                                     "v0.2.0",
+		"dev":                                        "dev",
+	} {
+		if got := shortVersion(in); got != want {
+			t.Errorf("shortVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

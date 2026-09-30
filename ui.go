@@ -186,7 +186,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // run's summary.
 func (m model) View() string {
 	w := max(m.width, 30)
-	title := titleStyle.Render("Orchestra") + " " + dimStyle.Render(buildVersion())
+	title := m.titleLine(w)
 	if m.quitting {
 		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
 	}
@@ -248,16 +248,21 @@ func (m model) workerList(w int) string {
 	return box(w, border, strings.Join(lines, "\n"))
 }
 
-// statsLine is the totals on one line, for a pane too short for the table.
+// statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
+// branch, running time and stopping state are on the title line.
 func (m model) statsLine(w int) string {
+	queued := "—"
+	if m.queued >= 0 {
+		queued = fmt.Sprint(m.queued)
+	}
 	parts := []string{
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
 		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
 		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
-		m.workersCell(),
-		dimStyle.Render(fmt.Sprintf("%d of %d · %s · %s", m.n, m.cfg.Limit, m.cfg.Base, time.Since(m.began).Truncate(time.Second))),
+		dimStyle.Render("workers ") + pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
+		dimStyle.Render(fmt.Sprintf("picked %d/%d · queue %s", m.n, m.cfg.Limit, queued)),
 	}
-	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render("  ·  ")), w, "…")
+	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }
 
 // activeList returns the running workers, oldest first.
@@ -425,7 +430,8 @@ func (m model) ticketsTable(w, maxLines int) string {
 		Render()
 }
 
-// statsTable lists the run's totals, one per row, with the counts in their event colours.
+// statsTable is the run's totals as one strip: a column per total, label over value, in the
+// events' colours. Too narrow a pane gets the one-line form instead.
 func (m model) statsTable(w int) string {
 	count := func(n int, mark string, style lipgloss.Style) string {
 		if n == 0 {
@@ -433,31 +439,43 @@ func (m model) statsTable(w int) string {
 		}
 		return style.Render(fmt.Sprintf("%s %d", mark, n))
 	}
+	deferred := count(m.deferred, "↷", deferredStyle)
+	if m.triaged > 0 {
+		deferred += organStyle.Render(fmt.Sprintf(" ◆ %d", m.triaged))
+	}
 	queued := dimStyle.Render("—")
 	if m.queued >= 0 {
-		queued = fmt.Sprintf("%d ready", m.queued)
+		queued = fmt.Sprint(m.queued)
 	}
-	rows := [][]string{
-		{"Completed", count(m.closed, "✓", closedStyle)},
-		{"Deferred", count(m.deferred, "↷", deferredStyle) + triagedNote(m.triaged)},
-		{"Needs you", count(m.asked, "?", stopStyle)},
-		{"Workers", m.workersCell()},
-		{"Picked up", pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d max", m.cfg.Limit))},
-		{"In queue", queued},
-		{"Branch", m.cfg.Base},
-		{"Running", time.Since(m.began).Truncate(time.Second).String()},
+	labels := []string{"Completed", "Deferred", "Needs you", "Workers", "Picked up", "In queue"}
+	values := []string{
+		count(m.closed, "✓", closedStyle),
+		deferred,
+		count(m.asked, "?", stopStyle),
+		pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" of %d", max(m.cfg.Concurrency, 1))),
+		pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d", m.cfg.Limit)),
+		queued,
+	}
+	need := len(labels) + 1 // borders
+	for i := range labels {
+		need += max(ansi.StringWidth(labels[i]), ansi.StringWidth(values[i])) + 2
+	}
+	if w < need {
+		return m.statsLine(w)
 	}
 	return table.New().
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
+		BorderHeader(false).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			s := lipgloss.NewStyle().Padding(0, 1)
-			if col == 0 {
-				return s.Faint(true).Width(12) // lines up with the Tickets table's first column
+			if row == table.HeaderRow {
+				return s.Faint(true)
 			}
 			return s
 		}).
-		Rows(rows...).
+		Headers(labels...).
+		Rows(values).
 		Width(w).
 		Render()
 }
@@ -510,13 +528,36 @@ func wrapLines(s string, width, max int) []string {
 	return lines
 }
 
-// workersCell says how many workers run out of how many may, and whether the run is stopping.
-func (m model) workersCell() string {
-	cell := pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" running of %d", max(m.cfg.Concurrency, 1)))
-	if m.stopping {
-		cell += stopStyle.Render(" · stopping")
+// shortVersion shortens a Go pseudo-version for display: v0.1.2-0.20260930072042-09ffc8431bb5+dirty
+// becomes "v0.1.2-dev 09ffc84+dirty". Tags and other versions are shown as they are.
+func shortVersion(v string) string {
+	base, rest, ok := strings.Cut(v, "-0.")
+	if !ok {
+		return v
 	}
-	return cell
+	stamp, hash, ok := strings.Cut(rest, "-")
+	if !ok || len(stamp) != 14 {
+		return v
+	}
+	dirty := ""
+	if h, d, found := strings.Cut(hash, "+"); found {
+		hash, dirty = h, "+"+d
+	}
+	if len(hash) > 7 {
+		hash = hash[:7]
+	}
+	return base + "-dev " + hash + dirty
+}
+
+// titleLine is the Orchestra pill, the version, the branch and how long the run has gone, and
+// whether it is stopping.
+func (m model) titleLine(w int) string {
+	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(buildVersion())) + "   " +
+		dimStyle.Render(fmt.Sprintf("%s · %s", m.cfg.Base, time.Since(m.began).Truncate(time.Second)))
+	if m.stopping {
+		line += stopStyle.Render("  · stopping")
+	}
+	return ansi.Truncate(line, w, "…")
 }
 
 func triagedNote(n int) string {

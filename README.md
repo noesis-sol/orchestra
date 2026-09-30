@@ -10,32 +10,29 @@ Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket
 One dashboard, updated in place: nothing is printed above it while the loop runs.
 
 ```
- Orchestra v0.1.0
-╭────────────┬───────────────────────────────────────────────────╮
-│ Completed  │ ✓ 2                                               │
-│ Deferred   │ ↷ 1 · ◆ 1 triaged                                 │
-│ Picked up  │ 4 of 40 max                                       │
-│ In queue   │ 12 ready                                          │
-│ Branch     │ batch/2026-09-28                                  │
-│ Running    │ 18m40s                                            │
-╰────────────┴───────────────────────────────────────────────────╯
-╭────────────┬─────────────┬────────────────────────────────────╮
-│ Tickets    │             │                                    │
-├────────────┼─────────────┼────────────────────────────────────┤
-│ ✓ done     │ kinieta-dwv │ ffd6ce4 merged into batch/2026-09… │
-│ ↷ deferred │ kinieta-vzg │ ◆ environment · high · Prompt was… │
-│ ✓ done     │ kinieta-y6j │ 6097367 merged into batch/2026-09… │
-│ ▶ working  │ kinieta-kco │ Open the property model: Interpol… │
-╰────────────┴─────────────┴────────────────────────────────────╯
-╭────────────────────────────────────────────────────────────────╮
-│ ⣾  kinieta-kco  working  4m52s                                 │
-│   Open the property model: Interpolatable protocol and custom… │
-│   ⏺ Bash(scripts/ci-local.sh lint ios)                         │
-╰────────────────────────────────────────────────────────────────╯
-  ctrl+c stops · the worker keeps running
+ Orchestra  v0.2.0   batch/2026-09-28 · 18m40s
+╭────────────┬───────────┬───────────┬───────────┬───────────┬───────────╮
+│ Completed  │ Deferred  │ Needs you │ Workers   │ Picked up │ In queue  │
+│ ✓ 2        │ ↷ 1 ◆ 1   │ 0         │ 1 of 3    │ 4 of 40   │ 12        │
+╰────────────┴───────────┴───────────┴───────────┴───────────┴───────────╯
+╭────────────┬─────────────┬─────────────────────────────────────────────╮
+│ Tickets    │             │                                             │
+├────────────┼─────────────┼─────────────────────────────────────────────┤
+│ ✓ done     │ kinieta-dwv │ ffd6ce4 merged into batch/2026-09-28        │
+│ ↷ deferred │ kinieta-vzg │ ◆ environment · high · prompt never submit… │
+│ ✓ done     │ kinieta-y6j │ 6097367 merged into batch/2026-09-28        │
+│ ▶ working  │ kinieta-kco │ Open the property model: Interpolatable p…  │
+╰────────────┴─────────────┴─────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────────╮
+│ ⣾  kinieta-kco  working  4m52s                                         │
+│   Open the property model: Interpolatable protocol and custom key-path │
+│   / constraint-constant properties                                     │
+│   ⏺ Bash(scripts/ci-local.sh lint ios)                                 │
+╰────────────────────────────────────────────────────────────────────────╯
+  ctrl+c stops · the workers keep running
 ```
 
-- **Totals** for the run.
+- **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, tickets picked up out of the limit, and how many are still ready. The branch and how long the run has gone are on the title line.
 - **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
 - **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 2 seconds.
 

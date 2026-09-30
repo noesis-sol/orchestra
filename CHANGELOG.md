@@ -17,6 +17,9 @@ All notable changes to orchestra are documented here. The format follows
   as `HOLD` and lets the running tickets finish. The dashboard shows a box per
   worker and a Workers row, and gives way in short panes (one line per worker,
   then no tickets table, then totals on one line).
+- The dashboard's totals are one strip (a column per total) above the tickets
+  table, 4 lines instead of 10; the branch, running time and "stopping" moved
+  to the title line, which shows an untagged build as `v0.1.2-dev 09ffc84`.
 - No more `WORKSPACE=`: worker tabs open in the Herdr workspace orchestra
   runs in (from `HERDR_WORKSPACE_ID`, or Herdr itself). `--workspace ID` puts
   them in another. The `WORKSPACE` environment variable is no longer read.
