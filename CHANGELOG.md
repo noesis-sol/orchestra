@@ -198,6 +198,11 @@ All notable changes to orchestra are documented here. The format follows
   ticket, or at the start of a run that finds it merged by hand (its branch on
   the base with a commit naming it, or, with the branch deleted, such a commit
   on the base). `LABEL_FAILED` says when bd can't add or remove it.
+- orchestra builds with Go 1.26.8 (`toolchain` in go.mod; an older Go fetches
+  it). Go 1.26.0–1.26.4 on Apple Silicon can leave a process forked by a
+  `-race` build spinning before exec, which hung the test suite
+  ([golang/go#79804](https://github.com/golang/go/issues/79804)); Go 1.26 is
+  still the minimum.
 
 ## [0.1.1] - 2026-09-29
 
