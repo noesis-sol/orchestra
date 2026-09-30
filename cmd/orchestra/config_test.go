@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -175,6 +176,72 @@ func TestExitCodes(t *testing.T) {
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("%s = %d, want %d", name, pair[0], pair[1])
+		}
+	}
+}
+
+// A flag replaces its variable, so an invalid variable under a flag is no problem; the flags are
+// held to the variables' rules.
+func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {
+	configFixture(t, "")
+	t.Setenv("LIMIT", "abc")
+	t.Setenv("DONE_SO_FAR", "-2")
+	t.Setenv("ORCHESTRA_CONCURRENT", "x")
+	if c, p := loadWith(t, "-limit", "5", "-done-so-far", "1", "-c", "2"); len(p) > 0 || c.Limit != 5 || c.DoneSoFar != 1 || c.Concurrency != 2 {
+		t.Errorf("flags over invalid variables: %+v %v", c.Config, p)
+	}
+	if _, p := loadWith(t, "--concurrent", "2"); len(p) != 2 || !strings.Contains(p[0], "LIMIT") || !strings.Contains(p[1], "DONE_SO_FAR") {
+		t.Errorf("variables without flags: %v", p)
+	}
+	t.Setenv("LIMIT", "")
+	t.Setenv("DONE_SO_FAR", "")
+	t.Setenv("ORCHESTRA_CONCURRENT", "")
+	_, p := loadWith(t, "-limit", "-1", "-done-so-far", "-3", "-c", "-1")
+	joined := strings.Join(p, "\n")
+	for _, want := range []string{"-limit must be a whole number (got -1)", "-done-so-far must be a whole number (got -3)", "between 1 and"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("problems lack %q:\n%s", want, joined)
+		}
+	}
+}
+
+// A relative WT_ROOT, like a relative WORKER_PROMPT, is relative to the repository, wherever in it
+// orchestra runs.
+func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
+	repo := configFixture(t, "")
+	os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755)
+	t.Chdir(filepath.Join(repo, "sub", "dir"))
+	t.Setenv("WT_ROOT", "../wt")
+	c, p := loadWith(t)
+	if want := filepath.Join(filepath.Dir(repo), "wt"); len(p) > 0 || !samePath(c.WTRoot, want) {
+		t.Errorf("WT_ROOT = %s, want %s (%v)", c.WTRoot, want, p)
+	}
+	if c, _ := loadWith(t, "-worktrees", "../wt2"); !samePath(c.WTRoot, filepath.Join(filepath.Dir(repo), "wt2")) {
+		t.Errorf("-worktrees = %s", c.WTRoot)
+	}
+}
+
+// Worktrees inside the repository are refused however the path reaches it.
+func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
+	repo := configFixture(t, "")
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(repo, link); err != nil {
+		t.Fatal(err)
+	}
+	cases := []string{repo, filepath.Join(repo, "wt"), "wt", filepath.Join(link, "wt"), link}
+	if runtime.GOOS == "darwin" {
+		cases = append(cases, filepath.Join(strings.ToUpper(repo), "wt"))
+	}
+	for _, root := range cases {
+		t.Setenv("WT_ROOT", root)
+		if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "must be outside the repository") {
+			t.Errorf("WT_ROOT=%s accepted: %v", root, p)
+		}
+	}
+	for _, root := range []string{repo + "-worktrees", filepath.Join(filepath.Dir(link), "elsewhere")} {
+		t.Setenv("WT_ROOT", root)
+		if _, p := loadWith(t); len(p) > 0 {
+			t.Errorf("WT_ROOT=%s refused: %v", root, p)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -44,16 +45,18 @@ func buildVersion() string {
 	return "dev"
 }
 
-func envInt(getenv func(string) string, name string, def int, problems *[]string) int {
+// envInt reads a whole-number variable, or def when it is unset. For anything else it returns def
+// and the problem, which only matters when no flag overrides the variable.
+func envInt(getenv func(string) string, name string, def int) (int, string) {
 	v := getenv(name)
 	if v == "" {
-		return def
+		return def, ""
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
-		*problems = append(*problems, fmt.Sprintf("%s must be a whole number (got '%s').", name, v))
+		return def, fmt.Sprintf("%s must be a whole number (got '%s').", name, v)
 	}
-	return n
+	return n, ""
 }
 
 func envOr(getenv func(string) string, name, def string) string {
@@ -89,8 +92,10 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	fs.SetOutput(output)
 
 	fs.StringVar(&c.Workspace, "workspace", "", "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list)")
-	fs.IntVar(&c.Limit, "limit", envInt(getenv, "LIMIT", 40, &problems), "stop after this many tickets in total [LIMIT]")
-	fs.IntVar(&c.DoneSoFar, "done-so-far", envInt(getenv, "DONE_SO_FAR", 0, &problems), "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
+	limit, limitProblem := envInt(getenv, "LIMIT", 40)
+	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")
+	doneSoFar, doneSoFarProblem := envInt(getenv, "DONE_SO_FAR", 0)
+	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar, "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")
 	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"), "worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
 	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0", "macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
@@ -98,7 +103,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
 	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
 	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
-	concurrent := envInt(getenv, "ORCHESTRA_CONCURRENT", 0, &problems)
+	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
@@ -123,6 +128,27 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	c.showVersion = *showVersion
 	if c.showVersion {
 		return c, nil, nil
+	}
+
+	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule.
+	// ResolveConcurrency checks the range of -concurrent (and -c) below.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for _, v := range []struct {
+		flag    string
+		isSet   bool
+		value   int
+		problem string
+	}{
+		{"limit", set["limit"], c.Limit, limitProblem},
+		{"done-so-far", set["done-so-far"], c.DoneSoFar, doneSoFarProblem},
+		{"concurrent", set["concurrent"] || set["c"], 0, concurrentProblem},
+	} {
+		if !v.isSet && v.problem != "" {
+			problems = append(problems, v.problem)
+		} else if v.isSet && v.value < 0 {
+			problems = append(problems, fmt.Sprintf("-%s must be a whole number (got %d).", v.flag, v.value))
+		}
 	}
 
 	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
@@ -185,14 +211,38 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if c.WTRoot == "" {
 			c.WTRoot = filepath.Join(filepath.Dir(c.Repo), filepath.Base(c.Repo)+"-worktrees")
 		}
-		if abs, err := filepath.Abs(c.WTRoot); err == nil {
-			c.WTRoot = abs
+		if !filepath.IsAbs(c.WTRoot) {
+			c.WTRoot = filepath.Join(c.Repo, c.WTRoot)
 		}
-		if c.WTRoot == c.Repo || strings.HasPrefix(c.WTRoot, c.Repo+"/") {
+		if within(c.WTRoot, c.Repo) {
 			problems = append(problems, fmt.Sprintf("WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
 		}
 	}
 	return c, problems, nil
+}
+
+// within reports whether path is dir or inside it, following symlinks (path need not exist yet)
+// and ignoring case on macOS, whose filesystems usually do.
+func within(path, dir string) bool {
+	path, dir = realPath(path), realPath(dir)
+	if runtime.GOOS == "darwin" {
+		path, dir = strings.ToLower(path), strings.ToLower(dir)
+	}
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// realPath is p with symlinks resolved as far as it exists; the missing rest is kept as written.
+func realPath(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p
+	}
+	return filepath.Join(realPath(parent), filepath.Base(p))
 }
 
 // exitStatus is the status orchestra ends with when it isn't 0; what went wrong has been
