@@ -35,7 +35,7 @@ func read(t *testing.T, p string) string {
 
 func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	repo, git := gitRepo(t)
-	lines, err := initProject(repo, "make check", false)
+	steps, err := initProject(repo, "make check", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	if !strings.Contains(status, ".orchestra/worker-prompt.md") || !strings.Contains(status, ".orchestra/.gitignore") {
 		t.Errorf("the prompt and .gitignore should be committable:\n%s", status)
 	}
-	if len(lines) == 0 {
+	if len(steps) == 0 {
 		t.Error("init should say what it did")
 	}
 
@@ -89,12 +89,12 @@ func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	if layout := projectLayout(repo); !layout.Legacy {
 		t.Error("before init the legacy layout should be used")
 	}
-	lines, err := initProject(repo, "", false)
+	steps, err := initProject(repo, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(lines, "\n"), "moved") {
-		t.Errorf("lines = %q", lines)
+	if !strings.Contains(steps[0].detail, "moved") {
+		t.Errorf("steps = %+v", steps)
 	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "legacy TICKET_ID" {
 		t.Errorf("moved prompt = %q", got)

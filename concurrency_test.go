@@ -210,21 +210,29 @@ func TestConcurrencyPrecedence(t *testing.T) {
 	}
 }
 
-func TestAskConcurrency(t *testing.T) {
-	for in, want := range map[string]int{"3\n": 3, "\n": 1, "abc\n2\n": 2, "0\n99\nno\n": 1, "": 1, "4": 4} {
-		var out strings.Builder
-		if got := askConcurrency(strings.NewReader(in), &out); got != want {
-			t.Errorf("answers %q gave %d, want %d", in, got, want)
-		}
+func TestDetectCheckAndDefaultChoice(t *testing.T) {
+	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
+	if got := detectCheck(kinieta); got != "scripts/ci-local.sh" {
+		t.Errorf("detectCheck = %q", got)
+	}
+	if got := detectCheck(promptTemplate); got != "" {
+		t.Errorf("the template's placeholder is not a check command: %q", got)
+	}
+	c := defaultChoice(Settings{}, kinieta)
+	if c.Check != "scripts/ci-local.sh" || c.checkFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.unasked {
+		t.Errorf("from the prompt: %+v", c)
+	}
+	c = defaultChoice(Settings{Check: "make check", Concurrency: 3}, kinieta)
+	if c.Check != "make check" || c.Concurrent != 3 || c.unasked {
+		t.Errorf("settings win: %+v", c)
 	}
 }
 
-func TestConfigureSettings(t *testing.T) {
+func TestApplySettingsSavesAndExplains(t *testing.T) {
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	var out strings.Builder
-	// Interactive, no flags: asked.
-	if _, err := configureSettings(repo, "make check", 0, true, strings.NewReader("3\n"), &out); err != nil {
+	st, err := applySettings(repo, initChoice{Check: "make check", Concurrent: 3})
+	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(settingsPath(repo))
@@ -233,22 +241,35 @@ func TestConfigureSettings(t *testing.T) {
 	if m["concurrent"] != float64(3) || m["check"] != "make check" {
 		t.Errorf("settings.json = %s", raw)
 	}
-	// Re-run without flags: kept, not asked again.
-	configureSettings(repo, "", 0, true, strings.NewReader("9\n"), &out)
-	if s, _, _ := loadSettings(repo); s.Concurrency != 3 || s.Check != "make check" {
-		t.Errorf("settings changed without flags: %+v", s)
+	if st.kind != stepCaution || !strings.Contains(st.detail, "side by side") {
+		t.Errorf("more than 1 should come with a caution: %+v", st)
 	}
-	// Flags change them.
-	configureSettings(repo, "", 2, false, strings.NewReader(""), &out)
-	if s, _, _ := loadSettings(repo); s.Concurrency != 2 {
-		t.Errorf("--concurrent did not apply: %+v", s)
+	st, _ = applySettings(repo, initChoice{Concurrent: 1, unasked: true})
+	if st.kind != stepCaution || !strings.Contains(st.detail, "merges unchecked") || !strings.Contains(st.detail, "not asked") {
+		t.Errorf("no check, not asked: %+v", st)
 	}
-	// Non-interactive without settings: 1, and says why.
-	fresh := t.TempDir()
-	os.MkdirAll(filepath.Join(fresh, ".orchestra"), 0o755)
-	lines, _ := configureSettings(fresh, "", 0, false, strings.NewReader(""), &out)
-	if s, _, _ := loadSettings(fresh); s.Concurrency != 1 || !strings.Contains(strings.Join(lines, ""), "--concurrent sets it") {
-		t.Errorf("non-interactive: %+v %q", s, lines)
+	st, _ = applySettings(repo, initChoice{Check: "make check", Concurrent: 1})
+	if st.kind != stepDone {
+		t.Errorf("one at a time with a check is plain done: %+v", st)
+	}
+}
+
+func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
+	repo, git := gitRepo(t)
+	steps, _ := initProject(repo, "make check", false)
+	next := nextSteps(repo, steps, prerequisites(repo))
+	joined := strings.Join(next, "\n")
+	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
+		t.Errorf("fresh init: %q", next)
+	}
+	if strings.Contains(joined, "placeholders") {
+		t.Errorf("--check filled the placeholders: %q", next)
+	}
+	git(repo, "add", ".orchestra")
+	git(repo, "commit", "-q", "-m", "setup")
+	steps, _ = initProject(repo, "", false)
+	if joined := strings.Join(nextSteps(repo, steps, nil), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
+		t.Errorf("nothing to commit or read on a second run: %q", joined)
 	}
 }
 

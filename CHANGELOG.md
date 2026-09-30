@@ -17,6 +17,11 @@ All notable changes to orchestra are documented here. The format follows
   as `HOLD` and lets the running tickets finish. The dashboard shows a box per
   worker and a Workers row, and gives way in short panes (one line per worker,
   then no tickets table, then totals on one line).
+- `orchestra init` asks with a form in a terminal (built with Charm's `huh`):
+  the check command, pre-filled from the settings or found in an existing
+  prompt, and the tickets at the same time. It prints each step in colour, the
+  prerequisites on one line, and a Next box with only what's left and the
+  exact command to start a run. Without a terminal it asks nothing.
 - `.orchestra/settings.json`: the check command and the default number of
   tickets at the same time. `orchestra init` flags are now `--check`,
   `--concurrent` / `-c` and `--force`.

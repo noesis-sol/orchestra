@@ -465,13 +465,41 @@ func (m model) statsTable(w int) string {
 // titleLines is how many lines the active ticket's title may take before it is cut short.
 const titleLines = 3
 
+// wordWrap breaks s between words only (not at hyphens, as in worker-prompt.md), cutting a word
+// longer than the width.
+func wordWrap(s string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(s) {
+		for ansi.StringWidth(word) > width { // a word too long for any line
+			if line != "" {
+				lines, line = append(lines, line), ""
+			}
+			cut := ansi.Truncate(word, width, "")
+			lines, word = append(lines, cut), word[len(cut):]
+		}
+		switch {
+		case line == "":
+			line = word
+		case ansi.StringWidth(line)+1+ansi.StringWidth(word) <= width:
+			line += " " + word
+		default:
+			lines, line = append(lines, line), word
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
+}
+
 // wrapLines word-wraps s to width and keeps at most max lines, ending the last with … if cut.
 func wrapLines(s string, width, max int) []string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" || width < 1 {
 		return nil
 	}
-	lines := strings.Split(ansi.Wrap(s, width, ""), "\n")
+	lines := wordWrap(s, width)
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
