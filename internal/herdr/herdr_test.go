@@ -3,6 +3,8 @@ package herdr
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -130,4 +132,39 @@ func validName(s string) bool {
 		}
 	}
 	return true
+}
+
+// fakeHerdr puts a herdr on PATH that logs each call's arguments and fails any 'agent read' of
+// scrollback, as Herdr does while the agent works. It returns the log's path.
+func fakeHerdr(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake herdr is a shell script")
+	}
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho \"$*\" >> '" + calls + "'\n" +
+		"case \"$*\" in *recent-unwrapped*) exit 1;; esac\necho screen\n"
+	if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return calls
+}
+
+func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
+	for status, want := range map[string]string{
+		"working": "agent read a --source visible\n",
+		"blocked": "agent read a --source visible\n",
+		"idle":    "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
+		"":        "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
+	} {
+		calls := fakeHerdr(t)
+		if got := (Terminal{}).Screen("a", status); got != "screen\n" {
+			t.Errorf("Screen(%q) = %q", status, got)
+		}
+		if got, _ := os.ReadFile(calls); string(got) != want {
+			t.Errorf("Screen(%q) ran herdr:\n%s\nwant:\n%s", status, got, want)
+		}
+	}
 }

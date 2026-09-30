@@ -35,7 +35,7 @@ func (h *refusingHerdr) PaneAgent(pane string) (string, string, string) {
 func (h *refusingHerdr) RenameAgent(name, to string) error  { return errNameRefused }
 func (h *refusingHerdr) FreeName(name string) string        { return name + "-1" }
 func (h *refusingHerdr) Status(name string) (string, error) { return "gone", nil }
-func (h *refusingHerdr) Screen(name string) string          { return "" }
+func (h *refusingHerdr) Screen(name, status string) string  { return "" }
 func (h *refusingHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	return errors.New("no agent")
 }

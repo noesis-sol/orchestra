@@ -34,7 +34,7 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 - **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, tickets picked up out of the limit, and how many are still ready. The branch and how long the run has gone are on the title line.
 - **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
-- **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 2 seconds.
+- **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 3 seconds.
 
 When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see Organs).
 

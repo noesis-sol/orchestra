@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -573,7 +574,7 @@ func (upToDate) FastForward(repo, branch string) (string, error)       { return 
 type noAgents struct{}
 
 func (noAgents) Status(name string) (string, error)                    { return "gone", nil }
-func (noAgents) Screen(name string) string                             { return "" }
+func (noAgents) Screen(name, status string) string                     { return "" }
 func (noAgents) Prompt(ctx context.Context, name, prompt string) error { return nil }
 func (noAgents) SendKeys(name string, keys ...string) error            { return nil }
 func (noAgents) WaitStarted(ctx context.Context, name string) bool     { return true }
@@ -832,8 +833,14 @@ func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
 // Herdr call does.
 type scriptedAgents struct {
 	noAgents
-	script []string
-	reads  int
+	script  []string
+	reads   int
+	screens []string // the status each screen read was given
+}
+
+func (a *scriptedAgents) Screen(name, status string) string {
+	a.screens = append(a.screens, status)
+	return ""
 }
 
 func (a *scriptedAgents) Status(name string) (string, error) {
@@ -863,7 +870,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now()); stop != nil {
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	if a.reads != 4 {
@@ -874,13 +881,29 @@ func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	}
 }
 
+// Each poll of a busy worker reads its status once, and its screen once, knowing the status: two
+// Herdr calls, where a second status read for the dashboard and a failed scrollback read made four.
+func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
+	o, a, _ := newSettleLoop(t, "working", "blocked", "working")
+	w := o.newWatcher("wt", Status{Ticket: "A"})
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), w.report); stop != nil {
+		t.Fatalf("stopped: %s", stop.text)
+	}
+	if a.reads != 4 {
+		t.Errorf("read the status %d times, want 4: once a poll", a.reads)
+	}
+	if want := []string{"working", "blocked", "working"}; !slices.Equal(a.screens, want) {
+		t.Errorf("screen reads were given %q, want %q: once a poll with the worker, none once it is gone", a.screens, want)
+	}
+}
+
 func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 	script := make([]string, maxFailedReads+5)
 	for i := range script {
 		script[i] = "unreadable"
 	}
 	o, a, _ := newSettleLoop(t, script...)
-	stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now())
+	stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil)
 	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
 		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 	}
@@ -941,7 +964,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 type promptAgents struct{ promptErr error }
 
 func (promptAgents) Status(name string) (string, error) { return "gone", nil }
-func (promptAgents) Screen(name string) string          { return "" }
+func (promptAgents) Screen(name, status string) string  { return "" }
 func (a promptAgents) Prompt(ctx context.Context, name, prompt string) error {
 	return a.promptErr
 }
@@ -1143,7 +1166,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 	}
 	o, _, logPath := newSettleLoop(t, script...)
 	o.wait.longRun = 5 * time.Millisecond
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now()); stop != nil {
+	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	var warned []string

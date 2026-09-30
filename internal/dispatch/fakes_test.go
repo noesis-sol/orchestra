@@ -444,7 +444,7 @@ func (h *fakeHerdr) Status(name string) (string, error) {
 	return "gone", nil
 }
 
-func (h *fakeHerdr) Screen(name string) string { return "" }
+func (h *fakeHerdr) Screen(name, status string) string { return "" }
 
 func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	h.mu.Lock()

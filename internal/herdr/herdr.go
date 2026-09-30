@@ -242,13 +242,16 @@ func (t Terminal) Status(name string) (string, error) {
 	return st, err
 }
 
-// Screen returns the end of the agent's terminal. Herdr can capture scrollback only while
-// the agent is idle, so while it works this falls back to the visible screen.
-func (t Terminal) Screen(name string) string {
-	out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
-	if err != nil {
-		out, _ = command.Output("", "herdr", "agent", "read", name, "--source", "visible")
+// Screen returns the end of the agent's terminal, given its status as just read ("" if not known).
+// Herdr can capture scrollback only while the agent is idle, so for a working or blocked agent this
+// reads the visible screen at once, and otherwise falls back to it when scrollback fails.
+func (t Terminal) Screen(name, status string) string {
+	if status != "working" && status != "blocked" {
+		if out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
+			return out
+		}
 	}
+	out, _ := command.Output("", "herdr", "agent", "read", name, "--source", "visible")
 	return out
 }
 

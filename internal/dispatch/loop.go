@@ -984,7 +984,8 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return halt(ExitTool, "START_FAILED for %s in tab %s", id, tab)
 	}
 
-	stopWatch := o.watch(ctx, wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
+	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
+	stopWatch := o.watch(ctx, w)
 	defer stopWatch()
 
 	if !o.promptTaken(ctx, id, agent, prompt, launch != "") {
@@ -1003,10 +1004,10 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return nil
 	}
 
-	if stop := o.waitSettled(ctx, id, agent, tab, wt, started); stop != nil {
+	stopWatch() // the settle loop reports from here on
+	if stop := o.waitSettled(ctx, id, agent, tab, wt, started, w.report); stop != nil {
 		return stop
 	}
-	stopWatch()
 
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
 	// question is out of the queue until the maintainer answers; the run goes on without it.
@@ -1206,8 +1207,8 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 // resume before it counts as settled. A status Herdr fails to read says nothing about the worker,
 // so the wait goes on through maxFailedReads of them in a row before the run stops. A worker still
 // going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still going
-// after longRunning is reported once.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started time.Time) *stopReason {
+// after longRunning is reported once. Each status read goes to report (nil: none), for the dashboard.
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started time.Time, report func(status string)) *stopReason {
 	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
 	warned := false
@@ -1216,6 +1217,9 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			return errInterrupted
 		}
 		st, err := o.agents.Status(agent)
+		if report != nil {
+			report(st)
+		}
 		if err != nil {
 			if failed++; failed == 1 {
 				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
@@ -1344,7 +1348,7 @@ func keepWaiting(ticketStatus string, idleFor, grace time.Duration) bool {
 // it is delivered by pasting.
 func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if o.agents.WaitStarted(ctx, agent) || o.claimed(id) || lastActivity(o.agents.Screen(agent)) != "" {
+		if o.agents.WaitStarted(ctx, agent) || o.claimed(id) || lastActivity(o.agents.Screen(agent, "")) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -1436,7 +1440,7 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
-			if inputHolds(o.agents.Screen(agent), prompt) {
+			if inputHolds(o.agents.Screen(agent, st), prompt) {
 				o.agents.SendKeys(agent, "enter")
 				return o.agents.WaitStarted(ctx, agent)
 			}
@@ -1448,29 +1452,53 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 	return false
 }
 
-// watch reports the worker's status and latest action every 2 seconds until the returned stop
-// function is called; stop waits for the last report, so no update lands after it.
-func (o *Loop) watch(ctx context.Context, wt string, base Status) (stop func()) {
+// watcher shows a worker's status and latest action on the dashboard.
+type watcher struct {
+	o        *Loop
+	wt       string
+	base     Status
+	activity string // the latest action read, kept while the screen can't be
+}
+
+func (o *Loop) newWatcher(wt string, base Status) *watcher {
+	return &watcher{o: o, wt: wt, base: base}
+}
+
+// report shows the worker in status st, as just read, reading its screen for its latest action.
+func (w *watcher) report(st string) {
+	o := w.o
+	s := w.base
+	s.Agent = st
+	if st != "gone" && st != "unreadable" {
+		w.activity = lastActivity(o.agents.Screen(o.agentName(w.base.Ticket), st))
+	}
+	s.Activity = w.activity
+	if o.reporter != nil && st == "working" {
+		if u, ok := o.reporter.LastToolUse(w.wt); ok {
+			s.Doing = Doing(u, o.cfg.Check)
+		}
+	}
+	o.status(s)
+}
+
+// watch reads the worker's status every poll and reports it until the returned stop function is
+// called; stop waits for the last report, so no update lands after it. The settle loop reports the
+// status it reads itself, so the watcher is stopped before it starts: each poll reads the status
+// once.
+func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	agent := o.agentName(base.Ticket)
+	agent := o.agentName(w.base.Ticket)
 	go func() {
 		defer close(done)
-		tick := time.NewTicker(2 * time.Second)
+		tick := time.NewTicker(o.pollEvery())
 		defer tick.Stop()
 		for {
-			s := base
-			s.Agent, _ = o.agents.Status(agent) // the settle loop logs failures
-			s.Activity = lastActivity(o.agents.Screen(agent))
-			if o.reporter != nil && s.Agent == "working" {
-				if u, ok := o.reporter.LastToolUse(wt); ok {
-					s.Doing = Doing(u, o.cfg.Check)
-				}
-			}
+			st, _ := o.agents.Status(agent) // a failure shows as unreadable; the start logs its own
 			if ctx.Err() != nil {
 				return
 			}
-			o.status(s)
+			w.report(st)
 			select {
 			case <-ctx.Done():
 				return

@@ -54,7 +54,9 @@ type Agents interface {
 	// Status is idle, working, blocked, done, unknown, or gone (no such agent); if the terminal
 	// cannot be asked it is "unreadable", with the error, and says nothing about the agent.
 	Status(name string) (string, error)
-	Screen(name string) string
+	// Screen is the end of the worker's terminal, given its status as just read ("" if not known):
+	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
+	Screen(name, status string) string
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
