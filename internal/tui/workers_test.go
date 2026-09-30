@@ -29,7 +29,7 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 		}
 	}
 	plain := ansi.Strip(v)
-	for _, want := range []string{"kinieta-0", "kinieta-1", "kinieta-2", "workers 3/3"} {
+	for _, want := range []string{"kinieta-0", "kinieta-1", "kinieta-2", "Workers", "3 of 3"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("view lacks %q", want)
 		}

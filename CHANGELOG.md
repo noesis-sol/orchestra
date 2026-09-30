@@ -60,6 +60,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard's totals strip drops its "Picked up" column (N of LIMIT), and
+  the one-line form its `picked N/LIMIT` count: the tickets table lists every
+  ticket picked up. The `[3/40]` count in the log lines is unchanged.
+
 - Everything orchestra owns in a project lives in `.orchestra/`: the prompt
   (`worker-prompt.md`), the log (`orchestra.log`), reports (`reports/`) and
   per-ticket files (`run/`). Projects not yet set up with `orchestra init` keep

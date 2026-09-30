@@ -11,10 +11,10 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 ```
  Orchestra  v0.2.0   batch/2026-09-28 · 18m40s
-╭────────────┬───────────┬───────────┬───────────┬───────────┬───────────╮
-│ Completed  │ Deferred  │ Needs you │ Workers   │ Picked up │ In queue  │
-│ ✓ 2        │ ↷ 1 ◆ 1   │ 0         │ 1 of 3    │ 4 of 40   │ 12        │
-╰────────────┴───────────┴───────────┴───────────┴───────────┴───────────╯
+╭──────────────┬──────────────┬──────────────┬─────────────┬─────────────╮
+│ Completed    │ Deferred     │ Needs you    │ Workers     │ In queue    │
+│ ✓ 2          │ ↷ 1 ◆ 1      │ 0            │ 1 of 3      │ 12          │
+╰──────────────┴──────────────┴──────────────┴─────────────┴─────────────╯
 ╭────────────┬─────────────┬─────────────────────────────────────────────╮
 │ Tickets    │             │                                             │
 ├────────────┼─────────────┼─────────────────────────────────────────────┤
@@ -32,7 +32,7 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
   ctrl+c stops · the workers keep running
 ```
 
-- **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, tickets picked up out of the limit, and how many are still ready. The branch and how long the run has gone are on the title line.
+- **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, and how many are still ready. The branch and how long the run has gone are on the title line.
 - **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
 - **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 3 seconds.
 

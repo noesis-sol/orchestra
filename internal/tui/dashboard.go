@@ -91,7 +91,6 @@ type Dashboard struct {
 	spin        spinner.Model
 	active      map[string]dispatch.Status // running workers, by ticket
 	stopping    bool                       // something stopped the run; the running ones are finishing
-	n           int
 	closed      int
 	deferred    int
 	triaged     int
@@ -110,7 +109,7 @@ type Dashboard struct {
 
 func NewDashboard(cfg dispatch.Config, cancel func()) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel}
 }
 
 func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
@@ -146,7 +145,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.received++
 		switch ev.Kind {
 		case dispatch.EvDispatch:
-			m.n, m.queued = ev.N, ev.Queued
+			m.queued = ev.Queued
 			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
 		case dispatch.EvQueue:
 			m.queued = ev.Queued
@@ -271,7 +270,7 @@ func (m Dashboard) statsLine(w int) string {
 		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
 		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
 		dimStyle.Render("workers ") + pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
-		dimStyle.Render(fmt.Sprintf("picked %d/%d · queue %s", m.n, m.cfg.Limit, queued)),
+		dimStyle.Render("queue " + queued),
 	}
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }
@@ -465,13 +464,12 @@ func (m Dashboard) statsTable(w int) string {
 	if m.queued >= 0 {
 		queued = fmt.Sprint(m.queued)
 	}
-	labels := []string{"Completed", "Deferred", "Needs you", "Workers", "Picked up", "In queue"}
+	labels := []string{"Completed", "Deferred", "Needs you", "Workers", "In queue"}
 	values := []string{
 		count(m.closed, "✓", closedStyle),
 		deferred,
 		count(m.asked, "?", stopStyle),
 		pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" of %d", max(m.cfg.Concurrency, 1))),
-		pickedStyle.Render(fmt.Sprint(m.n)) + dimStyle.Render(fmt.Sprintf(" of %d", m.cfg.Limit)),
 		queued,
 	}
 	need := len(labels) + 1 // borders
