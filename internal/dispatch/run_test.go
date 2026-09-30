@@ -88,7 +88,13 @@ type deferringTickets struct {
 	once             *sync.Once
 }
 
-func (d deferringTickets) Ready() ([]Ticket, error) { return []Ticket{{ID: "A", Title: "a"}}, nil }
+func (d deferringTickets) Ready(string) ([]Ticket, error) {
+	return []Ticket{{ID: "A", Title: "a"}}, nil
+}
+func (deferringTickets) Unclosed() ([]Ticket, error) { return nil, nil }
+func (deferringTickets) Descendants(string) ([]Ticket, error) {
+	return nil, nil
+}
 func (deferringTickets) Show(id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "deferred"}, nil
 }

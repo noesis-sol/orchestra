@@ -53,6 +53,15 @@ All notable changes to orchestra are documented here. The format follows
   and each ticket was deferred in turn. `"environment_hold": {"count": 2,
   "window": "2m"}` in `.orchestra/settings.json` sets the thresholds; `"count":
   0` turns it off.
+- `orchestra --ticket <id>` (or `ORCHESTRA_TICKET`) runs one ticket and its
+  subtickets, at any depth, and nothing else: an epic and its children, say, or
+  a ticket someone broke up. Follow-ups filed as its children (`bd create
+  --parent <id>`, which workers are asked to use) join the run; others wait for
+  a later run, and the log and run report list them. The run ends with
+  `SCOPE_DONE` when everything in it is merged, or `SCOPE_OPEN` naming each
+  subticket not done and why (blocked outside the scope, set aside, waiting on
+  a question). An unknown, closed or question ticket is a setup problem. The
+  START line, the dashboard's title and the run report show the scope.
 - Tickets that touch the same code no longer run side by side. A ticket's
   footprint is what its text names (paths such as `internal/dispatch/merge.go`
   or `run.go`, checked against `git ls-files`, and functions such as
@@ -148,6 +157,11 @@ All notable changes to orchestra are documented here. The format follows
 - The built-in worker prompt tells workers never to stop processes by name or
   pattern (`pkill -f dispatch.test` from one worker ended another's check with
   `signal: terminated`), only the ones they started, by PID.
+- Parents run last: a ticket whose subtickets aren't all closed and merged
+  waits for them, in every run. It used to be dispatched, and its worker, unable
+  to close it while its children were open, ended paused or deferred. An epic
+  is still never dispatched; once its last subticket merges, the log says it
+  can be closed with `bd close <id>`.
 - The dashboard's totals strip drops its "Picked up" column (N of LIMIT), and
   the one-line form its `picked N/LIMIT` count: the tickets table lists every
   ticket picked up. The `[3/40]` count in the log lines is unchanged.

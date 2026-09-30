@@ -147,18 +147,30 @@ func (o *Loop) reviewInput(code int, final string) string {
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(o.agentName(st.Ticket), ""), 60))
 	}
-	ready, _ := o.tickets.Ready()
+	ready, _ := o.tickets.Ready(c.Ticket)
 	meaning := exitMeaning(code)
 	if strings.HasPrefix(final, "DRAINED") {
 		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
 	}
-	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
-		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning, final) +
+	scope, outside := "Run", ""
+	if c.Ticket != "" {
+		scope = fmt.Sprintf("Run of ticket %s and its subtickets only", c.Ticket)
+		if subs, err := o.tickets.Descendants(c.Ticket); err == nil {
+			if filed, err := o.filedOutside(subs); err == nil {
+				for _, t := range filed {
+					outside += o.tickets.Describe(t.ID) + "\n"
+				}
+				outside = organ.Section(fmt.Sprintf("Follow-ups filed in this run outside the scope of %s, left for a later run", c.Ticket), outside)
+			}
+		}
+	}
+	return fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
+		scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning, final) +
 		organ.Section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section("Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		organ.Section("Tickets in progress when the run stopped", stopped.String()) +
-		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready)))
+		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready))) + outside
 }
 
 // Review has the reviewer write the run report.
@@ -167,8 +179,8 @@ func (o *Loop) Review(ctx context.Context, code int, final string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
-		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(result)), nil
+	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n", o.started.Format("2006-01-02"),
+		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg.Ticket), strings.TrimSpace(result)), nil
 }
 
 // SaveReport writes the run report to the reports folder and returns its path.
@@ -187,7 +199,7 @@ func (o *Loop) SaveReport(report string) (string, error) {
 func exitMeaning(code int) string {
 	switch code {
 	case ExitOK:
-		return "the queue was empty or the limit was reached"
+		return "the queue was empty or the limit was reached; a run of one ticket says in its final line whether all of it is merged"
 	case ExitStuck:
 		return "a worker was blocked, paused or ran past its time limit and needs attention"
 	case ExitTool:

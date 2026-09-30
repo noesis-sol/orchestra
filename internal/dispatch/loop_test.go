@@ -40,7 +40,9 @@ func (noTabs) CloseTab(tab string) {}
 
 type readyTickets []Ticket
 
-func (r readyTickets) Ready() ([]Ticket, error)            { return r, nil }
+func (r readyTickets) Ready(string) ([]Ticket, error)      { return r, nil }
+func (readyTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
+func (readyTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
 func (readyTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "open"}, nil }
 func (readyTickets) Status(id string) (string, error)      { return "open", nil }
 func (readyTickets) Describe(id string) string             { return id }
@@ -94,7 +96,9 @@ var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  
 // brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
 type brokenBd []Ticket
 
-func (b brokenBd) Ready() ([]Ticket, error)              { return b, nil }
+func (b brokenBd) Ready(string) ([]Ticket, error)        { return b, nil }
+func (brokenBd) Unclosed() ([]Ticket, error)             { return nil, nil }
+func (brokenBd) Descendants(string) ([]Ticket, error)    { return nil, nil }
 func (brokenBd) Show(id string) (Ticket, error)          { return Ticket{ID: id, Status: "unknown"}, errBd }
 func (brokenBd) Status(id string) (string, error)        { return "unknown", errBd }
 func (brokenBd) Describe(id string) string               { return id }

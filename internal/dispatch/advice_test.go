@@ -70,7 +70,9 @@ func TestLiveOrgans(t *testing.T) {
 // can't use it).
 type liveTickets struct{ repo string }
 
-func (l liveTickets) Ready() ([]Ticket, error)              { return nil, nil }
+func (l liveTickets) Ready(string) ([]Ticket, error)        { return nil, nil }
+func (l liveTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
+func (l liveTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
 func (l liveTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id}, nil }
 func (l liveTickets) Status(id string) (string, error)      { return "unknown", nil }
 func (l liveTickets) Closed(label string) ([]Ticket, error) { return nil, nil }

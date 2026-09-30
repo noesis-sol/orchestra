@@ -683,11 +683,12 @@ func shortVersion(v string) string {
 	return base + "-dev " + hash + dirty
 }
 
-// titleLine is the Orchestra pill, the version, the branch and how long the run has gone, the
-// solo ticket running alone or next, and whether the run is stopping.
+// titleLine is the Orchestra pill, the version, the branch, the ticket a scoped run works on and
+// how long the run has gone, the solo ticket running alone or next, and whether the run is
+// stopping.
 func (m Dashboard) titleLine(w int) string {
 	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + "   " +
-		dimStyle.Render(fmt.Sprintf("%s · %s", m.cfg.Base, time.Since(m.began).Truncate(time.Second)))
+		dimStyle.Render(fmt.Sprintf("%s%s · %s", m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
 	switch {
 	case m.solo.Next:
 		line += deferredStyle.Render("  · solo " + m.solo.Ticket + " next")

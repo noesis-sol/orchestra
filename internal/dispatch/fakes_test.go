@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -34,6 +35,9 @@ func newFakeBeads() *fakeBeads {
 	return &fakeBeads{tickets: map[string]*Ticket{}, links: map[string][]fakeLink{}, notes: map[string][]string{}}
 }
 
+// filedBefore is when the tickets a test adds were filed: before any run.
+const filedBefore = "2026-01-01T00:00:00Z"
+
 func (b *fakeBeads) add(id, title string, prio int, labels ...string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -43,8 +47,28 @@ func (b *fakeBeads) add(id, title string, prio int, labels ...string) {
 // addLocked adds a ticket. The caller holds mu: holding it across several makes them one change,
 // which a read of bd ready sees all of or none of.
 func (b *fakeBeads) addLocked(id, title string, prio int, labels ...string) {
-	b.tickets[id] = &Ticket{ID: id, Title: title, Status: "open", IssueType: "task", Priority: &prio, Labels: labels}
+	b.tickets[id] = &Ticket{ID: id, Title: title, Status: "open", IssueType: "task", Priority: &prio, Labels: labels, CreatedAt: filedBefore}
 	b.order = append(b.order, id)
+}
+
+// sub adds a subticket of parent, as bd create --parent does: filed now, linked parent-child.
+func (b *fakeBeads) sub(id, parent, title string, prio int, labels ...string) {
+	b.add(id, title, prio, labels...)
+	b.mu.Lock()
+	b.tickets[id].Parent = parent
+	b.tickets[id].CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	b.mu.Unlock()
+	b.link(id, parent, "parent-child")
+}
+
+// under reports whether id descends from root. The caller holds mu.
+func (b *fakeBeads) under(id, root string) bool {
+	for p := b.tickets[id].Parent; p != ""; p = b.tickets[p].Parent {
+		if p == root {
+			return true
+		}
+	}
+	return false
 }
 
 // link makes id depend on on.
@@ -66,13 +90,13 @@ func (b *fakeBeads) notesOf(id string) string {
 	return strings.Join(b.notes[id], "\n")
 }
 
-func (b *fakeBeads) Ready() ([]Ticket, error) {
+func (b *fakeBeads) Ready(scope string) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var ready []Ticket
 	for _, id := range b.order {
 		t := b.tickets[id]
-		if t.Status != "open" || t.IssueType == "epic" || HasLabel(*t, HumanLabel) {
+		if t.Status != "open" || t.IssueType == "epic" || HasLabel(*t, HumanLabel) || scope != "" && id != scope && !b.under(id, scope) {
 			continue
 		}
 		blocked, blockers := false, 0
@@ -90,6 +114,30 @@ func (b *fakeBeads) Ready() ([]Ticket, error) {
 	}
 	sort.SliceStable(ready, func(i, j int) bool { return *ready[i].Priority < *ready[j].Priority })
 	return ready, nil
+}
+
+func (b *fakeBeads) Unclosed() ([]Ticket, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var open []Ticket
+	for _, id := range b.order {
+		if t := b.tickets[id]; t.Status != "closed" {
+			open = append(open, *t)
+		}
+	}
+	return open, nil
+}
+
+func (b *fakeBeads) Descendants(root string) ([]Ticket, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var subs []Ticket
+	for _, id := range b.order {
+		if b.under(id, root) {
+			subs = append(subs, *b.tickets[id])
+		}
+	}
+	return subs, nil
 }
 
 func (b *fakeBeads) Show(id string) (Ticket, error) {

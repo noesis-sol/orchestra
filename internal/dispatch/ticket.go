@@ -19,6 +19,8 @@ type Ticket struct {
 	// (bd show counts every link); nil when bd doesn't say. It changes when a blocks link is added
 	// or removed.
 	DependencyCount *int `json:"dependency_count"`
+	// Parent is the ticket this one is a subticket of (a parent-child link), or "".
+	Parent string `json:"parent"`
 
 	// The ticket's text and custom metadata, which say where it works (its Footprint).
 	Description        string          `json:"description"`

@@ -2,12 +2,16 @@ package dispatch
 
 import "fmt"
 
-// held reports whether a ready ticket must wait for a ticket blocking it, saying why once. Workers
-// close their ticket before it merges, and bd ready counts a closed blocker as done, but until the
-// blocker merges its code is not on Base, which the ticket's worktree is cut from.
-func (o *Loop) held(t Ticket, running map[string]bool) bool {
+// held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
+// saying why once. Workers close their ticket before it merges, and bd ready counts a closed
+// blocker as done, but until the blocker merges its code is not on Base, which the ticket's
+// worktree is cut from. A parent in parents (see openParents) runs last: its worker couldn't close
+// it while it has open children, and its work builds on theirs.
+func (o *Loop) held(t Ticket, running, parents map[string]bool) bool {
 	why := ""
-	if len(running) > 0 || o.anyUnmerged() {
+	if parents[t.ID] {
+		why = "its subtickets are not all closed and merged"
+	} else if len(running) > 0 || o.anyUnmerged() {
 		why = o.waitsFor(t, running)
 	}
 	o.mu.Lock()
@@ -108,6 +112,7 @@ func (o *Loop) loadUnmerged() *stopReason {
 		}
 		o.info("  %s was left unmerged by an earlier run; tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
 			id, br, c.Base, UnmergedLabel)
+		o.setParent(id, t.Parent)
 		o.mu.Lock()
 		if o.unmerged == nil {
 			o.unmerged = map[string]string{}

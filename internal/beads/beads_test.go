@@ -156,14 +156,14 @@ func TestOnlyABlocksLinkIsAQuestion(t *testing.T) {
 func TestParseClosedKeepsOnlyClosedTickets(t *testing.T) {
 	raw := `{"schema_version":1,"data":[{"id":"k-1","status":"closed","labels":["unmerged"]},
 	         {"id":"k-2","status":"open","labels":["unmerged"]}]}`
-	got, err := parseClosed([]byte(raw))
+	got, err := parseList([]byte(raw), "closed")
 	if err != nil || len(got) != 1 || got[0].ID != "k-1" || !dispatch.HasLabel(got[0], dispatch.UnmergedLabel) {
 		t.Errorf("got %+v %v", got, err)
 	}
-	if got, err := parseClosed([]byte(`{"data":[],"schema_version":1}`)); err != nil || len(got) != 0 {
+	if got, err := parseList([]byte(`{"data":[],"schema_version":1}`), "closed"); err != nil || len(got) != 0 {
 		t.Errorf("empty: %v %v", got, err)
 	}
-	if _, err := parseClosed([]byte(`not json`)); err == nil {
+	if _, err := parseList([]byte(`not json`), "closed"); err == nil {
 		t.Error("garbage should be an error")
 	}
 }

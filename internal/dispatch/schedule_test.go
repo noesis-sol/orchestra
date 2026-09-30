@@ -60,7 +60,7 @@ type onceReady struct {
 	calls *atomic.Int32
 }
 
-func (o onceReady) Ready() ([]Ticket, error) {
+func (o onceReady) Ready(string) ([]Ticket, error) {
 	if o.calls.Add(1) == 1 {
 		return []Ticket{{ID: "A"}}, nil
 	}
@@ -105,7 +105,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 // unreadableReady can't list the ready queue.
 type unreadableReady struct{ brokenBd }
 
-func (unreadableReady) Ready() ([]Ticket, error) { return nil, errBd }
+func (unreadableReady) Ready(string) ([]Ticket, error) { return nil, errBd }
 
 func TestReadyUnreadableSaysWhy(t *testing.T) {
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")

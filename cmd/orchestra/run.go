@@ -90,10 +90,9 @@ type options struct {
 	WorkerPrompt string
 	Notify       bool
 	Plain        bool
-	Triage       bool     // triage organ on each deferred ticket
-	Review       bool     // reviewer organ when the loop stops
-	OrganModel   string   // model for the organs; "" uses the claude CLI's default
-	ExcludeTypes []string // issue types never taken from bd ready, from .orchestra/settings.json
+	Triage       bool   // triage organ on each deferred ticket
+	Review       bool   // reviewer organ when the loop stops
+	OrganModel   string // model for the organs; "" uses the claude CLI's default
 	showVersion  bool
 }
 
@@ -129,11 +128,12 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit, "stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none (default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
 	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
 	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout, "stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m (default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"), "work on this ticket and its subtickets only, each parent after its children; nothing else is started [ORCHESTRA_TICKET]")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n       orchestra plan [--apply]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n       orchestra plan [--apply]\n\nWork through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -254,6 +254,10 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		}
 		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" {
+			if p := scopeProblem(beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+				problems = append(problems, p)
+			}
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
@@ -279,6 +283,23 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		}
 	}
 	return c, problems, nil
+}
+
+// scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
+// must exist, be open and be work rather than a question for the maintainer.
+func scopeProblem(tickets interface {
+	Show(id string) (dispatch.Ticket, error)
+}, id string) string {
+	t, err := tickets.Show(id)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("Cannot read ticket %s (--ticket): %s", id, strings.Join(strings.Fields(err.Error()), " "))
+	case t.Status == "closed":
+		return fmt.Sprintf("Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
+	case dispatch.HasLabel(t, dispatch.HumanLabel):
+		return fmt.Sprintf("Ticket %s (--ticket) is a question for you (label %s), not work. Answer it with: bd human respond %s", id, dispatch.HumanLabel, id)
+	}
+	return ""
 }
 
 // within reports whether path is dir or inside it, following symlinks (path need not exist yet)

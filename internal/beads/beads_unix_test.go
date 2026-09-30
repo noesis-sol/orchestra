@@ -29,7 +29,7 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 			t.Errorf("%s: error %v, want bd's stderr", what, err)
 		}
 	}
-	_, err := b.Ready()
+	_, err := b.Ready("")
 	check("Ready", err)
 	tk, err := b.Show("k-1")
 	check("Show", err)
@@ -76,7 +76,7 @@ func TestReadyPassesTheExcludedTypesToBd(t *testing.T) {
 		{[]string{"epic", "decision"}, "--exclude-type epic,decision"},
 		{nil, ""},
 	} {
-		if _, err := (Tracker{Repo: t.TempDir(), ExcludeTypes: c.types}).Ready(); err != nil {
+		if _, err := (Tracker{Repo: t.TempDir(), ExcludeTypes: c.types}).Ready(""); err != nil {
 			t.Fatal(err)
 		}
 		b, _ := os.ReadFile(args)

@@ -8,11 +8,13 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready() ([]Ticket, error)              // open, ready tickets, highest priority first
-	Show(id string) (Ticket, error)        // with dependencies; Status "unknown" and the cause if unreadable
-	Status(id string) (string, error)      // "unknown" and the cause if unreadable
-	Describe(id string) string             // as a person reads it, for the organs' evidence
-	Closed(label string) ([]Ticket, error) // closed tickets carrying the label
+	Ready(scope string) ([]Ticket, error)    // open, ready tickets, highest priority first; with a scope, only it and its descendants
+	Unclosed() ([]Ticket, error)             // every ticket not closed, with its parent
+	Descendants(id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
+	Show(id string) (Ticket, error)          // with dependencies; Status "unknown" and the cause if unreadable
+	Status(id string) (string, error)        // "unknown" and the cause if unreadable
+	Describe(id string) string               // as a person reads it, for the organs' evidence
+	Closed(label string) ([]Ticket, error)   // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.

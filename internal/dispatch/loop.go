@@ -15,7 +15,7 @@ import (
 
 // Exit codes, unchanged from orchestrate.sh.
 const (
-	ExitOK          = 0   // nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked
+	ExitOK          = 0   // nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked; a scoped run says whether its scope is done
 	ExitSetup       = 2   // setup problem found before starting
 	ExitStuck       = 3   // a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past the ticket limit
 	ExitTool        = 4   // Herdr, Beads or git failure
@@ -73,6 +73,8 @@ type Loop struct {
 	holdSaid  map[string]string     // why each held ticket waits, as last said
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
 	askedIDs  map[string]bool       // tickets set aside in this run to wait on a question
+	parentOf  map[string]string     // the parent of each ticket dispatched or left unmerged, which waits for it
+	doneSaid  map[string]bool       // parents said to be ready to close
 
 	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
 	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
@@ -259,6 +261,8 @@ type Config struct {
 	Version      string        // orchestra's version, for the log
 	NoFootprint  bool          // start tickets side by side even when their footprints overlap
 	Predict      bool          // have the predictor organ guess the files of ready tickets naming none
+	Ticket       string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
+	ExcludeTypes []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.
 	EnvHoldCount int

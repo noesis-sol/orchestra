@@ -41,29 +41,34 @@ func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 			open = append(open, t)
 		}
 	}
+	byPriority(open)
+	return open, nil
+}
+
+// byPriority sorts tickets highest priority (lowest number) first, keeping bd's order otherwise.
+func byPriority(ts []dispatch.Ticket) {
 	prio := func(t dispatch.Ticket) int {
 		if t.Priority == nil {
 			return 9
 		}
 		return *t.Priority
 	}
-	sort.SliceStable(open, func(i, j int) bool { return prio(open[i]) < prio(open[j]) })
-	return open, nil
+	sort.SliceStable(ts, func(i, j int) bool { return prio(ts[i]) < prio(ts[j]) })
 }
 
-// parseClosed returns the closed tickets from 'bd list --json'.
-func parseClosed(raw []byte) ([]dispatch.Ticket, error) {
+// parseList returns the tickets from 'bd list --json'; with status, only those in it.
+func parseList(raw []byte, status string) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
 	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
 		return nil, err
 	}
-	var closed []dispatch.Ticket
+	var kept []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == "closed" {
-			closed = append(closed, t)
+		if status == "" || t.Status == status {
+			kept = append(kept, t)
 		}
 	}
-	return closed, nil
+	return kept, nil
 }
 
 // parseOpen returns the open tickets from 'bd list --json', leaving out questions for the
@@ -110,14 +115,34 @@ type Tracker struct {
 // Ready returns the open tickets bd considers ready, highest priority first; questions for the
 // maintainer and tickets of the excluded types are left out. bd filters them and parseReady filters
 // again, and the query has no limit, so work behind more than bd's default 100 ready entries is
-// still seen. Like the bash version it judges by the output; when that can't be read, the error
-// carries bd's stderr.
-func (b Tracker) Ready() ([]dispatch.Ticket, error) {
+// still seen. With a scope, only that ticket and its descendants (bd ready --parent) are returned.
+// Like the bash version it judges by the output; when that can't be read, the error carries bd's
+// stderr.
+func (b Tracker) Ready(scope string) ([]dispatch.Ticket, error) {
+	all, err := b.ready()
+	if err != nil || scope == "" {
+		return all, err
+	}
+	under, err := b.ready("--parent", scope)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range all {
+		if t.ID == scope {
+			under = append(under, t)
+		}
+	}
+	byPriority(under)
+	return under, nil
+}
+
+// ready runs bd ready with the filters every read uses and these extra arguments.
+func (b Tracker) ready(extra ...string) ([]dispatch.Ticket, error) {
 	args := []string{"ready", "--json", "--limit", "0", "--exclude-label", dispatch.HumanLabel}
 	if len(b.ExcludeTypes) > 0 {
 		args = append(args, "--exclude-type", strings.Join(b.ExcludeTypes, ","))
 	}
-	out, runErr := command.Output(b.Repo, "bd", args...)
+	out, runErr := command.Output(b.Repo, "bd", append(args, extra...)...)
 	ready, err := parseReady([]byte(out), b.ExcludeTypes)
 	switch {
 	case err != nil && runErr != nil:
@@ -131,15 +156,48 @@ func (b Tracker) Ready() ([]dispatch.Ticket, error) {
 // Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
 // carries bd's stderr.
 func (b Tracker) Closed(label string) ([]dispatch.Ticket, error) {
-	out, runErr := command.Output(b.Repo, "bd", "list", "--json", "--status", "closed", "--label", label, "--limit", "0")
-	closed, err := parseClosed([]byte(out))
+	return b.list("closed", "--status", "closed", "--label", label)
+}
+
+// Unclosed returns every ticket that isn't closed, without its text: what the loop needs is each
+// one's parent.
+func (b Tracker) Unclosed() ([]dispatch.Ticket, error) {
+	return b.list("", "--brief")
+}
+
+// Descendants returns the ticket's subtickets, their subtickets and so on, closed or not, without
+// their text. bd lists one level at a time.
+func (b Tracker) Descendants(id string) ([]dispatch.Ticket, error) {
+	var all []dispatch.Ticket
+	seen := map[string]bool{id: true}
+	for queue := []string{id}; len(queue) > 0; queue = queue[1:] {
+		children, err := b.list("", "--all", "--brief", "--parent", queue[0])
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range children {
+			if !seen[c.ID] {
+				seen[c.ID] = true
+				all = append(all, c)
+				queue = append(queue, c.ID)
+			}
+		}
+	}
+	return all, nil
+}
+
+// list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
+// ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
+func (b Tracker) list(status string, args ...string) ([]dispatch.Ticket, error) {
+	out, runErr := command.Output(b.Repo, "bd", append([]string{"list", "--json", "--limit", "0"}, args...)...)
+	tickets, err := parseList([]byte(out), status)
 	switch {
 	case err != nil && runErr != nil:
 		return nil, runErr
 	case err != nil:
 		return nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
 	}
-	return closed, nil
+	return tickets, nil
 }
 
 // Open returns the open tickets, leaving out questions for the maintainer and tickets of the

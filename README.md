@@ -96,6 +96,23 @@ orchestra
 
 Epics are never dispatched: their children are the work. `"exclude_types"` in `settings.json` lists the issue types a run leaves out of `bd ready`, for a project with other container or non-work types, for example `["epic", "decision", "milestone"]`; without it, only `epic` is left out, and `[]` dispatches every type.
 
+Parents run last. A ticket with subtickets (`bd create --parent <id>`) that aren't all closed and merged waits for them, logged once as `<id> waits: its subtickets are not all closed and merged`: its worker couldn't close it before they are, and its work builds on theirs. An epic is never dispatched; once its last subticket merges, the log says `all of <id>'s subtickets are merged; close it with: bd close <id>`. orchestra doesn't close it itself.
+
+### One ticket and its subtickets
+
+```
+orchestra --ticket CalendarView-bl0
+```
+
+`--ticket <id>` (or `ORCHESTRA_TICKET=<id>`) runs that ticket and its descendants (children, grandchildren, …) and nothing else: the queue is `bd ready --parent <id>` plus the ticket itself, with the usual filters, holds and priority order, each parent after its children. A ticket without subtickets is a run of one. An unknown ticket, a closed one or a question (label `human`) is a setup problem. The START line and the dashboard's title line show the scope (`· ticket <id>`), and so does the run report.
+
+Workers are told to file follow-ups that belong to the work as children of `<id>`, and those join the run; anything filed otherwise waits for a later run, and the log and the run report list it. `--limit`, `--concurrent` and the rest apply as usual. The run ends as any other, with `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, followed by whether the scope is finished:
+
+- `SCOPE_DONE: <id> and its 3 subtickets are merged`, or for an epic, `SCOPE_DONE: <id>'s 3 subtickets are merged; close it with: bd close <id>`;
+- `SCOPE_OPEN: <id>: 2 of its 5 subtickets not done: <id>.2 (blocked by other-7 outside the scope), <id>.4 (waiting on your answer to <question>)`, naming why each isn't: set aside in this run, deferred, closed but not merged, waiting for its own subtickets, not started.
+
+Both exit with 0.
+
 ## Several tickets at once
 
 With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:
@@ -119,7 +136,7 @@ Start at 1, and raise it once the checks run cleanly side by side.
 
 ## Worker prompt
 
-Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. `orchestra init` writes it from [`internal/project/worker-prompt.md`](internal/project/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
+Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. In a `--ticket` run, orchestra adds a line asking the worker to file follow-ups that belong to the work as children of that ticket, so they join the run (not for the ticket's own worker, which runs last). `orchestra init` writes it from [`internal/project/worker-prompt.md`](internal/project/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
 
 - **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
 - **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.
@@ -157,7 +174,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 
 | Code | Meaning |
 |---|---|
-| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`) |
+| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`) |
 | 2 | setup problem found before starting (all problems are listed) |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure |
@@ -197,6 +214,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `settle.go` | waiting for a worker to settle, reading its status, the dashboard watcher |
 | `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup |
 | `holds.go` | tickets held for an unmerged blocker, the `unmerged` label, tickets set aside, deferred or waiting on a question |
+| `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |
 | `events.go` | the log file, notifications, events and status sent to the dashboard |

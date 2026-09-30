@@ -99,6 +99,14 @@ going that long after dispatch; `0` for none, overriding `settings.json`), `--ch
 `ORCHESTRA_CHECK_TIMEOUT` (the check's time limit, overriding `settings.json`). `orchestra -h` lists
 them all.
 
+When the user wants one piece of work finished (an epic and its children, a ticket broken into
+subtickets) rather than the whole backlog, run `orchestra --ticket <id>` (or `ORCHESTRA_TICKET`):
+only that ticket and its descendants are dispatched, each parent after its children, and follow-ups
+join only when filed as its children (`bd create --parent <id>`). An epic is never dispatched;
+orchestra says when it can be closed (`bd close <id>`) but doesn't close it. In every run, a ticket
+with subtickets not yet closed and merged waits for them (`<id> waits: its subtickets are not all
+closed and merged`).
+
 With several at once, a ticket labelled `solo` runs with no other beside it. Suggest the label
 (`bd label add <id> solo`) for a ticket that restructures code most tickets touch, such as splitting
 a shared file: run next to other work, it guarantees merge conflicts.
@@ -151,6 +159,8 @@ then the tickets. The final log line and the exit code say why the run ended:
 |---|---|---|---|
 | `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached | Read the report; the next step is usually the batch PR. |
 | `DRAINED`, after a `DRAIN: stopping after …` line | 0 | the user pressed s in the dashboard (or orchestra got SIGUSR1): no new tickets started, the running ones finished and merged | As for `READY_EMPTY`; the queue may still hold tickets for the next run. A `DRAIN cancelled` line means the user took it back. |
+| `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
+| `…; SCOPE_OPEN: …` | 0 | a `--ticket` run with subtickets not done; each is named with why | Handle each reason: answer a question, merge or rebase an unmerged one, unblock or rerun. The report lists follow-ups filed outside the scope. |
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |

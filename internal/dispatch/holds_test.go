@@ -15,7 +15,9 @@ type fakeTickets struct {
 	shown map[string]Ticket
 }
 
-func (f fakeTickets) Ready() ([]Ticket, error) { return f.ready, nil }
+func (f fakeTickets) Ready(string) ([]Ticket, error)       { return f.ready, nil }
+func (f fakeTickets) Unclosed() ([]Ticket, error)          { return nil, nil }
+func (f fakeTickets) Descendants(string) ([]Ticket, error) { return nil, nil }
 func (f fakeTickets) Show(id string) (Ticket, error) {
 	if t, ok := f.shown[id]; ok {
 		return t, nil

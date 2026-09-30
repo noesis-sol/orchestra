@@ -55,7 +55,8 @@ type result struct {
 	stop *stopReason
 }
 
-// Run works through bd ready with up to Concurrency workers at a time and returns the exit code.
+// Run works through bd ready (in a scoped run, one ticket and its descendants) with up to
+// Concurrency workers at a time and returns the exit code.
 func (o *Loop) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
@@ -65,8 +66,8 @@ func (o *Loop) Run(ctx context.Context) int {
 	if c.TicketLimit > 0 {
 		ticketLimit = ShortDuration(c.TicketLimit)
 	}
-	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
-		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
+	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
+		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
 	if s := o.loadUnmerged(); s != nil {
 		return o.stop(s.code, "%s", s.text)
 	}
@@ -127,6 +128,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 			o.count++
 			inflight[t.ID] = true
+			o.setParent(t.ID, t.Parent)
 			how := "dispatching"
 			if HasLabel(*t, SoloLabel) {
 				o.solo, how = t.ID, "dispatching solo"
@@ -154,6 +156,9 @@ func (o *Loop) Run(ctx context.Context) int {
 			o.endFootprint(r.id)
 			if r.id == o.solo {
 				o.solo = ""
+			}
+			if r.stop == nil {
+				o.parentDone(r.id, inflight)
 			}
 			if r.stop == nil || r.stop == errInterrupted {
 				continue
@@ -204,11 +209,11 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 		return o.stop(stop.code, "%s", text)
 	case drained:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count)})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope()})
 	case o.count >= c.Limit:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope()})
 	default:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count)})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope()})
 	}
 	return ExitOK
 }
@@ -244,7 +249,11 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	}
 	t, queued, err := o.pick(running)
 	if err != nil {
-		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read 'bd ready --json'%s", because(err))
+		what := "'bd ready --json'"
+		if errors.As(err, new(listUnreadable)) {
+			what = "'bd list --json'"
+		}
+		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read %s%s", what, because(err))
 	}
 	return t, queued, nil
 }
@@ -271,10 +280,15 @@ func (o *Loop) soloState() SoloState {
 	return SoloState{}
 }
 
-// pick reads bd ready and returns the highest-priority ticket that can start, with how many others
-// could; with none, how many wait for a solo ticket. It says once why they wait.
+// pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
+// ticket that can start, with how many others could; with none, how many wait for a solo ticket.
+// It says once why they wait.
 func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
-	ready, err := o.tickets.Ready()
+	ready, err := o.tickets.Ready(o.cfg.Ticket)
+	if err != nil {
+		return nil, 0, err
+	}
+	parents, err := o.openParents(running)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -303,7 +317,7 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	if o.footprintOn() {
 		o.queuePredictions(ready, skip)
 	}
-	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running) || overlaps(t) }, len(running), o.solo)
+	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running, parents) || overlaps(t) }, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway.
 	if !slot {

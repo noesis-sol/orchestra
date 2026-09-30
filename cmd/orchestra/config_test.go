@@ -26,7 +26,7 @@ func configFixture(t *testing.T, settings string) string {
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
-		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE"} {
+		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE", "ORCHESTRA_TICKET"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("HERDR_ENV", "1")
