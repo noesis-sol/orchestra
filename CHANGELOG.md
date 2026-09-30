@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra init` sets up `.orchestra/` in a project: the worker prompt from
+  the built-in template (`-check` fills in the check command) or moved from
+  `.claude/worker-prompt.md`, a `.gitignore`, and a check of `bd`, `.beads`,
+  `herdr` and `claude`. It never replaces an existing prompt without `-force`.
+
 - Questions for the maintainer. A worker that needs a decision asks it as its
   own ticket, labelled `human`, that blocks the work ticket, and stops. The
   orchestrator never dispatches a question, shows the ticket as "? for you"
@@ -18,9 +23,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Everything orchestra owns in a project lives in `.orchestra/`: the prompt
+  (`worker-prompt.md`), the log (`orchestra.log`), reports (`reports/`) and
+  per-ticket files (`run/`). Projects not yet set up with `orchestra init` keep
+  using their `.claude/` files. The per-ticket launch prompt moves to
+  `.orchestra/run/prompt.md`; the old `/.orchestra/` entry in `info/exclude`,
+  which would hide the committed prompt, is narrowed to `/.orchestra/run/`.
+
 - Claude workers start with their prompt instead of having it pasted in. The
-  prompt goes to `.orchestra/prompt.md` in the ticket's worktree (kept out of
-  git through the repository's `info/exclude`), and the worker is started with
+  prompt goes to a file in the ticket's worktree (kept out of git), and the
+  worker is started with
   a one-line instruction to follow it; Herdr can't pass line breaks.
   `-prompt-at-launch=false` / `PROMPT_AT_LAUNCH=0` pastes it as before.
 - An idle worker whose ticket is still in progress gets 10 minutes to resume

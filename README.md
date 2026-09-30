@@ -40,16 +40,16 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see Organs).
 
-Everything is also appended to `.claude/orchestrate.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view.
+Everything is also appended to `.orchestra/orchestra.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view.
 
 ## Organs
 
 Organs are LLM-powered steps. The orchestrator gathers the evidence itself and passes it to `claude -p` with every built-in tool and MCP server disabled (`--tools "" --strict-mcp-config`), from outside the project. An organ can only read what it's given and answer. Organs advise: the orchestrator writes their output down, and no organ changes a ticket's status. A call is about 1,500 input tokens and takes 5–15 seconds.
 
 - **Triage**, for each deferred ticket. The evidence is the ticket (`bd show`), the end of the worker's terminal, and its worktree's changes and commits. The model decides whether the cause lies in the **environment** (the machine, tools or services), the **instructions** (the worker prompt or the ticket's wording), or the **problem** itself. It adds a recommendation to the ticket's notes, and a purple `◆` line appears in the terminal. Triage runs in the background, one ticket at a time, so the loop doesn't wait.
-- **Reviewer**, when the loop stops for any reason. It waits for pending triage, then reads the run's log lines, the commits merged during the run, the tickets set aside (with their triage notes) and the ticket that was running. It writes a short report in three sections: **Finished**, **Set aside** and **Needs you**. The report is shown in the terminal, rendered with Glamour, and saved to `.claude/orchestrate-reports/<start time>.md`. Pressing Ctrl+C while it's writing skips it.
+- **Reviewer**, when the loop stops for any reason. It waits for pending triage, then reads the run's log lines, the commits merged during the run, the tickets set aside (with their triage notes) and the ticket that was running. It writes a short report in three sections: **Finished**, **Set aside** and **Needs you**. The report is shown in the terminal, rendered with Glamour, and saved to `.orchestra/reports/<start time>.md`. Pressing Ctrl+C while it's writing skips it.
 
-Turn them off with `-triage=false` / `TRIAGE=0` and `-review=false` / `REVIEW=0`, and pick their model with `-organ-model` / `ORGAN_MODEL` (default: the `claude` CLI's). If `claude` isn't installed, organs switch off and the log says so. Add `.claude/orchestrate-reports/` to the project's `.gitignore`.
+Turn them off with `-triage=false` / `TRIAGE=0` and `-review=false` / `REVIEW=0`, and pick their model with `-organ-model` / `ORGAN_MODEL` (default: the `claude` CLI's). If `claude` isn't installed, organs switch off and the log says so.
 
 ## Install
 
@@ -58,6 +58,26 @@ go install github.com/noesis-sol/orchestra@latest
 ```
 
 That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra .` works too. `orchestra -version` shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd`, `herdr`, `git` and, for the organs, `claude`.
+
+## Set up a project
+
+In the project's repository:
+
+```
+orchestra init -check "scripts/ci-local.sh"
+```
+
+This creates `.orchestra/`, where everything `orchestra` owns in a project lives:
+
+```
+.orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
+.orchestra/.gitignore         committed: ignores the three below
+.orchestra/orchestra.log      the event log
+.orchestra/reports/           run reports
+.orchestra/run/               per-ticket files in each worktree (the worker's launch prompt)
+```
+
+`-check` fills the project's check command (lint, build and tests) into the template; without it, fill in the `<…>` placeholders yourself. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `-force`. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` afterwards.
 
 ## Run
 
@@ -68,11 +88,11 @@ git switch -c batch/$(date +%F)
 WORKSPACE=<herdr workspace id> orchestra
 ```
 
-`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.claude/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
+`orchestra -h` lists the flags. Each flag defaults to the environment variable `orchestrate.sh` used: `WORKSPACE`, `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`). The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
 
 ## Worker prompt
 
-Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.claude/worker-prompt.md` in the project), with every `TICKET_ID` replaced by its ticket. [`prompts/worker-prompt.md`](prompts/worker-prompt.md) is a reference to start from, not used by `orchestra` itself. Copy it into the project and replace the `<…>` placeholders with the project's own check commands. Each rule prevents a way a run goes wrong:
+Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. `orchestra init` writes it from [`prompts/worker-prompt.md`](prompts/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
 
 - **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
 - **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.
@@ -80,7 +100,7 @@ Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.claude/wor
 - **Close, and let the batch PR run CI.** A ticket whose change only CI can verify (a workflow, a platform the local checks don't cover) is closed once the local checks pass, with an "Awaits CI" note. The batch goes to the main branch through a pull request that runs every CI job, so each ticket needn't wait for its own.
 - **Ask, don't wait.** A ticket that needs the maintainer's decision gets a question ticket labelled `human` that blocks it. The orchestrator never hands a question to a worker; it shows the ticket as **? for you**, and the run goes on. Answer with `bd human respond <question> --response "…"`, and the ticket returns to the queue with its branch rebased onto the current one.
 
-Claude workers are started with a one-line instruction to read `.orchestra/prompt.md` in their worktree, where `orchestra` writes the prompt (`.orchestra/` is kept out of git through the repository's `info/exclude`). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
+Claude workers are started with a one-line instruction to read `.orchestra/run/prompt.md` in their worktree, where `orchestra` writes the prompt (kept out of git through the repository's `info/exclude`, so it's ignored even on a branch cut before `.orchestra/.gitignore` was committed). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
 
 ## Exit codes
 

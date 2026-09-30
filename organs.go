@@ -259,7 +259,7 @@ func (o *Orch) review(ctx context.Context, code int, final string) (string, stri
 	}
 	report := fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
 		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(r.Result))
-	dir := filepath.Join(o.cfg.Repo, ".claude", "orchestrate-reports")
+	dir := o.cfg.ReportsDir
 	path := filepath.Join(dir, o.started.Format("2006-01-02-150405")+".md")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return report, "", err

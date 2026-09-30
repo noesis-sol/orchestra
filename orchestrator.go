@@ -310,7 +310,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 	launch := ""
 	if c.LaunchPrompt && c.AgentKind == "claude" {
 		var err error
-		if launch, err = writeLaunchPrompt(c.Repo, wt, id, prompt); err != nil {
+		if launch, err = writeLaunchPrompt(wt, id, prompt); err != nil {
 			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
 			launch = ""
 		}

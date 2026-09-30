@@ -11,7 +11,8 @@
 //
 //	WORKSPACE=<herdr workspace id> orchestra
 //
-// Every event is shown in the terminal and appended to .claude/orchestrate.log.
+// Every event is shown in the terminal and appended to .orchestra/orchestra.log. Set a project up
+// with 'orchestra init'.
 package main
 
 import (
@@ -57,6 +58,7 @@ type Config struct {
 	Notify       bool
 	WTRoot       string
 	LogPath      string
+	ReportsDir   string
 	Plain        bool
 	Triage       bool   // triage organ on each deferred ticket
 	Review       bool   // reviewer organ when the loop stops
@@ -93,7 +95,7 @@ func loadConfig() (Config, []string) {
 	flag.IntVar(&c.Limit, "limit", envInt("LIMIT", 40, &problems), "stop after this many tickets in total [LIMIT]")
 	flag.IntVar(&c.DoneSoFar, "done-so-far", envInt("DONE_SO_FAR", 0, &problems), "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	flag.StringVar(&c.AgentKind, "agent", envOr("AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")
-	flag.StringVar(&c.WorkerPrompt, "prompt", envOr("WORKER_PROMPT", ".claude/worker-prompt.md"), "worker instructions with TICKET_ID as placeholder [WORKER_PROMPT]")
+	flag.StringVar(&c.WorkerPrompt, "prompt", os.Getenv("WORKER_PROMPT"), "worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
 	flag.BoolVar(&c.Notify, "notify", os.Getenv("NOTIFY") != "0", "macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
 	flag.StringVar(&c.WTRoot, "worktrees", os.Getenv("WT_ROOT"), "folder for the per-ticket worktrees, outside the repository (default: <repo>-worktrees next to it) [WT_ROOT]")
 	flag.BoolVar(&c.Triage, "triage", os.Getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
@@ -103,7 +105,7 @@ func loadConfig() (Config, []string) {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: WORKSPACE=<id> orchestra [flags]\n       orchestra init [-check \"<command>\"] [-force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -131,11 +133,15 @@ func loadConfig() (Config, []string) {
 	}
 
 	if c.Repo != "" {
-		if !filepath.IsAbs(c.WorkerPrompt) {
+		lay := projectLayout(c.Repo)
+		if c.WorkerPrompt == "" {
+			c.WorkerPrompt = lay.Prompt
+		} else if !filepath.IsAbs(c.WorkerPrompt) {
 			c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 		}
+		c.LogPath, c.ReportsDir = lay.Log, lay.Reports
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
-			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt)
+			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
 		} else if !strings.Contains(string(b), "TICKET_ID") {
 			problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+c.WorkerPrompt)
 		}
@@ -162,12 +168,14 @@ func loadConfig() (Config, []string) {
 		if c.WTRoot == c.Repo || strings.HasPrefix(c.WTRoot, c.Repo+"/") {
 			problems = append(problems, fmt.Sprintf("WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
 		}
-		c.LogPath = filepath.Join(c.Repo, ".claude", "orchestrate.log")
 	}
 	return c, problems
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		os.Exit(runInit(".", os.Args[2:]))
+	}
 	cfg, problems := loadConfig()
 	if len(problems) > 0 {
 		fmt.Fprintln(os.Stderr, "orchestra cannot start:")
@@ -184,6 +192,9 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orchestra cannot open its log:", err)
 		os.Exit(exitSetup)
+	}
+	if err := ensureRunExcluded(cfg.Repo); err != nil {
+		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", orchDir, runName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
 		fmt.Fprintln(os.Stderr, err)

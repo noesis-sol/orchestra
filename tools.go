@@ -227,42 +227,18 @@ func isArgumentRefused(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid_agent_argument")
 }
 
-// writeLaunchPrompt puts the worker prompt in the worktree at .orchestra/prompt.md, kept out of git
-// through the repository's info/exclude (shared by all worktrees, never committed), and returns
-// the one-line instruction to start the worker with.
-func writeLaunchPrompt(repo, wt, ticket, prompt string) (string, error) {
-	common, err := run(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		return "", err
-	}
-	exclude := filepath.Join(strings.TrimSpace(common), "info", "exclude")
-	b, _ := os.ReadFile(exclude)
-	if !strings.Contains(string(b), launchDir+"/") {
-		if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
-			return "", err
-		}
-		f, err := os.OpenFile(exclude, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return "", err
-		}
-		prefix := ""
-		if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
-			prefix = "\n"
-		}
-		fmt.Fprintf(f, "%s# worker prompts written by orchestra\n/%s/\n", prefix, launchDir)
-		f.Close()
-	}
-	dir := filepath.Join(wt, launchDir)
+// writeLaunchPrompt puts the worker prompt in the worktree at .orchestra/run/prompt.md, which
+// ensureRunExcluded keeps out of git, and returns the one-line instruction to start the worker with.
+func writeLaunchPrompt(wt, ticket, prompt string) (string, error) {
+	dir := filepath.Join(wt, orchDir, runName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Your instructions for ticket %s are in %s/prompt.md in this directory. Read that file and follow it exactly.", ticket, launchDir), nil
+	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. Read that file and follow it exactly.", ticket, orchDir, runName), nil
 }
-
-const launchDir = ".orchestra"
 
 // paneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
 // status "gone" if the pane holds no agent.
@@ -429,10 +405,10 @@ func lastActivity(screen string) string {
 
 // ---- Git -----------------------------------------------------------------------------
 
-// dirtyTree lists uncommitted work in checkout dir outside .claude/ and .beads/ (those hold the
-// prompts, log, local agent settings and tracker data). A failed git call counts as dirty.
+// dirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
+// (agent settings, tracker data, and orchestra's own files). A failed git call counts as dirty.
 func dirtyTree(dir string) string {
-	out, err := run("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads")
+	out, err := run("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
 	if err != nil {
 		return err.Error()
 	}
