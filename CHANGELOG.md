@@ -55,8 +55,9 @@ All notable changes to orchestra are documented here. The format follows
   orchestrator never dispatches a question, shows the ticket as "? for you"
   with a "Needs you" count, and carries on; the report says how to answer.
   `bd human respond <question>` answers it, and the ticket returns to the queue
-  by itself. `prompts/worker-prompt.md` has the commands.
-- `prompts/worker-prompt.md`, a reference worker prompt to copy into a project.
+  by itself. The built-in worker prompt has the commands.
+- `internal/project/worker-prompt.md`, the worker prompt template built into
+  the binary.
 
 ### Changed
 
@@ -98,9 +99,9 @@ All notable changes to orchestra are documented here. The format follows
   earlier output stays in the terminal's scrollback. Plain mode doesn't clear.
 - The active ticket's title wraps onto up to three lines instead of being cut
   off after one.
-- `prompts/worker-prompt.md` asks for ticket and question titles of at most 60
+- The built-in worker prompt asks for ticket and question titles of at most 60
   characters, with details in the description.
-- `prompts/worker-prompt.md`: a ticket that only CI can verify is closed once
+- The built-in worker prompt: a ticket that only CI can verify is closed once
   the local checks pass, with an "Awaits CI" note, instead of deferred; the
   batch's pull request runs every CI job.
 - A ticket closed but left unmerged (`MERGE_CONFLICT`, `CHECKS_FAILED`,

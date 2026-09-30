@@ -71,11 +71,11 @@ batch branch from the main branch (`git switch -c batch/$(date +%F)`), so the wo
 through one pull request.
 
 `orchestra` is a long-running terminal UI: never run it in your own shell tool. Start it in a pane
-beside yours and keep your own pane free:
+beside yours and keep your own pane free (the pane ID is read from Herdr's JSON with `jq`):
 
 ```
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["pane"]["pane_id"])')
+    | jq -r .result.pane.pane_id)
 herdr pane run "$P" "orchestra"
 herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY" --timeout 60000
 herdr pane read "$P" --source visible

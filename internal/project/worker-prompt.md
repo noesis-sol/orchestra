@@ -12,8 +12,7 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   short, at most 60 characters: a plain summary of the change. Details go in the description.
 
 ## Close
-- Close the ticket only when a full `<check command>` run passes after your last change AND
-  the tickets that depend on it have been reviewed.
+- Close the ticket only when a full `<check command>` run passes after your last change.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
   local checks don't cover), close the ticket once `<check command>` passes, with a note naming the
   CI job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
