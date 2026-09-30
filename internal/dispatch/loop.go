@@ -78,11 +78,10 @@ type Sink interface {
 // ---- Log file and notifications ------------------------------------------------------
 
 type Log struct {
-	mu      sync.Mutex
-	f       *os.File
-	notify  bool
-	project string
-	lines   []string // this run's lines, for the reviewer
+	mu    sync.Mutex
+	f     *os.File
+	alert func(text string) // shows a notification; nil when they are off
+	lines []string          // this run's lines, for the reviewer
 }
 
 func OpenLog(path string, notify bool, project string) (*Log, error) {
@@ -90,20 +89,27 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := exec.LookPath("osascript"); err != nil {
-		notify = false // notifications need macOS
+	l := &Log{f: f}
+	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
+		l.alert = func(text string) { go notification(project, text).Run() }
 	}
-	return &Log{f: f, notify: notify, project: project}, nil
+	return l, nil
 }
 
+// Line logs text.
 func (l *Log) Line(t time.Time, text string) {
 	line := t.Format("2006-01-02 15:04:05") + " " + text
 	l.mu.Lock()
 	fmt.Fprintln(l.f, line)
 	l.lines = append(l.lines, line)
 	l.mu.Unlock()
-	if l.notify && notifiable(text) {
-		go l.show(text)
+}
+
+// Alert logs text and shows it as a notification, if they are on.
+func (l *Log) Alert(t time.Time, text string) {
+	l.Line(t, text)
+	if l.alert != nil {
+		l.alert(text)
 	}
 }
 
@@ -126,21 +132,24 @@ func (l *Log) Raw(out string, err error) {
 	}
 }
 
-// Notify only for finished tickets and anything that stops the loop.
-func notifiable(text string) bool {
-	for _, k := range []string{"closed", "deferred", "BLOCKED", "PAUSED", "DIRTY_TREE", "READY_EMPTY",
-		"LIMIT_REACHED", "FAILED", "UNREADABLE", "WITHOUT_COMMIT", "INTERRUPTED", "REPORT", "ASKED", "HOLD", "CONFLICT", "UNKNOWN", "TICKET_LIMIT", "LONG_RUNNING"} {
-		if strings.Contains(text, k) {
-			return true
-		}
+// notifies says whether events of kind k are shown as notifications: finished tickets and
+// anything that needs the maintainer or stops the loop, not progress, dispatches or triage.
+func notifies(k Kind) bool {
+	switch k {
+	case EvClosed, EvDeferred, EvWarn, EvStop, EvDone, EvAsked, EvHold:
+		return true
 	}
 	return false
 }
 
-func (l *Log) show(text string) {
-	msg := strings.NewReplacer(`\`, "", `"`, "'").Replace(text) // keep AppleScript quoting intact
-	exec.Command("osascript", "-e",
-		fmt.Sprintf(`display notification "%s" with title "Orchestra: %s"`, msg, l.project)).Run()
+// notification is the osascript command showing text, titled with the project. Both go in as
+// arguments rather than into the script, so no quoting in them can break it.
+func notification(project, text string) *exec.Cmd {
+	return exec.Command("osascript",
+		"-e", "on run argv",
+		"-e", "display notification (item 1 of argv) with title (item 2 of argv)",
+		"-e", "end run",
+		"--", text, "Orchestra: "+project) // -- so text starting with - isn't taken for an option
 }
 
 // ---- Orchestrator --------------------------------------------------------------------
@@ -218,7 +227,10 @@ func (o *Loop) Final() string {
 
 func (o *Loop) emit(ev Event) {
 	ev.Time = time.Now()
-	if ev.Kind != EvQueue {
+	switch {
+	case notifies(ev.Kind):
+		o.log.Alert(ev.Time, ev.Text)
+	case ev.Kind != EvQueue:
 		o.log.Line(ev.Time, ev.Text)
 	}
 	o.sinkMu.Lock()

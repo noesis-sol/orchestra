@@ -483,12 +483,16 @@ func TestOutcomes(t *testing.T) {
 	}
 }
 
-func TestNotifiable(t *testing.T) {
-	if !notifiable("  kinieta-x closed (abc); merged") || !notifiable("PAUSED: x") {
-		t.Error("closed and PAUSED should notify")
+// The osascript command takes the text and project as arguments, so quotes in them can't break
+// the script, and a leading - isn't taken for an option.
+func TestNotificationPassesTextAsArguments(t *testing.T) {
+	cmd := notification(`my "repo"\`, `-x "closed" \ it`)
+	n := len(cmd.Args)
+	if n < 3 || cmd.Args[n-3] != "--" || cmd.Args[n-2] != `-x "closed" \ it` || cmd.Args[n-1] != `Orchestra: my "repo"\` {
+		t.Errorf("args: %q", cmd.Args)
 	}
-	if notifiable("[1/40] kinieta-x dispatching: Title") || notifiable("  worktree /a on wt/x") {
-		t.Error("dispatch and worktree lines should not notify")
+	if script := strings.Join(cmd.Args[:n-3], " "); strings.Contains(script, "repo") || strings.Contains(script, "closed") {
+		t.Errorf("text in the script: %q", script)
 	}
 }
 
@@ -1166,6 +1170,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 	}
 	o, _, logPath := newSettleLoop(t, script...)
 	o.wait.longRun = 5 * time.Millisecond
+	shown := recordAlerts(o.log)
 	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
@@ -1175,7 +1180,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 			warned = append(warned, ev.Text)
 		}
 	}
-	if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 5ms in tab tab") || !notifiable(warned[0]) {
+	if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 5ms in tab tab") || !shown.has(warned[0]) {
 		t.Errorf("warnings: %q", warned)
 	}
 	if !strings.Contains(read(t, logPath), "LONG_RUNNING") {

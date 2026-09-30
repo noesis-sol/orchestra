@@ -401,7 +401,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		cancel()
 		msg := interruptLine(why, orch.Running())
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
-		log.Line(ev.Time, msg)
+		log.Alert(ev.Time, msg)
 		sink.Event(ev)
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
 		// Run itself gives its workers up to SettleWait.
@@ -481,7 +481,7 @@ func organPhase(orch organs, c options, log *dispatch.Log, code int, final strin
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + firstLine(err.Error())
-			log.Line(time.Now(), msg)
+			log.Alert(time.Now(), msg)
 			out.Say(msg)
 		}
 		return
@@ -495,6 +495,6 @@ func organPhase(orch organs, c options, log *dispatch.Log, code int, final strin
 		out.Say(msg)
 		return
 	}
-	log.Line(time.Now(), "REPORT written to "+path)
+	log.Alert(time.Now(), "REPORT written to "+path)
 	out.Say("report saved to " + tui.Tildify(path))
 }

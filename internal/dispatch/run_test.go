@@ -25,6 +25,7 @@ type harness struct {
 	logPath  string
 	cfg      Config
 	reporter Reporter
+	alerts   *alerts // the last loop's notifications
 }
 
 // newHarness sets up a repository on main and an empty tracker; workers are Claude, given their
@@ -57,6 +58,7 @@ func (h *harness) loop() *Loop {
 	if err != nil {
 		h.t.Fatal(err)
 	}
+	h.alerts = recordAlerts(log)
 	o := New(h.cfg, log, "Work on TICKET_ID.", Deps{Tickets: h.beads, Notes: h.beads, Tabs: h.herdr, Starter: h.herdr,
 		Namer: h.herdr, Agents: h.herdr, Reporter: h.reporter, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{},
 		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
@@ -100,6 +102,28 @@ func activeIDs(o *Loop) []string {
 }
 
 func equal(a, b []string) bool { return strings.Join(a, "\n") == strings.Join(b, "\n") }
+
+// Notifications follow the kind of event, not words in it: a title or triage summary saying
+// closed, FAILED or deferred shows nothing.
+func TestRunNotifiesByEventNotText(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "closed FAILED deferred", 1)
+	h.worker("A", finishes("a.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	o.emit(Event{Kind: EvTriage, Ticket: "A", Text: "  triage A: flaky (high confidence) - deferred after FAILED checks, closed sockets"})
+	closed := h.sink.of(EvClosed)
+	if len(closed) != 1 {
+		t.Fatalf("closed: %q", closed)
+	}
+	want := []string{strings.TrimPrefix(closed[0], "A "), o.Final()}
+	if got := h.alerts.list(); !equal(got, want) {
+		t.Errorf("notified:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
 
 func TestRunMergesEachFinishedTicket(t *testing.T) {
 	t.Parallel()
@@ -614,7 +638,7 @@ func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
 	if code != ExitStuck || o.Final() != want {
 		t.Fatalf("exit %d, final %q", code, o.Final())
 	}
-	if !notifiable(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
+	if !h.alerts.has(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
 		t.Error("the stop should be logged and notified")
 	}
 	if got := activeIDs(o); !equal(got, []string{"A"}) {
@@ -641,7 +665,7 @@ func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
 			if code != ExitStuck || o.Final() != want {
 				t.Fatalf("exit %d, final %q, want %q", code, o.Final(), want)
 			}
-			if !notifiable(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
+			if !h.alerts.has(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
 				t.Error("the stop should be logged and notified")
 			}
 			if got := h.sink.of(EvDispatch); len(got) != 1 {

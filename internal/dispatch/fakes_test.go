@@ -504,6 +504,40 @@ func (fakeReporter) ReportArgs(worktree string) ([]string, error) {
 }
 func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
 
+// ---- Notifications -------------------------------------------------------------------
+
+// alerts records the notifications a Log shows.
+type alerts struct {
+	mu    sync.Mutex
+	shown []string
+}
+
+// recordAlerts turns l's notifications on, recording them instead of showing them.
+func recordAlerts(l *Log) *alerts {
+	a := &alerts{}
+	l.alert = func(text string) {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.shown = append(a.shown, text)
+	}
+	return a
+}
+
+func (a *alerts) list() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.shown...)
+}
+
+func (a *alerts) has(text string) bool {
+	for _, s := range a.list() {
+		if s == text {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- Sink ----------------------------------------------------------------------------
 
 // runSink records events and closes held on the first HOLD.
