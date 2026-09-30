@@ -42,11 +42,13 @@ All notable changes to orchestra are documented here. The format follows
 - A returning ticket's earlier worker is renamed (`<ticket>-1`, …) so the new
   worker can take the ticket's name; its tab is left open.
 - Error messages in the log cut long arguments short.
-- A worker whose start timed out is adopted instead of failing the run: Herdr
-  leaves it running unnamed in its tab, and retries found the tab busy
-  (`START_FAILED`). The orchestrator now names it after its ticket and carries
-  on. Workers started with their prompt get a 20-second start timeout, since
-  a busy worker never looks ready for input.
+- Workers given their prompt at launch are started by typing the command into
+  their tab and named as soon as Herdr recognises them, a few seconds instead
+  of ~24. `herdr agent start` waits for the agent to look ready for input,
+  which such a worker never does, so it always timed out, once for 15
+  minutes. It remains the fallback, and a worker whose start timed out is
+  adopted (named after its ticket) instead of failing the run with
+  `START_FAILED`.
 - The dashboard clears the screen when it starts, so it begins at the top;
   earlier output stays in the terminal's scrollback. Plain mode doesn't clear.
 - The active ticket's title wraps onto up to three lines instead of being cut

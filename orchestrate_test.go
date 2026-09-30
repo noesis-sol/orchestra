@@ -395,3 +395,12 @@ func TestParsePaneAgent(t *testing.T) {
 		t.Errorf("no agent: %q", s)
 	}
 }
+
+func TestShellQuoteMakesOneWord(t *testing.T) {
+	for _, in := range []string{"Your instructions for ticket k-1 are in .orchestra/run/prompt.md.", "it's `a` $test \"q\""} {
+		out, err := run("", "sh", "-c", "printf '%s' "+shellQuote(in))
+		if err != nil || out != in {
+			t.Errorf("shellQuote(%q) round-trips to %q (%v)", in, out, err)
+		}
+	}
+}

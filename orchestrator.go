@@ -316,10 +316,27 @@ func (o *Orch) work(ctx context.Context, t Ticket) (code int, stopped bool) {
 		}
 	}
 
+	// With its prompt in a file, the worker is started by typing the command into the tab and
+	// named once Herdr recognises it. Herdr's own start waits for the agent to look ready for
+	// input, which a worker that goes straight to work never does, so it could only time out.
+	ok := false
+	if launch != "" {
+		err := paneLaunch(pane, c.AgentKind, launch)
+		if err == nil {
+			_, ok = adoptPaneAgent(ctx, pane, c.AgentKind, id)
+		}
+		if ctx.Err() != nil {
+			return o.interrupted(), true
+		}
+		if !ok {
+			o.log.Raw("", fmt.Errorf("%s's worker was not recognised after starting it from its prompt file (%v); starting it with herdr agent start and pasting the prompt", id, err))
+			launch = ""
+		}
+	}
+
 	// 'agent start' can report failure while the agent is still coming up (agent_not_ready keeps
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
 	// the agent is there before trying again.
-	ok := false
 	for attempt := 0; attempt < 10 && !ok; attempt++ {
 		err := agentStart(ctx, id, c.AgentKind, pane, launch)
 		if ok = err == nil; ok {

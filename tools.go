@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // run executes a command and returns its stdout. The error carries stderr, so callers can log it.
@@ -207,13 +208,7 @@ func tabClose(tab string) { run("", "herdr", "tab", "close", tab) }
 // starts with the prompt already submitted. Herdr types the command into the pane's shell and
 // refuses arguments with line breaks, so the prompt must be one line.
 func agentStart(ctx context.Context, name, kind, pane, prompt string) error {
-	// A worker given its prompt goes straight to work and never looks ready for input, so Herdr's
-	// wait for readiness can only time out; keep it short and check the pane instead.
-	timeout := "60000"
-	if prompt != "" {
-		timeout = "20000"
-	}
-	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", timeout}
+	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
 	if prompt != "" {
 		args = append(args, "--", prompt)
 	}
@@ -238,6 +233,40 @@ func writeLaunchPrompt(wt, ticket, prompt string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. Read that file and follow it exactly.", ticket, orchDir, runName), nil
+}
+
+// paneLaunch types '<kind> <instruction>' into the pane's shell, as 'herdr agent start' would,
+// and returns at once. The instruction must be one line.
+func paneLaunch(pane, kind, instruction string) error {
+	_, err := run("", "herdr", "pane", "run", pane, kind+" "+shellQuote(instruction))
+	return err
+}
+
+// shellQuote quotes s as one word for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// adoptPaneAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it
+// name, and returns its status.
+func adoptPaneAgent(ctx context.Context, pane, kind, name string) (string, bool) {
+	deadline := time.Now().Add(time.Minute)
+	for {
+		if n, k, st := paneAgent(pane); st != "gone" && k == kind {
+			if n != name && agentRename(pane, name) != nil {
+				return st, false
+			}
+			return st, true
+		}
+		if time.Now().After(deadline) {
+			return "", false
+		}
+		select {
+		case <-ctx.Done():
+			return "", false
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // paneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
