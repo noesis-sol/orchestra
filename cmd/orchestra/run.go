@@ -133,7 +133,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n       orchestra plan [--apply]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
@@ -141,9 +141,12 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		return c, nil, err
 	}
 	if rest := fs.Args(); len(rest) > 0 {
-		if rest[0] == "init" {
+		switch rest[0] {
+		case "init":
 			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
-		} else {
+		case "plan":
+			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
+		default:
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}
 		return c, nil, errUnexpectedArgs
@@ -309,10 +312,13 @@ func status(code int) error {
 	return exitStatus(code)
 }
 
-// run is orchestra: 'orchestra init …' or a run. It returns nil or an exitStatus.
+// run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 1 && args[1] == "init" {
 		return status(runInit(".", args[2:], stdin, stdout, stderr))
+	}
+	if len(args) > 1 && args[1] == "plan" {
+		return status(runPlan(".", args[2:], stdout, stderr))
 	}
 	cfg, problems, err := loadConfig(args[1:], getenv, stderr)
 	switch {

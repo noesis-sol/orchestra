@@ -109,6 +109,11 @@ one. Naming files and functions in a ticket's description helps; so does `bd upd
 --set-metadata files=a.go,b.go` or an `area:<name>` label. `"footprint": false` in `settings.json`
 turns it off.
 
+After a batch of tickets is filed, `orchestra plan` proposes blocks links between open tickets that
+name the same function (or, when one names none, the same small file), the higher-priority ticket
+first, and changes nothing. Show the user the proposal; run `orchestra plan --apply` (which adds
+them with `bd dep add`) only when they approve.
+
 ## While it runs
 
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and

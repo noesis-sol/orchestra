@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra plan` proposes blocks links between open tickets that touch the
+  same code, so they run one after the other: two tickets that name the same
+  function, or, when either names none, the same file of at most 200 lines. The
+  higher-priority ticket (then the older one) goes first; pairs already ordered
+  are left alone, and tickets on one function form a chain. It prints the
+  proposal and changes nothing; `--apply` adds the links with `bd dep add`.
+- The worker prompt asks workers to link a follow-up that touches the same
+  files or functions as another open ticket (`--deps blocked-by:<id>` or
+  `related:<id>`).
 - A run holds when the machine, not the tickets, fails its workers: when 2
   tickets in a row had workers that settled within 2 minutes of dispatch
   without claiming the ticket or changing anything, or were blamed on the

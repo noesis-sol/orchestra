@@ -66,6 +66,41 @@ func parseClosed(raw []byte) ([]dispatch.Ticket, error) {
 	return closed, nil
 }
 
+// parseOpen returns the open tickets from 'bd list --json', leaving out questions for the
+// maintainer and tickets of the excluded issue types, and the blocks links among their
+// dependencies. bd list gives each dependency as a link (issue_id, depends_on_id, type), not as a
+// ticket.
+func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	var all []dispatch.Ticket
+	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+		return nil, nil, err
+	}
+	var deps []struct {
+		Dependencies []struct {
+			IssueID     string `json:"issue_id"`
+			DependsOnID string `json:"depends_on_id"`
+			Type        string `json:"type"`
+		} `json:"dependencies"`
+	}
+	if err := json.Unmarshal(unwrap(raw), &deps); err != nil {
+		return nil, nil, err
+	}
+	var open []dispatch.Ticket
+	var links []dispatch.Link
+	for i, t := range all {
+		for _, d := range deps[i].Dependencies {
+			if d.Type == "blocks" && d.IssueID != "" && d.DependsOnID != "" {
+				links = append(links, dispatch.Link{Blocker: d.DependsOnID, Blocked: d.IssueID})
+			}
+		}
+		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
+			t.Dependencies = nil
+			open = append(open, t)
+		}
+	}
+	return open, links, nil
+}
+
 // Tracker is Beads for one repository, as the loop uses it.
 type Tracker struct {
 	Repo         string
@@ -105,6 +140,27 @@ func (b Tracker) Closed(label string) ([]dispatch.Ticket, error) {
 		return nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
 	}
 	return closed, nil
+}
+
+// Open returns the open tickets, leaving out questions for the maintainer and tickets of the
+// excluded types, and the blocks links bd already has for them. When bd's output can't be read,
+// the error carries bd's stderr.
+func (b Tracker) Open() ([]dispatch.Ticket, []dispatch.Link, error) {
+	out, runErr := command.Output(b.Repo, "bd", "list", "--json", "--status", "open", "--limit", "0")
+	open, links, err := parseOpen([]byte(out), b.ExcludeTypes)
+	switch {
+	case err != nil && runErr != nil:
+		return nil, nil, runErr
+	case err != nil:
+		return nil, nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	}
+	return open, links, nil
+}
+
+// AddBlock links two tickets so that blocked waits for blocker.
+func (b Tracker) AddBlock(blocker, blocked string) error {
+	_, err := command.Output(b.Repo, "bd", "dep", "add", blocked, blocker)
+	return err
 }
 
 // parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.

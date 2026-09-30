@@ -73,6 +73,7 @@ func TestRunRefusesPositionalArguments(t *testing.T) {
 	}{
 		{[]string{"-c", "2", "init"}, "init comes before its flags"},
 		{[]string{"-plain", "init", "--check", "make test"}, "init comes before its flags"},
+		{[]string{"-c", "2", "plan", "--apply"}, "plan comes before its flags"},
 		{[]string{"foo"}, `unexpected argument "foo"`},
 	} {
 		_, stderr, err := runIn(t, dir, nil, tc.args...)

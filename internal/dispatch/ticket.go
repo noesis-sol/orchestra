@@ -9,6 +9,7 @@ type Ticket struct {
 	Status       string   `json:"status"`
 	IssueType    string   `json:"issue_type"` // task, bug, feature, epic, …
 	Priority     *int     `json:"priority"`
+	CreatedAt    string   `json:"created_at"` // RFC 3339, so older sorts first
 	Labels       []string `json:"labels"`
 	Dependencies []Ticket `json:"dependencies"` // from bd show; each carries its status and labels
 	// DependencyType is how a dependency links to the ticket (blocks, related, parent-child,
