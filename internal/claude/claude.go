@@ -69,31 +69,22 @@ func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return dispatch.ToolUse{}, false
-	}
-	u, ok := parseToolUse(b)
-	u.At = info.ModTime()
-	return u, ok
+	return parseToolUse(b)
 }
 
-// parseToolUse reads one hook input: the event, and before a tool use the tool and its arguments.
+// parseToolUse reads one hook input: the event, and before a tool use the tool and its command.
 func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 	var in struct {
 		Event string `json:"hook_event_name"`
 		Tool  string `json:"tool_name"`
 		Input struct {
-			Command     string `json:"command"`
-			Description string `json:"description"`
-			FilePath    string `json:"file_path"`
+			Command string `json:"command"`
 		} `json:"tool_input"`
 	}
 	if json.Unmarshal(b, &in) != nil || in.Event == "" {
 		return dispatch.ToolUse{}, false
 	}
-	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command,
-		Description: in.Input.Description, Path: in.Input.FilePath}, true
+	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command}, true
 }
 
 // shellQuote quotes s as one word for a POSIX shell.

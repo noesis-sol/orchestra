@@ -161,7 +161,10 @@ After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
 ```
 go test ./...
 go vet ./...
+staticcheck ./...
 ```
+
+`staticcheck` installs with `go install honnef.co/go/tools/cmd/staticcheck@latest`.
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 

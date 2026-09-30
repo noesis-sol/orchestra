@@ -43,8 +43,7 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 
 	runHook(t, settings, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"scripts/ci-local.sh 2>&1 | tail -25","description":"Running the full local CI"}}`)
 	u, ok := r.LastToolUse(wt)
-	if !ok || u.Event != "PreToolUse" || u.Tool != "Bash" || u.Command != "scripts/ci-local.sh 2>&1 | tail -25" ||
-		u.Description != "Running the full local CI" || u.At.IsZero() {
+	if !ok || u.Event != "PreToolUse" || u.Tool != "Bash" || u.Command != "scripts/ci-local.sh 2>&1 | tail -25" {
 		t.Errorf("before the tool: %+v %v", u, ok)
 	}
 	runHook(t, settings, "PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"`+strings.Repeat("x", 1<<16)+`"}}`)
@@ -70,8 +69,8 @@ func TestParseToolUse(t *testing.T) {
 	if _, ok := parseToolUse([]byte(`{"tool_name":"Bash"}`)); ok {
 		t.Error("input without an event should not parse")
 	}
-	u, ok := parseToolUse([]byte(`{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/wt/a.swift"}}`))
-	if !ok || u.Tool != "Edit" || u.Path != "/wt/a.swift" {
+	u, ok := parseToolUse([]byte(`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"go test ./...","description":"Run the tests"}}`))
+	if !ok || u.Tool != "Bash" || u.Command != "go test ./..." {
 		t.Errorf("%+v %v", u, ok)
 	}
 }

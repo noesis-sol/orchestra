@@ -18,10 +18,8 @@ import (
 // their status and screen.
 type Terminal struct{}
 
-// ---- Beads ---------------------------------------------------------------------------
-
-// ---- Herdr ---------------------------------------------------------------------------
-
+// CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
+// returns the tab's ID and its first pane's.
 func (t Terminal) CreateTab(workspace, cwd, label string) (tab, pane string, err error) {
 	out, err := command.Output("", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
@@ -280,5 +278,3 @@ func CurrentWorkspace(getenv func(string) string) string {
 	}
 	return r.Result.Pane.WorkspaceID
 }
-
-// ---- Git -----------------------------------------------------------------------------

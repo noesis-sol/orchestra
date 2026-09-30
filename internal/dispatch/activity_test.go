@@ -17,7 +17,7 @@ func TestDoing(t *testing.T) {
 		{bash("git status --short"), "scripts/ci-local.sh", ""},
 		{bash("xcodebuild -scheme Kinieta build"), "", ""},
 		{bash("cat latest.txt"), "", ""}, // "test" inside a word is not a test run
-		{ToolUse{Event: "PreToolUse", Tool: "Edit", Path: "a.swift"}, "", "editing"},
+		{ToolUse{Event: "PreToolUse", Tool: "Edit"}, "", "editing"},
 		{ToolUse{Event: "PreToolUse", Tool: "Grep"}, "", "reading"},
 		{ToolUse{Event: "PreToolUse", Tool: "Agent"}, "", ""},
 		{ToolUse{Event: "PostToolUse"}, "", ""},

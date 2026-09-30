@@ -576,13 +576,6 @@ func (m Dashboard) titleLine(w int) string {
 	return ansi.Truncate(line, w, "…")
 }
 
-func triagedNote(n int) string {
-	if n == 0 {
-		return ""
-	}
-	return organStyle.Render(fmt.Sprintf(" · ◆ %d triaged", n))
-}
-
 // doingLabel is the worker's status, made precise by what it reported doing when it is working.
 func doingLabel(st dispatch.Status) string {
 	if st.Agent == "working" && st.Doing != "" {
