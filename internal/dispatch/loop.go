@@ -307,7 +307,8 @@ func (o *Loop) Run(ctx context.Context) int {
 	}
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after Ctrl+C never blocks
 	inflight := map[string]bool{}
-	var stop *stopReason
+	var stop *stopReason // the first reason decides the exit code
+	var alsoStopped []string
 	for {
 		// Start tickets while there are free slots, unless something has stopped the run.
 		for stop == nil && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
@@ -331,12 +332,23 @@ func (o *Loop) Run(ctx context.Context) int {
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
-			if r.stop != nil && r.stop != errInterrupted && stop == nil {
+			if r.stop == nil || r.stop == errInterrupted {
+				continue
+			}
+			// Every reason is shown as it arrives. The first decides the exit code; the final
+			// line gives it and then the others.
+			first := stop == nil
+			if first {
 				stop = r.stop
-				if len(inflight) > 0 {
-					o.emit(Event{Kind: EvHold, Ticket: r.id, Text: fmt.Sprintf(
-						"HOLD: %s; no new tickets while the %d running finish", stop.text, len(inflight))})
-				}
+			} else {
+				alsoStopped = append(alsoStopped, r.stop.text)
+			}
+			switch {
+			case len(inflight) > 0:
+				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: fmt.Sprintf(
+					"HOLD: %s; no new tickets while the %d running finish", r.stop.text, len(inflight))})
+			case !first:
+				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
 		case <-ctx.Done():
 			return o.interrupted()
@@ -346,7 +358,11 @@ func (o *Loop) Run(ctx context.Context) int {
 	case ctx.Err() != nil:
 		return o.interrupted()
 	case stop != nil:
-		return o.stop(stop.code, "%s", stop.text)
+		text := stop.text
+		for _, t := range alsoStopped {
+			text += "; also " + t
+		}
+		return o.stop(stop.code, "%s", text)
 	case o.count >= c.Limit:
 		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)})
 	default:

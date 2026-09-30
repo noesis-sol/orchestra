@@ -310,3 +310,120 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 		t.Errorf("branch = %q", br)
 	}
 }
+
+// Fakes for a run whose workers stop before their agents start.
+
+type readyTickets []Ticket
+
+func (r readyTickets) Ready() ([]Ticket, error) { return r, nil }
+func (readyTickets) Show(id string) Ticket      { return Ticket{ID: id, Status: "open"} }
+func (readyTickets) Status(id string) string    { return "open" }
+func (readyTickets) Describe(id string) string  { return id }
+
+type cleanCheckout struct{}
+
+func (cleanCheckout) DirtyTree(dir string) string      { return "" }
+func (cleanCheckout) CurrentBranch(repo string) string { return "main" }
+func (cleanCheckout) Head(repo, rev string) string     { return "abc" }
+
+// newWorktrees creates every worktree.
+type newWorktrees struct{}
+
+func (newWorktrees) WorktreeOf(repo, branch string) string { return "" }
+func (newWorktrees) HasBranch(repo, branch string) bool    { return false }
+func (newWorktrees) Prune(repo string)                     {}
+func (newWorktrees) AddWorktree(repo, path, branch string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) NewWorktree(repo, path, branch, base string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) RemoveWorktree(repo, path string) (string, error) { return "", nil }
+func (newWorktrees) DeleteBranch(repo, branch string) (string, error) { return "", nil }
+
+type upToDate struct{}
+
+func (upToDate) IsAncestor(repo, ancestor, rev string) bool            { return true }
+func (upToDate) CommitNaming(repo, base, branch, ticket string) string { return "" }
+func (upToDate) Rebase(worktree, onto string) (string, error)          { return "", nil }
+func (upToDate) AbortRebase(worktree string)                           {}
+func (upToDate) FastForward(repo, branch string) (string, error)       { return "", nil }
+
+type noAgents struct{}
+
+func (noAgents) Status(name string) string                             { return "gone" }
+func (noAgents) Screen(name string) string                             { return "" }
+func (noAgents) Prompt(ctx context.Context, name, prompt string) error { return nil }
+func (noAgents) SendKeys(name string, keys ...string) error            { return nil }
+func (noAgents) WaitStarted(ctx context.Context, name string) bool     { return true }
+
+// gatedTabs fails to open a tab; for the ticket gated it waits until release is closed first.
+type gatedTabs struct {
+	gated   string
+	release chan struct{}
+}
+
+func (g gatedTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+	if label == g.gated {
+		<-g.release
+	}
+	return "", "", fmt.Errorf("no such workspace")
+}
+func (gatedTabs) CloseTab(tab string) {}
+
+// holdSink records events and closes release on the first HOLD.
+type holdSink struct {
+	recordSink
+	release chan struct{}
+	once    sync.Once
+}
+
+func (h *holdSink) Event(ev Event) {
+	h.recordSink.Event(ev)
+	if ev.Kind == EvHold {
+		h.once.Do(func() { close(h.release) })
+	}
+}
+
+func TestEveryWorkersStopReasonIsReported(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	sink := &holdSink{release: release}
+	// Both workers stop for want of a tab: A first, while B runs; B only once A's HOLD is out.
+	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 10, Concurrency: 2, WTRoot: "wts", LogPath: "log"},
+		log, "", Deps{Tickets: readyTickets{{ID: "A"}, {ID: "B"}}, Tabs: gatedTabs{gated: "B", release: release},
+			Agents: noAgents{}, Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
+	o.SetSink(sink)
+	code := o.Run(context.Background())
+	if code != ExitTool {
+		t.Errorf("exit code %d, want %d", code, ExitTool)
+	}
+
+	var holds []string
+	for _, ev := range sink.events {
+		if ev.Kind == EvHold {
+			holds = append(holds, ev.Ticket+" "+ev.Text)
+		}
+	}
+	wantHolds := []string{
+		"A HOLD: TAB_FAILED for A (is 'ws' a valid workspace?); no new tickets while the 1 running finish",
+		"B HOLD: TAB_FAILED for B (is 'ws' a valid workspace?)",
+	}
+	if strings.Join(holds, "\n") != strings.Join(wantHolds, "\n") {
+		t.Errorf("HOLD events:\n%s\nwant:\n%s", strings.Join(holds, "\n"), strings.Join(wantHolds, "\n"))
+	}
+	final := "TAB_FAILED for A (is 'ws' a valid workspace?); also TAB_FAILED for B (is 'ws' a valid workspace?)"
+	if o.Final() != final {
+		t.Errorf("final line %q, want %q", o.Final(), final)
+	}
+	logged := read(t, logPath)
+	for _, want := range []string{wantHolds[0][2:], wantHolds[1][2:], final} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log lacks %q:\n%s", want, logged)
+		}
+	}
+}
