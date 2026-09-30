@@ -63,7 +63,7 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{},
+	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{}, notes: newFakeBeads(),
 		checkout: git.Git{}, worktrees: git.Git{}, merger: git.Git{}, history: git.Git{}}
 	return &mergeFixture{repo: repo, git: run, orch: o, sink: sink}
 }
@@ -269,6 +269,15 @@ func (f fakeTickets) Status(id string) (string, error) {
 	return t.Status, err
 }
 func (f fakeTickets) Describe(id string) string { return id }
+func (f fakeTickets) Closed(label string) ([]Ticket, error) {
+	var closed []Ticket
+	for _, t := range f.shown {
+		if t.Status == "closed" && HasLabel(t, label) {
+			closed = append(closed, t)
+		}
+	}
+	return closed, nil
+}
 
 // aBlocksB is Beads with A closed (so bd ready lists B, which A blocks) and C ready on its own.
 func aBlocksB() fakeTickets {
@@ -464,10 +473,11 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 
 type readyTickets []Ticket
 
-func (r readyTickets) Ready() ([]Ticket, error)       { return r, nil }
-func (readyTickets) Show(id string) (Ticket, error)   { return Ticket{ID: id, Status: "open"}, nil }
-func (readyTickets) Status(id string) (string, error) { return "open", nil }
-func (readyTickets) Describe(id string) string        { return id }
+func (r readyTickets) Ready() ([]Ticket, error)            { return r, nil }
+func (readyTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "open"}, nil }
+func (readyTickets) Status(id string) (string, error)      { return "open", nil }
+func (readyTickets) Describe(id string) string             { return id }
+func (readyTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
 
 type cleanCheckout struct{}
 
@@ -494,6 +504,7 @@ type upToDate struct{}
 
 func (upToDate) IsAncestor(repo, ancestor, rev string) bool            { return true }
 func (upToDate) CommitNaming(repo, base, branch, ticket string) string { return "" }
+func (upToDate) CommitNamingOn(repo, rev, ticket string) string        { return "" }
 func (upToDate) Rebase(worktree, onto string) (string, error)          { return "", nil }
 func (upToDate) AbortRebase(worktree string)                           {}
 func (upToDate) FastForward(repo, branch string) (string, error)       { return "", nil }
@@ -585,13 +596,16 @@ var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  
 // brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
 type brokenBd []Ticket
 
-func (b brokenBd) Ready() ([]Ticket, error)        { return b, nil }
-func (brokenBd) Show(id string) (Ticket, error)    { return Ticket{ID: id, Status: "unknown"}, errBd }
-func (brokenBd) Status(id string) (string, error)  { return "unknown", errBd }
-func (brokenBd) Describe(id string) string         { return id }
-func (brokenBd) AppendNotes(id, note string) error { return errBd }
-func (brokenBd) Defer(id, reason string) error     { return errBd }
-func (brokenBd) Reopen(id string) error            { return errBd }
+func (b brokenBd) Ready() ([]Ticket, error)            { return b, nil }
+func (brokenBd) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "unknown"}, errBd }
+func (brokenBd) Status(id string) (string, error)      { return "unknown", errBd }
+func (brokenBd) Describe(id string) string             { return id }
+func (brokenBd) AppendNotes(id, note string) error     { return errBd }
+func (brokenBd) Defer(id, reason string) error         { return errBd }
+func (brokenBd) Reopen(id string) error                { return errBd }
+func (brokenBd) AddLabel(id, label string) error       { return errBd }
+func (brokenBd) RemoveLabel(id, label string) error    { return errBd }
+func (brokenBd) Closed(label string) ([]Ticket, error) { return nil, nil } // so the run gets as far as the workers
 
 type okTabs struct{}
 
@@ -622,7 +636,8 @@ func (d deferringTickets) Ready() ([]Ticket, error) { return []Ticket{{ID: "A", 
 func (deferringTickets) Show(id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "deferred"}, nil
 }
-func (deferringTickets) Status(id string) (string, error) { return "deferred", nil }
+func (deferringTickets) Status(id string) (string, error)      { return "deferred", nil }
+func (deferringTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
 func (d deferringTickets) Describe(id string) string {
 	d.once.Do(func() { close(d.entered) })
 	<-d.release
@@ -990,5 +1005,71 @@ func TestAnUnreadableStatusIsNotAClaim(t *testing.T) {
 	}
 	if !strings.Contains(read(t, logPath), "database is locked") {
 		t.Error("the cause was not logged")
+	}
+}
+
+// labelledA is Beads with k-a closed and labelled unmerged by an earlier run, blocking k-b.
+func labelledA() fakeTickets {
+	tk := aBlocksB()
+	tk.shown["k-a"] = Ticket{ID: "k-a", Status: "closed", Labels: []string{UnmergedLabel}}
+	return tk
+}
+
+func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	f.orch.tickets = labelledA()
+	f.git(f.repo, "branch", "wt/k-a") // cut, never committed to
+	if s := f.orch.loadUnmerged(); s != nil {
+		t.Fatal(s.text)
+	}
+	if got := f.next(t, nil); got != "" {
+		t.Errorf("next = %q, want k-b held: wt/k-a is on main but holds no commit naming k-a", got)
+	}
+
+	f = newMergeFixture(t, "true")
+	f.orch.tickets = labelledA()
+	f.onMain(t, "a.txt", "a\n")
+	f.git(f.repo, "commit", "-q", "--amend", "-m", "k-a: add a.txt") // merged by hand, branch deleted
+	if s := f.orch.loadUnmerged(); s != nil {
+		t.Fatal(s.text)
+	}
+	if got := f.next(t, nil); got != "k-b" {
+		t.Errorf("next = %q, want k-b: k-a is on main\n%s", got, f.sink.text())
+	}
+}
+
+// closedUnreadable is Beads that can't list closed tickets.
+type closedUnreadable struct{ readyTickets }
+
+func (closedUnreadable) Closed(label string) ([]Ticket, error) { return nil, errBd }
+
+func TestRunStopsWhenTheUnmergedTicketsCannotBeListed(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(Config{Repo: "repo", Base: "main", Limit: 10, Concurrency: 1}, log, "",
+		Deps{Tickets: closedUnreadable{readyTickets{{ID: "A"}}}, Checkout: cleanCheckout{}})
+	o.SetSink(&recordSink{})
+	if code := o.Run(context.Background()); code != ExitTool {
+		t.Errorf("exit code %d, want %d", code, ExitTool)
+	}
+	if !strings.HasPrefix(o.Final(), "READY_UNREADABLE: could not list the tickets labelled 'unmerged': bd defer A") {
+		t.Errorf("final line %q", o.Final())
+	}
+}
+
+func TestLabelFailureIsWarned(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	f.orch.notes = brokenBd(nil)
+	f.orch.tickets = aBlocksB()
+	wt := filepath.Join(t.TempDir(), "k-a")
+	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/k-a", wt, "main")
+	f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab") // CLOSED_WITHOUT_COMMIT
+	if ev := f.sink.text(); !strings.Contains(ev, "LABEL_FAILED: bd could not label k-a 'unmerged': bd defer A") {
+		t.Errorf("events:\n%s", ev)
+	}
+	if got := f.next(t, nil); got != "" {
+		t.Errorf("next = %q, want k-b held in this run all the same", got)
 	}
 }

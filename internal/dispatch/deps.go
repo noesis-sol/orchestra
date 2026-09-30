@@ -8,10 +8,11 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready() ([]Ticket, error)         // open, ready tickets, highest priority first
-	Show(id string) (Ticket, error)   // with dependencies; Status "unknown" and the cause if unreadable
-	Status(id string) (string, error) // "unknown" and the cause if unreadable
-	Describe(id string) string        // as a person reads it, for the organs' evidence
+	Ready() ([]Ticket, error)              // open, ready tickets, highest priority first
+	Show(id string) (Ticket, error)        // with dependencies; Status "unknown" and the cause if unreadable
+	Status(id string) (string, error)      // "unknown" and the cause if unreadable
+	Describe(id string) string             // as a person reads it, for the organs' evidence
+	Closed(label string) ([]Ticket, error) // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.
@@ -19,6 +20,8 @@ type Notes interface {
 	AppendNotes(id, note string) error
 	Defer(id, reason string) error
 	Reopen(id string) error
+	AddLabel(id, label string) error
+	RemoveLabel(id, label string) error
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
@@ -86,6 +89,7 @@ type Worktrees interface {
 type Merger interface {
 	IsAncestor(repo, ancestor, rev string) bool
 	CommitNaming(repo, base, branch, ticket string) string
+	CommitNamingOn(repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
 	Rebase(worktree, onto string) (string, error)
 	AbortRebase(worktree string)
 	FastForward(repo, branch string) (string, error)

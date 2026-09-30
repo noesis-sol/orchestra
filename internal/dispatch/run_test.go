@@ -411,3 +411,78 @@ func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 		t.Error("B should be merged")
 	}
 }
+
+// closesWithoutCommit claims the ticket and closes it, committing nothing.
+func closesWithoutCommit(w *fakeWorker) string {
+	w.claim()
+	w.close()
+	return "idle"
+}
+
+func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.beads.link("B", "A", "blocks")
+	h.worker("A", closesWithoutCommit)
+	h.worker("B", finishes("b.txt"))
+	if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
+		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+		t.Fatalf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
+	}
+
+	// Run 2: bd ready lists B, since A is closed, but A's code is still not on main.
+	if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 0 tickets" {
+		t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if ev := h.sink.text(); !strings.Contains(ev, "B waits: A closed but not merged (left unmerged by an earlier run)") {
+		t.Errorf("events:\n%s", ev)
+	}
+
+	// The maintainer finishes A by hand, keeping its branch; run 3 sees it on main.
+	wt := h.worktree("A")
+	os.WriteFile(filepath.Join(wt, "a.txt"), []byte("a\n"), 0o644)
+	h.git(wt, "add", "a.txt")
+	h.git(wt, "commit", "-q", "-m", "A: add a.txt")
+	h.git(h.repo, "merge", "-q", "--ff-only", "wt/A")
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
+		t.Fatalf("run 3: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if ev := h.sink.text(); !strings.Contains(ev, "A, left unmerged by an earlier run, is on main now") {
+		t.Errorf("events:\n%s", ev)
+	}
+	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+		t.Errorf("A's label should be removed: %v", a.Labels)
+	}
+	if log := h.mainLog(); !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+}
+
+func TestReopenedUnmergedTicketLosesItsLabelWhenItMerges(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.beads.link("B", "A", "blocks")
+	h.worker("A", closesWithoutCommit, finishes("a.txt"))
+	h.worker("B", finishes("b.txt"))
+	if o, code := h.run(); code != ExitOK {
+		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	h.beads.set("A", "open") // the maintainer reopens it
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+		t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+		t.Errorf("A merged, so its label should be removed: %v", a.Labels)
+	}
+	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+}

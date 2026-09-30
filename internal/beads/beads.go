@@ -53,6 +53,21 @@ func parseReady(raw []byte) ([]dispatch.Ticket, error) {
 	return open, nil
 }
 
+// parseClosed returns the closed tickets from 'bd list --json'.
+func parseClosed(raw []byte) ([]dispatch.Ticket, error) {
+	var all []dispatch.Ticket
+	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+		return nil, err
+	}
+	var closed []dispatch.Ticket
+	for _, t := range all {
+		if t.Status == "closed" {
+			closed = append(closed, t)
+		}
+	}
+	return closed, nil
+}
+
 // parseStatus returns the status from 'bd show --json', or "unknown" if it cannot be read.
 func parseStatus(raw []byte) string {
 	data := unwrap(raw)
@@ -90,6 +105,20 @@ func (b Tracker) Ready() ([]dispatch.Ticket, error) {
 		return nil, fmt.Errorf("could not parse 'bd ready --json': %w", err)
 	}
 	return ready, nil
+}
+
+// Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
+// carries bd's stderr.
+func (b Tracker) Closed(label string) ([]dispatch.Ticket, error) {
+	out, runErr := command.Output(b.Repo, "bd", "list", "--json", "--status", "closed", "--label", label, "--limit", "0")
+	closed, err := parseClosed([]byte(out))
+	switch {
+	case err != nil && runErr != nil:
+		return nil, runErr
+	case err != nil:
+		return nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	}
+	return closed, nil
 }
 
 // parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.
@@ -163,5 +192,17 @@ func (b Tracker) Describe(id string) string {
 // Reopen puts the ticket back in the queue.
 func (b Tracker) Reopen(id string) error {
 	_, err := command.Output(b.Repo, "bd", "update", id, "--status", "open")
+	return err
+}
+
+// AddLabel adds the label to the ticket.
+func (b Tracker) AddLabel(id, label string) error {
+	_, err := command.Output(b.Repo, "bd", "label", "add", id, label)
+	return err
+}
+
+// RemoveLabel removes the label from the ticket.
+func (b Tracker) RemoveLabel(id, label string) error {
+	_, err := command.Output(b.Repo, "bd", "label", "remove", id, label)
 	return err
 }

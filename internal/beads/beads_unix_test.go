@@ -44,6 +44,10 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 	check("AppendNotes", b.AppendNotes("k-1", "note"))
 	check("Defer", b.Defer("k-1", "reason"))
 	check("Reopen", b.Reopen("k-1"))
+	check("AddLabel", b.AddLabel("k-1", "unmerged"))
+	check("RemoveLabel", b.RemoveLabel("k-1", "unmerged"))
+	_, err = b.Closed("unmerged")
+	check("Closed", err)
 }
 
 func TestStatusWithoutOneIsAnError(t *testing.T) {

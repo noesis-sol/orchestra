@@ -64,8 +64,14 @@ func (Git) HasBranch(repo, branch string) bool {
 
 // CommitNaming returns the latest commit on branch (not on base) whose message names the ticket,
 // as "<hash> <subject>" cut to 70 characters, or "".
-func (Git) CommitNaming(repo, base, branch, ticket string) string {
-	out, _ := command.Output(repo, "git", "log", "--oneline", "-1", "--grep="+ticket, base+".."+branch)
+func (g Git) CommitNaming(repo, base, branch, ticket string) string {
+	return g.CommitNamingOn(repo, base+".."+branch, ticket)
+}
+
+// CommitNamingOn returns the latest commit reachable from rev (or in a range such as a..b) whose
+// message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
+func (Git) CommitNamingOn(repo, rev, ticket string) string {
+	out, _ := command.Output(repo, "git", "log", "--oneline", "-1", "--grep="+ticket, rev)
 	c := strings.TrimSpace(out)
 	if r := []rune(c); len(r) > 70 {
 		c = string(r[:70])

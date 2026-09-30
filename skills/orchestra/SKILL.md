@@ -130,6 +130,12 @@ Lines about single tickets, which don't stop the run:
   Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
   the queue, and its branch is rebased onto the current one when it is picked up.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
+- `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
+  it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
+  holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or
+  when a run starts and finds it merged by hand. If the ticket needs no merge after all, remove it:
+  `bd label remove <id> unmerged`.
+- `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
 - `DEFER_FAILED`: bd couldn't defer the ticket (its error is on the line), so it is still ready;
   the run leaves it alone. Once bd works again, defer it: `bd defer <id>`.
@@ -168,7 +174,8 @@ When a worker finished after the run had stopped (the ticket is closed but nothi
 3. Run the project's check command in the worktree.
 4. From the main checkout, on the base branch:
    `git merge --ff-only wt/<id>`, `git worktree remove <worktree>`, `git branch -d wt/<id>`,
-   and close its tab (`herdr tab close <tab>`).
+   `bd label remove <id> unmerged` (if it has the label), and close its tab
+   (`herdr tab close <tab>`).
 
 A set-aside ticket whose worktree has no commits and no changes can be cleaned up the same way,
 without the merge. A worktree with work in it is the user's call.

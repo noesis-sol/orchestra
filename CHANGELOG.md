@@ -92,6 +92,13 @@ All notable changes to orchestra are documented here. The format follows
 - `prompts/worker-prompt.md`: a ticket that only CI can verify is closed once
   the local checks pass, with an "Awaits CI" note, instead of deferred; the
   batch's pull request runs every CI job.
+- A ticket closed but left unmerged (`MERGE_CONFLICT`, `CHECKS_FAILED`,
+  `CLOSED_WITHOUT_COMMIT`, …) is labelled `unmerged`, so the tickets it blocks
+  wait in later runs too, not only in the run that set it aside; bd ready
+  counts a closed blocker as done. The label goes when orchestra merges the
+  ticket, or at the start of a run that finds it merged by hand (its branch on
+  the base with a commit naming it, or, with the branch deleted, such a commit
+  on the base). `LABEL_FAILED` says when bd can't add or remove it.
 
 ## [0.1.1] - 2026-09-29
 

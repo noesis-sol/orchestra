@@ -38,3 +38,8 @@ func OpenQuestion(t Ticket) *Ticket {
 	}
 	return nil
 }
+
+// UnmergedLabel marks a ticket closed but left unmerged (MERGE_CONFLICT, CHECKS_FAILED, …), so later
+// runs still hold the tickets it blocks: bd ready counts a closed blocker as done. The loop removes
+// it once the ticket merges.
+const UnmergedLabel = "unmerged"

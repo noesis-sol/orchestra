@@ -125,6 +125,42 @@ func (b *fakeBeads) Reopen(id string) error {
 	return nil
 }
 
+func (b *fakeBeads) Closed(label string) ([]Ticket, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var closed []Ticket
+	for _, id := range b.order {
+		if t := b.tickets[id]; t.Status == "closed" && HasLabel(*t, label) {
+			closed = append(closed, *t)
+		}
+	}
+	return closed, nil
+}
+
+func (b *fakeBeads) AddLabel(id, label string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if t, ok := b.tickets[id]; ok && !HasLabel(*t, label) {
+		t.Labels = append(t.Labels, label)
+	}
+	return nil
+}
+
+func (b *fakeBeads) RemoveLabel(id, label string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if t, ok := b.tickets[id]; ok {
+		var kept []string
+		for _, l := range t.Labels {
+			if l != label {
+				kept = append(kept, l)
+			}
+		}
+		t.Labels = kept
+	}
+	return nil
+}
+
 // ---- Workers -------------------------------------------------------------------------
 
 // behaviour is what a worker does once it has its prompt; it returns the status its agent then

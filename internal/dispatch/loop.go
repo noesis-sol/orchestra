@@ -179,7 +179,8 @@ type Loop struct {
 	organCtx  context.Context // cancelled when the maintainer skips the organs
 	mu        sync.Mutex
 	asideIDs  []string          // tickets deferred or left unmerged in this run
-	unmerged  map[string]string // tickets closed but left unmerged in this run, with why
+	unmerged  map[string]string // tickets closed but left unmerged, in this run or an earlier one, with why
+	labelled  map[string]bool   // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string // why each held ticket waits, as last said
 	askedIDs  map[string]bool   // tickets set aside in this run to wait on a question
 
@@ -343,6 +344,9 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.startHead = o.checkout.Head(c.Repo, c.Base)
 	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
 		c.Version, c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
+	if s := o.loadUnmerged(); s != nil {
+		return o.stop(s.code, "%s", s.text)
+	}
 
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
 	inflight := map[string]bool{}
@@ -536,21 +540,95 @@ func (o *Loop) waitsFor(id string, running map[string]bool) string {
 	return ""
 }
 
-// leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it.
+// earlierRun is why a ticket left unmerged by an earlier run is still unmerged.
+const earlierRun = "left unmerged by an earlier run"
+
+// loadUnmerged reads the tickets earlier runs left unmerged (closed, labelled UnmergedLabel), so the
+// tickets they block wait in this run too. One that has merged since, by hand, loses its label: its
+// branch is on Base with a commit naming it, or its branch is gone and a commit on Base names it.
+// It returns a reason to stop when bd can't say which they are.
+func (o *Loop) loadUnmerged() *stopReason {
+	c := o.cfg
+	closed, err := o.tickets.Closed(UnmergedLabel)
+	if err != nil {
+		return halt(ExitTool, "READY_UNREADABLE: could not list the tickets labelled '%s'%s", UnmergedLabel, because(err))
+	}
+	for _, t := range closed {
+		id, br := t.ID, "wt/"+t.ID
+		rev := c.Base
+		if o.worktrees.HasBranch(c.Repo, br) {
+			rev = br
+		}
+		if o.merger.IsAncestor(c.Repo, rev, c.Base) {
+			if commit := o.merger.CommitNamingOn(c.Repo, rev, id); commit != "" {
+				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed", id, c.Base, commit, UnmergedLabel)
+				o.unlabel(id)
+				continue
+			}
+		}
+		o.info("  %s was left unmerged by an earlier run; tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
+			id, br, c.Base, UnmergedLabel)
+		o.mu.Lock()
+		if o.unmerged == nil {
+			o.unmerged = map[string]string{}
+		}
+		o.unmerged[id] = earlierRun
+		o.mu.Unlock()
+		o.setLabelled(id, true)
+	}
+	return nil
+}
+
+// leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
+// this run and, through its UnmergedLabel, in later ones.
 func (o *Loop) leaveUnmerged(id, why string) {
 	o.markAside(id)
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	if o.unmerged == nil {
 		o.unmerged = map[string]string{}
 	}
 	o.unmerged[id] = why
+	o.mu.Unlock()
+	if err := o.notes.AddLabel(id, UnmergedLabel); err != nil {
+		o.log.Raw("", err)
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  LABEL_FAILED: bd could not label %s '%s'%s; later runs may start the tickets it blocks before it merges (bd label add %s %s)",
+			id, UnmergedLabel, because(err), id, UnmergedLabel)})
+		return
+	}
+	o.setLabelled(id, true)
 }
 
+// merged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
 func (o *Loop) merged(id string) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	delete(o.unmerged, id)
+	labelled := o.labelled[id]
+	o.mu.Unlock()
+	if labelled {
+		o.unlabel(id)
+	}
+}
+
+// unlabel removes the ticket's UnmergedLabel, warning when bd can't.
+func (o *Loop) unlabel(id string) {
+	if err := o.notes.RemoveLabel(id, UnmergedLabel); err != nil {
+		o.log.Raw("", err)
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
+			id, UnmergedLabel, because(err), id, UnmergedLabel)})
+		return
+	}
+	o.setLabelled(id, false)
+}
+
+func (o *Loop) setLabelled(id string, labelled bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.labelled == nil {
+		o.labelled = map[string]bool{}
+	}
+	o.labelled[id] = labelled
 }
 
 func (o *Loop) unmergedWhy(id string) string {
@@ -592,6 +670,9 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		}
 	}()
 	o.setAsked(id, false) // back from a question: set aside again, it stays out
+	if HasLabel(t, UnmergedLabel) {
+		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
+	}
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
 	wt, s := o.prepareWorktree(id, br)
