@@ -71,7 +71,8 @@ type Reporter interface {
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	DirtyTree(dir string) string // uncommitted work outside .claude/, .beads/, .orchestra/
+	DirtyTree(dir string) string     // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
+	DirtyWorktree(dir string) string // uncommitted work in a ticket's worktree outside .orchestra/run/
 	CurrentBranch(repo string) string
 	Head(repo, rev string) string
 }

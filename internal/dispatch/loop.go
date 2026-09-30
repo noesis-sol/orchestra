@@ -1075,7 +1075,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 	c := o.cfg
 	commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
-	switch closedOutcomeOf(commit, o.checkout.DirtyTree(wt) != "") {
+	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(wt) != "") {
 	case closedNoCommit:
 		o.leaveUnmerged(id, "CLOSED_WITHOUT_COMMIT")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -1418,7 +1418,7 @@ func (o *Loop) refreshBranch(wt, br string) bool {
 	if o.merger.IsAncestor(c.Repo, c.Base, br) {
 		return true // already on top of Base
 	}
-	if d := o.checkout.DirtyTree(wt); d != "" {
+	if d := o.checkout.DirtyWorktree(wt); d != "" {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base)})
 		return true
 	}

@@ -1,9 +1,13 @@
 package git
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 func TestParseWorktreeOf(t *testing.T) {
@@ -86,5 +90,43 @@ func TestCommitNamingIgnoresLongerIDs(t *testing.T) {
 	commit(t, repo, "Tidy up after x-12.1")
 	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
 		t.Errorf("got %q, want the commit naming x-12", got)
+	}
+}
+
+func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write := func(name, content string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q")
+	write(".claude/settings.json", "{}\n")
+	git("add", ".")
+	git("commit", "-q", "-m", "init")
+	write(".orchestra/run/prompt.md", "Work on it.\n") // the ticket's scratch
+	if d := (Git{}).DirtyWorktree(dir); d != "" {
+		t.Errorf(".orchestra/run/ should not count: %q", d)
+	}
+
+	write(".claude/settings.json", "{\"model\": \"opus\"}\n")
+	write(".beads/config.yaml", "prefix: t\n")
+	if d := (Git{}).DirtyTree(dir); d != "" {
+		t.Errorf("the main checkout's check should leave out .claude/ and .beads/: %q", d)
+	}
+	d := (Git{}).DirtyWorktree(dir)
+	if !strings.Contains(d, ".claude/settings.json") || !strings.Contains(d, ".beads/") {
+		t.Errorf("a worktree's check should count .claude/ and .beads/: %q", d)
 	}
 }

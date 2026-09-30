@@ -557,6 +557,47 @@ func closesWithoutCommit(w *fakeWorker) string {
 	return "idle"
 }
 
+// leavesUncommitted commits file, changes the tracked file edited without committing it, and
+// closes the ticket.
+func leavesUncommitted(file, edited string) behaviour {
+	return func(w *fakeWorker) string {
+		w.claim()
+		w.commit(file)
+		if err := os.WriteFile(filepath.Join(w.wt, edited), []byte("changed\n"), 0o644); err != nil {
+			w.t.Error(err)
+		}
+		w.close()
+		return "idle"
+	}
+}
+
+func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	os.MkdirAll(filepath.Join(h.repo, ".claude", "commands"), 0o755)
+	os.WriteFile(filepath.Join(h.repo, ".claude", "commands", "ship.md"), []byte("ship\n"), 0o644)
+	h.git(h.repo, "add", ".claude")
+	h.git(h.repo, "commit", "-q", "-m", "add a project command")
+	h.beads.add("A", "first", 1)
+	h.worker("A", leavesUncommitted("a.txt", ".claude/commands/ship.md"))
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_WITHOUT_COMMIT: A closed") || !strings.Contains(ev, "has uncommitted changes") {
+		t.Errorf("events:\n%s", ev)
+	}
+	if log := h.mainLog(); strings.Contains(log, "A: add a.txt") {
+		t.Errorf("A should not be merged:\n%s", log)
+	}
+	if !exists(h.worktree("A")) {
+		t.Error("A's worktree should be left for review")
+	}
+	if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+		t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
+	}
+}
+
 func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)

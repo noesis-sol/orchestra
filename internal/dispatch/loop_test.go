@@ -548,6 +548,7 @@ func (readyTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
 type cleanCheckout struct{}
 
 func (cleanCheckout) DirtyTree(dir string) string      { return "" }
+func (cleanCheckout) DirtyWorktree(dir string) string  { return "" }
 func (cleanCheckout) CurrentBranch(repo string) string { return "main" }
 func (cleanCheckout) Head(repo, rev string) string     { return "abc" }
 

@@ -22,6 +22,17 @@ func (Git) DirtyTree(dir string) string {
 	return strings.TrimSpace(out)
 }
 
+// DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
+// ticket's scratch). Unlike DirtyTree it counts .claude/, .beads/ and the rest of .orchestra/: a
+// change a worker left there is its ticket's work. A failed git call counts as dirty.
+func (Git) DirtyWorktree(dir string) string {
+	out, err := command.Output("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).orchestra/run")
+	if err != nil {
+		return err.Error()
+	}
+	return strings.TrimSpace(out)
+}
+
 // CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD.
 func (Git) CurrentBranch(repo string) string {
 	out, _ := command.Output(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
