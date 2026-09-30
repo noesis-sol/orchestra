@@ -3,6 +3,8 @@ package beads
 import (
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 func TestParseReadySortsOpenTicketsByPriority(t *testing.T) {
@@ -80,11 +82,11 @@ func TestOpenQuestionFromBdShow(t *testing.T) {
 	if !ok || tk.Status != "open" {
 		t.Fatalf("parseTicket: %v %+v", ok, tk)
 	}
-	if q := OpenQuestion(tk); q == nil || q.ID != "q-1" {
+	if q := dispatch.OpenQuestion(tk); q == nil || q.ID != "q-1" {
 		t.Errorf("open question = %+v", q)
 	}
 	tk.Dependencies[1].Status = "closed" // answered
-	if q := OpenQuestion(tk); q != nil {
+	if q := dispatch.OpenQuestion(tk); q != nil {
 		t.Errorf("an answered question should not block: %+v", q)
 	}
 	if _, ok := parseTicket([]byte("error: not found")); ok {

@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/noesis-sol/orchestra/internal/beads"
 )
 
 // recordSink keeps events for assertions.
@@ -185,7 +183,7 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 }
 
 func TestPickNextSkipsRunningTickets(t *testing.T) {
-	ready := []beads.Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}}
 	if tk, q := pickNext(ready, map[string]bool{"a": true}); tk == nil || tk.ID != "b" || q != 1 {
 		t.Errorf("got %v, %d", tk, q)
 	}

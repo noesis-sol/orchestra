@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -37,7 +38,7 @@ func TestLiveOrgans(t *testing.T) {
 		t.Skip("set ORGAN_LIVE=1 to call the real claude")
 	}
 	repo, id := os.Getenv("LIVE_REPO"), os.Getenv("LIVE_TICKET")
-	o := &Loop{cfg: Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, organ: organ.Client{Bin: "claude"},
+	o := &Loop{cfg: Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, tickets: liveTickets{repo}, organ: organ.Client{Bin: "claude"},
 		startHead: os.Getenv("LIVE_START"), started: time.Now().Add(-time.Hour), log: &Log{}}
 	b, _ := os.ReadFile(filepath.Join(repo, ".claude", "orchestrate.log"))
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
@@ -63,4 +64,16 @@ func TestLiveOrgans(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("report (%s):\n%s", time.Since(start).Round(time.Second), report)
+}
+
+// liveTickets reads Beads for TestLiveOrgans (the beads adapter imports this package, so the test
+// can't use it).
+type liveTickets struct{ repo string }
+
+func (l liveTickets) Ready() ([]Ticket, error) { return nil, nil }
+func (l liveTickets) Show(id string) Ticket    { return Ticket{ID: id} }
+func (l liveTickets) Status(id string) string  { return "unknown" }
+func (l liveTickets) Describe(id string) string {
+	out, _ := command.Output(l.repo, "bd", "show", id)
+	return out
 }

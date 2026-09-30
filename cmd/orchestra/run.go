@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
@@ -238,7 +239,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
-	orch := dispatch.New(cfg.Config, log, string(prompt), organ.Client{Bin: "claude", Model: cfg.OrganModel}, organCtx)
+	tracker := beads.Tracker{Repo: cfg.Repo}
+	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
+		Tickets:   tracker,
+		Notes:     tracker,
+		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
+		AdviceCtx: organCtx,
+	})
 	if off := organ.Unavailable("claude"); off != "" && (cfg.Triage || cfg.Review) {
 		log.Line(time.Now(), "organs off: "+off)
 		cfg.Triage, cfg.Review = false, false

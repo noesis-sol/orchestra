@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -26,7 +25,7 @@ func lastLines(s string, n int) string {
 // gatherDeferral collects the evidence for one deferred ticket.
 func (o *Loop) gatherDeferral(id, title, how, wt string) organ.Deferral {
 	c := o.cfg
-	show, _ := command.Output(c.Repo, "bd", "show", id)
+	show := o.tickets.Describe(id)
 	status, _ := command.Output("", "git", "-C", wt, "status", "--short")
 	commits, _ := command.Output("", "git", "-C", wt, "log", "--oneline", c.Base+"..HEAD")
 	stat, _ := command.Output("", "git", "-C", wt, "diff", "--stat", "HEAD")
@@ -79,7 +78,7 @@ func (o *Loop) triage(d organ.Deferral) {
 		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
 		return
 	}
-	beads.AppendNotes(o.cfg.Repo, d.ID, t.Note())
+	o.notes.AppendNotes(d.ID, t.Note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
 }
@@ -95,16 +94,16 @@ func (o *Loop) reviewInput(code int, final string) string {
 	commits, _ := command.Output(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
 	var setAside strings.Builder
 	for _, id := range o.setAside() {
-		show, _ := command.Output(c.Repo, "bd", "show", id)
+		show := o.tickets.Describe(id)
 		setAside.WriteString(show + "\n")
 	}
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
-		show, _ := command.Output(c.Repo, "bd", "show", st.Ticket)
+		show := o.tickets.Describe(st.Ticket)
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(herdr.Screen(st.Ticket), 60))
 	}
-	ready, _ := beads.Ready(c.Repo)
+	ready, _ := o.tickets.Ready()
 	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
 		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, exitMeaning(code), final) +
 		organ.Section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
