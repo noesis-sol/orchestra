@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 )
 
 // Exit codes, unchanged from orchestrate.sh.
@@ -332,7 +333,7 @@ func (o *Orch) Run(ctx context.Context) int {
 func (o *Orch) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
-	dirty, branch := dirtyTree(c.Repo), currentBranch(c.Repo)
+	dirty, branch := git.DirtyTree(c.Repo), git.CurrentBranch(c.Repo)
 	o.repoMu.Unlock()
 	if dirty != "" {
 		return nil, 0, halt(exitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping. Inspect with: git status", c.Repo)
@@ -541,8 +542,8 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
-		commit := commitNaming(c.Repo, c.Base, br, id)
-		switch closedOutcomeOf(commit, dirtyTree(wt) != "") {
+		commit := git.CommitNaming(c.Repo, c.Base, br, id)
+		switch closedOutcomeOf(commit, git.DirtyTree(wt) != "") {
 		case closedNoCommit:
 			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -584,7 +585,7 @@ func (o *Orch) prepareWorktree(id, br string) (string, *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
-	if wt := worktreeOf(c.Repo, br); wt != "" {
+	if wt := git.WorktreeOf(c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
 		o.refreshBranch(wt, br)
 		return wt, nil
@@ -593,7 +594,7 @@ func (o *Orch) prepareWorktree(id, br string) (string, *stopReason) {
 	command.Output(c.Repo, "git", "worktree", "prune")
 	var out string
 	var err error
-	if hasBranch(c.Repo, br) {
+	if git.HasBranch(c.Repo, br) {
 		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
 	} else {
 		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
@@ -619,8 +620,8 @@ func (o *Orch) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
 		o.repoMu.Lock()
-		if isAncestor(c.Repo, c.Base, br) {
-			commit := commitNaming(c.Repo, c.Base, br, id)
+		if git.IsAncestor(c.Repo, c.Base, br) {
+			commit := git.CommitNaming(c.Repo, c.Base, br, id)
 			out, err := command.Output(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
 			o.log.Raw(out, err)
 			if err != nil {
@@ -697,11 +698,6 @@ func (o *Orch) runCheck(ctx context.Context, wt string) error {
 	return err
 }
 
-func isAncestor(repo, ancestor, rev string) bool {
-	_, err := command.Output(repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
-	return err == nil
-}
-
 // idleGrace is how long an idle worker whose ticket is still in progress may take to resume
 // (typically it is waiting on its own background command) before the run pauses for it.
 const idleGrace = 10 * time.Minute
@@ -733,7 +729,7 @@ func (o *Orch) refreshBranch(wt, br string) {
 	if _, err := command.Output(c.Repo, "git", "merge-base", "--is-ancestor", c.Base, br); err == nil {
 		return // already on top of Base
 	}
-	if d := dirtyTree(wt); d != "" {
+	if d := git.DirtyTree(wt); d != "" {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s; its merge will fail until it is rebased", wt, br, c.Base)})
 		return
 	}

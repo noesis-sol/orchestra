@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
@@ -167,7 +168,7 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (Co
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if c.Base = currentBranch(c.Repo); c.Base == "" {
+		if c.Base = git.CurrentBranch(c.Repo); c.Base == "" {
 			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
 		}
 
