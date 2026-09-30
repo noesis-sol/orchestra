@@ -87,9 +87,10 @@ of starting the worker with it). `orchestra -h` lists them all.
 ## While it runs
 
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and
-  `.orchestra/` stops the run at the next ticket (`DIRTY_TREE`). A commit or branch switch there
-  makes the running ticket's merge fail (`MERGE_FAILED`). Beads changes (`bd update`, `bd create`)
-  are fine.
+  `.orchestra/`, or a branch switch there, stops the run at the next ticket or merge, whichever
+  comes first (`DIRTY_TREE`); a finished ticket is then left unmerged in its worktree for review.
+  A commit on the base branch is picked up: running tickets are rebased onto it and checked again
+  before they merge. Beads changes (`bd update`, `bd create`) are fine.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
 - **Follow it** in its pane, or with `tail -f` on the log. With several at once, the dashboard shows
   a box per worker (one line each in a short pane). Each worker is an agent named after its

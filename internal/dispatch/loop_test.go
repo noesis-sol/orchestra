@@ -163,6 +163,47 @@ func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
 	}
 }
 
+// A fast-forward moves whichever branch the main checkout is on, so switching it off Base while
+// a ticket runs must stop the run rather than land the ticket on the other branch.
+func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	f.git(f.repo, "branch", "other")
+	wt := f.ticket(t, "k-1", "a.txt", "a\n")
+	f.git(f.repo, "switch", "-q", "other")
+	main, other := f.git(f.repo, "rev-parse", "main"), f.git(f.repo, "rev-parse", "other")
+	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	if s == nil || s.code != ExitDirty || !strings.HasPrefix(s.text, "DIRTY_TREE:") {
+		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
+	}
+	if f.git(f.repo, "rev-parse", "main") != main || f.git(f.repo, "rev-parse", "other") != other {
+		t.Error("neither branch may move")
+	}
+	if _, err := os.Stat(wt); err != nil {
+		t.Error("the worktree must be kept for review")
+	}
+	f.git(f.repo, "rev-parse", "--verify", "-q", "wt/k-1") // fails the test if the branch is gone
+	if strings.Contains(f.sink.text(), "k-1 closed") {
+		t.Errorf("events:\n%s", f.sink.text())
+	}
+}
+
+func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	wt := f.ticket(t, "k-1", "a.txt", "a\n")
+	os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644)
+	before := f.git(f.repo, "rev-parse", "main")
+	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	if s == nil || s.code != ExitDirty || !strings.Contains(s.text, "uncommitted changes") {
+		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
+	}
+	if f.git(f.repo, "rev-parse", "main") != before {
+		t.Error("main must not move")
+	}
+	if _, err := os.Stat(wt); err != nil {
+		t.Error("the worktree must be kept for review")
+	}
+}
+
 func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	const n = 4

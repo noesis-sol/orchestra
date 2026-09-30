@@ -358,15 +358,11 @@ func (o *Loop) Run(ctx context.Context) int {
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; the check waits for any merge in progress.
 func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
-	c := o.cfg
 	o.repoMu.Lock()
-	dirty, branch := o.checkout.DirtyTree(c.Repo), o.checkout.CurrentBranch(c.Repo)
+	s := o.checkoutUnready("")
 	o.repoMu.Unlock()
-	if dirty != "" {
-		return nil, 0, halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping. Inspect with: git status", c.Repo)
-	}
-	if branch != c.Base {
-		return nil, 0, halt(ExitDirty, "DIRTY_TREE: %s is no longer on %s; stopping. Check it out again to continue.", c.Repo, c.Base)
+	if s != nil {
+		return nil, 0, s
 	}
 	ready, err := o.tickets.Ready()
 	if err != nil {
@@ -374,6 +370,20 @@ func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
 	}
 	t, queued := pickNext(ready, running)
 	return t, queued, nil
+}
+
+// checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
+// not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
+// Base. held, when set, says what is left for review. The caller holds repoMu.
+func (o *Loop) checkoutUnready(held string) *stopReason {
+	c := o.cfg
+	if o.checkout.DirtyTree(c.Repo) != "" {
+		return halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
+	}
+	if o.checkout.CurrentBranch(c.Repo) != c.Base {
+		return halt(ExitDirty, "DIRTY_TREE: %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
+	}
+	return nil
 }
 
 // pickNext returns the first ticket (ready is in priority order) that isn't running, and how many
@@ -667,6 +677,10 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	for attempt := 0; attempt < 3; attempt++ {
 		o.repoMu.Lock()
 		if o.merger.IsAncestor(c.Repo, c.Base, br) {
+			if s := o.checkoutUnready(fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
+				o.repoMu.Unlock()
+				return s
+			}
 			commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
 			out, err := o.merger.FastForward(c.Repo, br)
 			o.log.Raw(out, err)
