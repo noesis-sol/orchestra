@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -12,21 +12,21 @@ import (
 	"golang.org/x/term"
 )
 
-// initUI prints 'orchestra init' in colour on a terminal, and plainly otherwise (Lip Gloss drops
+// InitScreen prints 'orchestra init' in colour on a terminal, and plainly otherwise (Lip Gloss drops
 // the colours when the output isn't a terminal).
-type initUI struct {
+type InitScreen struct {
 	out   io.Writer
 	width int
 }
 
-func newInitUI(out io.Writer) initUI {
+func NewInitScreen(out io.Writer) InitScreen {
 	w := 80
 	if f, ok := out.(interface{ Fd() uintptr }); ok {
 		if tw, _, err := term.GetSize(int(f.Fd())); err == nil && tw > 0 {
 			w = min(tw, 100)
 		}
 	}
-	return initUI{out: out, width: w}
+	return InitScreen{out: out, width: w}
 }
 
 var (
@@ -36,19 +36,19 @@ var (
 	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
 )
 
-func (u initUI) header(repo string) {
+func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
-	fmt.Fprintln(u.out, titleStyle.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(tildify(repo)))
+	fmt.Fprintln(u.out, titleStyle.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(Tildify(repo)))
 	fmt.Fprintln(u.out, dimStyle.Render(" Sets this project up for orchestra, in .orchestra/."))
 	fmt.Fprintln(u.out)
 }
 
-func (u initUI) cancelled() {
+func (u InitScreen) Cancelled() {
 	fmt.Fprintln(u.out, deferredStyle.Render("  Cancelled; nothing was changed."))
 }
 
-// steps prints each step: ✓ done, • already there, ! done with something to watch.
-func (u initUI) steps(steps []project.Step) {
+// Steps prints each step: ✓ done, • already there, ! done with something to watch.
+func (u InitScreen) Steps(steps []project.Step) {
 	for _, s := range steps {
 		mark := map[project.StepKind]string{
 			project.StepDone:    closedStyle.Render("✓"),
@@ -83,8 +83,8 @@ func (u initUI) steps(steps []project.Step) {
 	}
 }
 
-// prerequisites prints what orchestra needs on one line, then a line per missing one.
-func (u initUI) prerequisites(pre []project.Step) {
+// Prerequisites prints what orchestra needs on one line, then a line per missing one.
+func (u InitScreen) Prerequisites(pre []project.Step) {
 	var marks []string
 	var missing []project.Step
 	for _, p := range pre {
@@ -101,8 +101,8 @@ func (u initUI) prerequisites(pre []project.Step) {
 	}
 }
 
-// next prints what is left for the user, numbered, in a box.
-func (u initUI) next(items []string) {
+// Next prints what is left for the user, numbered, in a box.
+func (u InitScreen) Next(items []string) {
 	var b strings.Builder
 	b.WriteString(nextTitle.Render("Next") + "\n")
 	for i, it := range items {
@@ -119,8 +119,8 @@ func (u initUI) next(items []string) {
 	fmt.Fprintln(u.out, nextBox.Width(u.width-2).Render(b.String()))
 }
 
-// signOff closes init: ready, or almost.
-func (u initUI) signOff(ready bool) {
+// SignOff closes init: ready, or almost.
+func (u InitScreen) SignOff(ready bool) {
 	if ready {
 		fmt.Fprintln(u.out, organStyle.Render(" ♪ The orchestra is ready."))
 	} else {
@@ -151,8 +151,8 @@ func concurrencyOptions(current int) []huh.Option[int] {
 	return opts
 }
 
-// askInit asks for what the flags didn't give, starting from the current choice.
-func askInit(c *project.Choice, askCheck, askConcurrent bool) error {
+// AskInit asks for what the flags didn't give, starting from the current choice.
+func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().

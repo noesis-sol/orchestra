@@ -9,6 +9,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tui"
 	"golang.org/x/term"
 )
 
@@ -63,12 +64,12 @@ func runInit(dir string, args []string) int {
 		choice.Concurrent, choice.Unasked = concurrent, false
 	}
 
-	ui := newInitUI(os.Stdout)
-	ui.header(repo)
+	ui := tui.NewInitScreen(os.Stdout)
+	ui.Header(repo)
 	interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	if interactive && !(checkGiven && concurrentGiven) {
-		if err := askInit(&choice, !checkGiven, !concurrentGiven); err != nil {
-			ui.cancelled()
+		if err := tui.AskInit(&choice, !checkGiven, !concurrentGiven); err != nil {
+			ui.Cancelled()
 			return dispatch.ExitSetup
 		}
 	}
@@ -80,18 +81,18 @@ func runInit(dir string, args []string) int {
 		steps = append(steps, s)
 	}
 	if err != nil {
-		ui.steps(steps)
+		ui.Steps(steps)
 		fmt.Fprintln(os.Stderr, "orchestra init:", err)
 		return dispatch.ExitSetup
 	}
 	pre := project.Prerequisites(repo)
-	ui.steps(steps)
-	ui.prerequisites(pre)
-	ui.next(project.NextSteps(repo, steps, pre))
+	ui.Steps(steps)
+	ui.Prerequisites(pre)
+	ui.Next(project.NextSteps(repo, steps, pre))
 	ready := true
 	for _, p := range pre {
 		ready = ready && p.Kind != project.StepMissing
 	}
-	ui.signOff(ready)
+	ui.SignOff(ready)
 	return dispatch.ExitOK
 }

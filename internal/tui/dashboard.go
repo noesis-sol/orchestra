@@ -1,4 +1,6 @@
-package main
+// Package tui is orchestra's terminal interface: the run's dashboard (Bubble Tea), plain output
+// for pipes, and orchestra init's form and summary.
+package tui
 
 import (
 	"fmt"
@@ -41,8 +43,8 @@ var (
 	home, _ = os.UserHomeDir()
 )
 
-// tildify shortens paths under the home directory for display; the log keeps full paths.
-func tildify(s string) string {
+// Tildify shortens paths under the home directory for display; the log keeps full paths.
+func Tildify(s string) string {
 	if home == "" {
 		return s
 	}
@@ -65,24 +67,24 @@ func renderEvent(ev dispatch.Event) string {
 	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+tildify(ev.Text)))
+		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvWarn:
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+tildify(strings.TrimSpace(ev.Text))))
+		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+Tildify(strings.TrimSpace(ev.Text))))
 	case dispatch.EvStop:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+tildify(ev.Text)))
+		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvDone:
 		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
 	}
-	return fmt.Sprintf("%s %s", ts, dimStyle.Render(tildify(ev.Text)))
+	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
 }
 
-// ---- Bubble Tea model ----------------------------------------------------------------
+// ---- Bubble Tea Dashboard ----------------------------------------------------------------
 
 type eventMsg dispatch.Event
 type statusMsg dispatch.Status
-type finishedMsg struct{}
+type Finished struct{}
 
-type model struct {
+type Dashboard struct {
 	cfg         dispatch.Config
 	spin        spinner.Model
 	active      map[string]dispatch.Status // running workers, by ticket
@@ -103,14 +105,14 @@ type model struct {
 	cancel      func()
 }
 
-func newModel(cfg dispatch.Config, cancel func()) model {
+func NewDashboard(cfg dispatch.Config, cancel func()) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return model{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
+	return Dashboard{cfg: cfg, spin: s, n: cfg.DoneSoFar, width: 80, queued: -1, began: time.Now(), cancel: cancel}
 }
 
-func (m model) Init() tea.Cmd { return m.spin.Tick }
+func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -175,7 +177,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.final, m.quitting = &ev, true
 			return m, tea.Quit
 		}
-	case finishedMsg:
+	case Finished:
 		m.quitting = true
 		return m, tea.Quit
 	}
@@ -185,7 +187,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View is the whole display: title, totals, the tickets of this run, and the active ticket. When
 // the program quits it renders once more without the active ticket, which stays on screen as the
 // run's summary.
-func (m model) View() string {
+func (m Dashboard) View() string {
 	w := max(m.width, 30)
 	title := m.titleLine(w)
 	if m.quitting {
@@ -228,8 +230,8 @@ func (m model) View() string {
 }
 
 // workerList is the compact form of the worker boxes: one box, one line per running worker.
-func (m model) workerList(w int) string {
-	running := m.activeList()
+func (m Dashboard) workerList(w int) string {
+	running := m.Running()
 	if len(running) == 0 {
 		return m.workerPanels(w)
 	}
@@ -251,7 +253,7 @@ func (m model) workerList(w int) string {
 
 // statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
 // branch, running time and stopping state are on the title line.
-func (m model) statsLine(w int) string {
+func (m Dashboard) statsLine(w int) string {
 	queued := "—"
 	if m.queued >= 0 {
 		queued = fmt.Sprint(m.queued)
@@ -266,8 +268,8 @@ func (m model) statsLine(w int) string {
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }
 
-// activeList returns the running workers, oldest first.
-func (m model) activeList() []dispatch.Status {
+// Running returns the running workers, oldest first.
+func (m Dashboard) Running() []dispatch.Status {
 	var l []dispatch.Status
 	for _, st := range m.active {
 		l = append(l, st)
@@ -277,8 +279,8 @@ func (m model) activeList() []dispatch.Status {
 }
 
 // workerPanels stacks a box per running worker, or one box saying what the loop is doing.
-func (m model) workerPanels(w int) string {
-	running := m.activeList()
+func (m Dashboard) workerPanels(w int) string {
+	running := m.Running()
 	if len(running) == 0 {
 		msg := "picking the next ticket…"
 		if m.stopping {
@@ -298,7 +300,7 @@ func (m model) workerPanels(w int) string {
 }
 
 // workerPanel boxes one running ticket: ID, worker status and time, title, latest action.
-func (m model) workerPanel(w int, st dispatch.Status, titleMax int) string {
+func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	border := lipgloss.TerminalColor(cyan)
@@ -342,7 +344,7 @@ type ticketRow struct {
 	triage    string // the triage organ's verdict
 }
 
-func (m *model) rowIndex(id string) int {
+func (m *Dashboard) rowIndex(id string) int {
 	for i := len(m.rows) - 1; i >= 0; i-- {
 		if m.rows[i].id == id {
 			return i
@@ -351,7 +353,7 @@ func (m *model) rowIndex(id string) int {
 	return -1
 }
 
-func (m *model) setRow(id string, state rowState, note string) {
+func (m *Dashboard) setRow(id string, state rowState, note string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id})
@@ -386,7 +388,7 @@ func (r ticketRow) cells(width int) [3]string {
 }
 
 // ticketsTable lists this run's tickets, newest last, in at most maxLines lines of screen.
-func (m model) ticketsTable(w, maxLines int) string {
+func (m Dashboard) ticketsTable(w, maxLines int) string {
 	if len(m.rows) == 0 {
 		return ""
 	}
@@ -433,7 +435,7 @@ func (m model) ticketsTable(w, maxLines int) string {
 
 // statsTable is the run's totals as one strip: a column per total, label over value, in the
 // events' colours. Too narrow a pane gets the one-line form instead.
-func (m model) statsTable(w int) string {
+func (m Dashboard) statsTable(w int) string {
 	count := func(n int, mark string, style lipgloss.Style) string {
 		if n == 0 {
 			return dimStyle.Render("0")
@@ -552,8 +554,8 @@ func shortVersion(v string) string {
 
 // titleLine is the Orchestra pill, the version, the branch and how long the run has gone, and
 // whether it is stopping.
-func (m model) titleLine(w int) string {
-	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(buildVersion())) + "   " +
+func (m Dashboard) titleLine(w int) string {
+	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + "   " +
 		dimStyle.Render(fmt.Sprintf("%s · %s", m.cfg.Base, time.Since(m.began).Truncate(time.Second)))
 	if m.stopping {
 		line += stopStyle.Render("  · stopping")
@@ -582,40 +584,44 @@ func agentStyle(s string) string {
 
 // ---- Sinks ---------------------------------------------------------------------------
 
-type teaSink struct{ p *tea.Program }
+// ProgramSink sends the loop's events and statuses to the dashboard.
+type ProgramSink struct{ p *tea.Program }
 
-func (s teaSink) Event(ev dispatch.Event)   { s.p.Send(eventMsg(ev)) }
-func (s teaSink) Status(st dispatch.Status) { s.p.Send(statusMsg(st)) }
+// NewProgramSink returns a sink for the dashboard program p.
+func NewProgramSink(p *tea.Program) ProgramSink { return ProgramSink{p} }
 
-// printSink prints each event as a line: styled for a terminal (after the live view has closed),
+func (s ProgramSink) Event(ev dispatch.Event)   { s.p.Send(eventMsg(ev)) }
+func (s ProgramSink) Status(st dispatch.Status) { s.p.Send(statusMsg(st)) }
+
+// Printer prints each event as a line: styled for a terminal (after the live view has closed),
 // or as the plain log line for pipes and -plain.
-type printSink struct {
-	styled bool
-	width  int
+type Printer struct {
+	Styled bool // colours and the rendered report, for a terminal
+	Width  int
 }
 
-func (p printSink) Event(ev dispatch.Event) {
-	if p.styled {
-		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.width, 20), ""))
+func (p Printer) Event(ev dispatch.Event) {
+	if p.Styled {
+		fmt.Println(ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
 		return
 	}
 	fmt.Printf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
-func (printSink) Status(dispatch.Status) {}
+func (Printer) Status(dispatch.Status) {}
 
-// say prints a line of the orchestrator's own progress outside the event stream.
-func (p printSink) say(text string) {
-	if p.styled {
+// Say prints a line of the orchestrator's own progress outside the event stream.
+func (p Printer) Say(text string) {
+	if p.Styled {
 		fmt.Println(organStyle.Render("◆ ") + dimStyle.Render(text))
 		return
 	}
 	fmt.Printf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
 }
 
-// report prints the reviewer's Markdown, rendered with Glamour on a terminal.
-func (p printSink) report(md string) {
-	if p.styled {
-		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.width-4, 40)))
+// Report prints the reviewer's Markdown, rendered with Glamour on a terminal.
+func (p Printer) Report(md string) {
+	if p.Styled {
+		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
 		if err == nil {
 			if out, err := r.Render(md); err == nil {
 				fmt.Print(out)
@@ -625,3 +631,9 @@ func (p printSink) report(md string) {
 	}
 	fmt.Println(md)
 }
+
+// Interrupted reports whether the run was stopped with Ctrl+C.
+func (m Dashboard) Interrupted() bool { return m.interrupted }
+
+// Final is the event the run ended with, or nil.
+func (m Dashboard) Final() *dispatch.Event { return m.final }

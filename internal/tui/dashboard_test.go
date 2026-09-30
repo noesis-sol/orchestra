@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -47,7 +47,7 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 }
 
 func TestViewFitsThePaneWidth(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
 	m.n, m.closed, m.deferred, m.queued = 3, 2, 1, 17
 	m.began = time.Now().Add(-12 * time.Minute)
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
@@ -73,23 +73,23 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 	}
 }
 
-func runEvents(m model, evs ...dispatch.Event) model {
+func runEvents(m Dashboard, evs ...dispatch.Event) Dashboard {
 	for _, ev := range evs {
 		next, _ := m.Update(eventMsg(ev))
-		m = next.(model)
+		m = next.(Dashboard)
 	}
 	return m
 }
 
 func TestTicketRowsFollowEachTicket(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
 		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "kinieta-vzg", Title: "Competing timelines"},
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"},
 		dispatch.Event{Kind: dispatch.EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property Dashboard"},
 	)
 	if len(m.rows) != 3 || m.closed != 1 || m.deferred != 1 || m.triaged != 1 {
 		t.Fatalf("rows %+v closed %d deferred %d triaged %d", m.rows, m.closed, m.deferred, m.triaged)
@@ -99,7 +99,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 	for _, want := range []string{
 		"✓ done", "kinieta-dwv", "ffd6ce4 merged", // completed: the commit, not the title
 		"↷ deferred", "◆ environment · high · prompt", // triage replaces the reason (cut to fit)
-		"▶ working", "Open the property model",
+		"▶ working", "Open the property Dashboard",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
@@ -117,7 +117,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
@@ -145,7 +145,7 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 }
 
 func TestAskedTicketIsCountedAndShown(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
 		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
@@ -178,7 +178,7 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		t.Errorf("short title = %q", got)
 	}
 
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
 	m.width, m.height = 66, 40
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
 	v := ansi.Strip(m.View())

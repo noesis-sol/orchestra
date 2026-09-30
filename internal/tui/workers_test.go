@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -11,10 +11,10 @@ import (
 )
 
 func TestDashboardShowsSeveralWorkers(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
 	m.active = map[string]dispatch.Status{}
 	for i, title := range []string{"Competing timelines on the same view and property fight each other every frame",
-		"Open the property model", "Warn in debug builds when a chain call is silently ignored"} {
+		"Open the property Dashboard", "Warn in debug builds when a chain call is silently ignored"} {
 		id := fmt.Sprintf("kinieta-%d", i)
 		m.active[id] = dispatch.Status{Ticket: id, Title: title, Started: time.Now().Add(-time.Duration(i) * time.Minute), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
 	}
@@ -41,7 +41,7 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 }
 
 func TestDashboardFitsShortPanes(t *testing.T) {
-	m := newModel(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},

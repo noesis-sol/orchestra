@@ -20,6 +20,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
@@ -255,34 +256,34 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-		orch.SetSink(printSink{})
+		orch.SetSink(tui.Printer{})
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
 		stop()
-		organPhase(orch, cfg, log, code, orch.Final(), printSink{}, cancelOrgans)
+		organPhase(orch, cfg, log, code, orch.Final(), tui.Printer{}, cancelOrgans)
 		return status(code)
 	}
 
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
-	p := tea.NewProgram(newModel(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
-	orch.SetSink(teaSink{p})
+	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
+	orch.SetSink(tui.NewProgramSink(p))
 	codes := make(chan int, 1)
 	go func() {
 		codes <- orch.Run(ctx)
-		p.Send(finishedMsg{})
+		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
-	sink := printSink{styled: true, width: width}
-	m, _ := final.(model)
-	if m.interrupted {
+	sink := tui.Printer{Styled: true, Width: width}
+	m, _ := final.(tui.Dashboard)
+	if m.Interrupted() {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		msg := "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"
-		if running := m.activeList(); len(running) > 0 {
+		if running := m.Running(); len(running) > 0 {
 			var names []string
 			for _, st := range running {
 				names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
@@ -301,8 +302,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
 		return exitStatus(dispatch.ExitInterrupted)
 	}
-	if m.final != nil {
-		sink.Event(*m.final)
+	if m.Final() != nil {
+		sink.Event(*m.Final())
 	}
 	code := <-codes
 	orch.SetSink(sink)
@@ -312,7 +313,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
 // the run report. Ctrl+C skips whatever is left.
-func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, final string, out printSink, cancelOrgans func()) {
+func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
 	if !c.Triage && !c.Review {
 		return
 	}
@@ -323,24 +324,24 @@ func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, fin
 		cancelOrgans()
 	}()
 	if c.Triage {
-		out.say("finishing triage…")
+		out.Say("finishing triage…")
 		orch.FinishTriage(ctx)
 	}
 	if !c.Review || ctx.Err() != nil {
 		return
 	}
-	out.say("writing the run report with claude… (ctrl+c skips)")
+	out.Say("writing the run report with claude… (ctrl+c skips)")
 	report, path, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + firstLine(err.Error())
 			log.Line(time.Now(), msg)
-			out.say(msg)
+			out.Say(msg)
 		}
 		return
 	}
 	fmt.Println()
-	out.report(report)
+	out.Report(report)
 	log.Line(time.Now(), "REPORT written to "+path)
-	out.say("report saved to " + tildify(path))
+	out.Say("report saved to " + tui.Tildify(path))
 }
