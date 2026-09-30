@@ -124,6 +124,13 @@ Claude workers are started with a one-line instruction to read `.orchestra/run/p
 
 Claude workers also start with `--settings .orchestra/run/hooks.json`: hooks, for that worker only, that record each tool it uses in `.orchestra/run/activity.json`. That is how the dashboard tells `testing` (the check command or a test runner), `editing` and `reading` apart from plain `working`, without reading the worker's screen.
 
+Workers of another agent kind (`--agent` / `AGENT_KIND`, any kind Herdr can start) are dispatched, watched and merged the same way, but these features only work with `claude`:
+- **Prompt at launch.** Other agents always get the prompt pasted.
+- **Recovering a paste whose Enter didn't register.** `orchestra` only recognises Claude Code's `❯` input box, so it pastes the prompt once more instead of pressing Enter, and if the worker still doesn't start, defers the ticket (`PROMPT_FAILED`).
+- **The latest action on the dashboard,** read from Claude Code's `⏺` and spinner lines, and `testing`, `editing` or `reading`, from the hooks above.
+
+The [organs](#organs) run `claude` whatever the workers' agent kind.
+
 ## Running orchestra through an agent
 
 Optional: [`skills/orchestra/SKILL.md`](skills/orchestra/SKILL.md) is a skill for coding agents such as Claude Code. It tells the agent how to:
