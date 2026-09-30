@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A worker's status says what it is doing: `testing` (yellow) while it runs the
+  project's check command or a test runner, `editing` or `reading`, and
+  `working` otherwise. Claude workers report each tool they use through hooks
+  loaded for them alone (`claude --settings .orchestra/run/hooks.json`, which
+  writes `.orchestra/run/activity.json`); the project's and the user's own
+  settings are untouched.
 - Several tickets at once. `.orchestra/settings.json` (written by `init`, which
   asks) holds the default; `--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT`
   overrides it for a run. Tickets are never handed out twice; finished tickets

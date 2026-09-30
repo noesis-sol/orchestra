@@ -63,6 +63,7 @@ type Status struct {
 	Started  time.Time
 	Agent    string // Herdr agent status
 	Activity string // the worker's latest action line
+	Doing    string // what a working worker is doing, from its reports: testing, editing, reading or ""
 	Gone     bool
 }
 
@@ -168,6 +169,7 @@ type Loop struct {
 	starter    Starter
 	namer      Namer
 	agents     Agents
+	reporter   Reporter
 	checkout   Checkout
 	worktrees  Worktrees
 	merger     Merger
@@ -186,7 +188,7 @@ type Loop struct {
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
-	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
+	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, reporter: d.Reporter,
 		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx}
 }
 
@@ -441,12 +443,22 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		}
 	}
 
+	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
+	var report []string
+	if o.reporter != nil && c.AgentKind == "claude" {
+		var err error
+		if report, err = o.reporter.ReportArgs(wt); err != nil {
+			o.log.Raw("", fmt.Errorf("cannot set up %s's worker to report what it does: %w", id, err))
+			report = nil
+		}
+	}
+
 	// With its prompt in a file, the worker is started by typing the command into the tab and
 	// named once Herdr recognises it. Herdr's own start waits for the agent to look ready for
 	// input, which a worker that goes straight to work never does, so it could only time out.
 	ok := false
 	if launch != "" {
-		err := o.starter.LaunchInPane(pane, c.AgentKind, launch)
+		err := o.starter.LaunchInPane(pane, c.AgentKind, append(report[:len(report):len(report)], launch))
 		if err == nil {
 			_, ok = o.namer.AdoptAgent(ctx, pane, c.AgentKind, id)
 		}
@@ -463,13 +475,22 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
 	// the agent is there before trying again.
 	for attempt := 0; attempt < 10 && !ok; attempt++ {
-		err := o.starter.StartAgent(ctx, id, c.AgentKind, pane, launch)
+		args := report[:len(report):len(report)]
+		if launch != "" {
+			args = append(args, launch)
+		}
+		err := o.starter.StartAgent(ctx, id, c.AgentKind, pane, args)
 		if ok = err == nil; ok {
 			break
 		}
 		o.log.Raw("", err)
-		if o.starter.IsArgumentRefused(err) && launch != "" {
-			launch = "" // start it plainly and paste the prompt instead
+		if o.starter.IsArgumentRefused(err) && len(args) > 0 {
+			// Start it plainly: paste the prompt instead, and do without reports if need be.
+			if launch != "" {
+				launch = ""
+			} else {
+				report = nil
+			}
 			continue
 		}
 		if !sleep(ctx, 3*time.Second) {
@@ -499,7 +520,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 		return halt(ExitTool, "START_FAILED for %s in tab %s", id, tab)
 	}
 
-	stopWatch := o.watch(ctx, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
+	stopWatch := o.watch(ctx, wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	defer stopWatch()
 
 	if !o.promptTaken(ctx, id, prompt, launch != "") {
@@ -801,7 +822,7 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 
 // watch reports the worker's status and latest action every 2 seconds until the returned stop
 // function is called; stop waits for the last report, so no update lands after it.
-func (o *Loop) watch(ctx context.Context, base Status) (stop func()) {
+func (o *Loop) watch(ctx context.Context, wt string, base Status) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -812,6 +833,11 @@ func (o *Loop) watch(ctx context.Context, base Status) (stop func()) {
 			s := base
 			s.Agent = o.agents.Status(s.Ticket)
 			s.Activity = lastActivity(o.agents.Screen(s.Ticket))
+			if o.reporter != nil && s.Agent == "working" {
+				if u, ok := o.reporter.LastToolUse(wt); ok {
+					s.Doing = Doing(u, o.cfg.Check)
+				}
+			}
 			if ctx.Err() != nil {
 				return
 			}

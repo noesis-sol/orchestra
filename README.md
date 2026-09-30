@@ -73,7 +73,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
-.orchestra/run/               per-ticket files in each worktree (the worker's launch prompt)
+.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's hooks and what they report)
 ```
 
 In a terminal, `init` asks with a short form: the **check command** (lint, build and tests), pre-filled from the settings or from an existing prompt, and how many **tickets to run at the same time** by default. `--check` and `--concurrent N` (or `-c N`) answer those without asking, which is what an agent or a script should use. Without a terminal it asks nothing, and uses 1 at a time. The check command goes into the prompt template and `settings.json`. `init` then shows each step, whether `bd`, Beads, `herdr` and `claude` are there, and a **Next** box with only what's left, ending with the command to start a run. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `--force`, and keeps existing settings unless `--check` or `--concurrent` change them. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` afterwards.
@@ -116,6 +116,8 @@ Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/
 - **Ask, don't wait.** A ticket that needs the maintainer's decision gets a question ticket labelled `human` that blocks it. The orchestrator never hands a question to a worker; it shows the ticket as **? for you**, and the run goes on. Answer with `bd human respond <question> --response "…"`, and the ticket returns to the queue with its branch rebased onto the current one.
 
 Claude workers are started with a one-line instruction to read `.orchestra/run/prompt.md` in their worktree, where `orchestra` writes the prompt (kept out of git through the repository's `info/exclude`, so it's ignored even on a branch cut before `.orchestra/.gitignore` was committed). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
+
+Claude workers also start with `--settings .orchestra/run/hooks.json`: hooks, for that worker only, that record each tool it uses in `.orchestra/run/activity.json`. That is how the dashboard tells `testing` (the check command or a test runner), `editing` and `reading` apart from plain `working`, without reading the worker's screen.
 
 ## Running orchestra through an agent
 

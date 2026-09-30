@@ -37,6 +37,7 @@ var (
 	stopStyle     = lipgloss.NewStyle().Foreground(red).Bold(true)   // needs you
 	doneStyle     = lipgloss.NewStyle().Foreground(green)
 	organStyle    = lipgloss.NewStyle().Foreground(purple).Bold(true) // an organ's output
+	testingStyle  = lipgloss.NewStyle().Foreground(yellow).Bold(true) // a worker running checks
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)
@@ -240,7 +241,7 @@ func (m Dashboard) workerList(w int) string {
 	for _, st := range running {
 		elapsed := time.Since(st.Started).Truncate(time.Second)
 		lines = append(lines, ansi.Truncate(fmt.Sprintf("%s %s  %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
-			agentStyle(st.Agent), dimStyle.Render(elapsed.String()), st.Title), inner, "…"))
+			agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()), st.Title), inner, "…"))
 	}
 	border := lipgloss.TerminalColor(cyan)
 	for _, st := range running {
@@ -309,7 +310,7 @@ func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	}
 	elapsed := time.Since(st.Started).Truncate(time.Second)
 	lines := []string{fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
-		agentStyle(st.Agent), dimStyle.Render(elapsed.String())))}
+		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String())))}
 	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
 		lines = append(lines, "  "+l)
 	}
@@ -410,6 +411,13 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 	}
 	for _, r := range rows {
 		c := r.cells(aboutWidth)
+		if st, ok := m.active[r.id]; ok && r.state == rowWorking {
+			if d := doingLabel(st); d == "testing" {
+				c[0] = testingStyle.Render("▶ testing")
+			} else if d == "editing" || d == "reading" {
+				c[0] = pickedStyle.Render("▶ " + d)
+			}
+		}
 		data = append(data, c[:])
 	}
 	return table.New().
@@ -570,10 +578,20 @@ func triagedNote(n int) string {
 	return organStyle.Render(fmt.Sprintf(" · ◆ %d triaged", n))
 }
 
+// doingLabel is the worker's status, made precise by what it reported doing when it is working.
+func doingLabel(st dispatch.Status) string {
+	if st.Agent == "working" && st.Doing != "" {
+		return st.Doing
+	}
+	return st.Agent
+}
+
 func agentStyle(s string) string {
 	switch s {
-	case "working":
+	case "working", "editing", "reading":
 		return pickedStyle.Render(s)
+	case "testing":
+		return testingStyle.Render(s)
 	case "blocked":
 		return stopStyle.Render(s + " — waiting for you")
 	case "":

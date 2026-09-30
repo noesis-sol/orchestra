@@ -146,6 +146,7 @@ Lines about single tickets, which don't stop the run:
 | a worker's screen and final message | its Herdr tab, labelled with the ticket ID |
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
+| the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json` |
 | questions for the user | `bd human list` |
 
 ## Finishing a ticket by hand

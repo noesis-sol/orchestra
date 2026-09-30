@@ -89,7 +89,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "kinieta-vzg", Title: "Competing timelines"},
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"},
 		dispatch.Event{Kind: dispatch.EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property Dashboard"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
 	)
 	if len(m.rows) != 3 || m.closed != 1 || m.deferred != 1 || m.triaged != 1 {
 		t.Fatalf("rows %+v closed %d deferred %d triaged %d", m.rows, m.closed, m.deferred, m.triaged)
@@ -99,7 +99,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 	for _, want := range []string{
 		"✓ done", "kinieta-dwv", "ffd6ce4 merged", // completed: the commit, not the title
 		"↷ deferred", "◆ environment · high · prompt", // triage replaces the reason (cut to fit)
-		"▶ working", "Open the property Dashboard",
+		"▶ working", "Open the property model",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
@@ -218,5 +218,24 @@ func TestShortVersion(t *testing.T) {
 		if got := shortVersion(in); got != want {
 			t.Errorf("shortVersion(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestWorkerShowsWhatItIsDoing(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	status := dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Activity: "⏺ Running the full local CI · 59s"}
+	m.active = map[string]dispatch.Status{"kinieta-ce1": status}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "▶ testing") || !strings.Contains(view, "kinieta-ce1  testing") || strings.Contains(view, "working") {
+		t.Errorf("a worker running the checks should show testing:\n%s", view)
+	}
+
+	status.Agent = "blocked" // a dialog outranks the last report
+	m.active["kinieta-ce1"] = status
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(view, "▶ working") {
+		t.Errorf("a blocked worker should show blocked:\n%s", view)
 	}
 }

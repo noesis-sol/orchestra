@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
@@ -247,6 +248,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		Starter:   terminal,
 		Namer:     terminal,
 		Agents:    terminal,
+		Reporter:  claude.Reporter{},
 		Checkout:  repo,
 		Worktrees: repo,
 		Merger:    repo,

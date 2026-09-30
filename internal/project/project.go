@@ -19,7 +19,7 @@ import (
 //	.orchestra/.gitignore         committed: ignores the rest
 //	.orchestra/orchestra.log      the event log
 //	.orchestra/reports/           run reports
-//	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt)
+//	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt, the worker's hooks)
 //
 // 'orchestra init' creates it. A project set up before that keeps its files in .claude/
 // (worker-prompt.md, orchestrate.log, orchestrate-reports/) and still works.

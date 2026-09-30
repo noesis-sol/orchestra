@@ -47,15 +47,15 @@ func (t Terminal) CreateTab(workspace, cwd, label string) (tab, pane string, err
 // CloseTab closes a Herdr tab.
 func (t Terminal) CloseTab(tab string) { command.Output("", "herdr", "tab", "close", tab) }
 
-// StartAgent starts an agent in the pane. A non-empty prompt is passed to the agent itself, so it
-// starts with the prompt already submitted. Herdr types the command into the pane's shell and
-// refuses arguments with line breaks, so the prompt must be one line.
-func (t Terminal) StartAgent(ctx context.Context, name, kind, pane, prompt string) error {
-	args := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
-	if prompt != "" {
-		args = append(args, "--", prompt)
+// StartAgent starts an agent in the pane, passing it args; a prompt among them starts it with the
+// prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
+// with line breaks, so each must be one line.
+func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
+	a := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
+	if len(args) > 0 {
+		a = append(append(a, "--"), args...)
 	}
-	_, err := command.OutputContext(ctx, "", "herdr", args...)
+	_, err := command.OutputContext(ctx, "", "herdr", a...)
 	return err
 }
 
@@ -65,10 +65,14 @@ func (t Terminal) IsArgumentRefused(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid_agent_argument")
 }
 
-// LaunchInPane types '<kind> <instruction>' into the pane's shell, as 'herdr agent start' would,
-// and returns at once. The instruction must be one line.
-func (t Terminal) LaunchInPane(pane, kind, instruction string) error {
-	_, err := command.Output("", "herdr", "pane", "run", pane, kind+" "+shellQuote(instruction))
+// LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
+// returns at once. Each argument must be one line.
+func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
+	line := kind
+	for _, a := range args {
+		line += " " + shellQuote(a)
+	}
+	_, err := command.Output("", "herdr", "pane", "run", pane, line)
 	return err
 }
 

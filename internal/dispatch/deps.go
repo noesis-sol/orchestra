@@ -29,9 +29,9 @@ type Tabs interface {
 
 // Starter starts a worker agent in a tab's pane.
 type Starter interface {
-	LaunchInPane(pane, kind, instruction string) error                     // type the command, return at once
-	StartAgent(ctx context.Context, name, kind, pane, prompt string) error // start and wait until it looks ready
-	IsArgumentRefused(err error) bool                                      // StartAgent can't pass these arguments
+	LaunchInPane(pane, kind string, args []string) error                          // type the command, return at once
+	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
+	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
 	WaitReady(ctx context.Context, name string) bool
 }
 
@@ -50,6 +50,13 @@ type Agents interface {
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
+}
+
+// Reporter has a worker report each tool it uses (Claude Code hooks), so the dashboard can say
+// what it is doing without reading its screen.
+type Reporter interface {
+	ReportArgs(worktree string) ([]string, error) // agent arguments that turn reporting on
+	LastToolUse(worktree string) (ToolUse, bool)  // false when the worker reported nothing
 }
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
@@ -95,6 +102,7 @@ type Deps struct {
 	Starter   Starter
 	Namer     Namer
 	Agents    Agents
+	Reporter  Reporter // nil: no reports
 	Checkout  Checkout
 	Worktrees Worktrees
 	Merger    Merger
