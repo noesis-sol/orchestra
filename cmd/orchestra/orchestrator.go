@@ -15,6 +15,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -163,9 +164,9 @@ type Orch struct {
 	mergeMu sync.Mutex
 	active  map[string]Status // tickets being worked on; left set for those still running at the end
 
-	organ      organ
+	organ      organ.Client
 	organCtx   context.Context // cancelled when the maintainer skips the organs
-	triageQ    chan deferral
+	triageQ    chan organ.Deferral
 	triageDone chan struct{}
 	mu         sync.Mutex
 	asideIDs   []string // tickets deferred or left unmerged in this run
@@ -381,7 +382,7 @@ func (o *Orch) work(ctx context.Context, t beads.Ticket) (stop *stopReason) {
 		}
 	}()
 
-	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
+	// One worktree per ticket. A ticket that comes back (organ.Deferral ended) resumes its old branch.
 	wt, s := o.prepareWorktree(id, br)
 	if s != nil {
 		return s

@@ -1,0 +1,167 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/organ"
+)
+
+// lastLines keeps the end of a long text, where a worker's conclusion is.
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// gatherDeferral collects the evidence for one deferred ticket.
+func (o *Orch) gatherDeferral(id, title, how, wt string) organ.Deferral {
+	c := o.cfg
+	show, _ := command.Output(c.Repo, "bd", "show", id)
+	status, _ := command.Output("", "git", "-C", wt, "status", "--short")
+	commits, _ := command.Output("", "git", "-C", wt, "log", "--oneline", c.Base+"..HEAD")
+	stat, _ := command.Output("", "git", "-C", wt, "diff", "--stat", "HEAD")
+	return organ.Deferral{ID: id, Title: title, How: how, Ticket: show,
+		Screen: lastLines(herdr.Screen(id), 80),
+		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
+			orNone(commits) + "\n\nDiff against its last commit:\n" + orNone(stat)}
+}
+
+func orNone(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "(none)"
+	}
+	return strings.TrimSpace(s)
+}
+
+// startTriage runs triage in the background, one ticket at a time, so the loop never waits for it.
+func (o *Orch) startTriage() {
+	o.triageQ = make(chan organ.Deferral, 64)
+	o.triageDone = make(chan struct{})
+	go func() {
+		defer close(o.triageDone)
+		for d := range o.triageQ {
+			o.triage(d)
+		}
+	}()
+}
+
+func (o *Orch) queueTriage(d organ.Deferral) {
+	if o.triageQ != nil {
+		o.triageQ <- d
+	}
+}
+
+// finishTriage waits for queued triage to finish, or for ctx to be cancelled.
+func (o *Orch) finishTriage(ctx context.Context) {
+	if o.triageQ == nil {
+		return
+	}
+	close(o.triageQ)
+	select {
+	case <-o.triageDone:
+	case <-ctx.Done():
+	}
+}
+
+func (o *Orch) triage(d organ.Deferral) {
+	t, err := o.organ.Triage(o.organCtx, d)
+	if err != nil {
+		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, firstLine(err.Error()))})
+		return
+	}
+	beads.AppendNotes(o.cfg.Repo, d.ID, t.Note())
+	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
+		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
+}
+
+func firstLine(s string) string {
+	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	return s
+}
+
+// reviewInput gathers the evidence for the reviewer.
+func (o *Orch) reviewInput(code int, final string) string {
+	c := o.cfg
+	commits, _ := command.Output(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
+	var setAside strings.Builder
+	for _, id := range o.setAside() {
+		show, _ := command.Output(c.Repo, "bd", "show", id)
+		setAside.WriteString(show + "\n")
+	}
+	var stopped strings.Builder
+	for _, st := range o.activeList() {
+		show, _ := command.Output(c.Repo, "bd", "show", st.Ticket)
+		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
+			st.Ticket, st.Tab, show, lastLines(herdr.Screen(st.Ticket), 60))
+	}
+	ready, _ := beads.Ready(c.Repo)
+	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
+		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, exitMeaning(code), final) +
+		organ.Section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
+		organ.Section("Commits merged into "+c.Base+" in this run", commits) +
+		organ.Section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
+		organ.Section("Tickets in progress when the run stopped", stopped.String()) +
+		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready)))
+}
+
+// review writes the run report and returns it with the path it was saved to.
+func (o *Orch) review(ctx context.Context, code int, final string) (string, string, error) {
+	result, err := o.organ.Review(ctx, o.reviewInput(code, final))
+	if err != nil {
+		return "", "", err
+	}
+	report := fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
+		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(result))
+	dir := o.cfg.ReportsDir
+	path := filepath.Join(dir, o.started.Format("2006-01-02-150405")+".md")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return report, "", err
+	}
+	return report, path, os.WriteFile(path, []byte(report), 0o644)
+}
+
+func exitMeaning(code int) string {
+	switch code {
+	case exitOK:
+		return "the queue was empty or the limit was reached"
+	case exitStuck:
+		return "a worker was blocked or paused and needs an answer"
+	case exitTool:
+		return "a Herdr, Beads or git command failed"
+	case exitDirty:
+		return "the main checkout had uncommitted changes or left its branch"
+	case exitMerge:
+		return "a finished ticket's branch did not fast-forward"
+	case exitInterrupted:
+		return "stopped with Ctrl+C"
+	}
+	return "unknown"
+}
+
+// setAside lists tickets deferred or left unmerged in this run, in order, without repeats.
+func (o *Orch) setAside() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]string(nil), o.asideIDs...)
+}
+
+func (o *Orch) markAside(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, x := range o.asideIDs {
+		if x == id {
+			return
+		}
+	}
+	o.asideIDs = append(o.asideIDs, id)
+}

@@ -17,6 +17,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -245,8 +246,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	orch := &Orch{cfg: cfg, log: log, prompt: string(prompt),
-		organ: organ{bin: "claude", model: cfg.OrganModel}, organCtx: organCtx}
-	if off := organsOff("claude"); off != "" && (cfg.Triage || cfg.Review) {
+		organ: organ.Client{Bin: "claude", Model: cfg.OrganModel}, organCtx: organCtx}
+	if off := organ.Unavailable("claude"); off != "" && (cfg.Triage || cfg.Review) {
 		log.Line(time.Now(), "organs off: "+off)
 		cfg.Triage, cfg.Review = false, false
 		orch.cfg = cfg
