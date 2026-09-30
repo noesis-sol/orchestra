@@ -117,6 +117,25 @@ func TestConfigTicketLimitPrecedence(t *testing.T) {
 	}
 }
 
+func TestConfigExcludeTypes(t *testing.T) {
+	configFixture(t, `{"concurrent": 1}`)
+	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic" {
+		t.Errorf("default: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644)
+	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic decision" {
+		t.Errorf("settings: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644)
+	if c, p := loadWith(t); len(p) > 0 || len(c.ExcludeTypes) != 0 {
+		t.Errorf("none: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "exclude_types must be a list") {
+		t.Errorf("invalid setting: %v", p)
+	}
+}
+
 func TestConfigDefaultsAndLayout(t *testing.T) {
 	repo := configFixture(t, `{"check": "make check"}`)
 	c, p := loadWith(t)

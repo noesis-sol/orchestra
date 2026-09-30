@@ -39,7 +39,8 @@ Where the project's orchestra files are:
 `.orchestra/settings.json` holds the check command and `concurrent`, how many tickets run at the
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
-`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none).
+`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), and `exclude_types`, the issue
+types never dispatched (default `["epic"]`; `[]` dispatches every type).
 
 ## Setting a project up
 

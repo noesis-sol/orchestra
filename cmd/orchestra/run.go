@@ -86,9 +86,10 @@ type options struct {
 	WorkerPrompt string
 	Notify       bool
 	Plain        bool
-	Triage       bool   // triage organ on each deferred ticket
-	Review       bool   // reviewer organ when the loop stops
-	OrganModel   string // model for the organs; "" uses the claude CLI's default
+	Triage       bool     // triage organ on each deferred ticket
+	Review       bool     // reviewer organ when the loop stops
+	OrganModel   string   // model for the organs; "" uses the claude CLI's default
+	ExcludeTypes []string // issue types never taken from bd ready, from .orchestra/settings.json
 	showVersion  bool
 }
 
@@ -213,6 +214,11 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		} else {
 			c.TicketLimit = d
 		}
+		if types, err := project.ResolveExcludeTypes(settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.ExcludeTypes = types
+		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
 		} else if !strings.Contains(string(b), "TICKET_ID") {
@@ -327,7 +333,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
-	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo}, herdr.Terminal{}, git.Git{}
+	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, herdr.Terminal{}, git.Git{}
 	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,

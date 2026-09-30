@@ -176,6 +176,30 @@ func TestTicketLimitPrecedence(t *testing.T) {
 	}
 }
 
+func TestExcludeTypes(t *testing.T) {
+	list := func(types ...string) *[]string { return &types }
+	cases := []struct {
+		setting *[]string
+		want    string
+		fails   bool
+	}{
+		{nil, "epic", false}, {list(), "", false}, {list("epic", "decision"), "epic decision", false},
+		{list(""), "", true}, {list("epic,decision"), "", true}, {list("a b"), "", true},
+	}
+	for _, c := range cases {
+		got, err := ResolveExcludeTypes(Settings{ExcludeTypes: c.setting})
+		if (err != nil) != c.fails || (!c.fails && strings.Join(got, " ") != c.want) {
+			t.Errorf("ResolveExcludeTypes(%v) = %q, %v", c.setting, got, err)
+		}
+	}
+	// The default is copied, so a run can't change it.
+	got, _ := ResolveExcludeTypes(Settings{})
+	got[0] = "task"
+	if DefaultExcludeTypes[0] != "epic" {
+		t.Error("the default changed")
+	}
+}
+
 func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
 	if got := DetectCheck(kinieta); got != "scripts/ci-local.sh" {
@@ -219,9 +243,11 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 		t.Errorf("one at a time with a check is plain done: %+v", st)
 	}
 	// Settings init doesn't ask about are kept.
-	SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h"})
+	none := []string{}
+	SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none})
 	ApplySettings(repo, Choice{Check: "make test", Concurrent: 2})
-	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 {
+	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 ||
+		s.ExcludeTypes == nil || len(*s.ExcludeTypes) != 0 {
 		t.Errorf("after init: %+v", s)
 	}
 }

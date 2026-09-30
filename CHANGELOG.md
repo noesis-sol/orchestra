@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `"exclude_types"` in `.orchestra/settings.json`: the issue types a run never
+  takes from `bd ready`, such as `["epic", "decision", "milestone"]`. Without
+  it, epics alone are left out; `[]` dispatches every type.
 - A worker's status says what it is doing: `testing` (yellow) while it runs the
   project's check command or a test runner, `editing` or `reading`, and
   `working` otherwise. Claude workers report each tool they use through hooks

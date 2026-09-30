@@ -60,3 +60,32 @@ func TestStatusWithoutOneIsAnError(t *testing.T) {
 		t.Errorf("got %q, %v; want unknown and an error", st, err)
 	}
 }
+
+func TestReadyPassesTheExcludedTypesToBd(t *testing.T) {
+	dir := t.TempDir()
+	args := filepath.Join(dir, "args")
+	script := "#!/bin/sh\necho \"$@\" > '" + args + "'\necho '[]'\n"
+	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, c := range []struct {
+		types []string
+		want  string
+	}{
+		{[]string{"epic", "decision"}, "--exclude-type epic,decision"},
+		{nil, ""},
+	} {
+		if _, err := (Tracker{Repo: t.TempDir(), ExcludeTypes: c.types}).Ready(); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(args)
+		got := string(b)
+		if !strings.Contains(got, "--exclude-label human") {
+			t.Errorf("%v: bd %s", c.types, got)
+		}
+		if c.want != "" && !strings.Contains(got, c.want) || c.want == "" && strings.Contains(got, "--exclude-type") {
+			t.Errorf("%v: bd %s, want %q", c.types, got, c.want)
+		}
+	}
+}

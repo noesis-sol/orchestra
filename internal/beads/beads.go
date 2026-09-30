@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -27,19 +28,16 @@ func unwrap(raw []byte) []byte {
 	return raw
 }
 
-// epicType is the issue type of an epic: its children are the work, so it is never dispatched.
-const epicType = "epic"
-
 // parseReady returns the open tickets from 'bd ready --json', highest priority (lowest number) first.
-// Questions for the maintainer and epics are left out.
-func parseReady(raw []byte) ([]dispatch.Ticket, error) {
+// Questions for the maintainer and tickets of the excluded issue types are left out.
+func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
 	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
 		return nil, err
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == "open" && t.IssueType != epicType && !dispatch.HasLabel(t, dispatch.HumanLabel) {
+		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
 			open = append(open, t)
 		}
 	}
@@ -87,17 +85,22 @@ func parseStatus(raw []byte) string {
 
 // Tracker is Beads for one repository, as the loop uses it.
 type Tracker struct {
-	Repo string
+	Repo         string
+	ExcludeTypes []string // issue types never dispatched, such as epics, whose children are the work
 }
 
 // Ready returns the open tickets bd considers ready, highest priority first; questions for the
-// maintainer and epics are left out. bd filters them and parseReady filters again, and the query
-// has no limit, so work behind more than bd's default 100 ready entries is still seen. Like the
-// bash version it judges by the output; when that can't be read, the error carries bd's stderr.
+// maintainer and tickets of the excluded types are left out. bd filters them and parseReady filters
+// again, and the query has no limit, so work behind more than bd's default 100 ready entries is
+// still seen. Like the bash version it judges by the output; when that can't be read, the error
+// carries bd's stderr.
 func (b Tracker) Ready() ([]dispatch.Ticket, error) {
-	out, runErr := command.Output(b.Repo, "bd", "ready", "--json", "--limit", "0",
-		"--exclude-type", epicType, "--exclude-label", dispatch.HumanLabel)
-	ready, err := parseReady([]byte(out))
+	args := []string{"ready", "--json", "--limit", "0", "--exclude-label", dispatch.HumanLabel}
+	if len(b.ExcludeTypes) > 0 {
+		args = append(args, "--exclude-type", strings.Join(b.ExcludeTypes, ","))
+	}
+	out, runErr := command.Output(b.Repo, "bd", args...)
+	ready, err := parseReady([]byte(out), b.ExcludeTypes)
 	switch {
 	case err != nil && runErr != nil:
 		return nil, runErr
