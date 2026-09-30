@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // gitRepo makes a repository with one commit and returns its path and a git runner.
@@ -13,7 +15,7 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	repo := t.TempDir()
 	git := func(dir string, args ...string) string {
 		t.Helper()
-		out, err := run(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
 		if err != nil {
 			t.Fatal(err)
 		}

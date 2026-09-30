@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -399,7 +401,7 @@ func TestParsePaneAgent(t *testing.T) {
 
 func TestShellQuoteMakesOneWord(t *testing.T) {
 	for _, in := range []string{"Your instructions for ticket k-1 are in .orchestra/run/prompt.md.", "it's `a` $test \"q\""} {
-		out, err := run("", "sh", "-c", "printf '%s' "+shellQuote(in))
+		out, err := command.Output("", "sh", "-c", "printf '%s' "+shellQuote(in))
 		if err != nil || out != in {
 			t.Errorf("shellQuote(%q) round-trips to %q (%v)", in, out, err)
 		}

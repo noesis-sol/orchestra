@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // Exit codes, unchanged from orchestrate.sh.
@@ -265,7 +267,7 @@ func (o *Orch) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
-	head, _ := run(c.Repo, "git", "rev-parse", c.Base)
+	head, _ := command.Output(c.Repo, "git", "rev-parse", c.Base)
 	o.startHead = strings.TrimSpace(head)
 	o.info("START orchestra %s in %s on %s (done so far: %d, limit: %d, concurrent: %d, workspace: %s, agent: %s, worktrees: %s)",
 		buildVersion(), c.Repo, c.Base, o.count, c.Limit, c.Concurrency, c.Workspace, c.AgentKind, c.WTRoot)
@@ -529,7 +531,7 @@ func (o *Orch) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	info := ticketInfo(c.Repo, id)
 	if q := openQuestion(info); q != nil && info.Status != "closed" {
 		if info.Status != "open" {
-			run(c.Repo, "bd", "update", id, "--status", "open") // back in the queue once answered
+			command.Output(c.Repo, "bd", "update", id, "--status", "open") // back in the queue once answered
 		}
 		o.markAside(id)
 		o.emit(Event{Kind: EvAsked, Ticket: id, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
@@ -588,13 +590,13 @@ func (o *Orch) prepareWorktree(id, br string) (string, *stopReason) {
 		return wt, nil
 	}
 	wt := filepath.Join(c.WTRoot, id)
-	run(c.Repo, "git", "worktree", "prune")
+	command.Output(c.Repo, "git", "worktree", "prune")
 	var out string
 	var err error
 	if hasBranch(c.Repo, br) {
-		out, err = run(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
+		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", wt, br)
 	} else {
-		out, err = run(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
+		out, err = command.Output(c.Repo, "git", "worktree", "add", "--quiet", "-b", br, wt, c.Base)
 	}
 	o.log.Raw(out, err)
 	if err != nil {
@@ -619,16 +621,16 @@ func (o *Orch) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		o.repoMu.Lock()
 		if isAncestor(c.Repo, c.Base, br) {
 			commit := commitNaming(c.Repo, c.Base, br, id)
-			out, err := run(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
+			out, err := command.Output(c.Repo, "git", "merge", "--ff-only", "--quiet", br)
 			o.log.Raw(out, err)
 			if err != nil {
 				o.repoMu.Unlock()
 				return halt(exitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
-			out, err = run(c.Repo, "git", "worktree", "remove", wt)
+			out, err = command.Output(c.Repo, "git", "worktree", "remove", wt)
 			o.log.Raw(out, err)
 			if err == nil {
-				out, err = run(c.Repo, "git", "branch", "-d", br)
+				out, err = command.Output(c.Repo, "git", "branch", "-d", br)
 				o.log.Raw(out, err)
 			}
 			o.repoMu.Unlock()
@@ -645,10 +647,10 @@ func (o *Orch) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		}
 
 		// Base moved on while the ticket ran: rebase it, still under the lock.
-		out, err := run("", "git", "-C", wt, "rebase", c.Base)
+		out, err := command.Output("", "git", "-C", wt, "rebase", c.Base)
 		o.log.Raw(out, err)
 		if err != nil {
-			run("", "git", "-C", wt, "rebase", "--abort")
+			command.Output("", "git", "-C", wt, "rebase", "--abort")
 			o.repoMu.Unlock()
 			o.markAside(id)
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -696,7 +698,7 @@ func (o *Orch) runCheck(ctx context.Context, wt string) error {
 }
 
 func isAncestor(repo, ancestor, rev string) bool {
-	_, err := run(repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
+	_, err := command.Output(repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
 	return err == nil
 }
 
@@ -728,17 +730,17 @@ func (o *Orch) promptTaken(ctx context.Context, id, prompt string, atLaunch bool
 // was cut; otherwise its merge could not fast-forward. A failed rebase is undone and reported.
 func (o *Orch) refreshBranch(wt, br string) {
 	c := o.cfg
-	if _, err := run(c.Repo, "git", "merge-base", "--is-ancestor", c.Base, br); err == nil {
+	if _, err := command.Output(c.Repo, "git", "merge-base", "--is-ancestor", c.Base, br); err == nil {
 		return // already on top of Base
 	}
 	if d := dirtyTree(wt); d != "" {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s; its merge will fail until it is rebased", wt, br, c.Base)})
 		return
 	}
-	out, err := run("", "git", "-C", wt, "rebase", c.Base)
+	out, err := command.Output("", "git", "-C", wt, "rebase", c.Base)
 	o.log.Raw(out, err)
 	if err != nil {
-		run("", "git", "-C", wt, "rebase", "--abort")
+		command.Output("", "git", "-C", wt, "rebase", "--abort")
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s; left as it was, so its merge will fail until it is rebased (worktree %s)", br, c.Base, wt)})
 		return
 	}

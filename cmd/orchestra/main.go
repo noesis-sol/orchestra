@@ -30,6 +30,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 )
@@ -122,7 +124,7 @@ func loadConfig() (Config, []string) {
 		os.Exit(exitOK)
 	}
 
-	if out, err := run("", "git", "rev-parse", "--show-toplevel"); err == nil {
+	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
 		c.Repo = strings.TrimSpace(out)
 	} else {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
@@ -170,8 +172,8 @@ func loadConfig() (Config, []string) {
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		gitDir, _ := run(c.Repo, "git", "rev-parse", "--absolute-git-dir")
-		commonDir, _ := run(c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+		gitDir, _ := command.Output(c.Repo, "git", "rev-parse", "--absolute-git-dir")
+		commonDir, _ := command.Output(c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}

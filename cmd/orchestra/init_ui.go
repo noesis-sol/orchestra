@@ -29,10 +29,10 @@ func newInitUI(out io.Writer) initUI {
 }
 
 var (
-	initLabel = lipgloss.NewStyle().Bold(true).Width(15)
-	nextBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
-	nextTitle = lipgloss.NewStyle().Bold(true).Foreground(purple)
-	command   = lipgloss.NewStyle().Bold(true).Foreground(cyan)
+	initLabel    = lipgloss.NewStyle().Bold(true).Width(15)
+	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
+	nextTitle    = lipgloss.NewStyle().Bold(true).Foreground(purple)
+	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
 )
 
 func (u initUI) header(repo string) {
@@ -108,7 +108,7 @@ func (u initUI) next(items []string) {
 		text, cmd, hasCmd := strings.Cut(it, "\n")
 		fmt.Fprintf(&b, "%s %s", dimStyle.Render(fmt.Sprintf("%d.", i+1)), text)
 		if hasCmd {
-			fmt.Fprintf(&b, "\n   %s", command.Render(cmd))
+			fmt.Fprintf(&b, "\n   %s", commandStyle.Render(cmd))
 		}
 		if i < len(items)-1 {
 			b.WriteString("\n")

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/command"
+
 	"golang.org/x/term"
 )
 
@@ -72,7 +74,7 @@ func fileExists(p string) bool {
 // before .orchestra/.gitignore was committed. Earlier versions excluded all of .orchestra/, which
 // would hide the committed prompt; that entry is narrowed to run/.
 func ensureRunExcluded(repo string) error {
-	common, err := run(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := command.Output(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
@@ -191,7 +193,7 @@ func runInit(dir string, args []string) int {
 		return exitSetup
 	}
 
-	out, err := run(dir, "git", "rev-parse", "--show-toplevel")
+	out, err := command.Output(dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orchestra init: not inside a git repository")
 		return exitSetup
@@ -318,9 +320,9 @@ func applySettings(repo string, c initChoice) (step, error) {
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
 func movePrompt(repo, from, to string) error {
 	rel, _ := filepath.Rel(repo, from)
-	if _, err := run(repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
+	if _, err := command.Output(repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
 		relTo, _ := filepath.Rel(repo, to)
-		_, err := run(repo, "git", "mv", rel, relTo)
+		_, err := command.Output(repo, "git", "mv", rel, relTo)
 		return err
 	}
 	return os.Rename(from, to)
@@ -371,7 +373,7 @@ func nextSteps(repo string, steps []step, pre []step) []string {
 	case len(steps) > 0 && strings.HasPrefix(steps[0].detail, "wrote"):
 		next = append(next, "Read "+orchDir+"/"+promptName+" and adjust it to the project.")
 	}
-	if out, _ := run(repo, "git", "status", "--porcelain", "--", orchDir, legacyPrompt); strings.TrimSpace(out) != "" {
+	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", orchDir, legacyPrompt); strings.TrimSpace(out) != "" {
 		next = append(next, "Commit "+orchDir+"/.")
 	}
 	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")

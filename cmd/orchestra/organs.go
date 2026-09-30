@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // Organs are LLM-powered steps. The orchestrator gathers the evidence itself and hands it to
@@ -146,10 +148,10 @@ func (t Triage) note() string {
 // gatherDeferral collects the evidence for one deferred ticket.
 func (o *Orch) gatherDeferral(id, title, how, wt string) deferral {
 	c := o.cfg
-	show, _ := run(c.Repo, "bd", "show", id)
-	status, _ := run("", "git", "-C", wt, "status", "--short")
-	commits, _ := run("", "git", "-C", wt, "log", "--oneline", c.Base+"..HEAD")
-	stat, _ := run("", "git", "-C", wt, "diff", "--stat", "HEAD")
+	show, _ := command.Output(c.Repo, "bd", "show", id)
+	status, _ := command.Output("", "git", "-C", wt, "status", "--short")
+	commits, _ := command.Output("", "git", "-C", wt, "log", "--oneline", c.Base+"..HEAD")
+	stat, _ := command.Output("", "git", "-C", wt, "diff", "--stat", "HEAD")
 	return deferral{ID: id, Title: title, How: how, Ticket: show,
 		Screen: lastLines(agentScreen(id), 80),
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
@@ -229,15 +231,15 @@ Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write 
 // reviewInput gathers the evidence for the reviewer.
 func (o *Orch) reviewInput(code int, final string) string {
 	c := o.cfg
-	commits, _ := run(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
+	commits, _ := command.Output(c.Repo, "git", "log", "--format=%h %s", o.startHead+".."+c.Base)
 	var setAside strings.Builder
 	for _, id := range o.setAside() {
-		show, _ := run(c.Repo, "bd", "show", id)
+		show, _ := command.Output(c.Repo, "bd", "show", id)
 		setAside.WriteString(show + "\n")
 	}
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
-		show, _ := run(c.Repo, "bd", "show", st.Ticket)
+		show, _ := command.Output(c.Repo, "bd", "show", st.Ticket)
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(agentScreen(st.Ticket), 60))
 	}

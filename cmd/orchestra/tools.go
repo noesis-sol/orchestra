@@ -6,43 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
-
-// run executes a command and returns its stdout. The error carries stderr, so callers can log it.
-func run(dir, name string, args ...string) (string, error) {
-	return runCtx(context.Background(), dir, name, args...)
-}
-
-func runCtx(ctx context.Context, dir, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BD_JSON_ENVELOPE=0") // pin the bd --json shape
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.String(), nil
-}
-
-// shortArgs renders arguments for an error message, cutting long ones (a whole prompt, say).
-func shortArgs(args []string) string {
-	out := make([]string, len(args))
-	for i, a := range args {
-		a = strings.ReplaceAll(a, "\n", " ")
-		if r := []rune(a); len(r) > 60 {
-			a = string(r[:60]) + "…"
-		}
-		out[i] = a
-	}
-	return strings.Join(out, " ")
-}
 
 // ---- Beads ---------------------------------------------------------------------------
 
@@ -132,7 +102,7 @@ func parseStatus(raw []byte) string {
 }
 
 func readyTickets(repo string) ([]Ticket, error) {
-	out, _ := run(repo, "bd", "ready", "--json") // like the bash version, judge by the output
+	out, _ := command.Output(repo, "bd", "ready", "--json") // like the bash version, judge by the output
 	return parseReady([]byte(out))
 }
 
@@ -155,7 +125,7 @@ func parseTicket(raw []byte) (Ticket, bool) {
 
 // ticketInfo returns the ticket with its dependencies; Status is "unknown" if it cannot be read.
 func ticketInfo(repo, id string) Ticket {
-	out, _ := run(repo, "bd", "show", id, "--json")
+	out, _ := command.Output(repo, "bd", "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	if !ok {
 		return Ticket{ID: id, Status: "unknown"}
@@ -164,22 +134,22 @@ func ticketInfo(repo, id string) Ticket {
 }
 
 func ticketStatus(repo, id string) string {
-	out, _ := run(repo, "bd", "show", id, "--json")
+	out, _ := command.Output(repo, "bd", "show", id, "--json")
 	return parseStatus([]byte(out))
 }
 
 func appendNotes(repo, id, note string) {
-	run(repo, "bd", "update", id, "--append-notes", note)
+	command.Output(repo, "bd", "update", id, "--append-notes", note)
 }
 
 func deferTicket(repo, id, reason string) {
-	run(repo, "bd", "defer", id, "--reason="+reason)
+	command.Output(repo, "bd", "defer", id, "--reason="+reason)
 }
 
 // ---- Herdr ---------------------------------------------------------------------------
 
 func tabCreate(workspace, cwd, label string) (tab, pane string, err error) {
-	out, err := run("", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
+	out, err := command.Output("", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
 		return "", "", err
 	}
@@ -203,7 +173,7 @@ func tabCreate(workspace, cwd, label string) (tab, pane string, err error) {
 }
 
 // tabClose closes a Herdr tab; a variable so tests can replace it.
-var tabClose = func(tab string) { run("", "herdr", "tab", "close", tab) }
+var tabClose = func(tab string) { command.Output("", "herdr", "tab", "close", tab) }
 
 // agentStart starts an agent in the pane. A non-empty prompt is passed to the agent itself, so it
 // starts with the prompt already submitted. Herdr types the command into the pane's shell and
@@ -213,7 +183,7 @@ func agentStart(ctx context.Context, name, kind, pane, prompt string) error {
 	if prompt != "" {
 		args = append(args, "--", prompt)
 	}
-	_, err := runCtx(ctx, "", "herdr", args...)
+	_, err := command.OutputContext(ctx, "", "herdr", args...)
 	return err
 }
 
@@ -239,7 +209,7 @@ func writeLaunchPrompt(wt, ticket, prompt string) (string, error) {
 // paneLaunch types '<kind> <instruction>' into the pane's shell, as 'herdr agent start' would,
 // and returns at once. The instruction must be one line.
 func paneLaunch(pane, kind, instruction string) error {
-	_, err := run("", "herdr", "pane", "run", pane, kind+" "+shellQuote(instruction))
+	_, err := command.Output("", "herdr", "pane", "run", pane, kind+" "+shellQuote(instruction))
 	return err
 }
 
@@ -273,7 +243,7 @@ func adoptPaneAgent(ctx context.Context, pane, kind, name string) (string, bool)
 // paneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
 // status "gone" if the pane holds no agent.
 func paneAgent(pane string) (name, kind, status string) {
-	out, err := run("", "herdr", "agent", "get", pane)
+	out, err := command.Output("", "herdr", "agent", "get", pane)
 	if err != nil {
 		return "", "", "gone"
 	}
@@ -301,7 +271,7 @@ func parsePaneAgent(raw []byte) (name, kind, status string) {
 }
 
 func agentRename(name, to string) error {
-	_, err := run("", "herdr", "agent", "rename", name, to)
+	_, err := command.Output("", "herdr", "agent", "rename", name, to)
 	return err
 }
 
@@ -323,24 +293,24 @@ func freeName(id string) string {
 
 // agentReady waits up to a minute for an agent that is already present to become idle.
 func agentReady(ctx context.Context, name string) bool {
-	_, err := runCtx(ctx, "", "herdr", "agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", "60000")
+	_, err := command.OutputContext(ctx, "", "herdr", "agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", "60000")
 	return err == nil
 }
 
 // agentPrompt submits the prompt and waits (up to 10 minutes) for the agent to first settle.
 func agentPrompt(ctx context.Context, name, prompt string) error {
-	_, err := runCtx(ctx, "", "herdr", "agent", "prompt", name, prompt, "--wait", "--timeout", "600000")
+	_, err := command.OutputContext(ctx, "", "herdr", "agent", "prompt", name, prompt, "--wait", "--timeout", "600000")
 	return err
 }
 
 func agentSendKeys(name string, keys ...string) error {
-	_, err := run("", "herdr", append([]string{"agent", "send-keys", name}, keys...)...)
+	_, err := command.Output("", "herdr", append([]string{"agent", "send-keys", name}, keys...)...)
 	return err
 }
 
 // agentWaitStarted waits up to 20 seconds for an agent to start working (or block).
 func agentWaitStarted(ctx context.Context, name string) bool {
-	_, err := runCtx(ctx, "", "herdr", "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", "20000")
+	_, err := command.OutputContext(ctx, "", "herdr", "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", "20000")
 	return err == nil
 }
 
@@ -388,7 +358,7 @@ func inputHolds(screen, prompt string) bool {
 
 // agentStatus returns idle, working, blocked, done or unknown, or "gone" if the agent cannot be read.
 func agentStatus(name string) string {
-	out, err := run("", "herdr", "agent", "get", name)
+	out, err := command.Output("", "herdr", "agent", "get", name)
 	if err != nil {
 		return "gone"
 	}
@@ -408,9 +378,9 @@ func agentStatus(name string) string {
 // agentScreen returns the end of the agent's terminal. Herdr can capture scrollback only while
 // the agent is idle, so while it works this falls back to the visible screen.
 func agentScreen(name string) string {
-	out, err := run("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
+	out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
 	if err != nil {
-		out, _ = run("", "herdr", "agent", "read", name, "--source", "visible")
+		out, _ = command.Output("", "herdr", "agent", "read", name, "--source", "visible")
 	}
 	return out
 }
@@ -442,7 +412,7 @@ func currentWorkspace() string {
 	if os.Getenv("HERDR_ENV") != "1" {
 		return ""
 	}
-	out, err := run("", "herdr", "pane", "current", "--current")
+	out, err := command.Output("", "herdr", "pane", "current", "--current")
 	if err != nil {
 		return ""
 	}
@@ -464,7 +434,7 @@ func currentWorkspace() string {
 // dirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
 // (agent settings, tracker data, and orchestra's own files). A failed git call counts as dirty.
 func dirtyTree(dir string) string {
-	out, err := run("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
+	out, err := command.Output("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
 	if err != nil {
 		return err.Error()
 	}
@@ -472,7 +442,7 @@ func dirtyTree(dir string) string {
 }
 
 func currentBranch(repo string) string {
-	out, _ := run(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
+	out, _ := command.Output(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
 	return strings.TrimSpace(out)
 }
 
@@ -491,19 +461,19 @@ func parseWorktreeOf(porcelain, branch string) string {
 }
 
 func worktreeOf(repo, branch string) string {
-	out, _ := run(repo, "git", "worktree", "list", "--porcelain")
+	out, _ := command.Output(repo, "git", "worktree", "list", "--porcelain")
 	return parseWorktreeOf(out, branch)
 }
 
 func hasBranch(repo, branch string) bool {
-	_, err := run(repo, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	_, err := command.Output(repo, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return err == nil
 }
 
 // commitNaming returns the latest commit on branch (not on base) whose message names the ticket,
 // as "<hash> <subject>" cut to 70 characters, or "".
 func commitNaming(repo, base, branch, ticket string) string {
-	out, _ := run(repo, "git", "log", "--oneline", "-1", "--grep="+ticket, base+".."+branch)
+	out, _ := command.Output(repo, "git", "log", "--oneline", "-1", "--grep="+ticket, base+".."+branch)
 	c := strings.TrimSpace(out)
 	if r := []rune(c); len(r) > 70 {
 		c = string(r[:70])
