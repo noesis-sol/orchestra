@@ -155,20 +155,27 @@ func (o *Loop) reviewInput(code int, final string) string {
 		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready)))
 }
 
-// Review writes the run report and returns it with the path it was saved to.
-func (o *Loop) Review(ctx context.Context, code int, final string) (string, string, error) {
+// Review has the reviewer write the run report.
+func (o *Loop) Review(ctx context.Context, code int, final string) (string, error) {
 	result, err := o.organ.Review(ctx, o.reviewInput(code, final))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	report := fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
-		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(result))
+	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s\n\n%s\n", o.started.Format("2006-01-02"),
+		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, strings.TrimSpace(result)), nil
+}
+
+// SaveReport writes the run report to the reports folder and returns its path.
+func (o *Loop) SaveReport(report string) (string, error) {
 	dir := o.cfg.ReportsDir
-	path := filepath.Join(dir, o.started.Format("2006-01-02-150405")+".md")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return report, "", err
+		return "", err
 	}
-	return report, path, os.WriteFile(path, []byte(report), 0o644)
+	path := filepath.Join(dir, o.started.Format("2006-01-02-150405")+".md")
+	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func exitMeaning(code int) string {

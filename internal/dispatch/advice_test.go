@@ -78,3 +78,24 @@ func (l liveTickets) Describe(id string) string {
 	out, _ := command.Output(l.repo, "bd", "show", id)
 	return out
 }
+
+func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "reports")
+	o := &Loop{cfg: Config{ReportsDir: dir}, started: time.Date(2026, 9, 30, 14, 5, 9, 0, time.Local)}
+	path, err := o.SaveReport("# report\n")
+	if err != nil || path != filepath.Join(dir, "2026-09-30-140509.md") {
+		t.Fatalf("saved to %q: %v", path, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "# report\n" {
+		t.Errorf("saved %q", b)
+	}
+
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.ReportsDir = filepath.Join(blocked, "reports")
+	if path, err := o.SaveReport("# report\n"); err == nil || path != "" {
+		t.Errorf("reports folder under a file: saved to %q, err %v", path, err)
+	}
+}

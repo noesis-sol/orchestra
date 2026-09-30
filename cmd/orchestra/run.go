@@ -444,9 +444,16 @@ func interruptLine(why string, running []dispatch.Status) string {
 	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
 }
 
+// organs is what organPhase needs from the loop.
+type organs interface {
+	FinishTriage(ctx context.Context)
+	Review(ctx context.Context, code int, final string) (string, error)
+	SaveReport(report string) (string, error)
+}
+
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
 // the run report. Ctrl+C skips whatever is left.
-func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
+func organPhase(orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
 	if !c.Triage && !c.Review {
 		return
 	}
@@ -464,7 +471,7 @@ func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, fin
 		return
 	}
 	out.Say("writing the run report with claude… (ctrl+c skips)")
-	report, path, err := orch.Review(ctx, code, final)
+	report, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + firstLine(err.Error())
@@ -475,6 +482,13 @@ func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, fin
 	}
 	fmt.Println()
 	out.Report(report)
+	path, err := orch.SaveReport(report)
+	if err != nil {
+		msg := "report not saved: " + firstLine(err.Error())
+		log.Line(time.Now(), msg)
+		out.Say(msg)
+		return
+	}
 	log.Line(time.Now(), "REPORT written to "+path)
 	out.Say("report saved to " + tui.Tildify(path))
 }
