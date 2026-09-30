@@ -734,7 +734,7 @@ func keepWaiting(ticketStatus string, idleFor time.Duration) bool {
 // it is delivered by pasting.
 func (o *Loop) promptTaken(ctx context.Context, id, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if herdr.WaitStarted(ctx, id) || beads.Status(o.cfg.Repo, id) != "open" || herdr.LastActivity(herdr.Screen(id)) != "" {
+		if herdr.WaitStarted(ctx, id) || beads.Status(o.cfg.Repo, id) != "open" || lastActivity(herdr.Screen(id)) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -785,7 +785,7 @@ func (o *Loop) deliverPrompt(ctx context.Context, id, prompt string) bool {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
-			if herdr.InputHolds(herdr.Screen(id), prompt) {
+			if inputHolds(herdr.Screen(id), prompt) {
 				herdr.SendKeys(id, "enter")
 				return herdr.WaitStarted(ctx, id)
 			}
@@ -809,7 +809,7 @@ func (o *Loop) watch(ctx context.Context, base Status) (stop func()) {
 		for {
 			s := base
 			s.Agent = herdr.Status(s.Ticket)
-			s.Activity = herdr.LastActivity(herdr.Screen(s.Ticket))
+			s.Activity = lastActivity(herdr.Screen(s.Ticket))
 			if ctx.Err() != nil {
 				return
 			}

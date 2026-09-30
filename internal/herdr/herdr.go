@@ -171,48 +171,6 @@ func WaitStarted(ctx context.Context, name string) bool {
 	return err == nil
 }
 
-// InputHolds reports whether the agent's input box still holds the prompt, unsent. The box runs
-// from the last line starting with ❯ to the rule below it; a long paste shows only its last lines
-// there, or a "[Pasted text …]" placeholder, so any substantial line of the prompt counts.
-func InputHolds(screen, prompt string) bool {
-	lines := strings.Split(screen, "\n")
-	start := -1
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "❯") {
-			start = i
-		}
-	}
-	if start < 0 {
-		return false
-	}
-	var box []string
-	for i, l := range lines[start:] {
-		t := strings.TrimSpace(l)
-		if i > 0 && strings.HasPrefix(t, "─") {
-			break
-		}
-		box = append(box, t)
-	}
-	box[0] = strings.TrimSpace(strings.TrimPrefix(box[0], "❯"))
-	text := strings.Join(box, " ")
-	if strings.Contains(text, "[Pasted text") {
-		return true
-	}
-	for _, l := range strings.Split(prompt, "\n") {
-		r := []rune(strings.TrimSpace(l))
-		if len(r) < 20 {
-			continue // too short to tell apart from anything else on screen
-		}
-		if len(r) > 40 {
-			r = r[:40]
-		}
-		if strings.Contains(text, string(r)) {
-			return true
-		}
-	}
-	return false
-}
-
 // Status returns idle, working, blocked, done or unknown, or "gone" if the agent cannot be read.
 func Status(name string) string {
 	out, err := command.Output("", "herdr", "agent", "get", name)
@@ -240,24 +198,6 @@ func Screen(name string) string {
 		out, _ = command.Output("", "herdr", "agent", "read", name, "--source", "visible")
 	}
 	return out
-}
-
-// Claude Code marks tool calls with ⏺ and its working spinner with one of these glyphs.
-var activityMarks = []string{"⏺", "✻", "✶", "✳", "✢", "✽"}
-
-// LastActivity returns the worker's most recent action or spinner line, skipping the input box
-// and status bar at the bottom of its screen.
-func LastActivity(screen string) string {
-	lines := strings.Split(screen, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
-		for _, m := range activityMarks {
-			if strings.HasPrefix(l, m) {
-				return l
-			}
-		}
-	}
-	return ""
 }
 
 // CurrentWorkspace returns the Herdr workspace orchestra runs in: from HERDR_WORKSPACE_ID, which
