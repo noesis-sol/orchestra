@@ -56,6 +56,7 @@ func (g Client) Ask(ctx context.Context, timeout time.Duration, system, input, s
 	cmd.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.WaitDelay = 5 * time.Second // don't wait on pipes a leftover child of the CLI still holds
 	if err := cmd.Run(); err != nil {
 		return Result{}, fmt.Errorf("%s: %w: %s", g.Bin, err, strings.TrimSpace(stderr.String()))
 	}

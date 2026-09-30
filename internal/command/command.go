@@ -5,10 +5,12 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Output runs a command in dir and returns its stdout. The error carries stderr, so callers can
@@ -29,6 +31,23 @@ func OutputContext(ctx context.Context, dir, name string, args ...string) (strin
 		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// GroupOutput runs a command in dir in its own process group and returns its combined stdout
+// and stderr. When ctx is done the whole group is stopped, not just the command: SIGTERM, then
+// SIGKILL after grace. Wait gives up on output pipes still held open after twice grace, and
+// anything the command left running is killed once it has exited.
+func GroupOutput(ctx context.Context, grace time.Duration, dir, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	inGroup(cmd, grace)
+	cmd.WaitDelay = 2 * grace
+	out, err := cmd.CombinedOutput()
+	killGroup(cmd)
+	if err == nil || errors.Is(err, exec.ErrWaitDelay) { // exited 0, though maybe leaving a process behind
+		err = ctx.Err()
+	}
+	return out, err
 }
 
 // shortArgs renders arguments for an error message, cutting long ones (a whole prompt, say).

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -745,13 +746,11 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 }
 
 // runCheck runs the project's check command in the worktree, logging the end of its output if it
-// fails. It gives up after 30 minutes.
+// fails. It gives up after 30 minutes, stopping everything the check started.
 func (o *Loop) runCheck(ctx context.Context, wt string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", o.cfg.Check)
-	cmd.Dir = wt
-	out, err := cmd.CombinedOutput()
+	out, err := command.GroupOutput(ctx, 5*time.Second, wt, "sh", "-c", o.cfg.Check)
 	if err != nil {
 		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
 	}
