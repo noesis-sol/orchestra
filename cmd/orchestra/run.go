@@ -399,10 +399,12 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 			}
 			cancelRun(dispatch.Interrupted(why))
 		})
+		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 		sink := tui.Printer{Out: stdout}
 		orch.SetSink(sink)
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
+		stopDrain()
 		if !leaving(stopWatching()) {
 			organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
 		}
@@ -413,9 +415,17 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
 	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
-	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout),
+	drain := func(on bool) {
+		if on {
+			orch.Drain("from the dashboard")
+		} else {
+			orch.Resume("from the dashboard")
+		}
+	}
+	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
 		tea.WithoutSignalHandler())
 	stopWatching := watchSignals(func(os.Signal) { p.Quit() })
+	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) }) // the dashboard hears it from the loop
 	progSink := tui.NewProgramSink(p)
 	orch.SetSink(progSink)
 	codes := make(chan int, 1)
@@ -425,6 +435,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	}()
 	final, err := p.Run()
 	sig := stopWatching()
+	stopDrain()
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
@@ -510,6 +521,31 @@ func watchSignals(onStop func(os.Signal)) (stop func() os.Signal) {
 	}
 }
 
+// watchDrain calls onDrain, from another goroutine, each time orchestra receives one of
+// drainSignals. The function it returns stops watching.
+func watchDrain(onDrain func()) (stop func()) {
+	if len(drainSignals) == 0 {
+		return func() {} // signal.Notify with no signals would catch them all
+	}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, drainSignals...)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-sigs:
+				onDrain()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		signal.Stop(sigs)
+		close(done)
+	}
+}
+
 func signalName(s os.Signal) string {
 	switch s {
 	case os.Interrupt:
@@ -518,6 +554,9 @@ func signalName(s os.Signal) string {
 		return "SIGTERM"
 	case syscall.SIGHUP:
 		return "SIGHUP"
+	}
+	if len(drainSignals) > 0 && s == drainSignals[0] {
+		return "SIGUSR1"
 	}
 	return s.String()
 }

@@ -142,7 +142,7 @@ const reviewSystem = `You write the end-of-run report for an automated coding pi
 
 Use only the evidence given; never invent tickets, commits or causes. Write Markdown, at most 20 lines in all:
 
-- First, one sentence: how the run ended and why.
+- First, one sentence: how the run ended and why. When the maintainer asked it to stop after the running tickets (a DRAIN line and a DRAINED final line), say so.
 - ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few words, the commit hash.
 - ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the triage cause when a triage note gives one.
 - ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run.

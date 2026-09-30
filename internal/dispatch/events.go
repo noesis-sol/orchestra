@@ -22,6 +22,8 @@ const (
 	EvTriage               // the triage organ's verdict on a deferred ticket
 	EvAsked                // a ticket waits on the maintainer's answer to a question
 	EvHold                 // something stopped the run; no new tickets while the running ones finish
+	EvDrain                // the maintainer asked to stop after the running tickets
+	EvResume               // the maintainer took that back
 	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
 )
 

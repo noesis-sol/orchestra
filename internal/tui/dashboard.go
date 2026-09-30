@@ -81,6 +81,8 @@ func renderEvent(ev dispatch.Event) string {
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvDone:
 		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
+	case dispatch.EvDrain, dispatch.EvResume:
+		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
 	}
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
 }
@@ -96,6 +98,8 @@ type Dashboard struct {
 	spin        spinner.Model
 	active      map[string]dispatch.Status // running workers, by ticket
 	stopping    bool                       // something stopped the run; the running ones are finishing
+	draining    bool                       // the maintainer asked to stop after the running tickets
+	asking      bool                       // the question whether to stop after them, or to go on, is open
 	closed      int
 	deferred    int
 	triaged     int
@@ -111,11 +115,13 @@ type Dashboard struct {
 	solo        dispatch.SoloState
 	began       time.Time
 	cancel      func()
+	drain       func(on bool) // asks the loop to stop after the running tickets, or with false to go on
 }
 
-func NewDashboard(cfg dispatch.Config, cancel func()) Dashboard {
+// NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain.
+func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain}
 }
 
 func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
@@ -125,10 +131,18 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch key := msg.String(); {
+		case key == "ctrl+c": // at any time, the question open or not
 			m.interrupted, m.quitting = true, true
 			m.cancel()
 			return m, tea.Quit
+		case m.asking && key == "y":
+			m.asking, m.draining = false, !m.draining
+			m.drain(m.draining)
+		case m.asking && (key == "n" || key == "esc"):
+			m.asking = false
+		case key == "s" && (m.draining || !m.stopping): // a run already stopping has nothing to drain
+			m.asking = true
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -173,6 +187,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
 				m.rows[i].triage = ev.Detail + " · " + ev.Title
 			}
+		case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
+			m.draining = ev.Kind == dispatch.EvDrain
 		case dispatch.EvHold:
 			m.stopping = true
 			if ev.Ticket != "" { // a stop found before dispatching belongs to no ticket
@@ -209,25 +225,34 @@ func (m Dashboard) View() string {
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
-	hint := "  ctrl+c stops · the worker keeps running"
-	if m.cfg.Concurrency > 1 {
-		hint = "  ctrl+c stops · the workers keep running"
+	hint := m.hintLine(w)
+	if !m.asking {
+		return m.layout(w, title, hint)
 	}
-	hint = dimStyle.Render(ansi.Truncate(hint, w, "…"))
-	stats := m.statsTable(w)
+	// The question goes in a box over the middle of the dashboard, or, where the pane is too
+	// small for one, on a line above the hint.
+	modal := m.modal(w)
+	if v := m.layout(w, title, hint); w >= 36 && lipgloss.Height(v) >= lipgloss.Height(modal)+2 {
+		return overlay(v, modal, w)
+	}
+	return m.layout(w, title, lipgloss.JoinVertical(lipgloss.Left, m.promptLine(w), hint))
+}
 
-	// The view must fit the pane: Bubble Tea can't redraw one taller than the terminal. Give
-	// way step by step: one line per worker instead of a box each, then no tickets table, then
-	// the totals on one line, then cut.
+// layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
+// can't redraw a view taller than the terminal. It gives way step by step: one line per worker
+// instead of a box each, then no tickets table, then the totals on one line, then cut, keeping
+// footer.
+func (m Dashboard) layout(w int, title, footer string) string {
+	stats := m.statsTable(w)
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {
 		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
-		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - 1
+		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - lipgloss.Height(footer)
 		parts := []string{title, stats}
 		if room >= 7 {
 			parts = append(parts, m.ticketsTable(w, room))
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, append(parts, panels, hint)...)
+		return lipgloss.JoinVertical(lipgloss.Left, append(parts, panels, footer)...)
 	}
 	if v := compose(stats, m.workerPanels(w)); fits(v) {
 		return v
@@ -235,11 +260,94 @@ func (m Dashboard) View() string {
 	if v := compose(stats, m.workerList(w)); fits(v) {
 		return v
 	}
-	v := lipgloss.JoinVertical(lipgloss.Left, title, m.statsLine(w), m.workerList(w), hint)
-	if lines := strings.Split(v, "\n"); len(lines) > m.height && m.height > 0 {
-		v = strings.Join(lines[:m.height], "\n")
+	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, title, m.statsLine(w), m.workerList(w)), "\n")
+	foot := strings.Split(footer, "\n")
+	if keep := max(m.height-len(foot), 0); len(body) > keep {
+		body = body[:keep]
 	}
-	return v
+	lines := append(body, foot...)
+	if len(lines) > m.height {
+		lines = lines[len(lines)-m.height:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// hintLine says which keys do what: s stops after the running tickets, or once asked goes on;
+// ctrl+c stops at once. A narrow pane gets a shorter form.
+func (m Dashboard) hintLine(w int) string {
+	long, short := "  s stops after current · ctrl+c stops now", " s: stop after · ctrl+c: now"
+	switch {
+	case m.draining:
+		long, short = "  s keeps going · ctrl+c stops now", " s: go on · ctrl+c: now"
+	case m.stopping:
+		long, short = "  ctrl+c stops now", " ctrl+c: now"
+	}
+	hint := long
+	if ansi.StringWidth(long) > w {
+		hint = short
+	}
+	return dimStyle.Render(ansi.Truncate(hint, w, "…"))
+}
+
+// runningIDs names the running tickets, oldest first.
+func (m Dashboard) runningIDs() string {
+	var ids []string
+	for _, st := range m.Running() {
+		ids = append(ids, st.Ticket)
+	}
+	return strings.Join(ids, ", ")
+}
+
+// modal is the question s asks, in a box: whether to stop after the running tickets, or, while
+// the run winds down, whether to take tickets again.
+func (m Dashboard) modal(w int) string {
+	var question, about, keys string
+	switch n := len(m.active); {
+	case m.draining:
+		question, about = "Keep taking tickets?", "New tickets start again as slots free up."
+		keys = "y keep going · n keep stopping"
+	case n == 0:
+		question, about = "Stop after the running tickets?", "No new tickets will start. Nothing is running, so the run ends now."
+		keys = "y stop · n keep going"
+	default:
+		question = "Stop after the running tickets?"
+		about = fmt.Sprintf("No new tickets will start. %d running (%s) will finish and merge, then the run ends.", n, m.runningIDs())
+		keys = "y stop after current · n keep going"
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
+	return box(min(w-4, 64), yellow, body)
+}
+
+// promptLine is the question on one line, for a pane too small for the box; the keys come first
+// so a narrow pane keeps them.
+func (m Dashboard) promptLine(w int) string {
+	line := " Stop after current? y/n · "
+	switch n := len(m.active); {
+	case m.draining:
+		line = " Keep taking tickets? y/n · new tickets start again as slots free up"
+	case n == 0:
+		line += "nothing is running, so the run ends now"
+	default:
+		line += fmt.Sprintf("%d running (%s) finish and merge, then the run ends", n, m.runningIDs())
+	}
+	return deferredStyle.Bold(true).Render(ansi.Truncate(line, w, "…"))
+}
+
+// overlay draws fg over the middle of bg, a view w wide.
+func overlay(bg, fg string, w int) string {
+	lines, over := strings.Split(bg, "\n"), strings.Split(fg, "\n")
+	fw := lipgloss.Width(fg)
+	left, top := max((w-fw)/2, 0), max((len(lines)-len(over))/2, 0)
+	for i, l := range over {
+		if top+i >= len(lines) {
+			break
+		}
+		b := lines[top+i]
+		head := ansi.Truncate(b, left, "")
+		head += strings.Repeat(" ", max(left-ansi.StringWidth(head), 0))
+		lines[top+i] = head + "\x1b[0m" + l + "\x1b[0m" + ansi.TruncateLeft(b, left+fw, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // workerList is the compact form of the worker boxes: one box, one line per running worker.
@@ -582,8 +690,11 @@ func (m Dashboard) titleLine(w int) string {
 	case m.solo.Ticket != "":
 		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
 	}
-	if m.stopping {
+	switch {
+	case m.stopping:
 		line += stopStyle.Render("  · stopping")
+	case m.draining:
+		line += stopStyle.Render("  · stopping after current")
 	}
 	return ansi.Truncate(line, w, "…")
 }

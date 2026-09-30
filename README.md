@@ -29,12 +29,14 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 │   / constraint-constant properties                                     │
 │   ⏺ Bash(scripts/ci-local.sh lint ios)                                 │
 ╰────────────────────────────────────────────────────────────────────────╯
-  ctrl+c stops · the workers keep running
+  s stops after current · ctrl+c stops now
 ```
 
 - **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, and how many are still ready. The branch and how long the run has gone are on the title line.
 - **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
 - **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 3 seconds.
+
+- **Keys**: **s** asks, in a box over the dashboard (a line above the hint in a small pane), whether to stop after the running tickets: `Stop after the running tickets? No new tickets will start. 2 running (kinieta-kco, kinieta-y6j) will finish and merge, then the run ends.` **y** confirms, **n** or **Esc** closes it. The run then starts no new ticket, from any path; the running ones carry on as usual, merges, rebases and re-checks included, and when the last one returns the run ends normally with `DRAINED after 12 tickets` (exit code 0), triage and the report. The log says `DRAIN: stopping after the 2 running tickets (…), asked from the dashboard`, and the report's first sentence mentions it. With nothing running, it ends at once. Meanwhile the title line shows `· stopping after current`, and **s** offers `Keep taking tickets?` to take it back (logged as `DRAIN cancelled`). **Ctrl+C** stops at once at any time, the question open or not, leaving the workers running. Outside the dashboard (`-plain`, scripts), `kill -USR1 <pid>` asks the same without a question.
 
 When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see Organs).
 
@@ -105,7 +107,7 @@ With `concurrent` above 1, up to that many workers run side by side, each in its
 - **Planning orders tickets that touch the same code.** Keeping overlapping tickets apart at dispatch still lets them run in either order; `orchestra plan` orders them ahead of time. It reads the open tickets (leaving out questions and the `exclude_types`), computes each one's footprint, and proposes a blocks link between two that name the same function, or, when either names no function, the same file of at most 200 lines (in a larger file they likely work in different places; a file a ticket adds counts as small). The higher-priority ticket goes first, then the older one. Area labels alone link nothing, and tickets already ordered by blocks links, directly or through others, are left alone; tickets touching one function form a chain rather than each waiting for every other. It prints each link (`k-2 (P3) waits for k-1 (P1): both touch Loop.merge`) and changes nothing; `orchestra plan --apply` adds them with `bd dep add`. Run it after filing a batch of tickets, before a run: `bd ready` then holds each second ticket until the first closes, and `orchestra` until it merges.
 - **One git writer at a time.** Worktree creation, rebases, merges and cleanup in the main repository take a lock, so workers don't trip over git's lock files.
 - **A failing machine holds the run.** Sometimes the environment fails every worker the same way, whichever ticket it has: a safety classifier that is down refuses every command, say, and each worker gives up at once. Setting each ticket aside in turn would burn through the queue, so the run holds for the environment instead when 2 tickets in a row either had workers that settled within 2 minutes of dispatch without claiming the ticket, committing or leaving changes, or were blamed on the environment with high confidence by [triage](#organs). The log and a notification say once `ENVIRONMENT: the last 2 tickets (<a>, <b>) each settled within 2m of starting without being claimed or changed; check the machine, then restart`: no new tickets start, the running ones finish, and the run ends with exit code 7. Tickets whose workers failed at once did nothing, so they are reopened rather than left deferred, with their notes kept; tickets triage blamed, whose workers had started on them, stay deferred with the verdict in their notes. One such failure alone changes nothing. `"environment_hold": {"count": 3, "window": "90s"}` in `settings.json` changes the thresholds, and `{"count": 0}` turns it off.
-- **Stopping drains.** Something that stops the run (`PAUSED`, `BLOCKED`, a tool failure) is logged as `HOLD`. No new tickets start, the running ones finish and merge, and then the run ends with that reason. With one ticket at a time, nothing changes. Ctrl+C still stops at once.
+- **Stopping drains.** Something that stops the run (`PAUSED`, `BLOCKED`, a tool failure) is logged as `HOLD`. No new tickets start, the running ones finish and merge, and then the run ends with that reason. With one ticket at a time, nothing changes. Ctrl+C still stops at once. To wind a run down yourself, press **s** in the dashboard (or send SIGUSR1): see [What you see](#what-you-see).
 
 What `orchestra` can't make safe for you:
 
@@ -153,7 +155,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 
 | Code | Meaning |
 |---|---|
-| 0 | nothing left in `bd ready`, or the limit was reached |
+| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`) |
 | 2 | setup problem found before starting (all problems are listed) |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure |
@@ -196,6 +198,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |
 | `events.go` | the log file, notifications, events and status sent to the dashboard |
+| `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing |
 | `advice.go` | triage and the run review |
 | `deps.go` | the interfaces to Beads, Herdr, git and workers' reports |

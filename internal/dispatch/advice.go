@@ -148,8 +148,12 @@ func (o *Loop) reviewInput(code int, final string) string {
 			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(o.agentName(st.Ticket), ""), 60))
 	}
 	ready, _ := o.tickets.Ready()
+	meaning := exitMeaning(code)
+	if strings.HasPrefix(final, "DRAINED") {
+		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
+	}
 	return fmt.Sprintf("Run on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
-		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, exitMeaning(code), final) +
+		c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning, final) +
 		organ.Section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section("Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +

@@ -8,6 +8,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- **s** in the dashboard stops the run after its running tickets: a box asks
+  `Stop after the running tickets?`, naming them, and **y** confirms (**n** or
+  **Esc** closes it). No new ticket starts from any path; the running ones
+  finish and merge as usual, and the run ends with `DRAINED after <n> tickets`,
+  exit code 0, then triage and the report, whose first sentence says so. The
+  log says `DRAIN: stopping after the 2 running tickets (…), asked from the
+  dashboard`; the title line shows `· stopping after current`, and **s** again
+  takes it back (`DRAIN cancelled`). Ctrl+C still stops at once. SIGUSR1 does
+  the same without the question, for `-plain` and scripts. Before, the only way
+  to end a run from the dashboard was Ctrl+C, which left finished work unmerged.
 - `orchestra plan` proposes blocks links between open tickets that touch the
   same code, so they run one after the other: two tickets that name the same
   function, or, when either names none, the same file of at most 200 lines. The

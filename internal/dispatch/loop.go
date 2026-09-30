@@ -15,7 +15,7 @@ import (
 
 // Exit codes, unchanged from orchestrate.sh.
 const (
-	ExitOK          = 0   // nothing left in bd ready, or LIMIT reached
+	ExitOK          = 0   // nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked
 	ExitSetup       = 2   // setup problem found before starting
 	ExitStuck       = 3   // a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past the ticket limit
 	ExitTool        = 4   // Herdr, Beads or git failure
@@ -98,6 +98,14 @@ type Loop struct {
 	envStop     *stopReason
 	envWake     chan struct{}
 
+	// Winding down, under drainMu: the maintainer asked to stop after the running tickets, and how
+	// they last asked either way. drainWake (buffered 1) tells Run. Its own lock, as the dashboard
+	// sets it while the loop may be waiting on the dashboard.
+	drainMu   sync.Mutex
+	drain     bool
+	drainHow  string
+	drainWake chan struct{}
+
 	wait timing // how long it waits on things; tests shorten it
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
@@ -109,7 +117,7 @@ type Loop struct {
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, reporter: d.Reporter,
 		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
-		envWake: make(chan struct{}, 1)}
+		envWake: make(chan struct{}, 1), drainWake: make(chan struct{}, 1)}
 }
 
 // Final is the line the run ended with.

@@ -49,7 +49,7 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 }
 
 func TestViewFitsThePaneWidth(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {})
 	m.closed, m.deferred, m.queued = 2, 1, 17
 	m.began = time.Now().Add(-12 * time.Minute)
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
@@ -84,7 +84,7 @@ func runEvents(m Dashboard, evs ...dispatch.Event) Dashboard {
 }
 
 func TestTicketRowsFollowEachTicket(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
 		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
@@ -119,7 +119,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
@@ -147,7 +147,7 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 }
 
 func TestAskedTicketIsCountedAndShown(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
 		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
@@ -180,7 +180,7 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		t.Errorf("short title = %q", got)
 	}
 
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m.width, m.height = 66, 40
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
 	v := ansi.Strip(m.View())
@@ -224,7 +224,7 @@ func TestShortVersion(t *testing.T) {
 }
 
 func TestWorkerShowsWhatItIsDoing(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
 	m.width, m.height = 70, 40
 	status := dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
@@ -252,7 +252,7 @@ func (*recorder) Status(dispatch.Status)    {}
 // channel its final model arrives on.
 func runDashboard(t *testing.T) (*tea.Program, *ProgramSink, chan Dashboard) {
 	t.Helper()
-	p := tea.NewProgram(NewDashboard(dispatch.Config{Limit: 40}, func() {}),
+	p := tea.NewProgram(NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {}),
 		tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
 	final := make(chan Dashboard, 1)
 	go func() {
@@ -281,7 +281,7 @@ func TestHandoffPassesOnWhatTheClosedDashboardMissed(t *testing.T) {
 }
 
 func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
-	p := tea.NewProgram(NewDashboard(dispatch.Config{}, func() {}), tea.WithInput(nil), tea.WithOutput(io.Discard))
+	p := tea.NewProgram(NewDashboard(dispatch.Config{}, func() {}, func(bool) {}), tea.WithInput(nil), tea.WithOutput(io.Discard))
 	p.Kill() // as good as a program that never started: it drops what it is sent
 	sink := NewProgramSink(p)
 	sink.Event(dispatch.Event{Text: "START"})
@@ -294,7 +294,7 @@ func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
 }
 
 func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {})
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First", Queued: 0},
 		dispatch.Event{Kind: dispatch.EvQueue, Queued: 3})
 	if m.queued != 3 {

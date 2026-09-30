@@ -105,7 +105,7 @@ func TestMainExitStatusMapping(t *testing.T) {
 // model and error.
 func closedDashboard(t *testing.T, send func(*tea.Program, *tui.ProgramSink)) (tui.Dashboard, error) {
 	t.Helper()
-	p := tea.NewProgram(tui.NewDashboard(dispatch.Config{Limit: 40}, func() {}),
+	p := tea.NewProgram(tui.NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {}),
 		tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
 	type result struct {
 		m   tea.Model
@@ -124,7 +124,7 @@ func closedDashboard(t *testing.T, send func(*tea.Program, *tui.ProgramSink)) (t
 
 func TestAnyEarlyEndOfTheDashboardStopsTheLoop(t *testing.T) {
 	cancelled := false
-	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }, func(bool) {}).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil); why != "with Ctrl+C" || !cancelled {
 		t.Errorf("Ctrl+C: stopped %q, cancelled %v", why, cancelled)
 	}

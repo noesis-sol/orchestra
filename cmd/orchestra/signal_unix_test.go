@@ -33,3 +33,21 @@ func TestStopSignalsAreCaught(t *testing.T) {
 		t.Error("Ctrl+C and the loop's own end keep the organ phase")
 	}
 }
+
+// SIGUSR1 asks the run to stop after its running tickets, each time it comes.
+func TestDrainSignalIsCaught(t *testing.T) {
+	drained := make(chan struct{}, 2)
+	stop := watchDrain(func() { drained <- struct{}{} })
+	defer stop()
+	for i := 0; i < 2; i++ {
+		syscall.Kill(os.Getpid(), syscall.SIGUSR1)
+		select {
+		case <-drained:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("SIGUSR1 %d was not caught", i+1)
+		}
+	}
+	if name := signalName(syscall.SIGUSR1); name != "SIGUSR1" {
+		t.Errorf("signalName = %q", name)
+	}
+}

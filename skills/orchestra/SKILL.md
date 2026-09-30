@@ -129,6 +129,10 @@ them with `bd dep add`) only when they approve.
   The name is the ticket ID lowercased, with anything other than letters, digits, `-` and `_`
   turned into `_` (`CalendarView-bl0.1` → `calendarview-bl0_1`); an ID over 32 characters is cut
   and ends in a short hash.
+- **To wind the run down**, the user presses s in the dashboard and confirms with y: no new
+  tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
+  Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>`; don't press keys in its
+  pane. Ctrl+C stops at once instead, leaving the workers running.
 - **Don't type into a worker's tab or press keys on its dialogs** unless the user asks; Enter on a
   dialog picks an option (on Claude Code's trust dialog, "No, exit").
 
@@ -140,6 +144,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | Last line | Exit | Meaning | What to do |
 |---|---|---|---|
 | `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached | Read the report; the next step is usually the batch PR. |
+| `DRAINED`, after a `DRAIN: stopping after …` line | 0 | the user pressed s in the dashboard (or orchestra got SIGUSR1): no new tickets started, the running ones finished and merged | As for `READY_EMPTY`; the queue may still hold tickets for the next run. A `DRAIN cancelled` line means the user took it back. |
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |

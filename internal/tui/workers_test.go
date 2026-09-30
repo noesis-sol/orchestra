@@ -11,7 +11,7 @@ import (
 )
 
 func TestDashboardShowsSeveralWorkers(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {})
 	m.active = map[string]dispatch.Status{}
 	for i, title := range []string{"Competing timelines on the same view and property fight each other every frame",
 		"Open the property Dashboard", "Warn in debug builds when a chain call is silently ignored"} {
@@ -41,7 +41,7 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 }
 
 func TestDashboardHoldWithoutTicket(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() {}, func(bool) {})
 	m.width, m.height = 100, 30
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-0", Title: "A ticket"},
 		dispatch.Event{Kind: dispatch.EvHold, Text: "HOLD: DIRTY_TREE: …; no new tickets while the 1 running finish"})
@@ -54,7 +54,7 @@ func TestDashboardHoldWithoutTicket(t *testing.T) {
 }
 
 func TestDashboardFitsShortPanes(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {}, func(bool) {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},
@@ -95,7 +95,7 @@ func TestTriageLineIsPurpleDiamondWithCause(t *testing.T) {
 
 // The title line says which solo ticket runs alone, or waits to, and forgets it once it is done.
 func TestDashboardShowsTheSoloTicket(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {})
 	m.width, m.height = 120, 30
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-a", Title: "A ticket"},
 		dispatch.Event{Kind: dispatch.EvQueue, Queued: 2, Solo: dispatch.SoloState{Ticket: "k-s", Next: true}})

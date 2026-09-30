@@ -79,7 +79,18 @@ func (o *Loop) Run(ctx context.Context) int {
 	var stop *stopReason // the first reason decides the exit code
 	var alsoStopped []string
 	envSaid := false
+	drained := false // the maintainer asked to stop after the running tickets, as last said
+	// winding reads and logs a request to wind down or to take tickets again; asked just before a
+	// ticket would start, it keeps that ticket from starting.
+	winding := func() bool {
+		if on, how := o.draining(); on != drained {
+			drained = on
+			o.emit(drainEvent(on, how, inflight))
+		}
+		return drained
+	}
 	for {
+		winding()
 		// Workers failing at once, whichever ticket they have, hold the run: said once, before
 		// another ticket starts.
 		if s := o.environmentStop(); s != nil && !envSaid {
@@ -94,8 +105,9 @@ func (o *Loop) Run(ctx context.Context) int {
 					"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
 			}
 		}
-		// Start tickets while there are free slots, unless something has stopped the run.
-		for stop == nil && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
+		// Start tickets while there are free slots, unless something has stopped the run or the
+		// maintainer asked it to wind down.
+		for stop == nil && !drained && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
 			t, queued, s := o.next(inflight)
 			if s != nil {
 				stop = s
@@ -108,6 +120,9 @@ func (o *Loop) Run(ctx context.Context) int {
 			if t == nil {
 				o.reportQueue(queued)
 				break // nothing ready that isn't already running, or it waits for a solo ticket
+			}
+			if winding() {
+				break
 			}
 			o.count++
 			inflight[t.ID] = true
@@ -150,13 +165,14 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
 		case <-o.envWake: // the hold is picked up above
+		case <-o.drainWake: // so is the request to wind down
 		case <-poll.C:
 			if o.footprintOn() && len(inflight) > 1 {
 				o.readEdits() // warns when two workers edit the same file
 			}
 			// With a free slot, the loop above reads bd ready again. With none, the queue count is
 			// brought up to date; a failed read waits for the next poll, as nothing depends on it.
-			if stop == nil && len(inflight) >= c.Concurrency && o.count < c.Limit {
+			if stop == nil && !drained && len(inflight) >= c.Concurrency && o.count < c.Limit {
 				if t, queued, err := o.pick(inflight); err == nil {
 					if t != nil {
 						queued++
@@ -178,6 +194,8 @@ func (o *Loop) Run(ctx context.Context) int {
 			text += "; also " + t
 		}
 		return o.stop(stop.code, "%s", text)
+	case drained:
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count)})
 	case o.count >= c.Limit:
 		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)})
 	default:
