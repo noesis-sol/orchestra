@@ -1,6 +1,7 @@
 # Agent Orchestra
 
-<img width="2172" height="724" alt="52045c80-b098-423f-8c98-246654400497" src="https://github.com/user-attachments/assets/c6cb72f8-21a8-4805-8bff-76a43d4db1e6" />
+<img width="2172" height="724" alt="661180647-c6cb72f8-21a8-4805-8bff-76a43d4db1e6" src="https://github.com/user-attachments/assets/f2e76a42-7112-4909-87df-6dc154679b2f" />
+
 
 Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket at a time. Each ticket goes to a coding agent in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are merged into the branch you started on. A Go rewrite of `orchestrate.sh`, with the same environment variables, log file and exit codes, and a live terminal view built with Bubble Tea.
 
