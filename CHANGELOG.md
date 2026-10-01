@@ -32,7 +32,8 @@ All notable changes to orchestra are documented here. The format follows
   `.orchestra/settings.json` or `--resolve-conflicts=false` turns it off.
 - After a run holds for the environment, it probes the machine once the running
   tickets finish: 10 minutes later one worker without a ticket is started in
-  the main checkout and asked to run a single command. If it does, the log and
+  the main checkout and asked to run a single command (a Claude worker starts
+  without MCP servers, with `--strict-mcp-config`). If it does, the log and
   a notification say `PROBE_OK: …; taking tickets again`, and the run goes on
   with the reopened tickets. If not, the run ends with `ENVIRONMENT` (exit code
   7) as before, the line saying how the probe failed and its tab left open. A

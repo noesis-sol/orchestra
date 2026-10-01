@@ -229,6 +229,49 @@ func TestAProbeThatRunsItsCommandEndsTheHold(t *testing.T) {
 	}
 }
 
+// The probe runs one echo, so a Claude probe worker starts without MCP servers.
+func TestTheProbeStartsWithoutMCPServers(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp, finishes("a.txt"))
+	h.worker("B", givesUp, finishes("b.txt"))
+	h.worker(probeID, runsProbe)
+
+	if _, code := h.run(); code != ExitOK {
+		t.Fatalf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
+	}
+	if got := h.herdr.argsFor(probeID); len(got) != 1 || !equal(got[0], []string{"start", "--strict-mcp-config"}) {
+		t.Errorf("probe started with %q, want once with --strict-mcp-config", got)
+	}
+}
+
+// A Herdr that refuses arguments starts the probe worker plainly.
+func TestTheProbeStartsPlainlyWhenHerdrRefusesArguments(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.herdr.refuseArgs = true
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp, finishes("a.txt"))
+	h.worker("B", givesUp, finishes("b.txt"))
+	h.worker(probeID, runsProbe)
+
+	if _, code := h.run(); code != ExitOK {
+		t.Fatalf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
+	}
+	got := h.herdr.argsFor(probeID)
+	if len(got) != 2 || !equal(got[0], []string{"start", "--strict-mcp-config"}) || !equal(got[1], []string{"start"}) {
+		t.Errorf("probe started with %q, want --strict-mcp-config, then no arguments", got)
+	}
+	if !strings.Contains(h.logged(), errRefused.Error()) {
+		t.Errorf("log lacks the refusal:\n%s", h.logged())
+	}
+}
+
 func TestAProbeThatRunsNoCommandEndsTheRun(t *testing.T) {
 	h := newHarness(t)
 	h.holdForEnvironment(time.Minute)

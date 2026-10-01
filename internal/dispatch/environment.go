@@ -223,7 +223,18 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
 	deadline := time.Now().Add(orDefault(o.wait.probe, probeLimit))
-	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
+	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
+	// refuses the argument.
+	var args []string
+	if c.AgentKind == "claude" {
+		args = []string{"--strict-mcp-config"}
+	}
+	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
+	if err != nil && len(args) > 0 && o.starter.IsArgumentRefused(err) {
+		o.log.Raw("", err)
+		err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil)
+	}
+	if err != nil {
 		// 'agent start' can fail while the agent still comes up.
 		if st, serr := o.agents.Status(ctx, agent); serr != nil || st == StateGone { // the start's error is the one to report
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
