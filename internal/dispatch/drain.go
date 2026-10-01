@@ -47,14 +47,19 @@ func drainEvent(on bool, how string, inflight map[string]bool) Event {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	var text string
+	lead, list, tail := DrainWords(ids)
+	return Event{Kind: EvDrain, Text: "DRAIN: " + lead + list + tail + asked}
+}
+
+// DrainWords says that the run winds down after the tickets in ids, in the words the DRAIN line,
+// the dashboard and its question share: lead + list + tail reads "stopping after the 2 running
+// tickets finish (A, B): no new tickets will start". A display short of room shortens list alone.
+func DrainWords(ids []string) (lead, list, tail string) {
 	switch len(ids) {
 	case 0:
-		text = "DRAIN: stopping now, as nothing is running" + asked
+		return "stopping now, as nothing is running", "", ""
 	case 1:
-		text = fmt.Sprintf("DRAIN: stopping after the running ticket (%s)%s", ids[0], asked)
-	default:
-		text = fmt.Sprintf("DRAIN: stopping after the %d running tickets (%s)%s", len(ids), strings.Join(ids, ", "), asked)
+		return "stopping after ", ids[0], " finishes: no new tickets will start"
 	}
-	return Event{Kind: EvDrain, Text: text}
+	return fmt.Sprintf("stopping after the %d running tickets finish (", len(ids)), strings.Join(ids, ", "), "): no new tickets will start"
 }

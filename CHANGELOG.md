@@ -167,6 +167,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A run winding down after **s** → **y** (or SIGUSR1) says so on its own line
+  above the dashboard's hint, in the stop colour:
+  `■ Stopping after the 2 running tickets finish (…): no new tickets will start`,
+  updated as tickets finish and wrapped rather than cut in a narrow pane (only
+  the IDs are shortened). It replaces `· stopping after current` on the title
+  line, which a narrow pane cut off. The hint reads `s cancels the stop`
+  instead of `s keeps going`, the queue count is marked `held`, and the title
+  line puts `stopping` and `solo` before the branch and time. The question, the
+  line and the `DRAIN` log line use the same words.
 - The built-in worker prompt tells workers never to stop processes by name or
   pattern (`pkill -f dispatch.test` from one worker ended another's check with
   `signal: terminated`), only the ones they started, by PID.
