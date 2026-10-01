@@ -75,6 +75,7 @@ type Loop struct {
 	askedIDs  map[string]bool       // tickets set aside in this run to wait on a question
 	parentOf  map[string]string     // the parent of each ticket dispatched or left unmerged, which waits for it
 	doneSaid  map[string]bool       // parents said to be ready to close
+	finishing map[string]string     // what each worker is doing that Ctrl+C doesn't stop, such as "merge"
 
 	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
 	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
@@ -168,6 +169,22 @@ func (o *Loop) clearActive(id string) {
 	delete(o.active, id)
 }
 
+// markFinishing marks what ticket id's worker is doing that Ctrl+C doesn't stop, for the wait
+// after it to name; the function it returns clears the mark.
+func (o *Loop) markFinishing(id, what string) func() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.finishing == nil {
+		o.finishing = map[string]string{}
+	}
+	o.finishing[id] = what
+	return func() {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		delete(o.finishing, id)
+	}
+}
+
 // activeList returns the tickets being worked on, oldest first.
 func (o *Loop) activeList() []Status {
 	o.mu.Lock()
@@ -196,6 +213,7 @@ type timing struct {
 	startGrace time.Duration // startGrace
 	probe      time.Duration // how long the probe worker may take to run its command: probeLimit
 	ready      time.Duration // between reads of bd ready while workers run: readyPoll
+	settleSay  time.Duration // after Ctrl+C, before naming the workers not yet returned: settleSay
 }
 
 func orDefault(d, def time.Duration) time.Duration {

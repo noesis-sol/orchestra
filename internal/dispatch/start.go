@@ -55,6 +55,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 // not be rebased onto Base.
 func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, conflicts bool, stop *stopReason) {
 	c := o.cfg
+	defer o.markFinishing(id, "worktree setup")()
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
 	o.worktrees.Prune(ctx, c.Repo) // forget a worktree whose folder was deleted, so it isn't reused

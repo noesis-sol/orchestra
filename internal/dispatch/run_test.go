@@ -144,6 +144,7 @@ func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
 // so triage closes and the reviewer reads the loop only once it has stopped changing.
 func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
 	o, tk, sink := newDeferringLoop(t)
+	o.wait.settleSay = 10 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	codes := make(chan int, 1)
@@ -154,6 +155,9 @@ func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
 	case <-codes:
 		t.Fatal("Run returned while its worker was still running")
 	case <-time.After(100 * time.Millisecond):
+	}
+	if !strings.Contains(sink.text(), "'s last command to finish…") {
+		t.Errorf("the worker still out should be named:\n%s", sink.text())
 	}
 	close(tk.release)
 	if code := <-codes; code != ExitInterrupted {
@@ -340,15 +344,18 @@ func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
 	}
 }
 
-// interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded.
+// interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded,
+// which then takes slow.
 type interruptingMerger struct {
 	Merger
 	t      *testing.T
 	cancel context.CancelCauseFunc
+	slow   time.Duration
 }
 
 func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string) (string, error) {
 	m.cancel(Interrupted("with Ctrl+C"))
+	time.Sleep(m.slow)
 	if ctx.Err() != nil {
 		m.t.Error("the merge was cut short by Ctrl+C")
 	}
@@ -385,6 +392,43 @@ func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
 	if got := activeIDs(o); len(got) != 0 {
 		t.Errorf("active: %v", got)
 	}
+	if got := waiting(h.sink); len(got) != 0 {
+		t.Errorf("a merge done within a second should go unmentioned:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// Ctrl+C during a merge that takes a while: the run says what it waits for, rather than sit
+// silent until the merge is done.
+func TestInterruptNamesTheMergeItWaitsFor(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o := h.loop()
+	o.wait.settleSay = 10 * time.Millisecond
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel, slow: 200 * time.Millisecond}
+	if code := o.Run(ctx); code != ExitInterrupted {
+		t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
+	}
+	if got := waiting(h.sink); !equal(got, []string{"A   waiting for A's merge to finish…"}) {
+		t.Errorf("waiting:\n%s", strings.Join(got, "\n"))
+	}
+	if got := h.sink.of(EvClosed); len(got) != 1 {
+		t.Errorf("A should merge:\n%s", h.sink.text())
+	}
+}
+
+// waiting is what the run said it waits for after Ctrl+C.
+func waiting(s *runSink) []string {
+	var l []string
+	for _, e := range s.of(EvInfo) {
+		if strings.Contains(e, "waiting for") {
+			l = append(l, e)
+		}
+	}
+	return l
 }
 
 func TestInterruptLineNamesTheWorkersLeftRunning(t *testing.T) {

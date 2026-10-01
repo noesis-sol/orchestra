@@ -264,6 +264,10 @@ All notable changes to orchestra are documented here. The format follows
   After Ctrl+C the run waits for its workers to return rather than giving up
   after 10 seconds and leaving them behind; a merge already under way, and the
   notes after it, finish first, so the repository is never left half merged.
+  A worker not back within a second is named under the `INTERRUPTED` line (in
+  `-plain`, above it), with what it is finishing: `waiting for <ticket>'s merge
+  to finish…`, its `worktree setup`, or its `last command`, which stops by its
+  time limit.
 
 ## [0.1.1] - 2026-09-29
 

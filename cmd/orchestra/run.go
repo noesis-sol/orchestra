@@ -491,7 +491,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		log.Alert(ev.Time, msg)
 		sink.Event(ev)
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
-		// Run waits for its workers, whose commands stop with it or at their time limits.
+		// Run waits for its workers, whose commands stop with it or at their time limits, and names
+		// any not back within a second below the INTERRUPTED line.
 		<-codes
 		if !leaving(sig) {
 			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)

@@ -1,9 +1,12 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 )
@@ -247,12 +250,38 @@ func (o *Loop) Run(ctx context.Context) int {
 // report) reads a loop that has stopped changing and no worker is left behind. Each command a
 // worker runs stops with the run or at its time limit, and only what must finish once begun (a
 // merge under way, the notes after it) goes on, so they return within seconds, or within a
-// command's time limit when one hangs. A worker that settled still counts toward the hold.
+// command's time limit when one hangs. Those not back within settleSay are named, so the terminal
+// doesn't sit silent meanwhile. A worker that settled still counts toward the hold.
 func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[string]bool) {
+	slow := time.NewTimer(orDefault(o.wait.settleSay, settleSay))
+	defer slow.Stop()
 	for len(inflight) > 0 {
-		r := <-results
-		delete(inflight, r.id)
-		o.settled(ctx, r.id, r.how)
+		select {
+		case r := <-results:
+			delete(inflight, r.id)
+			o.settled(ctx, r.id, r.how)
+		case <-slow.C:
+			o.sayWaiting(inflight)
+		}
+	}
+}
+
+// settleSay is how long settle waits after Ctrl+C before naming the workers it waits for: most
+// return within milliseconds.
+const settleSay = time.Second
+
+// sayWaiting names each worker settle waits for, with what it is finishing: its merge, say, or a
+// command that has yet to stop or reach its time limit.
+func (o *Loop) sayWaiting(inflight map[string]bool) {
+	ids := slices.Sorted(maps.Keys(inflight))
+	o.mu.Lock()
+	what := make([]string, len(ids))
+	for i, id := range ids {
+		what[i] = cmp.Or(o.finishing[id], "last command")
+	}
+	o.mu.Unlock()
+	for i, id := range ids {
+		o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf("  waiting for %s's %s to finish…", id, what[i])})
 	}
 }
 

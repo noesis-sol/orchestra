@@ -43,6 +43,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 	keep := context.WithoutCancel(ctx)
+	defer o.markFinishing(id, "merge")()
 	o.mergeMu.Lock()
 	defer o.mergeMu.Unlock() // held on every return; a hand-back lets go of it and takes it again
 	handedBack := 0
