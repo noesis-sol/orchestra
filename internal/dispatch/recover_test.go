@@ -2,7 +2,9 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -129,5 +131,27 @@ func TestWatcherPanicOnlyStopsWatching(t *testing.T) {
 	stop() // returns: the watcher ended
 	if got := sink.text(); !strings.Contains(got, "  WATCH_FAILED for A: panic: runtime error: index out of range") {
 		t.Errorf("events:\n%s", got)
+	}
+}
+
+// A worker's panic on a runtime error keeps it as the stop's cause.
+func TestPanicStopKeepsTheRuntimeError(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := New(Config{LogPath: "orchestra.log"}, log, "", Deps{})
+	var p any
+	func() {
+		defer func() { p = recover() }()
+		var tk *Ticket
+		_ = tk.Title
+	}()
+	s := o.panicStop("A", p)
+	if s.kind != stopPanic || !errors.As(s, new(runtime.Error)) {
+		t.Errorf("stop %v (kind %s), want PANIC caused by a runtime.Error", s, s.kind)
+	}
+	if s := o.panicStop("A", "not an error"); s.kind != stopPanic || errors.Unwrap(s) != nil {
+		t.Errorf("stop %v caused by %v, want PANIC without a cause", s, errors.Unwrap(s))
 	}
 }

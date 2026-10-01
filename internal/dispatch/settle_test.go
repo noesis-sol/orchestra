@@ -71,7 +71,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
 	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil); stop != nil {
-		t.Fatalf("stopped: %s", stop.text)
+		t.Fatalf("stopped: %s", stop)
 	}
 	if a.reads != 4 {
 		t.Errorf("read the status %d times, want 4: the wait should last until the worker is gone", a.reads)
@@ -87,7 +87,7 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 	o, a, _ := newSettleLoop(t, "working", "blocked", "working")
 	w := o.newWatcher("wt", Status{Ticket: "A"})
 	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, w.report); stop != nil {
-		t.Fatalf("stopped: %s", stop.text)
+		t.Fatalf("stopped: %s", stop)
 	}
 	if a.reads != 4 {
 		t.Errorf("read the status %d times, want 4: once a poll", a.reads)
@@ -104,7 +104,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 	}
 	o, a, _ := newSettleLoop(t, script...)
 	_, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil)
-	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
+	if stop == nil || stop.code != ExitTool || stop.kind != stopHerdrFailed {
 		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 	}
 	if a.reads != maxFailedReads {
@@ -122,7 +122,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 	o.wait.longRun = 5 * time.Millisecond
 	shown := recordAlerts(o.log)
 	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil); stop != nil {
-		t.Fatalf("stopped: %s", stop.text)
+		t.Fatalf("stopped: %s", stop)
 	}
 	var warned []string
 	for _, ev := range o.sink.(*recordSink).events {

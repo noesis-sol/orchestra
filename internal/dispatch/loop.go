@@ -142,18 +142,61 @@ func (o *Loop) Final() string {
 }
 
 // stopReason ends the run: a ticket hit something that needs the maintainer, or a tool failed.
-// With several workers, no new tickets start and the running ones finish first.
+// With several workers, no new tickets start and the running ones finish first. Its kind says
+// what stopped the run and its cause, if any, what failed; its text is the line the run ends
+// with, which begins with the kind.
 type stopReason struct {
-	code int
-	text string
+	code   int
+	kind   stopKind
+	detail string // what follows the kind on the line
+	cause  error
 }
+
+// stopKind is what stopped the run, as the first word of its line says.
+type stopKind string
+
+const (
+	stopAgentBusy        stopKind = "AGENT_BUSY"
+	stopAgentNameTaken   stopKind = "AGENT_NAME_TAKEN"
+	stopBlocked          stopKind = "BLOCKED"
+	stopDirtyTree        stopKind = "DIRTY_TREE"
+	stopEnvironment      stopKind = "ENVIRONMENT"
+	stopGitFailed        stopKind = "GIT_FAILED"
+	stopHerdrFailed      stopKind = "HERDR_FAILED"
+	stopInterrupted      stopKind = "INTERRUPTED"
+	stopMergeFailed      stopKind = "MERGE_FAILED"
+	stopPanic            stopKind = "PANIC"
+	stopPaused           stopKind = "PAUSED"
+	stopReadyUnreadable  stopKind = "READY_UNREADABLE"
+	stopStartFailed      stopKind = "START_FAILED"
+	stopStatusUnreadable stopKind = "STATUS_UNREADABLE"
+	stopTabFailed        stopKind = "TAB_FAILED"
+	stopTicketLimit      stopKind = "TICKET_LIMIT"
+	stopUnknown          stopKind = "UNKNOWN"
+	stopWorktreeFailed   stopKind = "WORKTREE_FAILED"
+)
 
 // errInterrupted is returned by a worker when Ctrl+C cancelled the run.
-var errInterrupted = &stopReason{code: ExitInterrupted}
+var errInterrupted = &stopReason{code: ExitInterrupted, kind: stopInterrupted}
 
-func halt(code int, format string, a ...any) *stopReason {
-	return &stopReason{code: code, text: fmt.Sprintf(format, a...)}
+// halt is a reason to stop of the given kind, ending the run with code. Its line is the kind
+// followed by format, which begins with what separates them (": ", " for ").
+func halt(code int, kind stopKind, format string, a ...any) *stopReason {
+	return &stopReason{code: code, kind: kind, detail: fmt.Sprintf(format, a...)}
 }
+
+// causedBy keeps err as what made s stop the run, for errors.Is and errors.As; its line names
+// err already, if it should.
+func (s *stopReason) causedBy(err error) *stopReason {
+	s.cause = err
+	return s
+}
+
+// Error is the line the run ends with.
+func (s *stopReason) Error() string { return string(s.kind) + s.detail }
+
+// Unwrap is what failed, or nil.
+func (s *stopReason) Unwrap() error { return s.cause }
 
 func (o *Loop) setActive(st Status) {
 	o.mu.Lock()

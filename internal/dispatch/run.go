@@ -79,7 +79,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
 	if s := o.loadUnmerged(ctx); s != nil {
-		return o.stop(s.code, "%s", s.text)
+		return o.stop(s.code, "%s", s)
 	}
 	defer o.startPredicting()()
 
@@ -121,11 +121,11 @@ func (o *Loop) Run(ctx context.Context) int {
 			if stop == nil {
 				stop = s
 			} else {
-				alsoStopped = append(alsoStopped, s.text)
+				alsoStopped = append(alsoStopped, s.Error())
 			}
 			if len(inflight) > 0 {
 				o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-					"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+					"HOLD: %s; no new tickets while the %d running finish", s, len(inflight))})
 			}
 		}
 		// Start tickets while there are free slots, unless something has stopped the run or the
@@ -136,7 +136,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				stop = s
 				if len(inflight) > 0 {
 					o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-						"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+						"HOLD: %s; no new tickets while the %d running finish", s, len(inflight))})
 				}
 				break
 			}
@@ -195,14 +195,14 @@ func (o *Loop) Run(ctx context.Context) int {
 			if first {
 				stop = r.stop
 			} else {
-				alsoStopped = append(alsoStopped, r.stop.text)
+				alsoStopped = append(alsoStopped, r.stop.Error())
 			}
 			switch {
 			case len(inflight) > 0:
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: fmt.Sprintf(
-					"HOLD: %s; no new tickets while the %d running finish", r.stop.text, len(inflight))})
+					"HOLD: %s; no new tickets while the %d running finish", r.stop, len(inflight))})
 			case !first:
-				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
+				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.Error()})
 			}
 		case v := <-o.verdicts:
 			o.triaged(keep, v) // a hold is picked up above
@@ -231,7 +231,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)
 	case stop != nil:
-		text := stop.text
+		text := stop.Error()
 		for _, t := range alsoStopped {
 			text += "; also " + t
 		}
@@ -307,7 +307,7 @@ func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int,
 		if errors.As(err, new(listUnreadable)) {
 			what = "'bd list --json'"
 		}
-		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read %s%s", what, because(err))
+		return nil, 0, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
 	}
 	return t, queued, nil
 }
@@ -399,13 +399,13 @@ func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 	c := o.cfg
 	dirty, branch, err := o.readCheckout(ctx)
 	if err != nil {
-		return halt(ExitTool, "GIT_FAILED: could not read the state of %s%s; stopping%s", c.Repo, because(err), held)
+		return halt(ExitTool, stopGitFailed, ": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err)
 	}
 	if dirty != "" {
-		return halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
+		return halt(ExitDirty, stopDirtyTree, ": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
 	}
 	if branch != c.Base {
-		return halt(ExitDirty, "DIRTY_TREE: %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
+		return halt(ExitDirty, stopDirtyTree, ": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
 	}
 	return nil
 }

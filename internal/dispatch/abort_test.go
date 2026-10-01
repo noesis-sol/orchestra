@@ -23,7 +23,7 @@ func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
 	f.onMain(t, "shared.txt", "line 1 from main\n")
 	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if ev := f.sink.text(); !strings.Contains(ev, "MERGE_CONFLICT: k-1") || !strings.Contains(ev, "its rebase could not be aborted, so "+wt+" is left mid-rebase") {
 		t.Errorf("events:\n%s", ev)

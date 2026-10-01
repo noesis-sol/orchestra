@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -116,7 +117,7 @@ func TestReadyUnreadableSaysWhy(t *testing.T) {
 	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: unreadableReady{}, Checkout: cleanCheckout{}})
 	_, _, s := o.next(context.Background(), nil)
 	want := "READY_UNREADABLE: could not read 'bd ready --json': bd defer A: exit status 1: Error: database is locked (another bd holds it)"
-	if s == nil || s.text != want {
+	if s == nil || s.kind != stopReadyUnreadable || !errors.Is(s, errBd) || s.Error() != want {
 		t.Errorf("got %+v, want %q", s, want)
 	}
 }

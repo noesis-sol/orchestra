@@ -98,7 +98,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	c := o.cfg
 	closed, err := o.tickets.Closed(ctx, UnmergedLabel)
 	if err != nil {
-		return halt(ExitTool, "READY_UNREADABLE: could not list the tickets labelled '%s'%s", UnmergedLabel, because(err))
+		return halt(ExitTool, stopReadyUnreadable, ": could not list the tickets labelled '%s'%s", UnmergedLabel, because(err)).causedBy(err)
 	}
 	for _, t := range closed {
 		id, br := t.ID, "wt/"+t.ID

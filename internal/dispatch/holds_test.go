@@ -53,7 +53,7 @@ func (f *mergeFixture) next(t *testing.T, running map[string]bool) string {
 	t.Helper()
 	tk, _, s := f.orch.next(context.Background(), running)
 	if s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if tk == nil {
 		return ""
@@ -119,7 +119,7 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 			f.orch.tickets = aBlocksB()
 			wt := c.setup(f)
 			if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil {
-				t.Fatal(s.text)
+				t.Fatal(s)
 			}
 			if got := f.next(t, nil); got != "" {
 				t.Errorf("next = %q, want k-b held while k-a is unmerged", got)
@@ -136,13 +136,15 @@ func TestDependentStartsOnceItsBlockerMerges(t *testing.T) {
 	f.orch.tickets = aBlocksB()
 	wt := f.ticket(t, "k-a", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab") // CHECKS_FAILED
+	if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil { // CHECKS_FAILED
+		t.Fatal(s)
+	}
 	if got := f.next(t, nil); got != "" {
 		t.Fatalf("next = %q, want k-b held", got)
 	}
 	f.orch.cfg.Check = "true" // fixed by hand, and merged
 	if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if !strings.Contains(f.sink.text(), "k-a closed") {
 		t.Fatalf("k-a did not merge; events:\n%s", f.sink.text())
@@ -259,7 +261,7 @@ func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
 	f.orch.tickets = labelledA()
 	f.git(f.repo, "branch", "wt/k-a") // cut, never committed to
 	if s := f.orch.loadUnmerged(context.Background()); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if got := f.next(t, nil); got != "" {
 		t.Errorf("next = %q, want k-b held: wt/k-a is on main but holds no commit naming k-a", got)
@@ -270,7 +272,7 @@ func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
 	f.onMain(t, "a.txt", "a\n")
 	f.git(f.repo, "commit", "-q", "--amend", "-m", "k-a: add a.txt") // merged by hand, branch deleted
 	if s := f.orch.loadUnmerged(context.Background()); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if got := f.next(t, nil); got != "k-b" {
 		t.Errorf("next = %q, want k-b: k-a is on main\n%s", got, f.sink.text())
@@ -307,7 +309,9 @@ func TestLabelFailureIsWarned(t *testing.T) {
 	f.orch.tickets = aBlocksB()
 	wt := filepath.Join(t.TempDir(), "k-a")
 	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/k-a", wt, "main")
-	f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab") // CLOSED_WITHOUT_COMMIT
+	if s := f.orch.finish(context.Background(), "k-a", "wt/k-a", wt, "tab"); s != nil { // CLOSED_WITHOUT_COMMIT
+		t.Fatal(s)
+	}
 	if ev := f.sink.text(); !strings.Contains(ev, "LABEL_FAILED: bd could not label k-a 'unmerged': bd defer A") {
 		t.Errorf("events:\n%s", ev)
 	}

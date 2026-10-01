@@ -31,7 +31,11 @@ func (o *Loop) panicStop(id string, p any) *stopReason {
 	if ok {
 		left = fmt.Sprintf("its worktree and tab %s are left for review", st.Tab)
 	}
-	return halt(ExitTool, "PANIC in %s: %s; %s (the stack is in %s)", id, text, left, o.cfg.LogPath)
+	s := halt(ExitTool, stopPanic, " in %s: %s; %s (the stack is in %s)", id, text, left, o.cfg.LogPath)
+	if err, ok := p.(error); ok {
+		s = s.causedBy(err) // a runtime.Error, say
+	}
+	return s
 }
 
 // held is a mutex taken and let go of along the way, as merging does, released by a deferred

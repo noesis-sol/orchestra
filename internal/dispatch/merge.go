@@ -56,8 +56,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		if o.merger.IsAncestor(keep, c.Repo, c.Base, br) {
 			if s := o.checkoutUnready(keep, fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
 				repo.unlock()
-				why, _, _ := strings.Cut(s.text, ":")
-				o.leaveUnmerged(keep, id, why) // DIRTY_TREE or GIT_FAILED
+				o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or GIT_FAILED
 				return s
 			}
 			commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
@@ -65,8 +64,8 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			o.log.Raw(out, err)
 			if err != nil {
 				repo.unlock()
-				o.leaveUnmerged(keep, id, "MERGE_FAILED")
-				return halt(ExitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
+				o.leaveUnmerged(keep, id, string(stopMergeFailed))
+				return halt(ExitMerge, stopMergeFailed, ": %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
 			o.merged(keep, id)
 			out, err = o.worktrees.RemoveWorktree(keep, c.Repo, wt)

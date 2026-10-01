@@ -33,7 +33,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
 			}
 			if failed >= maxFailedReads {
-				return time.Time{}, halt(ExitTool, "HERDR_FAILED: the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err)
+				return time.Time{}, halt(ExitTool, stopHerdrFailed, ": the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err).causedBy(err)
 			}
 			if !sleep(ctx, o.pollEvery()) {
 				return time.Time{}, errInterrupted
@@ -71,7 +71,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				blockedSince = time.Now()
 			}
 			if time.Since(blockedSince) > orDefault(o.wait.blocked, blockedLimit) {
-				return time.Time{}, halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
+				return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
 			}
 		} else {
 			blockedSince = time.Time{}
@@ -81,14 +81,14 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				unknownSince = time.Now()
 			}
 			if time.Since(unknownSince) > orDefault(o.wait.unknown, unknownLimit) {
-				return time.Time{}, halt(ExitStuck, "UNKNOWN >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+				return time.Time{}, halt(ExitStuck, stopUnknown, " >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 			}
 		} else {
 			unknownSince = time.Time{}
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
 			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
-			return time.Time{}, halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
+			return time.Time{}, halt(ExitStuck, stopTicketLimit, ": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
 		}
 		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
 			warned = true

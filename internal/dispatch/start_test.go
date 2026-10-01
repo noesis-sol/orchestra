@@ -59,11 +59,11 @@ func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 		o.cfg.WTRoot, o.cfg.AgentKind, o.cfg.LaunchPrompt = t.TempDir(), "claude", launch
 		o.starter, o.namer, o.agents = h, h, h
 		s := o.work(context.Background(), Ticket{ID: "Cal-bl0.1", Title: "t"}, new(settling))
-		if s == nil || s.code != ExitTool {
+		if s == nil || s.code != ExitTool || s.kind != stopStartFailed || !errors.Is(s, errNameRefused) {
 			t.Fatalf("launch=%v: want START_FAILED, got %+v", launch, s)
 		}
-		if !strings.Contains(s.text, "agent-for-Cal-bl0.1") || !strings.Contains(s.text, "agent names must be lowercase") {
-			t.Errorf("launch=%v: the stop should name the agent and give Herdr's message: %s", launch, s.text)
+		if !strings.Contains(s.Error(), "agent-for-Cal-bl0.1") || !strings.Contains(s.Error(), "agent names must be lowercase") {
+			t.Errorf("launch=%v: the stop should name the agent and give Herdr's message: %s", launch, s)
 		}
 		if launch {
 			if len(h.adopts) != 1 || h.adopts[0] != "agent-for-Cal-bl0.1" || len(h.starts) != 0 {

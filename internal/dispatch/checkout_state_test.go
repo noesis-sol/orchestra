@@ -43,7 +43,7 @@ func TestFailingGitIsNotADirtyTree(t *testing.T) {
 		switch {
 		case tc.want == "" && (s != nil || tk == nil || tk.ID != "A"):
 			t.Errorf("%d failures: got %v (%+v), want A", tc.fails, tk, s)
-		case tc.want != "" && (s == nil || s.code != ExitTool || s.text != tc.want):
+		case tc.want != "" && (s == nil || s.code != ExitTool || s.kind != stopGitFailed || s.Error() != tc.want):
 			t.Errorf("%d failures: got %+v, want %q", tc.fails, s, tc.want)
 		}
 	}

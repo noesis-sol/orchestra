@@ -70,19 +70,19 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return errInterrupted
 	}
 	if err != nil {
-		return halt(ExitTool, "HERDR_FAILED: cannot tell whether an earlier worker for %s is still in its tab: %v", id, err)
+		return halt(ExitTool, stopHerdrFailed, ": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
 	}
 	switch st {
 	case StateGone:
 	case StateWorking, StateBlocked:
-		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
+		return halt(ExitTool, stopAgentBusy, ": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
 		name := o.namer.FreeName(ctx, agent)
 		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
-			return halt(ExitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id)
+			return halt(ExitTool, stopAgentNameTaken, ": an earlier worker for %s holds its name and could not be renamed", id)
 		}
 		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 	}
@@ -95,7 +95,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return errInterrupted
 	}
 	if err != nil {
-		return halt(ExitTool, "TAB_FAILED for %s (is '%s' a valid workspace?)", id, c.Workspace)
+		return halt(ExitTool, stopTabFailed, " for %s (is '%s' a valid workspace?)", id, c.Workspace).causedBy(err)
 	}
 	started := time.Now()
 	o.setActive(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
@@ -129,7 +129,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// input, which a worker that goes straight to work never does, so it could only time out.
 	// A name Herdr refuses would be refused on every retry, so that ends the attempt at once.
 	nameRefused := func(err error) *stopReason {
-		return halt(ExitTool, "START_FAILED for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err)
+		return halt(ExitTool, stopStartFailed, " for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err).causedBy(err)
 	}
 	ok := false
 	if launch != "" {
@@ -159,7 +159,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			if ok = adopted; ok {
 				o.info("  %s's worker was slow to start; named it %s", id, agent)
 			} else if held != "" {
-				return halt(ExitTool, "START_FAILED for %s in tab %s: the worker launched there could not be named %s (%s); stopping rather than starting a second one in it", id, tab, agent, held)
+				return halt(ExitTool, stopStartFailed, " for %s in tab %s: the worker launched there could not be named %s (%s); stopping rather than starting a second one in it", id, tab, agent, held)
 			}
 		}
 		if !ok {
@@ -229,7 +229,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		}
 	}
 	if !ok {
-		return halt(ExitTool, "START_FAILED for %s in tab %s", id, tab)
+		return halt(ExitTool, stopStartFailed, " for %s in tab %s", id, tab)
 	}
 
 	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
@@ -293,9 +293,9 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
-		return halt(ExitStuck, "PAUSED: %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
+		return halt(ExitStuck, stopPaused, ": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
-		return halt(ExitTool, "STATUS_UNREADABLE for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab)
+		return halt(ExitTool, stopStatusUnreadable, " for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab).causedBy(showErr)
 	case outcomeUnfinished:
 		if o.failedAtOnce(keep, s, started, idleAt, br, head, wt) {
 			*how = settledFast

@@ -110,7 +110,7 @@ func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 		return
 	}
 	o.envWhy = why
-	o.envStop = halt(ExitEnvironment, "ENVIRONMENT: %s; check the machine, then restart", why)
+	o.envStop = halt(ExitEnvironment, stopEnvironment, ": %s; check the machine, then restart", why)
 	for _, id := range o.fastFails {
 		o.reopenFailed(ctx, id)
 	}
@@ -171,8 +171,8 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		return stop
 	}
 	if err != nil {
-		return halt(ExitEnvironment, "ENVIRONMENT: %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
-			o.envWhy, ShortDuration(after), err)
+		return halt(ExitEnvironment, stopEnvironment, ": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
+			o.envWhy, ShortDuration(after), err).causedBy(err)
 	}
 	o.closeTab(ctx, tab)
 	select {
