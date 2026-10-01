@@ -127,9 +127,10 @@ func FirstLine(s string) string {
 	return s
 }
 
-// reviewInput gathers the evidence for the reviewer.
+// reviewInput gathers the evidence for the reviewer, each section tagged with the same fresh ID.
 func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	c := o.cfg
+	tag := organ.EvidenceID()
 	commits := o.history.Subjects(ctx, c.Repo, o.startHead+".."+c.Base)
 	var setAside strings.Builder
 	for _, id := range o.setAside() {
@@ -159,18 +160,18 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 				for _, t := range filed {
 					outside += o.tickets.Describe(ctx, t.ID) + "\n"
 				}
-				outside = organ.Section(fmt.Sprintf(
+				outside = organ.Section(tag, fmt.Sprintf(
 					"Follow-ups filed in this run outside the scope of %s, left for a later run", c.Ticket), outside)
 			}
 		}
 	}
 	return fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
 		scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning, final) +
-		organ.Section("Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
-		organ.Section("Commits merged into "+c.Base+" in this run", commits) +
-		organ.Section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
-		organ.Section("Tickets in progress when the run stopped", stopped.String()) +
-		organ.Section("Tickets still ready", stillReady) + outside
+		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
+		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
+		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
+		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
+		organ.Section(tag, "Tickets still ready", stillReady) + outside
 }
 
 // Review has the reviewer write the run report.

@@ -24,6 +24,17 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   follow-up that restructures code most tickets touch (splitting or moving a shared file)
   `--labels solo`, so it runs with no other ticket beside it.
 
+## Working unattended
+- Nobody reads your turns as they happen: a turn that ends without a tool call ends your work on
+  the ticket. Don't end a turn with a summary that announces your next step, an offer to go on, or
+  a choice that doesn't block the rest: make the choice, note it on the ticket, and go on. Put a
+  status note in the same message as your next tool call.
+- The only stops are the ones under Close: DONE once the ticket is closed, a question when only the
+  maintainer can decide, a deferral when you cannot finish.
+- For a ticket with several parts, keep its acceptance criteria as a todo checklist (TodoWrite or
+  TaskCreate; this overrides the Beads instructions against them) and tick items off as you go.
+  Beads stays the record of the ticket.
+
 ## Close
 - Close the ticket only when a full `<check command>` run passes after your last change.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the

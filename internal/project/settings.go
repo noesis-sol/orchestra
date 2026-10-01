@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 )
@@ -46,6 +47,12 @@ type Settings struct {
 	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
 	// server Claude Code finds; [] gives them none.
 	MCPServers *[]string `json:"mcp_servers,omitempty"`
+	// WorkerEffort is the effort Claude workers are started at (claude --effort), unless
+	// --worker-effort says otherwise. Empty: Claude Code's own default.
+	WorkerEffort string `json:"worker_effort,omitempty"`
+	// OrganEffort is the effort of every organ, unless --organ-effort says otherwise. Empty: each
+	// organ's own, low for triage and the predictor and medium for the run report.
+	OrganEffort string `json:"organ_effort,omitempty"`
 }
 
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
@@ -238,6 +245,26 @@ func ResolveExcludeTypes(s Settings) ([]string, error) {
 		types = append(types, t)
 	}
 	return types, nil
+}
+
+// Efforts are the effort levels claude --effort takes.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// ResolveEffort picks an effort: the flag's (or its variable's) when given, else the project's
+// setting called key, else "" (the default). Either must be one of Efforts.
+func ResolveEffort(flagValue, key, setting string) (string, error) {
+	switch {
+	case flagValue != "":
+		if !slices.Contains(Efforts, flagValue) {
+			return "", fmt.Errorf("--%s must be one of %s (got '%s')",
+				strings.ReplaceAll(key, "_", "-"), strings.Join(Efforts, ", "), flagValue)
+		}
+		return flagValue, nil
+	case setting != "" && !slices.Contains(Efforts, setting):
+		return "", fmt.Errorf("%s: %s must be one of %s (got '%s')",
+			SettingsPath("."), key, strings.Join(Efforts, ", "), setting)
+	}
+	return setting, nil
 }
 
 // ResolveEnvironmentHold picks a run's environment hold from the project's settings: how many

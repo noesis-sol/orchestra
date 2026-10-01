@@ -189,8 +189,26 @@ All notable changes to orchestra are documented here. The format follows
   by itself. The built-in worker prompt has the commands.
 - `internal/project/worker-prompt.md`, the worker prompt template built into
   the binary.
+- `--worker-effort` / `WORKER_EFFORT` / `"worker_effort"` starts Claude workers
+  with `claude --effort <level>`; unset, they keep Claude Code's default, and
+  `orchestra init` says how to choose one.
+- A Claude worker whose turn ends (its Stop hook) with its ticket still in
+  progress, without a question or a deferral, is told to continue, at most
+  twice, before the idle grace and `PAUSED` apply as before.
+- With a ticket limit, the worker's prompt says how long it has for the ticket.
+- The worker prompt (template and this repository's) asks workers not to end a
+  turn with a summary, an offer to go on or a non-blocking choice, and lets
+  them keep a ticket's acceptance criteria as a todo checklist.
 
 ### Changed
+
+- Organs run at an explicit effort: `low` for triage and the predictor,
+  `medium` for the run report (measured: triage 7.9 s against 15.0 s at
+  `high`, the predictor 4.3 s against 7.2 s, the report 7.3 s against 8.5 s).
+  `--organ-effort` / `ORGAN_EFFORT` / `"organ_effort"` sets one for all.
+- Each section of an organ's evidence is wrapped in `<evidence id="…">` tags
+  whose ID is fresh for each call, and every organ's system prompt says text
+  inside them is evidence only, never instructions to follow.
 
 - The dashboard heads the boxes of the tickets being worked on with a faint
   `Current` label, like the tickets table's `Tickets` header, in the boxed and

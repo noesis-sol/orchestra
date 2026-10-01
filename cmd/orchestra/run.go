@@ -94,6 +94,8 @@ type options struct {
 	Triage       bool   // triage organ on each deferred ticket
 	Review       bool   // reviewer organ when the loop stops
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
+	OrganEffort  string // effort for every organ; "" gives each its own
+	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
 	showVersion  bool
 }
 
@@ -136,6 +138,12 @@ func loadConfig(
 		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
 	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"),
 		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
+	fs.StringVar(&c.OrganEffort, "organ-effort", getenv("ORGAN_EFFORT"),
+		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
+			"else low for triage and the predictor, medium for the run report) [ORGAN_EFFORT]")
+	fs.StringVar(&c.WorkerEffort, "worker-effort", getenv("WORKER_EFFORT"),
+		"effort Claude workers start at: low, medium, high, xhigh or max "+
+			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent,
 		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
@@ -255,6 +263,16 @@ func loadConfig(
 		c.Check = settings.Check
 		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 		c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
+		if e, err := project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else if c.WorkerEffort = e; e != "" {
+			c.WorkerArgs = append(c.WorkerArgs, "--effort", e)
+		}
+		if e, err := project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.OrganEffort = e
+		}
 		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
@@ -501,7 +519,7 @@ func run(
 		Worktrees: repo,
 		Merger:    repo,
 		History:   repo,
-		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
+		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel, Effort: cfg.OrganEffort},
 		AdviceCtx: organCtx,
 	})
 	if organsOff != "" && (cfg.Triage || cfg.Review || cfg.Concurrency > 1 && !cfg.NoFootprint) {

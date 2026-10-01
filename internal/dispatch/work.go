@@ -135,7 +135,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id)
+	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote()
 	launch := ""
 	if c.LaunchPrompt && c.AgentKind == "claude" {
 		var err error
@@ -155,7 +155,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		}
 	}
 	// startArgs are the worker's arguments: its MCP servers and the run's arguments for every Claude
-	// worker (--no-chrome or --chrome), which it always gets, then its reports and its prompt, if it
+	// worker (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
 	// has them.
 	fixed := mcpArgs[:len(mcpArgs):len(mcpArgs)]
 	if c.AgentKind == "claude" {
@@ -332,6 +332,17 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.
 	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, w.hooks, adopted, o.newWatcher(w.wt, base).report, how)
+}
+
+// budgetNote tells a worker the time its ticket has when the run sets a ticket limit, as agents pace
+// themselves to a stated budget; "" without one.
+func (o *Loop) budgetNote() string {
+	limit := o.cfg.TicketLimit
+	if limit <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nYou have about %s for this ticket: a worker still going after that stops the run, "+
+		"so pace yourself to it.\n", ShortDuration(limit))
 }
 
 // resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and

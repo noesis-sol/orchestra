@@ -153,7 +153,8 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	}
 	in := o.reviewInput(context.Background(), code, o.Final())
 	for _, want := range []string{"Run of ticket R and its subtickets only, on branch main",
-		"## Follow-ups filed in this run outside the scope of R, left for a later run\n\nX: follow-up elsewhere [open]"} {
+		"## Follow-ups filed in this run outside the scope of R, left for a later run\n\n<evidence id=\"",
+		"\">\nX: follow-up elsewhere [open]\n</evidence id=\""} {
 		if !strings.Contains(in, want) {
 			t.Errorf("report input lacks %q:\n%s", want, in)
 		}

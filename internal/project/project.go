@@ -352,6 +352,10 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 				strings.Join(names, ", ")+"):\norchestra init --mcp <name>,<name>")
 		}
 	}
+	if s, _, err := LoadSettings(repo); err == nil && s.WorkerEffort == "" {
+		next = append(next, "Workers run at Claude Code's default effort. To choose one, set \"worker_effort\" ("+
+			strings.Join(Efforts, ", ")+") in "+Dir+"/"+SettingsName+", or run with --worker-effort.")
+	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
 	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt)

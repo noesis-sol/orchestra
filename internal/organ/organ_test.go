@@ -29,7 +29,7 @@ func fakeClaude(t *testing.T, output string) (bin, record string) {
 
 func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 	bin, record := fakeClaude(t, `{"type":"result","is_error":false,"result":"ok"}`)
-	r, err := Client{Bin: bin, Model: "opus"}.Ask(context.Background(), time.Minute, "SYSTEM", "EVIDENCE", `{"type":"object"}`)
+	r, err := Client{Bin: bin, Model: "opus"}.Ask(context.Background(), time.Minute, "low", "SYSTEM", "EVIDENCE", `{"type":"object"}`)
 	if err != nil || r.Result != "ok" {
 		t.Fatalf("ask: %v %+v", err, r)
 	}
@@ -39,7 +39,7 @@ func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 		"[-p]", "[--tools]\n[]\n", // every built-in tool disabled
 		"[--strict-mcp-config]", // no MCP servers
 		"[--no-session-persistence]", "[--system-prompt]\n[SYSTEM]", "[--output-format]\n[json]",
-		"[--json-schema]", "[--model]\n[opus]", "--- stdin\nEVIDENCE",
+		"[--json-schema]", "[--model]\n[opus]", "[--effort]\n[low]", "--- stdin\nEVIDENCE",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("claude was not called with %q:\n%s", want, got)
@@ -58,11 +58,11 @@ func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 
 func TestOrganErrorsAreReported(t *testing.T) {
 	bin, _ := fakeClaude(t, `{"type":"result","is_error":true,"result":"usage limit reached"}`)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "s", "i", ""); err == nil || !strings.Contains(err.Error(), "usage limit") {
+	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "low", "s", "i", ""); err == nil || !strings.Contains(err.Error(), "usage limit") {
 		t.Errorf("want the CLI's error, got %v", err)
 	}
 	bin, _ = fakeClaude(t, `not json`)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "s", "i", ""); err == nil {
+	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "low", "s", "i", ""); err == nil {
 		t.Error("garbage output should be an error")
 	}
 }
@@ -89,7 +89,8 @@ func TestTriageInputCarriesTheEvidence(t *testing.T) {
 	in := triageInput(Deferral{ID: "k-1", Title: "Support visionOS", How: "the worker deferred it",
 		Ticket: "k-1 · Support visionOS", Screen: "⏺ The visionOS runtime is not installed.", Worktree: ""})
 	for _, want := range []string{"k-1 (Support visionOS) was set aside: the worker deferred it",
-		"## Ticket (bd show)", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n(none)"} {
+		"## Ticket (bd show)", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n<evidence id=\"",
+		"\n(none)\n</evidence id=\""} {
 		if !strings.Contains(in, want) {
 			t.Errorf("triage input lacks %q:\n%s", want, in)
 		}
@@ -129,8 +130,9 @@ func TestPredictFilesAsksWithTheTicketAndTheFiles(t *testing.T) {
 		t.Fatalf("got %v, %v", got, err)
 	}
 	b, _ := os.ReadFile(record)
-	for _, want := range []string{"ticket k-2 (Faster picks)", "## Ticket (bd show)\n\nk-2 · Faster picks",
-		"## Repository files (git ls-files)\n\na.go\ninternal/b.go", "[--json-schema]"} {
+	for _, want := range []string{"ticket k-2 (Faster picks)", "## Ticket (bd show)\n\n<evidence id=\"",
+		"\nk-2 · Faster picks\n</evidence id=\"", "## Repository files (git ls-files)\n\n<evidence id=\"",
+		"\na.go\ninternal/b.go\n</evidence id=\"", "[--json-schema]"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("claude was not given %q:\n%s", want, b)
 		}

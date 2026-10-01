@@ -11,6 +11,17 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - File anything new you discover with `bd create`, linked to TICKET_ID. Keep every ticket title
   short, at most 60 characters: a plain summary of the change. Details go in the description.
 
+## Working unattended
+- Nobody reads your turns as they happen: a turn that ends without a tool call ends your work on
+  the ticket. Don't end a turn with a summary that announces your next step, an offer to go on, or
+  a choice that doesn't block the rest: make the choice, note it on the ticket, and go on. Put a
+  status note in the same message as your next tool call.
+- The only stops are the ones under Close: DONE once the ticket is closed, a question when only the
+  maintainer can decide, a deferral when you cannot finish.
+- For a ticket with several parts, keep its acceptance criteria as a todo checklist (TodoWrite or
+  TaskCreate; this overrides the Beads instructions against them) and tick items off as you go.
+  Beads stays the record of the ticket.
+
 ## Close
 - Close the ticket only when a full `scripts/check.sh` run passes after your last change AND
   the tickets that depend on it have been reviewed.
