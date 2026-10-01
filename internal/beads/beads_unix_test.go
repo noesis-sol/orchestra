@@ -63,7 +63,7 @@ func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	ctx, cancel := context.WithCancelCause(context.Background())
-	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.Interrupted("with Ctrl+C")) })
+	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.InterruptedError("with Ctrl+C")) })
 	start := time.Now()
 	st, err := Tracker{Repo: t.TempDir()}.Status(ctx, "k-1")
 	if took := time.Since(start); took > time.Second {

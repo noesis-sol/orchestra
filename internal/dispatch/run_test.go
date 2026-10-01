@@ -290,7 +290,7 @@ func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 	codes := make(chan int, 1)
 	go func() { codes <- o.Run(ctx) }()
 	<-started
-	cancel(Interrupted("by SIGHUP"))
+	cancel(InterruptedError("by SIGHUP"))
 	select {
 	case code := <-codes:
 		want := "INTERRUPTED: stopped by SIGHUP while A (tab " + o.Running()[0].Tab + ") were running; their tabs and worktrees are left open"
@@ -327,7 +327,7 @@ func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
 	go func() { codes <- o.Run(ctx) }()
 	<-started
 	time.Sleep(50 * time.Millisecond) // the settle loop is waiting on Herdr
-	cancel(Interrupted("with Ctrl+C"))
+	cancel(InterruptedError("with Ctrl+C"))
 	select {
 	case code := <-codes:
 		if code != ExitInterrupted {
@@ -354,7 +354,7 @@ type interruptingMerger struct {
 }
 
 func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string) (string, error) {
-	m.cancel(Interrupted("with Ctrl+C"))
+	m.cancel(InterruptedError("with Ctrl+C"))
 	time.Sleep(m.slow)
 	if ctx.Err() != nil {
 		m.t.Error("the merge was cut short by Ctrl+C")

@@ -18,17 +18,17 @@ type SoloState struct {
 	Next   bool
 }
 
-// Interrupted is the cause a run's context is cancelled with to say what stopped the run, as in
-// "by SIGTERM". Without it the loop reports Ctrl+C.
-type Interrupted string
+// InterruptedError is the cause a run's context is cancelled with to say what stopped the run, as
+// in "by SIGTERM". Without it the loop reports Ctrl+C.
+type InterruptedError string
 
-func (i Interrupted) Error() string { return "stopped " + string(i) }
+func (i InterruptedError) Error() string { return "stopped " + string(i) }
 
 func (o *Loop) interrupted(ctx context.Context) int {
 	if !o.ReportInterrupt {
 		return ExitInterrupted
 	}
-	why := Interrupted("with Ctrl+C")
+	why := InterruptedError("with Ctrl+C")
 	errors.As(context.Cause(ctx), &why)
 	o.emit(Event{Kind: EvStop, Text: InterruptLine(string(why), o.activeList())})
 	return ExitInterrupted
@@ -304,7 +304,7 @@ func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int,
 	}
 	if err != nil {
 		what := "'bd ready --json'"
-		if errors.As(err, new(listUnreadable)) {
+		if errors.As(err, new(listUnreadableError)) {
 			what = "'bd list --json'"
 		}
 		return nil, 0, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
@@ -423,13 +423,10 @@ func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err erro
 				return dirty, branch, nil
 			}
 		}
-		if try == gitTries || ctx.Err() != nil {
+		if try == gitTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return "", "", err
 		}
-		o.log.Raw("", err)
-		if !sleep(ctx, o.pollEvery()) {
-			return "", "", err
-		}
+		o.log.Raw("", err) // tried again; only the error returned is the caller's to report
 	}
 }
 

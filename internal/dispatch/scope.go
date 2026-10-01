@@ -27,18 +27,18 @@ func (o *Loop) setParent(id, parent string) {
 	o.parentOf[id] = parent
 }
 
-// listUnreadable is openParents' error: bd could not list the tickets that aren't closed.
-type listUnreadable struct{ err error }
+// listUnreadableError is openParents' error: bd could not list the tickets that aren't closed.
+type listUnreadableError struct{ err error }
 
-func (e listUnreadable) Error() string { return e.err.Error() }
-func (e listUnreadable) Unwrap() error { return e.err }
+func (e listUnreadableError) Error() string { return e.err.Error() }
+func (e listUnreadableError) Unwrap() error { return e.err }
 
 // openParents returns the tickets with a subticket not yet closed and merged: one bd lists as not
 // closed, one running (its worker closes it before it merges) or one left unmerged.
 func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[string]bool, error) {
 	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
-		return nil, listUnreadable{err}
+		return nil, listUnreadableError{err}
 	}
 	parents := map[string]bool{}
 	for _, t := range open {

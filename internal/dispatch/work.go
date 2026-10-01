@@ -180,10 +180,10 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if ok = err == nil; ok {
 			break
 		}
-		o.log.Raw("", err)
 		if o.starter.IsNameRefused(err) {
 			return nameRefused(err)
 		}
+		o.log.Raw("", err)
 		if o.starter.IsArgumentRefused(err) && len(args) > 0 {
 			// Start it plainly: paste the prompt instead, and do without reports if need be.
 			if launch != "" {
@@ -212,10 +212,10 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 					o.info("  %s's worker started without its name; named it %s", id, agent)
 					st = pst
 				} else {
-					o.log.Raw("", err)
 					if o.starter.IsNameRefused(err) {
 						return nameRefused(err)
 					}
+					o.log.Raw("", err)
 				}
 			}
 		}
@@ -314,10 +314,11 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	return nil
 }
 
+// outcome starts at one so an unset outcome is no outcome, never "closed".
 type outcome int
 
 const (
-	outcomeClosed outcome = iota
+	outcomeClosed outcome = iota + 1
 	outcomeDeferred
 	outcomePaused
 	outcomeUnreadable
@@ -338,10 +339,11 @@ func outcomeOf(status string) outcome {
 	return outcomeUnfinished
 }
 
+// closedOutcome starts at one so an unset outcome is no outcome, never "merge".
 type closedOutcome int
 
 const (
-	closedMerge closedOutcome = iota
+	closedMerge closedOutcome = iota + 1
 	closedNoCommit
 	closedDirty
 )

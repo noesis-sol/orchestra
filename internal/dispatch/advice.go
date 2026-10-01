@@ -44,6 +44,8 @@ func orNone(s string) string {
 // Nobody closes triageQ: workers may still be sending when the run ends. FinishTriage cancels
 // triageStop instead, and the goroutine triages what is already queued, then returns.
 func (o *Loop) StartTriage() {
+	// Triaging a ticket takes a model's answer, much longer than a worker takes to defer one, and
+	// a worker sending to a full queue waits: 64 is far more deferrals than are ever waiting at once.
 	o.triageQ = make(chan organ.Deferral, 64)
 	o.triageStop, o.triageFinish = context.WithCancel(context.Background())
 	o.triageDone = make(chan struct{})

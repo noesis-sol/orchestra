@@ -460,7 +460,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 			if s == os.Interrupt {
 				why = "with Ctrl+C"
 			}
-			cancelRun(dispatch.Interrupted(why))
+			cancelRun(dispatch.InterruptedError(why))
 		})
 		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 		sink := tui.Printer{Out: stdout}

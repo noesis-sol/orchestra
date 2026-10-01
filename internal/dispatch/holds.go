@@ -215,15 +215,11 @@ func (o *Loop) appendNotes(ctx context.Context, id, note string) {
 }
 
 // deferAside defers the ticket and keeps it out of the rest of the run, which matters most when
-// bd fails to defer it: it would still be ready and dispatched again at once. The error is logged
-// and returned so the caller can warn.
+// bd fails to defer it: it would still be ready and dispatched again at once. The error is
+// returned for the caller to warn with.
 func (o *Loop) deferAside(ctx context.Context, id, reason string) error {
 	o.markAside(id)
-	err := o.notes.Defer(ctx, id, reason)
-	if err != nil {
-		o.log.Raw("", err)
-	}
-	return err
+	return o.notes.Defer(ctx, id, reason)
 }
 
 // setAside lists tickets deferred or left unmerged in this run, in order, without repeats.

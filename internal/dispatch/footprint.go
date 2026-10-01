@@ -69,14 +69,17 @@ var (
 
 // sourceExtensions are the file extensions a bare name (loop.go) is taken for a file by when the
 // repository's files aren't known.
-var sourceExtensions = map[string]bool{}
+var sourceExtensions = setOf(`go md json yaml yml toml swift py js ts tsx jsx mjs rs rb java kt kts
+	c h cc cpp hpp m mm sh bash zsh txt html css scss sql mod sum lock xml plist gradle cs php ex exs
+	erl hs ml scala dart vue svelte proto tf ini cfg conf`)
 
-func init() {
-	for _, e := range strings.Fields(`go md json yaml yml toml swift py js ts tsx jsx mjs rs rb java kt kts
-		c h cc cpp hpp m mm sh bash zsh txt html css scss sql mod sum lock xml plist gradle cs php ex exs
-		erl hs ml scala dart vue svelte proto tf ini cfg conf`) {
-		sourceExtensions[e] = true
+// setOf is the set of the space-separated words in s.
+func setOf(s string) map[string]bool {
+	set := map[string]bool{}
+	for _, w := range strings.Fields(s) {
+		set[w] = true
 	}
+	return set
 }
 
 // repoFiles are the repository's files, to tell a path named in a ticket from other words and to
@@ -134,14 +137,8 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 
 // stdPackages are standard packages whose functions tickets name in passing (os.WriteFile,
 // strings.HasPrefix): they say nothing about where a ticket works.
-var stdPackages = map[string]bool{}
-
-func init() {
-	for _, p := range strings.Fields(`bufio bytes context errors exec filepath fmt http io json os path reflect
-		regexp slices sort strconv strings sync syscall time`) {
-		stdPackages[p] = true
-	}
-}
+var stdPackages = setOf(`bufio bytes context errors exec filepath fmt http io json os path reflect
+	regexp slices sort strconv strings sync syscall time`)
 
 // funcName is a function as the footprint keeps it: a lower-case qualifier is a package or a
 // variable (o.merge), not a type, and is left off. "" for a standard package's function.

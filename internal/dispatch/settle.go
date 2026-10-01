@@ -115,19 +115,16 @@ const longRunning = 2 * time.Hour
 // worker.
 const maxFailedReads = 20
 
-// readStatus reads the worker's status, trying up to tries times while Herdr fails to answer and
-// logging each failure but the last, which it returns if Herdr never answers. agent is the
-// worker's Herdr name.
+// readStatus reads the worker's status, trying up to tries times while Herdr fails to answer. A
+// failure it tries again after is logged; the last, if Herdr never answers, is returned for the
+// caller to report. agent is the worker's Herdr name.
 func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (AgentState, error) {
 	for try := 1; ; try++ {
 		st, err := o.agents.Status(ctx, agent)
-		if err == nil || try == tries {
+		if err == nil || try == tries || !sleep(ctx, o.pollEvery()) {
 			return st, err
 		}
 		o.log.Raw("", err)
-		if !sleep(ctx, o.pollEvery()) {
-			return st, err
-		}
 	}
 }
 

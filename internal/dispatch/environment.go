@@ -216,11 +216,11 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	}
 	deadline := time.Now().Add(orDefault(o.wait.probe, probeLimit))
 	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
-		o.log.Raw("", err)
 		// 'agent start' can fail while the agent still comes up.
-		if st, err := o.agents.Status(ctx, agent); err != nil || st == StateGone { // the start's error is the one to report
+		if st, serr := o.agents.Status(ctx, agent); serr != nil || st == StateGone { // the start's error is the one to report
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
+		o.log.Raw("", err) // it came up all the same
 	}
 	o.info("  probe worker %s started in tab %s", agent, tab)
 	prompt := fmt.Sprintf("Orchestra is checking that commands run on this machine; there is no ticket. "+

@@ -75,6 +75,19 @@ func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 	}
 }
 
+// A probe whose start fails, with no agent left in its pane, reports the start's error.
+func TestAProbeThatCannotStartReportsWhy(t *testing.T) {
+	f := newMergeFixture(t, "true")
+	h := &refusingHerdr{}
+	o := f.orch
+	o.cfg.AgentKind = "claude"
+	o.starter, o.namer, o.agents = h, h, h
+	_, err := o.probe(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "could not be started") || !strings.Contains(err.Error(), "agent names must be lowercase") {
+		t.Errorf("want the start's error, got %v", err)
+	}
+}
+
 func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	old := f.ticket(t, "k-1", "a.txt", "a\n")

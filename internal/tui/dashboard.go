@@ -564,6 +564,8 @@ func box(w int, border lipgloss.TerminalColor, content string) string {
 
 // ---- Tickets table -------------------------------------------------------------------
 
+// rowState starts at working on purpose: a row is added when its ticket is picked up, so an unset
+// state means the worker is still at it.
 type rowState int
 
 const (
