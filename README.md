@@ -232,12 +232,10 @@ After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
 ## Development
 
 ```
-go test ./...
-go vet ./...
-golangci-lint run
+scripts/check.sh
 ```
 
-`golangci-lint run` runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared. It installs with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`. Orchestra's own check command (`.orchestra/settings.json`) leaves it out, so a worker's machine needs only Go.
+`scripts/check.sh` is the full check: `go vet ./...`, `go test -race ./...` and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs it with `go run` at a pinned version (v2.14.0), so a machine needs only Go; the first run downloads it.
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
