@@ -217,7 +217,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View is the whole display: title, totals, the tickets of this run, and the active ticket. When
+// View is the whole display: title, totals, the tickets of this run, and the current tickets. When
 // the program quits it renders once more without the active ticket, which stays on screen as the
 // run's summary.
 func (m Dashboard) View() string {
@@ -247,8 +247,8 @@ func (m Dashboard) View() string {
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
 // can't redraw a view taller than the terminal. It gives way step by step: one line per worker
-// instead of a box each, then no tickets table, then the totals on one line, then cut, keeping
-// footer.
+// instead of a box each, then no tickets table, then the totals on one line, then the Current
+// label, then cut, keeping footer.
 func (m Dashboard) layout(w int, title, footer string) string {
 	stats := m.statsTable(w)
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
@@ -264,14 +264,17 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		}
 		return lipgloss.JoinVertical(lipgloss.Left, append(parts, footer)...)
 	}
-	if v := compose(stats, m.workerPanels(w)); fits(v) {
+	if v := compose(stats, current(m.workerPanels(w))); fits(v) {
 		return v
 	}
-	if v := compose(stats, m.workerList(w)); fits(v) {
+	if v := compose(stats, current(m.workerList(w))); fits(v) {
 		return v
 	}
 	top := []string{title, m.statsLine(w)}
 	if list := m.workerList(w); list != "" {
+		if v := lipgloss.JoinVertical(lipgloss.Left, append(top, current(list), footer)...); fits(v) {
+			return v
+		}
 		top = append(top, list)
 	}
 	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, top...), "\n")
@@ -284,6 +287,15 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		lines = lines[len(lines)-m.height:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// current heads the worker boxes with a Current label, faint and indented like the tickets
+// table's Tickets header; nothing when there are no boxes.
+func current(panels string) string {
+	if panels == "" {
+		return ""
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, dimStyle.Render("  Current"), panels)
 }
 
 // hintLine says which keys do what: s stops after the running tickets, or once asked cancels

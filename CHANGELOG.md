@@ -167,6 +167,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard heads the boxes of the tickets being worked on with a faint
+  `Current` label, like the tickets table's `Tickets` header, in the boxed and
+  the one-line-per-worker layouts and over the `picking the next ticket…` box.
+  It is the first thing left out when the pane is too short.
 - A run winding down after **s** → **y** (or SIGUSR1) says so on its own line
   above the dashboard's hint, in the stop colour:
   `■ Stopping after the 2 running tickets finish (…): no new tickets will start`,

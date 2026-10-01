@@ -23,6 +23,7 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 │ ✓ done     │ kinieta-y6j │ 6097367 merged into batch/2026-09-28        │
 │ ▶ working  │ kinieta-kco │ Open the property model: Interpolatable p…  │
 ╰────────────┴─────────────┴─────────────────────────────────────────────╯
+  Current
 ╭────────────────────────────────────────────────────────────────────────╮
 │ ⣾  kinieta-kco  working  4m52s                                         │
 │   Open the property model: Interpolatable protocol and custom key-path │
@@ -34,7 +35,7 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 - **Totals** for the run, as one strip: completed, deferred (and how many triaged), questions for you, workers running out of how many may, and how many are still ready. The branch and how long the run has gone are on the title line.
 - **Tickets**: one row per ticket, updated as it moves. A **picked-up** ticket (cyan) shows its title. A **completed** one (green) shows only the merged commit. A **deferred** one (yellow) shows why, replaced by the triage organ's verdict (purple `◆`) once it's in. A ticket that stopped the run is red. The table shows the most recent tickets that fit in the pane.
-- **Active ticket**: the worker's status, elapsed time, the ticket title and the worker's latest action. The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 3 seconds.
+- **Current**: a box per running ticket, with the worker's status, elapsed time, the ticket title and the worker's latest action (one line per worker, in a single box, when the pane is short). The border is cyan while the worker runs, red when it's blocked, and grey between tickets. It updates every 3 seconds. In the smallest panes the `Current` label is the first thing left out.
 
 - **Keys**: **s** asks, in a box over the dashboard (a line above the hint in a small pane), whether to stop after the running tickets: `Stop after the running tickets? Stopping after the 2 running tickets finish (kinieta-kco, kinieta-y6j): no new tickets will start. They merge as usual, then the run ends.` **y** confirms, **n** or **Esc** closes it. The run then starts no new ticket, from any path; the running ones carry on as usual, merges, rebases and re-checks included, and when the last one returns the run ends normally with `DRAINED after 12 tickets` (exit code 0), triage and the report. The log says `DRAIN: stopping after the 2 running tickets finish (…): no new tickets will start, asked from the dashboard`, and the report's first sentence mentions it. With nothing running, it ends at once. Meanwhile a line above the hint says the same, `■ Stopping after the 2 running tickets finish (…): no new tickets will start`, naming the tickets left as they finish (in a narrow pane it wraps and shortens the IDs only); the totals mark the queue `held`; and the hint reads `s cancels the stop · ctrl+c stops now`: **s** offers `Keep taking tickets?` to take it back (logged as `DRAIN cancelled`). **Ctrl+C** stops at once at any time, the question open or not, leaving the workers running. Outside the dashboard (`-plain`, scripts), `kill -USR1 <pid>` asks the same without a question.
 
