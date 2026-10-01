@@ -78,7 +78,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			if err == nil {
-				o.tabs.CloseTab(keep, tab)
+				o.closeTab(keep, tab)
 				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
 			} else {
@@ -96,7 +96,9 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		if err != nil {
 			r.files = o.merger.ConflictedFiles(keep, wt)
 			if why := o.whyNotHandBack(keep, r, handedBack); why != "" {
-				o.merger.AbortRebase(keep, wt)
+				if err := o.abortRebase(keep, wt); err != nil {
+					why += "; its rebase could not be aborted, so " + wt + " is left mid-rebase"
+				}
 				repo.unlock()
 				o.leaveConflict(keep, r, "not handed back to its worker: "+why)
 				return nil
@@ -162,6 +164,14 @@ func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
 }
 
+// abortRebase gives up a rebase stopped in wt, logging git's output, and returns git's error: the
+// worktree is then left mid-rebase.
+func (o *Loop) abortRebase(ctx context.Context, wt string) error {
+	out, err := o.merger.AbortRebase(ctx, wt)
+	o.log.Raw(out, err)
+	return err
+}
+
 // errCheckTimedOut is runCheck's error for a check stopped at its time limit.
 var errCheckTimedOut = errors.New("check timed out")
 
@@ -202,7 +212,9 @@ func (o *Loop) refreshBranch(ctx context.Context, wt, br string) bool {
 	out, err := o.merger.Rebase(ctx, wt, c.Base)
 	o.log.Raw(out, err)
 	if err != nil {
-		o.merger.AbortRebase(ctx, wt)
+		if err := o.abortRebase(ctx, wt); err != nil {
+			o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_ABORT_FAILED: %s is left mid-rebase onto %s; resolve and continue it there, or run git rebase --abort", wt, c.Base)})
+		}
 		return false
 	}
 	o.info("  rebased %s onto %s", br, c.Base)

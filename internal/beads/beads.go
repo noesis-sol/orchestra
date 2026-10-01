@@ -283,7 +283,10 @@ func (b Tracker) Defer(ctx context.Context, id, reason string) error {
 
 // Describe returns 'bd show' for the ticket, as a person reads it.
 func (b Tracker) Describe(ctx context.Context, id string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "show", id)
+	out, err := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "show", id)
+	if err != nil {
+		return fmt.Sprintf("(bd show %s failed: %v)", id, err)
+	}
 	return out
 }
 

@@ -43,7 +43,7 @@ var (
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)
-	home, _ = os.UserHomeDir()
+	home, _ = os.UserHomeDir() // none known: paths are shown in full
 )
 
 // Tildify shortens paths under the home directory for display; the log keeps full paths.

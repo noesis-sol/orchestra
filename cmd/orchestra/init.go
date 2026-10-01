@@ -70,7 +70,7 @@ func runInit(ctx context.Context, dir string, args []string, stdin io.Reader, st
 		fmt.Fprintln(stderr, "orchestra init:", err)
 		return dispatch.ExitSetup
 	}
-	promptText, _ := os.ReadFile(project.Locate(repo).Prompt)
+	promptText, _ := os.ReadFile(project.Locate(repo).Prompt) // no prompt yet: no check command to find in it
 	choice := project.DefaultChoice(existing, string(promptText))
 	if checkGiven {
 		choice.Check, choice.CheckFrom = strings.TrimSpace(*check), "--check"

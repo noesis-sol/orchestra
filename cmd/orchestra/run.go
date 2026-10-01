@@ -267,9 +267,9 @@ func loadConfig(ctx context.Context, args []string, getenv func(string) string, 
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		gitDir, _ := command.Output(ctx, command.ReadLimit, c.Repo, "git", "rev-parse", "--absolute-git-dir")
-		commonDir, _ := command.Output(ctx, command.ReadLimit, c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
+		if linked, err := linkedWorktree(ctx, c.Repo); err != nil {
+			problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
+		} else if linked {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
 		if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
@@ -289,6 +289,20 @@ func loadConfig(ctx context.Context, args []string, getenv func(string) string, 
 		}
 	}
 	return c, problems, nil
+}
+
+// linkedWorktree reports whether repo is a linked worktree rather than the main checkout: its git
+// directory is not the common one.
+func linkedWorktree(ctx context.Context, repo string) (bool, error) {
+	gitDir, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return false, err
+	}
+	commonDir, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir), nil
 }
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
@@ -372,15 +386,27 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		return exitStatus(dispatch.ExitSetup)
 	}
 
-	prompt, _ := os.ReadFile(cfg.WorkerPrompt)
-	os.MkdirAll(cfg.WTRoot, 0o755)
-	os.MkdirAll(filepath.Dir(cfg.LogPath), 0o755)
+	prompt, err := os.ReadFile(cfg.WorkerPrompt)
+	if err != nil {
+		fmt.Fprintln(stderr, "orchestra cannot read the worker prompt:", err)
+		return exitStatus(dispatch.ExitSetup)
+	}
+	for _, dir := range []string{cfg.WTRoot, filepath.Dir(cfg.LogPath)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Fprintln(stderr, "orchestra cannot create its folder:", err)
+			return exitStatus(dispatch.ExitSetup)
+		}
+	}
 	log, err := dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(dispatch.ExitSetup)
 	}
-	defer log.Close() // shows the run's last notifications before orchestra exits
+	defer func() { // shows the run's last notifications before orchestra exits
+		if err := log.Close(); err != nil {
+			fmt.Fprintln(stderr, "orchestra cannot close its log:", err)
+		}
+	}()
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}

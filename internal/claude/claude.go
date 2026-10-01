@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,8 +34,11 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 		return nil, err
 	}
 	activity, edits := filepath.Join(dir, activityName), filepath.Join(dir, editsName)
-	os.Remove(activity)
-	os.Remove(edits)
+	for _, f := range []string{activity, edits} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
 	b, err := json.MarshalIndent(hookSettings(activity, edits), "", "  ")
 	if err != nil {
 		return nil, err

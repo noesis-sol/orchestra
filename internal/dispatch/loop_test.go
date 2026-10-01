@@ -34,7 +34,7 @@ type noTabs struct{}
 func (noTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	return "tab", "pane", nil
 }
-func (noTabs) CloseTab(ctx context.Context, tab string) {}
+func (noTabs) CloseTab(ctx context.Context, tab string) error { return nil }
 
 // Fakes for a run whose workers stop before their agents start.
 
@@ -65,7 +65,7 @@ type newWorktrees struct{}
 
 func (newWorktrees) WorktreeOf(ctx context.Context, repo, branch string) string { return "" }
 func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) bool    { return false }
-func (newWorktrees) Prune(ctx context.Context, repo string)                     {}
+func (newWorktrees) Prune(ctx context.Context, repo string) (string, error)     { return "", nil }
 func (newWorktrees) AddWorktree(ctx context.Context, repo, path, branch string) (string, error) {
 	return "", nil
 }
@@ -87,7 +87,7 @@ func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket str
 }
 func (upToDate) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string { return "" }
 func (upToDate) Rebase(ctx context.Context, worktree, onto string) (string, error)   { return "", nil }
-func (upToDate) AbortRebase(ctx context.Context, worktree string)                    {}
+func (upToDate) AbortRebase(ctx context.Context, worktree string) (string, error)    { return "", nil }
 func (upToDate) ConflictedFiles(ctx context.Context, worktree string) []string       { return nil }
 func (upToDate) RebaseInProgress(ctx context.Context, worktree string) bool          { return false }
 func (upToDate) CountCommits(ctx context.Context, repo, revs string) int             { return 0 }
@@ -133,7 +133,7 @@ type okTabs struct{}
 func (okTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	return "tab-" + label, "pane-" + label, nil
 }
-func (okTabs) CloseTab(ctx context.Context, tab string) {}
+func (okTabs) CloseTab(ctx context.Context, tab string) error { return nil }
 
 // Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
 // (Describe) until release is closed.

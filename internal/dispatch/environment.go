@@ -174,7 +174,7 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		return halt(ExitEnvironment, "ENVIRONMENT: %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
 			o.envWhy, ShortDuration(after), err)
 	}
-	o.tabs.CloseTab(ctx, tab)
+	o.closeTab(ctx, tab)
 	select {
 	case <-o.verdicts: // given while the probe ran, about a ticket from before the hold: forgotten with the row
 	default:
@@ -194,8 +194,10 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err := os.MkdirAll(filepath.Dir(proof), 0o755); err != nil {
 		return "", fmt.Errorf("cannot make %s: %w", filepath.Dir(proof), err)
 	}
-	os.Remove(proof)
-	defer os.Remove(proof)
+	if err := os.Remove(proof); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("cannot remove an earlier probe's %s: %w", proof, err)
+	}
+	defer func() { _ = os.Remove(proof) }() // best effort: the next probe removes it first
 	ran := func() bool {
 		b, err := os.ReadFile(proof)
 		return err == nil && strings.TrimSpace(string(b)) == "ok"
@@ -203,7 +205,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 
 	// An earlier probe's worker, left open because it failed, may hold the name.
 	agent := o.agentName(probeID)
-	if st, _ := o.readStatus(ctx, agent, 5); st != "gone" {
+	if st, _ := o.readStatus(ctx, agent, 5); st != "gone" { // unreadable, logged: the name may be taken
 		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
@@ -216,7 +218,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
 		o.log.Raw("", err)
 		// 'agent start' can fail while the agent still comes up.
-		if st, _ := o.agents.Status(ctx, agent); st == "gone" || st == "unreadable" {
+		if st, _ := o.agents.Status(ctx, agent); st == "gone" || st == "unreadable" { // the start's error is the one to report
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
 	}
@@ -230,7 +232,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		if ran() {
 			return tab, nil
 		}
-		st, _ := o.agents.Status(ctx, agent)
+		st, _ := o.agents.Status(ctx, agent) // unreadable: asked again after the next poll
 		switch {
 		case st == "gone":
 			return tab, fmt.Errorf("it went away without running its command (tab %s)", tab)

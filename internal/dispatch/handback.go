@@ -167,7 +167,9 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 func (o *Loop) undoResolution(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
 	if o.merger.RebaseInProgress(ctx, r.wt) {
-		o.merger.AbortRebase(ctx, r.wt)
+		if err := o.abortRebase(ctx, r.wt); err != nil {
+			return "the rebase could not be aborted, so " + r.wt + " is left mid-rebase"
+		}
 		return "the rebase was aborted"
 	}
 	now := o.checkout.Head(ctx, c.Repo, r.br)

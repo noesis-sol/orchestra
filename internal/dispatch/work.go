@@ -89,7 +89,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, wt, id)
 	if ctx.Err() != nil {
 		if err == nil {
-			o.tabs.CloseTab(keep, tab)
+			o.closeTab(keep, tab)
 		}
 		return errInterrupted
 	}
@@ -350,4 +350,11 @@ func closedOutcomeOf(commit string, worktreeDirty bool) closedOutcome {
 		return closedDirty
 	}
 	return closedMerge
+}
+
+// closeTab closes a worker's tab; a failure is only logged, as the tab is then merely left open.
+func (o *Loop) closeTab(ctx context.Context, tab string) {
+	if err := o.tabs.CloseTab(ctx, tab); err != nil {
+		o.log.Raw("", fmt.Errorf("cannot close tab %s: %w", tab, err))
+	}
 }

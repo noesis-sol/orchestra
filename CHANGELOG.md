@@ -280,6 +280,17 @@ All notable changes to orchestra are documented here. The format follows
   the footprint predictor only that prediction, and one watching a starting
   worker only stops its status showing (`WATCH_FAILED`). A panic in the loop
   itself still ends orchestra, now with the dashboard's terminal restored.
+- Failures orchestra used to ignore now show. A git that can't say where the
+  repository's git directories are is a setup problem (exit code 2) instead of
+  passing the linked-worktree check, as are a worktree or log folder that can't
+  be created and a worker prompt that vanished after the setup check. A `git
+  rebase --abort` that fails no longer goes unmentioned: the ticket set aside
+  says its worktree is left mid-rebase, and a returning ticket whose refresh
+  can't be aborted logs `REBASE_ABORT_FAILED`. A Herdr tab that won't close, an
+  Enter that can't be pressed into a worker and a failed `git worktree prune`
+  are logged. A `.git/info/exclude` that can't be read is no longer rewritten
+  without its entries, and stale worker or probe records that can't be removed
+  stop the start rather than being read later.
 
 ## [0.1.1] - 2026-09-29
 

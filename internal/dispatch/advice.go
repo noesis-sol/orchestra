@@ -137,7 +137,10 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(ctx, o.agentName(st.Ticket), ""), 60))
 	}
-	ready, _ := o.tickets.Ready(ctx, c.Ticket)
+	stillReady := "unknown, bd could not list them"
+	if ready, err := o.tickets.Ready(ctx, c.Ticket); err == nil {
+		stillReady = fmt.Sprintf("%d", len(ready))
+	}
 	meaning := exitMeaning(code)
 	if strings.HasPrefix(final, "DRAINED") {
 		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
@@ -160,7 +163,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section("Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section("Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		organ.Section("Tickets in progress when the run stopped", stopped.String()) +
-		organ.Section("Tickets still ready", fmt.Sprintf("%d", len(ready))) + outside
+		organ.Section("Tickets still ready", stillReady) + outside
 }
 
 // Review has the reviewer write the run report.

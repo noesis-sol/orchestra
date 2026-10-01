@@ -65,7 +65,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		return dispatch.ExitTool
 	}
 	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), func(p string) int {
-		b, _ := os.ReadFile(filepath.Join(repo, p))
+		b, _ := os.ReadFile(filepath.Join(repo, p)) // a file that can't be read counts as one not written yet
 		return bytes.Count(b, []byte("\n"))
 	})
 	if len(links) == 0 {

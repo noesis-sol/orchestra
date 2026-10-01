@@ -58,7 +58,7 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, c
 	defer o.markFinishing(id, "worktree setup")()
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
-	o.worktrees.Prune(ctx, c.Repo) // forget a worktree whose folder was deleted, so it isn't reused
+	o.log.Raw(o.worktrees.Prune(ctx, c.Repo)) // forget a worktree whose folder was deleted, so it isn't reused
 	if wt := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
 		return wt, !o.refreshBranch(ctx, wt, br), nil
@@ -129,13 +129,15 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		st, _ := o.readStatus(ctx, agent, 5)
+		st, _ := o.readStatus(ctx, agent, 5) // unreadable after its errors were logged: not started
 		switch st {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
 			if inputHolds(o.agents.Screen(ctx, agent, st), prompt) {
-				o.agents.SendKeys(ctx, agent, "enter")
+				if err := o.agents.SendKeys(ctx, agent, "enter"); err != nil {
+					o.log.Raw("", fmt.Errorf("cannot press Enter for %s: %w", agent, err))
+				}
 				return o.agents.WaitStarted(ctx, agent)
 			}
 			// The box is empty: the paste itself was lost, so send it again.

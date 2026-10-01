@@ -91,7 +91,8 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 	l := &Log{f: f}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
 		l.alert = l.inBackground(func(text string) {
-			command.Output(context.Background(), notifyLimit, "", "osascript", notification(project, text)...)
+			// Best effort: the text is in the log already, a notification that fails is only not shown.
+			_, _ = command.Output(context.Background(), notifyLimit, "", "osascript", notification(project, text)...)
 		})
 	}
 	return l, nil

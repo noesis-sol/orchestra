@@ -132,7 +132,7 @@ func (h *fakeHerdr) CreateTab(ctx context.Context, workspace, cwd, label string)
 	return tab, pane, nil
 }
 
-func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) {
+func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = append(h.closed, tab)
@@ -143,6 +143,7 @@ func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) {
 		}
 	}
 	h.agents = left
+	return nil
 }
 
 // Starter

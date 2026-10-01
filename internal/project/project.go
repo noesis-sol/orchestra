@@ -5,6 +5,7 @@ package project
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,7 +80,10 @@ func EnsureRunExcluded(ctx context.Context, repo string) error {
 		return err
 	}
 	exclude := filepath.Join(strings.TrimSpace(common), "info", "exclude")
-	b, _ := os.ReadFile(exclude)
+	b, err := os.ReadFile(exclude)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err // rewriting it would lose the entries it holds
+	}
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(b) == 0 {
 		lines = nil
@@ -227,7 +231,7 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 
 // ApplySettings saves the choice to .orchestra/settings.json.
 func ApplySettings(repo string, c Choice) (Step, error) {
-	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about
+	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
 	s.Check, s.CheckTimeout, s.Concurrency = c.Check, c.CheckTimeout, c.Concurrent
 	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
@@ -267,7 +271,7 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
 func movePrompt(ctx context.Context, repo, from, to string) error {
-	rel, _ := filepath.Rel(repo, from)
+	rel, _ := filepath.Rel(repo, from) // both paths are under repo, so Rel can't fail
 	if _, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
 		relTo, _ := filepath.Rel(repo, to)
 		_, err := command.Output(ctx, command.WriteLimit, repo, "git", "mv", rel, relTo)
@@ -314,13 +318,14 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step) []str
 			break
 		}
 	}
-	prompt, _ := os.ReadFile(filepath.Join(repo, Dir, promptName))
+	prompt, _ := os.ReadFile(filepath.Join(repo, Dir, promptName)) // a step above says if it is missing
 	switch {
 	case strings.Contains(string(prompt), "<check command>") || strings.Contains(string(prompt), "<What it runs"):
 		next = append(next, "Fill in the <…> placeholders in "+Dir+"/"+promptName+".")
 	case wroteTemplate(steps):
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
 	}
+	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
 	if out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
 		commit = append(commit, Dir+"/")

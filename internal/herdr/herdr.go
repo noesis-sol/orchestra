@@ -47,8 +47,9 @@ func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (
 }
 
 // CloseTab closes a Herdr tab.
-func (t Terminal) CloseTab(ctx context.Context, tab string) {
-	run(ctx, command.ReadLimit, "tab", "close", tab)
+func (t Terminal) CloseTab(ctx context.Context, tab string) error {
+	_, err := run(ctx, command.ReadLimit, "tab", "close", tab)
+	return err
 }
 
 // StartAgent starts an agent in the pane, passing it args; a prompt among them starts it with the
@@ -196,7 +197,7 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (stri
 // PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
 // status "gone" if the pane holds no agent and "unreadable" if Herdr could not be asked.
 func (t Terminal) PaneAgent(ctx context.Context, pane string) (name, kind, status string) {
-	name, kind, status, _ = readAgent(run(ctx, command.ReadLimit, "agent", "get", pane))
+	name, kind, status, _ = readAgent(run(ctx, command.ReadLimit, "agent", "get", pane)) // a failure is status "unreadable"
 	return name, kind, status
 }
 
@@ -297,7 +298,7 @@ func (t Terminal) Screen(ctx context.Context, name, status string) string {
 			return out
 		}
 	}
-	out, _ := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "visible")
+	out, _ := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "visible") // "" when Herdr can't read it
 	return out
 }
 

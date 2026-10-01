@@ -30,7 +30,7 @@ type Notes interface {
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
 type Tabs interface {
 	CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error)
-	CloseTab(ctx context.Context, tab string)
+	CloseTab(ctx context.Context, tab string) error
 }
 
 // Starter starts a worker agent in a tab's pane.
@@ -86,7 +86,7 @@ type Checkout interface {
 type Worktrees interface {
 	WorktreeOf(ctx context.Context, repo, branch string) string
 	HasBranch(ctx context.Context, repo, branch string) bool
-	Prune(ctx context.Context, repo string)
+	Prune(ctx context.Context, repo string) (string, error)
 	AddWorktree(ctx context.Context, repo, path, branch string) (string, error)
 	NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error)
 	RemoveWorktree(ctx context.Context, repo, path string) (string, error)
@@ -99,7 +99,7 @@ type Merger interface {
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
 	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
 	Rebase(ctx context.Context, worktree, onto string) (string, error)
-	AbortRebase(ctx context.Context, worktree string)
+	AbortRebase(ctx context.Context, worktree string) (string, error)
 	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged
 	RebaseInProgress(ctx context.Context, worktree string) bool    // a rebase stopped and neither finished nor aborted
 	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
