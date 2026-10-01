@@ -57,6 +57,7 @@ func (a *scriptedAgents) Status(ctx context.Context, name string) (string, error
 
 func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, string) {
 	t.Helper()
+	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {

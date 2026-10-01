@@ -170,6 +170,7 @@ func (promptAgents) WaitStarted(ctx context.Context, name string) bool          
 
 func brokenBdRun(t *testing.T, agents Agents) (*Loop, *recordSink, string, int) {
 	t.Helper()
+	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {

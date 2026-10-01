@@ -68,6 +68,7 @@ func (o onceReady) Ready(context.Context, string) ([]Ticket, error) {
 }
 
 func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
+	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {

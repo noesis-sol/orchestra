@@ -57,6 +57,7 @@ type harness struct {
 // prompt at launch, one at a time.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	noLeaks(t) // checked once the workers below have returned
 	repo, run := gitRepo(t)
 	run(repo, "branch", "-M", "main")
 	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".orchestra/\n"), 0o644) // the launch prompt

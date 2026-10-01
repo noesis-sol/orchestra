@@ -76,6 +76,8 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 	}
 	l := &Log{f: f}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
+		// Nothing waits for a notification: it is the one goroutine that may outlive the run.
+		// Tests record alerts instead (recordAlerts), so the leak checks never meet it.
 		l.alert = func(text string) { go notification(project, text).Run() }
 	}
 	return l, nil

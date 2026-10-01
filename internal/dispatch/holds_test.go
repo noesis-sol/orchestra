@@ -283,6 +283,7 @@ func (closedUnreadable) Closed(ctx context.Context, label string) ([]Ticket, err
 }
 
 func TestRunStopsWhenTheUnmergedTicketsCannotBeListed(t *testing.T) {
+	noLeaks(t)
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

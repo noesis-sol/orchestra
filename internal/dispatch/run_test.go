@@ -41,6 +41,7 @@ func (h *holdSink) Event(ev Event) {
 }
 
 func TestEveryWorkersStopReasonIsReported(t *testing.T) {
+	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
@@ -123,6 +124,7 @@ func (g *goneSink) Status(st Status) {
 
 func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
 	t.Helper()
+	noLeaks(t)
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)
