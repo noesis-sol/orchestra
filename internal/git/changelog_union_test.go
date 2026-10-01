@@ -64,7 +64,7 @@ func TestTicketsAddingAtTheSameSpotRebaseCleanly(t *testing.T) {
 				if err == nil {
 					t.Fatalf("without merge=union the entries should conflict; the test proves nothing\n%s", out)
 				}
-				(Git{}).AbortRebase(context.Background(), repo)
+				must("rebase", "--abort")
 				return
 			}
 			if err != nil {

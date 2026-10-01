@@ -34,9 +34,6 @@ linters:
       - path: _test\.go
         linters: [revive]
         text: "^unused-parameter:"
-      # Production code's unchecked errors are orchestra-d8n's; drop this rule when it lands.
-      - path-except: _test\.go
-        linters: [errcheck]
 
 formatters:
   enable:

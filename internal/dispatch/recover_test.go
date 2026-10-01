@@ -78,8 +78,7 @@ type panickyNotes struct {
 
 func (n panickyNotes) AppendNotes(ctx context.Context, id, note string) error {
 	if id == n.id {
-		var m map[string]string
-		m[id] = note
+		panic("no notes for " + id)
 	}
 	return n.fakeBeads.AppendNotes(ctx, id, note)
 }
@@ -100,7 +99,7 @@ func TestTriagePanicOnlyFailsTriage(t *testing.T) {
 	o.FinishTriage(context.Background())
 
 	got := sink.text()
-	want := "  TRIAGE_FAILED for A: panic: assignment to entry in nil map (the stack is in " + logPath + ")\n"
+	want := "  TRIAGE_FAILED for A: panic: no notes for A (the stack is in " + logPath + ")\n"
 	if !strings.Contains(got, want) || !strings.Contains(got, "  triage B: environment (high confidence)") {
 		t.Errorf("A's triage should fail with the panic and B's go on; events:\n%s", got)
 	}
