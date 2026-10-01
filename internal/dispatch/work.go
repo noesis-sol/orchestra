@@ -11,12 +11,14 @@ import (
 
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
 // ticket then stays listed as active (still being worked on). It sets how to how the worker
-// settled, for the hold for the environment.
+// settled, for the hold for the environment. A panic in it is such a reason: PANIC.
 func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopReason) {
 	c := o.cfg
 	id, br := t.ID, "wt/"+t.ID
 	defer func() {
-		if stop == nil {
+		if p := recover(); p != nil {
+			stop = o.panicStop(id, p)
+		} else if stop == nil {
 			o.clearActive(id)
 		}
 	}()

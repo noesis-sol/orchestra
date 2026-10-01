@@ -44,16 +44,18 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 	keep := context.WithoutCancel(ctx)
 	defer o.markFinishing(id, "merge")()
-	o.mergeMu.Lock()
-	defer o.mergeMu.Unlock() // held on every return; a hand-back lets go of it and takes it again
+	repo, queue := &held{mu: &o.repoMu}, &held{mu: &o.mergeMu} // let go of even if the merge panics
+	defer repo.release()
+	queue.lock()
+	defer queue.release() // held on every return; a hand-back lets go of it and takes it again
 	handedBack := 0
 	// Only merges move Base during a run, and they queue here; a second pass covers a commit made
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
-		o.repoMu.Lock()
+		repo.lock()
 		if o.merger.IsAncestor(keep, c.Repo, c.Base, br) {
 			if s := o.checkoutUnready(keep, fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
-				o.repoMu.Unlock()
+				repo.unlock()
 				why, _, _ := strings.Cut(s.text, ":")
 				o.leaveUnmerged(keep, id, why) // DIRTY_TREE or GIT_FAILED
 				return s
@@ -62,7 +64,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			out, err := o.merger.FastForward(keep, c.Repo, br)
 			o.log.Raw(out, err)
 			if err != nil {
-				o.repoMu.Unlock()
+				repo.unlock()
 				o.leaveUnmerged(keep, id, "MERGE_FAILED")
 				return halt(ExitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
@@ -73,7 +75,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 				out, err = o.worktrees.DeleteBranch(keep, c.Repo, br)
 				o.log.Raw(out, err)
 			}
-			o.repoMu.Unlock()
+			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			if err == nil {
 				o.tabs.CloseTab(keep, tab)
@@ -95,24 +97,24 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			r.files = o.merger.ConflictedFiles(keep, wt)
 			if why := o.whyNotHandBack(keep, r, handedBack); why != "" {
 				o.merger.AbortRebase(keep, wt)
-				o.repoMu.Unlock()
+				repo.unlock()
 				o.leaveConflict(keep, r, "not handed back to its worker: "+why)
 				return nil
 			}
-			o.repoMu.Unlock()
+			repo.unlock()
 			handedBack++
 			// The worker takes minutes: let the other finished tickets merge meanwhile, and queue
 			// behind them again to check its work and merge.
-			o.mergeMu.Unlock()
+			queue.unlock()
 			why, stop := o.handBack(ctx, r)
-			o.mergeMu.Lock()
+			queue.lock()
 			if stop != nil {
 				return stop // Ctrl+C: the rebase is left as it is, as the INTERRUPTED line says
 			}
 			if why != "" {
-				o.repoMu.Lock()
+				repo.lock()
 				undone := o.undoResolution(keep, r)
-				o.repoMu.Unlock()
+				repo.unlock()
 				o.appendNotes(keep, id, fmt.Sprintf("Orchestra: %s conflicted with %s in %s; its worker was asked to resolve the rebase, but %s, so %s was set aside for review; %s.",
 					br, c.Base, strings.Join(r.files, ", "), why, id, undone))
 				o.leaveConflict(keep, r, fmt.Sprintf("handed back to its worker, but %s; %s", why, undone))
@@ -121,7 +123,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			attempt-- // resolved and checked: merge, or rebase again if Base moved meanwhile
 			continue
 		}
-		o.repoMu.Unlock()
+		repo.unlock()
 		o.info("  rebased %s onto %s, which moved on while it ran", br, c.Base)
 		if c.Check == "" {
 			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)

@@ -269,6 +269,18 @@ All notable changes to orchestra are documented here. The format follows
   to finish…`, its `worktree setup`, or its `last command`, which stops by its
   time limit.
 
+### Fixed
+
+- A panic while working on one ticket (a nil pointer, an index out of range)
+  no longer kills orchestra and leaves the other workers running unsupervised:
+  the run holds with `PANIC in <ticket>: <value>; its worktree and tab … are
+  left for review`, the running tickets finish and merge, and the run ends with
+  that line (exit code 4) and its report. The stack is in the log. A panic in
+  triage only fails that ticket's triage (`TRIAGE_FAILED … panic: …`), one in
+  the footprint predictor only that prediction, and one watching a starting
+  worker only stops its status showing (`WATCH_FAILED`). A panic in the loop
+  itself still ends orchestra, now with the dashboard's terminal restored.
+
 ## [0.1.1] - 2026-09-29
 
 ### Changed

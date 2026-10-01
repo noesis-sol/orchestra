@@ -181,7 +181,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 | 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`) |
 | 2 | setup problem found before starting (all problems are listed) |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
-| 4 | Herdr, Beads or git failure |
+| 4 | Herdr, Beads or git failure, or orchestra panicked while working on a ticket (`PANIC`) |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |
 | 6 | a finished ticket's branch does not fast-forward (it should have been rebased first) |
 | 7 | workers kept failing at once, whichever ticket they had: the environment, not the tickets (`ENVIRONMENT`) |

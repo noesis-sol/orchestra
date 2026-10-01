@@ -466,11 +466,24 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	progSink := tui.NewProgramSink(p)
 	orch.SetSink(progSink)
 	codes := make(chan int, 1)
+	ran := make(chan struct{}) // closed once the dashboard has exited and the terminal is restored
 	go func() {
+		// The loop recovers its workers' panics; one in the loop itself is a bug that ends
+		// orchestra, but not with the terminal left in raw mode. Panicking again from here keeps
+		// the original stack in the crash.
+		defer func() {
+			if v := recover(); v != nil {
+				log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
+				p.Kill()
+				<-ran
+				panic(v)
+			}
+		}()
 		codes <- orch.Run(ctx)
 		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
+	close(ran)
 	sig := stopWatching()
 	stopDrain()
 	if err != nil {

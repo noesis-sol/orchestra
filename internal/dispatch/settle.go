@@ -208,6 +208,12 @@ func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 	agent := o.agentName(w.base.Ticket)
 	go func() {
 		defer close(done)
+		defer func() {
+			if p := recover(); p != nil { // the worker goes on; only its status stops showing until it settles
+				o.emit(Event{Kind: EvWarn, Ticket: w.base.Ticket, Text: fmt.Sprintf("  WATCH_FAILED for %s: panic: %s; its status is not shown until it takes its prompt (the stack is in %s)",
+					w.base.Ticket, o.logPanic("watching "+w.base.Ticket, p), o.cfg.LogPath)})
+			}
+		}()
 		tick := time.NewTicker(o.pollEvery())
 		defer tick.Stop()
 		for {

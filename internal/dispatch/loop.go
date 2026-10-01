@@ -18,7 +18,7 @@ const (
 	ExitOK          = 0   // nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked; a scoped run says whether its scope is done
 	ExitSetup       = 2   // setup problem found before starting
 	ExitStuck       = 3   // a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past the ticket limit
-	ExitTool        = 4   // Herdr, Beads or git failure
+	ExitTool        = 4   // Herdr, Beads or git failure, or a worker panicked
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
 	ExitEnvironment = 7   // workers kept failing at once, whichever ticket they had: the machine, not the tickets

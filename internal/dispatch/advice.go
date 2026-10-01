@@ -93,7 +93,15 @@ func (o *Loop) FinishTriage(ctx context.Context) {
 	}
 }
 
+// triage has the triage organ judge one deferred ticket and writes its verdict down. A panic loses
+// that verdict, not the run.
 func (o *Loop) triage(d organ.Deferral) {
+	defer func() {
+		if p := recover(); p != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: panic: %s (the stack is in %s)",
+				d.ID, o.logPanic("triage of "+d.ID, p), o.cfg.LogPath)})
+		}
+	}()
 	t, err := o.organ.Triage(o.organCtx, d)
 	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
 	// time limit.
