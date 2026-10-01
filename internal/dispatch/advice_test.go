@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -34,13 +35,15 @@ func TestLastLines(t *testing.T) {
 //	ORGAN_LIVE=1 LIVE_REPO=~/Projects/kinieta LIVE_BASE=<branch> LIVE_START=<commit> \
 //	LIVE_TICKET=<deferred id> LIVE_WT=<its worktree> go test -run TestLiveOrgans -v
 //
-// Without LIVE_TICKET it runs only the screen organ's cases, on kinieta's README (LIVE_REPO's when set).
+// Without LIVE_TICKET it runs only the screen organ's cases, on kinieta's README (LIVE_REPO's when set),
+// and the plan organ's, on a small fixture repository.
 func TestLiveOrgans(t *testing.T) {
 	if os.Getenv("ORGAN_LIVE") != "1" {
 		t.Skip("set ORGAN_LIVE=1 to call the real claude")
 	}
 	repo, id := os.Getenv("LIVE_REPO"), os.Getenv("LIVE_TICKET")
 	t.Run("screen", func(t *testing.T) { liveScreen(t, repo) })
+	t.Run("plan", livePlan)
 	if id == "" {
 		return
 	}
@@ -92,6 +95,57 @@ func liveScreen(t *testing.T, repo string) {
 		t.Logf("screen %q (%s): %s: %s", text, time.Since(start).Round(time.Second), s.Verdict, s.Reason)
 		if s.Verdict != want {
 			t.Errorf("screen %q = %s, want %s", text, s.Verdict, want)
+		}
+	}
+}
+
+// livePlan plans a small feature on a fixture repository and checks only the plan's shape: the
+// organ's own checks passed, and every ticket can be worked on.
+func livePlan(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"README.md": "# todo\n\nA command-line to-do list: `todo add <text>`, `todo list`, `todo done <n>`. " +
+			"Items are kept in ~/.todo.json.\n",
+		"CLAUDE.md":   "Run `go test ./...` before committing. Keep each command in its own file under cmd/.\n",
+		"go.mod":      "module example.com/todo\n\ngo 1.26\n",
+		"main.go":     "package main\n\nimport \"example.com/todo/cmd\"\n\nfunc main() { cmd.Run() }\n",
+		"cmd/run.go":  "package cmd\n\n// Run dispatches os.Args[1] to add, list or done.\nfunc Run() {}\n",
+		"cmd/list.go": "package cmd\n\n// List prints the items, numbered, one per line.\nfunc List(items []Item) {}\n",
+		"cmd/store.go": "package cmd\n\n// Item is one to-do.\ntype Item struct{ Text string; Done bool }\n\n" +
+			"// Load reads ~/.todo.json.\nfunc Load() ([]Item, error) { return nil, nil }\n",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
+		if out, err := command.Output(context.Background(), command.WriteLimit, dir, "git", args...); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	request := "Add a --json flag to todo list (cmd/list.go) that prints the items as a JSON array, and a " +
+		"--done flag that lists only finished items."
+	ev, err := organ.GatherFeature(dir, request, git.Git{}.TrackedFiles(context.Background(), dir), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	p, err := organ.Client{Bin: "claude"}.PlanFeature(context.Background(), ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("plan (%s): epic %q, %d tickets, questions %q, notes %q", time.Since(start).Round(time.Second),
+		p.Epic.Title, len(p.Tickets), p.Questions, p.Notes)
+	if p.NeedsAnswers() {
+		t.Fatalf("a clear request should be planned, not questioned: %q", p.Questions)
+	}
+	for _, tk := range p.Tickets {
+		t.Logf("%s [%s P%d] %s; files %q; blocked by %q", tk.Key, tk.Type, tk.Priority, tk.Title, tk.Files, tk.BlockedBy)
+		if tk.Description == "" || tk.Acceptance == "" || len(tk.Files) == 0 {
+			t.Errorf("ticket %s lacks a description, acceptance or files: %+v", tk.Key, tk)
 		}
 	}
 }

@@ -28,12 +28,14 @@ import (
 //   predictor each ready ticket that names no files: the files it will likely change, which the
 //             orchestrator caches on the ticket and schedules it by.
 //   screen    a feature request typed or pasted: ok to plan, reject (malicious or inappropriate) or unclear.
+//   plan      a screened feature request: an epic and its child tickets, or the questions it needs
+//             answered first. Orchestra checks the plan and files it.
 
 // Client runs organs through the claude CLI.
 type Client struct {
 	Bin    string // "claude"; tests substitute a fake
 	Model  string // "" uses the claude CLI's default
-	Effort string // "" gives each organ its own: TriageEffort, PredictEffort or ReviewEffort
+	Effort string // "" gives each organ its own: TriageEffort, PredictEffort, ReviewEffort, ScreenEffort or PlanEffort
 }
 
 // Each organ's effort when Client.Effort sets none: low for the short structured answers of triage

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // ---- Screen --------------------------------------------------------------------------
@@ -72,18 +71,10 @@ type Screening struct {
 const maxReadme = 4000
 
 func screenInput(r Request) string {
-	readme := r.README
-	if len(readme) > maxReadme {
-		cut := maxReadme
-		for cut > 0 && !utf8.RuneStart(readme[cut]) {
-			cut--
-		}
-		readme = readme[:cut] + "\n(… cut)"
-	}
 	id := EvidenceID()
 	return "Screen this feature request for the repository " + r.Repo + ".\n\n" +
 		Section(id, "Feature request", r.Text) +
-		Section(id, "README (first part)", readme)
+		Section(id, "README (first part)", cut(r.README, maxReadme))
 }
 
 func parseScreening(r Result) (Screening, error) {
