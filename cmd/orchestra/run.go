@@ -380,6 +380,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(dispatch.ExitSetup)
 	}
+	defer log.Close() // shows the run's last notifications before orchestra exits
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}

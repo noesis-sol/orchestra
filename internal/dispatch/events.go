@@ -1,12 +1,15 @@
 package dispatch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 type Kind int
@@ -62,11 +65,16 @@ type Sink interface {
 	Status(Status)
 }
 
+// notifyLimit is how long a notification may take to show before its osascript is stopped.
+const notifyLimit = 10 * time.Second
+
 type Log struct {
-	mu    sync.Mutex
-	f     *os.File
-	alert func(text string) // shows a notification; nil when they are off
-	lines []string          // this run's lines, for the reviewer
+	mu     sync.Mutex
+	f      *os.File
+	alert  func(text string) // shows a notification; nil when they are off
+	lines  []string          // this run's lines, for the reviewer
+	shown  sync.WaitGroup    // notifications still being shown
+	closed bool              // Close has been called: no more notifications start
 }
 
 func OpenLog(path string, notify bool, project string) (*Log, error) {
@@ -76,11 +84,40 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 	}
 	l := &Log{f: f}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
-		// Nothing waits for a notification: it is the one goroutine that may outlive the run.
-		// Tests record alerts instead (recordAlerts), so the leak checks never meet it.
-		l.alert = func(text string) { go notification(project, text).Run() }
+		l.alert = l.inBackground(func(text string) {
+			command.Output(context.Background(), notifyLimit, "", "osascript", notification(project, text)...)
+		})
 	}
 	return l, nil
+}
+
+// inBackground makes show run on its own goroutine, so a slow notification doesn't hold up the
+// loop, and has Close wait for it. Notifications raised after Close are dropped.
+func (l *Log) inBackground(show func(text string)) func(text string) {
+	return func(text string) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.closed {
+			return
+		}
+		l.shown.Add(1)
+		go func() {
+			defer l.shown.Done()
+			show(text)
+		}()
+	}
+}
+
+// Close waits for the notifications still being shown, each at most notifyLimit, so the run's
+// last one isn't lost when orchestra exits, then closes the log file.
+func (l *Log) Close() error {
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
+	l.shown.Wait()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.f.Close()
 }
 
 // Line logs text.
@@ -129,14 +166,15 @@ func notifies(k Kind) bool {
 	return false
 }
 
-// notification is the osascript command showing text, titled with the project. Both go in as
+// notification is the osascript arguments showing text, titled with the project. Both go in as
 // arguments rather than into the script, so no quoting in them can break it.
-func notification(project, text string) *exec.Cmd {
-	return exec.Command("osascript",
+func notification(project, text string) []string {
+	return []string{
 		"-e", "on run argv",
 		"-e", "display notification (item 1 of argv) with title (item 2 of argv)",
 		"-e", "end run",
-		"--", text, "Orchestra: "+project) // -- so text starting with - isn't taken for an option
+		"--", text, "Orchestra: " + project, // -- so text starting with - isn't taken for an option
+	}
 }
 
 func (o *Loop) emit(ev Event) {
