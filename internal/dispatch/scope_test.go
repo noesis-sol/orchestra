@@ -31,7 +31,7 @@ type prompted struct{ got map[string]string }
 
 // then reads the worker's launch prompt, then does b.
 func (p *prompted) then(b behaviour) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		raw, err := os.ReadFile(filepath.Join(w.wt, ".orchestra", "run", "prompt.md"))
 		if err != nil {
 			w.t.Error(err)
@@ -131,7 +131,7 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	h := scopedHarness(t, "R")
 	h.beads.add("R", "root", 2)
 	h.beads.sub("R.1", "R", "child", 1)
-	h.worker("R.1", func(w *fakeWorker) string {
+	h.worker("R.1", func(w *fakeWorker) AgentState {
 		w.beads.sub("R.2", "R", "follow-up in scope", 1)
 		w.beads.filed("X", "follow-up elsewhere", 0)
 		return finishes("r1.txt")(w)
@@ -173,8 +173,8 @@ func TestScopeOpenSaysWhyEachSubticketIsNotDone(t *testing.T) {
 	h.beads.sub("E.3", "E", "set aside", 2)
 	h.beads.sub("E.4", "E", "asks", 3)
 	h.worker("E.1", finishes("e1.txt"))
-	h.worker("E.3", func(w *fakeWorker) string { w.claim(); w.deferIt(); return "idle" })
-	h.worker("E.4", func(w *fakeWorker) string { w.claim(); w.ask("Q", "which way?"); return "idle" })
+	h.worker("E.3", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
+	h.worker("E.4", func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" })
 	o, code := h.run()
 	want := "READY_EMPTY after 3 tickets; SCOPE_OPEN: E: 3 of its 4 subtickets not done: " +
 		"E.2 (blocked by B outside the scope), E.3 (set aside in this run), E.4 (waiting on your answer to Q)"

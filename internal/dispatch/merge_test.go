@@ -254,7 +254,7 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 }
 
 // closesWithoutCommit claims the ticket and closes it, committing nothing.
-func closesWithoutCommit(w *fakeWorker) string {
+func closesWithoutCommit(w *fakeWorker) AgentState {
 	w.claim()
 	w.close()
 	return "idle"
@@ -263,7 +263,7 @@ func closesWithoutCommit(w *fakeWorker) string {
 // leavesUncommitted commits file, changes the tracked file edited without committing it, and
 // closes the ticket.
 func leavesUncommitted(file, edited string) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		w.claim()
 		w.commit(file)
 		if err := os.WriteFile(filepath.Join(w.wt, edited), []byte("changed\n"), 0o644); err != nil {

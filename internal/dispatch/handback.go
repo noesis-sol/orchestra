@@ -41,10 +41,10 @@ func (o *Loop) whyNotHandBack(ctx context.Context, r rebaseStop, handedBack int)
 	switch st, err := o.agents.Status(ctx, o.agentName(r.id)); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
-	case st == "gone":
+	case st == StateGone:
 		return "its worker is gone"
-	case st != "idle" && st != "done":
-		return "its worker is " + st
+	case st != StateIdle && st != StateDone:
+		return "its worker is " + string(st)
 	}
 	return ""
 }
@@ -95,18 +95,18 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 // waitResolved waits for the worker to settle after its hand-back: idle with the rebase over, idle
 // for idleGrace with it still in progress (its own background command may keep it idle), gone, or
 // still busy after limit, which it returns as the reason. Each status read goes to report.
-func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, string)) string {
+func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, AgentState, error)) string {
 	deadline := time.Now().Add(limit)
 	var idleSince time.Time
 	for {
 		st, err := o.agents.Status(ctx, agent)
-		report(ctx, st)
+		report(ctx, st, err)
 		if err != nil {
 			o.log.Raw("", err)
 		}
-		idle := err == nil && (st == "idle" || st == "done")
+		idle := err == nil && (st == StateIdle || st == StateDone)
 		switch {
-		case err == nil && st == "gone":
+		case err == nil && st == StateGone:
 			return ""
 		case !idle:
 			idleSince = time.Time{}
@@ -119,6 +119,9 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Du
 		if time.Now().After(deadline) {
 			if idle {
 				return "" // what it left is checked next
+			}
+			if err != nil {
+				return fmt.Sprintf("its worker's status could still not be read after %s", ShortDuration(limit))
 			}
 			return fmt.Sprintf("its worker was still %s after %s", st, ShortDuration(limit))
 		}
@@ -205,7 +208,7 @@ func (o *Loop) setResolving(id string, on bool) Status {
 	}
 	o.mu.Unlock()
 	if !on {
-		o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: "idle"})
+		o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: StateIdle})
 	}
 	return st
 }

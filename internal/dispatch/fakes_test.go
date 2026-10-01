@@ -248,7 +248,7 @@ func (b *fakeBeads) metadata(id, key string) string {
 
 // behaviour is what a worker does once it has its prompt; it returns the status its agent then
 // settles in (idle, blocked, …). The agent is working until it returns.
-type behaviour func(w *fakeWorker) string
+type behaviour func(w *fakeWorker) AgentState
 
 // fakeWorker is a worker on one ticket, in its worktree.
 type fakeWorker struct {
@@ -256,7 +256,7 @@ type fakeWorker struct {
 	id    string
 	wt    string
 	beads *fakeBeads
-	shows func(status string) // what Herdr shows it as from now on, while it goes on working
+	shows func(state AgentState) // what Herdr shows it as from now on, while it goes on working
 }
 
 func (w *fakeWorker) claim()   { w.beads.set(w.id, "in_progress") }
@@ -283,7 +283,7 @@ func (w *fakeWorker) ask(q, title string) {
 
 // finishes claims the ticket, commits file and closes it.
 func finishes(file string) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		w.claim()
 		w.commit(file)
 		w.close()

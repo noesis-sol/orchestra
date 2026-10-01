@@ -98,11 +98,11 @@ func (upToDate) FastForward(ctx context.Context, repo, branch string) (string, e
 
 type noAgents struct{}
 
-func (noAgents) Status(ctx context.Context, name string) (string, error)         { return "gone", nil }
-func (noAgents) Screen(ctx context.Context, name, status string) string          { return "" }
-func (noAgents) Prompt(ctx context.Context, name, prompt string) error           { return nil }
-func (noAgents) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
-func (noAgents) WaitStarted(ctx context.Context, name string) bool               { return true }
+func (noAgents) Status(ctx context.Context, name string) (AgentState, error)       { return "gone", nil }
+func (noAgents) Screen(ctx context.Context, name string, status AgentState) string { return "" }
+func (noAgents) Prompt(ctx context.Context, name, prompt string) error             { return nil }
+func (noAgents) SendKeys(ctx context.Context, name string, keys ...string) error   { return nil }
+func (noAgents) WaitStarted(ctx context.Context, name string) bool                 { return true }
 
 // Fakes for a run whose workers start, against a bd that fails.
 
@@ -160,8 +160,8 @@ func (quietHistory) Subjects(ctx context.Context, repo, revs string) string  { r
 // promptAgents take their prompt (or refuse it, with promptErr) and are gone once they have.
 type promptAgents struct{ promptErr error }
 
-func (promptAgents) Status(ctx context.Context, name string) (string, error) { return "gone", nil }
-func (promptAgents) Screen(ctx context.Context, name, status string) string  { return "" }
+func (promptAgents) Status(ctx context.Context, name string) (AgentState, error)       { return "gone", nil }
+func (promptAgents) Screen(ctx context.Context, name string, status AgentState) string { return "" }
 func (a promptAgents) Prompt(ctx context.Context, name, prompt string) error {
 	return a.promptErr
 }

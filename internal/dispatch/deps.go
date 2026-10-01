@@ -45,21 +45,34 @@ type Starter interface {
 // Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
 // its ticket).
 type Namer interface {
-	AgentName(id string) string                                              // the agent name for ticket id's worker
-	AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) // name the agent that appears in the pane
-	PaneAgent(ctx context.Context, pane string) (name, kind, status string)  // status as Agents.Status gives it
+	AgentName(id string) string                                                                  // the agent name for ticket id's worker
+	AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error)                 // name the agent that appears in the pane
+	PaneAgent(ctx context.Context, pane string) (name, kind string, state AgentState, err error) // state and error as Agents.Status gives them
 	RenameAgent(ctx context.Context, name, to string) error
 	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
 }
 
+// AgentState is a worker's status as Herdr reports it, or StateGone when Herdr has no such agent.
+type AgentState string
+
+// The states an agent can be in.
+const (
+	StateIdle    AgentState = "idle"
+	StateWorking AgentState = "working"
+	StateBlocked AgentState = "blocked"
+	StateDone    AgentState = "done"
+	StateUnknown AgentState = "unknown" // Herdr can't tell what the agent is doing
+	StateGone    AgentState = "gone"    // Herdr has no such agent
+)
+
 // Agents watches and nudges a running worker by name.
 type Agents interface {
-	// Status is idle, working, blocked, done, unknown, or gone (no such agent); if the terminal
-	// cannot be asked it is "unreadable", with the error, and says nothing about the agent.
-	Status(ctx context.Context, name string) (string, error)
-	// Screen is the end of the worker's terminal, given its status as just read ("" if not known):
+	// Status is the worker's state. An error means the terminal could not be asked, and says
+	// nothing about the agent: the state is then "".
+	Status(ctx context.Context, name string) (AgentState, error)
+	// Screen is the end of the worker's terminal, given its state as just read ("" if not known):
 	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
-	Screen(ctx context.Context, name, status string) string
+	Screen(ctx context.Context, name string, state AgentState) string
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(ctx context.Context, name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool

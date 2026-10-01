@@ -14,7 +14,7 @@ import (
 
 // givesUp is a worker whose environment fails it: it settles at once, without claiming its ticket
 // or changing anything.
-func givesUp(w *fakeWorker) string { return "idle" }
+func givesUp(w *fakeWorker) AgentState { return "idle" }
 
 func (h *harness) holdForEnvironment(window time.Duration) {
 	h.cfg.EnvHoldCount, h.cfg.EnvHoldWindow = 2, window
@@ -128,7 +128,7 @@ echo '{"structured_output":{"cause":"environment","confidence":"high","summary":
 func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 	h := newHarness(t)
 	h.holdForEnvironment(time.Minute)
-	defers := func(w *fakeWorker) string { w.claim(); w.deferIt(); return "idle" }
+	defers := func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" }
 	h.beads.add("A", "a", 1)
 	h.beads.add("B", "b", 2)
 	h.beads.add("C", "c", 3)
@@ -137,7 +137,7 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 	h.worker("B", defers)
 	// Triage runs beside the loop, so C may start before the second verdict: then it finishes once
 	// the run holds.
-	h.worker("C", func(w *fakeWorker) string {
+	h.worker("C", func(w *fakeWorker) AgentState {
 		select {
 		case <-h.sink.held:
 		case <-time.After(patience):
@@ -170,7 +170,7 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 }
 
 // runsProbe is a probe worker on a machine that works again: it runs the command it was given.
-func runsProbe(w *fakeWorker) string {
+func runsProbe(w *fakeWorker) AgentState {
 	if err := os.WriteFile(filepath.Join(w.wt, ".orchestra", "run", "probe"), []byte("ok\n"), 0o644); err != nil {
 		w.t.Error(err)
 	}

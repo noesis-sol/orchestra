@@ -17,12 +17,16 @@ const lateAdopt = 2 * time.Minute
 func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, adopted bool, err error) {
 	deadline := time.Now().Add(orDefault(o.wait.adopt, lateAdopt))
 	for {
-		name, kind, st := o.namer.PaneAgent(ctx, pane)
+		name, kind, st, readErr := o.namer.PaneAgent(ctx, pane)
 		switch {
-		case st == "gone":
+		case readErr != nil:
+			const why = "Herdr could not say what the pane holds"
+			if why != held {
+				o.log.Raw("", readErr)
+			}
+			held = why
+		case st == StateGone:
 			held = ""
-		case st == "unreadable":
-			held = "Herdr could not say what the pane holds"
 		case kind != o.cfg.AgentKind:
 			held = fmt.Sprintf("the pane holds a %s agent", kind)
 		case name == agent:
@@ -129,11 +133,15 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		st, _ := o.readStatus(ctx, agent, 5) // unreadable after its errors were logged: not started
+		st, err := o.readStatus(ctx, agent, 5)
+		if err != nil {
+			o.log.Raw("", err)
+			return false // not started, as far as anyone can tell
+		}
 		switch st {
-		case "working", "blocked":
+		case StateWorking, StateBlocked:
 			return true // it started; a block is handled by the settle loop
-		case "idle", "done":
+		case StateIdle, StateDone:
 			if inputHolds(o.agents.Screen(ctx, agent, st), prompt) {
 				if err := o.agents.SendKeys(ctx, agent, "enter"); err != nil {
 					o.log.Raw("", fmt.Errorf("cannot press Enter for %s: %w", agent, err))

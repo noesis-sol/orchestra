@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/noesis-sol/orchestra/internal/herdr"
 )
 
 // refusingHerdr is Herdr refusing every agent name: the start, the adoption and the rename.
@@ -32,19 +30,21 @@ func (h *refusingHerdr) IsNameRefused(err error) bool {
 }
 func (h *refusingHerdr) WaitReady(ctx context.Context, name string) bool { return false }
 func (h *refusingHerdr) AgentName(id string) string                      { return "agent-for-" + id }
-func (h *refusingHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
+func (h *refusingHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error) {
 	h.adopts = append(h.adopts, name)
 	return "working", errNameRefused
 }
-func (h *refusingHerdr) PaneAgent(ctx context.Context, pane string) (string, string, string) {
-	return "", "claude", "working"
+func (h *refusingHerdr) PaneAgent(ctx context.Context, pane string) (string, string, AgentState, error) {
+	return "", "claude", "working", nil
 }
 func (h *refusingHerdr) RenameAgent(ctx context.Context, name, to string) error {
 	return errNameRefused
 }
-func (h *refusingHerdr) FreeName(ctx context.Context, name string) string        { return name + "-1" }
-func (h *refusingHerdr) Status(ctx context.Context, name string) (string, error) { return "gone", nil }
-func (h *refusingHerdr) Screen(ctx context.Context, name, status string) string  { return "" }
+func (h *refusingHerdr) FreeName(ctx context.Context, name string) string { return name + "-1" }
+func (h *refusingHerdr) Status(ctx context.Context, name string) (AgentState, error) {
+	return "gone", nil
+}
+func (h *refusingHerdr) Screen(ctx context.Context, name string, status AgentState) string { return "" }
 func (h *refusingHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	return errors.New("no agent")
 }
@@ -257,15 +257,25 @@ func TestStartAdoptsAnAgentLeftUnnamed(t *testing.T) {
 	}
 }
 
-// A ticket ID longer than Herdr's 32-character name limit still gets a worker, under the cut name
-// herdr.AgentName gives it, whether the worker is launched with its prompt or started and pasted to.
+// cutName stands in for herdr.AgentName, which this package's tests can't import (herdr imports
+// dispatch): an ID over Herdr's 32-character limit gets a shorter name that isn't the ID.
+func cutName(id string) string {
+	if len(id) <= 32 {
+		return id
+	}
+	return id[:28] + "-cut"
+}
+
+// A ticket ID longer than Herdr's 32-character name limit still gets a worker, under a cut name
+// like the one herdr.AgentName gives it, whether the worker is launched with its prompt or started
+// and pasted to.
 func TestLongTicketIDRunsUnderACutName(t *testing.T) {
 	t.Parallel()
 	const id = "platform-backend-services-core-a3f.12.34" // 40 characters
 	for _, launch := range []bool{true, false} {
 		h := newHarness(t)
 		h.cfg.LaunchPrompt = launch
-		h.herdr.agentName = herdr.AgentName
+		h.herdr.agentName = cutName
 		h.beads.add(id, "long", 1)
 		h.worker(id, finishes("a.txt"))
 		o, code := h.run()

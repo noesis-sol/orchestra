@@ -226,8 +226,8 @@ func TestHoldLetsTheRunningWorkerFinish(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.beads.add("C", "third", 3)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); return "idle" })
-	h.worker("B", func(w *fakeWorker) string { h.waitHeld(); return finishes("b.txt")(w) })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
+	h.worker("B", func(w *fakeWorker) AgentState { h.waitHeld(); return finishes("b.txt")(w) })
 	o, code := h.run()
 	if code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") || strings.Contains(o.Final(), "also") {
 		t.Fatalf("exit %d, final %q", code, o.Final())
@@ -256,8 +256,8 @@ func TestBothWorkersStopReasonsAreReported(t *testing.T) {
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); return "idle" })
-	h.worker("B", func(w *fakeWorker) string { h.waitHeld(); w.claim(); return "blocked" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
+	h.worker("B", func(w *fakeWorker) AgentState { h.waitHeld(); w.claim(); return "blocked" })
 	o, code := h.run()
 	if code != ExitStuck {
 		t.Errorf("exit %d, want %d: the first reason decides", code, ExitStuck)
@@ -282,7 +282,7 @@ func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
 	started, release := make(chan struct{}), make(chan struct{})
-	h.worker("A", func(w *fakeWorker) string { w.claim(); close(started); <-release; return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
 	defer close(release)
 	o := h.loop()
 	o.ReportInterrupt = true
@@ -319,7 +319,7 @@ func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.herdr.statusHangs["A"] = true
 	started, release := make(chan struct{}), make(chan struct{})
-	h.worker("A", func(w *fakeWorker) string { w.claim(); close(started); <-release; return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
 	defer close(release)
 	o := h.loop()
 	ctx, cancel := context.WithCancelCause(context.Background())

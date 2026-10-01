@@ -142,7 +142,7 @@ func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "first", 1)
 	bStarted := make(chan struct{})
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		w.beads.add("B", "follow-up", 2) // the worker files a follow-up
 		select {
@@ -152,7 +152,7 @@ func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
 		}
 		return finishes("a.txt")(w)
 	})
-	h.worker("B", func(w *fakeWorker) string { close(bStarted); return finishes("b.txt")(w) })
+	h.worker("B", func(w *fakeWorker) AgentState { close(bStarted); return finishes("b.txt")(w) })
 	o := h.loop()
 	o.wait.ready = 5 * time.Millisecond
 	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
@@ -169,7 +169,7 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		w.beads.mu.Lock() // both at once: a poll between them would report a queue of 1 first
 		w.beads.addLocked("B", "second", 2)
@@ -207,7 +207,7 @@ type overlap struct {
 
 // runs wraps b to record id's worker as running while it works.
 func (v *overlap) runs(id string, b behaviour) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		v.mu.Lock()
 		if v.running == nil {
 			v.running, v.beside = map[string]bool{}, map[string][]string{}
@@ -270,7 +270,7 @@ func TestSoloTicketNeverRunsAlongsideAnother(t *testing.T) {
 	h.beads.add("A", "first", 2)
 	h.beads.add("B", "second", 3)
 	var v overlap
-	h.worker("S", v.runs("S", func(w *fakeWorker) string {
+	h.worker("S", v.runs("S", func(w *fakeWorker) AgentState {
 		eventually(t, "the loop never said A and B wait for S", func() bool {
 			return strings.Contains(h.sink.text(), "waiting for solo ticket S to finish")
 		})
@@ -311,7 +311,7 @@ func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 	h.beads.add("S", "split the loop", 2, SoloLabel)
 	h.beads.add("B", "second", 3)
 	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 		eventually(t, "the loop never said S is next", func() bool {
 			return strings.Contains(h.sink.text(), "solo ticket S is next")
 		})
@@ -349,11 +349,11 @@ func TestSoloTicketWithOneWorkerChangesNothing(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("S", "split the loop", 2, SoloLabel)
 	h.beads.add("B", "second", 3)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		time.Sleep(20 * time.Millisecond) // a few polls with S next
 		return finishes("a.txt")(w)
 	})
-	h.worker("S", func(w *fakeWorker) string {
+	h.worker("S", func(w *fakeWorker) AgentState {
 		time.Sleep(20 * time.Millisecond) // a few polls with S running
 		return finishes("s.txt")(w)
 	})

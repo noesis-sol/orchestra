@@ -46,7 +46,7 @@ func TestRunGoesOnPastATicketItsWorkerDefers(t *testing.T) {
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); w.deferIt(); return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
 	h.worker("B", finishes("b.txt"))
 	o := h.loop()
 	o.StartTriage()
@@ -116,9 +116,9 @@ func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.worker("A",
-		func(w *fakeWorker) string { w.claim(); w.ask("Q", "which way?"); return "idle" },
+		func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" },
 		finishes("a.txt"))
-	h.worker("B", func(w *fakeWorker) string {
+	h.worker("B", func(w *fakeWorker) AgentState {
 		w.beads.set("Q", "closed") // the maintainer answers meanwhile
 		return finishes("b.txt")(w)
 	})

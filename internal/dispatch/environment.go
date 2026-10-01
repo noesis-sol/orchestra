@@ -205,7 +205,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 
 	// An earlier probe's worker, left open because it failed, may hold the name.
 	agent := o.agentName(probeID)
-	if st, _ := o.readStatus(ctx, agent, 5); st != "gone" { // unreadable, logged: the name may be taken
+	if st, err := o.readStatus(ctx, agent, 5); err != nil || st != StateGone { // unreadable: the name may be taken
 		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
@@ -218,7 +218,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
 		o.log.Raw("", err)
 		// 'agent start' can fail while the agent still comes up.
-		if st, _ := o.agents.Status(ctx, agent); st == "gone" || st == "unreadable" { // the start's error is the one to report
+		if st, err := o.agents.Status(ctx, agent); err != nil || st == StateGone { // the start's error is the one to report
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
 	}
@@ -232,11 +232,11 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		if ran() {
 			return tab, nil
 		}
-		st, _ := o.agents.Status(ctx, agent) // unreadable: asked again after the next poll
+		st, err := o.agents.Status(ctx, agent) // unreadable: asked again after the next poll
 		switch {
-		case st == "gone":
+		case err == nil && st == StateGone:
 			return tab, fmt.Errorf("it went away without running its command (tab %s)", tab)
-		case (st == "idle" || st == "done") && !ran():
+		case err == nil && (st == StateIdle || st == StateDone) && !ran():
 			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
 			return tab, fmt.Errorf("it ran no command within %s; see tab %s", ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)

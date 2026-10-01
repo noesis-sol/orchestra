@@ -33,7 +33,7 @@ func (r *hookReporter) LastToolUse(wt string) (ToolUse, bool) {
 // startsSlowly is a worker Herdr shows as idle from its first command on, its ticket still open,
 // while it goes on to claim it, commit file and close it.
 func startsSlowly(file string, report func(wt, event string)) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		if report != nil {
 			report(w.wt, "PreToolUse") // cat .orchestra/run/prompt.md
 		}
@@ -83,7 +83,7 @@ func TestWorkerStoppedWithItsTicketOpenIsDeferred(t *testing.T) {
 	hooks := &hookReporter{}
 	h.reporter = hooks
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string { hooks.report(w.wt, "Stop"); return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { hooks.report(w.wt, "Stop"); return "idle" })
 	o := h.loop()
 	o.wait.startGrace = patience
 	if code := o.Run(t.Context()); code != ExitOK {
@@ -122,7 +122,7 @@ func TestWithoutHooksAnOpenTicketGetsAStartUpGrace(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)
 		h.beads.add("A", "first", 1)
-		h.worker("A", func(w *fakeWorker) string { return "idle" })
+		h.worker("A", func(w *fakeWorker) AgentState { return "idle" })
 		o := h.loop()
 		const grace = 50 * time.Millisecond
 		o.wait.startGrace = grace

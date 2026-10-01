@@ -242,6 +242,18 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 	}
 }
 
+// A status Herdr failed to read shows as unreadable, not as the empty state it comes with.
+func TestWorkerWhoseStatusCannotBeReadShowsUnreadable(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Unreadable: true}}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "kinieta-ce1  unreadable") {
+		t.Errorf("a worker whose status can't be read should show unreadable:\n%s", view)
+	}
+}
+
 func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})

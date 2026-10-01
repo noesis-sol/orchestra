@@ -16,7 +16,7 @@ import (
 // run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
 // without a limit, one still going after longRunning is reported once. Each status read goes to
 // report (nil: none), for the dashboard.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(ctx context.Context, status string)) (idleAt time.Time, stop *stopReason) {
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(ctx context.Context, st AgentState, err error)) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
 	warned := false
@@ -26,7 +26,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 		}
 		st, err := o.agents.Status(ctx, agent)
 		if report != nil {
-			report(ctx, st)
+			report(ctx, st, err)
 		}
 		if err != nil {
 			if failed++; failed == 1 {
@@ -41,14 +41,14 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			continue
 		}
 		failed = 0
-		if st == "gone" {
+		if st == StateGone {
 			o.info("  %s settled: its worker is gone", id)
 			if idleSince.IsZero() {
 				return time.Now(), nil
 			}
 			return idleSince, nil
 		}
-		if st == "idle" || st == "done" {
+		if st == StateIdle || st == StateDone {
 			if idleSince.IsZero() {
 				idleSince = time.Now()
 			}
@@ -66,7 +66,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 		} else {
 			idleSince = time.Time{}
 		}
-		if st == "blocked" {
+		if st == StateBlocked {
 			if blockedSince.IsZero() {
 				blockedSince = time.Now()
 			}
@@ -76,7 +76,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 		} else {
 			blockedSince = time.Time{}
 		}
-		if st == "unknown" {
+		if st == StateUnknown {
 			if unknownSince.IsZero() {
 				unknownSince = time.Now()
 			}
@@ -116,9 +116,9 @@ const longRunning = 2 * time.Hour
 const maxFailedReads = 20
 
 // readStatus reads the worker's status, trying up to tries times while Herdr fails to answer and
-// logging each failure. "unreadable" and the last error if it never answers. agent is the
+// logging each failure but the last, which it returns if Herdr never answers. agent is the
 // worker's Herdr name.
-func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (string, error) {
+func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (AgentState, error) {
 	for try := 1; ; try++ {
 		st, err := o.agents.Status(ctx, agent)
 		if err == nil || try == tries {
@@ -181,16 +181,17 @@ func (o *Loop) newWatcher(wt string, base Status) *watcher {
 	return &watcher{o: o, wt: wt, base: base}
 }
 
-// report shows the worker in status st, as just read, reading its screen for its latest action.
-func (w *watcher) report(ctx context.Context, st string) {
+// report shows the worker in state st, as just read, reading its screen for its latest action; err
+// is why the state could not be read.
+func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 	o := w.o
 	s := w.base
-	s.Agent = st
-	if st != "gone" && st != "unreadable" {
+	s.Agent, s.Unreadable = st, err != nil
+	if err == nil && st != StateGone {
 		w.activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.base.Ticket), st))
 	}
 	s.Activity = w.activity
-	if o.reporter != nil && st == "working" {
+	if o.reporter != nil && st == StateWorking {
 		if u, ok := o.reporter.LastToolUse(w.wt); ok {
 			s.Doing = Doing(u, o.cfg.Check)
 		}
@@ -217,11 +218,11 @@ func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 		tick := time.NewTicker(o.pollEvery())
 		defer tick.Stop()
 		for {
-			st, _ := o.agents.Status(ctx, agent) // a failure shows as unreadable; the start logs its own
+			st, err := o.agents.Status(ctx, agent) // a failure shows as unreadable; the start logs its own
 			if ctx.Err() != nil {
 				return
 			}
-			w.report(ctx, st)
+			w.report(ctx, st, err)
 			select {
 			case <-ctx.Done():
 				return

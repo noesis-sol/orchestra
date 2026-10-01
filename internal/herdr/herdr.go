@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // Terminal is Herdr as orchestra uses it: tabs for workers, starting and naming agents, and reading
@@ -171,11 +172,12 @@ func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []st
 }
 
 // AdoptAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it
-// name, and returns its status. The error says why it could not, such as Herdr refusing the name.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
+// name, and returns its state. The error says why it could not, such as Herdr refusing the name.
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (dispatch.AgentState, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
-		if n, k, st := t.PaneAgent(ctx, pane); st != "gone" && k == kind {
+		n, k, st, err := t.PaneAgent(ctx, pane)
+		if err == nil && st != dispatch.StateGone && k == kind {
 			if n != name {
 				if err := t.RenameAgent(ctx, pane, name); err != nil {
 					return st, err
@@ -184,6 +186,9 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (stri
 			return st, nil
 		}
 		if time.Now().After(deadline) {
+			if err != nil {
+				return "", fmt.Errorf("no %s agent appeared in pane %s within a minute; Herdr could not say what it holds: %w", kind, pane, err)
+			}
 			return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
 		}
 		select {
@@ -194,19 +199,18 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (stri
 	}
 }
 
-// PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
-// status "gone" if the pane holds no agent and "unreadable" if Herdr could not be asked.
-func (t Terminal) PaneAgent(ctx context.Context, pane string) (name, kind, status string) {
-	name, kind, status, _ = readAgent(run(ctx, command.ReadLimit, "agent", "get", pane)) // a failure is status "unreadable"
-	return name, kind, status
+// PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and state, with
+// state StateGone if the pane holds no agent, and an error if Herdr could not be asked.
+func (t Terminal) PaneAgent(ctx context.Context, pane string) (name, kind string, state dispatch.AgentState, err error) {
+	return readAgent(run(ctx, command.ReadLimit, "agent", "get", pane))
 }
 
-// readAgent reads the output of 'herdr agent get': the agent's name, kind and status. Herdr answers
-// a missing agent with agent_not_found (and fails), which is "gone"; any other failure (Herdr busy
-// or restarting, say) says nothing about the agent, so it is "unreadable" with the error.
-func readAgent(out string, err error) (name, kind, status string, _ error) {
+// readAgent reads the output of 'herdr agent get': the agent's name, kind and state. Herdr answers
+// a missing agent with agent_not_found (and fails), which is StateGone; any other failure (Herdr
+// busy or restarting, say) says nothing about the agent, so it is the error, with no state.
+func readAgent(out string, err error) (name, kind string, state dispatch.AgentState, _ error) {
 	if HasCode(err, AgentNotFound) {
-		return "", "", "gone", nil
+		return "", "", dispatch.StateGone, nil
 	}
 	var r struct {
 		Result struct {
@@ -220,17 +224,17 @@ func readAgent(out string, err error) (name, kind, status string, _ error) {
 	jerr := json.Unmarshal([]byte(out), &r)
 	switch {
 	case err != nil:
-		return "", "", "unreadable", err
+		return "", "", "", err
 	case jerr != nil:
-		return "", "", "unreadable", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
+		return "", "", "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
 	case r.Result.Agent.AgentStatus == "":
-		return "", "", "gone", nil
+		return "", "", dispatch.StateGone, nil
 	}
 	a := r.Result.Agent
 	if a.Name != nil {
 		name = *a.Name
 	}
-	return name, a.Agent, a.AgentStatus, nil
+	return name, a.Agent, dispatch.AgentState(a.AgentStatus), nil
 }
 
 // RenameAgent gives the agent (by name or pane) a new name.
@@ -248,7 +252,7 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 		if len(base)+len(suffix) > maxName {
 			base = base[:maxName-len(suffix)]
 		}
-		if st, _ := t.Status(ctx, base+suffix); st == "gone" { // not "unreadable": that name may be taken
+		if st, err := t.Status(ctx, base+suffix); err == nil && st == dispatch.StateGone { // not unreadable: that name may be taken
 			return base + suffix
 		}
 	}
@@ -258,7 +262,7 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
 	const wait = time.Minute
-	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", millis(wait))
+	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", string(dispatch.StateIdle), "--until", string(dispatch.StateDone), "--timeout", millis(wait))
 	return err == nil
 }
 
@@ -278,22 +282,22 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 	const wait = 20 * time.Second
-	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", millis(wait))
+	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked), "--timeout", millis(wait))
 	return err == nil
 }
 
-// Status returns idle, working, blocked, done or unknown, or "gone" if Herdr has no such agent. If
-// Herdr cannot be asked it returns "unreadable" and the error: the agent may well be there.
-func (t Terminal) Status(ctx context.Context, name string) (string, error) {
+// Status returns the agent's state, StateGone if Herdr has no such agent. If Herdr cannot be asked
+// it returns the error and no state: the agent may well be there.
+func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
 	_, _, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
 	return st, err
 }
 
-// Screen returns the end of the agent's terminal, given its status as just read ("" if not known).
+// Screen returns the end of the agent's terminal, given its state as just read ("" if not known).
 // Herdr can capture scrollback only while the agent is idle, so for a working or blocked agent this
 // reads the visible screen at once, and otherwise falls back to it when scrollback fails.
-func (t Terminal) Screen(ctx context.Context, name, status string) string {
-	if status != "working" && status != "blocked" {
+func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
+	if state != dispatch.StateWorking && state != dispatch.StateBlocked {
 		if out, err := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
 			return out
 		}

@@ -28,21 +28,21 @@ func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 	}
 }
 
-// scriptedAgents reports the statuses in its script in turn, then gone; "unreadable" fails as a
-// Herdr call does.
+// scriptedAgents reports the states in its script in turn, then gone; "unreadable" in the script
+// fails as a Herdr call does.
 type scriptedAgents struct {
 	noAgents
 	script  []string
 	reads   int
-	screens []string // the status each screen read was given
+	screens []AgentState // the state each screen read was given
 }
 
-func (a *scriptedAgents) Screen(ctx context.Context, name, status string) string {
+func (a *scriptedAgents) Screen(ctx context.Context, name string, status AgentState) string {
 	a.screens = append(a.screens, status)
 	return ""
 }
 
-func (a *scriptedAgents) Status(ctx context.Context, name string) (string, error) {
+func (a *scriptedAgents) Status(ctx context.Context, name string) (AgentState, error) {
 	a.reads++
 	if len(a.script) == 0 {
 		return "gone", nil
@@ -50,9 +50,9 @@ func (a *scriptedAgents) Status(ctx context.Context, name string) (string, error
 	st := a.script[0]
 	a.script = a.script[1:]
 	if st == "unreadable" {
-		return st, errors.New("herdr agent get: server busy")
+		return "", errors.New("herdr agent get: server busy")
 	}
-	return st, nil
+	return AgentState(st), nil
 }
 
 func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, string) {
@@ -92,7 +92,7 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 	if a.reads != 4 {
 		t.Errorf("read the status %d times, want 4: once a poll", a.reads)
 	}
-	if want := []string{"working", "blocked", "working"}; !slices.Equal(a.screens, want) {
+	if want := []AgentState{"working", "blocked", "working"}; !slices.Equal(a.screens, want) {
 		t.Errorf("screen reads were given %q, want %q: once a poll with the worker, none once it is gone", a.screens, want)
 	}
 }
@@ -143,7 +143,7 @@ func TestRunStopsForAWorkerIdleWithItsTicketInProgress(t *testing.T) {
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
 	o, code := h.run()
 	if code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress in tab tab1") {
 		t.Fatalf("exit %d, final %q", code, o.Final())
@@ -166,7 +166,7 @@ func TestRunStopsForAWorkerBlockedTooLong(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); return "blocked" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "blocked" })
 	o, code := h.run()
 	if code != ExitStuck || o.Final() != "BLOCKED >4min: tab tab1 (A) needs attention" {
 		t.Fatalf("exit %d, final %q", code, o.Final())
@@ -181,7 +181,7 @@ func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string { w.claim(); return "unknown" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "unknown" })
 	o := h.loop()
 	o.wait.unknown = 30 * time.Millisecond
 	code := o.Run(context.Background())
@@ -201,19 +201,19 @@ func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
 // a paused one: noted on the ticket, its tab and worktree left open.
 func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
 	t.Parallel()
-	for _, st := range []string{"working", "unknown"} {
-		t.Run(st, func(t *testing.T) {
+	for _, st := range []AgentState{StateWorking, StateUnknown} {
+		t.Run(string(st), func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t)
 			h.cfg.TicketLimit = 50 * time.Millisecond
 			h.beads.add("A", "first", 1)
 			h.beads.add("B", "second", 2)
-			h.worker("A", func(w *fakeWorker) string { w.claim(); return st })
+			h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return st })
 			h.herdr.showsAs["A"] = st // from the start: the limit may pass before the worker returns
 			o := h.loop()
 			o.wait.unknown = time.Hour
 			code := o.Run(context.Background())
-			want := "TICKET_LIMIT: A still " + st + " after 50ms in tab tab1 (worktree " + h.worktree("A") + "); stopping so it can be looked at"
+			want := "TICKET_LIMIT: A still " + string(st) + " after 50ms in tab tab1 (worktree " + h.worktree("A") + "); stopping so it can be looked at"
 			if code != ExitStuck || o.Final() != want {
 				t.Fatalf("exit %d, final %q, want %q", code, o.Final(), want)
 			}

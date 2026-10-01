@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 func TestReadAgent(t *testing.T) {
@@ -27,11 +28,11 @@ func TestReadAgent(t *testing.T) {
 	}
 	// A failed call that doesn't say the agent is missing tells nothing about it.
 	for _, failed := range []error{errors.New("exit status 1"), &Error{Code: "server_busy", Err: errors.New("exit status 1")}} {
-		if _, k, s, err := readAgent("", failed); s != "unreadable" || k != "" || err != failed {
+		if _, k, s, err := readAgent("", failed); s != "" || k != "" || err != failed {
 			t.Errorf("failed call %v: %q %q %v", failed, k, s, err)
 		}
 	}
-	if _, _, s, err := readAgent("not json", nil); s != "unreadable" || err == nil {
+	if _, _, s, err := readAgent("not json", nil); s != "" || err == nil {
 		t.Errorf("garbled output: %q %v", s, err)
 	}
 }
@@ -64,7 +65,7 @@ func TestHerdrErrorsAreDecodedFromStderr(t *testing.T) {
 	}
 
 	failingHerdr(t, `{"error":{"code":"server_busy","message":"try again"}}`)
-	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "unreadable" || !HasCode(err, "server_busy") {
+	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "" || !HasCode(err, "server_busy") {
 		t.Errorf("Herdr busy: %q %v", st, err)
 	}
 
@@ -73,7 +74,7 @@ func TestHerdrErrorsAreDecodedFromStderr(t *testing.T) {
 	if errors.As(err, &he) || !errors.As(err, &ce) || ce.Stderr != "panic: not JSON" {
 		t.Errorf("stderr that isn't Herdr's error stays a command error: %#v", err)
 	}
-	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "unreadable" || err == nil {
+	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "" || err == nil {
 		t.Errorf("unexplained failure: %q %v", st, err)
 	}
 }
@@ -186,7 +187,7 @@ func herdrScript(t *testing.T, script string) {
 }
 
 func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
-	for status, want := range map[string]string{
+	for status, want := range map[dispatch.AgentState]string{
 		"working": "agent read a --source visible\n",
 		"blocked": "agent read a --source visible\n",
 		"idle":    "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",

@@ -475,7 +475,7 @@ func (m Dashboard) workerList(w int) string {
 	}
 	border := lipgloss.TerminalColor(cyan)
 	for _, st := range running {
-		if st.Agent == "blocked" {
+		if st.Agent == dispatch.StateBlocked {
 			border = red
 		}
 	}
@@ -542,7 +542,7 @@ func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	border := lipgloss.TerminalColor(cyan)
-	if st.Agent == "blocked" {
+	if st.Agent == dispatch.StateBlocked {
 		border = red
 	}
 	elapsed := time.Since(st.Started).Truncate(time.Second)
@@ -822,22 +822,24 @@ func (m Dashboard) titleLine(w int) string {
 
 // doingLabel is the worker's status, made precise by what it reported doing when it is working.
 func doingLabel(st dispatch.Status) string {
-	if st.Resolving {
+	switch {
+	case st.Resolving:
 		return "resolving"
-	}
-	if st.Agent == "working" && st.Doing != "" {
+	case st.Unreadable:
+		return "unreadable"
+	case st.Agent == dispatch.StateWorking && st.Doing != "":
 		return st.Doing
 	}
-	return st.Agent
+	return string(st.Agent)
 }
 
 func agentStyle(s string) string {
 	switch s {
-	case "working", "editing", "reading":
+	case string(dispatch.StateWorking), "editing", "reading":
 		return pickedStyle.Render(s)
 	case "testing":
 		return testingStyle.Render(s)
-	case "blocked":
+	case string(dispatch.StateBlocked):
 		return stopStyle.Render(s + " — waiting for you")
 	case "":
 		return ""

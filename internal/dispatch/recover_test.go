@@ -34,7 +34,7 @@ func TestWorkerPanicHoldsTheRun(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.worker("A", finishes("a.txt"))
-	h.worker("B", func(w *fakeWorker) string { h.waitHeld(); return finishes("b.txt")(w) })
+	h.worker("B", func(w *fakeWorker) AgentState { h.waitHeld(); return finishes("b.txt")(w) })
 	o := h.loop()
 	o.merger = panickyMerger{branch: "wt/A"}
 	code := o.Run(context.Background())
@@ -111,8 +111,8 @@ func TestTriagePanicOnlyFailsTriage(t *testing.T) {
 // panickyAgents panics reading a worker's status.
 type panickyAgents struct{ noAgents }
 
-func (panickyAgents) Status(ctx context.Context, name string) (string, error) {
-	var l []string
+func (panickyAgents) Status(ctx context.Context, name string) (AgentState, error) {
+	var l []AgentState
 	return l[0], nil
 }
 

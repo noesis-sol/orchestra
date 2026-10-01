@@ -69,11 +69,12 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	if ctx.Err() != nil {
 		return errInterrupted
 	}
-	switch st {
-	case "gone":
-	case "unreadable":
+	if err != nil {
 		return halt(ExitTool, "HERDR_FAILED: cannot tell whether an earlier worker for %s is still in its tab: %v", id, err)
-	case "working", "blocked":
+	}
+	switch st {
+	case StateGone:
+	case StateWorking, StateBlocked:
 		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
 		name := o.namer.FreeName(ctx, agent)
@@ -199,10 +200,14 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if err != nil {
 			o.log.Raw("", err)
 		}
-		if st == "gone" {
+		if err == nil && st == StateGone {
 			// A start that times out leaves the agent running unnamed in its pane, and a retry
 			// would find the pane busy: adopt that agent under the ticket's name instead.
-			if name, kind, pst := o.namer.PaneAgent(ctx, pane); pst != "gone" && name == "" && kind == c.AgentKind {
+			name, kind, pst, perr := o.namer.PaneAgent(ctx, pane)
+			if perr != nil {
+				o.log.Raw("", perr)
+			}
+			if perr == nil && pst != StateGone && name == "" && kind == c.AgentKind {
 				if err := o.namer.RenameAgent(ctx, pane, agent); err == nil {
 					o.info("  %s's worker started without its name; named it %s", id, agent)
 					st = pst
@@ -215,9 +220,9 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			}
 		}
 		switch st {
-		case "idle", "done":
+		case StateIdle, StateDone:
 			ok = true
-		case "working", "blocked", "unknown":
+		case StateWorking, StateBlocked, StateUnknown:
 			// Up but busy. With the prompt given at launch that means it started; otherwise (a
 			// startup dialog, say) give it time rather than starting a second one.
 			ok = launch != "" || o.starter.WaitReady(ctx, agent)

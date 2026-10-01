@@ -13,9 +13,10 @@ import (
 type fakePane struct{ ticket, wt, tab string }
 
 type fakeAgent struct {
-	name, kind, pane, status string
-	prompted                 bool
-	late                     bool // Herdr doesn't see it yet: adoption gives up, and the next pane read misses it
+	name, kind, pane string
+	status           AgentState
+	prompted         bool
+	late             bool // Herdr doesn't see it yet: adoption gives up, and the next pane read misses it
 }
 
 var errRefused = errors.New("herdr: unknown argument")
@@ -41,7 +42,7 @@ type fakeHerdr struct {
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
-	showsAs      map[string]string      // the status these tickets' workers show from their prompt on, instead of working
+	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
 	refuseArgs   bool                   // StartAgent takes no arguments
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
@@ -50,7 +51,7 @@ type fakeHerdr struct {
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
-		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]string{}, statusHangs: map[string]bool{}}
+		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
 
 // agent returns the agent named name, or nil. The caller holds mu.
@@ -91,7 +92,7 @@ func (h *fakeHerdr) prompt(a *fakeAgent) {
 	h.running.Add(1)
 	go func() {
 		defer h.running.Done()
-		shows := func(st string) {
+		shows := func(st AgentState) {
 			h.mu.Lock()
 			a.status = st
 			h.mu.Unlock()
@@ -208,7 +209,7 @@ func errLongName(name string) error {
 	return nil
 }
 
-func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
+func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := errLongName(name); err != nil {
@@ -222,18 +223,18 @@ func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (st
 		return "", fmt.Errorf("herdr: no unnamed agent in %s to name %s", pane, name)
 	}
 	a.name = name
-	return name, nil
+	return a.status, nil
 }
 
-func (h *fakeHerdr) PaneAgent(ctx context.Context, pane string) (string, string, string) {
+func (h *fakeHerdr) PaneAgent(ctx context.Context, pane string) (string, string, AgentState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if a := h.inPane(pane); a != nil && !a.late {
-		return a.name, a.kind, a.status
+		return a.name, a.kind, a.status, nil
 	} else if a != nil {
 		a.late = false // there next time
 	}
-	return "", "", "gone"
+	return "", "", StateGone, nil
 }
 
 // RenameAgent renames the agent called name, or the one in the pane called name.
@@ -266,21 +267,21 @@ func (h *fakeHerdr) FreeName(ctx context.Context, id string) string {
 
 // Agents
 
-func (h *fakeHerdr) Status(ctx context.Context, name string) (string, error) {
+func (h *fakeHerdr) Status(ctx context.Context, name string) (AgentState, error) {
 	h.mu.Lock()
 	if a := h.agent(name); a != nil && a.prompted && h.statusHangs[h.panes[a.pane].ticket] {
 		h.mu.Unlock()
 		<-ctx.Done() // as a Herdr that doesn't answer, stopped by the call's context
-		return "unreadable", fmt.Errorf("herdr agent get %s: %w", name, context.Cause(ctx))
+		return "", fmt.Errorf("herdr agent get %s: %w", name, context.Cause(ctx))
 	}
 	defer h.mu.Unlock()
 	if a := h.agent(name); a != nil {
 		return a.status, nil
 	}
-	return "gone", nil
+	return StateGone, nil
 }
 
-func (h *fakeHerdr) Screen(ctx context.Context, name, status string) string { return "" }
+func (h *fakeHerdr) Screen(ctx context.Context, name string, state AgentState) string { return "" }
 
 func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	h.mu.Lock()
