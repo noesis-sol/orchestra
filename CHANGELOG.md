@@ -17,6 +17,21 @@ All notable changes to orchestra are documented here. The format follows
   or a claude.ai connector, is a setup problem (exit code 2). Without
   `"mcp_servers"`, workers load every server as before, and the run warns once.
   The `START` line names the servers workers get.
+- `orchestra init` asks which MCP servers workers get, offering those Claude
+  Code defines for the repository on this machine (local scope for the
+  repository or its main checkout, project scope in `.mcp.json`, user scope;
+  `CLAUDE_CONFIG_DIR` honoured), and saves their names only, never their
+  definitions. `--mcp a,b` chooses without asking and `--mcp ""` chooses none.
+  claude.ai connectors are listed as not available to workers. A chosen name
+  this machine doesn't define is reported with `claude mcp add` as the fix,
+  and saved anyway.
+- The README defines **workers** (the coding agents that do tickets) and
+  **organs** (orchestra's one-shot advisers, with no tools and no MCP servers)
+  and explains workers' MCP servers: how they're chosen and resolved, why
+  claude.ai connectors aren't available, and why workers should get only what
+  the work needs. The skill says how to check and change them and how to fix a
+  server a machine doesn't define. `orchestra -h` uses the same words and lists
+  exit code 7.
 - A finished ticket whose rebase onto work merged while it ran stops on
   conflicts goes back to its own worker instead of straight to review: the
   rebase is left stopped in its worktree, and the worker, still idle in its tab,

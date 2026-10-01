@@ -131,11 +131,11 @@ func loadConfig(
 		"folder for the per-ticket worktrees, outside the repository "+
 			"(default: <repo>-worktrees next to it) [WT_ROOT]")
 	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0",
-		"triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
+		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
 	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0",
-		"write a run report with claude when the loop stops [REVIEW=0 turns off]")
+		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
 	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"),
-		"model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
+		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent,
 		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
@@ -162,13 +162,13 @@ func loadConfig(
 		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
-			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n"+
+			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--mcp names] [--force]\n"+
 			"       orchestra plan [--apply]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, "+
-			"one agent per Herdr tab and git worktree.\n\n")
+			"one worker (a coding agent) per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
-			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
+			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err

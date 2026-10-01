@@ -3,7 +3,14 @@
 <img width="2172" height="724" alt="661180647-c6cb72f8-21a8-4805-8bff-76a43d4db1e6" src="https://github.com/user-attachments/assets/f2e76a42-7112-4909-87df-6dc154679b2f" />
 
 
-Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket at a time. Each ticket goes to a coding agent in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are merged into the branch you started on. A Go rewrite of `orchestrate.sh`, with the same environment variables, log file and exit codes, and a live terminal view built with Bubble Tea.
+Works through a [Beads](https://github.com/gastownhall/beads) backlog one ticket at a time. Each ticket goes to a worker in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are merged into the branch you started on. A Go rewrite of `orchestrate.sh`, with the same environment variables, log file and exit codes, and a live terminal view built with Bubble Tea.
+
+## Workers and organs
+
+Two kinds of model calls do orchestra's work, and this README keeps their names apart:
+
+- **Workers** are the coding agents that do the tickets: one per ticket, each in its own Herdr tab and git worktree, a full Claude Code session (by default) with its tools and the [MCP servers the project chose](#mcp-servers-for-workers). They edit, test, commit and close their ticket.
+- **[Organs](#organs)** are orchestra's own one-shot advisers: triage, the predictor and the reviewer, which writes the run report. Each is a single `claude -p` call with no tools and no MCP servers. They read only the evidence orchestra hands them and answer; they change nothing.
 
 ## What you see
 
@@ -39,13 +46,13 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 - **Keys**: **s** asks, in a box over the dashboard (a line above the hint in a small pane), whether to stop after the running tickets: `Stop after the running tickets? Stopping after the 2 running tickets finish (kinieta-kco, kinieta-y6j): no new tickets will start. They merge as usual, then the run ends.` **y** confirms, **n** or **Esc** closes it. The run then starts no new ticket, from any path; the running ones carry on as usual, merges, rebases and re-checks included, and when the last one returns the run ends normally with `DRAINED after 12 tickets` (exit code 0), triage and the report. The log says `DRAIN: stopping after the 2 running tickets finish (…): no new tickets will start, asked from the dashboard`, and the report's first sentence mentions it. With nothing running, it ends at once. Meanwhile a line above the hint says the same, `■ Stopping after the 2 running tickets finish (…): no new tickets will start`, naming the tickets left as they finish (in a narrow pane it wraps and shortens the IDs only); the totals mark the queue `held`; and the hint reads `s cancels the stop · ctrl+c stops now`: **s** offers `Keep taking tickets?` to take it back (logged as `DRAIN cancelled`). **Ctrl+C** stops at once at any time, the question open or not, leaving the workers running. Outside the dashboard (`-plain`, scripts), `kill -USR1 <pid>` asks the same without a question.
 
-When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see Organs).
+When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see [Organs](#organs)).
 
 Everything is also appended to `.orchestra/orchestra.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view.
 
 ## Organs
 
-Organs are LLM-powered steps. The orchestrator gathers the evidence itself and passes it to `claude -p` with every built-in tool and MCP server disabled (`--tools "" --strict-mcp-config`), from outside the project. An organ can only read what it's given and answer. Organs advise: the orchestrator writes their output down, and no organ changes a ticket's status. A call is about 1,500 input tokens and takes 5–15 seconds.
+Organs are orchestra's one-shot advisers (see [Workers and organs](#workers-and-organs)). The orchestrator gathers the evidence itself and passes it to `claude -p` with every built-in tool and MCP server disabled (`--tools "" --strict-mcp-config`), from outside the project. An organ can only read what it's given and answer. Organs advise: the orchestrator writes their output down, and no organ changes a ticket's status. A call is about 1,500 input tokens and takes 5–15 seconds.
 
 - **Triage**, for each deferred ticket. The evidence is the ticket (`bd show`), the end of the worker's terminal, and its worktree's changes and commits. The model decides whether the cause lies in the **environment** (the machine, tools or services), the **instructions** (the worker prompt or the ticket's wording), or the **problem** itself. It adds a recommendation to the ticket's notes, and a purple `◆` line appears in the terminal. Triage runs in the background, one ticket at a time, so the loop doesn't wait.
 - **Predictor**, for each ready ticket that names nothing its [footprint](#several-tickets-at-once) can use. The evidence is the ticket (`bd show`) and the repository's files (`git ls-files`); the model picks the few files the ticket will most likely change. The guess is cached on the ticket as `predicted_files` metadata (apart from your `files`), so it's asked once per ticket, and scheduling uses it from then on. It runs in the background, one ticket at a time, only with several tickets at once and footprints on; a ticket is dispatched without waiting for its prediction.
@@ -73,14 +80,40 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 
 ```
 .orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
-.orchestra/settings.json      committed: the check command and its time limit, how many tickets run at once, an optional ticket limit, the issue types never dispatched, whether tickets are kept apart by footprint, whether conflicts go back to their workers, and when failing workers hold the run
+.orchestra/settings.json      committed: the check command and its time limit, how many tickets run at once, the MCP servers workers get (by name), an optional ticket limit, the issue types never dispatched, whether tickets are kept apart by footprint, whether conflicts go back to their workers, and when failing workers hold the run
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
-.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's hooks and what they report)
+.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's MCP servers, its hooks and what they report)
 ```
 
-In a terminal, `init` asks with a short form: the **check command** (lint, build and tests), pre-filled from the settings or from an existing prompt, its **time limit** (30m offered), and how many **tickets to run at the same time** by default. Where the project keeps a `CHANGELOG.md` that `.gitattributes` doesn't merge by union yet, it also offers to add `CHANGELOG.md merge=union` there, so tickets that each add an entry at the same spot don't conflict (see [Several tickets at once](#several-tickets-at-once)). `--check`, `--check-timeout 5m`, `--concurrent N` (or `-c N`) and `--changelog-union` (or `--changelog-union=false`) answer those without asking, which is what an agent or a script should use. Without a terminal it asks nothing, uses 1 at a time, and leaves `.gitattributes` alone. The check command goes into the prompt template and `settings.json`. `init` then shows each step, whether `bd`, Beads, `herdr` and `claude` are there, and a **Next** box with only what's left, ending with the command to start a run. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `--force`, and keeps existing settings unless its flags change them. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` (and `.gitattributes`, if it changed) afterwards.
+In a terminal, `init` asks with a short form: the **check command** (lint, build and tests), pre-filled from the settings or from an existing prompt, its **time limit** (30m offered), how many **tickets to run at the same time** by default, and which **MCP servers workers get** (see [MCP servers for workers](#mcp-servers-for-workers)). Where the project keeps a `CHANGELOG.md` that `.gitattributes` doesn't merge by union yet, it also offers to add `CHANGELOG.md merge=union` there, so tickets that each add an entry at the same spot don't conflict (see [Several tickets at once](#several-tickets-at-once)). `--check`, `--check-timeout 5m`, `--concurrent N` (or `-c N`), `--mcp a,b` (or `--mcp ""` for none) and `--changelog-union` (or `--changelog-union=false`) answer those without asking, which is what a script, or an agent setting the project up for you, should use. Without a terminal it asks nothing, uses 1 at a time, leaves the MCP servers as they were (unset on a first run), and leaves `.gitattributes` alone. The check command goes into the prompt template and `settings.json`. `init` then shows each step, whether `bd`, Beads, `herdr` and `claude` are there, and a **Next** box with only what's left, ending with the command to start a run. `init` also checks for `bd`, `.beads`, `herdr` and `claude`, and says what's missing. It never replaces an existing prompt unless you pass `--force`, and keeps existing settings unless its flags change them. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` (and `.gitattributes`, if it changed) afterwards.
+
+## MCP servers for workers
+
+A worker reads ticket text that orchestra can't fully trust: a ticket filed by someone else, a follow-up another worker wrote, text pasted from an issue or a web page. Whatever it reads can steer what it does with its tools, so give it only the MCP servers the project's work needs. Each server a worker doesn't need is something a misled worker could reach, and its tool descriptions cost input tokens in every request: choosing 1 server out of 10 saved about 17,000 per request in one measurement.
+
+`orchestra init` asks which servers workers get, offering every server Claude Code defines for the repository on your machine, with its scope and transport, the current choice ticked (none on a first run); with no server to offer, it chooses none. `--mcp postgres,firecrawl` chooses without asking, and `--mcp ""` chooses none. `settings.json` keeps their names only:
+
+```json
+{ "mcp_servers": ["postgres", "firecrawl"] }
+```
+
+The definitions stay in Claude Code's own config, because they can hold API keys and tokens and differ from machine to machine. Each machine resolves the names the way Claude Code does, the first scope that defines a name winning:
+
+1. **local**: `~/.claude.json`, under the repository's path (or its main checkout's, from a worktree): `claude mcp add <name> …`;
+2. **project**: `.mcp.json` in the repository, committed and shared: `claude mcp add --scope project <name> …`;
+3. **user**: `~/.claude.json`, for every repository: `claude mcp add --scope user <name> …`.
+
+With `CLAUDE_CONFIG_DIR` set, `.claude.json` is read from there instead of your home folder.
+
+**claude.ai connectors** (the servers Claude Code lists as `claude.ai …`) belong to your claude.ai account: Claude Code fetches them when it starts, and there is no definition on the machine that orchestra could hand a worker. `init` lists them as not available to workers and doesn't offer them. For a worker to use the same service, define an MCP server for it with `claude mcp add`.
+
+When a run starts, it looks up each chosen name on this machine. A name that isn't defined here, or names a claude.ai connector, is a setup problem (exit code 2) naming the fix: `redis isn't defined on this machine (define it: claude mcp add redis …)`, or `… is a claude.ai connector, which workers can't get`, or choose the servers again with `orchestra init`. A worker is never started without a server its project chose. `init` itself only warns about such a name and saves it anyway, as a teammate may define it.
+
+Each Claude worker then gets the chosen servers' definitions in `.orchestra/run/mcp.json` in its worktree (readable by you only, and out of git) and starts with `--mcp-config <that file> --strict-mcp-config`, so no definition appears on a command line and no other server loads. `"mcp_servers": []` starts workers with `--strict-mcp-config` alone: no MCP servers. The `START` line in the log says what workers get: `MCP servers: postgres, firecrawl`, `MCP servers: none`, or `MCP servers: all, not configured`. If Herdr refuses those arguments, the run stops with `START_FAILED` rather than start the worker with every server.
+
+Without `"mcp_servers"`, workers load every MCP server Claude Code finds on the machine, as before this setting existed, and the run warns once, in the log and on the dashboard: `workers load every MCP server Claude Code finds on this machine; choose theirs with orchestra init`. Workers of another agent kind (`--agent`) don't get the setting; the log says so once. Organs never get any MCP server.
 
 ## Run
 
@@ -93,7 +126,7 @@ orchestra
 
 `--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). Worker tabs open in the Herdr workspace `orchestra` runs in; `--workspace ID` puts them in another, for example a separate space for workers. `orchestra -h` lists the flags. Most default to the environment variable `orchestrate.sh` used: `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`); a relative `WORKER_PROMPT` or `WT_ROOT`, or their flags, is relative to the repository. The organs add `TRIAGE`, `REVIEW` and `ORGAN_MODEL`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
 
-`--ticket-limit 2h` (or `TICKET_LIMIT=2h`, or `"ticket_limit": "2h"` in `settings.json`) stops the run, like `PAUSED`, when a worker is still going that long after its ticket was dispatched: a hung command or a stuck agent would otherwise hold its slot for good. The ticket gets a note, and its tab and worktree are left open. `0` turns a limit from `settings.json` off for a run. Without a limit, a worker still going after 2 hours is logged and notified once (`LONG_RUNNING`), and the run keeps waiting. Whatever the limit, a worker whose status Herdr can't tell (`unknown`) for 5 minutes stops the run (`UNKNOWN >5min`), as one blocked on a dialog for 4 does. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
+`--ticket-limit 2h` (or `TICKET_LIMIT=2h`, or `"ticket_limit": "2h"` in `settings.json`) stops the run, like `PAUSED`, when a worker is still going that long after its ticket was dispatched: a hung command or a stuck worker would otherwise hold its slot for good. The ticket gets a note, and its tab and worktree are left open. `0` turns a limit from `settings.json` off for a run. Without a limit, a worker still going after 2 hours is logged and notified once (`LONG_RUNNING`), and the run keeps waiting. Whatever the limit, a worker whose status Herdr can't tell (`unknown`) for 5 minutes stops the run (`UNKNOWN >5min`), as one blocked on a dialog for 4 does. A project not yet set up with `orchestra init` keeps working from `.claude/worker-prompt.md`, `.claude/orchestrate.log` and `.claude/orchestrate-reports/`.
 
 Every `bd`, `git` and `herdr` command orchestra runs has a time limit: 30 seconds for a read or a Herdr call, 2 minutes for a git write (worktree, rebase, merge, branch) or a `bd` update; Herdr's own waits keep their timeouts, with 30 seconds to spare. A command still running then is stopped and fails with `<command>: timed out after 30s`, reported like any failure of it (`STATUS_UNREADABLE`, `HERDR_FAILED`, `GIT_FAILED`, …). Ctrl+C stops the commands in flight too, and the run ends once its workers have returned; a merge already under way, and the notes after it, finish first, so the repository is never left half merged.
 
@@ -151,12 +184,12 @@ Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/
 - **Close, and let the batch PR run CI.** A ticket whose change only CI can verify (a workflow, a platform the local checks don't cover) is closed once the local checks pass, with an "Awaits CI" note. The batch goes to the main branch through a pull request that runs every CI job, so each ticket needn't wait for its own.
 - **Ask, don't wait.** A ticket that needs the maintainer's decision gets a question ticket labelled `human` that blocks it. The orchestrator never hands a question to a worker; it shows the ticket as **? for you**, and the run goes on. Answer with `bd human respond <question> --response "…"`, and the ticket returns to the queue with its branch rebased onto the current one. If you answer in the worker's tab instead and it carries on, orchestra adopts that worker when the ticket returns and merges its work; a worker still idle there is told the question is answered and carries on with what it knows. The log says `ANSWERED`, and the ticket's row goes back to working.
 
-Claude workers are started with a one-line instruction to read `.orchestra/run/prompt.md` in their worktree, where `orchestra` writes the prompt (kept out of git through the repository's `info/exclude`, so it's ignored even on a branch cut before `.orchestra/.gitignore` was committed). Herdr can't pass line breaks to an agent, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
+Claude workers are started with a one-line instruction to read `.orchestra/run/prompt.md` in their worktree, where `orchestra` writes the prompt (kept out of git through the repository's `info/exclude`, so it's ignored even on a branch cut before `.orchestra/.gitignore` was committed). Herdr can't pass line breaks to a worker, and a prompt pasted into the input box can go unsubmitted. `-prompt-at-launch=false` pastes it instead.
 
 Claude workers also start with `--settings .orchestra/run/hooks.json`: hooks, for that worker only, that record each tool it uses in `.orchestra/run/activity.json`. That is how the dashboard tells `testing` (the check command or a test runner), `editing` and `reading` apart from plain `working`, without reading the worker's screen. It is also how `orchestra` knows a worker has finished: Herdr can show a worker as idle while it is still starting up, so a Claude worker counts as settled only at its Stop hook, the end of its turn. While its last hook was a tool use it is mid-turn, whatever Herdr says, for up to 10 minutes (a turn that fails ends without a Stop). Without hooks (another agent kind), or before its first one, an idle worker gets 3 minutes from its start to claim its ticket before it counts as settled with the ticket still open. The log says what decided it, such as `A settled: Stop hook at 20:48:39`.
 
 Workers of another agent kind (`--agent` / `AGENT_KIND`, any kind Herdr can start) are dispatched, watched and merged the same way, but these features only work with `claude`:
-- **Prompt at launch.** Other agents always get the prompt pasted.
+- **Prompt at launch.** Workers of other kinds always get the prompt pasted.
 - **Recovering a paste whose Enter didn't register.** `orchestra` only recognises Claude Code's `❯` input box, so it pastes the prompt once more instead of pressing Enter, and if the worker still doesn't start, defers the ticket (`PROMPT_FAILED`).
 - **The latest action on the dashboard,** read from Claude Code's `⏺` and spinner lines, and `testing`, `editing` or `reading`, from the hooks above.
 
@@ -166,6 +199,7 @@ The [organs](#organs) run `claude` whatever the workers' agent kind.
 
 Optional: [`skills/orchestra/SKILL.md`](skills/orchestra/SKILL.md) is a skill for coding agents such as Claude Code. It tells the agent how to:
 - find out where a project stands: whether `init` has run, which files the project uses, whether a run is active;
+- choose, check and fix the MCP servers workers get;
 - launch a run in a Herdr pane beside its own;
 - leave the checkout alone during a run;
 - read the log, the run report and the tickets' triage notes when something is set aside or a run stops;
@@ -192,7 +226,7 @@ After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
 ## Differences from orchestrate.sh
 
 - `python3` is no longer needed.
-- If `herdr agent start` reports a failure but the agent came up anyway, the orchestrator uses it instead of retrying into an occupied pane, which ends in `START_FAILED`.
+- If `herdr agent start` reports a failure but the worker came up anyway, the orchestrator uses it instead of retrying into an occupied pane, which ends in `START_FAILED`.
 - The dispatch log line includes the ticket title: `[1/40] kinieta-2e7 dispatching: <title>`.
 
 ## Development
