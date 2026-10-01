@@ -68,8 +68,9 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra -version
 
 - `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that
   fails lint is not merged. Run it in full before closing a ticket.
-- Go 1.26 with `toolchain go1.26.8` in go.mod: keep it at 1.26.5 or later, which fixes a race-detector hang in
-  fork on darwin/arm64 (golang/go#79804).
+- go.mod requires Go 1.26 (`go 1.26.0`) and pins `toolchain go1.27.1`, the version the project builds
+  and tests with. Keep the toolchain at 1.26.5 or later, which fixes a race-detector hang in fork on
+  darwin/arm64 (golang/go#79804).
 - `TestLiveOrgans` calls the real `claude`; it is skipped unless enabled (its comment says how).
 
 ## Architecture Overview
