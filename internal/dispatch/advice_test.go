@@ -70,10 +70,84 @@ func TestLiveOrgans(t *testing.T) {
 // can't use it).
 type liveTickets struct{ repo string }
 
-func (l liveTickets) Ready() ([]Ticket, error) { return nil, nil }
-func (l liveTickets) Show(id string) Ticket    { return Ticket{ID: id} }
-func (l liveTickets) Status(id string) string  { return "unknown" }
+func (l liveTickets) Ready(string) ([]Ticket, error)        { return nil, nil }
+func (l liveTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
+func (l liveTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
+func (l liveTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id}, nil }
+func (l liveTickets) Status(id string) (string, error)      { return "unknown", nil }
+func (l liveTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
 func (l liveTickets) Describe(id string) string {
 	out, _ := command.Output(l.repo, "bd", "show", id)
 	return out
+}
+
+func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "reports")
+	o := &Loop{cfg: Config{ReportsDir: dir}, started: time.Date(2026, 9, 30, 14, 5, 9, 0, time.Local)}
+	path, err := o.SaveReport("# report\n")
+	if err != nil || path != filepath.Join(dir, "2026-09-30-140509.md") {
+		t.Fatalf("saved to %q: %v", path, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "# report\n" {
+		t.Errorf("saved %q", b)
+	}
+
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.cfg.ReportsDir = filepath.Join(blocked, "reports")
+	if path, err := o.SaveReport("# report\n"); err == nil || path != "" {
+		t.Errorf("reports folder under a file: saved to %q, err %v", path, err)
+	}
+}
+
+// A worker that outlasts the wait finds triage closed when it gets there, and neither panics nor
+// blocks.
+func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
+	o, tk, sink := newDeferringLoop(t)
+	o.wait.settle = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	codes := make(chan int, 1)
+	go func() { codes <- o.Run(ctx) }()
+	<-tk.entered
+	cancel()
+	select {
+	case code := <-codes:
+		if code != ExitInterrupted {
+			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
+		}
+	case <-time.After(patience):
+		t.Fatal("Run did not return after its settle wait")
+	}
+	o.FinishTriage(context.Background())
+	close(tk.release)
+	select {
+	case <-sink.gone:
+	case <-time.After(patience):
+		t.Fatal("the worker did not return")
+	}
+}
+
+func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
+	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := &Loop{log: log, sink: &recordSink{}, organ: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
+		organCtx: context.Background()}
+	o.queueTriage(context.Background(), organ.Deferral{ID: "before-start"}) // triage off: nothing happens
+	o.StartTriage()
+	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
+	o.FinishTriage(context.Background())
+	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
+	o.FinishTriage(context.Background()) // a second call returns too
+	got := o.sink.(*recordSink).text()
+	if !strings.Contains(got, "TRIAGE_FAILED for A") || strings.Contains(got, " B:") || strings.Contains(got, "before-start") {
+		t.Errorf("A should be triaged (and fail, without claude), B and before-start dropped:\n%s", got)
+	}
+	if len(o.triageQ) != 0 {
+		t.Errorf("queue = %v", o.triageQ)
+	}
 }

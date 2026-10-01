@@ -4,6 +4,8 @@ package herdr
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -16,10 +18,8 @@ import (
 // their status and screen.
 type Terminal struct{}
 
-// ---- Beads ---------------------------------------------------------------------------
-
-// ---- Herdr ---------------------------------------------------------------------------
-
+// CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
+// returns the tab's ID and its first pane's.
 func (t Terminal) CreateTab(workspace, cwd, label string) (tab, pane string, err error) {
 	out, err := command.Output("", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
@@ -65,55 +65,93 @@ func (t Terminal) IsArgumentRefused(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid_agent_argument")
 }
 
+// IsNameRefused reports Herdr refusing an agent name; a retry under the same name cannot succeed.
+func (t Terminal) IsNameRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid_agent_name")
+}
+
+// maxName is the longest agent name Herdr accepts.
+const maxName = 32
+
+// AgentName returns the Herdr agent name for ticket id. Herdr takes names of 1-32 characters from
+// [a-z0-9_-] starting with a letter, while bd IDs can hold capitals (a prefix taken from the folder
+// name) and dots (every child ID), and can be longer. Capitals are lowered, anything else becomes
+// '_', a name not starting with a letter gets a 't' in front, and a name that is too long is cut
+// and ends in a hash of the whole ID, so two long IDs sharing a start still get different names.
+func AgentName(id string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(id) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	name := b.String()
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		name = "t" + name
+	}
+	if len(name) > maxName {
+		sum := sha256.Sum256([]byte(id))
+		hash := hex.EncodeToString(sum[:3])
+		name = name[:maxName-len(hash)-1] + "-" + hash
+	}
+	return name
+}
+
+// AgentName returns the Herdr agent name for ticket id; see the function AgentName.
+func (t Terminal) AgentName(id string) string { return AgentName(id) }
+
 // LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
 // returns at once. Each argument must be one line.
 func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
 	line := kind
 	for _, a := range args {
-		line += " " + shellQuote(a)
+		line += " " + command.ShellQuote(a)
 	}
 	_, err := command.Output("", "herdr", "pane", "run", pane, line)
 	return err
 }
 
-// shellQuote quotes s as one word for a POSIX shell.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // AdoptAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it
-// name, and returns its status.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, bool) {
+// name, and returns its status. The error says why it could not, such as Herdr refusing the name.
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
 		if n, k, st := t.PaneAgent(pane); st != "gone" && k == kind {
-			if n != name && t.RenameAgent(pane, name) != nil {
-				return st, false
+			if n != name {
+				if err := t.RenameAgent(pane, name); err != nil {
+					return st, err
+				}
 			}
-			return st, true
+			return st, nil
 		}
 		if time.Now().After(deadline) {
-			return "", false
+			return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
 		}
 		select {
 		case <-ctx.Done():
-			return "", false
+			return "", ctx.Err()
 		case <-time.After(time.Second):
 		}
 	}
 }
 
 // PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
-// status "gone" if the pane holds no agent.
+// status "gone" if the pane holds no agent and "unreadable" if Herdr could not be asked.
 func (t Terminal) PaneAgent(pane string) (name, kind, status string) {
-	out, err := command.Output("", "herdr", "agent", "get", pane)
-	if err != nil {
-		return "", "", "gone"
-	}
-	return parsePaneAgent([]byte(out))
+	name, kind, status, _ = readAgent(command.Output("", "herdr", "agent", "get", pane))
+	return name, kind, status
 }
 
-func parsePaneAgent(raw []byte) (name, kind, status string) {
+// readAgent reads the output of 'herdr agent get': the agent's name, kind and status. Herdr answers
+// a missing agent with agent_not_found on stderr (and fails), which is "gone"; any other failure
+// (Herdr busy or restarting, say) says nothing about the agent, so it is "unreadable" with the
+// error.
+func readAgent(out string, err error) (name, kind, status string, _ error) {
+	if err != nil && strings.Contains(err.Error(), `"code":"agent_not_found"`) { // stderr is in err
+		return "", "", "gone", nil
+	}
 	var r struct {
 		Result struct {
 			Agent struct {
@@ -122,15 +160,26 @@ func parsePaneAgent(raw []byte) (name, kind, status string) {
 				AgentStatus string  `json:"agent_status"`
 			} `json:"agent"`
 		} `json:"result"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
-	if json.Unmarshal(raw, &r) != nil || r.Result.Agent.AgentStatus == "" {
-		return "", "", "gone"
+	jerr := json.Unmarshal([]byte(out), &r)
+	switch {
+	case jerr == nil && r.Error.Code == "agent_not_found":
+		return "", "", "gone", nil
+	case err != nil:
+		return "", "", "unreadable", err
+	case jerr != nil:
+		return "", "", "unreadable", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
+	case r.Result.Agent.AgentStatus == "":
+		return "", "", "gone", nil
 	}
 	a := r.Result.Agent
 	if a.Name != nil {
 		name = *a.Name
 	}
-	return name, a.Agent, a.AgentStatus
+	return name, a.Agent, a.AgentStatus, nil
 }
 
 // RenameAgent gives the agent (by name or pane) a new name.
@@ -139,16 +188,16 @@ func (t Terminal) RenameAgent(name, to string) error {
 	return err
 }
 
-// FreeName returns an unused agent name for an earlier worker of ticket id: id-1, id-2, …,
+// FreeName returns an unused agent name for an earlier worker that holds name: name-1, name-2, …,
 // within Herdr's 32-character limit, or "" if none is free.
-func (t Terminal) FreeName(id string) string {
+func (t Terminal) FreeName(name string) string {
 	for n := 1; n <= 20; n++ {
 		suffix := fmt.Sprintf("-%d", n)
-		base := id
-		if len(base)+len(suffix) > 32 {
-			base = base[:32-len(suffix)]
+		base := name
+		if len(base)+len(suffix) > maxName {
+			base = base[:maxName-len(suffix)]
 		}
-		if t.Status(base+suffix) == "gone" {
+		if st, _ := t.Status(base + suffix); st == "gone" { // not "unreadable": that name may be taken
 			return base + suffix
 		}
 	}
@@ -179,32 +228,23 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 	return err == nil
 }
 
-// Status returns idle, working, blocked, done or unknown, or "gone" if the agent cannot be read.
-func (t Terminal) Status(name string) string {
-	out, err := command.Output("", "herdr", "agent", "get", name)
-	if err != nil {
-		return "gone"
-	}
-	var r struct {
-		Result struct {
-			Agent struct {
-				AgentStatus string `json:"agent_status"`
-			} `json:"agent"`
-		} `json:"result"`
-	}
-	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Agent.AgentStatus == "" {
-		return "gone"
-	}
-	return r.Result.Agent.AgentStatus
+// Status returns idle, working, blocked, done or unknown, or "gone" if Herdr has no such agent. If
+// Herdr cannot be asked it returns "unreadable" and the error: the agent may well be there.
+func (t Terminal) Status(name string) (string, error) {
+	_, _, st, err := readAgent(command.Output("", "herdr", "agent", "get", name))
+	return st, err
 }
 
-// Screen returns the end of the agent's terminal. Herdr can capture scrollback only while
-// the agent is idle, so while it works this falls back to the visible screen.
-func (t Terminal) Screen(name string) string {
-	out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
-	if err != nil {
-		out, _ = command.Output("", "herdr", "agent", "read", name, "--source", "visible")
+// Screen returns the end of the agent's terminal, given its status as just read ("" if not known).
+// Herdr can capture scrollback only while the agent is idle, so for a working or blocked agent this
+// reads the visible screen at once, and otherwise falls back to it when scrollback fails.
+func (t Terminal) Screen(name, status string) string {
+	if status != "working" && status != "blocked" {
+		if out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
+			return out
+		}
 	}
+	out, _ := command.Output("", "herdr", "agent", "read", name, "--source", "visible")
 	return out
 }
 
@@ -233,5 +273,3 @@ func CurrentWorkspace(getenv func(string) string) string {
 	}
 	return r.Result.Pane.WorkspaceID
 }
-
-// ---- Git -----------------------------------------------------------------------------

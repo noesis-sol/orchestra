@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -22,6 +23,8 @@ import (
 //             problem itself? The recommendation is appended to the ticket's notes.
 //   reviewer  when the loop stops, for any reason: a short report of what finished, what was
 //             set aside and why, and what needs the maintainer.
+//   predictor each ready ticket that names no files: the files it will likely change, which the
+//             orchestrator caches on the ticket and schedules it by.
 
 type Client struct {
 	Bin   string // "claude"; tests substitute a fake
@@ -56,6 +59,7 @@ func (g Client) Ask(ctx context.Context, timeout time.Duration, system, input, s
 	cmd.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.WaitDelay = 5 * time.Second // don't wait on pipes a leftover child of the CLI still holds
 	if err := cmd.Run(); err != nil {
 		return Result{}, fmt.Errorf("%s: %w: %s", g.Bin, err, strings.TrimSpace(stderr.String()))
 	}
@@ -141,10 +145,10 @@ const reviewSystem = `You write the end-of-run report for an automated coding pi
 
 Use only the evidence given; never invent tickets, commits or causes. Write Markdown, at most 20 lines in all:
 
-- First, one sentence: how the run ended and why.
+- First, one sentence: how the run ended and why. When the run was of one ticket and its subtickets only, the sentence names that ticket and says whether all of it is merged (SCOPE_DONE) or not (SCOPE_OPEN). When the maintainer asked it to stop after the running tickets (a DRAIN line and a DRAINED final line), say so.
 - ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few words, the commit hash.
 - ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the triage cause when a triage note gives one.
-- ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run.
+- ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run, and one bullet naming the follow-ups filed outside a one-ticket run, which wait for a later run.
 
 Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write "Nothing." under a section with no entries. No preamble and no closing remarks.`
 
@@ -172,4 +176,74 @@ func (g Client) Review(ctx context.Context, evidence string) (string, error) {
 		return "", err
 	}
 	return r.Result, nil
+}
+
+// ---- Predictor -----------------------------------------------------------------------
+
+const predictSystem = `You predict where a coding ticket will work. An orchestrator runs several coding agents side by side, each on one ticket, and keeps tickets that change the same files apart. This ticket names no files, so predict the repository files its change will most likely edit.
+
+Use only the ticket and the list of the repository's files. Pick at most 8 files from the list, most likely first, written exactly as listed; leave out files that are merely read, generated or incidental (a changelog, go.sum). Tests belong in the list only when the ticket is mainly about them. Return an empty list when the ticket gives no clue.`
+
+const predictSchema = `{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"}}},"required":["files"]}`
+
+// MaxPredicted is the most files a prediction keeps.
+const MaxPredicted = 8
+
+// maxListed is the most repository files an organ's input lists: enough for most projects, and a
+// few hundred kilobytes at most.
+const maxListed = 5000
+
+// Footprint is the evidence for predicting a ticket's files.
+type Footprint struct {
+	ID, Title string
+	Ticket    string   // bd show
+	Files     []string // git ls-files
+}
+
+func predictInput(f Footprint) string {
+	listed := f.Files
+	more := ""
+	if len(listed) > maxListed {
+		listed, more = listed[:maxListed], fmt.Sprintf("\n(… and %d more)", len(f.Files)-maxListed)
+	}
+	return "Predict the files ticket " + f.ID + " (" + f.Title + ") will change.\n\n" +
+		Section("Ticket (bd show)", f.Ticket) +
+		Section("Repository files (git ls-files)", strings.Join(listed, "\n")+more)
+}
+
+// parsePrediction keeps the predicted files that are repository files, without repeats, up to
+// MaxPredicted.
+func parsePrediction(r Result, tracked []string) ([]string, error) {
+	var p struct {
+		Files []string `json:"files"`
+	}
+	raw := r.Structured
+	if len(raw) == 0 {
+		raw = json.RawMessage(r.Result)
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, fmt.Errorf("unreadable prediction: %w", err)
+	}
+	known := map[string]bool{}
+	for _, f := range tracked {
+		known[f] = true
+	}
+	files := []string{}
+	for _, f := range p.Files {
+		f = strings.TrimPrefix(strings.TrimSpace(f), "./")
+		if known[f] && !slices.Contains(files, f) && len(files) < MaxPredicted {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+// PredictFiles predicts the repository files a ticket naming none will change; empty when the
+// ticket gives no clue.
+func (g Client) PredictFiles(ctx context.Context, f Footprint) ([]string, error) {
+	r, err := g.Ask(ctx, 2*time.Minute, predictSystem, predictInput(f), predictSchema)
+	if err != nil {
+		return nil, err
+	}
+	return parsePrediction(r, f.Files)
 }

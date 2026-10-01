@@ -4,8 +4,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -24,7 +26,7 @@ func configFixture(t *testing.T, settings string) string {
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
-		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "WORKSPACE"} {
+		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE", "ORCHESTRA_TICKET"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("HERDR_ENV", "1")
@@ -79,6 +81,91 @@ func TestConfigConcurrencyPrecedence(t *testing.T) {
 	os.Remove(".orchestra/settings.json")
 	if c, _ := loadWith(t); c.Concurrency != 1 {
 		t.Errorf("no settings: %d", c.Concurrency)
+	}
+}
+
+func TestConfigTicketLimitPrecedence(t *testing.T) {
+	configFixture(t, `{"concurrent": 1, "ticket_limit": "2h"}`)
+	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 2*time.Hour {
+		t.Errorf("settings: %s %v", c.TicketLimit, p)
+	}
+	t.Setenv("TICKET_LIMIT", "90m")
+	if c, _ := loadWith(t); c.TicketLimit != 90*time.Minute {
+		t.Errorf("the environment overrides settings: %s", c.TicketLimit)
+	}
+	if c, _ := loadWith(t, "--ticket-limit", "0"); c.TicketLimit != 0 {
+		t.Errorf("--ticket-limit 0 turns it off: %s", c.TicketLimit)
+	}
+	if _, p := loadWith(t, "--ticket-limit", "-1h"); len(p) != 1 || !strings.Contains(p[0], "--ticket-limit must not be negative") {
+		t.Errorf("negative: %v", p)
+	}
+	t.Setenv("TICKET_LIMIT", "soon")
+	if c, p := loadWith(t, "--ticket-limit", "3h"); len(p) > 0 || c.TicketLimit != 3*time.Hour {
+		t.Errorf("the flag over an invalid variable: %s %v", c.TicketLimit, p)
+	}
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "TICKET_LIMIT must be a duration") {
+		t.Errorf("invalid variable: %v", p)
+	}
+	t.Setenv("TICKET_LIMIT", "")
+	os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ticket_limit must be a duration") {
+		t.Errorf("invalid setting: %v", p)
+	}
+	os.Remove(".orchestra/settings.json")
+	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
+		t.Errorf("no settings: %s %v", c.TicketLimit, p)
+	}
+}
+
+func TestConfigCheckTimeoutPrecedence(t *testing.T) {
+	configFixture(t, `{"concurrent": 1, "check_timeout": "5m"}`)
+	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 5*time.Minute {
+		t.Errorf("settings: %s %v", c.CheckTimeout, p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "10m")
+	if c, _ := loadWith(t); c.CheckTimeout != 10*time.Minute {
+		t.Errorf("the environment overrides settings: %s", c.CheckTimeout)
+	}
+	if c, _ := loadWith(t, "--check-timeout", "45m"); c.CheckTimeout != 45*time.Minute {
+		t.Errorf("--check-timeout overrides the environment: %s", c.CheckTimeout)
+	}
+	if _, p := loadWith(t, "--check-timeout", "0"); len(p) != 1 || !strings.Contains(p[0], "--check-timeout must be a positive duration") {
+		t.Errorf("zero: %v", p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "0")
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ORCHESTRA_CHECK_TIMEOUT must be a positive duration") {
+		t.Errorf("zero variable: %v", p)
+	}
+	if c, p := loadWith(t, "--check-timeout", "2m"); len(p) > 0 || c.CheckTimeout != 2*time.Minute {
+		t.Errorf("the flag over an invalid variable: %s %v", c.CheckTimeout, p)
+	}
+	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "")
+	os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "check_timeout must be a positive duration") {
+		t.Errorf("invalid setting: %v", p)
+	}
+	os.Remove(".orchestra/settings.json")
+	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 30*time.Minute {
+		t.Errorf("no settings: %s %v", c.CheckTimeout, p)
+	}
+}
+
+func TestConfigExcludeTypes(t *testing.T) {
+	configFixture(t, `{"concurrent": 1}`)
+	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic" {
+		t.Errorf("default: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644)
+	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic decision" {
+		t.Errorf("settings: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644)
+	if c, p := loadWith(t); len(p) > 0 || len(c.ExcludeTypes) != 0 {
+		t.Errorf("none: %v %v", c.ExcludeTypes, p)
+	}
+	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "exclude_types must be a list") {
+		t.Errorf("invalid setting: %v", p)
 	}
 }
 
@@ -175,6 +262,72 @@ func TestExitCodes(t *testing.T) {
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("%s = %d, want %d", name, pair[0], pair[1])
+		}
+	}
+}
+
+// A flag replaces its variable, so an invalid variable under a flag is no problem; the flags are
+// held to the variables' rules.
+func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {
+	configFixture(t, "")
+	t.Setenv("LIMIT", "abc")
+	t.Setenv("DONE_SO_FAR", "-2")
+	t.Setenv("ORCHESTRA_CONCURRENT", "x")
+	if c, p := loadWith(t, "-limit", "5", "-done-so-far", "1", "-c", "2"); len(p) > 0 || c.Limit != 5 || c.DoneSoFar != 1 || c.Concurrency != 2 {
+		t.Errorf("flags over invalid variables: %+v %v", c.Config, p)
+	}
+	if _, p := loadWith(t, "--concurrent", "2"); len(p) != 2 || !strings.Contains(p[0], "LIMIT") || !strings.Contains(p[1], "DONE_SO_FAR") {
+		t.Errorf("variables without flags: %v", p)
+	}
+	t.Setenv("LIMIT", "")
+	t.Setenv("DONE_SO_FAR", "")
+	t.Setenv("ORCHESTRA_CONCURRENT", "")
+	_, p := loadWith(t, "-limit", "-1", "-done-so-far", "-3", "-c", "-1")
+	joined := strings.Join(p, "\n")
+	for _, want := range []string{"-limit must be a whole number (got -1)", "-done-so-far must be a whole number (got -3)", "between 1 and"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("problems lack %q:\n%s", want, joined)
+		}
+	}
+}
+
+// A relative WT_ROOT, like a relative WORKER_PROMPT, is relative to the repository, wherever in it
+// orchestra runs.
+func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
+	repo := configFixture(t, "")
+	os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755)
+	t.Chdir(filepath.Join(repo, "sub", "dir"))
+	t.Setenv("WT_ROOT", "../wt")
+	c, p := loadWith(t)
+	if want := filepath.Join(filepath.Dir(repo), "wt"); len(p) > 0 || !samePath(c.WTRoot, want) {
+		t.Errorf("WT_ROOT = %s, want %s (%v)", c.WTRoot, want, p)
+	}
+	if c, _ := loadWith(t, "-worktrees", "../wt2"); !samePath(c.WTRoot, filepath.Join(filepath.Dir(repo), "wt2")) {
+		t.Errorf("-worktrees = %s", c.WTRoot)
+	}
+}
+
+// Worktrees inside the repository are refused however the path reaches it.
+func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
+	repo := configFixture(t, "")
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(repo, link); err != nil {
+		t.Fatal(err)
+	}
+	cases := []string{repo, filepath.Join(repo, "wt"), "wt", filepath.Join(link, "wt"), link}
+	if runtime.GOOS == "darwin" {
+		cases = append(cases, filepath.Join(strings.ToUpper(repo), "wt"))
+	}
+	for _, root := range cases {
+		t.Setenv("WT_ROOT", root)
+		if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "must be outside the repository") {
+			t.Errorf("WT_ROOT=%s accepted: %v", root, p)
+		}
+	}
+	for _, root := range []string{repo + "-worktrees", filepath.Join(filepath.Dir(link), "elsewhere")} {
+		t.Setenv("WT_ROOT", root)
+		if _, p := loadWith(t); len(p) > 0 {
+			t.Errorf("WT_ROOT=%s refused: %v", root, p)
 		}
 	}
 }

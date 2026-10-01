@@ -3,14 +3,11 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/noesis-sol/orchestra/internal/git"
 )
 
 // recordSink keeps events for assertions.
@@ -39,211 +36,146 @@ func (noTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
 }
 func (noTabs) CloseTab(tab string) {}
 
-// mergeFixture is a repository on main with a ticket branch in its own worktree, and an Loop set
-// up to merge it.
-type mergeFixture struct {
-	repo string
-	git  func(dir string, args ...string) string
-	orch *Loop
-	sink *recordSink
-}
+// Fakes for a run whose workers stop before their agents start.
 
-func newMergeFixture(t *testing.T, check string) *mergeFixture {
+type readyTickets []Ticket
+
+func (r readyTickets) Ready(string) ([]Ticket, error)      { return r, nil }
+func (readyTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
+func (readyTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
+func (readyTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "open"}, nil }
+func (readyTickets) Status(id string) (string, error)      { return "open", nil }
+func (readyTickets) Describe(id string) string             { return id }
+func (readyTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
+
+type cleanCheckout struct{}
+
+func (cleanCheckout) DirtyTree(dir string) (string, error)      { return "", nil }
+func (cleanCheckout) DirtyWorktree(dir string) string           { return "" }
+func (cleanCheckout) CurrentBranch(repo string) (string, error) { return "main", nil }
+func (cleanCheckout) Head(repo, rev string) string              { return "abc" }
+func (cleanCheckout) TrackedFiles(repo string) []string         { return nil }
+
+// newWorktrees creates every worktree.
+type newWorktrees struct{}
+
+func (newWorktrees) WorktreeOf(repo, branch string) string { return "" }
+func (newWorktrees) HasBranch(repo, branch string) bool    { return false }
+func (newWorktrees) Prune(repo string)                     {}
+func (newWorktrees) AddWorktree(repo, path, branch string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) NewWorktree(repo, path, branch, base string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) RemoveWorktree(repo, path string) (string, error) { return "", nil }
+func (newWorktrees) DeleteBranch(repo, branch string) (string, error) { return "", nil }
+
+type upToDate struct{}
+
+func (upToDate) IsAncestor(repo, ancestor, rev string) bool            { return true }
+func (upToDate) CommitNaming(repo, base, branch, ticket string) string { return "" }
+func (upToDate) CommitNamingOn(repo, rev, ticket string) string        { return "" }
+func (upToDate) Rebase(worktree, onto string) (string, error)          { return "", nil }
+func (upToDate) AbortRebase(worktree string)                           {}
+func (upToDate) ConflictedFiles(worktree string) []string              { return nil }
+func (upToDate) RebaseInProgress(worktree string) bool                 { return false }
+func (upToDate) CountCommits(repo, revs string) int                    { return 0 }
+func (upToDate) ResetBranch(worktree, rev string) (string, error)      { return "", nil }
+func (upToDate) FastForward(repo, branch string) (string, error)       { return "", nil }
+
+type noAgents struct{}
+
+func (noAgents) Status(name string) (string, error)                    { return "gone", nil }
+func (noAgents) Screen(name, status string) string                     { return "" }
+func (noAgents) Prompt(ctx context.Context, name, prompt string) error { return nil }
+func (noAgents) SendKeys(name string, keys ...string) error            { return nil }
+func (noAgents) WaitStarted(ctx context.Context, name string) bool     { return true }
+
+// Fakes for a run whose workers start, against a bd that fails.
+
+// errBd is what the fakes' bd says when it fails.
+var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  (another bd holds it)")
+
+// brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
+type brokenBd []Ticket
+
+func (b brokenBd) Ready(string) ([]Ticket, error)        { return b, nil }
+func (brokenBd) Unclosed() ([]Ticket, error)             { return nil, nil }
+func (brokenBd) Descendants(string) ([]Ticket, error)    { return nil, nil }
+func (brokenBd) Show(id string) (Ticket, error)          { return Ticket{ID: id, Status: "unknown"}, errBd }
+func (brokenBd) Status(id string) (string, error)        { return "unknown", errBd }
+func (brokenBd) Describe(id string) string               { return id }
+func (brokenBd) AppendNotes(id, note string) error       { return errBd }
+func (brokenBd) Defer(id, reason string) error           { return errBd }
+func (brokenBd) Reopen(id string) error                  { return errBd }
+func (brokenBd) AddLabel(id, label string) error         { return errBd }
+func (brokenBd) RemoveLabel(id, label string) error      { return errBd }
+func (brokenBd) SetMetadata(id, key, value string) error { return errBd }
+func (brokenBd) Closed(label string) ([]Ticket, error)   { return nil, nil } // so the run gets as far as the workers
+
+type okTabs struct{}
+
+func (okTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+	return "tab-" + label, "pane-" + label, nil
+}
+func (okTabs) CloseTab(tab string) {}
+
+// Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
+// (Describe) until release is closed.
+
+type okStarter struct{}
+
+func (okStarter) LaunchInPane(pane, kind string, args []string) error { return nil }
+func (okStarter) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
+	return nil
+}
+func (okStarter) IsArgumentRefused(err error) bool                { return false }
+func (okStarter) IsNameRefused(err error) bool                    { return false }
+func (okStarter) WaitReady(ctx context.Context, name string) bool { return true }
+
+type quietHistory struct{}
+
+func (quietHistory) ShortStatus(worktree string) string { return "" }
+func (quietHistory) OneLineLog(dir, revs string) string { return "" }
+func (quietHistory) DiffStat(worktree string) string    { return "" }
+func (quietHistory) Subjects(repo, revs string) string  { return "" }
+
+// promptAgents take their prompt (or refuse it, with promptErr) and are gone once they have.
+type promptAgents struct{ promptErr error }
+
+func (promptAgents) Status(name string) (string, error) { return "gone", nil }
+func (promptAgents) Screen(name, status string) string  { return "" }
+func (a promptAgents) Prompt(ctx context.Context, name, prompt string) error {
+	return a.promptErr
+}
+func (promptAgents) SendKeys(name string, keys ...string) error        { return nil }
+func (promptAgents) WaitStarted(ctx context.Context, name string) bool { return false }
+
+func brokenBdRun(t *testing.T, agents Agents) (*Loop, *recordSink, string, int) {
 	t.Helper()
-	repo, run := gitRepo(t)
-	run(repo, "branch", "-M", "main")
-	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
-	run(repo, "add", ".")
-	run(repo, "commit", "-q", "-m", "shared file")
-	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	logPath := filepath.Join(t.TempDir(), "orchestra.log")
+	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
 		t.Fatal(err)
 	}
+	bd := brokenBd{{ID: "A", Title: "a"}}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{},
-		checkout: git.Git{}, worktrees: git.Git{}, merger: git.Git{}, history: git.Git{}}
-	return &mergeFixture{repo: repo, git: run, orch: o, sink: sink}
+	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 5, Concurrency: 1, WTRoot: "wts", LogPath: "log", AgentKind: "claude"},
+		log, "", Deps{Tickets: bd, Notes: bd, Tabs: okTabs{}, Starter: okStarter{}, Agents: agents,
+			Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
+	o.SetSink(sink)
+	code := o.Run(context.Background())
+	return o, sink, read(t, logPath), code
 }
 
-// ticket makes wt/<id> in its own worktree with one commit writing file.
-func (f *mergeFixture) ticket(t *testing.T, id, file, content string) string {
-	t.Helper()
-	wt := filepath.Join(t.TempDir(), id)
-	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/"+id, wt, "main")
-	os.WriteFile(filepath.Join(wt, file), []byte(content), 0o644)
-	f.git(wt, "add", ".")
-	f.git(wt, "commit", "-q", "-m", id+": change "+file)
-	return wt
-}
-
-func (f *mergeFixture) onMain(t *testing.T, file, content string) {
-	t.Helper()
-	os.WriteFile(filepath.Join(f.repo, file), []byte(content), 0o644)
-	f.git(f.repo, "add", ".")
-	f.git(f.repo, "commit", "-q", "-m", "main moves on: "+file)
-}
-
-func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
-	f := newMergeFixture(t, "exit 1") // must not run: nothing to re-check
-	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
-	}
-	if !strings.Contains(f.git(f.repo, "log", "--oneline", "-1"), "k-1: change a.txt") {
-		t.Error("the ticket was not merged")
-	}
-	if _, err := os.Stat(wt); !os.IsNotExist(err) {
-		t.Error("the worktree should be removed after merging")
-	}
-	if !strings.Contains(f.sink.text(), "k-1 closed") {
-		t.Errorf("events:\n%s", f.sink.text())
-	}
-}
-
-func TestMergeRebasesAndRechecksWhenMainMoved(t *testing.T) {
-	f := newMergeFixture(t, "test -f a.txt && test -f b.txt") // passes only on the rebased tree
-	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
-	}
-	log := f.git(f.repo, "log", "--oneline")
-	if !strings.Contains(log, "k-1: change a.txt") || !strings.Contains(log, "main moves on: b.txt") {
-		t.Errorf("history:\n%s", log)
-	}
-	ev := f.sink.text()
-	if !strings.Contains(ev, "rebased wt/k-1 onto main") || !strings.Contains(ev, "passes on the rebased") {
-		t.Errorf("events:\n%s", ev)
-	}
-}
-
-func TestMergeLeavesAConflictForReview(t *testing.T) {
-	f := newMergeFixture(t, "true")
-	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
-	f.onMain(t, "shared.txt", "line 1 from main\n")
-	before := f.git(f.repo, "rev-parse", "main")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
-	}
-	if f.git(f.repo, "rev-parse", "main") != before {
-		t.Error("main must not change on a conflict")
-	}
-	if !strings.Contains(f.sink.text(), "MERGE_CONFLICT: k-1") {
-		t.Errorf("events:\n%s", f.sink.text())
-	}
-	if st := f.git(wt, "status", "--porcelain"); st != "" {
-		t.Errorf("the worktree should be left clean, not mid-rebase: %q", st)
-	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
-		t.Errorf("set aside = %v", got)
-	}
-}
-
-func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
-	f := newMergeFixture(t, "exit 3")
-	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	f.onMain(t, "b.txt", "b\n")
-	before := f.git(f.repo, "rev-parse", "main")
-	f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
-	if f.git(f.repo, "rev-parse", "main") != before {
-		t.Error("main must not change when the checks fail")
-	}
-	if !strings.Contains(f.sink.text(), "CHECKS_FAILED: k-1") {
-		t.Errorf("events:\n%s", f.sink.text())
-	}
-}
-
-func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
-	f := newMergeFixture(t, "")
-	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	f.onMain(t, "b.txt", "b\n")
-	f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
-	if ev := f.sink.text(); !strings.Contains(ev, "without checking the rebased code") || !strings.Contains(ev, "k-1 closed") {
-		t.Errorf("events:\n%s", ev)
-	}
-}
-
-func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
-	f := newMergeFixture(t, "true")
-	const n = 4
-	wts := make([]string, n)
-	for i := range wts {
-		wts[i] = f.ticket(t, fmt.Sprintf("k-%d", i), fmt.Sprintf("f%d.txt", i), "x\n")
-	}
-	var wg sync.WaitGroup
-	for i := range wts {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			if s := f.orch.merge(context.Background(), fmt.Sprintf("k-%d", i), fmt.Sprintf("wt/k-%d", i), wts[i], "tab"); s != nil {
-				t.Errorf("k-%d: %s", i, s.text)
-			}
-		}(i)
-	}
-	wg.Wait()
-	log := f.git(f.repo, "log", "--oneline")
-	for i := 0; i < n; i++ {
-		if !strings.Contains(log, fmt.Sprintf("k-%d: change f%d.txt", i, i)) {
-			t.Errorf("k-%d missing from main:\n%s", i, log)
-		}
-	}
-	if st := f.git(f.repo, "status", "--porcelain"); st != "" {
-		t.Errorf("main checkout left dirty: %q", st)
-	}
-}
-
-func TestPickNextSkipsRunningTickets(t *testing.T) {
-	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	if tk, q := pickNext(ready, map[string]bool{"a": true}); tk == nil || tk.ID != "b" || q != 1 {
-		t.Errorf("got %v, %d", tk, q)
-	}
-	if tk, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true}); tk != nil {
-		t.Errorf("everything is running, got %v", tk)
-	}
-}
-
-func TestOutcomes(t *testing.T) {
-	for status, want := range map[string]outcome{
-		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,
-		"unknown": outcomeUnreadable, "open": outcomeUnfinished, "blocked": outcomeUnfinished,
+func TestShortDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		2 * time.Hour: "2h", 90 * time.Minute: "1h30m", 45 * time.Minute: "45m", 30 * time.Second: "30s",
+		50 * time.Millisecond: "50ms", time.Hour + 30*time.Second: "1h0m30s",
 	} {
-		if got := outcomeOf(status); got != want {
-			t.Errorf("outcomeOf(%q) = %v, want %v", status, got, want)
-		}
-	}
-	if closedOutcomeOf("", false) != closedNoCommit || closedOutcomeOf("", true) != closedNoCommit {
-		t.Error("a closed ticket without a commit must not merge")
-	}
-	if closedOutcomeOf("abc123 fix", true) != closedDirty {
-		t.Error("a dirty worktree must not merge")
-	}
-	if closedOutcomeOf("abc123 fix", false) != closedMerge {
-		t.Error("a commit and a clean worktree should merge")
-	}
-}
-
-func TestNotifiable(t *testing.T) {
-	if !notifiable("  kinieta-x closed (abc); merged") || !notifiable("PAUSED: x") {
-		t.Error("closed and PAUSED should notify")
-	}
-	if notifiable("[1/40] kinieta-x dispatching: Title") || notifiable("  worktree /a on wt/x") {
-		t.Error("dispatch and worktree lines should not notify")
-	}
-}
-
-func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
-	cases := []struct {
-		status string
-		idle   time.Duration
-		wait   bool
-	}{
-		{"in_progress", time.Minute, true},              // probably waiting on its own background command
-		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
-		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
-	}
-	for _, c := range cases {
-		if got := keepWaiting(c.status, c.idle); got != c.wait {
-			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
+		if got := ShortDuration(d); got != want {
+			t.Errorf("ShortDuration(%s) = %q, want %q", d, got, want)
 		}
 	}
 }

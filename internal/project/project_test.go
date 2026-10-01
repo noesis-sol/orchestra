@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -155,6 +156,74 @@ func TestConcurrencyPrecedence(t *testing.T) {
 	}
 }
 
+func TestTicketLimitPrecedence(t *testing.T) {
+	cases := []struct {
+		flag    time.Duration
+		given   bool
+		setting string
+		want    time.Duration
+		fails   bool
+	}{
+		{0, false, "", 0, false}, {0, false, "2h", 2 * time.Hour, false}, {0, false, "0", 0, false},
+		{time.Hour, true, "2h", time.Hour, false}, {0, true, "2h", 0, false},
+		{-time.Hour, true, "", 0, true}, {0, false, "two hours", 0, true}, {0, false, "-1h", 0, true},
+	}
+	for _, c := range cases {
+		got, err := ResolveTicketLimit(c.flag, c.given, Settings{TicketLimit: c.setting})
+		if (err != nil) != c.fails || (!c.fails && got != c.want) {
+			t.Errorf("ResolveTicketLimit(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
+		}
+	}
+}
+
+func TestCheckTimeoutPrecedence(t *testing.T) {
+	cases := []struct {
+		flag    time.Duration
+		given   bool
+		setting string
+		want    time.Duration
+		fails   bool
+	}{
+		{0, false, "", 30 * time.Minute, false}, {0, false, "5m", 5 * time.Minute, false},
+		{45 * time.Minute, true, "5m", 45 * time.Minute, false},
+		{0, true, "5m", 0, true}, {-time.Minute, true, "", 0, true},
+		{0, false, "0", 0, true}, {0, false, "-5m", 0, true}, {0, false, "five minutes", 0, true},
+	}
+	for _, c := range cases {
+		got, err := ResolveCheckTimeout(c.flag, c.given, Settings{CheckTimeout: c.setting})
+		if (err != nil) != c.fails || (!c.fails && got != c.want) {
+			t.Errorf("ResolveCheckTimeout(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
+		}
+	}
+	if d, err := ParseCheckTimeout(DefaultCheckTimeoutText); err != nil || d != DefaultCheckTimeout {
+		t.Errorf("DefaultCheckTimeoutText = %q, DefaultCheckTimeout = %s", DefaultCheckTimeoutText, DefaultCheckTimeout)
+	}
+}
+
+func TestExcludeTypes(t *testing.T) {
+	list := func(types ...string) *[]string { return &types }
+	cases := []struct {
+		setting *[]string
+		want    string
+		fails   bool
+	}{
+		{nil, "epic", false}, {list(), "", false}, {list("epic", "decision"), "epic decision", false},
+		{list(""), "", true}, {list("epic,decision"), "", true}, {list("a b"), "", true},
+	}
+	for _, c := range cases {
+		got, err := ResolveExcludeTypes(Settings{ExcludeTypes: c.setting})
+		if (err != nil) != c.fails || (!c.fails && strings.Join(got, " ") != c.want) {
+			t.Errorf("ResolveExcludeTypes(%v) = %q, %v", c.setting, got, err)
+		}
+	}
+	// The default is copied, so a run can't change it.
+	got, _ := ResolveExcludeTypes(Settings{})
+	got[0] = "task"
+	if DefaultExcludeTypes[0] != "epic" {
+		t.Error("the default changed")
+	}
+}
+
 func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	kinieta := "- Check your work with `scripts/ci-local.sh`. It runs the CI jobs locally"
 	if got := DetectCheck(kinieta); got != "scripts/ci-local.sh" {
@@ -171,20 +240,50 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	if c.Check != "make check" || c.Concurrent != 3 || c.Unasked {
 		t.Errorf("settings win: %+v", c)
 	}
+	// A concurrency every run would reject is replaced, and the summary says so.
+	for _, n := range []int{-1, MaxConcurrency + 4} {
+		c = DefaultChoice(Settings{Check: "make check", Concurrency: n}, "")
+		if c.Concurrent != 1 || !c.Unasked || c.Replaced != n {
+			t.Errorf("concurrent %d: %+v", n, c)
+		}
+	}
+	// So is a check time limit every run would reject; a valid one is kept.
+	if c = DefaultChoice(Settings{CheckTimeout: "45m"}, ""); c.CheckTimeout != "45m" || c.ReplacedTimeout != "" {
+		t.Errorf("check timeout 45m: %+v", c)
+	}
+	if c = DefaultChoice(Settings{CheckTimeout: "soon"}, ""); c.CheckTimeout != "" || c.ReplacedTimeout != "soon" {
+		t.Errorf("check timeout soon: %+v", c)
+	}
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	st, _ := ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 20}, ""))
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
+		t.Errorf("replaced concurrency: %+v", st)
+	}
+	st, _ = ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 1, CheckTimeout: "0"}, ""))
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
+		t.Errorf("replaced check timeout: %+v", st)
+	}
+	if s, _, _ := LoadSettings(repo); s.CheckTimeout != "" {
+		t.Errorf("the invalid check_timeout was kept: %+v", s)
+	}
 }
 
 func TestApplySettingsSavesAndExplains(t *testing.T) {
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	st, err := ApplySettings(repo, Choice{Check: "make check", Concurrent: 3})
+	st, err := ApplySettings(repo, Choice{Check: "make check", CheckTimeout: "5m", Concurrent: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(SettingsPath(repo))
 	var m map[string]any
 	json.Unmarshal(raw, &m)
-	if m["concurrent"] != float64(3) || m["check"] != "make check" {
+	if m["concurrent"] != float64(3) || m["check"] != "make check" || m["check_timeout"] != "5m" {
 		t.Errorf("settings.json = %s", raw)
+	}
+	if !strings.Contains(st.Detail, "check: make check, stopped after 5m") {
+		t.Errorf("the time limit should be in the summary: %+v", st)
 	}
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "side by side") {
 		t.Errorf("more than 1 should come with a caution: %+v", st)
@@ -196,6 +295,34 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	st, _ = ApplySettings(repo, Choice{Check: "make check", Concurrent: 1})
 	if st.Kind != StepDone {
 		t.Errorf("one at a time with a check is plain done: %+v", st)
+	}
+	// Settings init doesn't ask about are kept.
+	none := []string{}
+	SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none})
+	ApplySettings(repo, Choice{Check: "make test", Concurrent: 2})
+	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 ||
+		s.ExcludeTypes == nil || len(*s.ExcludeTypes) != 0 {
+		t.Errorf("after init: %+v", s)
+	}
+}
+
+func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	os.WriteFile(SettingsPath(repo), []byte(`{"check": "make check", "ticket_limit": "2h", "future": {"a": [1, 2]}}`), 0o644)
+	if err := SaveSettings(repo, Settings{Concurrency: 2}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(SettingsPath(repo))
+	var m map[string]any
+	json.Unmarshal(raw, &m)
+	if len(m) != 2 || m["concurrent"] != float64(2) || m["future"] == nil {
+		t.Errorf("known keys follow Settings, unknown ones stay: %s", raw)
+	}
+	// Broken JSON is not overwritten.
+	os.WriteFile(SettingsPath(repo), []byte(`{"concurrent": `), 0o644)
+	if err := SaveSettings(repo, Settings{Concurrency: 2}); err == nil {
+		t.Error("saved over a settings.json it could not read")
 	}
 }
 
@@ -209,6 +336,9 @@ func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	}
 	if strings.Contains(joined, "placeholders") {
 		t.Errorf("--check filled the placeholders: %q", next)
+	}
+	if !strings.Contains(joined, "Read .orchestra/worker-prompt.md") {
+		t.Errorf("a prompt written from the template is to be read: %q", next)
 	}
 	git(repo, "add", ".orchestra")
 	git(repo, "commit", "-q", "-m", "setup")

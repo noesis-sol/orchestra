@@ -87,15 +87,17 @@ func (u InitScreen) Steps(steps []project.Step) {
 func (u InitScreen) Prerequisites(pre []project.Step) {
 	var marks []string
 	var missing []project.Step
+	lead := closedStyle.Render("✓")
 	for _, p := range pre {
 		if p.Kind == project.StepMissing {
 			marks = append(marks, stopStyle.Render("✗ "+p.Label))
 			missing = append(missing, p)
+			lead = stopStyle.Render("✗")
 		} else {
 			marks = append(marks, closedStyle.Render("✓ ")+p.Label)
 		}
 	}
-	fmt.Fprintf(u.out, "  %s %s%s\n", closedStyle.Render("✓"), initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
+	fmt.Fprintf(u.out, "  %s %s%s\n", lead, initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
 	for _, p := range missing {
 		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", 19), stopStyle.Render(p.Label+": "+p.Detail))
 	}
@@ -140,7 +142,7 @@ func concurrencyOptions(current int) []huh.Option[int] {
 		8: "a big machine, and tickets that rarely touch the same files",
 	}
 	values := []int{1, 2, 3, 4, 6, 8}
-	if _, ok := notes[current]; !ok && current > 0 {
+	if _, ok := notes[current]; !ok && current > 0 && current <= project.MaxConcurrency {
 		values = append(values, current)
 		notes[current] = "the current setting"
 	}
@@ -151,8 +153,9 @@ func concurrencyOptions(current int) []huh.Option[int] {
 	return opts
 }
 
-// AskInit asks for what the flags didn't give, starting from the current choice.
-func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
+// AskInit asks for what the flags didn't give, starting from the current choice, reading the
+// answers from in and drawing the form on out.
+func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion bool) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -162,6 +165,22 @@ func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
 			Placeholder("e.g. make check").
 			Value(&c.Check))
 	}
+	if askTimeout {
+		if c.CheckTimeout == "" {
+			c.CheckTimeout = project.DefaultCheckTimeoutText
+		}
+		fields = append(fields, huh.NewInput().
+			Title("Check time limit").
+			Description("How long orchestra lets the check command run on a rebased ticket before it stops it "+
+				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override "+
+				"it with --check-timeout.").
+			Placeholder("e.g. 5m, 45m").
+			Validate(func(v string) error {
+				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
+				return err
+			}).
+			Value(&c.CheckTimeout))
+	}
 	if askConcurrent {
 		fields = append(fields, huh.NewSelect[int]().
 			Title("Tickets at the same time").
@@ -169,14 +188,24 @@ func AskInit(c *project.Choice, askCheck, askConcurrent bool) error {
 			Options(concurrencyOptions(c.Concurrent)...).
 			Value(&c.Concurrent))
 	}
+	if askUnion {
+		fields = append(fields, huh.NewConfirm().
+			Title("Merge CHANGELOG.md by union").
+			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each "+
+				"add an entry at the same spot, and git stops the second one's rebase on a conflict; with "+
+				"this line it keeps both sides' lines instead.").
+			Affirmative("Add it").
+			Negative("No").
+			Value(&c.Union))
+	}
 	if len(fields) == 0 {
 		return nil
 	}
 	before := c.Check
-	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).Run(); err != nil {
+	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out).Run(); err != nil {
 		return err
 	}
-	c.Check = strings.TrimSpace(c.Check)
+	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)
 	if askCheck && c.Check != before {
 		c.CheckFrom = "the form"
 	}

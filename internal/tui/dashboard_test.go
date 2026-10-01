@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -47,8 +49,8 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 }
 
 func TestViewFitsThePaneWidth(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
-	m.n, m.closed, m.deferred, m.queued = 3, 2, 1, 17
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {})
+	m.closed, m.deferred, m.queued = 2, 1, 17
 	m.began = time.Now().Add(-12 * time.Minute)
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
 		Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
@@ -82,7 +84,7 @@ func runEvents(m Dashboard, evs ...dispatch.Event) Dashboard {
 }
 
 func TestTicketRowsFollowEachTicket(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-dwv", Title: "Reduce Motion: keep fades"},
 		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "kinieta-dwv", Detail: "ffd6ce4 merged into batch"},
@@ -117,7 +119,7 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {})
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
@@ -145,7 +147,7 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 }
 
 func TestAskedTicketIsCountedAndShown(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
 		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: Decision for k-1: MIT or Apache?"})
@@ -178,7 +180,7 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		t.Errorf("short title = %q", got)
 	}
 
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m.width, m.height = 66, 40
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
 	v := ansi.Strip(m.View())
@@ -222,7 +224,7 @@ func TestShortVersion(t *testing.T) {
 }
 
 func TestWorkerShowsWhatItIsDoing(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
 	m.width, m.height = 70, 40
 	status := dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
@@ -237,5 +239,98 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 	m.active["kinieta-ce1"] = status
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(view, "▶ working") {
 		t.Errorf("a blocked worker should show blocked:\n%s", view)
+	}
+}
+
+func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Resolving: true}}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "⟳ resolving") || !strings.Contains(view, "kinieta-ce1  resolving") {
+		t.Errorf("a worker resolving its rebase should show resolving:\n%s", view)
+	}
+}
+
+// recorder is a sink that keeps the events' texts.
+type recorder struct{ texts []string }
+
+func (r *recorder) Event(ev dispatch.Event) { r.texts = append(r.texts, ev.Text) }
+func (*recorder) Status(dispatch.Status)    {}
+
+// runDashboard starts a dashboard program without a terminal and returns it with its sink and the
+// channel its final model arrives on.
+func runDashboard(t *testing.T) (*tea.Program, *ProgramSink, chan Dashboard) {
+	t.Helper()
+	p := tea.NewProgram(NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {}),
+		tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
+	final := make(chan Dashboard, 1)
+	go func() {
+		m, _ := p.Run()
+		d, _ := m.(Dashboard)
+		final <- d
+	}()
+	return p, NewProgramSink(p), final
+}
+
+func TestHandoffPassesOnWhatTheClosedDashboardMissed(t *testing.T) {
+	_, sink, final := runDashboard(t)
+	sink.Event(dispatch.Event{Kind: dispatch.EvInfo, Text: "START"})
+	sink.Event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY"}) // closes the dashboard
+	m := <-final
+	sink.Event(dispatch.Event{Kind: dispatch.EvTriage, Text: "TRIAGE a-1"}) // sent to the exited program
+	var r recorder
+	sink.Handoff(&r, m.Received())
+	sink.Event(dispatch.Event{Kind: dispatch.EvTriage, Text: "TRIAGE a-2"})
+	if m.Received() != 2 || m.Final() == nil || m.Final().Text != "READY_EMPTY" {
+		t.Errorf("dashboard received %d, final %v", m.Received(), m.Final())
+	}
+	if got := strings.Join(r.texts, ","); got != "TRIAGE a-1,TRIAGE a-2" {
+		t.Errorf("handed off %s, want the two triage lines", got)
+	}
+}
+
+func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
+	p := tea.NewProgram(NewDashboard(dispatch.Config{}, func() {}, func(bool) {}), tea.WithInput(nil), tea.WithOutput(io.Discard))
+	p.Kill() // as good as a program that never started: it drops what it is sent
+	sink := NewProgramSink(p)
+	sink.Event(dispatch.Event{Text: "START"})
+	sink.Event(dispatch.Event{Text: "DISPATCH a-1"})
+	var r recorder
+	sink.Handoff(&r, Dashboard{}.Received())
+	if got := strings.Join(r.texts, ","); got != "START,DISPATCH a-1" {
+		t.Errorf("handed off %s", got)
+	}
+}
+
+func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First", Queued: 0},
+		dispatch.Event{Kind: dispatch.EvQueue, Queued: 3})
+	if m.queued != 3 {
+		t.Errorf("queued = %d, want 3", m.queued)
+	}
+	if len(m.rows) != 1 {
+		t.Errorf("a queue count should add no row: %d rows", len(m.rows))
+	}
+}
+
+func TestPlainPrinterWritesLogLinesToOut(t *testing.T) {
+	var b strings.Builder
+	p := Printer{Out: &b}
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.Local)
+	p.Event(dispatch.Event{Kind: dispatch.EvQueue, Text: "3 ready", Time: at})
+	p.Event(dispatch.Event{Text: "MERGED orchestra-1", Time: at})
+	p.Say("finishing triage…")
+	p.Report("# Run report")
+	out := b.String()
+	if strings.Contains(out, "3 ready") {
+		t.Errorf("the queue count was printed:\n%s", out)
+	}
+	for _, want := range []string{"2026-09-30 12:00:00 MERGED orchestra-1\n", " finishing triage…\n", "\n\n# Run report\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
 	}
 }

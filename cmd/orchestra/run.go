@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,9 +10,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -43,16 +46,35 @@ func buildVersion() string {
 	return "dev"
 }
 
-func envInt(getenv func(string) string, name string, def int, problems *[]string) int {
+// envInt reads a whole-number variable, or def when it is unset. For anything else it returns def
+// and the problem, which only matters when no flag overrides the variable.
+func envInt(getenv func(string) string, name string, def int) (int, string) {
 	v := getenv(name)
 	if v == "" {
-		return def
+		return def, ""
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
-		*problems = append(*problems, fmt.Sprintf("%s must be a whole number (got '%s').", name, v))
+		return def, fmt.Sprintf("%s must be a whole number (got '%s').", name, v)
 	}
-	return n
+	return n, ""
+}
+
+// envDuration reads a duration variable such as 2h, which may be 0 unless positive is set; given is
+// false when it is unset. Like envInt, anything else is returned as a problem.
+func envDuration(getenv func(string) string, name string, positive bool) (d time.Duration, given bool, problem string) {
+	v := getenv(name)
+	if v == "" {
+		return 0, false, ""
+	}
+	d, err := time.ParseDuration(v)
+	switch {
+	case positive && (err != nil || d <= 0):
+		return 0, false, fmt.Sprintf("%s must be a positive duration such as 5m (got '%s').", name, v)
+	case err != nil || d < 0:
+		return 0, false, fmt.Sprintf("%s must be a duration such as 2h, or 0 for none (got '%s').", name, v)
+	}
+	return d, true, ""
 }
 
 func envOr(getenv func(string) string, name, def string) string {
@@ -74,9 +96,13 @@ type options struct {
 	showVersion  bool
 }
 
+// errUnexpectedArgs is loadConfig's error for positional arguments: a run takes none.
+var errUnexpectedArgs = errors.New("unexpected arguments")
+
 // loadConfig reads the flags in args (defaulting to the environment variables orchestrate.sh used)
 // and collects every setup problem, so they can be reported together. The error is the flag
-// package's: flag.ErrHelp after -h, or a malformed flag.
+// package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
+// argument such as 'init' after a flag; both have been reported to output.
 func loadConfig(args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
 	var c options
 	var problems []string
@@ -84,8 +110,10 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	fs.SetOutput(output)
 
 	fs.StringVar(&c.Workspace, "workspace", "", "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list)")
-	fs.IntVar(&c.Limit, "limit", envInt(getenv, "LIMIT", 40, &problems), "stop after this many tickets in total [LIMIT]")
-	fs.IntVar(&c.DoneSoFar, "done-so-far", envInt(getenv, "DONE_SO_FAR", 0, &problems), "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
+	limit, limitProblem := envInt(getenv, "LIMIT", 40)
+	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")
+	doneSoFar, doneSoFarProblem := envInt(getenv, "DONE_SO_FAR", 0)
+	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar, "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")
 	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"), "worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
 	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0", "macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
@@ -93,23 +121,67 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
 	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
 	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
-	concurrent := envInt(getenv, "ORCHESTRA_CONCURRENT", 0, &problems)
+	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
+	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT", false)
+	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit, "stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none (default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
+	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
+	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout, "stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m (default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"), "work on this ticket and its subtickets only, each parent after its children; nothing else is started [ORCHESTRA_TICKET]")
+	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true, "when a finished ticket's rebase onto work merged while it ran stops on conflicts, ask its worker to resolve them before setting it aside; needs a check command (default: .orchestra/settings.json, else on)")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--concurrent N] [--force]\n\nWork through 'bd ready' one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n       orchestra plan [--apply]\n\nWork through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked or paused, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
+		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
 	}
+	if rest := fs.Args(); len(rest) > 0 {
+		switch rest[0] {
+		case "init":
+			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
+		case "plan":
+			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
+		default:
+			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
+		}
+		return c, nil, errUnexpectedArgs
+	}
 	c.showVersion = *showVersion
 	if c.showVersion {
 		return c, nil, nil
+	}
+
+	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule.
+	// ResolveConcurrency checks the range of -concurrent (and -c) below.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for _, v := range []struct {
+		flag    string
+		isSet   bool
+		value   int
+		problem string
+	}{
+		{"limit", set["limit"], c.Limit, limitProblem},
+		{"done-so-far", set["done-so-far"], c.DoneSoFar, doneSoFarProblem},
+		{"concurrent", set["concurrent"] || set["c"], 0, concurrentProblem},
+	} {
+		if !v.isSet && v.problem != "" {
+			problems = append(problems, v.problem)
+		} else if v.isSet && v.value < 0 {
+			problems = append(problems, fmt.Sprintf("-%s must be a whole number (got %d).", v.flag, v.value))
+		}
+	}
+	if !set["ticket-limit"] && ticketLimitProblem != "" {
+		problems = append(problems, ticketLimitProblem)
+	}
+	if !set["check-timeout"] && checkTimeoutProblem != "" {
+		problems = append(problems, checkTimeoutProblem)
 	}
 
 	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
@@ -145,10 +217,41 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			problems = append(problems, "Unreadable settings: "+err.Error())
 		}
 		c.Check = settings.Check
+		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.Concurrency = n
+		}
+		if d, err := project.ResolveTicketLimit(c.TicketLimit, set["ticket-limit"] || ticketLimitGiven, settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.TicketLimit = d
+		}
+		if d, err := project.ResolveCheckTimeout(c.CheckTimeout, set["check-timeout"] || checkTimeoutGiven, settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.CheckTimeout = d
+		}
+		if on, d, err := project.ResolveConflictResolution(c.ResolveConflicts, set["resolve-conflicts"], settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.ResolveConflicts, c.ResolveTimeout = on, d
+		}
+		if n, d, err := project.ResolveEnvironmentHold(settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.EnvHoldCount, c.EnvHoldWindow = n, d
+		}
+		if d, err := project.ResolveEnvironmentProbe(settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.EnvProbe = d
+		}
+		if types, err := project.ResolveExcludeTypes(settings); err != nil {
+			problems = append(problems, err.Error()+".")
+		} else {
+			c.ExcludeTypes = types
 		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
@@ -157,6 +260,10 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		}
 		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" {
+			if p := scopeProblem(beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+				problems = append(problems, p)
+			}
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
@@ -165,21 +272,64 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if c.Base = (git.Git{}).CurrentBranch(c.Repo); c.Base == "" {
+		if base, err := (git.Git{}).CurrentBranch(c.Repo); err != nil {
+			problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
+		} else if c.Base = base; c.Base == "" {
 			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
 		}
 
 		if c.WTRoot == "" {
 			c.WTRoot = filepath.Join(filepath.Dir(c.Repo), filepath.Base(c.Repo)+"-worktrees")
 		}
-		if abs, err := filepath.Abs(c.WTRoot); err == nil {
-			c.WTRoot = abs
+		if !filepath.IsAbs(c.WTRoot) {
+			c.WTRoot = filepath.Join(c.Repo, c.WTRoot)
 		}
-		if c.WTRoot == c.Repo || strings.HasPrefix(c.WTRoot, c.Repo+"/") {
+		if within(c.WTRoot, c.Repo) {
 			problems = append(problems, fmt.Sprintf("WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
 		}
 	}
 	return c, problems, nil
+}
+
+// scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
+// must exist, be open and be work rather than a question for the maintainer.
+func scopeProblem(tickets interface {
+	Show(id string) (dispatch.Ticket, error)
+}, id string) string {
+	t, err := tickets.Show(id)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("Cannot read ticket %s (--ticket): %s", id, strings.Join(strings.Fields(err.Error()), " "))
+	case t.Status == "closed":
+		return fmt.Sprintf("Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
+	case dispatch.HasLabel(t, dispatch.HumanLabel):
+		return fmt.Sprintf("Ticket %s (--ticket) is a question for you (label %s), not work. Answer it with: bd human respond %s", id, dispatch.HumanLabel, id)
+	}
+	return ""
+}
+
+// within reports whether path is dir or inside it, following symlinks (path need not exist yet)
+// and ignoring case on macOS, whose filesystems usually do.
+func within(path, dir string) bool {
+	path, dir = realPath(path), realPath(dir)
+	if runtime.GOOS == "darwin" {
+		path, dir = strings.ToLower(path), strings.ToLower(dir)
+	}
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// realPath is p with symlinks resolved as far as it exists; the missing rest is kept as written.
+func realPath(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p
+	}
+	return filepath.Join(realPath(parent), filepath.Base(p))
 }
 
 // exitStatus is the status orchestra ends with when it isn't 0; what went wrong has been
@@ -196,10 +346,13 @@ func status(code int) error {
 	return exitStatus(code)
 }
 
-// run is orchestra: 'orchestra init …' or a run. It returns nil or an exitStatus.
+// run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(".", args[2:]))
+		return status(runInit(".", args[2:], stdin, stdout, stderr))
+	}
+	if len(args) > 1 && args[1] == "plan" {
+		return status(runPlan(".", args[2:], stdout, stderr))
 	}
 	cfg, problems, err := loadConfig(args[1:], getenv, stderr)
 	switch {
@@ -240,7 +393,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
 	cfg.Version = buildVersion()
-	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo}, herdr.Terminal{}, git.Git{}
+	organsOff := organ.Unavailable("claude")
+	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
+	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, herdr.Terminal{}, git.Git{}
 	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
@@ -256,8 +411,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel},
 		AdviceCtx: organCtx,
 	})
-	if off := organ.Unavailable("claude"); off != "" && (cfg.Triage || cfg.Review) {
-		log.Line(time.Now(), "organs off: "+off)
+	if organsOff != "" && (cfg.Triage || cfg.Review || cfg.Concurrency > 1 && !cfg.NoFootprint) {
+		log.Line(time.Now(), "organs off: "+organsOff)
 		cfg.Triage, cfg.Review = false, false
 	}
 	if cfg.Triage {
@@ -272,69 +427,194 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		}
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
-		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-		orch.SetSink(tui.Printer{})
+		ctx, cancelRun := context.WithCancelCause(ctx)
+		stopWatching := watchSignals(func(s os.Signal) {
+			why := "by " + signalName(s)
+			if s == os.Interrupt {
+				why = "with Ctrl+C"
+			}
+			cancelRun(dispatch.Interrupted(why))
+		})
+		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
+		sink := tui.Printer{Out: stdout}
+		orch.SetSink(sink)
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
-		stop()
-		organPhase(orch, cfg, log, code, orch.Final(), tui.Printer{}, cancelOrgans)
+		stopDrain()
+		if !leaving(stopWatching()) {
+			organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
+		}
 		return status(code)
 	}
 
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
-	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel), tea.WithInput(stdin), tea.WithOutput(stdout))
-	orch.SetSink(tui.NewProgramSink(p))
+	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
+	drain := func(on bool) {
+		if on {
+			orch.Drain("from the dashboard")
+		} else {
+			orch.Resume("from the dashboard")
+		}
+	}
+	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
+		tea.WithoutSignalHandler())
+	stopWatching := watchSignals(func(os.Signal) { p.Quit() })
+	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) }) // the dashboard hears it from the loop
+	progSink := tui.NewProgramSink(p)
+	orch.SetSink(progSink)
 	codes := make(chan int, 1)
 	go func() {
 		codes <- orch.Run(ctx)
 		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
+	sig := stopWatching()
+	stopDrain()
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
-	sink := tui.Printer{Styled: true, Width: width}
+	sink := tui.Printer{Out: stdout, Styled: true, Width: width}
 	m, _ := final.(tui.Dashboard)
-	if m.Interrupted() {
-		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
-		msg := "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree"
-		if running := m.Running(); len(running) > 0 {
-			var names []string
-			for _, st := range running {
-				names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
-			}
-			msg = fmt.Sprintf("INTERRUPTED: stopped with Ctrl+C while %s were running; their tabs and worktrees are left open", strings.Join(names, ", "))
-		}
-		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
-		log.Line(ev.Time, msg)
-		sink.Event(ev)
-		// Let the loop notice the cancellation before the reviewer reads its state.
-		select {
-		case <-codes:
-		case <-time.After(15 * time.Second):
-		}
-		orch.SetSink(sink)
-		organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
-		return exitStatus(dispatch.ExitInterrupted)
-	}
 	if m.Final() != nil {
 		sink.Event(*m.Final())
 	}
+	// From here the loop's events are printed, starting with any the dashboard never received.
+	progSink.Handoff(sink, m.Received())
+	if why := stoppedBy(m, err, len(codes) > 0, sig); why != "" {
+		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
+		cancel()
+		msg := dispatch.InterruptLine(why, orch.Running())
+		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
+		log.Alert(ev.Time, msg)
+		sink.Event(ev)
+		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
+		// Run itself gives its workers up to SettleWait.
+		select {
+		case <-codes:
+		case <-time.After(dispatch.SettleWait + 5*time.Second):
+		}
+		if !leaving(sig) {
+			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
+		}
+		return exitStatus(dispatch.ExitInterrupted)
+	}
 	code := <-codes
-	orch.SetSink(sink)
 	organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
 	return status(code)
 }
 
+// stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by
+// itself: Ctrl+C in the dashboard, a signal (sig, nil if none came) that closed it, or the
+// dashboard failing (err is what its program returned) while the loop was still running. It is ""
+// when the loop ended the run.
+func stoppedBy(m tui.Dashboard, err error, loopDone bool, sig os.Signal) string {
+	switch {
+	case m.Interrupted():
+		return "with Ctrl+C"
+	case m.Final() != nil || loopDone:
+		return ""
+	case sig != nil:
+		return "by " + signalName(sig)
+	case err != nil:
+		return "because the dashboard failed"
+	default:
+		// The dashboard quits by itself only on the loop's last event, so this shouldn't happen.
+		return "because the dashboard closed"
+	}
+}
+
+// stopSignals stop a run the way Ctrl+C does: SIGINT, kill's SIGTERM, and SIGHUP from closing the
+// terminal or Herdr pane.
+var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
+
+// watchSignals calls onStop, once and from another goroutine, when orchestra receives one of
+// stopSignals. The function it returns stops watching and returns the signal that came, or nil;
+// from then on the signals have their default effect again.
+func watchSignals(onStop func(os.Signal)) (stop func() os.Signal) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, stopSignals...)
+	got := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case s := <-sigs:
+			got <- s // before onStop, so whatever onStop makes happen finds it
+			onStop(s)
+		case <-done:
+		}
+	}()
+	return func() os.Signal {
+		signal.Stop(sigs)
+		close(done)
+		select {
+		case s := <-got:
+			return s
+		default:
+			return nil
+		}
+	}
+}
+
+// watchDrain calls onDrain, from another goroutine, each time orchestra receives one of
+// drainSignals. The function it returns stops watching.
+func watchDrain(onDrain func()) (stop func()) {
+	if len(drainSignals) == 0 {
+		return func() {} // signal.Notify with no signals would catch them all
+	}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, drainSignals...)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-sigs:
+				onDrain()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		signal.Stop(sigs)
+		close(done)
+	}
+}
+
+func signalName(s os.Signal) string {
+	switch s {
+	case os.Interrupt:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	case syscall.SIGHUP:
+		return "SIGHUP"
+	}
+	if len(drainSignals) > 0 && s == drainSignals[0] {
+		return "SIGUSR1"
+	}
+	return s.String()
+}
+
+// leaving reports whether sig asks orchestra to go away rather than stop the run: SIGTERM, or
+// SIGHUP when nobody is left to read the report. The organ phase is skipped then.
+func leaving(sig os.Signal) bool { return sig == syscall.SIGTERM || sig == syscall.SIGHUP }
+
+// organs is what organPhase needs from the loop.
+type organs interface {
+	FinishTriage(ctx context.Context)
+	Review(ctx context.Context, code int, final string) (string, error)
+	SaveReport(report string) (string, error)
+}
+
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
-// the run report. Ctrl+C skips whatever is left.
-func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
+// the run report. Ctrl+C, or another of stopSignals, skips whatever is left.
+func organPhase(orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
 	if !c.Triage && !c.Review {
 		return
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
 	defer stop()
 	go func() {
 		<-ctx.Done()
@@ -348,17 +628,23 @@ func organPhase(orch *dispatch.Loop, c options, log *dispatch.Log, code int, fin
 		return
 	}
 	out.Say("writing the run report with claude… (ctrl+c skips)")
-	report, path, err := orch.Review(ctx, code, final)
+	report, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
-			msg := "REVIEW_FAILED: " + firstLine(err.Error())
-			log.Line(time.Now(), msg)
+			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
+			log.Alert(time.Now(), msg)
 			out.Say(msg)
 		}
 		return
 	}
-	fmt.Println()
 	out.Report(report)
-	log.Line(time.Now(), "REPORT written to "+path)
+	path, err := orch.SaveReport(report)
+	if err != nil {
+		msg := "report not saved: " + dispatch.FirstLine(err.Error())
+		log.Line(time.Now(), msg)
+		out.Say(msg)
+		return
+	}
+	log.Alert(time.Now(), "REPORT written to "+path)
 	out.Say("report saved to " + tui.Tildify(path))
 }

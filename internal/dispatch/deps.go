@@ -8,17 +8,23 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready() ([]Ticket, error)  // open, ready tickets, highest priority first
-	Show(id string) Ticket     // with dependencies; Status "unknown" if unreadable
-	Status(id string) string   // "unknown" if unreadable
-	Describe(id string) string // as a person reads it, for the organs' evidence
+	Ready(scope string) ([]Ticket, error)    // open, ready tickets, highest priority first; with a scope, only it and its descendants
+	Unclosed() ([]Ticket, error)             // every ticket not closed, with its parent
+	Descendants(id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
+	Show(id string) (Ticket, error)          // with dependencies; Status "unknown" and the cause if unreadable
+	Status(id string) (string, error)        // "unknown" and the cause if unreadable
+	Describe(id string) string               // as a person reads it, for the organs' evidence
+	Closed(label string) ([]Ticket, error)   // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.
 type Notes interface {
-	AppendNotes(id, note string)
-	Defer(id, reason string)
-	Reopen(id string)
+	AppendNotes(id, note string) error
+	Defer(id, reason string) error
+	Reopen(id string) error
+	AddLabel(id, label string) error
+	RemoveLabel(id, label string) error
+	SetMetadata(id, key, value string) error
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
@@ -32,21 +38,28 @@ type Starter interface {
 	LaunchInPane(pane, kind string, args []string) error                          // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
 	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
+	IsNameRefused(err error) bool                                                 // Herdr won't take this agent name
 	WaitReady(ctx context.Context, name string) bool
 }
 
-// Namer finds and names agents, which is how the loop refers to a worker (by its ticket).
+// Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
+// its ticket).
 type Namer interface {
-	AdoptAgent(ctx context.Context, pane, kind, name string) (string, bool) // name the agent that appears in the pane
-	PaneAgent(pane string) (name, kind, status string)
+	AgentName(id string) string                                              // the agent name for ticket id's worker
+	AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) // name the agent that appears in the pane
+	PaneAgent(pane string) (name, kind, status string)                       // status as Agents.Status gives it
 	RenameAgent(name, to string) error
-	FreeName(id string) string // an unused name for an earlier worker of ticket id
+	FreeName(name string) string // an unused name for an earlier worker that holds name
 }
 
 // Agents watches and nudges a running worker by name.
 type Agents interface {
-	Status(name string) string // idle, working, blocked, done, unknown, or gone
-	Screen(name string) string
+	// Status is idle, working, blocked, done, unknown, or gone (no such agent); if the terminal
+	// cannot be asked it is "unreadable", with the error, and says nothing about the agent.
+	Status(name string) (string, error)
+	// Screen is the end of the worker's terminal, given its status as just read ("" if not known):
+	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
+	Screen(name, status string) string
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
@@ -57,13 +70,16 @@ type Agents interface {
 type Reporter interface {
 	ReportArgs(worktree string) ([]string, error) // agent arguments that turn reporting on
 	LastToolUse(worktree string) (ToolUse, bool)  // false when the worker reported nothing
+	EditedFiles(worktree string) []string         // repository files the worker has edited so far
 }
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	DirtyTree(dir string) string // uncommitted work outside .claude/, .beads/, .orchestra/
-	CurrentBranch(repo string) string
+	DirtyTree(dir string) (string, error)      // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
+	DirtyWorktree(dir string) string           // uncommitted work in a ticket's worktree outside .orchestra/run/
+	CurrentBranch(repo string) (string, error) // "" on a detached HEAD
 	Head(repo, rev string) string
+	TrackedFiles(repo string) []string // git ls-files; nil when git can't list them
 }
 
 // Worktrees manages the per-ticket worktrees and their branches.
@@ -81,8 +97,13 @@ type Worktrees interface {
 type Merger interface {
 	IsAncestor(repo, ancestor, rev string) bool
 	CommitNaming(repo, base, branch, ticket string) string
+	CommitNamingOn(repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
 	Rebase(worktree, onto string) (string, error)
 	AbortRebase(worktree string)
+	ConflictedFiles(worktree string) []string // files a stopped rebase left unmerged
+	RebaseInProgress(worktree string) bool    // a rebase stopped and neither finished nor aborted
+	CountCommits(repo, revs string) int       // -1 if git can't count them
+	ResetBranch(worktree, rev string) (string, error)
 	FastForward(repo, branch string) (string, error)
 }
 
