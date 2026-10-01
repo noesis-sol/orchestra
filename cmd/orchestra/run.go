@@ -168,7 +168,8 @@ func loadConfig(
 			"one worker (a coding agent) per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
-			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 7 environment failing workers, 130 Ctrl+C.\n")
+			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
+			"7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
