@@ -32,9 +32,10 @@ func NewInitScreen(out io.Writer) InitScreen {
 
 var (
 	initLabel    = lipgloss.NewStyle().Bold(true).Width(15)
-	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
 	nextTitle    = lipgloss.NewStyle().Bold(true).Foreground(purple)
 	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
+	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
 )
 
 // Header prints the title and the repository being set up.
@@ -205,7 +206,8 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeou
 		return nil
 	}
 	before := c.Check
-	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out).Run(); err != nil {
+	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out)
+	if err := form.Run(); err != nil {
 		return err
 	}
 	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)

@@ -75,7 +75,8 @@ func fileExists(p string) bool {
 // before .orchestra/.gitignore was committed. Earlier versions excluded all of .orchestra/, which
 // would hide the committed prompt; that entry is narrowed to run/.
 func EnsureRunExcluded(ctx context.Context, repo string) error {
-	common, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := command.Output(ctx, command.ReadLimit, repo,
+		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
@@ -198,7 +199,8 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 	rel := Dir + "/" + promptName
 	switch {
 	case fileExists(prompt) && !force:
-		done = append(done, Step{Kind: StepKept, Label: "worker prompt", Detail: rel + " is there; left as it is (--force replaces it with the template)"})
+		done = append(done, Step{Kind: StepKept, Label: "worker prompt",
+			Detail: rel + " is there; left as it is (--force replaces it with the template)"})
 	case !fileExists(prompt) && fileExists(legacy) && !force:
 		if err := movePrompt(ctx, repo, legacy, prompt); err != nil {
 			return done, err
@@ -208,7 +210,8 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 		if err := os.WriteFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "wrote " + rel + " from the template", Template: true})
+		done = append(done, Step{Kind: StepDone, Label: "worker prompt",
+			Detail: "wrote " + rel + " from the template", Template: true})
 	}
 
 	gi := filepath.Join(dir, ".gitignore")
@@ -216,7 +219,8 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 		if err := os.WriteFile(gi, []byte(orchGitignore), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{Kind: StepDone, Label: ".gitignore", Detail: "the log, reports and per-ticket files stay out of git"})
+		done = append(done, Step{Kind: StepDone, Label: ".gitignore",
+			Detail: "the log, reports and per-ticket files stay out of git"})
 	} else {
 		done = append(done, Step{Kind: StepKept, Label: ".gitignore", Detail: Dir + "/.gitignore is there"})
 	}
@@ -224,7 +228,8 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 		return done, err
 	}
 	if fileExists(filepath.Join(repo, legacyLog)) || fileExists(filepath.Join(repo, legacyReports)) {
-		done = append(done, Step{Kind: StepKept, Label: "history", Detail: "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
+		done = append(done, Step{Kind: StepKept, Label: "history",
+			Detail: "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
 	}
 	return done, nil
 }
@@ -327,10 +332,12 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step) []str
 	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
-	if out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt)
+	if strings.TrimSpace(out) != "" {
 		commit = append(commit, Dir+"/")
 	}
-	if out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", attributesName); strings.TrimSpace(out) != "" {
+	out, _ = command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", attributesName)
+	if strings.TrimSpace(out) != "" {
 		commit = append(commit, attributesName)
 	}
 	if len(commit) > 0 {
@@ -359,5 +366,6 @@ func WriteLaunchPrompt(wt, ticket, prompt string) (string, error) {
 	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. Read that file and follow it exactly.", ticket, Dir, RunName), nil
+	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. "+
+		"Read that file and follow it exactly.", ticket, Dir, RunName), nil
 }

@@ -190,7 +190,8 @@ func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket,
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
 // ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
 func (b Tracker) list(ctx context.Context, status string, args ...string) ([]dispatch.Ticket, error) {
-	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", append([]string{"list", "--json", "--limit", "0"}, args...)...)
+	args = append([]string{"list", "--json", "--limit", "0"}, args...)
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", args...)
 	tickets, err := parseList([]byte(out), status)
 	switch {
 	case err != nil && runErr != nil:
@@ -205,7 +206,8 @@ func (b Tracker) list(ctx context.Context, status string, args ...string) ([]dis
 // excluded types, and the blocks links bd already has for them. When bd's output can't be read,
 // the error carries bd's stderr.
 func (b Tracker) Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
-	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "list", "--json", "--status", "open", "--limit", "0")
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo,
+		"bd", "list", "--json", "--status", "open", "--limit", "0")
 	open, links, err := parseOpen([]byte(out), b.ExcludeTypes)
 	switch {
 	case err != nil && runErr != nil:

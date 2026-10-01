@@ -62,7 +62,8 @@ func (o *Loop) settled(ctx context.Context, id string, how settling) {
 	case o.envStop != nil:
 		o.reopenFailed(ctx, id)
 	case len(o.fastFails) >= n:
-		o.holdForEnvironment(ctx, fmt.Sprintf("the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
+		o.holdForEnvironment(ctx, fmt.Sprintf(
+			"the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
 			len(o.fastFails), strings.Join(o.fastFails, ", "), ShortDuration(o.cfg.EnvHoldWindow)))
 	}
 }
@@ -98,7 +99,8 @@ func (o *Loop) triaged(ctx context.Context, v verdict) {
 	}
 	o.envVerdicts = append(o.envVerdicts, v.id)
 	if len(o.envVerdicts) >= n {
-		o.holdForEnvironment(ctx, fmt.Sprintf("triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
+		o.holdForEnvironment(ctx, fmt.Sprintf(
+			"triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
 			len(o.envVerdicts), strings.Join(o.envVerdicts, ", "), strings.TrimSuffix(strings.TrimSpace(v.summary), ".")))
 	}
 }
@@ -121,12 +123,14 @@ func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 func (o *Loop) reopenFailed(ctx context.Context, id string) {
 	if err := o.notes.Reopen(ctx, id); err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; reopen it with: bd update %s --status open",
+			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; "+
+				"reopen it with: bd update %s --status open",
 			id, because(err), id)})
 		return
 	}
 	o.unmarkAside(id)
-	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, so the run held for the environment rather than for this ticket.")
+	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, "+
+		"so the run held for the environment rather than for this ticket.")
 	o.info("  %s reopened: its worker failed at once, like the tickets before it", id)
 }
 
@@ -141,14 +145,17 @@ const probeLimit = 5 * time.Minute
 // the machine. It returns nil when the probe ran its command and the hold has ended, or else the
 // reason to end the run with. winding says whether the maintainer asked to wind down, hearing any
 // request waiting; hear takes one as it comes, and says the same.
-func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding func() bool, hear func(drainRequest) bool) *stopReason {
+func (o *Loop) probeEnvironment(
+	ctx context.Context, stop *stopReason, winding func() bool, hear func(drainRequest) bool,
+) *stopReason {
 	after := o.cfg.EnvProbe
 	if after <= 0 || o.envProbed || stop == nil || stop != o.envStop || winding() || ctx.Err() != nil {
 		return stop
 	}
 	o.envProbed = true
 	o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-		"PROBE: the run holds for the environment; in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
+		"PROBE: the run holds for the environment; "+
+			"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
 		ShortDuration(after))})
 	wait := time.NewTimer(after)
 	defer wait.Stop()
@@ -171,7 +178,8 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		return stop
 	}
 	if err != nil {
-		return halt(ExitEnvironment, stopEnvironment, ": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
+		return halt(ExitEnvironment, stopEnvironment,
+			": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
 			o.envWhy, ShortDuration(after), err).causedBy(err)
 	}
 	o.closeTab(ctx, tab)
@@ -239,7 +247,8 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		case err == nil && (st == StateIdle || st == StateDone) && !ran():
 			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
-			return tab, fmt.Errorf("it ran no command within %s; see tab %s", ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)
+			return tab, fmt.Errorf("it ran no command within %s; see tab %s",
+				ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return tab, errors.New("interrupted")

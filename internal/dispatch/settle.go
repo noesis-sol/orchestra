@@ -16,7 +16,10 @@ import (
 // run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
 // without a limit, one still going after longRunning is reported once. Each status read goes to
 // report (nil: none), for the dashboard.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(ctx context.Context, st AgentState, err error)) (idleAt time.Time, stop *stopReason) {
+func (o *Loop) waitSettled(
+	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool,
+	report func(ctx context.Context, st AgentState, err error),
+) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
 	warned := false
@@ -33,7 +36,9 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
 			}
 			if failed >= maxFailedReads {
-				return time.Time{}, halt(ExitTool, stopHerdrFailed, ": the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err).causedBy(err)
+				return time.Time{}, halt(ExitTool, stopHerdrFailed,
+					": the status of %s's worker (tab %s) could not be read %d times in a row: %v",
+					id, tab, failed, err).causedBy(err)
 			}
 			if !sleep(ctx, o.pollEvery()) {
 				return time.Time{}, errInterrupted
@@ -81,19 +86,25 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				unknownSince = time.Now()
 			}
 			if time.Since(unknownSince) > orDefault(o.wait.unknown, unknownLimit) {
-				return time.Time{}, halt(ExitStuck, stopUnknown, " >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+				return time.Time{}, halt(ExitStuck, stopUnknown,
+					" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 			}
 		} else {
 			unknownSince = time.Time{}
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
-			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
-			return time.Time{}, halt(ExitStuck, stopTicketLimit, ": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
+			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
+				"Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).",
+				tab, st, ShortDuration(limit), wt))
+			return time.Time{}, halt(ExitStuck, stopTicketLimit,
+				": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
+				id, st, ShortDuration(limit), tab, wt)
 		}
 		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
 			warned = true
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)", id, st, ShortDuration(long), tab)})
+				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
+				id, st, ShortDuration(long), tab)})
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return time.Time{}, errInterrupted
@@ -208,7 +219,8 @@ func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 		defer close(done)
 		defer func() {
 			if p := recover(); p != nil { // the worker goes on; only its status stops showing until it settles
-				o.emit(Event{Kind: EvWarn, Ticket: w.base.Ticket, Text: fmt.Sprintf("  WATCH_FAILED for %s: panic: %s; its status is not shown until it takes its prompt (the stack is in %s)",
+				o.emit(Event{Kind: EvWarn, Ticket: w.base.Ticket, Text: fmt.Sprintf("  WATCH_FAILED for %s: panic: %s; "+
+					"its status is not shown until it takes its prompt (the stack is in %s)",
 					w.base.Ticket, o.logPanic("watching "+w.base.Ticket, p), o.cfg.LogPath)})
 			}
 		}()

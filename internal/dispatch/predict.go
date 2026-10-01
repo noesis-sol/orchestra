@@ -107,14 +107,17 @@ func (o *Loop) prediction(id string) []string {
 func (o *Loop) predict(ctx context.Context, t Ticket) {
 	defer func() {
 		if p := recover(); p != nil {
-			o.info("  %s footprint not predicted: panic: %s (the stack is in %s)", t.ID, o.logPanic("predicting "+t.ID+"'s footprint", p), o.cfg.LogPath)
+			o.info("  %s footprint not predicted: panic: %s (the stack is in %s)",
+				t.ID, o.logPanic("predicting "+t.ID+"'s footprint", p), o.cfg.LogPath)
 		}
 	}()
 	tracked := o.checkout.TrackedFiles(ctx, o.cfg.Repo)
 	if len(tracked) == 0 {
 		return // no files to choose from
 	}
-	files, err := o.organ.PredictFiles(ctx, organ.Footprint{ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked})
+	files, err := o.organ.PredictFiles(ctx, organ.Footprint{
+		ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked,
+	})
 	switch {
 	case ctx.Err() != nil:
 		return // the run ended

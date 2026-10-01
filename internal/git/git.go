@@ -21,7 +21,8 @@ type Git struct{}
 // (agent settings, tracker data, and orchestra's own files). It returns git's error when git can't
 // tell, which is not the same as dirty.
 func (Git) DirtyTree(ctx context.Context, dir string) (string, error) {
-	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
+	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain",
+		"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
 	if err != nil {
 		return "", err
 	}
@@ -32,7 +33,8 @@ func (Git) DirtyTree(ctx context.Context, dir string) (string, error) {
 // ticket's scratch). Unlike DirtyTree it counts .claude/, .beads/ and the rest of .orchestra/: a
 // change a worker left there is its ticket's work. A failed git call counts as dirty.
 func (Git) DirtyWorktree(ctx context.Context, dir string) string {
-	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).orchestra/run")
+	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain",
+		"--", ".", ":(exclude).orchestra/run")
 	if err != nil {
 		return err.Error()
 	}
@@ -77,7 +79,8 @@ func parseWorktreeOf(porcelain, branch string) string {
 
 // WorktreeOf returns the path of the worktree that has branch checked out, or "".
 func (Git) WorktreeOf(ctx context.Context, repo, branch string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "worktree", "list", "--porcelain") // on failure none is found, and adding one fails with git's reason
+	// On failure none is found, and adding one fails with git's reason.
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "worktree", "list", "--porcelain")
 	return parseWorktreeOf(out, branch)
 }
 
@@ -96,7 +99,9 @@ func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string
 // CommitNamingOn returns the latest commit reachable from rev (or in a range such as a..b) whose
 // message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
 func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev) // on failure none is found: nothing is merged
+	// On failure none is found: nothing is merged.
+	out, _ := command.Output(ctx, command.ReadLimit, repo,
+		"git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev)
 	return latestNaming(out, ticket)
 }
 
@@ -195,7 +200,8 @@ func (Git) RemoveWorktree(ctx context.Context, repo, path string) (string, error
 // packed-refs.lock, which a commit, rebase or merge in any worktree also takes for a moment; git
 // gives up after a second, too soon on a loaded machine while workers commit, so it waits longer.
 func (Git) DeleteBranch(ctx context.Context, repo, branch string) (string, error) {
-	return command.Output(ctx, command.WriteLimit, repo, "git", "-c", "core.packedRefsTimeout=10000", "branch", "-d", branch)
+	return command.Output(ctx, command.WriteLimit, repo,
+		"git", "-c", "core.packedRefsTimeout=10000", "branch", "-d", branch)
 }
 
 // Rebase rebases the branch checked out in worktree onto onto.
@@ -210,7 +216,9 @@ func (Git) AbortRebase(ctx context.Context, worktree string) (string, error) {
 
 // ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or nil.
 func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--name-only", "--diff-filter=U") // nil on failure: the files only explain the conflict
+	// Nil on failure: the files only explain the conflict.
+	out, _ := command.Output(ctx, command.ReadLimit, "",
+		"git", "-C", worktree, "diff", "--name-only", "--diff-filter=U")
 	return strings.Fields(out)
 }
 
@@ -218,7 +226,8 @@ func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
 // aborted. A git call that fails counts as one in progress: it can't be shown to be over.
 func (Git) RebaseInProgress(ctx context.Context, worktree string) bool {
 	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
-		out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
+		out, err := command.Output(ctx, command.ReadLimit, "",
+			"git", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
 		if err != nil {
 			return true
 		}
@@ -254,24 +263,28 @@ func (Git) FastForward(ctx context.Context, repo, branch string) (string, error)
 
 // ShortStatus is 'git status --short' in worktree.
 func (Git) ShortStatus(ctx context.Context, worktree string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "status", "--short") // for people and the organs: "" on failure
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "status", "--short")
 	return out
 }
 
 // OneLineLog is 'git log --oneline revs' in dir.
 func (Git) OneLineLog(ctx context.Context, dir, revs string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "log", "--oneline", revs) // for people and the organs: "" on failure
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "log", "--oneline", revs)
 	return out
 }
 
 // DiffStat is the diff stat of worktree's uncommitted changes.
 func (Git) DiffStat(ctx context.Context, worktree string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--stat", "HEAD") // for people and the organs: "" on failure
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--stat", "HEAD")
 	return out
 }
 
 // Subjects lists revs as "<hash> <subject>" lines, run in repo.
 func (Git) Subjects(ctx context.Context, repo, revs string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--format=%h %s", revs) // for people and the organs: "" on failure
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--format=%h %s", revs)
 	return out
 }

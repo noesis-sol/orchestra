@@ -41,12 +41,15 @@ func ApplyUnion(ctx context.Context, repo string, c Choice) (s Step, ok bool, er
 	const why = "two tickets adding entries at the same spot"
 	switch {
 	case mergesByUnion(ctx, repo):
-		return Step{Kind: StepKept, Label: label, Detail: changelogName + " merges by union: " + why + " keep both"}, true, nil
+		return Step{Kind: StepKept, Label: label,
+			Detail: changelogName + " merges by union: " + why + " keep both"}, true, nil
 	case c.UnionUnasked:
-		return Step{Kind: StepCaution, Label: label, Detail: "not asked (no terminal): with " + why + ", the second one's rebase " +
-			"conflicts; --changelog-union adds " + unionLine + " to " + attributesName + " so git keeps both sides' lines"}, true, nil
+		return Step{Kind: StepCaution, Label: label, Detail: "not asked (no terminal): with " + why +
+			", the second one's rebase conflicts; --changelog-union adds " + unionLine + " to " + attributesName +
+			" so git keeps both sides' lines"}, true, nil
 	case !c.Union:
-		return Step{Kind: StepKept, Label: label, Detail: attributesName + " left as it is: " + why + " will conflict"}, true, nil
+		return Step{Kind: StepKept, Label: label,
+			Detail: attributesName + " left as it is: " + why + " will conflict"}, true, nil
 	}
 	p := filepath.Join(repo, attributesName)
 	b, err := os.ReadFile(p)

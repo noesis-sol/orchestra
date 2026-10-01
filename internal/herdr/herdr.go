@@ -24,7 +24,8 @@ type Terminal struct{}
 // CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
 // returns the tab's ID and its first pane's.
 func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error) {
-	out, err := run(ctx, command.ReadLimit, "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
+	out, err := run(ctx, command.ReadLimit,
+		"tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
 		return "", "", err
 	}
@@ -187,7 +188,8 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (disp
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
-				return "", fmt.Errorf("no %s agent appeared in pane %s within a minute; Herdr could not say what it holds: %w", kind, pane, err)
+				return "", fmt.Errorf("no %s agent appeared in pane %s within a minute; "+
+					"Herdr could not say what it holds: %w", kind, pane, err)
 			}
 			return "", fmt.Errorf("no %s agent appeared in pane %s within a minute", kind, pane)
 		}
@@ -201,7 +203,9 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (disp
 
 // PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and state, with
 // state StateGone if the pane holds no agent, and an error if Herdr could not be asked.
-func (t Terminal) PaneAgent(ctx context.Context, pane string) (name, kind string, state dispatch.AgentState, err error) {
+func (t Terminal) PaneAgent(
+	ctx context.Context, pane string,
+) (name, kind string, state dispatch.AgentState, err error) {
 	return readAgent(run(ctx, command.ReadLimit, "agent", "get", pane))
 }
 
@@ -252,7 +256,8 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 		if len(base)+len(suffix) > maxName {
 			base = base[:maxName-len(suffix)]
 		}
-		if st, err := t.Status(ctx, base+suffix); err == nil && st == dispatch.StateGone { // not unreadable: that name may be taken
+		// Not unreadable: that name may be taken.
+		if st, err := t.Status(ctx, base+suffix); err == nil && st == dispatch.StateGone {
 			return base + suffix
 		}
 	}
@@ -262,7 +267,9 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
 	const wait = time.Minute
-	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", string(dispatch.StateIdle), "--until", string(dispatch.StateDone), "--timeout", millis(wait))
+	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
+		"--until", string(dispatch.StateIdle), "--until", string(dispatch.StateDone),
+		"--timeout", millis(wait))
 	return err == nil
 }
 
@@ -282,7 +289,9 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 	const wait = 20 * time.Second
-	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name, "--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked), "--timeout", millis(wait))
+	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
+		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked),
+		"--timeout", millis(wait))
 	return err == nil
 }
 
@@ -298,7 +307,9 @@ func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState,
 // reads the visible screen at once, and otherwise falls back to it when scrollback fails.
 func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
 	if state != dispatch.StateWorking && state != dispatch.StateBlocked {
-		if out, err := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
+		out, err := run(ctx, command.ReadLimit,
+			"agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
+		if err == nil {
 			return out
 		}
 	}

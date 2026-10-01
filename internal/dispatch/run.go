@@ -44,12 +44,14 @@ func InterruptLine(why string, running []Status) string {
 	for _, st := range running {
 		if st.Resolving {
 			// Its worker may still finish the rebase; either way it is resumed by hand.
-			names = append(names, fmt.Sprintf("%s (tab %s, resolving conflicts: its rebase is left in progress: finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
+			names = append(names, fmt.Sprintf("%s (tab %s, resolving conflicts: its rebase is left in progress: "+
+				"finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
 			continue
 		}
 		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
 	}
-	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
+	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open",
+		why, strings.Join(names, ", "))
 }
 
 // readyPoll is how often Run reads bd ready while workers run: tickets become ready mid-run (a
@@ -76,8 +78,10 @@ func (o *Loop) Run(ctx context.Context) int {
 	if c.TicketLimit > 0 {
 		ticketLimit = ShortDuration(c.TicketLimit)
 	}
-	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
-		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
+	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
+		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
+		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit,
+		ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
 	if s := o.loadUnmerged(ctx); s != nil {
 		return o.stop(s.code, "%s", s)
 	}
@@ -155,8 +159,8 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.solo, how = t.ID, "dispatching solo"
 			}
 			o.queued, o.soloShown = queued, o.soloState()
-			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued, Solo: o.soloShown,
-				Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
+			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
+				Queued: queued, Solo: o.soloShown, Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
 			o.startFootprint(*t)
 			go func(t Ticket) {
 				r := result{id: t.ID}
@@ -371,7 +375,8 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	if o.footprintOn() {
 		o.queuePredictions(ready, skip)
 	}
-	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }, len(running), o.solo)
+	held := func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }
+	t, queued, next := pickNext(ready, skip, held, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway.
 	if !slot {
@@ -383,7 +388,8 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	case slot && t == nil && queued > 0 && o.solo != "":
 		why = fmt.Sprintf("waiting for solo ticket %s to finish", o.solo)
 	case next != "":
-		why = fmt.Sprintf("solo ticket %s is next: no new tickets start until the running ones finish, then it runs alone", next)
+		why = fmt.Sprintf(
+			"solo ticket %s is next: no new tickets start until the running ones finish, then it runs alone", next)
 	}
 	if why != "" && why != o.soloSaid {
 		o.info("  %s", why)
@@ -399,13 +405,16 @@ func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 	c := o.cfg
 	dirty, branch, err := o.readCheckout(ctx)
 	if err != nil {
-		return halt(ExitTool, stopGitFailed, ": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err)
+		return halt(ExitTool, stopGitFailed,
+			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err)
 	}
 	if dirty != "" {
-		return halt(ExitDirty, stopDirtyTree, ": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
+		return halt(ExitDirty, stopDirtyTree,
+			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
 	}
 	if branch != c.Base {
-		return halt(ExitDirty, stopDirtyTree, ": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
+		return halt(ExitDirty, stopDirtyTree,
+			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
 	}
 	return nil
 }
@@ -435,7 +444,9 @@ func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err erro
 // (the one running, or "") runs nothing starts, and one first in line starts only once none of
 // the running tickets are left, holding back the tickets behind it until then so it isn't
 // starved; next names it. With no ticket to start, queued is how many wait.
-func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string) (t *Ticket, queued int, next string) {
+func pickNext(
+	ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string,
+) (t *Ticket, queued int, next string) {
 	var free []Ticket
 	for _, t := range ready {
 		if !skip[t.ID] && !held(t) {

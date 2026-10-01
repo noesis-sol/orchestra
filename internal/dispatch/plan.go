@@ -26,7 +26,11 @@ const SmallFileLines = 200
 func PlanLinks(open []Ticket, existing []Link, tracked []string, lines func(path string) int) []Link {
 	ts := slices.Clone(open)
 	slices.SortStableFunc(ts, func(a, b Ticket) int {
-		return cmp.Or(cmp.Compare(PriorityOf(a), PriorityOf(b)), cmp.Compare(a.CreatedAt, b.CreatedAt), cmp.Compare(a.ID, b.ID))
+		return cmp.Or(
+			cmp.Compare(PriorityOf(a), PriorityOf(b)),
+			cmp.Compare(a.CreatedAt, b.CreatedAt),
+			cmp.Compare(a.ID, b.ID),
+		)
 	})
 	repo := newRepoFiles(tracked)
 	fps := make([]Footprint, len(ts))

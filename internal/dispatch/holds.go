@@ -98,7 +98,8 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	c := o.cfg
 	closed, err := o.tickets.Closed(ctx, UnmergedLabel)
 	if err != nil {
-		return halt(ExitTool, stopReadyUnreadable, ": could not list the tickets labelled '%s'%s", UnmergedLabel, because(err)).causedBy(err)
+		return halt(ExitTool, stopReadyUnreadable, ": could not list the tickets labelled '%s'%s",
+			UnmergedLabel, because(err)).causedBy(err)
 	}
 	for _, t := range closed {
 		id, br := t.ID, "wt/"+t.ID
@@ -108,12 +109,14 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 		}
 		if o.merger.IsAncestor(ctx, c.Repo, rev, c.Base) {
 			if commit := o.merger.CommitNamingOn(ctx, c.Repo, rev, id); commit != "" {
-				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed", id, c.Base, commit, UnmergedLabel)
+				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
+					id, c.Base, commit, UnmergedLabel)
 				o.unlabel(ctx, id)
 				continue
 			}
 		}
-		o.info("  %s was left unmerged by an earlier run; tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
+		o.info("  %s was left unmerged by an earlier run; "+
+			"tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
 			id, br, c.Base, UnmergedLabel)
 		o.setParent(id, t.Parent)
 		o.mu.Lock()
@@ -140,7 +143,8 @@ func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) {
 	if err := o.notes.AddLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  LABEL_FAILED: bd could not label %s '%s'%s; later runs may start the tickets it blocks before it merges (bd label add %s %s)",
+			"  LABEL_FAILED: bd could not label %s '%s'%s; "+
+				"later runs may start the tickets it blocks before it merges (bd label add %s %s)",
 			id, UnmergedLabel, because(err), id, UnmergedLabel)})
 		return
 	}
@@ -163,7 +167,8 @@ func (o *Loop) unlabel(ctx context.Context, id string) {
 	if err := o.notes.RemoveLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
+			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; "+
+				"later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
 			id, UnmergedLabel, because(err), id, UnmergedLabel)})
 		return
 	}

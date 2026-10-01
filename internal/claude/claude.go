@@ -123,7 +123,8 @@ func editedFiles(b []byte, worktree string) []string {
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(worktree, path)
 			}
-			if r, err := filepath.Rel(root, path); err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			r, err := filepath.Rel(root, path)
+			if err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 				rel = filepath.ToSlash(r)
 				break
 			}

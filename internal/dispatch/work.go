@@ -44,7 +44,9 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	if conflicts {
 		// A worker is told not to rebase, so it would work on a stale base and its merge would end
 		// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.
-		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), then bring it back with: bd undefer %s",
+		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. "+
+			"Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), "+
+			"then bring it back with: bd undefer %s",
 			br, c.Base, wt, c.Base, id))
 		if err := o.deferAside(keep, id, fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt)); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -53,7 +55,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			return nil
 		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its branch conflicts with " + c.Base, Text: fmt.Sprintf(
-			"  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; rebase it in %s, then bd undefer %s",
+			"  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; "+
+				"rebase it in %s, then bd undefer %s",
 			br, c.Base, id, wt, id)})
 		return nil
 	}
@@ -70,12 +73,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return errInterrupted
 	}
 	if err != nil {
-		return halt(ExitTool, stopHerdrFailed, ": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
+		return halt(ExitTool, stopHerdrFailed,
+			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
 	}
 	switch st {
 	case StateGone:
 	case StateWorking, StateBlocked:
-		return halt(ExitTool, stopAgentBusy, ": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
+		return halt(ExitTool, stopAgentBusy,
+			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
+			id, st, wt)
 	default:
 		name := o.namer.FreeName(ctx, agent)
 		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
@@ -129,7 +135,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// input, which a worker that goes straight to work never does, so it could only time out.
 	// A name Herdr refuses would be refused on every retry, so that ends the attempt at once.
 	nameRefused := func(err error) *stopReason {
-		return halt(ExitTool, stopStartFailed, " for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err).causedBy(err)
+		return halt(ExitTool, stopStartFailed,
+			" for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err).causedBy(err)
 	}
 	ok := false
 	if launch != "" {
@@ -148,7 +155,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			// The typed command may still be starting (a slow first start, many MCP servers), and
 			// a second agent started in its pane would take the prompt twice: watch the pane for
 			// longer, and start another only once it is plainly empty.
-			o.log.Raw("", fmt.Errorf("%s's worker was not named %s after it was launched (%v); watching its tab for longer", id, agent, err))
+			o.log.Raw("", fmt.Errorf(
+				"%s's worker was not named %s after it was launched (%v); watching its tab for longer", id, agent, err))
 			held, adopted, err := o.adoptLate(ctx, pane, agent)
 			if ctx.Err() != nil {
 				return errInterrupted
@@ -159,11 +167,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			if ok = adopted; ok {
 				o.info("  %s's worker was slow to start; named it %s", id, agent)
 			} else if held != "" {
-				return halt(ExitTool, stopStartFailed, " for %s in tab %s: the worker launched there could not be named %s (%s); stopping rather than starting a second one in it", id, tab, agent, held)
+				return halt(ExitTool, stopStartFailed,
+					" for %s in tab %s: the worker launched there could not be named %s (%s); "+
+						"stopping rather than starting a second one in it",
+					id, tab, agent, held)
 			}
 		}
 		if !ok {
-			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); starting it with herdr agent start and pasting the prompt", id, agent, err))
+			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); "+
+				"starting it with herdr agent start and pasting the prompt", id, agent, err))
 			launch = ""
 		}
 	}
@@ -240,15 +252,18 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; deferred so it can be retried (worktree %s).", tab, wt))
+		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; "+
+			"deferred so it can be retried (worktree %s).", tab, wt))
 		if err := o.deferAside(keep, id, "the worker never started on its prompt"); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  DEFER_FAILED: %s's worker never started on its prompt, and bd could not defer it%s; kept out of this run, worktree %s and tab %s left open",
+				"  DEFER_FAILED: %s's worker never started on its prompt, and bd could not defer it%s; "+
+					"kept out of this run, worktree %s and tab %s left open",
 				id, because(err), wt, tab)})
 			return nil
 		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
-			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open", id, wt, tab)})
+			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open",
+			id, wt, tab)})
 		return nil
 	}
 
@@ -271,7 +286,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if info.Status != "open" { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-					"  REOPEN_FAILED: %s stays %s, so it won't come back once %s is answered%s; reopen it with: bd update %s --status open",
+					"  REOPEN_FAILED: %s stays %s, so it won't come back once %s is answered%s; "+
+						"reopen it with: bd update %s --status open",
 					id, info.Status, q.ID, because(err), id)})
 			}
 		}
@@ -292,24 +308,32 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		o.queueTriage(ctx, o.gatherDeferral(ctx, id, t.Title, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
-		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
-		return halt(ExitStuck, stopPaused, ": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
+		o.appendNotes(keep, id, fmt.Sprintf(
+			"Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
+		return halt(ExitStuck, stopPaused,
+			": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
-		return halt(ExitTool, stopStatusUnreadable, " for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab).causedBy(showErr)
+		return halt(ExitTool, stopStatusUnreadable,
+			" for %s%s; stopping rather than guessing (worktree %s and tab %s left open)",
+			id, because(showErr), wt, tab).causedBy(showErr)
 	case outcomeUnfinished:
 		if o.failedAtOnce(keep, s, started, idleAt, br, head, wt) {
 			*how = settledFast
 		}
-		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
-		if err := o.deferAside(keep, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)); err != nil {
+		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; "+
+			"deferred for review (worktree %s).", tab, s, wt))
+		why := fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)
+		if err := o.deferAside(keep, id, why); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; kept out of this run, worktree %s and tab %s left for review",
+				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; "+
+					"kept out of this run, worktree %s and tab %s left for review",
 				id, s, because(err), wt, tab)})
 			return nil
 		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
-		o.queueTriage(ctx, o.gatherDeferral(ctx, id, t.Title, fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s), wt))
+		settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
+		o.queueTriage(ctx, o.gatherDeferral(ctx, id, t.Title, settled, wt))
 	}
 	return nil
 }

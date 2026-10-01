@@ -67,5 +67,6 @@ func DrainWords(ids []string) (lead, list, tail string) {
 	case 1:
 		return "stopping after ", ids[0], " finishes: no new tickets will start"
 	}
-	return fmt.Sprintf("stopping after the %d running tickets finish (", len(ids)), strings.Join(ids, ", "), "): no new tickets will start"
+	return fmt.Sprintf("stopping after the %d running tickets finish (", len(ids)), strings.Join(ids, ", "),
+		"): no new tickets will start"
 }

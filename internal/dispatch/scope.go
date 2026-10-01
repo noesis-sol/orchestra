@@ -100,7 +100,9 @@ func (o *Loop) scopeNote(id string) string {
 	if r == "" || id == r {
 		return ""
 	}
-	return fmt.Sprintf("\n\nThis run works on %s and its subtickets only. File a follow-up that belongs to this work as a child of %s (bd create --parent %s …) so this run picks it up; anything else waits for a later run.\n", r, r, r)
+	return fmt.Sprintf("\n\nThis run works on %s and its subtickets only. "+
+		"File a follow-up that belongs to this work as a child of %s (bd create --parent %s …) "+
+		"so this run picks it up; anything else waits for a later run.\n", r, r, r)
 }
 
 // ScopeLabel is how a run's scope is shown after the branch: " · ticket <id>", or "".
@@ -156,7 +158,8 @@ func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 	n := len(subs)
 	switch {
 	case len(open) > 0:
-		return fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s", root, len(open), subtickets(n), strings.Join(open, ", "))
+		return fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s",
+			root, len(open), subtickets(n), strings.Join(open, ", "))
 	case done(top):
 		return fmt.Sprintf("; SCOPE_DONE: %s and its %s are merged", root, subtickets(n))
 	case o.excluded(top):
@@ -166,7 +169,8 @@ func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 		}
 		return fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; close it with: bd close %s", root, subtickets(n), verb, root)
 	}
-	return fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)", root, subtickets(n), root, o.notDoneWhy(ctx, top, in, false))
+	return fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)",
+		root, subtickets(n), root, o.notDoneWhy(ctx, top, in, false))
 }
 
 // notDoneWhy says why ticket t of the scope (in) is not closed and merged; openKids says it has

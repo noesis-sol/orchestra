@@ -95,7 +95,9 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 // waitResolved waits for the worker to settle after its hand-back: idle with the rebase over, idle
 // for idleGrace with it still in progress (its own background command may keep it idle), gone, or
 // still busy after limit, which it returns as the reason. Each status read goes to report.
-func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, AgentState, error)) string {
+func (o *Loop) waitResolved(
+	ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, AgentState, error),
+) string {
 	deadline := time.Now().Add(limit)
 	var idleSince time.Time
 	for {
@@ -148,7 +150,8 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id), nil
 	}
 	if n := o.merger.CountCommits(keep, c.Repo, r.onto+".."+r.br); n != r.own {
-		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)", r.br, n, r.own), nil
+		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)",
+			r.br, n, r.own), nil
 	}
 	o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
 	if err := o.runCheck(ctx, r.wt); err != nil {
@@ -156,7 +159,8 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 			return "", errInterrupted
 		}
 		if errors.Is(err, errCheckTimedOut) {
-			return fmt.Sprintf("'%s' did not finish within %s on the resolved %s", c.Check, ShortDuration(o.checkTimeout()), r.br), nil
+			return fmt.Sprintf("'%s' did not finish within %s on the resolved %s",
+				c.Check, ShortDuration(o.checkTimeout()), r.br), nil
 		}
 		return fmt.Sprintf("'%s' fails on the resolved %s (output is in %s)", c.Check, r.br, c.LogPath), nil
 	}
@@ -185,9 +189,11 @@ func (o *Loop) undoResolution(ctx context.Context, r rebaseStop) string {
 	out, err := o.merger.ResetBranch(ctx, r.wt, r.head)
 	o.log.Raw(out, err)
 	if err != nil {
-		return fmt.Sprintf("%s could not be reset to %s, where it was before the rebase; it is left at %s", r.br, short(r.head), short(now))
+		return fmt.Sprintf("%s could not be reset to %s, where it was before the rebase; it is left at %s",
+			r.br, short(r.head), short(now))
 	}
-	return fmt.Sprintf("%s was reset to %s, where it was before the rebase (its worker's attempt is %s)", r.br, short(r.head), short(now))
+	return fmt.Sprintf("%s was reset to %s, where it was before the rebase (its worker's attempt is %s)",
+		r.br, short(r.head), short(now))
 }
 
 func short(hash string) string {

@@ -88,15 +88,27 @@ func Section(title, body string) string {
 
 // ---- Triage --------------------------------------------------------------------------
 
-const triageSystem = `You triage tickets that an automated coding pipeline set aside. An orchestrator hands each Beads ticket to a coding agent (a "worker") in its own git worktree; when the worker cannot finish, the ticket is deferred. Decide where the cause lies:
+const triageSystem = "You triage tickets that an automated coding pipeline set aside. An " +
+	"orchestrator hands each Beads ticket to a coding agent (a \"worker\") in its own git " +
+	"worktree; when the worker cannot finish, the ticket is deferred. Decide where the cause " +
+	"lies:\n\n" +
+	"- environment: the machine, tools or services the worker ran on. Examples: a missing " +
+	"SDK, simulator or platform; a permission prompt or safety check that failed or refused " +
+	"commands; network, credentials, flaky infrastructure.\n" +
+	"- instructions: the worker prompt or the ticket's wording. Examples: unclear or " +
+	"contradictory acceptance criteria, missing information, a decision only a human can " +
+	"make, a rule that forced deferral (such as \"awaits CI\").\n" +
+	"- problem: the task itself. Examples: too large for one ticket, blocked on a design " +
+	"question or on other work, failing tests the worker could not fix.\n\n" +
+	"Use only the evidence given. Recommend the single most useful next step for the " +
+	"maintainer, concretely (a command to run, a question to answer, how to split or reword " +
+	"the ticket). summary is at most 15 words. recommendation is at most 3 sentences."
 
-- environment: the machine, tools or services the worker ran on. Examples: a missing SDK, simulator or platform; a permission prompt or safety check that failed or refused commands; network, credentials, flaky infrastructure.
-- instructions: the worker prompt or the ticket's wording. Examples: unclear or contradictory acceptance criteria, missing information, a decision only a human can make, a rule that forced deferral (such as "awaits CI").
-- problem: the task itself. Examples: too large for one ticket, blocked on a design question or on other work, failing tests the worker could not fix.
-
-Use only the evidence given. Recommend the single most useful next step for the maintainer, concretely (a command to run, a question to answer, how to split or reword the ticket). summary is at most 15 words. recommendation is at most 3 sentences.`
-
-const triageSchema = `{"type":"object","properties":{"cause":{"type":"string","enum":["environment","instructions","problem"]},"confidence":{"type":"string","enum":["high","medium","low"]},"summary":{"type":"string"},"recommendation":{"type":"string"}},"required":["cause","confidence","summary","recommendation"]}`
+const triageSchema = `{"type":"object","properties":{"cause":{"type":"string",` +
+	`"enum":["environment","instructions","problem"]},"confidence":{"type":"string",` +
+	`"enum":["high","medium","low"]},"summary":{"type":"string"},` +
+	`"recommendation":{"type":"string"}},"required":["cause","confidence","summary",` +
+	`"recommendation"]}`
 
 // Verdict is the triage organ's answer.
 type Verdict struct {
@@ -146,16 +158,28 @@ func (t Verdict) Note() string {
 
 // ---- Reviewer ------------------------------------------------------------------------
 
-const reviewSystem = `You write the end-of-run report for an automated coding pipeline. An orchestrator hands Beads tickets to coding agents ("workers") one at a time, each in its own git worktree and Herdr tab, and merges finished tickets into one branch. The maintainer reads your report when they come back.
-
-Use only the evidence given; never invent tickets, commits or causes. Write Markdown, at most 20 lines in all:
-
-- First, one sentence: how the run ended and why. When the run was of one ticket and its subtickets only, the sentence names that ticket and says whether all of it is merged (SCOPE_DONE) or not (SCOPE_OPEN). When the maintainer asked it to stop after the running tickets (a DRAIN line and a DRAINED final line), say so.
-- ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few words, the commit hash.
-- ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the triage cause when a triage note gives one.
-- ## Needs you: concrete actions for the maintainer, most urgent first: questions to answer (a ticket waiting on a question labelled "human" is answered with: bd human respond <question id> --response "…"; it then returns to the queue by itself), a worker waiting in a tab (name the tab), an environment fix, whatever stopped the run, and one bullet naming the follow-ups filed outside a one-ticket run, which wait for a later run.
-
-Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write "Nothing." under a section with no entries. No preamble and no closing remarks.`
+const reviewSystem = "You write the end-of-run report for an automated coding pipeline. An " +
+	"orchestrator hands Beads tickets to coding agents (\"workers\") one at a time, each in " +
+	"its own git worktree and Herdr tab, and merges finished tickets into one branch. The " +
+	"maintainer reads your report when they come back.\n\n" +
+	"Use only the evidence given; never invent tickets, commits or causes. Write Markdown, " +
+	"at most 20 lines in all:\n\n" +
+	"- First, one sentence: how the run ended and why. When the run was of one ticket and " +
+	"its subtickets only, the sentence names that ticket and says whether all of it is " +
+	"merged (SCOPE_DONE) or not (SCOPE_OPEN). When the maintainer asked it to stop after the " +
+	"running tickets (a DRAIN line and a DRAINED final line), say so.\n" +
+	"- ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few " +
+	"words, the commit hash.\n" +
+	"- ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the " +
+	"triage cause when a triage note gives one.\n" +
+	"- ## Needs you: concrete actions for the maintainer, most urgent first: questions to " +
+	"answer (a ticket waiting on a question labelled \"human\" is answered with: bd human " +
+	"respond <question id> --response \"…\"; it then returns to the queue by itself), a " +
+	"worker waiting in a tab (name the tab), an environment fix, whatever stopped the run, " +
+	"and one bullet naming the follow-ups filed outside a one-ticket run, which wait for a " +
+	"later run.\n\n" +
+	"Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write " +
+	"\"Nothing.\" under a section with no entries. No preamble and no closing remarks."
 
 // Unavailable explains why the organs can't run, or returns "".
 func Unavailable(bin string) string {
@@ -185,11 +209,17 @@ func (g Client) Review(ctx context.Context, evidence string) (string, error) {
 
 // ---- Predictor -----------------------------------------------------------------------
 
-const predictSystem = `You predict where a coding ticket will work. An orchestrator runs several coding agents side by side, each on one ticket, and keeps tickets that change the same files apart. This ticket names no files, so predict the repository files its change will most likely edit.
+const predictSystem = "You predict where a coding ticket will work. An orchestrator runs " +
+	"several coding agents side by side, each on one ticket, and keeps tickets that change " +
+	"the same files apart. This ticket names no files, so predict the repository files its " +
+	"change will most likely edit.\n\n" +
+	"Use only the ticket and the list of the repository's files. Pick at most 8 files from " +
+	"the list, most likely first, written exactly as listed; leave out files that are merely " +
+	"read, generated or incidental (a changelog, go.sum). Tests belong in the list only when " +
+	"the ticket is mainly about them. Return an empty list when the ticket gives no clue."
 
-Use only the ticket and the list of the repository's files. Pick at most 8 files from the list, most likely first, written exactly as listed; leave out files that are merely read, generated or incidental (a changelog, go.sum). Tests belong in the list only when the ticket is mainly about them. Return an empty list when the ticket gives no clue.`
-
-const predictSchema = `{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"}}},"required":["files"]}`
+const predictSchema = `{"type":"object","properties":{"files":{"type":"array",` +
+	`"items":{"type":"string"}}},"required":["files"]}`
 
 // MaxPredicted is the most files a prediction keeps.
 const MaxPredicted = 8

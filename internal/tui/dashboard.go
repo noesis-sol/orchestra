@@ -70,7 +70,8 @@ func renderEvent(ev dispatch.Event) string {
 	case dispatch.EvDeferred:
 		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
 	case dispatch.EvTriage:
-		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
+		return fmt.Sprintf("%s %s  %s",
+			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:
@@ -259,7 +260,8 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {
 		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
-		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - lipgloss.Height(footer)
+		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) -
+			lipgloss.Height(footer)
 		parts := []string{title, stats}
 		if room >= 7 {
 			parts = append(parts, m.ticketsTable(w, room))
@@ -413,7 +415,8 @@ func (m Dashboard) modal(w int) string {
 		question, about = "Keep taking tickets?", "New tickets start again as slots free up."
 		keys = "y keep going · n keep stopping"
 	case n == 0:
-		question, about = "Stop after the running tickets?", "No new tickets will start. Nothing is running, so the run ends now."
+		question = "Stop after the running tickets?"
+		about = "No new tickets will start. Nothing is running, so the run ends now."
 		keys = "y stop · n keep going"
 	default:
 		lead, list, tail := dispatch.DrainWords(m.runningIDs())
@@ -424,7 +427,8 @@ func (m Dashboard) modal(w int) string {
 		}
 		keys = "y stop after current · n keep going"
 	}
-	body := lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
 	return box(min(w-4, 64), yellow, body)
 }
 
@@ -496,7 +500,8 @@ func (m Dashboard) statsLine(w int) string {
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
 		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
 		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
-		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) + dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
+		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
+			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
 		dimStyle.Render("queue " + queued),
 	}
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
@@ -818,7 +823,8 @@ func (m Dashboard) titleLine(w int) string {
 	case m.solo.Ticket != "":
 		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
 	}
-	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s", m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
+	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
+		m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
 	return ansi.Truncate(line, w, "…")
 }
 

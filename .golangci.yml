@@ -6,10 +6,13 @@ linters:
   enable:
     - errcheck
     - govet
+    - lll
     - predeclared
     - revive # its default rules
     - staticcheck
   settings:
+    lll:
+      line-length: 120 # a ceiling; the Uber guide's 99 is the goal where it reads naturally
     errcheck:
       exclude-functions: # terminal writes
         - fmt.Fprint
@@ -34,6 +37,12 @@ linters:
       - path: _test\.go
         linters: [revive]
         text: "^unused-parameter:"
+      # The line limit is for production code.
+      - path: _test\.go
+        linters: [lll]
+      # A URL can't be wrapped.
+      - source: "https?://"
+        linters: [lll]
 
 formatters:
   enable:

@@ -15,9 +15,13 @@ import (
 
 // Exit codes, unchanged from orchestrate.sh.
 const (
-	ExitOK          = 0   // nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked; a scoped run says whether its scope is done
-	ExitSetup       = 2   // setup problem found before starting
-	ExitStuck       = 3   // a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past the ticket limit
+	// nothing left in bd ready, LIMIT reached, or it stopped after the running tickets as asked; a
+	// scoped run says whether its scope is done
+	ExitOK    = 0
+	ExitSetup = 2 // setup problem found before starting
+	// a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past
+	// the ticket limit
+	ExitStuck       = 3
 	ExitTool        = 4   // Herdr, Beads or git failure, or a worker panicked
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
@@ -129,9 +133,13 @@ type Loop struct {
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
-	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, reporter: d.Reporter,
-		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
-		verdicts: make(chan verdict), runDone: make(chan struct{}), drainReqs: make(chan drainRequest, 1)}
+	return &Loop{
+		cfg: cfg, log: log, prompt: prompt,
+		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
+		reporter: d.Reporter, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History,
+		organ: d.Advisor, organCtx: d.AdviceCtx,
+		verdicts: make(chan verdict), runDone: make(chan struct{}), drainReqs: make(chan drainRequest, 1),
+	}
 }
 
 // Final is the line the run ended with.

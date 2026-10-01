@@ -8,13 +8,15 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready(ctx context.Context, scope string) ([]Ticket, error)    // open, ready tickets, highest priority first; with a scope, only it and its descendants
+	// open, ready tickets, highest priority first; with a scope, only it and its descendants
+	Ready(ctx context.Context, scope string) ([]Ticket, error)
 	Unclosed(ctx context.Context) ([]Ticket, error)               // every ticket not closed, with its parent
 	Descendants(ctx context.Context, id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
-	Show(ctx context.Context, id string) (Ticket, error)          // with dependencies; Status "unknown" and the cause if unreadable
-	Status(ctx context.Context, id string) (string, error)        // "unknown" and the cause if unreadable
-	Describe(ctx context.Context, id string) string               // as a person reads it, for the organs' evidence
-	Closed(ctx context.Context, label string) ([]Ticket, error)   // closed tickets carrying the label
+	// with dependencies; Status "unknown" and the cause if unreadable
+	Show(ctx context.Context, id string) (Ticket, error)
+	Status(ctx context.Context, id string) (string, error)      // "unknown" and the cause if unreadable
+	Describe(ctx context.Context, id string) string             // as a person reads it, for the organs' evidence
+	Closed(ctx context.Context, label string) ([]Ticket, error) // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.
@@ -45,9 +47,12 @@ type Starter interface {
 // Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
 // its ticket).
 type Namer interface {
-	AgentName(id string) string                                                                  // the agent name for ticket id's worker
-	AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error)                 // name the agent that appears in the pane
-	PaneAgent(ctx context.Context, pane string) (name, kind string, state AgentState, err error) // state and error as Agents.Status gives them
+	// the agent name for ticket id's worker
+	AgentName(id string) string
+	// name the agent that appears in the pane
+	AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error)
+	// state and error as Agents.Status gives them
+	PaneAgent(ctx context.Context, pane string) (name, kind string, state AgentState, err error)
 	RenameAgent(ctx context.Context, name, to string) error
 	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
 }
@@ -88,8 +93,10 @@ type Reporter interface {
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	DirtyTree(ctx context.Context, dir string) (string, error)      // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
-	DirtyWorktree(ctx context.Context, dir string) string           // uncommitted work in a ticket's worktree outside .orchestra/run/
+	// uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
+	DirtyTree(ctx context.Context, dir string) (string, error)
+	// uncommitted work in a ticket's worktree outside .orchestra/run/
+	DirtyWorktree(ctx context.Context, dir string) string
 	CurrentBranch(ctx context.Context, repo string) (string, error) // "" on a detached HEAD
 	Head(ctx context.Context, repo, rev string) string
 	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them
@@ -110,7 +117,8 @@ type Worktrees interface {
 type Merger interface {
 	IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
-	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
+	// the latest commit reachable from rev naming the ticket
+	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string
 	Rebase(ctx context.Context, worktree, onto string) (string, error)
 	AbortRebase(ctx context.Context, worktree string) (string, error)
 	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged

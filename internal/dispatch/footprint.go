@@ -112,7 +112,8 @@ func newRepoFiles(tracked []string) *repoFiles {
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = strings.TrimPrefix(name, "./")
 	if r == nil {
-		if explicit || strings.Contains(name, "/") || sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))] {
+		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
+		if explicit || strings.Contains(name, "/") || sourceExtensions[ext] {
 			return []string{name}
 		}
 		return nil

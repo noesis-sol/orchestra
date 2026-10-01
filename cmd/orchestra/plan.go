@@ -69,7 +69,8 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		return bytes.Count(b, []byte("\n"))
 	})
 	if len(links) == 0 {
-		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n", plural(len(open), "open ticket"))
+		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",
+			plural(len(open), "open ticket"))
 		return dispatch.ExitOK
 	}
 	prios := map[string]string{}
@@ -80,10 +81,12 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	if *apply {
 		verb = "Adding"
 	}
-	fmt.Fprintf(stdout, "%s %s between the %s:\n", verb, plural(len(links), "blocks link"), plural(len(open), "open ticket"))
+	fmt.Fprintf(stdout, "%s %s between the %s:\n",
+		verb, plural(len(links), "blocks link"), plural(len(open), "open ticket"))
 	failed := 0
 	for _, l := range links {
-		fmt.Fprintf(stdout, "  %s (%s) waits for %s (%s): both touch %s\n", l.Blocked, prios[l.Blocked], l.Blocker, prios[l.Blocker], l.Why)
+		fmt.Fprintf(stdout, "  %s (%s) waits for %s (%s): both touch %s\n",
+			l.Blocked, prios[l.Blocked], l.Blocker, prios[l.Blocker], l.Why)
 		if !*apply {
 			continue
 		}

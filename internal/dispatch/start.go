@@ -77,7 +77,8 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, c
 	}
 	o.log.Raw(out, err)
 	if err != nil {
-		return "", false, halt(ExitTool, stopWorktreeFailed, " for %s at %s (git output is in %s)", id, wt, c.LogPath).causedBy(err)
+		return "", false, halt(ExitTool, stopWorktreeFailed, " for %s at %s (git output is in %s)",
+			id, wt, c.LogPath).causedBy(err)
 	}
 	o.info("  worktree %s on %s", wt, br)
 	return wt, !o.refreshBranch(ctx, wt, br), nil
