@@ -300,13 +300,13 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	return strings.Join(lines, "\n")
 }
 
-// current heads the worker boxes with a Current label, faint and indented like the tickets
-// table's Tickets header; nothing when there are no boxes.
+// current heads the worker boxes with a Current label, indented like the tickets table's Tickets
+// header but bold in the working colour, where the eye should land; nothing when there are no boxes.
 func current(panels string) string {
 	if panels == "" {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, dimStyle.Render("  Current"), panels)
+	return lipgloss.JoinVertical(lipgloss.Left, "  "+pickedStyle.Render("Current"), panels)
 }
 
 // hintLine says which keys do what: s stops after the running tickets, or once asked cancels
