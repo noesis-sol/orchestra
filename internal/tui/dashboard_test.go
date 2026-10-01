@@ -160,6 +160,28 @@ func TestAskedTicketIsCountedAndShown(t *testing.T) {
 	}
 }
 
+// Once its question is answered, an asked ticket's row goes back to working, rather than a second
+// row being added, and it no longer counts as needing the maintainer.
+func TestAnsweredTicketGoesBackToWorkInItsRow(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m,
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
+		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Write the README"},
+		dispatch.Event{Kind: dispatch.EvAnswered, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "k-1", Title: "Choose the licence"})
+	if len(m.rows) != 2 || m.rows[0].id != "k-1" || m.rows[0].state != rowWorking || m.rows[0].note != "" || m.asked != 0 {
+		t.Fatalf("rows %+v, asked %d; want k-1's first row working again and nothing asked", m.rows, m.asked)
+	}
+	m.width, m.height = 80, 40
+	if v := ansi.Strip(m.View()); strings.Contains(v, "? for you") || !strings.Contains(v, "Choose the licence") {
+		t.Errorf("view:\n%s", v)
+	}
+	if got := ansi.Strip(renderEvent(dispatch.Event{Kind: dispatch.EvAnswered, Ticket: "k-1", Detail: "q-1: MIT or Apache?"})); !strings.Contains(got, "↺ k-1 answered  q-1: MIT or Apache?") {
+		t.Errorf("rendered %q", got)
+	}
+}
+
 func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 	title := "Competing timelines on the same view and property fight each other every frame"
 	got := wrapLines(title, 30, titleLines)

@@ -239,11 +239,11 @@ func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
 	o.SetSink(&recordSink{})
 	o.markAside("deferred")
 	o.markAside("answered")
-	o.setAsked("answered", true)
+	o.setAsked("answered", &askedWorker{question: "Q"})
 	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "answered" {
 		t.Fatalf("got %v (%v), want the ticket whose question was answered", tk, s)
 	}
-	o.setAsked("answered", false) // dispatched again, then set aside for another reason
+	o.setAsked("answered", nil) // dispatched again, then set aside for another reason
 	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "fresh" {
 		t.Fatalf("got %v (%v), want the fresh ticket", tk, s)
 	}

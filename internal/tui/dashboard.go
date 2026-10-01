@@ -74,6 +74,8 @@ func renderEvent(ev dispatch.Event) string {
 			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
+	case dispatch.EvAnswered:
+		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvWarn:
@@ -174,7 +176,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch ev.Kind {
 		case dispatch.EvDispatch:
 			m.queued, m.solo = ev.Queued, ev.Solo
-			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
+			m.working(ev.Ticket, ev.Title)
 		case dispatch.EvQueue:
 			m.queued, m.solo = ev.Queued, ev.Solo
 		case dispatch.EvClosed:
@@ -190,6 +192,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case dispatch.EvAsked:
 			m.asked++
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
+		case dispatch.EvAnswered:
+			m.working(ev.Ticket, "")
 		case dispatch.EvTriage:
 			m.triaged++
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
@@ -605,6 +609,23 @@ func (m *Dashboard) setRow(id string, state rowState, note string) {
 		i = len(m.rows) - 1
 	}
 	m.rows[i].state, m.rows[i].note = state, note
+}
+
+// working shows ticket id as picked up. A ticket back from a question keeps its row, which no
+// longer needs the maintainer; title "" keeps the row's.
+func (m *Dashboard) working(id, title string) {
+	i := m.rowIndex(id)
+	if i < 0 {
+		m.rows = append(m.rows, ticketRow{id: id, title: title, state: rowWorking})
+		return
+	}
+	if m.rows[i].state == rowAsked {
+		m.asked--
+	}
+	m.rows[i].state, m.rows[i].note = rowWorking, ""
+	if title != "" {
+		m.rows[i].title = title
+	}
 }
 
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows

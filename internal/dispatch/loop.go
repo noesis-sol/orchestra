@@ -72,15 +72,15 @@ type Loop struct {
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
 	mu        sync.Mutex
-	asideIDs  []string              // tickets deferred or left unmerged in this run
-	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why
-	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
-	holdSaid  map[string]string     // why each held ticket waits, as last said
-	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
-	askedIDs  map[string]bool       // tickets set aside in this run to wait on a question
-	parentOf  map[string]string     // the parent of each ticket dispatched or left unmerged, which waits for it
-	doneSaid  map[string]bool       // parents said to be ready to close
-	finishing map[string]string     // what each worker is doing that Ctrl+C doesn't stop, such as "merge"
+	asideIDs  []string               // tickets deferred or left unmerged in this run
+	unmerged  map[string]string      // tickets closed but left unmerged, in this run or an earlier one, with why
+	labelled  map[string]bool        // tickets carrying UnmergedLabel, which a merge removes
+	holdSaid  map[string]string      // why each held ticket waits, as last said
+	blockers  map[string]blockLinks  // each ready ticket's blockers, read once per run
+	askedIDs  map[string]askedWorker // tickets set aside in this run to wait on a question, and where their workers were left
+	parentOf  map[string]string      // the parent of each ticket dispatched or left unmerged, which waits for it
+	doneSaid  map[string]bool        // parents said to be ready to close
+	finishing map[string]string      // what each worker is doing that Ctrl+C doesn't stop, such as "merge"
 
 	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
 	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.

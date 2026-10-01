@@ -158,6 +158,10 @@ func (o *Loop) Run(ctx context.Context) int {
 			if HasLabel(*t, SoloLabel) {
 				o.solo, how = t.ID, "dispatching solo"
 			}
+			if w, ok := o.asked(t.ID); ok {
+				o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
+					"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
+			}
 			o.queued, o.soloShown = queued, o.soloState()
 			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
 				Queued: queued, Solo: o.soloShown, Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})

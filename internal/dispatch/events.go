@@ -31,6 +31,7 @@ const (
 	EvResume               // the maintainer took that back
 	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
 	EvProbed               // a probe found the machine working after an environment hold: tickets start again
+	EvAnswered             // an asked ticket's question was answered: it comes back, dispatched next
 )
 
 // Event is one thing that happened in the run, for the log and the sink.

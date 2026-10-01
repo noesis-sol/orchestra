@@ -22,7 +22,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			o.clearActive(id)
 		}
 	}()
-	o.setAsked(id, false) // back from a question: set aside again, it stays out
+	earlier, asked := o.asked(id)
+	o.setAsked(id, nil) // back from a question: set aside again, it stays out
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
@@ -34,6 +35,52 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// keep, which Ctrl+C doesn't cancel, so the repository and the ticket aren't left half done.
 	// Each command still has its time limit.
 	keep := context.WithoutCancel(ctx)
+
+	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
+	agent := o.agentName(id)
+
+	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
+	// Herdr keeps unique. It is looked at before the worktree is touched: one still at work there
+	// must not have its branch rebased under it. One left by a question asked in this run may have
+	// had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in. Any
+	// other is renamed so the new worker can have the name; its tab stays as it is.
+	st, err := o.readStatus(ctx, agent, 5)
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	if err != nil {
+		return halt(ExitTool, stopHerdrFailed,
+			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
+	}
+	switch st {
+	case StateGone:
+	case StateWorking, StateBlocked:
+		if asked {
+			o.info("  %s's earlier worker is still %s in tab %s; adopting it rather than starting another",
+				id, st, earlier.tab)
+			return o.adopt(ctx, t, agent, earlier, st)
+		}
+		return halt(ExitTool, stopAgentBusy,
+			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
+			id, st, br)
+	default:
+		if asked && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, earlier) {
+			o.info("  %s's earlier worker in tab %s was told %s is answered and carries on; adopting it",
+				id, earlier.tab, earlier.question)
+			return o.adopt(ctx, t, agent, earlier, StateWorking)
+		}
+		if ctx.Err() != nil {
+			return errInterrupted
+		}
+		name := o.namer.FreeName(ctx, agent)
+		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
+			if ctx.Err() != nil {
+				return errInterrupted
+			}
+			return halt(ExitTool, stopAgentNameTaken, ": an earlier worker for %s holds its name and could not be renamed", id)
+		}
+		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
+	}
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
 	wt, conflicts, s := o.prepareWorktree(keep, id, br)
@@ -62,36 +109,6 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	}
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
-
-	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
-	agent := o.agentName(id)
-
-	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
-	// Herdr keeps unique. Rename it so the new worker can have the name; its tab stays as it is.
-	st, err := o.readStatus(ctx, agent, 5)
-	if ctx.Err() != nil {
-		return errInterrupted
-	}
-	if err != nil {
-		return halt(ExitTool, stopHerdrFailed,
-			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
-	}
-	switch st {
-	case StateGone:
-	case StateWorking, StateBlocked:
-		return halt(ExitTool, stopAgentBusy,
-			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
-			id, st, wt)
-	default:
-		name := o.namer.FreeName(ctx, agent)
-		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
-			if ctx.Err() != nil {
-				return errInterrupted
-			}
-			return halt(ExitTool, stopAgentNameTaken, ": an earlier worker for %s holds its name and could not be renamed", id)
-		}
-		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
-	}
 
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, wt, id)
 	if ctx.Err() != nil {
@@ -269,7 +286,48 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	stopWatch() // the settle loop reports from here on
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
-	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), report != nil, w.report)
+	return o.conclude(ctx, t, agent, tab, wt, head, started, report != nil, w.report)
+}
+
+// adopt takes on the worker an asked ticket left in its tab, which carries on with the ticket now
+// its question is answered, as if it had just been started on it: it waits for it to settle and
+// merges or sets aside its work as usual. st is its status, as just read.
+func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState) *stopReason {
+	id := t.ID
+	o.footprintWorktree(id, w.wt)
+	head := o.checkout.Head(ctx, o.cfg.Repo, "wt/"+id)
+	started := time.Now()
+	base := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: started}
+	o.setActive(base)
+	running := base
+	running.Agent = st
+	o.status(running)
+	defer o.status(Status{Ticket: id, Gone: true})
+	// Its hooks' record still ends with the Stop of the turn it asked in, which would pass for the
+	// end of this one, so it is waited on as a worker without them.
+	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, false, o.newWatcher(w.wt, base).report)
+}
+
+// resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
+// to carry on, so it keeps what it already knows of the ticket. It reports whether it took that up.
+func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool {
+	msg := fmt.Sprintf("Orchestra: your question %s is answered. Read the answer with bd show %s, claim %s again with bd update %s --claim, and carry on with it where you left off, as your instructions say.",
+		w.question, w.question, id, id)
+	if o.deliverPrompt(ctx, agent, msg) {
+		return true
+	}
+	if ctx.Err() == nil {
+		o.log.Raw("", fmt.Errorf("%s's earlier worker in tab %s did not take up the answer to %s; starting a new one", id, w.tab, w.question))
+	}
+	return false
+}
+
+// conclude waits for ticket t's worker, started (or adopted) at started, to settle, and then does
+// what its ticket's status says: merge it, set it aside, or stop the run.
+func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head string, started time.Time, hooks bool,
+	report func(ctx context.Context, st AgentState, err error)) *stopReason {
+	id, br := t.ID, "wt/"+t.ID
+	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), hooks, report)
 	if stop != nil {
 		return stop
 	}
@@ -278,11 +336,12 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// question is out of the queue until the maintainer answers; the run goes on without it. The
 	// worker has settled: what follows is bookkeeping, on keep, but for the waits merging has (a
 	// check, a worker resolving conflicts) and evidence for triage, which Ctrl+C skips.
+	keep := context.WithoutCancel(ctx)
 	info, showErr := o.tickets.Show(keep, id)
 	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
 		o.markAside(id)
-		o.setAsked(id, true)
+		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title})
 		if info.Status != "open" { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

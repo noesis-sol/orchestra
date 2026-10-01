@@ -190,20 +190,40 @@ func (o *Loop) unmergedWhy(id string) string {
 	return o.unmerged[id]
 }
 
-// setAsked records whether ticket id is set aside waiting on a question.
-func (o *Loop) setAsked(id string, asked bool) {
+// askedWorker is where a ticket set aside to wait on a question left its worker, which may carry
+// on once the question is answered, and the question.
+type askedWorker struct {
+	tab, wt  string
+	question string // its ID
+	title    string
+}
+
+// setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
+// longer.
+func (o *Loop) setAsked(id string, w *askedWorker) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.askedIDs == nil {
-		o.askedIDs = map[string]bool{}
+	if w == nil {
+		delete(o.askedIDs, id)
+		return
 	}
-	o.askedIDs[id] = asked
+	if o.askedIDs == nil {
+		o.askedIDs = map[string]askedWorker{}
+	}
+	o.askedIDs[id] = *w
+}
+
+// asked returns where ticket id, set aside waiting on a question, left its worker.
+func (o *Loop) asked(id string) (askedWorker, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	w, ok := o.askedIDs[id]
+	return w, ok
 }
 
 func (o *Loop) isAsked(id string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.askedIDs[id]
+	_, ok := o.asked(id)
+	return ok
 }
 
 func (o *Loop) anyUnmerged() bool {

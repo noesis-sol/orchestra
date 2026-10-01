@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOutcomes(t *testing.T) {
@@ -108,8 +109,8 @@ func TestAFailedDeferKeepsTheTicketOutOfTheRun(t *testing.T) {
 }
 
 // A worker asks the maintainer a question: its ticket leaves the queue and the run goes on. Once
-// the question is answered the ticket comes back, to its old worktree, and the earlier worker still
-// in its tab gives up the ticket's name to the new one.
+// the question is answered the ticket comes back, and its earlier worker, idle in its tab, is told
+// so and carries on there with what it knows; its work is merged in the same run.
 func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -117,7 +118,7 @@ func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 	h.beads.add("B", "second", 2)
 	h.worker("A",
 		func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" },
-		finishes("a.txt"))
+		finishes("a.txt")) // once told the answer is in
 	h.worker("B", func(w *fakeWorker) AgentState {
 		w.beads.set("Q", "closed") // the maintainer answers meanwhile
 		return finishes("b.txt")(w)
@@ -129,19 +130,87 @@ func TestAskedTicketReturnsOnceAnswered(t *testing.T) {
 	if got := h.sink.of(EvAsked); len(got) != 1 || !strings.HasPrefix(got[0], "A   ASKED: A waits on your answer to Q (which way?)") {
 		t.Errorf("asked:\n%s", strings.Join(got, "\n"))
 	}
+	if got := h.sink.of(EvAnswered); !equal(got, []string{"A   ANSWERED: Q (which way?) is answered, so A comes back"}) {
+		t.Errorf("answered:\n%s", strings.Join(got, "\n"))
+	}
 	if got := h.sink.of(EvDispatch); len(got) != 3 || !strings.HasPrefix(got[0], "A ") || !strings.HasPrefix(got[1], "B ") || !strings.HasPrefix(got[2], "A ") {
 		t.Errorf("dispatched:\n%s", strings.Join(got, "\n"))
 	}
-	ev := h.sink.text()
-	for _, want := range []string{"reusing worktree ", "/A (wt/A)", "earlier worker for A renamed to A-1"} {
-		if !strings.Contains(ev, want) {
-			t.Errorf("events lack %q:\n%s", want, ev)
-		}
+	if ev := h.sink.text(); !strings.Contains(ev, "A's earlier worker in tab tab1 was told Q is answered and carries on; adopting it") || strings.Contains(ev, "renamed") {
+		t.Errorf("the earlier worker should have been told the answer is in, not replaced:\n%s", ev)
 	}
 	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "B: add b.txt") {
 		t.Errorf("main:\n%s", log)
 	}
-	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab2", "tab3"}) {
-		t.Errorf("tabs closed: %v; the asking worker's tab1 should stay\n%s\nlog:\n%s", got, h.sink.text(), h.logged())
+	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab2", "tab1"}) {
+		t.Errorf("tabs closed: %v; A's work should be merged from tab1, with no third tab\n%s\nlog:\n%s", got, h.sink.text(), h.logged())
+	}
+	if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
+		t.Errorf("pasted to %v; want the answer's news to A's worker only", got)
+	}
+}
+
+// The maintainer answers in the asking worker's tab, and it carries on before the run sees the
+// answer. When the ticket comes back the run adopts that worker, still working, rather than stop
+// for it: it waits for it to settle and merges its work, without touching its worktree before.
+func TestAskedTicketWhoseWorkerCarriesOnIsAdopted(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A", func(w *fakeWorker) string {
+		w.claim()
+		w.ask("Q", "which way?")
+		w.shows("idle") // asked, and stopped
+		for st, _ := w.beads.Status(context.Background(), "Q"); st != "closed"; st, _ = w.beads.Status(context.Background(), "Q") {
+			time.Sleep(time.Millisecond)
+		}
+		w.shows("working") // answered in its tab
+		eventually(t, "A's worker was never adopted", func() bool {
+			return strings.Contains(h.sink.text(), "A's earlier worker is still working in tab tab1; adopting it rather than starting another")
+		})
+		w.claim()
+		w.commit("a.txt")
+		w.close()
+		return "idle"
+	})
+	h.worker("B", func(w *fakeWorker) string {
+		w.beads.set("Q", "closed")
+		return finishes("b.txt")(w)
+	})
+	o, code := h.run()
+	if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if len(h.sink.of(EvHold)) != 0 || len(h.sink.of(EvAnswered)) != 1 {
+		t.Errorf("want one ANSWERED and no HOLD:\n%s", h.sink.text())
+	}
+	if ev := h.sink.text(); strings.Contains(ev, "reusing worktree") || strings.Contains(ev, "renamed") {
+		t.Errorf("the adopted worker's worktree was prepared again, or the worker renamed:\n%s", ev)
+	}
+	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "B: add b.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+	if got := h.herdr.tabsClosed(); !equal(got, []string{"tab2", "tab1"}) {
+		t.Errorf("tabs closed: %v; A's work should be merged from tab1, with no third tab\n%s", got, h.sink.text())
+	}
+	if got := h.herdr.pastedTo(); len(got) != 0 {
+		t.Errorf("pasted to %v; a working worker is left to work", got)
+	}
+}
+
+// An earlier worker still at work on a ticket that was not asked in this run stops the run, before
+// its branch is touched.
+func TestAnEarlierWorkerStillWorkingStopsTheRunBeforeItsWorktree(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.herdr.agents = append(h.herdr.agents, &fakeAgent{name: "A", kind: "claude", pane: "elsewhere", status: "working"})
+	o, code := h.run()
+	if code != ExitTool || !strings.HasPrefix(o.Final(), "AGENT_BUSY: an earlier worker for A is still working in its tab") {
+		t.Fatalf("exit %d, final %q", code, o.Final())
+	}
+	if exists(h.worktree("A")) {
+		t.Error("a worktree was made under the earlier worker")
 	}
 }

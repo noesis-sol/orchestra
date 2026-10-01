@@ -182,7 +182,9 @@ Lines about single tickets, which don't stop the run:
 - `PROMPT_FAILED`: the worker never started on its prompt; deferred, safe to reopen.
 - `ASKED`: the worker asked the user a question, as a ticket labelled `human` that blocks the work.
   Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
-  the queue, and its branch is rebased onto the current one when it is picked up.
+  the queue, and its branch is rebased onto the current one when it is picked up. `ANSWERED` says it
+  came back. If its worker is still in its tab (answered there, say), orchestra adopts it instead,
+  or tells it, idle, that the question is answered, and merges its work as usual.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which

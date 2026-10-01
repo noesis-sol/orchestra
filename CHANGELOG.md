@@ -292,6 +292,19 @@ All notable changes to orchestra are documented here. The format follows
   without its entries, and stale worker or probe records that can't be removed
   stop the start rather than being read later.
 
+### Fixed
+
+- A ticket back from a question whose worker is still in its tab no longer
+  stops the run with `AGENT_BUSY`. Answering in the worker's tab lets it carry
+  on before orchestra sees the answer; the run now adopts that worker when the
+  ticket comes back: it waits for it to settle and merges its work as usual.
+  A worker idle in its tab is told the question is answered and to carry on,
+  keeping what it knows; only if it doesn't is a new worker started. The log
+  says `ANSWERED: <question> (…) is answered, so <id> comes back`, and the
+  dashboard turns the ticket's own row from "? for you" back to working rather
+  than adding a second one. An earlier worker is now looked at before its
+  worktree is touched, so a branch is never rebased under a live worker.
+
 ## [0.1.1] - 2026-09-29
 
 ### Changed
