@@ -92,13 +92,12 @@ type Loop struct {
 	predicted   map[string][]string
 	predictWake chan struct{}
 
-	// Triage's queue. Workers add to it until FinishTriage closes it; a worker still settling
-	// after that finds it closed rather than a closed channel.
-	triageMu     sync.Mutex
-	triageOn     bool // StartTriage was called
-	triageClosed bool // FinishTriage was called
-	triageQ      []organ.Deferral
-	triageWake   chan struct{} // buffered 1: something was queued, or the queue closed
+	// Triage's queue, set by StartTriage before any worker runs. Workers send to triageQ until
+	// FinishTriage calls triageFinish, cancelling triageStop; triageDone closes when the triage
+	// goroutine returns.
+	triageQ      chan organ.Deferral
+	triageStop   context.Context
+	triageFinish context.CancelFunc
 	triageDone   chan struct{}
 
 	// Holding for the environment, under mu: the tickets whose workers failed at once in a row, the

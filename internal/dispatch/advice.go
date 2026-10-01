@@ -41,73 +41,52 @@ func orNone(s string) string {
 }
 
 // StartTriage runs triage in the background, one ticket at a time, so the loop never waits for it.
+// Nobody closes triageQ: workers may still be sending when the run ends. FinishTriage cancels
+// triageStop instead, and the goroutine triages what is already queued, then returns.
 func (o *Loop) StartTriage() {
-	o.triageMu.Lock()
-	o.triageOn = true
-	o.triageWake = make(chan struct{}, 1)
+	o.triageQ = make(chan organ.Deferral, 64)
+	o.triageStop, o.triageFinish = context.WithCancel(context.Background())
 	o.triageDone = make(chan struct{})
-	o.triageMu.Unlock()
 	go func() {
 		defer close(o.triageDone)
 		for {
-			d, ok, finished := o.nextTriage()
-			switch {
-			case ok:
+			select {
+			case d := <-o.triageQ:
 				o.triage(d)
-			case finished:
-				return
-			default:
-				<-o.triageWake
+			case <-o.triageStop.Done():
+				for {
+					select {
+					case d := <-o.triageQ:
+						o.triage(d)
+					default:
+						return
+					}
+				}
 			}
 		}
 	}()
 }
 
-// nextTriage takes the oldest queued deferral; finished says nothing more will be queued.
-func (o *Loop) nextTriage() (d organ.Deferral, ok, finished bool) {
-	o.triageMu.Lock()
-	defer o.triageMu.Unlock()
-	if len(o.triageQ) > 0 {
-		d, o.triageQ = o.triageQ[0], o.triageQ[1:]
-		return d, true, false
-	}
-	return d, false, o.triageClosed
-}
-
-// queueTriage hands a deferral to triage without waiting. It does nothing without triage, after
-// Ctrl+C, or once FinishTriage has run: a worker may still be settling when the run ends.
+// queueTriage hands a deferral to triage. It does nothing without triage, after Ctrl+C, or once
+// FinishTriage has run: a worker may still be settling when the run ends.
 func (o *Loop) queueTriage(ctx context.Context, d organ.Deferral) {
-	if ctx.Err() != nil {
+	if o.triageQ == nil || ctx.Err() != nil || o.triageStop.Err() != nil {
 		return
 	}
-	o.triageMu.Lock()
-	defer o.triageMu.Unlock()
-	if !o.triageOn || o.triageClosed {
-		return
-	}
-	o.triageQ = append(o.triageQ, d)
-	o.wakeTriage()
-}
-
-// wakeTriage tells the triage goroutine there is news. The caller holds triageMu.
-func (o *Loop) wakeTriage() {
 	select {
-	case o.triageWake <- struct{}{}:
-	default: // already told
+	case o.triageQ <- d:
+	case <-o.triageStop.Done():
+	case <-ctx.Done():
 	}
 }
 
 // FinishTriage waits for queued triage to finish, or for ctx to be cancelled. Nothing is queued
 // after it.
 func (o *Loop) FinishTriage(ctx context.Context) {
-	o.triageMu.Lock()
-	if !o.triageOn {
-		o.triageMu.Unlock()
+	if o.triageQ == nil {
 		return
 	}
-	o.triageClosed = true
-	o.wakeTriage()
-	o.triageMu.Unlock()
+	o.triageFinish()
 	select {
 	case <-o.triageDone:
 	case <-ctx.Done():
