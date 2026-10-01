@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // Handing a rebase that stops on conflicts back to the ticket's worker, in whole runs.
@@ -129,24 +131,18 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		resolve behaviour
-		timeout time.Duration
 		why     string
 	}{
 		{"extra commit", func(w *fakeWorker) AgentState {
 			resolvesWith("main\nA\n")(w)
 			w.commit("extra.txt")
 			return "idle"
-		}, 0, "wt/A has 2 commits where the ticket had 1 (a commit made besides the rebase?)"},
-		{"unfinished", func(w *fakeWorker) AgentState { return "idle" }, 0, "its worker left the rebase unfinished"},
-		{"markers left", resolvesWith("<<<<<<< ours\nmain\n=======\nA\n>>>>>>> theirs\n"), 0, "'! grep -q '<<<<<<<' shared.txt' fails on the resolved wt/A"},
-		{"timed out", func(w *fakeWorker) AgentState { return "working" }, 50 * time.Millisecond, "its worker was still working after 50ms"},
+		}, "wt/A has 2 commits where the ticket had 1 (a commit made besides the rebase?)"},
+		{"markers left", resolvesWith("<<<<<<< ours\nmain\n=======\nA\n>>>>>>> theirs\n"), "'! grep -q '<<<<<<<' shared.txt' fails on the resolved wt/A"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := conflictHarness(t)
-			if tc.timeout > 0 {
-				h.cfg.ResolveTimeout = tc.timeout
-			}
 			h.beads.add("A", "first", 1)
 			h.worker("A", conflicting(h.repo), tc.resolve)
 			o, code := h.run()
@@ -176,6 +172,67 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 			if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 				t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 			}
+		})
+	}
+}
+
+// A hand-back its worker doesn't finish in time sets the ticket aside as a failed resolution does:
+// a worker idle with the rebase still stopped once its idle grace is over, and one still working at
+// the hand-back's time limit.
+func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		resolve behaviour
+		after   time.Duration
+		why     string
+	}{
+		{"unfinished", func(w *fakeWorker) AgentState { return "idle" }, idleGrace, "its worker left the rebase unfinished"},
+		{"timed out", func(w *fakeWorker) AgentState { return "working" }, project.DefaultResolveTimeout,
+			"its worker was still working after 20m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				h := newTimedHarness(t)
+				h.cfg.Check = "false" // never run: no resolution gets that far
+				h.cfg.ResolveConflicts = true
+				h.mem.conflict("wt/A", "shared.txt")
+				h.beads.add("A", "first", 1)
+				h.worker("A", func(w *fakeWorker) AgentState {
+					w.claim()
+					w.git.commit("main", "landed on main: shared.txt", "shared.txt")
+					w.commit("shared.txt")
+					w.close()
+					return "idle"
+				}, tc.resolve)
+				var handedBack time.Time
+				h.herdr.onPrompt = func(id string) { handedBack = time.Now() }
+				o, code := h.run()
+				if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
+					t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+				}
+				if took := time.Since(handedBack); took < tc.after || took > tc.after+2*statusPoll {
+					t.Errorf("set aside %s after the hand-back, want %s", took, tc.after)
+				}
+				ev := h.sink.text()
+				if !strings.Contains(ev, "MERGE_CONFLICT: A closed, but wt/A conflicts with main") ||
+					!strings.Contains(ev, "handed back to its worker, but "+tc.why+"; the rebase was aborted") {
+					t.Errorf("events:\n%s", ev)
+				}
+				if n := h.beads.notesOf("A"); !strings.Contains(n, "its worker was asked to resolve the rebase, but "+tc.why) {
+					t.Errorf("notes:\n%s", n)
+				}
+				if log := h.mainLog(); strings.Contains(log, "A: add") {
+					t.Errorf("main must not change:\n%s", log)
+				}
+				if h.mem.RebaseInProgress(t.Context(), h.worktree("A")) {
+					t.Error("the rebase should be aborted")
+				}
+				if a, _ := h.beads.Show(t.Context(), "A"); !HasLabel(a, UnmergedLabel) {
+					t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
+				}
+			})
 		})
 	}
 }

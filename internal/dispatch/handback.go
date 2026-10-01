@@ -115,7 +115,7 @@ func (o *Loop) waitResolved(
 		case idleSince.IsZero():
 			idleSince = time.Now()
 		}
-		if idle && (!o.merger.RebaseInProgress(ctx, wt) || time.Since(idleSince) >= orDefault(o.wait.idleGrace, idleGrace)) {
+		if idle && (!o.merger.RebaseInProgress(ctx, wt) || time.Since(idleSince) >= idleGrace) {
 			return ""
 		}
 		if time.Now().After(deadline) {

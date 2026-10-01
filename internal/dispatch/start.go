@@ -15,7 +15,7 @@ const lateAdopt = 2 * time.Minute
 // the configured kind is there. When it gives up, held says what the pane holds ("" for nothing).
 // The error is a rename Herdr refused, or the context ending.
 func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, adopted bool, err error) {
-	deadline := time.Now().Add(orDefault(o.wait.adopt, lateAdopt))
+	deadline := time.Now().Add(lateAdopt)
 	for {
 		name, kind, st, readErr := o.namer.PaneAgent(ctx, pane)
 		switch {

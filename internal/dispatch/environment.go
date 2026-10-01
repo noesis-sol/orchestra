@@ -228,7 +228,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
-	deadline := time.Now().Add(orDefault(o.wait.probe, probeLimit))
+	deadline := time.Now().Add(probeLimit)
 	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
 	// refuses the argument.
 	var args []string
@@ -266,7 +266,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
 			return tab, fmt.Errorf("it ran no command within %s; see tab %s",
-				ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)
+				ShortDuration(probeLimit), tab)
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return tab, errors.New("interrupted")

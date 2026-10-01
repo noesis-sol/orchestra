@@ -126,7 +126,9 @@ type Loop struct {
 	// the run winds down is Run's own.
 	drainReqs chan drainRequest
 
-	wait timing // how long it waits on things; tests shorten it
+	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
+	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
+	poll time.Duration
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
 	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
@@ -255,21 +257,7 @@ func (o *Loop) activeList() []Status {
 // workers were left running.
 func (o *Loop) Running() []Status { return o.activeList() }
 
-// timing is how long the loop waits on things. A zero field means the default.
-type timing struct {
-	poll       time.Duration // between reads of a worker's status: 3 seconds
-	startRetry time.Duration // after a failed start, before looking for the agent: 3 seconds
-	adopt      time.Duration // watching a pane for a worker slow to start: lateAdopt
-	blocked    time.Duration // a worker blocked for longer stops the run: blockedLimit
-	unknown    time.Duration // a worker whose status stays unknown for longer stops the run: unknownLimit
-	longRun    time.Duration // without a ticket limit, a worker going on longer is reported once: longRunning
-	idleGrace  time.Duration // idleGrace
-	startGrace time.Duration // startGrace
-	probe      time.Duration // how long the probe worker may take to run its command: probeLimit
-	ready      time.Duration // between reads of bd ready while workers run: readyPoll
-	settleSay  time.Duration // after Ctrl+C, before naming the workers not yet returned: settleSay
-}
-
+// orDefault is d, or def if d is zero.
 func orDefault(d, def time.Duration) time.Duration {
 	if d == 0 {
 		return def
@@ -277,9 +265,13 @@ func orDefault(d, def time.Duration) time.Duration {
 	return d
 }
 
-// pollEvery is how often a worker's status is read while waiting on it.
+// statusPoll is how often a worker's status is read while waiting on it.
+const statusPoll = 3 * time.Second
+
+// pollEvery is how often a worker's status is read while waiting on it: statusPoll, unless a test
+// shortens it.
 func (o *Loop) pollEvery() time.Duration {
-	return orDefault(o.wait.poll, 3*time.Second)
+	return orDefault(o.poll, statusPoll)
 }
 
 // sleep waits for d, returning false if ctx is cancelled first.

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -205,70 +206,83 @@ func TestStartFallsBackToPastingThePrompt(t *testing.T) {
 // pasted to it again.
 func TestStartAdoptsAWorkerSlowToAppear(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.herdr.launchSlow["A"] = true
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.herdr.startsFor(); len(got) != 0 {
-		t.Errorf("herdr agent start was asked for %v; want no second worker", got)
-	}
-	if got := h.herdr.pastedTo(); len(got) != 0 {
-		t.Errorf("pasted to %v; the worker had its prompt at launch", got)
-	}
-	if !strings.Contains(h.sink.text(), "A's worker was slow to start; named it A") {
-		t.Errorf("events:\n%s", h.sink.text())
-	}
-	if !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Error("A should be merged")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.herdr.launchSlow["A"] = true
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := h.herdr.startsFor(); len(got) != 0 {
+			t.Errorf("herdr agent start was asked for %v; want no second worker", got)
+		}
+		if got := h.herdr.pastedTo(); len(got) != 0 {
+			t.Errorf("pasted to %v; the worker had its prompt at launch", got)
+		}
+		if !strings.Contains(h.sink.text(), "A's worker was slow to start; named it A") {
+			t.Errorf("events:\n%s", h.sink.text())
+		}
+		if !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Error("A should be merged")
+		}
+	})
 }
 
-// A launch that leaves the pane empty for good falls back to Herdr's start and a pasted prompt.
+// A launch that leaves the pane empty for good falls back to Herdr's start and a pasted prompt,
+// once the pane has been watched for a while.
 func TestStartFallsBackWhenTheLaunchedWorkerNeverAppears(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.herdr.launchLost["A"] = true
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o := h.loop()
-	o.wait.adopt = 20 * time.Millisecond
-	if code := o.Run(context.Background()); code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.herdr.startsFor(); !equal(got, []string{"A"}) {
-		t.Errorf("herdr agent start was asked for %v; want A once", got)
-	}
-	if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
-		t.Errorf("pasted to %v", got)
-	}
-	if !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Error("A should be merged")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.herdr.launchLost["A"] = true
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		start := time.Now()
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if took := time.Since(start); took < lateAdopt {
+			t.Errorf("gave up on the launched worker after %s, within %s", took, lateAdopt)
+		}
+		if got := h.herdr.startsFor(); !equal(got, []string{"A"}) {
+			t.Errorf("herdr agent start was asked for %v; want A once", got)
+		}
+		if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
+			t.Errorf("pasted to %v", got)
+		}
+		if !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Error("A should be merged")
+		}
+	})
 }
 
 // A start that times out leaves the agent in its pane without a name: it is adopted, not started
 // twice.
 func TestStartAdoptsAnAgentLeftUnnamed(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.LaunchPrompt = false
-	h.herdr.startUnnamed["A"] = true
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if !strings.Contains(h.sink.text(), "A's worker started without its name; named it") {
-		t.Errorf("events:\n%s", h.sink.text())
-	}
-	if !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Error("A should be merged")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.LaunchPrompt = false
+		h.herdr.startUnnamed["A"] = true
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if !strings.Contains(h.sink.text(), "A's worker started without its name; named it") {
+			t.Errorf("events:\n%s", h.sink.text())
+		}
+		if got := h.herdr.startsFor(); !equal(got, []string{"A"}) {
+			t.Errorf("herdr agent start was asked for %v; want A once", got)
+		}
+		if !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Error("A should be merged")
+		}
+	})
 }
 
 // cutName stands in for herdr.AgentName, which this package's tests can't import (herdr imports

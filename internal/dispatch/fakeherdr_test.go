@@ -28,6 +28,7 @@ var errRefused = errors.New("herdr: unknown argument")
 type fakeHerdr struct {
 	t     *testing.T
 	beads *fakeBeads
+	git   *fakeGit // the repository workers commit to, if in memory
 
 	mu         sync.Mutex
 	tabs       int
@@ -47,6 +48,7 @@ type fakeHerdr struct {
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
 	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
+	onPrompt     func(id string)        // told of each prompt pasted, with the ticket's ID; nil: none
 	refuseArgs   bool                   // StartAgent takes no arguments
 	refusePaths  bool                   // StartAgent takes no arguments but plain flags, such as --no-chrome
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
@@ -101,7 +103,7 @@ func (h *fakeHerdr) prompt(a *fakeAgent) {
 			a.status = st
 			h.mu.Unlock()
 		}
-		st := b(&fakeWorker{t: h.t, id: p.ticket, wt: p.wt, beads: h.beads, shows: shows})
+		st := b(&fakeWorker{t: h.t, id: p.ticket, wt: p.wt, beads: h.beads, git: h.git, shows: shows})
 		h.mu.Lock()
 		a.status = st
 		h.mu.Unlock()
@@ -309,6 +311,9 @@ func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 		return fmt.Errorf("herdr agent prompt: no agent %s", name)
 	}
 	h.pasted = append(h.pasted, h.panes[a.pane].ticket)
+	if h.onPrompt != nil {
+		h.onPrompt(h.panes[a.pane].ticket)
+	}
 	if h.promptFails[h.panes[a.pane].ticket] {
 		return errors.New("herdr agent prompt: the agent did not start")
 	}

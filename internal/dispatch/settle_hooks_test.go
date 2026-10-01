@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -31,14 +32,14 @@ func (r *hookReporter) LastToolUse(wt string) (ToolUse, bool) {
 }
 
 // startsSlowly is a worker Herdr shows as idle from its first command on, its ticket still open,
-// while it goes on to claim it, commit file and close it.
-func startsSlowly(file string, report func(wt, event string)) behaviour {
+// for slow, then goes on to claim it, commit file and close it.
+func startsSlowly(file string, slow time.Duration, report func(wt, event string)) behaviour {
 	return func(w *fakeWorker) AgentState {
 		if report != nil {
 			report(w.wt, "PreToolUse") // cat .orchestra/run/prompt.md
 		}
 		w.shows("idle")
-		time.Sleep(100 * time.Millisecond) // many polls
+		time.Sleep(slow)
 		w.claim()
 		w.commit(file)
 		w.close()
@@ -50,51 +51,56 @@ func startsSlowly(file string, report func(wt, event string)) behaviour {
 }
 
 // A Claude worker Herdr shows as idle before its Stop hook, its ticket still open, is mid-turn: it
-// isn't deferred, and its close is merged.
+// isn't deferred, though it stays idle past the start-up grace, and its close is merged.
 func TestIdleWorkerBeforeItsStopHookIsNotDeferred(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	hooks := &hookReporter{}
-	h.reporter = hooks
-	h.beads.add("A", "first", 1)
-	h.worker("A", startsSlowly("a.txt", hooks.report))
-	o := h.loop()
-	o.wait.startGrace = time.Nanosecond // the hooks hold it, not the start-up grace
-	o.wait.idleGrace = patience         // idle while it commits, too
-	if code := o.Run(t.Context()); code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.sink.of(EvDeferred); len(got) != 0 {
-		t.Errorf("deferred: %q", got)
-	}
-	if st := h.statusOf("A"); st != "closed" || !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Errorf("A is %s; main:\n%s", st, h.mainLog())
-	}
-	if logged := h.logged(); !strings.Contains(logged, "A settled: Stop hook at ") {
-		t.Errorf("the log should say the Stop hook settled it:\n%s", logged)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		hooks := &hookReporter{}
+		h.reporter = hooks
+		h.beads.add("A", "first", 1)
+		h.worker("A", startsSlowly("a.txt", startGrace+time.Minute, hooks.report))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := h.sink.of(EvDeferred); len(got) != 0 {
+			t.Errorf("deferred: %q", got)
+		}
+		if st := h.statusOf("A"); st != "closed" || !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Errorf("A is %s; main:\n%s", st, h.mainLog())
+		}
+		if logged := h.logged(); !strings.Contains(logged, "A settled: Stop hook at ") {
+			t.Errorf("the log should say the Stop hook settled it:\n%s", logged)
+		}
+	})
 }
 
 // A Claude worker whose Stop hook came with its ticket still open has finished without closing it:
 // deferred for review as before, without waiting out a start-up grace.
 func TestWorkerStoppedWithItsTicketOpenIsDeferred(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	hooks := &hookReporter{}
-	h.reporter = hooks
-	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) AgentState { hooks.report(w.wt, "Stop"); return "idle" })
-	o := h.loop()
-	o.wait.startGrace = patience
-	if code := o.Run(t.Context()); code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
-		t.Errorf("deferred: %q", got)
-	}
-	if logged := h.logged(); !strings.Contains(logged, "A settled: Stop hook at ") {
-		t.Errorf("the log should say the Stop hook settled it:\n%s", logged)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		hooks := &hookReporter{}
+		h.reporter = hooks
+		h.beads.add("A", "first", 1)
+		h.worker("A", func(w *fakeWorker) AgentState { hooks.report(w.wt, "Stop"); return "idle" })
+		start := time.Now()
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if took := time.Since(start); took >= startGrace {
+			t.Errorf("settled after %s, the start-up grace", took)
+		}
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
+			t.Errorf("deferred: %q", got)
+		}
+		if logged := h.logged(); !strings.Contains(logged, "A settled: Stop hook at ") {
+			t.Errorf("the log should say the Stop hook settled it:\n%s", logged)
+		}
+	})
 }
 
 // Without hooks, an idle worker gets a start-up grace to claim its ticket: one that does within it
@@ -103,42 +109,43 @@ func TestWithoutHooksAnOpenTicketGetsAStartUpGrace(t *testing.T) {
 	t.Parallel()
 	t.Run("claimed within it", func(t *testing.T) {
 		t.Parallel()
-		h := newHarness(t)
-		h.beads.add("A", "first", 1)
-		h.worker("A", startsSlowly("a.txt", nil))
-		o := h.loop()
-		o.wait.startGrace, o.wait.idleGrace = patience, patience // idle while it commits, too
-		if code := o.Run(t.Context()); code != ExitOK {
-			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-		}
-		if got := h.sink.of(EvDeferred); len(got) != 0 {
-			t.Errorf("deferred: %q", got)
-		}
-		if !strings.Contains(h.mainLog(), "A: add a.txt") {
-			t.Errorf("main:\n%s", h.mainLog())
-		}
+		synctest.Test(t, func(t *testing.T) {
+			h := newTimedHarness(t)
+			h.beads.add("A", "first", 1)
+			h.worker("A", startsSlowly("a.txt", startGrace-time.Minute, nil))
+			o, code := h.run()
+			if code != ExitOK {
+				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+			}
+			if got := h.sink.of(EvDeferred); len(got) != 0 {
+				t.Errorf("deferred: %q", got)
+			}
+			if !strings.Contains(h.mainLog(), "A: add a.txt") {
+				t.Errorf("main:\n%s", h.mainLog())
+			}
+		})
 	})
 	t.Run("left open", func(t *testing.T) {
 		t.Parallel()
-		h := newHarness(t)
-		h.beads.add("A", "first", 1)
-		h.worker("A", func(w *fakeWorker) AgentState { return "idle" })
-		o := h.loop()
-		const grace = 50 * time.Millisecond
-		o.wait.startGrace = grace
-		began := time.Now()
-		if code := o.Run(t.Context()); code != ExitOK {
-			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-		}
-		if took := time.Since(began); took < grace {
-			t.Errorf("settled after %s, within the %s grace", took, grace)
-		}
-		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
-			t.Errorf("deferred: %q", got)
-		}
-		if logged := h.logged(); !strings.Contains(logged, "A settled: idle 50ms after it started, with the ticket still open") {
-			t.Errorf("the log should say the grace settled it:\n%s", logged)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			h := newTimedHarness(t)
+			h.beads.add("A", "first", 1)
+			h.worker("A", func(w *fakeWorker) AgentState { return "idle" })
+			began := time.Now()
+			o, code := h.run()
+			if code != ExitOK {
+				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+			}
+			if took := time.Since(began); took < startGrace || took > startGrace+statusPoll {
+				t.Errorf("settled after %s, want once the %s grace is over", took, startGrace)
+			}
+			if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
+				t.Errorf("deferred: %q", got)
+			}
+			if logged := h.logged(); !strings.Contains(logged, "A settled: idle 3m after it started, with the ticket still open") {
+				t.Errorf("the log should say the grace settled it:\n%s", logged)
+			}
+		})
 	})
 }
 
@@ -171,46 +178,47 @@ func TestIdleSettledIgnoresReportsBeforeTheAdoption(t *testing.T) {
 // with its ticket open, and settles at its own Stop hook.
 func TestAdoptedWorkerSettlesAtItsOwnStopHook(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	hooks := &hookReporter{}
-	h.reporter = hooks
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("A",
-		func(w *fakeWorker) AgentState {
-			w.claim()
-			w.ask("Q", "which way?")
-			w.beads.set(w.id, "open")
-			hooks.report(w.wt, "Stop")
-			return "idle"
-		},
-		func(w *fakeWorker) AgentState { // once told the answer is in
-			w.shows("idle")
-			time.Sleep(100 * time.Millisecond) // many polls, before its first hook
-			hooks.report(w.wt, "PreToolUse")   // bd show Q
-			w.claim()
-			w.commit("a.txt")
-			w.close()
-			hooks.report(w.wt, "Stop")
-			return "idle"
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		hooks := &hookReporter{}
+		h.reporter = hooks
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("A",
+			func(w *fakeWorker) AgentState {
+				w.claim()
+				w.ask("Q", "which way?")
+				w.beads.set(w.id, "open")
+				hooks.report(w.wt, "Stop")
+				return "idle"
+			},
+			func(w *fakeWorker) AgentState { // once told the answer is in
+				w.shows("idle")
+				time.Sleep(time.Minute)          // many polls, within the start-up grace, before its first hook
+				hooks.report(w.wt, "PreToolUse") // bd show Q
+				w.claim()
+				w.commit("a.txt")
+				w.close()
+				hooks.report(w.wt, "Stop")
+				return "idle"
+			})
+		h.worker("B", func(w *fakeWorker) AgentState {
+			time.Sleep(time.Minute)    // the stale Stop is older than the adoption
+			w.beads.set("Q", "closed") // the maintainer answers meanwhile
+			return finishes("b.txt")(w)
 		})
-	h.worker("B", func(w *fakeWorker) AgentState {
-		w.beads.set("Q", "closed") // the maintainer answers meanwhile
-		return finishes("b.txt")(w)
+		o, code := h.run()
+		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := h.sink.of(EvDeferred); len(got) != 0 {
+			t.Errorf("deferred: %q", got)
+		}
+		if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") {
+			t.Errorf("main:\n%s", log)
+		}
+		if logged := h.logged(); strings.Count(logged, "A settled: Stop hook at ") != 2 {
+			t.Errorf("both of A's turns should be settled by their own Stop hook:\n%s", logged)
+		}
 	})
-	o := h.loop()
-	o.wait.startGrace = patience // only the stale Stop could settle it while it starts on the answer
-	o.wait.idleGrace = patience  // idle while it commits, too
-	if code := o.Run(t.Context()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.sink.of(EvDeferred); len(got) != 0 {
-		t.Errorf("deferred: %q", got)
-	}
-	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") {
-		t.Errorf("main:\n%s", log)
-	}
-	if logged := h.logged(); strings.Count(logged, "A settled: Stop hook at ") != 2 {
-		t.Errorf("both of A's turns should be settled by their own Stop hook:\n%s", logged)
-	}
 }

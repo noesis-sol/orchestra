@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -24,64 +25,69 @@ func fakePredictor(t *testing.T, script string) (bin, record string) {
 }
 
 // A ready ticket naming nothing gets its files predicted in the background and cached on it; a
-// later pick keeps it apart from the running ticket that names one of them.
+// later pick keeps it apart from the running ticket that names one of them. The predictor is a
+// command, which holds the bubble's clock while it runs.
 func TestPredictedFootprintKeepsATicketApart(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.commitFiles("internal/x.go", "internal/y.go", "internal/z.go")
-	h.cfg.Concurrency = 2
-	h.cfg.Predict = true
-	h.beads.add("A", "first", 1)
-	h.beads.describe("A", "Change internal/x.go.")
-	h.beads.add("Z", "second", 2)
-	h.beads.describe("Z", "Change internal/z.go.")
-	h.beads.add("B", "third", 3) // names nothing
-	h.beads.add("C", "fourth", 4)
-	h.beads.describe("C", "Change internal/y.go.")
-	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-		eventually(t, "C never took the free slot", func() bool { return h.sink.dispatchedYet("C") })
-		time.Sleep(20 * time.Millisecond) // a few more polls, with a slot free
-		return finishes("a.txt")(w)
-	}))
-	h.worker("Z", v.runs("Z", func(w *fakeWorker) AgentState {
-		eventually(t, "B's files were never cached", func() bool { return h.beads.metadata("B", PredictedKey) != "" })
-		return finishes("z.txt")(w)
-	}))
-	h.worker("B", v.runs("B", finishes("b.txt")))
-	h.worker("C", v.runs("C", finishes("c.txt")))
-	bin, asked := fakePredictor(t, `echo '{"structured_output":{"files":["internal/x.go","internal/nowhere.go"]}}'`)
-	o := h.loop()
-	o.organ = organ.Client{Bin: bin}
-	o.wait.ready = 5 * time.Millisecond
-	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.beads.metadata("B", PredictedKey); got != "internal/x.go" {
-		t.Errorf("cached %q", got)
-	}
-	if got := v.of("B"); slices.Contains(got, "A") {
-		t.Errorf("B ran beside A")
-	}
-	if got := h.sink.dispatched(); !equal(got, []string{"A", "Z", "C", "B"}) {
-		t.Errorf("dispatched %v", got)
-	}
-	log := h.logged()
-	for _, want := range []string{"B footprint predicted: internal/x.go\n", "skipping B: touches internal/x.go, like running A\n",
-		"B footprint: internal/x.go (predicted)\n"} {
-		if strings.Count(log, want) != 1 {
-			t.Errorf("not logged once: %q\n%s", want, log)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.commitFiles("internal/x.go", "internal/y.go", "internal/z.go")
+		h.cfg.Concurrency = 2
+		h.cfg.Predict = true
+		h.beads.add("A", "first", 1)
+		h.beads.describe("A", "Change internal/x.go.")
+		h.beads.add("Z", "second", 2)
+		h.beads.describe("Z", "Change internal/z.go.")
+		h.beads.add("B", "third", 3) // names nothing
+		h.beads.add("C", "fourth", 4)
+		h.beads.describe("C", "Change internal/y.go.")
+		var v overlap
+		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
+			time.Sleep(3 * readyPoll) // C takes Z's slot; then a few more polls, with a slot free
+			return finishes("a.txt")(w)
+		}))
+		h.worker("Z", v.runs("Z", func(w *fakeWorker) AgentState {
+			time.Sleep(time.Second) // B's files are predicted meanwhile
+			if h.beads.metadata("B", PredictedKey) == "" {
+				t.Error("B's files were not cached while Z ran")
+			}
+			return finishes("z.txt")(w)
+		}))
+		h.worker("B", v.runs("B", finishes("b.txt")))
+		h.worker("C", v.runs("C", finishes("c.txt")))
+		bin, asked := fakePredictor(t, `echo '{"structured_output":{"files":["internal/x.go","internal/nowhere.go"]}}'`)
+		o := h.loop()
+		o.organ = organ.Client{Bin: bin}
+		if code := o.Run(t.Context()); code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-	}
-	b, _ := os.ReadFile(asked)
-	if n := strings.Count(string(b), "Predict the files ticket"); n != 1 || !strings.Contains(string(b), "ticket B (third)") ||
-		!strings.Contains(string(b), "internal/x.go\ninternal/y.go") {
-		t.Errorf("the predictor was asked %d times, want once for B:\n%s", n, b)
-	}
+		if got := h.beads.metadata("B", PredictedKey); got != "internal/x.go" {
+			t.Errorf("cached %q", got)
+		}
+		if got := v.of("B"); slices.Contains(got, "A") {
+			t.Errorf("B ran beside A")
+		}
+		if got := h.sink.dispatched(); !equal(got, []string{"A", "Z", "C", "B"}) {
+			t.Errorf("dispatched %v", got)
+		}
+		log := h.logged()
+		for _, want := range []string{"B footprint predicted: internal/x.go\n", "skipping B: touches internal/x.go, like running A\n",
+			"B footprint: internal/x.go (predicted)\n"} {
+			if strings.Count(log, want) != 1 {
+				t.Errorf("not logged once: %q\n%s", want, log)
+			}
+		}
+		b, _ := os.ReadFile(asked)
+		if n := strings.Count(string(b), "Predict the files ticket"); n != 1 || !strings.Contains(string(b), "ticket B (third)") ||
+			!strings.Contains(string(b), "internal/x.go\ninternal/y.go") {
+			t.Errorf("the predictor was asked %d times, want once for B:\n%s", n, b)
+		}
+	})
 }
 
 // Dispatch never waits for a prediction: with the predictor hanging, tickets naming nothing run
-// side by side, and the run ends without waiting for it.
+// side by side, and the run ends without waiting for it. On the real clock: a command that hangs
+// would hold a synctest bubble's clock until it ends.
 func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -97,7 +103,6 @@ func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	bin, asked := fakePredictor(t, "exec sleep 60")
 	o := h.loop()
 	o.organ = organ.Client{Bin: bin}
-	o.wait.ready = 5 * time.Millisecond
 	start := time.Now()
 	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
@@ -128,7 +133,6 @@ func TestPredictorOffWithoutOrgansOrFootprints(t *testing.T) {
 		bin, asked := fakePredictor(t, `echo '{"structured_output":{"files":["a.txt"]}}'`)
 		o := h.loop()
 		o.organ = organ.Client{Bin: bin}
-		o.wait.ready = 5 * time.Millisecond
 		if code := o.Run(context.Background()); code != ExitOK {
 			t.Fatalf("%+v: exit %d\n%s", c, code, h.sink.text())
 		}

@@ -100,9 +100,10 @@ README defines both terms; use them consistently.
 - Every external command goes through `internal/command` with a context and a time limit (`ReadLimit`,
   `WriteLimit`); nothing blocks without watching for cancellation.
 - Agent status is the typed `AgentState`, not strings.
-- Tests: whole-run scenarios use the fakes (`fakes_test.go`, `fakeherdr_test.go`) and the harness in
-  `helpers_test.go`; goroutine leaks fail the dispatch tests (goleak). Put new tests in a file named after the
-  feature rather than at the end of a shared test file; add changelog entries as new lines (`.gitattributes` has
-  `CHANGELOG.md merge=union`), so parallel tickets don't conflict.
+- Tests: whole-run scenarios use the fakes (`fakes_test.go`, `fakeherdr_test.go`, `fakegit_test.go`) and the harness
+  in `helpers_test.go`: `newTimedHarness` inside `synctest.Test` when time drives the scenario (real durations,
+  git in memory), `newHarness` when git is its subject; goroutine leaks fail the dispatch tests (goleak). Put new
+  tests in a file named after the feature rather than at the end of a shared test file; add changelog entries as new
+  lines (`.gitattributes` has `CHANGELOG.md merge=union`), so parallel tickets don't conflict.
 - Workers never push; orchestra merges. `.orchestra/settings.json` and `.orchestra/worker-prompt.md` are committed;
   `.orchestra/run/` (per-ticket files, including workers' MCP definitions) never is.

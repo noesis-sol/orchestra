@@ -323,6 +323,12 @@ All notable changes to orchestra are documented here. The format follows
   `-plain`, above it), with what it is finishing: `waiting for <ticket>'s merge
   to finish…`, its `worktree setup`, or its `last command`, which stops by its
   time limit.
+- The run loop's tests of what time drives (the idle and start-up graces, the
+  blocked and unknown limits, the ticket limit, the ready poll, draining, the
+  hold for the environment and its probe, hand-back time limits, Ctrl+C) run
+  in `testing/synctest` bubbles, on the loop's real durations and git in
+  memory, so they no longer depend on how loaded the machine is. The loop's
+  test-only timing settings are gone, but for its status poll.
 
 ### Fixed
 

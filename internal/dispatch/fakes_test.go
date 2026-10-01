@@ -16,7 +16,7 @@ import (
 )
 
 // In-memory stand-ins for Beads and Herdr, so a whole run can be driven by a test. Git is real,
-// in a temporary repository.
+// in a temporary repository, or in memory (fakegit_test.go).
 
 // ---- Beads ---------------------------------------------------------------------------
 
@@ -36,8 +36,9 @@ func newFakeBeads() *fakeBeads {
 	return &fakeBeads{tickets: map[string]*Ticket{}, links: map[string][]fakeLink{}, notes: map[string][]string{}}
 }
 
-// filedBefore is when the tickets a test adds were filed: before any run.
-const filedBefore = "2026-01-01T00:00:00Z"
+// filedBefore is when the tickets a test adds were filed: before any run, on the real clock or a
+// synctest bubble's, which starts at 2000-01-01.
+const filedBefore = "1999-01-01T00:00:00Z"
 
 func (b *fakeBeads) add(id, title string, prio int, labels ...string) {
 	b.mu.Lock()
@@ -256,6 +257,7 @@ type fakeWorker struct {
 	id    string
 	wt    string
 	beads *fakeBeads
+	git   *fakeGit               // git in memory, or nil for the real one
 	shows func(state AgentState) // what Herdr shows it as from now on, while it goes on working
 }
 
@@ -265,6 +267,12 @@ func (w *fakeWorker) deferIt() { w.beads.set(w.id, "deferred") }
 
 // commit adds file to the ticket's branch in a commit naming the ticket.
 func (w *fakeWorker) commit(file string) {
+	if w.git != nil {
+		if err := w.git.commitIn(w.wt, w.id+": add "+file, file); err != nil {
+			w.t.Error(err)
+		}
+		return
+	}
 	if err := os.WriteFile(filepath.Join(w.wt, file), []byte(w.id+"\n"), 0o644); err != nil {
 		w.t.Error(err)
 	}

@@ -91,7 +91,7 @@ func (o *Loop) waitSettled(
 			if blockedSince.IsZero() {
 				blockedSince = time.Now()
 			}
-			if time.Since(blockedSince) > orDefault(o.wait.blocked, blockedLimit) {
+			if time.Since(blockedSince) > blockedLimit {
 				return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
 			}
 		} else {
@@ -101,7 +101,7 @@ func (o *Loop) waitSettled(
 			if unknownSince.IsZero() {
 				unknownSince = time.Now()
 			}
-			if time.Since(unknownSince) > orDefault(o.wait.unknown, unknownLimit) {
+			if time.Since(unknownSince) > unknownLimit {
 				return time.Time{}, halt(ExitStuck, stopUnknown,
 					" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 			}
@@ -116,11 +116,11 @@ func (o *Loop) waitSettled(
 				": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
 				id, st, ShortDuration(limit), tab, wt)
 		}
-		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
+		if o.cfg.TicketLimit == 0 && !warned && time.Since(started) > longRunning {
 			warned = true
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
-				id, st, ShortDuration(long), tab)})
+				id, st, ShortDuration(longRunning), tab)})
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return time.Time{}, errInterrupted
@@ -221,9 +221,8 @@ func later(a, b time.Time) time.Time {
 // done with it.
 func (o *Loop) idleSettled(ticket, wt string, hooks bool, since time.Time, idleFor, running time.Duration) (
 	settled bool, why string) {
-	grace := orDefault(o.wait.idleGrace, idleGrace)
 	if ticket == "in_progress" {
-		return idleFor >= grace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(grace))
+		return idleFor >= idleGrace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(idleGrace))
 	}
 	if hooks && o.reporter != nil {
 		u, ok := o.reporter.LastToolUse(wt)
@@ -234,12 +233,13 @@ func (o *Loop) idleSettled(ticket, wt string, hooks bool, since time.Time, idleF
 			if u.Event == "Stop" {
 				return true, "Stop hook at " + u.At.Format("15:04:05")
 			}
-			return idleFor >= grace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook", ShortDuration(grace), u.Event)
+			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook",
+				ShortDuration(idleGrace), u.Event)
 		}
 	}
 	if ticket == "open" {
-		start := orDefault(o.wait.startGrace, startGrace)
-		return running >= start, fmt.Sprintf("idle %s after it started, with the ticket still open", ShortDuration(start))
+		return running >= startGrace, fmt.Sprintf("idle %s after it started, with the ticket still open",
+			ShortDuration(startGrace))
 	}
 	return true, "idle with the ticket " + ticket
 }

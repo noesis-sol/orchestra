@@ -38,12 +38,13 @@ func read(t *testing.T, p string) string {
 	return string(b)
 }
 
-// Whole runs, with Beads and Herdr faked and git real.
+// Whole runs, with Beads and Herdr faked and git real, or in memory (newTimedHarness).
 
 type harness struct {
 	t        *testing.T
 	repo     string
-	git      func(dir string, args ...string) string
+	git      func(dir string, args ...string) string // nil with git in memory
+	mem      *fakeGit                                // git in memory, or nil
 	beads    *fakeBeads
 	herdr    *fakeHerdr
 	sink     *runSink
@@ -65,9 +66,31 @@ func newHarness(t *testing.T) *harness {
 	}
 	run(repo, "add", ".")
 	run(repo, "commit", "-q", "-m", "ignore .orchestra")
+	h := harnessIn(t, repo)
+	h.git = run
+	return h
+}
+
+// newTimedHarness is newHarness with git in memory, for scenarios whose subject is timing rather
+// than git. It is called inside synctest.Test: the loop then waits as long as it would in a real
+// run (10 minutes' idle grace, a ready poll every 30 seconds, …) on the bubble's clock, which moves
+// on whenever every goroutine in the run waits, so a test takes no longer, and no less, however
+// loaded the machine is. A worker waits on that clock too: time.Sleep lets the run go on that long.
+func newTimedHarness(t *testing.T) *harness {
+	t.Helper()
+	noLeaks(t)
+	h := harnessIn(t, t.TempDir())
+	h.mem = newFakeGit("main")
+	h.herdr.git = h.mem
+	return h
+}
+
+// harnessIn sets up a run of the repository in repo with an empty tracker.
+func harnessIn(t *testing.T, repo string) *harness {
+	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	beads := newFakeBeads()
-	h := &harness{t: t, repo: repo, git: run, beads: beads, herdr: newFakeHerdr(t, beads),
+	h := &harness{t: t, repo: repo, beads: beads, herdr: newFakeHerdr(t, beads),
 		sink: &runSink{held: make(chan struct{})}, logPath: logPath,
 		cfg: Config{Repo: repo, Base: "main", Workspace: "ws", Limit: 10, Concurrency: 1, AgentKind: "claude",
 			WTRoot: t.TempDir(), LogPath: logPath, LaunchPrompt: true}}
@@ -87,12 +110,17 @@ func (h *harness) loop() *Loop {
 		h.t.Fatal(err)
 	}
 	h.alerts = recordAlerts(log)
-	o := New(h.cfg, log, "Work on TICKET_ID.", Deps{Tickets: h.beads, Notes: h.beads, Tabs: h.herdr, Starter: h.herdr,
-		Namer: h.herdr, Agents: h.herdr, Reporter: h.reporter, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{},
-		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
+	d := Deps{Tickets: h.beads, Notes: h.beads, Tabs: h.herdr, Starter: h.herdr, Namer: h.herdr, Agents: h.herdr,
+		Reporter: h.reporter, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{}, History: git.Git{},
+		Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()}
+	if h.mem != nil {
+		d.Checkout, d.Worktrees, d.Merger, d.History = h.mem, h.mem, h.mem, h.mem
+	}
+	o := New(h.cfg, log, "Work on TICKET_ID.", d)
 	o.SetSink(h.sink)
-	o.wait = timing{poll: time.Millisecond, startRetry: time.Millisecond, adopt: patience, blocked: 30 * time.Millisecond,
-		idleGrace: 30 * time.Millisecond, startGrace: 30 * time.Millisecond}
+	if h.mem == nil {
+		o.poll = time.Millisecond // git takes real time: the loop's clock is the real one
+	}
 	return o
 }
 
@@ -101,7 +129,12 @@ func (h *harness) run() (*Loop, int) {
 	return o, o.Run(context.Background())
 }
 
-func (h *harness) mainLog() string { return h.git(h.repo, "log", "--oneline", "main") }
+func (h *harness) mainLog() string {
+	if h.mem != nil {
+		return h.mem.log("main")
+	}
+	return h.git(h.repo, "log", "--oneline", "main")
+}
 
 func (h *harness) worktree(id string) string { return filepath.Join(h.cfg.WTRoot, id) }
 

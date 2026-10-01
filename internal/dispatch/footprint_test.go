@@ -1,13 +1,13 @@
 package dispatch
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -146,6 +146,10 @@ func (b *fakeBeads) describe(id, text string) {
 
 // commitFiles adds files to the harness repository's main branch, so tickets can name them.
 func (h *harness) commitFiles(files ...string) {
+	if h.mem != nil {
+		h.mem.commit("main", "files", files...)
+		return
+	}
 	for _, f := range files {
 		if err := os.MkdirAll(filepath.Join(h.repo, filepath.Dir(f)), 0o755); err != nil {
 			h.t.Fatal(err)
@@ -165,80 +169,80 @@ func (s *runSink) dispatchedYet(id string) bool { return slices.Contains(s.dispa
 // takes the free slot.
 func TestOverlappingTicketsNeverRunTogether(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.Concurrency = 2
-	h.beads.add("A", "fix the merge", 1)
-	h.beads.describe("A", "When `Loop.merge` aborts a rebase, say why.")
-	h.beads.add("B", "time the merge", 2)
-	h.beads.describe("B", "Log how long Loop.merge() takes.")
-	h.beads.add("C", "pick faster", 3)
-	h.beads.describe("C", "Speed up pickNext().")
-	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-		eventually(t, "C never took the free slot", func() bool { return h.sink.dispatchedYet("C") })
-		time.Sleep(20 * time.Millisecond) // a few more polls, with C finished and a slot free
-		return finishes("a.txt")(w)
-	}))
-	h.worker("B", v.runs("B", finishes("b.txt")))
-	h.worker("C", v.runs("C", finishes("c.txt")))
-	o := h.loop()
-	o.wait.ready = 5 * time.Millisecond
-	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := v.of("B"); slices.Contains(got, "A") {
-		t.Errorf("B ran beside A")
-	}
-	if got := h.sink.dispatched(); !equal(got, []string{"A", "C", "B"}) {
-		t.Errorf("dispatched %v", got)
-	}
-	log := h.logged()
-	if n := strings.Count(log, "skipping B: touches Loop.merge, like running A"); n != 1 {
-		t.Errorf("the skip was logged %d times, want once:\n%s", n, log)
-	}
-	if !strings.Contains(log, "A footprint: Loop.merge\n") || !strings.Contains(log, "C footprint: pickNext\n") {
-		t.Errorf("footprints not logged at dispatch:\n%s", log)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.Concurrency = 2
+		h.beads.add("A", "fix the merge", 1)
+		h.beads.describe("A", "When `Loop.merge` aborts a rebase, say why.")
+		h.beads.add("B", "time the merge", 2)
+		h.beads.describe("B", "Log how long Loop.merge() takes.")
+		h.beads.add("C", "pick faster", 3)
+		h.beads.describe("C", "Speed up pickNext().")
+		var v overlap
+		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
+			time.Sleep(3 * readyPoll) // a few polls, with C finished and a slot free
+			return finishes("a.txt")(w)
+		}))
+		h.worker("B", v.runs("B", finishes("b.txt")))
+		h.worker("C", v.runs("C", finishes("c.txt")))
+		o, code := h.run()
+		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := v.of("B"); slices.Contains(got, "A") {
+			t.Errorf("B ran beside A")
+		}
+		if got := h.sink.dispatched(); !equal(got, []string{"A", "C", "B"}) {
+			t.Errorf("dispatched %v", got)
+		}
+		log := h.logged()
+		if n := strings.Count(log, "skipping B: touches Loop.merge, like running A"); n != 1 {
+			t.Errorf("the skip was logged %d times, want once:\n%s", n, log)
+		}
+		if !strings.Contains(log, "A footprint: Loop.merge\n") || !strings.Contains(log, "C footprint: pickNext\n") {
+			t.Errorf("footprints not logged at dispatch:\n%s", log)
+		}
+	})
 }
 
 // Files a worker edits extend its ticket's footprint: a ticket naming one waits, and one naming
 // another file takes the free slot.
 func TestEditsExtendARunningTicketsFootprint(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.commitFiles("internal/x.go", "internal/y.go")
-	edits := &editsReporter{}
-	h.reporter = edits
-	h.cfg.Concurrency = 2
-	h.beads.add("A", "first", 1) // names nothing
-	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-		w.claim()
-		edits.edit(w.wt, "internal/x.go")
-		w.beads.add("B", "second", 2)
-		w.beads.describe("B", "Change internal/x.go.")
-		w.beads.add("C", "third", 3)
-		w.beads.describe("C", "Change internal/y.go.")
-		eventually(t, "C never took the free slot", func() bool { return h.sink.dispatchedYet("C") })
-		time.Sleep(20 * time.Millisecond) // a few more polls
-		return finishes("a.txt")(w)
-	}))
-	h.worker("B", v.runs("B", finishes("b.txt")))
-	h.worker("C", v.runs("C", finishes("c.txt")))
-	o := h.loop()
-	o.wait.ready = 5 * time.Millisecond
-	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := v.of("B"); slices.Contains(got, "A") {
-		t.Errorf("B ran beside A, which edits the file it names")
-	}
-	if got := h.sink.dispatched(); !equal(got, []string{"A", "C", "B"}) {
-		t.Errorf("dispatched %v", got)
-	}
-	if log := h.logged(); strings.Count(log, "skipping B: touches internal/x.go, like running A") != 1 {
-		t.Errorf("the skip was not logged once:\n%s", log)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.commitFiles("internal/x.go", "internal/y.go")
+		edits := &editsReporter{}
+		h.reporter = edits
+		h.cfg.Concurrency = 2
+		h.beads.add("A", "first", 1) // names nothing
+		var v overlap
+		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
+			w.claim()
+			edits.edit(w.wt, "internal/x.go")
+			w.beads.add("B", "second", 2)
+			w.beads.describe("B", "Change internal/x.go.")
+			w.beads.add("C", "third", 3)
+			w.beads.describe("C", "Change internal/y.go.")
+			time.Sleep(3 * readyPoll) // C takes the free slot at the next poll; then a few more
+			return finishes("a.txt")(w)
+		}))
+		h.worker("B", v.runs("B", finishes("b.txt")))
+		h.worker("C", v.runs("C", finishes("c.txt")))
+		o, code := h.run()
+		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := v.of("B"); slices.Contains(got, "A") {
+			t.Errorf("B ran beside A, which edits the file it names")
+		}
+		if got := h.sink.dispatched(); !equal(got, []string{"A", "C", "B"}) {
+			t.Errorf("dispatched %v", got)
+		}
+		if log := h.logged(); strings.Count(log, "skipping B: touches internal/x.go, like running A") != 1 {
+			t.Errorf("the skip was not logged once:\n%s", log)
+		}
+	})
 }
 
 // Tickets that name nothing run side by side in priority order, as they did before footprints; so
@@ -246,37 +250,40 @@ func TestEditsExtendARunningTicketsFootprint(t *testing.T) {
 func TestWithoutFootprintsTicketsRunAsBefore(t *testing.T) {
 	t.Parallel()
 	for _, off := range []bool{false, true} {
-		h := newHarness(t)
-		h.cfg.Concurrency = 2
-		h.cfg.NoFootprint = off
-		h.beads.add("A", "first", 1)
-		h.beads.add("B", "second", 2)
-		h.beads.add("C", "third", 3)
-		if off {
-			h.beads.describe("A", "Fix Loop.merge().")
-			h.beads.describe("B", "Fix Loop.merge().")
-		}
-		var v overlap
-		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-			eventually(t, "B never ran beside A", func() bool { return h.sink.dispatchedYet("B") })
-			return finishes("a.txt")(w)
-		}))
-		h.worker("B", v.runs("B", finishes("b.txt")))
-		h.worker("C", v.runs("C", finishes("c.txt")))
-		o := h.loop()
-		o.wait.ready = 5 * time.Millisecond
-		if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
-			t.Fatalf("off=%v: exit %d, final %q\n%s", off, code, o.Final(), h.sink.text())
-		}
-		if got := h.sink.dispatched(); !equal(got, []string{"A", "B", "C"}) {
-			t.Errorf("off=%v: dispatched %v", off, got)
-		}
-		if log := h.logged(); strings.Contains(log, "skipping") {
-			t.Errorf("off=%v: a ticket was skipped:\n%s", off, log)
-		}
-		if log := h.logged(); off && strings.Contains(log, "footprint") {
-			t.Errorf("footprints logged with them off:\n%s", log)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			h := newTimedHarness(t)
+			h.cfg.Concurrency = 2
+			h.cfg.NoFootprint = off
+			h.beads.add("A", "first", 1)
+			h.beads.add("B", "second", 2)
+			h.beads.add("C", "third", 3)
+			if off {
+				h.beads.describe("A", "Fix Loop.merge().")
+				h.beads.describe("B", "Fix Loop.merge().")
+			}
+			h.worker("A", func(w *fakeWorker) AgentState {
+				time.Sleep(time.Second)
+				if !h.sink.dispatchedYet("B") {
+					t.Errorf("off=%v: B didn't run beside A", off)
+				}
+				return finishes("a.txt")(w)
+			})
+			h.worker("B", finishes("b.txt"))
+			h.worker("C", finishes("c.txt"))
+			o, code := h.run()
+			if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+				t.Fatalf("off=%v: exit %d, final %q\n%s", off, code, o.Final(), h.sink.text())
+			}
+			if got := h.sink.dispatched(); !equal(got, []string{"A", "B", "C"}) {
+				t.Errorf("off=%v: dispatched %v", off, got)
+			}
+			if log := h.logged(); strings.Contains(log, "skipping") {
+				t.Errorf("off=%v: a ticket was skipped:\n%s", off, log)
+			}
+			if log := h.logged(); off && strings.Contains(log, "footprint") {
+				t.Errorf("footprints logged with them off:\n%s", log)
+			}
+		})
 	}
 }
 
@@ -284,32 +291,31 @@ func TestWithoutFootprintsTicketsRunAsBefore(t *testing.T) {
 // to conflict.
 func TestTwoWorkersEditingOneFileAreWarnedAbout(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	edits := &editsReporter{}
-	h.reporter = edits
-	h.cfg.Concurrency = 2
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	const warning = "LIKELY_CONFLICT: A and B both edit internal/x.go; the second to merge may conflict"
-	both := func(file string) behaviour {
-		return func(w *fakeWorker) AgentState {
-			edits.edit(w.wt, "internal/x.go")
-			eventually(t, "no warning", func() bool { return strings.Contains(h.sink.text(), warning) })
-			time.Sleep(20 * time.Millisecond) // a few more polls
-			return finishes(file)(w)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		edits := &editsReporter{}
+		h.reporter = edits
+		h.cfg.Concurrency = 2
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		const warning = "LIKELY_CONFLICT: A and B both edit internal/x.go; the second to merge may conflict"
+		both := func(file string) behaviour {
+			return func(w *fakeWorker) AgentState {
+				edits.edit(w.wt, "internal/x.go")
+				time.Sleep(3 * readyPoll) // warned at the next poll; then a few more
+				return finishes(file)(w)
+			}
 		}
-	}
-	h.worker("A", both("a.txt"))
-	h.worker("B", both("b.txt"))
-	o := h.loop()
-	o.wait.ready = 5 * time.Millisecond
-	if code := o.Run(context.Background()); code != ExitOK {
-		t.Fatalf("exit %d\n%s", code, h.sink.text())
-	}
-	if n := strings.Count(h.logged(), warning); n != 1 {
-		t.Errorf("warned %d times, want once:\n%s", n, h.logged())
-	}
-	if !h.alerts.has("  " + warning) {
-		t.Errorf("no notification: %q", h.alerts.list())
-	}
+		h.worker("A", both("a.txt"))
+		h.worker("B", both("b.txt"))
+		if _, code := h.run(); code != ExitOK {
+			t.Fatalf("exit %d\n%s", code, h.sink.text())
+		}
+		if n := strings.Count(h.logged(), warning); n != 1 {
+			t.Errorf("warned %d times, want once:\n%s", n, h.logged())
+		}
+		if !h.alerts.has("  " + warning) {
+			t.Errorf("no notification: %q", h.alerts.list())
+		}
+	})
 }

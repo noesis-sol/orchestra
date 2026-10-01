@@ -258,7 +258,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			return halt(ExitTool, stopStartFailed,
 				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", id, tab, err).causedBy(err)
 		}
-		if !sleep(ctx, orDefault(o.wait.startRetry, 3*time.Second)) {
+		if !sleep(ctx, startRetry) {
 			return errInterrupted
 		}
 		st, err := o.agents.Status(ctx, agent)
@@ -449,6 +449,10 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 	}
 	return nil
 }
+
+// startRetry is how long a failed 'agent start' is given, before the pane is looked at for the
+// agent, which may still be coming up.
+const startRetry = 3 * time.Second
 
 // outcome starts at one so an unset outcome is no outcome, never "closed".
 type outcome int

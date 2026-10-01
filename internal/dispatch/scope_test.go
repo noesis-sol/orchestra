@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -42,7 +43,11 @@ func (p *prompted) then(b behaviour) behaviour {
 }
 
 func scopedHarness(t *testing.T, root string) *harness {
-	h := newHarness(t)
+	return scoped(newHarness(t), root)
+}
+
+// scoped makes h's run one of root and its descendants.
+func scoped(h *harness, root string) *harness {
 	h.cfg.Ticket, h.cfg.ExcludeTypes = root, []string{"epic"}
 	return h
 }
@@ -161,30 +166,33 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	}
 }
 
-// A scope left unfinished ends with SCOPE_OPEN, saying why each subticket isn't done.
+// A scope left unfinished ends with SCOPE_OPEN, saying why each subticket isn't done. The asking
+// worker leaves its ticket in progress, so it settles only after the idle grace.
 func TestScopeOpenSaysWhyEachSubticketIsNotDone(t *testing.T) {
 	t.Parallel()
-	h := scopedHarness(t, "E")
-	h.beads.add("B", "blocker outside", 0)
-	h.beads.add("E", "epic", 1)
-	h.beads.kind("E", "epic")
-	h.beads.sub("E.1", "E", "done", 1)
-	h.beads.sub("E.2", "E", "blocked", 1)
-	h.beads.link("E.2", "B", "blocks")
-	h.beads.sub("E.3", "E", "set aside", 2)
-	h.beads.sub("E.4", "E", "asks", 3)
-	h.worker("E.1", finishes("e1.txt"))
-	h.worker("E.3", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
-	h.worker("E.4", func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" })
-	o, code := h.run()
-	want := "READY_EMPTY after 3 tickets; SCOPE_OPEN: E: 3 of its 4 subtickets not done: " +
-		"E.2 (blocked by B outside the scope), E.3 (set aside in this run), E.4 (waiting on your answer to Q)"
-	if code != ExitOK || o.Final() != want {
-		t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
-	}
-	if strings.Contains(h.sink.text(), "B dispatching") {
-		t.Error("B is outside the scope, yet dispatched")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := scoped(newTimedHarness(t), "E")
+		h.beads.add("B", "blocker outside", 0)
+		h.beads.add("E", "epic", 1)
+		h.beads.kind("E", "epic")
+		h.beads.sub("E.1", "E", "done", 1)
+		h.beads.sub("E.2", "E", "blocked", 1)
+		h.beads.link("E.2", "B", "blocks")
+		h.beads.sub("E.3", "E", "set aside", 2)
+		h.beads.sub("E.4", "E", "asks", 3)
+		h.worker("E.1", finishes("e1.txt"))
+		h.worker("E.3", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
+		h.worker("E.4", func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" })
+		o, code := h.run()
+		want := "READY_EMPTY after 3 tickets; SCOPE_OPEN: E: 3 of its 4 subtickets not done: " +
+			"E.2 (blocked by B outside the scope), E.3 (set aside in this run), E.4 (waiting on your answer to Q)"
+		if code != ExitOK || o.Final() != want {
+			t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
+		}
+		if strings.Contains(h.sink.text(), "B dispatching") {
+			t.Error("B is outside the scope, yet dispatched")
+		}
+	})
 }
 
 // An epic's scope ends done once its subtickets merge, leaving the epic for the maintainer to close.

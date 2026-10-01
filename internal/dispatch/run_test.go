@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -141,43 +143,41 @@ func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
 }
 
 // Ctrl+C while a worker gathers a deferral for triage: Run waits for the worker before returning,
-// so triage closes and the reviewer reads the loop only once it has stopped changing.
+// naming it once it has waited a while, so triage closes and the reviewer reads the loop only once
+// it has stopped changing.
 func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
-	o, tk, sink := newDeferringLoop(t)
-	o.wait.settleSay = 10 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	codes := make(chan int, 1)
-	go func() { codes <- o.Run(ctx) }()
-	<-tk.entered
-	cancel()
-	select {
-	case <-codes:
-		t.Fatal("Run returned while its worker was still running")
-	case <-time.After(100 * time.Millisecond):
-	}
-	if !strings.Contains(sink.text(), "'s last command to finish…") {
-		t.Errorf("the worker still out should be named:\n%s", sink.text())
-	}
-	close(tk.release)
-	if code := <-codes; code != ExitInterrupted {
-		t.Errorf("exit code %d, want %d", code, ExitInterrupted)
-	}
-	select {
-	case <-sink.gone:
-	default:
-		t.Error("Run returned before its worker did")
-	}
-	finished := make(chan struct{})
-	go func() { o.FinishTriage(context.Background()); close(finished) }()
-	select {
-	case <-finished:
-	case <-time.After(patience):
-		t.Fatal("FinishTriage did not return")
-	}
-	if strings.Contains(sink.text(), "TRIAGE") {
-		t.Errorf("a deferral after Ctrl+C should not be triaged:\n%s", sink.text())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		o, tk, sink := newDeferringLoop(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		codes := make(chan int, 1)
+		go func() { codes <- o.Run(ctx) }()
+		<-tk.entered
+		cancel()
+		time.Sleep(settleSay)
+		synctest.Wait()
+		select {
+		case <-codes:
+			t.Fatal("Run returned while its worker was still running")
+		default:
+		}
+		if !strings.Contains(sink.text(), "'s last command to finish…") {
+			t.Errorf("the worker still out should be named:\n%s", sink.text())
+		}
+		close(tk.release)
+		if code := <-codes; code != ExitInterrupted {
+			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
+		}
+		select {
+		case <-sink.gone:
+		default:
+			t.Error("Run returned before its worker did")
+		}
+		o.FinishTriage(t.Context())
+		if strings.Contains(sink.text(), "TRIAGE") {
+			t.Errorf("a deferral after Ctrl+C should not be triaged:\n%s", sink.text())
+		}
+	})
 }
 
 func TestRunMergesEachFinishedTicket(t *testing.T) {
@@ -221,127 +221,128 @@ func TestRunMergesEachFinishedTicket(t *testing.T) {
 // merges.
 func TestHoldLetsTheRunningWorkerFinish(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.Concurrency = 2
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.beads.add("C", "third", 3)
-	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
-	h.worker("B", func(w *fakeWorker) AgentState { h.waitHeld(); return finishes("b.txt")(w) })
-	o, code := h.run()
-	if code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") || strings.Contains(o.Final(), "also") {
-		t.Fatalf("exit %d, final %q", code, o.Final())
-	}
-	holds := h.sink.of(EvHold)
-	if len(holds) != 1 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED: A still in_progress") ||
-		!strings.HasSuffix(holds[0], "; no new tickets while the 1 running finish") {
-		t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
-	}
-	if !strings.Contains(h.mainLog(), "B: add b.txt") {
-		t.Error("B should finish and merge during the hold")
-	}
-	for _, d := range h.sink.of(EvDispatch) {
-		if strings.HasPrefix(d, "C ") {
-			t.Errorf("C started during the hold: %s", d)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.Concurrency = 2
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.beads.add("C", "third", 3)
+		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
+		h.worker("B", func(w *fakeWorker) AgentState { <-h.sink.held; return finishes("b.txt")(w) })
+		o, code := h.run()
+		if code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") || strings.Contains(o.Final(), "also") {
+			t.Fatalf("exit %d, final %q", code, o.Final())
 		}
-	}
-	if got := activeIDs(o); !equal(got, []string{"A"}) {
-		t.Errorf("active: %v", got)
-	}
+		holds := h.sink.of(EvHold)
+		if len(holds) != 1 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED: A still in_progress") ||
+			!strings.HasSuffix(holds[0], "; no new tickets while the 1 running finish") {
+			t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
+		}
+		if !strings.Contains(h.mainLog(), "B: add b.txt") {
+			t.Error("B should finish and merge during the hold")
+		}
+		for _, d := range h.sink.of(EvDispatch) {
+			if strings.HasPrefix(d, "C ") {
+				t.Errorf("C started during the hold: %s", d)
+			}
+		}
+		if got := activeIDs(o); !equal(got, []string{"A"}) {
+			t.Errorf("active: %v", got)
+		}
+	})
 }
 
 func TestBothWorkersStopReasonsAreReported(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.Concurrency = 2
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
-	h.worker("B", func(w *fakeWorker) AgentState { h.waitHeld(); w.claim(); return "blocked" })
-	o, code := h.run()
-	if code != ExitStuck {
-		t.Errorf("exit %d, want %d: the first reason decides", code, ExitStuck)
-	}
-	final := o.Final()
-	if !strings.HasPrefix(final, "PAUSED: A still in_progress") || !strings.Contains(final, "; also BLOCKED >4min: tab ") ||
-		!strings.HasSuffix(final, " (B) needs attention") {
-		t.Errorf("final %q", final)
-	}
-	holds := h.sink.of(EvHold)
-	if len(holds) != 2 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED") || !strings.HasPrefix(holds[1], "B HOLD: BLOCKED") {
-		t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
-	}
-	if got := activeIDs(o); len(got) != 2 {
-		t.Errorf("active: %v, want both left for the reviewer", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.Concurrency = 2
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
+		h.worker("B", func(w *fakeWorker) AgentState { <-h.sink.held; w.claim(); return "blocked" })
+		o, code := h.run()
+		if code != ExitStuck {
+			t.Errorf("exit %d, want %d: the first reason decides", code, ExitStuck)
+		}
+		final := o.Final()
+		if !strings.HasPrefix(final, "PAUSED: A still in_progress") || !strings.Contains(final, "; also BLOCKED >4min: tab ") ||
+			!strings.HasSuffix(final, " (B) needs attention") {
+			t.Errorf("final %q", final)
+		}
+		holds := h.sink.of(EvHold)
+		if len(holds) != 2 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED") || !strings.HasPrefix(holds[1], "B HOLD: BLOCKED") {
+			t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
+		}
+		if got := activeIDs(o); len(got) != 2 {
+			t.Errorf("active: %v, want both left for the reviewer", got)
+		}
+	})
 }
 
 // Ctrl+C while a worker works: the run stops at once and leaves the worker, its tab and worktree.
 func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.beads.add("A", "first", 1)
-	started, release := make(chan struct{}), make(chan struct{})
-	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
-	defer close(release)
-	o := h.loop()
-	o.ReportInterrupt = true
-	ctx, cancel := context.WithCancelCause(context.Background())
-	codes := make(chan int, 1)
-	go func() { codes <- o.Run(ctx) }()
-	<-started
-	cancel(InterruptedError("by SIGHUP"))
-	select {
-	case code := <-codes:
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.beads.add("A", "first", 1)
+		started, release := make(chan struct{}), make(chan struct{})
+		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
+		defer close(release)
+		o := h.loop()
+		o.ReportInterrupt = true
+		ctx, cancel := context.WithCancelCause(t.Context())
+		codes := make(chan int, 1)
+		go func() { codes <- o.Run(ctx) }()
+		<-started
+		cancel(InterruptedError("by SIGHUP"))
+		stopped := time.Now()
+		code := <-codes
 		want := "INTERRUPTED: stopped by SIGHUP while A (tab " + o.Running()[0].Tab + ") were running; their tabs and worktrees are left open"
-		if code != ExitInterrupted || o.Final() != want {
-			t.Errorf("exit %d, final %q, want %q", code, o.Final(), want)
+		if code != ExitInterrupted || o.Final() != want || time.Since(stopped) != 0 {
+			t.Errorf("exit %d, final %q after %s, want %q at once", code, o.Final(), time.Since(stopped), want)
 		}
-	case <-time.After(patience):
-		t.Fatal("Run did not return after Ctrl+C")
-	}
-	if got := activeIDs(o); !equal(got, []string{"A"}) {
-		t.Errorf("active: %v", got)
-	}
-	if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
-		t.Errorf("workers returned before Run: %v, want A's", got)
-	}
-	if len(h.herdr.tabsClosed()) != 0 || !exists(h.worktree("A")) {
-		t.Error("the worker's tab and worktree should be left")
-	}
+		if got := activeIDs(o); !equal(got, []string{"A"}) {
+			t.Errorf("active: %v", got)
+		}
+		if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
+			t.Errorf("workers returned before Run: %v, want A's", got)
+		}
+		if len(h.herdr.tabsClosed()) != 0 || !exists(h.worktree("A")) {
+			t.Error("the worker's tab and worktree should be left")
+		}
+	})
 }
 
 // Ctrl+C while a worker waits on a Herdr that doesn't answer: the call is cancelled, and Run
-// returns within a second, once the worker has.
+// returns at once, once the worker has.
 func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.beads.add("A", "first", 1)
-	h.herdr.statusHangs["A"] = true
-	started, release := make(chan struct{}), make(chan struct{})
-	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
-	defer close(release)
-	o := h.loop()
-	ctx, cancel := context.WithCancelCause(context.Background())
-	codes := make(chan int, 1)
-	go func() { codes <- o.Run(ctx) }()
-	<-started
-	time.Sleep(50 * time.Millisecond) // the settle loop is waiting on Herdr
-	cancel(InterruptedError("with Ctrl+C"))
-	select {
-	case code := <-codes:
-		if code != ExitInterrupted {
-			t.Errorf("exit %d, want %d", code, ExitInterrupted)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.beads.add("A", "first", 1)
+		h.herdr.statusHangs["A"] = true
+		started, release := make(chan struct{}), make(chan struct{})
+		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); close(started); <-release; return "idle" })
+		defer close(release)
+		o := h.loop()
+		ctx, cancel := context.WithCancelCause(t.Context())
+		codes := make(chan int, 1)
+		go func() { codes <- o.Run(ctx) }()
+		<-started
+		time.Sleep(time.Minute) // the settle loop is waiting on Herdr
+		cancel(InterruptedError("with Ctrl+C"))
+		stopped := time.Now()
+		if code := <-codes; code != ExitInterrupted || time.Since(stopped) != 0 {
+			t.Errorf("exit %d after %s, want %d at once", code, time.Since(stopped), ExitInterrupted)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Run did not return within a second of Ctrl+C")
-	}
-	if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
-		t.Errorf("workers returned before Run: %v, want A's", got)
-	}
-	if got := activeIDs(o); !equal(got, []string{"A"}) {
-		t.Errorf("active: %v, want A left running", got)
-	}
+		if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
+			t.Errorf("workers returned before Run: %v, want A's", got)
+		}
+		if got := activeIDs(o); !equal(got, []string{"A"}) {
+			t.Errorf("active: %v, want A left running", got)
+		}
+	})
 }
 
 // interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded,
@@ -366,58 +367,61 @@ func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string
 // merged, and then the run stops.
 func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("A", finishes("a.txt"))
-	o := h.loop()
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(nil)
-	o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel}
-	if code := o.Run(ctx); code != ExitInterrupted {
-		t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
-	}
-	if got := h.sink.of(EvClosed); len(got) != 1 || !strings.Contains(got[0], "A closed (") {
-		t.Errorf("closed:\n%s", strings.Join(got, "\n"))
-	}
-	if !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Errorf("A should be merged:\n%s", h.mainLog())
-	}
-	if exists(h.worktree("A")) || h.git(h.repo, "branch", "--list", "wt/A") != "" || !equal(h.herdr.tabsClosed(), []string{"tab1"}) {
-		t.Error("A's worktree, branch and tab should be removed")
-	}
-	if got := h.sink.of(EvDispatch); len(got) != 1 {
-		t.Errorf("dispatched after Ctrl+C:\n%s", strings.Join(got, "\n"))
-	}
-	if got := activeIDs(o); len(got) != 0 {
-		t.Errorf("active: %v", got)
-	}
-	if got := waiting(h.sink); len(got) != 0 {
-		t.Errorf("a merge done within a second should go unmentioned:\n%s", strings.Join(got, "\n"))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("A", finishes("a.txt"))
+		o := h.loop()
+		ctx, cancel := context.WithCancelCause(t.Context())
+		defer cancel(nil)
+		o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel}
+		if code := o.Run(ctx); code != ExitInterrupted {
+			t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
+		}
+		if got := h.sink.of(EvClosed); len(got) != 1 || !strings.Contains(got[0], "A closed (") {
+			t.Errorf("closed:\n%s", strings.Join(got, "\n"))
+		}
+		if !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Errorf("A should be merged:\n%s", h.mainLog())
+		}
+		if exists(h.worktree("A")) || slices.Contains(h.mem.branchList(), "wt/A") || !equal(h.herdr.tabsClosed(), []string{"tab1"}) {
+			t.Error("A's worktree, branch and tab should be removed")
+		}
+		if got := h.sink.of(EvDispatch); len(got) != 1 {
+			t.Errorf("dispatched after Ctrl+C:\n%s", strings.Join(got, "\n"))
+		}
+		if got := activeIDs(o); len(got) != 0 {
+			t.Errorf("active: %v", got)
+		}
+		if got := waiting(h.sink); len(got) != 0 {
+			t.Errorf("a merge done within a second should go unmentioned:\n%s", strings.Join(got, "\n"))
+		}
+	})
 }
 
 // Ctrl+C during a merge that takes a while: the run says what it waits for, rather than sit
 // silent until the merge is done.
 func TestInterruptNamesTheMergeItWaitsFor(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o := h.loop()
-	o.wait.settleSay = 10 * time.Millisecond
-	ctx, cancel := context.WithCancelCause(context.Background())
-	defer cancel(nil)
-	o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel, slow: 200 * time.Millisecond}
-	if code := o.Run(ctx); code != ExitInterrupted {
-		t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
-	}
-	if got := waiting(h.sink); !equal(got, []string{"A   waiting for A's merge to finish…"}) {
-		t.Errorf("waiting:\n%s", strings.Join(got, "\n"))
-	}
-	if got := h.sink.of(EvClosed); len(got) != 1 {
-		t.Errorf("A should merge:\n%s", h.sink.text())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		o := h.loop()
+		ctx, cancel := context.WithCancelCause(t.Context())
+		defer cancel(nil)
+		o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel, slow: 2 * settleSay}
+		if code := o.Run(ctx); code != ExitInterrupted {
+			t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
+		}
+		if got := waiting(h.sink); !equal(got, []string{"A   waiting for A's merge to finish…"}) {
+			t.Errorf("waiting:\n%s", strings.Join(got, "\n"))
+		}
+		if got := h.sink.of(EvClosed); len(got) != 1 {
+			t.Errorf("A should merge:\n%s", h.sink.text())
+		}
+	})
 }
 
 // waiting is what the run said it waits for after Ctrl+C.

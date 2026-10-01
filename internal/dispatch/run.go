@@ -94,7 +94,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
 	inflight := map[string]bool{}
 	o.queued = -1
-	poll := time.NewTicker(orDefault(o.wait.ready, readyPoll))
+	poll := time.NewTicker(readyPoll)
 	defer poll.Stop()
 	var stop *stopReason // the first reason decides the exit code
 	var alsoStopped []string
@@ -265,7 +265,7 @@ func (o *Loop) Run(ctx context.Context) int {
 // command's time limit when one hangs. Those not back within settleSay are named, so the terminal
 // doesn't sit silent meanwhile. A worker that settled still counts toward the hold.
 func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[string]bool) {
-	slow := time.NewTimer(orDefault(o.wait.settleSay, settleSay))
+	slow := time.NewTimer(settleSay)
 	defer slow.Stop()
 	for len(inflight) > 0 {
 		select {
