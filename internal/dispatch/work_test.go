@@ -158,7 +158,7 @@ func TestAskedTicketWhoseWorkerCarriesOnIsAdopted(t *testing.T) {
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		w.ask("Q", "which way?")
 		w.shows("idle") // asked, and stopped
@@ -174,7 +174,7 @@ func TestAskedTicketWhoseWorkerCarriesOnIsAdopted(t *testing.T) {
 		w.close()
 		return "idle"
 	})
-	h.worker("B", func(w *fakeWorker) string {
+	h.worker("B", func(w *fakeWorker) AgentState {
 		w.beads.set("Q", "closed")
 		return finishes("b.txt")(w)
 	})
