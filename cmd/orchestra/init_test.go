@@ -52,3 +52,61 @@ func TestInitSavesTheCheckTimeout(t *testing.T) {
 		t.Errorf("--check-timeout 0: exit = %d, stderr:\n%s", exitOf(err), stderr)
 	}
 }
+
+func TestInitChoosesWorkersMCPServersWithoutATerminal(t *testing.T) {
+	repo, _ := gitRepo(t)
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{
+		"mcpServers": {"firecrawl": {"type": "stdio", "command": "npx", "env": {"FIRECRAWL_API_KEY": "secret"}}},
+		"claudeAiMcpEverConnected": ["claude.ai Gmail"]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".mcp.json"), []byte(`{"mcpServers": {"postgres": {"command": "pg-mcp"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"HOME": home}
+	settings := func() string {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(read(t, project.SettingsPath(repo))), &m); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(string(m["mcp_servers"])), "")
+	}
+
+	// No terminal, no --mcp, first run: left unset, and the summary says so.
+	stdout, stderr, err := runIn(t, repo, env, "init", "--check", "make check")
+	if err != nil || settings() != "" || !strings.Contains(stdout, "not asked: no terminal; --mcp sets them") ||
+		!strings.Contains(stdout, "orchestra init --mcp") {
+		t.Fatalf("unset: %v, mcp_servers %q\nstdout:\n%s\nstderr:\n%s", err, settings(), stdout, stderr)
+	}
+	// --mcp saves the names, and nothing from the definitions.
+	stdout, stderr, err = runIn(t, repo, env, "init", "--mcp", "postgres, firecrawl")
+	if err != nil || settings() != `["postgres","firecrawl"]` {
+		t.Fatalf("--mcp: %v, mcp_servers %q\nstdout:\n%s\nstderr:\n%s", err, settings(), stdout, stderr)
+	}
+	if raw := read(t, project.SettingsPath(repo)); strings.Contains(raw, "secret") || strings.Contains(raw, "pg-mcp") {
+		t.Errorf("a definition reached settings.json: %s", raw)
+	}
+	plain := strings.Join(strings.Fields(stdout), " ")
+	for _, want := range []string{"postgres (project, stdio), firecrawl (user, stdio)", "(claude.ai connectors): Gmail"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("summary lacks %q:\n%s", want, stdout)
+		}
+	}
+	// Without --mcp again, the setting is kept.
+	if _, _, err = runIn(t, repo, env, "init"); err != nil || settings() != `["postgres","firecrawl"]` {
+		t.Errorf("kept: %v, mcp_servers %q", err, settings())
+	}
+	// A name this machine doesn't define is reported, and saved.
+	stdout, _, err = runIn(t, repo, env, "init", "--mcp", "redis")
+	if plain = strings.Join(strings.Fields(stdout), " "); err != nil || settings() != `["redis"]` ||
+		!strings.Contains(plain, "claude mcp add redis") {
+		t.Errorf("undefined: %v, mcp_servers %q\nstdout:\n%s", err, settings(), stdout)
+	}
+	// --mcp "" chooses none.
+	stdout, _, err = runIn(t, repo, env, "init", "--mcp", "")
+	if err != nil || settings() != `[]` || !strings.Contains(stdout, "orchestra init --mcp") {
+		t.Errorf("none: %v, mcp_servers %q\nstdout:\n%s", err, settings(), stdout)
+	}
+}

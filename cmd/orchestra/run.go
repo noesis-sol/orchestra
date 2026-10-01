@@ -407,7 +407,7 @@ func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) error {
 	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(ctx, ".", args[2:], stdin, stdout, stderr))
+		return status(runInit(ctx, ".", args[2:], getenv, stdin, stdout, stderr))
 	}
 	if len(args) > 1 && args[1] == "plan" {
 		return status(runPlan(ctx, ".", args[2:], stdout, stderr))

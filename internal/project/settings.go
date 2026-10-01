@@ -42,6 +42,10 @@ type Settings struct {
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
+	// MCPServers names the MCP servers workers get, defined in each machine's Claude Code config
+	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
+	// server Claude Code finds; [] gives them none.
+	MCPServers *[]string `json:"mcp_servers,omitempty"`
 }
 
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers

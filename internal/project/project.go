@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 )
 
 // A project keeps everything orchestra owns in .orchestra/:
@@ -132,8 +133,8 @@ type Step struct {
 	Template      bool // the worker prompt was written from the template, for the project to adjust
 }
 
-// Choice is what init sets up: the check command, its time limit and the default number of
-// tickets at once.
+// Choice is what init sets up: the check command, its time limit, the default number of tickets
+// at once and the MCP servers workers get.
 type Choice struct {
 	Check        string
 	CheckTimeout string // as in settings.json; "" for DefaultCheckTimeout
@@ -147,6 +148,14 @@ type Choice struct {
 	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
 	// when init could neither ask nor take --changelog-union.
 	Union, UnionUnasked bool
+	// MCP names the MCP servers workers get; nil leaves mcp_servers unset. MCPUnasked is set when
+	// init could neither ask nor take --mcp.
+	MCP        *[]string
+	MCPUnasked bool
+	// Servers are the MCP servers Claude Code knows for the repository, and ServersErr why they
+	// couldn't all be read.
+	Servers    []mcp.Server
+	ServersErr error
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
@@ -154,6 +163,10 @@ type Choice struct {
 // would reject, is replaced by 1; a check_timeout every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
 	c := Choice{Check: s.Check, CheckTimeout: s.CheckTimeout, Concurrent: s.Concurrency, CheckFrom: "settings"}
+	if s.MCPServers != nil {
+		names := append([]string{}, *s.MCPServers...)
+		c.MCP = &names
+	}
 	if _, err := ParseCheckTimeout(c.CheckTimeout); c.CheckTimeout != "" && err != nil {
 		c.ReplacedTimeout, c.CheckTimeout = c.CheckTimeout, ""
 	}
@@ -237,7 +250,10 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 // ApplySettings saves the choice to .orchestra/settings.json.
 func ApplySettings(repo string, c Choice) (Step, error) {
 	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
-	s.Check, s.CheckTimeout, s.Concurrency = c.Check, c.CheckTimeout, c.Concurrent
+	s.Check, s.CheckTimeout, s.Concurrency, s.MCPServers = c.Check, c.CheckTimeout, c.Concurrent, c.MCP
+	if c.MCP != nil && *c.MCP == nil {
+		s.MCPServers = &[]string{} // none, not null
+	}
 	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
 	}
@@ -315,7 +331,7 @@ func Prerequisites(repo string) []Step {
 }
 
 // NextSteps lists what is left for the user, in order.
-func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step) []string {
+func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Choice) []string {
 	var next []string
 	for _, p := range pre {
 		if p.Kind == StepMissing {
@@ -329,6 +345,12 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step) []str
 		next = append(next, "Fill in the <…> placeholders in "+Dir+"/"+promptName+".")
 	case wroteTemplate(steps):
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
+	}
+	if c.MCP == nil || len(*c.MCP) == 0 {
+		if names := AvailableServers(c.Servers); len(names) > 0 {
+			next = append(next, "Choose the MCP servers workers need from those defined here ("+
+				strings.Join(names, ", ")+"):\norchestra init --mcp <name>,<name>")
+		}
 	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string

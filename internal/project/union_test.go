@@ -50,7 +50,7 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 	if s, _, _ := ApplyUnion(context.Background(), repo, Choice{Union: true}); s.Kind != StepKept || strings.Count(read(t, attrs), "merge=union") != 1 {
 		t.Errorf("second run: %+v, .gitattributes = %q", s, read(t, attrs))
 	}
-	if next := strings.Join(NextSteps(context.Background(), repo, nil, nil), "\n"); !strings.Contains(next, "Commit .gitattributes.") {
+	if next := strings.Join(NextSteps(context.Background(), repo, nil, nil, Choice{}), "\n"); !strings.Contains(next, "Commit .gitattributes.") {
 		t.Errorf("the new line is to be committed: %q", next)
 	}
 	git(repo, "add", ".")
