@@ -30,10 +30,11 @@ type fakeHerdr struct {
 	mu         sync.Mutex
 	tabs       int
 	panes      map[string]fakePane
-	agents     []*fakeAgent // gone ones are removed
-	closed     []string     // tabs closed
-	pasted     []string     // tickets whose prompt was pasted
-	starts     []string     // tickets StartAgent was asked to start a worker for
+	agents     []*fakeAgent          // gone ones are removed
+	closed     []string              // tabs closed
+	pasted     []string              // tickets whose prompt was pasted
+	starts     []string              // tickets StartAgent was asked to start a worker for
+	args       map[string][][]string // the arguments of each LaunchInPane and StartAgent, by ticket
 	behaviours map[string][]behaviour
 	running    sync.WaitGroup
 
@@ -49,7 +50,7 @@ type fakeHerdr struct {
 }
 
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
-	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
+	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{}, args: map[string][][]string{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
 		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
@@ -116,6 +117,14 @@ func (h *fakeHerdr) startsFor() []string {
 	return append([]string(nil), h.starts...)
 }
 
+// argsFor is the arguments each worker for ticket id was started with, in order, each led by how:
+// "launch" (LaunchInPane) or "start" (StartAgent).
+func (h *fakeHerdr) argsFor(id string) [][]string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([][]string(nil), h.args[id]...)
+}
+
 func (h *fakeHerdr) pastedTo() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -152,6 +161,7 @@ func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) error {
 func (h *fakeHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.args[h.panes[pane].ticket] = append(h.args[h.panes[pane].ticket], append([]string{"launch"}, args...))
 	if h.launchFails[h.panes[pane].ticket] {
 		return errors.New("herdr pane run: failed")
 	}
@@ -168,6 +178,7 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.starts = append(h.starts, h.panes[pane].ticket)
+	h.args[h.panes[pane].ticket] = append(h.args[h.panes[pane].ticket], append([]string{"start"}, args...))
 	if err := errLongName(name); err != nil {
 		return err
 	}

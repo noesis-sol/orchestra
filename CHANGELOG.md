@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Claude workers get only the MCP servers the project chose (`"mcp_servers"`
+  in `.orchestra/settings.json`, set with `orchestra init`): each is resolved
+  at start-up from this machine's Claude Code config, written to the worktree's
+  `.orchestra/run/mcp.json` (readable by its owner only) and passed with
+  `--strict-mcp-config --mcp-config`, so no definition shows on the command
+  line. `[]` gives workers none. A chosen server this machine doesn't define,
+  or a claude.ai connector, is a setup problem (exit code 2). Without
+  `"mcp_servers"`, workers load every server as before, and the run warns once.
+  The `START` line names the servers workers get.
 - A finished ticket whose rebase onto work merged while it ran stops on
   conflicts goes back to its own worker instead of straight to review: the
   rebase is left stopped in its worktree, and the worker, still idle in its tab,

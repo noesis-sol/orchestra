@@ -2,13 +2,20 @@ package project
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 )
+
+// MCPConfigName is the file in a worktree's .orchestra/run/ holding the definitions of the MCP
+// servers its worker gets.
+const MCPConfigName = "mcp.json"
 
 // ConfigRoots are the directories Claude Code may key the repository's local-scope MCP servers
 // by: repo, then its main checkout when repo is a linked worktree. mcp.Discover takes them.
@@ -99,4 +106,64 @@ func MCPStep(c Choice) Step {
 		detail += " · couldn't read Claude Code's MCP config: " + c.ServersErr.Error()
 	}
 	return Step{Kind: kind, Label: "MCP servers", Detail: detail}
+}
+
+// ResolveMCP finds the definitions of the MCP servers named in mcp_servers among servers, as
+// mcp.Discover lists them on this machine. A name that isn't defined here, or names a claude.ai
+// connector, is an error naming each such server and how to fix it: workers would otherwise start
+// without a server their project chose for them.
+func ResolveMCP(names []string, servers []mcp.Server) ([]mcp.Server, error) {
+	chosen := []mcp.Server{}
+	var missing, connectors []string
+	for _, name := range names {
+		switch s, ok := mcp.Find(servers, name); {
+		case !ok:
+			missing = append(missing, name)
+		case !s.Available():
+			connectors = append(connectors, name)
+		default:
+			chosen = append(chosen, s)
+		}
+	}
+	var problems []string
+	for _, name := range missing {
+		problems = append(problems, fmt.Sprintf("%s isn't defined on this machine (define it: claude mcp add %s …)",
+			name, name))
+	}
+	for _, name := range connectors {
+		problems = append(problems, name+" is a claude.ai connector, which workers can't get")
+	}
+	if len(problems) > 0 {
+		return nil, fmt.Errorf(
+			"MCP servers for workers (mcp_servers in %s/%s): %s; or choose theirs again with: orchestra init",
+			Dir, SettingsName, strings.Join(problems, "; "))
+	}
+	return chosen, nil
+}
+
+// WriteMCPConfig puts servers' definitions in the worktree at .orchestra/run/mcp.json, as Claude
+// Code's --mcp-config takes them, and returns its path. The definitions may hold secrets, so the
+// file is readable by its owner only, and EnsureRunExcluded keeps it out of git.
+func WriteMCPConfig(wt string, servers []mcp.Server) (string, error) {
+	defs := map[string]json.RawMessage{}
+	for _, s := range servers {
+		defs[s.Name] = s.Definition
+	}
+	b, err := json.MarshalIndent(map[string]any{"mcpServers": defs}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(wt, Dir, RunName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, MCPConfigName)
+	// WriteFile keeps an earlier file's mode, so that file goes first.
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }

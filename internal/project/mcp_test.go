@@ -135,3 +135,29 @@ func TestConfigRootsAddTheMainCheckoutOfAWorktree(t *testing.T) {
 		t.Errorf("worktree's main checkout = %s, want %s", roots[1], repo)
 	}
 }
+
+func TestWriteMCPConfigIsForItsOwnerOnly(t *testing.T) {
+	wt := t.TempDir()
+	path := filepath.Join(wt, Dir, RunName, MCPConfigName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("earlier"), 0o644); err != nil { // an earlier worker's, readable by all
+		t.Fatal(err)
+	}
+	got, err := WriteMCPConfig(wt, testServers[:2])
+	if err != nil || got != path {
+		t.Fatalf("%s %v", got, err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v %v", fi.Mode(), err)
+	}
+	var f struct {
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	b, _ := os.ReadFile(path)
+	if err := json.Unmarshal(b, &f); err != nil || len(f.MCPServers) != 2 || !strings.Contains(string(f.MCPServers["postgres"]), "secret") {
+		t.Errorf("%s %v", b, err)
+	}
+}

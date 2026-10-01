@@ -109,6 +109,13 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return nil
 	}
 
+	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
+	// every server on the machine, so a file it can't have stops the run rather than the worker.
+	mcpArgs, err := o.mcpArgs(wt)
+	if err != nil {
+		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
+	}
+
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
 
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, wt, id)
@@ -147,6 +154,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			report = nil
 		}
 	}
+	// startArgs are the worker's arguments: its MCP servers, which it always gets, then its reports
+	// and its prompt, if it has them.
+	startArgs := func() []string {
+		args := append(append([]string{}, mcpArgs...), report...)
+		if launch != "" {
+			args = append(args, launch)
+		}
+		return args
+	}
 
 	// With its prompt in a file, the worker is started by typing the command into the tab and
 	// named once Herdr recognises it. Herdr's own start waits for the agent to look ready for
@@ -158,7 +174,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	}
 	ok := false
 	if launch != "" {
-		err := o.starter.LaunchInPane(ctx, pane, c.AgentKind, append(report[:len(report):len(report)], launch))
+		err := o.starter.LaunchInPane(ctx, pane, c.AgentKind, startArgs())
 		typed := err == nil
 		if typed {
 			_, err = o.namer.AdoptAgent(ctx, pane, c.AgentKind, agent)
@@ -202,10 +218,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// the name), and a retry then finds the pane occupied, so after each failure check whether
 	// the agent is there before trying again.
 	for attempt := 0; attempt < 10 && !ok; attempt++ {
-		args := report[:len(report):len(report)]
-		if launch != "" {
-			args = append(args, launch)
-		}
+		args := startArgs()
 		err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
 		if ok = err == nil; ok {
 			break
@@ -214,7 +227,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			return nameRefused(err)
 		}
 		o.log.Raw("", err)
-		if o.starter.IsArgumentRefused(err) && len(args) > 0 {
+		if o.starter.IsArgumentRefused(err) && len(args) > len(mcpArgs) {
 			// Start it plainly: paste the prompt instead, and do without reports if need be.
 			if launch != "" {
 				launch = ""
@@ -222,6 +235,11 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 				report = nil
 			}
 			continue
+		}
+		if o.starter.IsArgumentRefused(err) && len(mcpArgs) > 0 {
+			// Without them it would start with every MCP server on the machine.
+			return halt(ExitTool, stopStartFailed,
+				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", id, tab, err).causedBy(err)
 		}
 		if !sleep(ctx, orDefault(o.wait.startRetry, 3*time.Second)) {
 			return errInterrupted

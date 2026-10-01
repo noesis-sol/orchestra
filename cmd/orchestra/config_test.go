@@ -368,3 +368,70 @@ func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
 		}
 	}
 }
+
+// mcp_servers is resolved to this machine's definitions at start-up; a name it can't give workers
+// is a setup problem naming the fix.
+func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
+	repo := configFixture(t, `{"mcp_servers": ["postgres", "exa"]}`)
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	user := `{"mcpServers": {"postgres": {"command": "pg-mcp"}}, "claudeAiMcpEverConnected": ["claude.ai Gmail"]}`
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".mcp.json"), []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, p := loadWith(t)
+	if len(p) > 0 || c.MCP == nil || len(*c.MCP) != 2 {
+		t.Fatalf("resolved: %v %v", c.MCP, p)
+	}
+	if s := (*c.MCP)[0]; s.Name != "postgres" || string(s.Definition) != `{"command": "pg-mcp"}` {
+		t.Errorf("postgres: %+v", s)
+	}
+	if s := (*c.MCP)[1]; s.Name != "exa" || !strings.Contains(string(s.Definition), "exa.example") {
+		t.Errorf("exa: %+v", s)
+	}
+
+	settings := func(s string) {
+		t.Helper()
+		if err := os.WriteFile(".orchestra/settings.json", []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings(`{"mcp_servers": ["postgres", "redis", "claude.ai Gmail"]}`)
+	_, p = loadWith(t)
+	if len(p) != 1 {
+		t.Fatalf("unresolvable: %v", p)
+	}
+	for _, want := range []string{"mcp_servers in .orchestra/settings.json", "redis isn't defined on this machine (define it: claude mcp add redis …)",
+		"claude.ai Gmail is a claude.ai connector, which workers can't get", "orchestra init"} {
+		if !strings.Contains(p[0], want) {
+			t.Errorf("%q lacks %q", p[0], want)
+		}
+	}
+	if strings.Contains(p[0], "postgres") {
+		t.Errorf("names a resolved server: %q", p[0])
+	}
+	t.Setenv("AGENT_KIND", "codex") // not passed to it, so not resolved
+	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 3 || (*c.MCP)[1].Definition != nil {
+		t.Errorf("another agent: %v %v", c.MCP, p)
+	}
+	t.Setenv("AGENT_KIND", "")
+
+	settings(`{"mcp_servers": []}`)
+	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 0 {
+		t.Errorf("none: %v %v", c.MCP, p)
+	}
+	settings(`{}`)
+	if c, p := loadWith(t); len(p) > 0 || c.MCP != nil {
+		t.Errorf("unset: %v %v", c.MCP, p)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings(`{"mcp_servers": ["postgres"]}`)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "Cannot read Claude Code's MCP config") {
+		t.Errorf("unreadable: %v", p)
+	}
+}

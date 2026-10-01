@@ -243,6 +243,9 @@ func (m Dashboard) View() string {
 	if m.draining {
 		hint = lipgloss.JoinVertical(lipgloss.Left, m.windDownLine(w), hint)
 	}
+	if warn := m.cfg.MCPWarning(); warn != "" { // in the log once; here for the whole run
+		hint = lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
+	}
 	if !m.asking {
 		return m.layout(w, title, hint)
 	}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -347,4 +348,8 @@ type Config struct {
 	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
 	// worker without a ticket is started to see whether commands run again; 0 for none.
 	EnvProbe time.Duration
+	// MCP is the MCP servers Claude workers get and no others: those mcp_servers in
+	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
+	// nil when the project hasn't chosen: workers then load every server Claude Code finds.
+	MCP *[]mcp.Server
 }

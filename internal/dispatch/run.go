@@ -79,9 +79,10 @@ func (o *Loop) Run(ctx context.Context) int {
 		ticketLimit = ShortDuration(c.TicketLimit)
 	}
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
-		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
+		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s, MCP servers: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit,
-		ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
+		ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot, c.mcpLabel())
+	o.sayMCP()
 	if s := o.loadUnmerged(ctx); s != nil {
 		return o.stop(s.code, "%s", s)
 	}

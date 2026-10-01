@@ -23,6 +23,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -289,6 +290,25 @@ func loadConfig(
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.ExcludeTypes = types
+		}
+		// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
+		// config; one this machine can't give them is for the maintainer to fix before they start.
+		switch {
+		case settings.MCPServers == nil:
+		case c.AgentKind != "claude": // only named: the loop says they aren't passed to such workers
+			named := []mcp.Server{}
+			for _, name := range *settings.MCPServers {
+				named = append(named, mcp.Server{Name: name})
+			}
+			c.MCP = &named
+		default:
+			if servers, err := mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, c.Repo)...); err != nil {
+				problems = append(problems, "Cannot read Claude Code's MCP config for the workers' MCP servers: "+err.Error()+".")
+			} else if chosen, err := project.ResolveMCP(*settings.MCPServers, servers); err != nil {
+				problems = append(problems, err.Error()+".")
+			} else {
+				c.MCP = &chosen
+			}
 		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")

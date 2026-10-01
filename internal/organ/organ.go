@@ -41,6 +41,8 @@ type Result struct {
 
 // args keeps an organ read-only and small: no built-in tools, no MCP servers (their tool lists
 // alone are ~180k tokens), a short system prompt in place of Claude Code's, and no saved session.
+// --strict-mcp-config with no --mcp-config is no MCP servers at all, whatever mcp_servers in
+// .orchestra/settings.json gives the workers: an organ never gets those.
 func (g Client) args(system, schema string) []string {
 	a := []string{"-p", "--tools", "", "--strict-mcp-config", "--no-session-persistence",
 		"--system-prompt", system, "--output-format", "json"}
