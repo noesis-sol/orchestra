@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // runHook runs the command of the event's hook in settings as Claude Code would, with input on stdin.
@@ -51,8 +52,8 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 		t.Errorf("after the tool: %+v %v", u, ok)
 	}
 	runHook(t, settings, "Stop", `{"hook_event_name":"Stop"}`)
-	if u, _ := r.LastToolUse(wt); u.Event != "Stop" {
-		t.Errorf("at the end of the turn: %+v", u)
+	if u, _ := r.LastToolUse(wt); u.Event != "Stop" || time.Since(u.At) > time.Minute || time.Until(u.At) > time.Minute {
+		t.Errorf("at the end of the turn, reported just now: %+v", u)
 	}
 	if _, err := os.Stat(filepath.Join(wt, ".orchestra", "run")); err != nil {
 		t.Fatal(err)

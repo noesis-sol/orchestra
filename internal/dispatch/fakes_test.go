@@ -255,6 +255,7 @@ type fakeWorker struct {
 	id    string
 	wt    string
 	beads *fakeBeads
+	shows func(status string) // what Herdr shows it as from now on, while it goes on working
 }
 
 func (w *fakeWorker) claim()   { w.beads.set(w.id, "in_progress") }

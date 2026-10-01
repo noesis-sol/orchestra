@@ -228,7 +228,9 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	}
 
 	stopWatch() // the settle loop reports from here on
-	if stop := o.waitSettled(ctx, id, agent, tab, wt, started, w.report); stop != nil {
+	// It has begun on its prompt now, and reports through hooks only if it was started with them.
+	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), report != nil, w.report)
+	if stop != nil {
 		return stop
 	}
 
@@ -269,7 +271,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	case outcomeUnreadable:
 		return halt(ExitTool, "STATUS_UNREADABLE for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab)
 	case outcomeUnfinished:
-		fast = o.failedAtOnce(s, started, br, head, wt)
+		fast = o.failedAtOnce(s, started, idleAt, br, head, wt)
 		o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		if err := o.deferAside(id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

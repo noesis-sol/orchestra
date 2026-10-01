@@ -89,7 +89,7 @@ func (h *harness) loop() *Loop {
 		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
 	o.SetSink(h.sink)
 	o.wait = timing{poll: time.Millisecond, startRetry: time.Millisecond, adopt: patience, blocked: 30 * time.Millisecond,
-		idleGrace: 30 * time.Millisecond, settle: patience}
+		idleGrace: 30 * time.Millisecond, startGrace: 30 * time.Millisecond, settle: patience}
 	return o
 }
 

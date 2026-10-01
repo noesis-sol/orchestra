@@ -230,6 +230,17 @@ All notable changes to orchestra are documented here. The format follows
   `-race` build spinning before exec, which hung the test suite
   ([golang/go#79804](https://github.com/golang/go/issues/79804)); Go 1.26 is
   still the minimum.
+- A worker that has only just started is no longer taken for one that has
+  finished. Herdr can show a worker as idle while it starts up, with its ticket
+  still open, and its ticket was deferred while it went on to do the work,
+  which was then never merged. A Claude worker now counts as settled only at
+  its Stop hook (the end of its turn); while its last hook was a tool use it is
+  mid-turn whatever Herdr says, for up to 10 minutes. Without hooks, or before
+  its first one, an idle worker gets 3 minutes from its start to claim its
+  ticket. The log says what decided it: `<ticket> settled: Stop hook at
+  20:48:39`, `… idle 3m after it started, with the ticket still open`. The
+  environment hold counts a worker by when it went idle, so the grace doesn't
+  hide one that failed at once.
 
 ## [0.1.1] - 2026-09-29
 

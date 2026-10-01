@@ -75,15 +75,19 @@ func hookSettings(activity, edits string) map[string]any {
 	}}
 }
 
-// LastToolUse returns what the worker in worktree reported last, and false when it has reported
-// nothing readable.
+// LastToolUse returns what the worker in worktree reported last, and when, and false when it has
+// reported nothing readable.
 func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	path := filepath.Join(worktree, project.Dir, project.RunName, activityName)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
-	return parseToolUse(b)
+	u, ok := parseToolUse(b)
+	if fi, err := os.Stat(path); ok && err == nil {
+		u.At = fi.ModTime() // each report replaces the file, so it was written then
+	}
+	return u, ok
 }
 
 // EditedFiles returns the files the worker in worktree has edited, as paths in the repository, in

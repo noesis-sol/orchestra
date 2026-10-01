@@ -3,13 +3,15 @@ package dispatch
 import (
 	"regexp"
 	"strings"
+	"time"
 )
 
 // ToolUse is what a worker last reported through its hooks.
 type ToolUse struct {
-	Event   string // PreToolUse (using Tool now), PostToolUse (between tools) or Stop (turn over)
-	Tool    string // Bash, Edit, Read, …
-	Command string // Bash's command
+	Event   string    // PreToolUse (using Tool now), PostToolUse (between tools) or Stop (turn over)
+	Tool    string    // Bash, Edit, Read, …
+	Command string    // Bash's command
+	At      time.Time // when it was reported; zero if not known
 }
 
 // testRunner matches commands that run a test suite, for projects whose check command is not

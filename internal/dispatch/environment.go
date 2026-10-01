@@ -26,11 +26,13 @@ import (
 // tickets again. If not, the run ends as it would have. The machine is probed once per run, so an
 // environment that keeps failing ends the run the second time it holds.
 
-// failedAtOnce reports whether a worker settled as one failed by its environment does: soon after
-// started, its ticket still open, its branch still at head and its worktree clean.
-func (o *Loop) failedAtOnce(status string, started time.Time, br, head, wt string) bool {
+// failedAtOnce reports whether a worker settled as one failed by its environment does: idle for good
+// (from idleAt) soon after started, its ticket still open, its branch still at head and its
+// worktree clean. Going idle counts, not settling: an idle worker with its ticket open is given
+// startGrace before it settles, which can outlast the window.
+func (o *Loop) failedAtOnce(status string, started, idleAt time.Time, br, head, wt string) bool {
 	c := o.cfg
-	return c.EnvHoldCount > 0 && status == "open" && time.Since(started) < c.EnvHoldWindow &&
+	return c.EnvHoldCount > 0 && status == "open" && idleAt.Sub(started) < c.EnvHoldWindow &&
 		o.checkout.Head(c.Repo, br) == head && o.checkout.DirtyWorktree(wt) == ""
 }
 

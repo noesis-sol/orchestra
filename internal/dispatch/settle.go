@@ -7,20 +7,22 @@ import (
 	"time"
 )
 
-// waitSettled waits until the worker settles. Never answer its prompts; stop if it stays blocked for 4
-// minutes, or in a status Herdr can't tell (unknown) for 5. A worker waiting on its own background
-// command looks idle too, so an idle worker whose ticket is still in progress gets idleGrace to
-// resume before it counts as settled. A status Herdr fails to read says nothing about the worker,
-// so the wait goes on through maxFailedReads of them in a row before the run stops. A worker still
-// going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still going
-// after longRunning is reported once. Each status read goes to report (nil: none), for the dashboard.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started time.Time, report func(status string)) *stopReason {
+// waitSettled waits until the worker settles, and returns when it went idle for good. Never answer
+// its prompts; stop if it stays blocked for 4 minutes, or in a status Herdr can't tell (unknown) for
+// 5. An idle worker has settled only once idleSettled says so: Herdr takes a worker for idle while
+// it starts up, and while it waits on its own background command. hooks says it reports through
+// them, begun when it was confirmed started on its prompt. A status Herdr fails to read says
+// nothing about the worker, so the wait goes on through maxFailedReads of them in a row before the
+// run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
+// without a limit, one still going after longRunning is reported once. Each status read goes to
+// report (nil: none), for the dashboard.
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(status string)) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
 	warned := false
 	for {
 		if ctx.Err() != nil {
-			return errInterrupted
+			return time.Time{}, errInterrupted
 		}
 		st, err := o.agents.Status(agent)
 		if report != nil {
@@ -31,16 +33,20 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
 			}
 			if failed >= maxFailedReads {
-				return halt(ExitTool, "HERDR_FAILED: the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err)
+				return time.Time{}, halt(ExitTool, "HERDR_FAILED: the status of %s's worker (tab %s) could not be read %d times in a row: %v", id, tab, failed, err)
 			}
 			if !sleep(ctx, o.pollEvery()) {
-				return errInterrupted
+				return time.Time{}, errInterrupted
 			}
 			continue
 		}
 		failed = 0
 		if st == "gone" {
-			return nil
+			o.info("  %s settled: its worker is gone", id)
+			if idleSince.IsZero() {
+				return time.Now(), nil
+			}
+			return idleSince, nil
 		}
 		if st == "idle" || st == "done" {
 			if idleSince.IsZero() {
@@ -50,8 +56,9 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			if err != nil {
 				o.log.Raw("", err)
 			}
-			if !keepWaiting(ts, time.Since(idleSince), orDefault(o.wait.idleGrace, idleGrace)) {
-				return nil
+			if done, why := o.idleSettled(ts, wt, hooks, time.Since(idleSince), time.Since(begun)); done {
+				o.info("  %s settled: %s", id, why)
+				return idleSince, nil
 			}
 		} else {
 			idleSince = time.Time{}
@@ -61,7 +68,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				blockedSince = time.Now()
 			}
 			if time.Since(blockedSince) > orDefault(o.wait.blocked, blockedLimit) {
-				return halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
+				return time.Time{}, halt(ExitStuck, "BLOCKED >4min: tab %s (%s) needs attention", tab, id)
 			}
 		} else {
 			blockedSince = time.Time{}
@@ -71,14 +78,14 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				unknownSince = time.Now()
 			}
 			if time.Since(unknownSince) > orDefault(o.wait.unknown, unknownLimit) {
-				return halt(ExitStuck, "UNKNOWN >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+				return time.Time{}, halt(ExitStuck, "UNKNOWN >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 			}
 		} else {
 			unknownSince = time.Time{}
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
 			o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
-			return halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
+			return time.Time{}, halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
 		}
 		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
 			warned = true
@@ -86,7 +93,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)", id, st, ShortDuration(long), tab)})
 		}
 		if !sleep(ctx, o.pollEvery()) {
-			return errInterrupted
+			return time.Time{}, errInterrupted
 		}
 	}
 }
@@ -122,11 +129,41 @@ func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (string,
 }
 
 // idleGrace is how long an idle worker whose ticket is still in progress may take to resume
-// (typically it is waiting on its own background command) before the run pauses for it.
+// (typically it is waiting on its own background command) before the run pauses for it, and how
+// long one whose hooks last reported a tool use may stay idle before its turn counts as over.
 const idleGrace = 10 * time.Minute
 
-func keepWaiting(ticketStatus string, idleFor, grace time.Duration) bool {
-	return ticketStatus == "in_progress" && idleFor < grace
+// startGrace is how long after it started on its prompt an idle worker may leave its ticket open
+// (still starting up, or not yet at bd update --claim) before it counts as settled, when no hook
+// says whether its turn is over.
+const startGrace = 3 * time.Minute
+
+// idleSettled decides whether a worker Herdr shows idle has settled, from its ticket's status, how
+// long it has been idle (idleFor) and how long since it started on its prompt (running); why names
+// what decided it. A ticket in progress gets idleGrace, as its worker may be waiting on its own
+// background command. Otherwise a worker that reports through hooks has settled at its Stop hook,
+// the end of its turn: the record is removed before it starts, so any Stop came after its prompt.
+// While its last report is a tool use it is mid-turn, whatever Herdr says, for up to idleGrace (a
+// turn that fails ends without a Stop). Before its first report, or without hooks, an open ticket
+// gets startGrace; any other status means the worker is done with it.
+func (o *Loop) idleSettled(ticket, wt string, hooks bool, idleFor, running time.Duration) (settled bool, why string) {
+	grace := orDefault(o.wait.idleGrace, idleGrace)
+	if ticket == "in_progress" {
+		return idleFor >= grace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(grace))
+	}
+	if hooks && o.reporter != nil {
+		if u, ok := o.reporter.LastToolUse(wt); ok {
+			if u.Event == "Stop" {
+				return true, "Stop hook at " + u.At.Format("15:04:05")
+			}
+			return idleFor >= grace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook", ShortDuration(grace), u.Event)
+		}
+	}
+	if ticket == "open" {
+		start := orDefault(o.wait.startGrace, startGrace)
+		return running >= start, fmt.Sprintf("idle %s after it started, with the ticket still open", ShortDuration(start))
+	}
+	return true, "idle with the ticket " + ticket
 }
 
 // watcher shows a worker's status and latest action on the dashboard.

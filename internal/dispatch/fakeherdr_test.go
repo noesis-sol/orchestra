@@ -90,7 +90,12 @@ func (h *fakeHerdr) prompt(a *fakeAgent) {
 	h.running.Add(1)
 	go func() {
 		defer h.running.Done()
-		st := b(&fakeWorker{t: h.t, id: p.ticket, wt: p.wt, beads: h.beads})
+		shows := func(st string) {
+			h.mu.Lock()
+			a.status = st
+			h.mu.Unlock()
+		}
+		st := b(&fakeWorker{t: h.t, id: p.ticket, wt: p.wt, beads: h.beads, shows: shows})
 		h.mu.Lock()
 		a.status = st
 		h.mu.Unlock()

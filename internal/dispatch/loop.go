@@ -194,6 +194,7 @@ type timing struct {
 	unknown    time.Duration // a worker whose status stays unknown for longer stops the run: unknownLimit
 	longRun    time.Duration // without a ticket limit, a worker going on longer is reported once: longRunning
 	idleGrace  time.Duration // idleGrace
+	startGrace time.Duration // startGrace
 	settle     time.Duration // SettleWait
 	probe      time.Duration // how long the probe worker may take to run its command: probeLimit
 	ready      time.Duration // between reads of bd ready while workers run: readyPoll

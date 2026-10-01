@@ -20,9 +20,10 @@ func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
 		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
 	}
+	o := &Loop{}
 	for _, c := range cases {
-		if got := keepWaiting(c.status, c.idle, idleGrace); got != c.wait {
-			t.Errorf("keepWaiting(%s, %s) = %v, want %v", c.status, c.idle, got, c.wait)
+		if settled, _ := o.idleSettled(c.status, "wt", false, c.idle, startGrace); settled == c.wait {
+			t.Errorf("idleSettled(%s, idle %s) = %v, want %v", c.status, c.idle, settled, !c.wait)
 		}
 	}
 }
@@ -68,7 +69,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil); stop != nil {
+	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	if a.reads != 4 {
@@ -84,7 +85,7 @@ func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 	o, a, _ := newSettleLoop(t, "working", "blocked", "working")
 	w := o.newWatcher("wt", Status{Ticket: "A"})
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), w.report); stop != nil {
+	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, w.report); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	if a.reads != 4 {
@@ -101,7 +102,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		script[i] = "unreadable"
 	}
 	o, a, _ := newSettleLoop(t, script...)
-	stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil)
+	_, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil)
 	if stop == nil || stop.code != ExitTool || !strings.Contains(stop.text, "HERDR_FAILED") {
 		t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 	}
@@ -119,7 +120,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 	o, _, logPath := newSettleLoop(t, script...)
 	o.wait.longRun = 5 * time.Millisecond
 	shown := recordAlerts(o.log)
-	if stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), nil); stop != nil {
+	if _, stop := o.waitSettled(context.Background(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, nil); stop != nil {
 		t.Fatalf("stopped: %s", stop.text)
 	}
 	var warned []string
