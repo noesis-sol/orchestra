@@ -333,6 +333,7 @@ type Config struct {
 	NoFootprint  bool          // start tickets side by side even when their footprints overlap
 	Predict      bool          // have the predictor organ guess the files of ready tickets naming none
 	Ticket       string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
+	Feature      string        // the feature request (--feature) Ticket, its epic, was planned from; "" for none
 	ExcludeTypes []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.

@@ -152,9 +152,14 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	if strings.HasPrefix(final, "DRAINED") {
 		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
 	}
-	scope, outside := "Run", ""
+	scope, outside, feature := "Run", "", ""
 	if c.Ticket != "" {
 		scope = fmt.Sprintf("Run of ticket %s and its subtickets only", c.Ticket)
+		if c.Feature != "" {
+			scope = fmt.Sprintf("Run of epic %s and its subtickets only, filed from a feature request (orchestra "+
+				"--feature) just before the run", c.Ticket)
+			feature = organ.Section(tag, "The feature request epic "+c.Ticket+" was planned from", c.Feature)
+		}
 		if subs, err := o.tickets.Descendants(ctx, c.Ticket); err == nil {
 			if filed, err := o.filedOutside(ctx, subs); err == nil {
 				for _, t := range filed {
@@ -171,7 +176,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
-		organ.Section(tag, "Tickets still ready", stillReady) + outside
+		organ.Section(tag, "Tickets still ready", stillReady) + outside + feature
 }
 
 // Review has the reviewer write the run report.
@@ -181,7 +186,7 @@ func (o *Loop) Review(ctx context.Context, code int, final string) (string, erro
 		return "", err
 	}
 	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n", o.started.Format("2006-01-02"),
-		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg.Ticket),
+		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg),
 		strings.TrimSpace(result)), nil
 }
 

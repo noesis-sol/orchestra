@@ -848,7 +848,7 @@ func (m Dashboard) titleLine(w int) string {
 		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
 	}
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
-		m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
+		m.cfg.Base, dispatch.ScopeLabel(m.cfg), time.Since(m.began).Truncate(time.Second)))
 	return ansi.Truncate(line, w, "…")
 }
 

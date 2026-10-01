@@ -105,12 +105,26 @@ func (o *Loop) scopeNote(id string) string {
 		"so this run picks it up; anything else waits for a later run.\n", r, r, r)
 }
 
-// ScopeLabel is how a run's scope is shown after the branch: " · ticket <id>", or "".
-func ScopeLabel(ticket string) string {
-	if ticket == "" {
+// ScopeLabel is how a run's scope is shown after the branch: " · ticket <id>", " · feature <epic>"
+// for a run planned from a feature request, or "".
+func ScopeLabel(c Config) string {
+	switch {
+	case c.Ticket == "":
 		return ""
+	case c.Feature != "":
+		return " · feature " + c.Ticket
 	}
-	return " · ticket " + ticket
+	return " · ticket " + c.Ticket
+}
+
+// FeatureLine is a feature request on one line, its whitespace collapsed and cut after 200
+// characters, for the log.
+func FeatureLine(text string) string {
+	line := strings.Join(strings.Fields(text), " ")
+	if r := []rune(line); len(r) > 200 {
+		line = string(r[:200]) + "…"
+	}
+	return line
 }
 
 // subtickets is "1 subticket" or "n subtickets".

@@ -96,6 +96,7 @@ type options struct {
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
 	OrganEffort  string // effort for every organ; "" gives each its own
 	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
+	Yes          bool   // file a --feature plan without asking
 	showVersion  bool
 }
 
@@ -140,7 +141,7 @@ func loadConfig(
 		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
 	fs.StringVar(&c.OrganEffort, "organ-effort", getenv("ORGAN_EFFORT"),
 		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
-			"else low for triage and the predictor, medium for the run report) [ORGAN_EFFORT]")
+			"else low for triage, the predictor and screening, medium for the run report, high for planning) [ORGAN_EFFORT]")
 	fs.StringVar(&c.WorkerEffort, "worker-effort", getenv("WORKER_EFFORT"),
 		"effort Claude workers start at: low, medium, high, xhigh or max "+
 			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
@@ -159,6 +160,10 @@ func loadConfig(
 	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"),
 		"work on this ticket and its subtickets only, each parent after its children; "+
 			"nothing else is started [ORCHESTRA_TICKET]")
+	fs.StringVar(&c.Feature, "feature", "",
+		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
+			"confirm, and run the epic as --ticket would")
+	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
 	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true,
 		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
 			"ask its worker to resolve them before setting it aside; needs a check command "+
@@ -171,9 +176,11 @@ func loadConfig(
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
 			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--mcp names] [--force]\n"+
+			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
 			"       orchestra plan [--apply]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, "+
-			"one worker (a coding agent) per Herdr tab and git worktree.\n\n")
+			"one worker (a coding agent) per Herdr tab and git worktree.\n"+
+			"With --feature, plan the request as an epic and its tickets first, and run those.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
 			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
@@ -224,6 +231,16 @@ func loadConfig(
 	}
 	if !set["check-timeout"] && checkTimeoutProblem != "" {
 		problems = append(problems, checkTimeoutProblem)
+	}
+	c.Feature = strings.TrimSpace(c.Feature)
+	switch {
+	case set["feature"] && c.Feature == "":
+		problems = append(problems, "--feature needs the request: orchestra --feature \"<what to build>\"")
+	case set["feature"] && c.Ticket != "":
+		problems = append(problems, "--feature can't be combined with --ticket (or ORCHESTRA_TICKET): "+
+			"a feature run is scoped to the epic it files.")
+	case !set["feature"] && c.Yes:
+		problems = append(problems, "--yes only applies with --feature.")
 	}
 
 	if out, err := command.Output(ctx, command.ReadLimit, "", "git", "rev-parse", "--show-toplevel"); err == nil {
@@ -505,6 +522,13 @@ func run(
 	if err := os.Chdir(cfg.Repo); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitStatus(dispatch.ExitSetup)
+	}
+	if cfg.Feature != "" {
+		epic, code := runFeature(ctx, cfg, log, stdin, stdout, stderr)
+		if epic == "" {
+			return status(code)
+		}
+		cfg.Ticket = epic
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

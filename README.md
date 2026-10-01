@@ -157,6 +157,22 @@ Workers are told to file follow-ups that belong to the work as children of `<id>
 
 Both exit with 0.
 
+### A feature from one request
+
+```
+orchestra --feature "Add a --json flag to the list command"
+```
+
+`--feature "<request>"` takes a request from idea to a finished run. After the usual startup checks (repository, `bd`, Herdr, settings, MCP servers, and a clean main checkout), so that nothing is filed for a run that couldn't start:
+
+1. The [screen organ](#organs) judges the request. A request it rejects or finds unclear stops with its reason (exit code 2), as does a screen that fails: an unscreened request isn't planned.
+2. The [plan organ](#organs) plans it as an epic and its tickets. When it needs answers first, orchestra prints its questions and stops (exit code 2); run it again with the answers in the request.
+3. orchestra shows the plan: the epic, then each ticket with its type, priority, files and the tickets it waits for (`after:`), and any file dropped when the plan was checked. It asks `File these N tickets and start the run? [y/N]`. `--yes` files it without asking; without a terminal to ask on, and without `--yes`, nothing is filed (exit code 2).
+4. orchestra files the plan with `bd`: the epic, each ticket as its child with its description, acceptance criteria, type, priority and `files` metadata (which [footprints](#several-tickets-at-once) read), then a `blocks` link for each ticket it waits for. If a `bd` command fails, orchestra stops (exit code 4) and lists what it filed, with the `bd delete … --force` command that removes it and the `orchestra --ticket <epic>` command that carries on with it.
+5. The run is that of `--ticket <epic>`, with the other flags as given (`-c`, `--plain`, the effort flags, …). The START line and the dashboard's title show `· feature <epic>`, the log names the request, and the run report gets the request as evidence.
+
+Nothing is filed before you confirm the plan, and Ctrl+C stops the screen, the plan or the question with nothing filed (exit code 130). `--organ-model` and `--organ-effort` apply to both organs. `--feature` with `--ticket` (or `ORCHESTRA_TICKET`), and an empty request, are setup problems.
+
 ## Several tickets at once
 
 With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:
@@ -225,8 +241,8 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 
 | Code | Meaning |
 |---|---|
-| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`) |
-| 2 | setup problem found before starting (all problems are listed) |
+| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined |
+| 2 | setup problem found before starting (all problems are listed); with `--feature`, also a request the screen turned down or couldn't judge, a plan that failed or has questions, or no terminal to confirm on without `--yes` |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure, or orchestra panicked while working on a ticket (`PANIC`) |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |

@@ -315,3 +315,43 @@ func (b Tracker) SetMetadata(ctx context.Context, id, key, value string) error {
 	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "update", id, "--set-metadata", key+"="+value)
 	return err
 }
+
+// NewTicket is a ticket to file with Create.
+type NewTicket struct {
+	Title, Description, Acceptance string
+	Type                           string // bd's issue type: epic, feature, task, bug or chore
+	Priority                       int    // 0 (critical) to 4 (backlog)
+	Parent                         string // "" for none
+	Files                          []string
+}
+
+// Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
+// which footprint scheduling reads. When bd's output can't be read, the error carries bd's stderr.
+func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
+	args := []string{"create", "--json", "--title=" + t.Title, "--description=" + t.Description,
+		"--type=" + t.Type, "--priority=" + fmt.Sprint(t.Priority)}
+	if t.Acceptance != "" {
+		args = append(args, "--acceptance="+t.Acceptance)
+	}
+	if t.Parent != "" {
+		args = append(args, "--parent="+t.Parent)
+	}
+	if len(t.Files) > 0 {
+		meta, err := json.Marshal(map[string][]string{dispatch.FilesKey: t.Files})
+		if err != nil {
+			return "", err
+		}
+		args = append(args, "--metadata="+string(meta))
+	}
+	out, runErr := command.Output(ctx, command.WriteLimit, b.Repo, "bd", args...)
+	if runErr != nil {
+		return "", runErr
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(unwrap([]byte(out)), &created); err != nil || created.ID == "" {
+		return "", fmt.Errorf("'bd create --json' gave no ID: %q", strings.TrimSpace(out))
+	}
+	return created.ID, nil
+}

@@ -80,8 +80,11 @@ func (o *Loop) Run(ctx context.Context) int {
 	}
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
 		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s, MCP servers: %s)",
-		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit,
+		c.Version, c.Repo, c.Base, ScopeLabel(c), o.count, c.Limit, c.Concurrency, ticketLimit,
 		ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot, c.mcpLabel())
+	if c.Feature != "" {
+		o.info("  feature: epic %s, planned from: %s", c.Ticket, FeatureLine(c.Feature))
+	}
 	o.sayMCP()
 	if s := o.loadUnmerged(ctx); s != nil {
 		return o.stop(s.code, "%s", s)

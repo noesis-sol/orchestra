@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra --feature "<request>"` takes a feature request from idea to a
+  scoped run: after the usual startup checks, the screen organ judges it, the
+  plan organ plans it as an epic and its tickets, orchestra shows the plan and
+  asks `File these N tickets and start the run? [y/N]` (`--yes` skips the
+  question; without a terminal it must be given), files the epic and its
+  children with `bd` (acceptance criteria, `files` metadata, `blocks` links),
+  and runs the epic as `--ticket` would. A rejected, unclear or unscreened
+  request, a failed plan or one with questions, and `--feature` with
+  `--ticket` or an empty request, exit 2 with nothing filed; a `bd` failure
+  while filing lists what was filed and how to remove it or carry on. The
+  START line, the dashboard (`· feature <epic>`) and the run report name the
+  feature and the epic.
 - Claude workers get only the MCP servers the project chose (`"mcp_servers"`
   in `.orchestra/settings.json`, set with `orchestra init`): each is resolved
   at start-up from this machine's Claude Code config, written to the worktree's
