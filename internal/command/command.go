@@ -13,24 +13,85 @@ import (
 	"time"
 )
 
-// Output runs a command in dir and returns its stdout. The error carries stderr, so callers can
-// log it.
-func Output(dir, name string, args ...string) (string, error) {
-	return OutputContext(context.Background(), dir, name, args...)
-}
+// Time limits on the commands orchestra runs, by kind. A command still running at its limit is
+// stopped and fails, so a hung bd, git or herdr can't hold a worker forever. Waits that have a
+// time limit of their own (herdr agent wait, prompt --wait) are given that one, with ReadLimit to
+// spare.
+const (
+	ReadLimit  = 30 * time.Second // a read, and any herdr call
+	WriteLimit = 2 * time.Minute  // a write: git worktrees, rebases, merges and branches, bd updates
+)
 
-// OutputContext is Output, stopped when ctx is cancelled.
-func OutputContext(ctx context.Context, dir, name string, args ...string) (string, error) {
+// stopGrace is how long a command that is stopped has between SIGTERM and SIGKILL (git removes its
+// lock files on SIGTERM, not on SIGKILL), and how long Output then waits for output pipes that a
+// process the command started still holds.
+const stopGrace = 500 * time.Millisecond
+
+// Output runs a command in dir and returns its stdout. The command is stopped when ctx is done or
+// once it has run for limit (0 for no limit). The error is an *Error carrying stderr, and for a
+// command that was stopped why: the limit it ran into, or the cause ctx was cancelled with.
+func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
+	if limit > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, limit, fmt.Errorf("timed out after %s", shortDuration(limit)))
+		defer cancel()
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "BD_JSON_ENVELOPE=0") // pin the bd --json shape
+	cmd.Cancel = func() error { return terminate(cmd.Process) }
+	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, strings.TrimSpace(stderr.String()))
+	err := cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
+		err = nil // exited 0, leaving a process behind that holds the output
 	}
-	return stdout.String(), nil
+	if err == nil {
+		return stdout.String(), nil
+	}
+	e := &Error{Name: name, Args: args, Err: err, Stderr: strings.TrimSpace(stderr.String())}
+	if cause := context.Cause(ctx); cause != nil {
+		e.Err, e.Stopped = cause, true
+	}
+	return stdout.String(), e
+}
+
+// Error is a command that failed: what ran, why it failed, and what it said on stderr. Callers that
+// react to a particular failure read its fields (or Err, through errors.As) instead of its text.
+type Error struct {
+	Name    string
+	Args    []string
+	Err     error  // how the command failed (*exec.ExitError, say), or why it was stopped
+	Stderr  string // trimmed
+	Stopped bool   // stopped by its time limit or a cancelled context, Err saying which
+}
+
+// Error reads "git rebase main: exit status 1: <stderr>", or for a stopped command
+// "git rebase main: timed out after 2m (<stderr>)".
+func (e *Error) Error() string {
+	switch {
+	case !e.Stopped:
+		return fmt.Sprintf("%s %s: %v: %s", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+	case e.Stderr != "":
+		return fmt.Sprintf("%s %s: %v (%s)", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+	}
+	return fmt.Sprintf("%s %s: %v", e.Name, shortArgs(e.Args), e.Err)
+}
+
+func (e *Error) Unwrap() error { return e.Err }
+
+// shortDuration is d as a person would write it: 2m, 30s, 500ms.
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
+	}
+	return s
 }
 
 // GroupOutput runs a command in dir in its own process group and returns its combined stdout

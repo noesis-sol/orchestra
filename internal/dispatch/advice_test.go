@@ -49,7 +49,7 @@ func TestLiveOrgans(t *testing.T) {
 		}
 	}
 
-	d := o.gatherDeferral(id, "", "the worker deferred it", os.Getenv("LIVE_WT"))
+	d := o.gatherDeferral(context.Background(), id, "", "the worker deferred it", os.Getenv("LIVE_WT"))
 	start := time.Now()
 	tr, err := o.organ.Triage(context.Background(), d)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestLiveOrgans(t *testing.T) {
 
 	o.markAside(id)
 	start = time.Now()
-	report, err := o.organ.Review(context.Background(), o.reviewInput(ExitOK, "(live test: the run is still going)"))
+	report, err := o.organ.Review(context.Background(), o.reviewInput(context.Background(), ExitOK, "(live test: the run is still going)"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +70,14 @@ func TestLiveOrgans(t *testing.T) {
 // can't use it).
 type liveTickets struct{ repo string }
 
-func (l liveTickets) Ready(string) ([]Ticket, error)        { return nil, nil }
-func (l liveTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
-func (l liveTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
-func (l liveTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id}, nil }
-func (l liveTickets) Status(id string) (string, error)      { return "unknown", nil }
-func (l liveTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
-func (l liveTickets) Describe(id string) string {
-	out, _ := command.Output(l.repo, "bd", "show", id)
+func (l liveTickets) Ready(context.Context, string) ([]Ticket, error)            { return nil, nil }
+func (l liveTickets) Unclosed(ctx context.Context) ([]Ticket, error)             { return nil, nil }
+func (l liveTickets) Descendants(context.Context, string) ([]Ticket, error)      { return nil, nil }
+func (l liveTickets) Show(ctx context.Context, id string) (Ticket, error)        { return Ticket{ID: id}, nil }
+func (l liveTickets) Status(ctx context.Context, id string) (string, error)      { return "unknown", nil }
+func (l liveTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }
+func (l liveTickets) Describe(ctx context.Context, id string) string {
+	out, _ := command.Output(context.Background(), 0, l.repo, "bd", "show", id)
 	return out
 }
 
@@ -99,34 +99,6 @@ func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
 	o.cfg.ReportsDir = filepath.Join(blocked, "reports")
 	if path, err := o.SaveReport("# report\n"); err == nil || path != "" {
 		t.Errorf("reports folder under a file: saved to %q, err %v", path, err)
-	}
-}
-
-// A worker that outlasts the wait finds triage closed when it gets there, and neither panics nor
-// blocks.
-func TestWorkerOutlastingTheSettleWaitFindsTriageClosed(t *testing.T) {
-	o, tk, sink := newDeferringLoop(t)
-	o.wait.settle = 50 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	codes := make(chan int, 1)
-	go func() { codes <- o.Run(ctx) }()
-	<-tk.entered
-	cancel()
-	select {
-	case code := <-codes:
-		if code != ExitInterrupted {
-			t.Errorf("exit code %d, want %d", code, ExitInterrupted)
-		}
-	case <-time.After(patience):
-		t.Fatal("Run did not return after its settle wait")
-	}
-	o.FinishTriage(context.Background())
-	close(tk.release)
-	select {
-	case <-sink.gone:
-	case <-time.After(patience):
-		t.Fatal("the worker did not return")
 	}
 }
 

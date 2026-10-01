@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/term"
 )
@@ -19,6 +20,7 @@ type InitScreen struct {
 	width int
 }
 
+// NewInitScreen returns the screen for out, as wide as its terminal (at most 100), or 80.
 func NewInitScreen(out io.Writer) InitScreen {
 	w := 80
 	if f, ok := out.(interface{ Fd() uintptr }); ok {
@@ -31,11 +33,13 @@ func NewInitScreen(out io.Writer) InitScreen {
 
 var (
 	initLabel    = lipgloss.NewStyle().Bold(true).Width(15)
-	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
 	nextTitle    = lipgloss.NewStyle().Bold(true).Foreground(purple)
 	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
+	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
 )
 
+// Header prints the title and the repository being set up.
 func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
 	fmt.Fprintln(u.out, titleStyle.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(Tildify(repo)))
@@ -43,6 +47,7 @@ func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
 }
 
+// Cancelled says init was cancelled with nothing changed.
 func (u InitScreen) Cancelled() {
 	fmt.Fprintln(u.out, deferredStyle.Render("  Cancelled; nothing was changed."))
 }
@@ -153,9 +158,54 @@ func concurrencyOptions(current int) []huh.Option[int] {
 	return opts
 }
 
+// mcpOptions are the MCP servers offered to workers, each with where it is defined, and the names
+// selected to start with: the current setting (nothing on first run). A chosen server this machine
+// doesn't define is offered too, so keeping the selection keeps it. claude.ai connectors aren't
+// offered: workers can't have them.
+func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string) {
+	var current []string
+	if c.MCP != nil {
+		current = *c.MCP
+	}
+	for _, s := range c.Servers {
+		switch {
+		case s.Scope == mcp.ScopeBuiltIn:
+			label := s.Name + "  · built into Claude Code, drives Chrome on this machine"
+			opts = append(opts, huh.NewOption(label, s.Name))
+		case s.Available():
+			opts = append(opts, huh.NewOption(fmt.Sprintf("%s  · %s scope, %s", s.Name, s.Scope, s.Type), s.Name))
+		}
+	}
+	for _, name := range current {
+		if _, ok := mcp.Find(c.Servers, name); !ok {
+			missing := "  · not defined on this machine"
+			if name == mcp.Chrome {
+				missing = "  · Claude in Chrome isn't set up on this machine"
+			}
+			opts = append(opts, huh.NewOption(name+missing, name))
+		}
+		if s, ok := mcp.Find(c.Servers, name); !ok || s.Available() {
+			selected = append(selected, name)
+		}
+	}
+	return opts, selected
+}
+
+// mcpDescription explains the MCP server choice, naming the claude.ai connectors workers can't have.
+func mcpDescription(c project.Choice) string {
+	d := "Workers get only the servers chosen here. settings.json keeps " +
+		"their names; each machine's Claude Code config defines them."
+	if connectors := project.Connectors(c.Servers); len(connectors) > 0 {
+		d += "\nNot available to workers (claude.ai connector): " + strings.Join(connectors, ", ") + "."
+	}
+	return d
+}
+
 // AskInit asks for what the flags didn't give, starting from the current choice, reading the
-// answers from in and drawing the form on out.
-func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion bool) error {
+// answers from in and drawing the form on out. With no MCP servers to offer, askMCP chooses none.
+func AskInit(
+	in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion, askMCP bool,
+) error {
 	var fields []huh.Field
 	if askCheck {
 		fields = append(fields, huh.NewInput().
@@ -198,11 +248,23 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeou
 			Negative("No").
 			Value(&c.Union))
 	}
+	mcpOpts, servers := mcpOptions(*c)
+	if askMCP && len(mcpOpts) > 0 {
+		fields = append(fields, huh.NewMultiSelect[string]().
+			Title("MCP servers for workers").
+			Description(mcpDescription(*c)).
+			Options(mcpOpts...).
+			Value(&servers))
+	}
+	if askMCP && len(mcpOpts) == 0 {
+		c.MCP = &[]string{}
+	}
 	if len(fields) == 0 {
 		return nil
 	}
 	before := c.Check
-	if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out).Run(); err != nil {
+	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out)
+	if err := form.Run(); err != nil {
 		return err
 	}
 	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)
@@ -211,6 +273,10 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeou
 	}
 	if askConcurrent {
 		c.Unasked = false
+	}
+	if askMCP && len(mcpOpts) > 0 {
+		chosen := append([]string{}, servers...)
+		c.MCP, c.MCPUnasked = &chosen, false
 	}
 	return nil
 }

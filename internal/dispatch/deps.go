@@ -8,34 +8,36 @@ import (
 
 // Tickets is what the loop reads from the tracker (Beads).
 type Tickets interface {
-	Ready(scope string) ([]Ticket, error)    // open, ready tickets, highest priority first; with a scope, only it and its descendants
-	Unclosed() ([]Ticket, error)             // every ticket not closed, with its parent
-	Descendants(id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
-	Show(id string) (Ticket, error)          // with dependencies; Status "unknown" and the cause if unreadable
-	Status(id string) (string, error)        // "unknown" and the cause if unreadable
-	Describe(id string) string               // as a person reads it, for the organs' evidence
-	Closed(label string) ([]Ticket, error)   // closed tickets carrying the label
+	// open, ready tickets, highest priority first; with a scope, only it and its descendants
+	Ready(ctx context.Context, scope string) ([]Ticket, error)
+	Unclosed(ctx context.Context) ([]Ticket, error)               // every ticket not closed, with its parent
+	Descendants(ctx context.Context, id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
+	// with dependencies; Status "unknown" and the cause if unreadable
+	Show(ctx context.Context, id string) (Ticket, error)
+	Status(ctx context.Context, id string) (string, error)      // "unknown" and the cause if unreadable
+	Describe(ctx context.Context, id string) string             // as a person reads it, for the organs' evidence
+	Closed(ctx context.Context, label string) ([]Ticket, error) // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.
 type Notes interface {
-	AppendNotes(id, note string) error
-	Defer(id, reason string) error
-	Reopen(id string) error
-	AddLabel(id, label string) error
-	RemoveLabel(id, label string) error
-	SetMetadata(id, key, value string) error
+	AppendNotes(ctx context.Context, id, note string) error
+	Defer(ctx context.Context, id, reason string) error
+	Reopen(ctx context.Context, id string) error
+	AddLabel(ctx context.Context, id, label string) error
+	RemoveLabel(ctx context.Context, id, label string) error
+	SetMetadata(ctx context.Context, id, key, value string) error
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
 type Tabs interface {
-	CreateTab(workspace, cwd, label string) (tab, pane string, err error)
-	CloseTab(tab string)
+	CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error)
+	CloseTab(ctx context.Context, tab string) error
 }
 
 // Starter starts a worker agent in a tab's pane.
 type Starter interface {
-	LaunchInPane(pane, kind string, args []string) error                          // type the command, return at once
+	LaunchInPane(ctx context.Context, pane, kind string, args []string) error     // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
 	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
 	IsNameRefused(err error) bool                                                 // Herdr won't take this agent name
@@ -45,23 +47,39 @@ type Starter interface {
 // Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
 // its ticket).
 type Namer interface {
-	AgentName(id string) string                                              // the agent name for ticket id's worker
-	AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) // name the agent that appears in the pane
-	PaneAgent(pane string) (name, kind, status string)                       // status as Agents.Status gives it
-	RenameAgent(name, to string) error
-	FreeName(name string) string // an unused name for an earlier worker that holds name
+	// the agent name for ticket id's worker
+	AgentName(id string) string
+	// name the agent that appears in the pane
+	AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error)
+	// state and error as Agents.Status gives them
+	PaneAgent(ctx context.Context, pane string) (name, kind string, state AgentState, err error)
+	RenameAgent(ctx context.Context, name, to string) error
+	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
 }
+
+// AgentState is a worker's status as Herdr reports it, or StateGone when Herdr has no such agent.
+type AgentState string
+
+// The states an agent can be in.
+const (
+	StateIdle    AgentState = "idle"
+	StateWorking AgentState = "working"
+	StateBlocked AgentState = "blocked"
+	StateDone    AgentState = "done"
+	StateUnknown AgentState = "unknown" // Herdr can't tell what the agent is doing
+	StateGone    AgentState = "gone"    // Herdr has no such agent
+)
 
 // Agents watches and nudges a running worker by name.
 type Agents interface {
-	// Status is idle, working, blocked, done, unknown, or gone (no such agent); if the terminal
-	// cannot be asked it is "unreadable", with the error, and says nothing about the agent.
-	Status(name string) (string, error)
-	// Screen is the end of the worker's terminal, given its status as just read ("" if not known):
+	// Status is the worker's state. An error means the terminal could not be asked, and says
+	// nothing about the agent: the state is then "".
+	Status(ctx context.Context, name string) (AgentState, error)
+	// Screen is the end of the worker's terminal, given its state as just read ("" if not known):
 	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
-	Screen(name, status string) string
+	Screen(ctx context.Context, name string, state AgentState) string
 	Prompt(ctx context.Context, name, prompt string) error
-	SendKeys(name string, keys ...string) error
+	SendKeys(ctx context.Context, name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
 }
 
@@ -75,47 +93,52 @@ type Reporter interface {
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	DirtyTree(dir string) (string, error)      // uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
-	DirtyWorktree(dir string) string           // uncommitted work in a ticket's worktree outside .orchestra/run/
-	CurrentBranch(repo string) (string, error) // "" on a detached HEAD
-	Head(repo, rev string) string
-	TrackedFiles(repo string) []string // git ls-files; nil when git can't list them
+	// uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
+	DirtyTree(ctx context.Context, dir string) (string, error)
+	// uncommitted work in a ticket's worktree outside .orchestra/run/
+	DirtyWorktree(ctx context.Context, dir string) string
+	CurrentBranch(ctx context.Context, repo string) (string, error) // "" on a detached HEAD
+	Head(ctx context.Context, repo, rev string) string
+	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them
 }
 
 // Worktrees manages the per-ticket worktrees and their branches.
 type Worktrees interface {
-	WorktreeOf(repo, branch string) string
-	HasBranch(repo, branch string) bool
-	Prune(repo string)
-	AddWorktree(repo, path, branch string) (string, error)
-	NewWorktree(repo, path, branch, base string) (string, error)
-	RemoveWorktree(repo, path string) (string, error)
-	DeleteBranch(repo, branch string) (string, error)
+	WorktreeOf(ctx context.Context, repo, branch string) string
+	HasBranch(ctx context.Context, repo, branch string) bool
+	Prune(ctx context.Context, repo string) (string, error)
+	AddWorktree(ctx context.Context, repo, path, branch string) (string, error)
+	NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error)
+	RemoveWorktree(ctx context.Context, repo, path string) (string, error)
+	DeleteBranch(ctx context.Context, repo, branch string) (string, error)
 }
 
 // Merger brings finished branches onto the base branch.
 type Merger interface {
-	IsAncestor(repo, ancestor, rev string) bool
-	CommitNaming(repo, base, branch, ticket string) string
-	CommitNamingOn(repo, rev, ticket string) string // the latest commit reachable from rev naming the ticket
-	Rebase(worktree, onto string) (string, error)
-	AbortRebase(worktree string)
-	ConflictedFiles(worktree string) []string // files a stopped rebase left unmerged
-	RebaseInProgress(worktree string) bool    // a rebase stopped and neither finished nor aborted
-	CountCommits(repo, revs string) int       // -1 if git can't count them
-	ResetBranch(worktree, rev string) (string, error)
-	FastForward(repo, branch string) (string, error)
+	IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
+	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
+	// the latest commit reachable from rev naming the ticket
+	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string
+	Rebase(ctx context.Context, worktree, onto string) (string, error)
+	AbortRebase(ctx context.Context, worktree string) (string, error)
+	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged
+	RebaseInProgress(ctx context.Context, worktree string) bool    // a rebase stopped and neither finished nor aborted
+	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
+	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
+	FastForward(ctx context.Context, repo, branch string) (string, error)
 }
 
 // History is what the organs read about the work.
 type History interface {
-	ShortStatus(worktree string) string
-	OneLineLog(dir, revs string) string
-	DiffStat(worktree string) string
-	Subjects(repo, revs string) string
+	ShortStatus(ctx context.Context, worktree string) string
+	OneLineLog(ctx context.Context, dir, revs string) string
+	DiffStat(ctx context.Context, worktree string) string
+	Subjects(ctx context.Context, repo, revs string) string
 }
 
-// Deps are the loop's connections to the tracker, the terminal, git and the organs.
+// Deps are the loop's connections to the tracker, the terminal, git and the organs. A method that
+// runs a command takes a context, which stops it: the run's, cancelled by Ctrl+C, or one detached
+// from it for what must finish once begun. The adapters give every command a time limit as well.
 type Deps struct {
 	Tickets   Tickets
 	Notes     Notes

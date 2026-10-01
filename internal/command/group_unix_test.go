@@ -54,7 +54,7 @@ func TestGroupOutputStopsAChildThatHoldsTheOutput(t *testing.T) {
 		t.Error("a timed-out command should fail")
 	}
 	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		syscall.Kill(pid, syscall.SIGKILL)
+		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
 		t.Errorf("child %d still runs", pid)
 	}
 }
@@ -66,7 +66,7 @@ func TestGroupOutputPassesAndCleansUpAfterABackgroundChild(t *testing.T) {
 		t.Errorf("got %q, %v", out, err)
 	}
 	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		syscall.Kill(pid, syscall.SIGKILL)
+		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
 		t.Errorf("child %d still runs", pid)
 	}
 }
@@ -88,7 +88,7 @@ func TestGroupOutputKillsALeftoverHoldingTheOutputOnceTheCommandExits(t *testing
 		t.Errorf("got %q, %v", out, err)
 	}
 	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		syscall.Kill(pid, syscall.SIGKILL)
+		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
 		t.Errorf("child %d still runs", pid)
 	}
 }
@@ -104,7 +104,7 @@ func awaitExitWithin(t *testing.T, cmd *exec.Cmd, d time.Duration) {
 			t.Fatal(err)
 		}
 	case <-time.After(d):
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill() // best effort: the test already fails
 		t.Fatalf("awaitExit still waits after %s", d)
 	}
 }
@@ -145,7 +145,7 @@ func TestCancelSignalsNothingOnceTheCommandHasExited(t *testing.T) {
 	if g.kill != nil {
 		t.Error("Cancel armed a SIGKILL after the command exited")
 	}
-	cmd.Wait()
+	_ = cmd.Wait() // only reaps it; the test is about Cancel
 }
 
 func TestTheSIGKILLStopsOnceTheCommandExits(t *testing.T) {
@@ -161,5 +161,5 @@ func TestTheSIGKILLStopsOnceTheCommandExits(t *testing.T) {
 	if g.kill.Stop() {
 		t.Error("the SIGKILL was still armed after the command exited")
 	}
-	cmd.Wait()
+	_ = cmd.Wait() // reaps it; the error is the signal that stopped it
 }

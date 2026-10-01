@@ -43,7 +43,7 @@ var (
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)
-	home, _ = os.UserHomeDir()
+	home, _ = os.UserHomeDir() // none known: paths are shown in full
 )
 
 // Tildify shortens paths under the home directory for display; the log keeps full paths.
@@ -70,9 +70,12 @@ func renderEvent(ev dispatch.Event) string {
 	case dispatch.EvDeferred:
 		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
 	case dispatch.EvTriage:
-		return fmt.Sprintf("%s %s  %s", ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
+		return fmt.Sprintf("%s %s  %s",
+			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
+	case dispatch.EvAnswered:
+		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvWarn:
@@ -93,8 +96,11 @@ func renderEvent(ev dispatch.Event) string {
 
 type eventMsg dispatch.Event
 type statusMsg dispatch.Status
+
+// Finished tells the dashboard the run has returned, so it quits.
 type Finished struct{}
 
+// Dashboard is the live view of a run, a Bubble Tea model.
 type Dashboard struct {
 	cfg         dispatch.Config
 	spin        spinner.Model
@@ -126,8 +132,10 @@ func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool)) Dashb
 	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain}
 }
 
+// Init starts the spinner.
 func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 
+// Update handles the loop's events and statuses, keys and the window's size.
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -168,7 +176,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch ev.Kind {
 		case dispatch.EvDispatch:
 			m.queued, m.solo = ev.Queued, ev.Solo
-			m.rows = append(m.rows, ticketRow{id: ev.Ticket, title: ev.Title, state: rowWorking})
+			m.working(ev.Ticket, ev.Title)
 		case dispatch.EvQueue:
 			m.queued, m.solo = ev.Queued, ev.Solo
 		case dispatch.EvClosed:
@@ -184,6 +192,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case dispatch.EvAsked:
 			m.asked++
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
+		case dispatch.EvAnswered:
+			m.working(ev.Ticket, "")
 		case dispatch.EvTriage:
 			m.triaged++
 			if i := m.rowIndex(ev.Ticket); i >= 0 {
@@ -217,7 +227,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View is the whole display: title, totals, the tickets of this run, and the active ticket. When
+// View is the whole display: title, totals, the tickets of this run, and the current tickets. When
 // the program quits it renders once more without the active ticket, which stays on screen as the
 // run's summary.
 func (m Dashboard) View() string {
@@ -230,6 +240,12 @@ func (m Dashboard) View() string {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
 	hint := m.hintLine(w)
+	if m.draining {
+		hint = lipgloss.JoinVertical(lipgloss.Left, m.windDownLine(w), hint)
+	}
+	if warn := m.cfg.MCPWarning(); warn != "" { // in the log once; here for the whole run
+		hint = lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
+	}
 	if !m.asking {
 		return m.layout(w, title, hint)
 	}
@@ -244,27 +260,38 @@ func (m Dashboard) View() string {
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
 // can't redraw a view taller than the terminal. It gives way step by step: one line per worker
-// instead of a box each, then no tickets table, then the totals on one line, then cut, keeping
-// footer.
+// instead of a box each, then no tickets table, then the totals on one line, then the Current
+// label, then cut, keeping footer.
 func (m Dashboard) layout(w int, title, footer string) string {
 	stats := m.statsTable(w)
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {
 		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
-		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - lipgloss.Height(footer)
+		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) -
+			lipgloss.Height(footer)
 		parts := []string{title, stats}
 		if room >= 7 {
 			parts = append(parts, m.ticketsTable(w, room))
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, append(parts, panels, footer)...)
+		if panels != "" {
+			parts = append(parts, panels)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, append(parts, footer)...)
 	}
-	if v := compose(stats, m.workerPanels(w)); fits(v) {
+	if v := compose(stats, current(m.workerPanels(w))); fits(v) {
 		return v
 	}
-	if v := compose(stats, m.workerList(w)); fits(v) {
+	if v := compose(stats, current(m.workerList(w))); fits(v) {
 		return v
 	}
-	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, title, m.statsLine(w), m.workerList(w)), "\n")
+	top := []string{title, m.statsLine(w)}
+	if list := m.workerList(w); list != "" {
+		if v := lipgloss.JoinVertical(lipgloss.Left, append(top, current(list), footer)...); fits(v) {
+			return v
+		}
+		top = append(top, list)
+	}
+	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, top...), "\n")
 	foot := strings.Split(footer, "\n")
 	if keep := max(m.height-len(foot), 0); len(body) > keep {
 		body = body[:keep]
@@ -276,13 +303,22 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	return strings.Join(lines, "\n")
 }
 
-// hintLine says which keys do what: s stops after the running tickets, or once asked goes on;
-// ctrl+c stops at once. A narrow pane gets a shorter form.
+// current heads the worker boxes with a Current label, indented like the tickets table's Tickets
+// header but bold in the working colour, where the eye should land; nothing when there are no boxes.
+func current(panels string) string {
+	if panels == "" {
+		return ""
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, "  "+pickedStyle.Render("Current"), panels)
+}
+
+// hintLine says which keys do what: s stops after the running tickets, or once asked cancels
+// that; ctrl+c stops at once. A narrow pane gets a shorter form.
 func (m Dashboard) hintLine(w int) string {
 	long, short := "  s stops after current · ctrl+c stops now", " s: stop after · ctrl+c: now"
 	switch {
 	case m.draining:
-		long, short = "  s keeps going · ctrl+c stops now", " s: go on · ctrl+c: now"
+		long, short = "  s cancels the stop · ctrl+c stops now", " s: cancel stop · ctrl+c: now"
 	case m.stopping:
 		long, short = "  ctrl+c stops now", " ctrl+c: now"
 	}
@@ -293,13 +329,88 @@ func (m Dashboard) hintLine(w int) string {
 	return dimStyle.Render(ansi.Truncate(hint, w, "…"))
 }
 
+// windDownLine says, while the run winds down, after which tickets it ends, in the DRAIN line's
+// words and as tickets finish. A narrow pane wraps it rather than lose words: only the ticket IDs
+// are shortened.
+func (m Dashboard) windDownLine(w int) string {
+	lead, list, tail := dispatch.DrainWords(m.runningIDs())
+	lines := wrapAround(" ■ "+capitalize(lead), list, tail, w, "   ")
+	for i := range lines {
+		lines[i] = stopStyle.Render(lines[i])
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapAround word-wraps lead + list + tail to width, continuation lines starting with indent,
+// and shortens list, kept on one line with the punctuation touching it, where it doesn't fit.
+func wrapAround(lead, list, tail string, width int, indent string) []string {
+	var lines []string
+	line, fresh := "", true // fresh: nothing on the line but its indent
+	add := func(word string) {
+		switch {
+		case fresh:
+			line += word
+		case ansi.StringWidth(line)+1+ansi.StringWidth(word) <= width:
+			line += " " + word
+		default:
+			lines, line = append(lines, line), indent+word
+		}
+		fresh = false
+	}
+	if strings.HasPrefix(lead, " ") { // keep a leading margin, which Fields drops
+		line = lead[:len(lead)-len(strings.TrimLeft(lead, " "))]
+	}
+	before, after := strings.Fields(lead), strings.Fields(tail)
+	left, right := "", ""
+	if list != "" && len(before) > 0 && !strings.HasSuffix(lead, " ") {
+		left, before = before[len(before)-1], before[:len(before)-1]
+	}
+	if list != "" && len(after) > 0 && !strings.HasPrefix(tail, " ") {
+		right, after = after[0], after[1:]
+	}
+	for _, word := range before {
+		add(word)
+	}
+	if list != "" {
+		unit := left + list + right
+		room := width - ansi.StringWidth(line) - 1
+		if fresh {
+			room++
+		}
+		const least = 6 // fewer columns of IDs say nothing
+		if ansi.StringWidth(unit) > room && room-ansi.StringWidth(left+right) < min(least, ansi.StringWidth(list)) {
+			lines, line, fresh = append(lines, line), indent, true
+			room = width - ansi.StringWidth(indent)
+		}
+		if ansi.StringWidth(unit) > room {
+			unit = left + ansi.Truncate(list, max(room-ansi.StringWidth(left+right), 1), "…") + right
+		}
+		add(unit)
+	}
+	for _, word := range after {
+		add(word)
+	}
+	lines = append(lines, line)
+	for i := range lines {
+		lines[i] = ansi.Truncate(lines[i], width, "…") // a word wider than the pane
+	}
+	return lines
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 // runningIDs names the running tickets, oldest first.
-func (m Dashboard) runningIDs() string {
+func (m Dashboard) runningIDs() []string {
 	var ids []string
 	for _, st := range m.Running() {
 		ids = append(ids, st.Ticket)
 	}
-	return strings.Join(ids, ", ")
+	return ids
 }
 
 // modal is the question s asks, in a box: whether to stop after the running tickets, or, while
@@ -311,14 +422,20 @@ func (m Dashboard) modal(w int) string {
 		question, about = "Keep taking tickets?", "New tickets start again as slots free up."
 		keys = "y keep going · n keep stopping"
 	case n == 0:
-		question, about = "Stop after the running tickets?", "No new tickets will start. Nothing is running, so the run ends now."
+		question = "Stop after the running tickets?"
+		about = "No new tickets will start. Nothing is running, so the run ends now."
 		keys = "y stop · n keep going"
 	default:
+		lead, list, tail := dispatch.DrainWords(m.runningIDs())
 		question = "Stop after the running tickets?"
-		about = fmt.Sprintf("No new tickets will start. %d running (%s) will finish and merge, then the run ends.", n, m.runningIDs())
+		about = capitalize(lead+list+tail) + ". They merge as usual, then the run ends."
+		if n == 1 {
+			about = capitalize(lead+list+tail) + ". It merges as usual, then the run ends."
+		}
 		keys = "y stop after current · n keep going"
 	}
-	body := lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
 	return box(min(w-4, 64), yellow, body)
 }
 
@@ -332,7 +449,7 @@ func (m Dashboard) promptLine(w int) string {
 	case n == 0:
 		line += "nothing is running, so the run ends now"
 	default:
-		line += fmt.Sprintf("%d running (%s) finish and merge, then the run ends", n, m.runningIDs())
+		line += fmt.Sprintf("%d running (%s) finish and merge, then the run ends", n, strings.Join(m.runningIDs(), ", "))
 	}
 	return deferredStyle.Bold(true).Render(ansi.Truncate(line, w, "…"))
 }
@@ -369,7 +486,7 @@ func (m Dashboard) workerList(w int) string {
 	}
 	border := lipgloss.TerminalColor(cyan)
 	for _, st := range running {
-		if st.Agent == "blocked" {
+		if st.Agent == dispatch.StateBlocked {
 			border = red
 		}
 	}
@@ -377,17 +494,21 @@ func (m Dashboard) workerList(w int) string {
 }
 
 // statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
-// branch, running time and stopping state are on the title line.
+// branch, running time and stopping state are on the title line, the winding down above the hint.
 func (m Dashboard) statsLine(w int) string {
 	queued := "—"
 	if m.queued >= 0 {
 		queued = fmt.Sprint(m.queued)
 	}
+	if m.draining {
+		queued += " held" // not taken while the run winds down
+	}
 	parts := []string{
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
 		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
 		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
-		dimStyle.Render("workers ") + pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
+		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
+			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
 		dimStyle.Render("queue " + queued),
 	}
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
@@ -403,10 +524,14 @@ func (m Dashboard) Running() []dispatch.Status {
 	return l
 }
 
-// workerPanels stacks a box per running worker, or one box saying what the loop is doing.
+// workerPanels stacks a box per running worker, or one box saying what the loop is doing; nothing
+// when the run winds down with nothing running.
 func (m Dashboard) workerPanels(w int) string {
 	running := m.Running()
 	if len(running) == 0 {
+		if m.draining {
+			return "" // the line above the hint says the run ends
+		}
 		msg := "picking the next ticket…"
 		if m.stopping {
 			msg = "stopping…"
@@ -429,7 +554,7 @@ func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	border := lipgloss.TerminalColor(cyan)
-	if st.Agent == "blocked" {
+	if st.Agent == dispatch.StateBlocked {
 		border = red
 	}
 	elapsed := time.Since(st.Started).Truncate(time.Second)
@@ -451,6 +576,8 @@ func box(w int, border lipgloss.TerminalColor, content string) string {
 
 // ---- Tickets table -------------------------------------------------------------------
 
+// rowState starts at working on purpose: a row is added when its ticket is picked up, so an unset
+// state means the worker is still at it.
 type rowState int
 
 const (
@@ -485,6 +612,23 @@ func (m *Dashboard) setRow(id string, state rowState, note string) {
 		i = len(m.rows) - 1
 	}
 	m.rows[i].state, m.rows[i].note = state, note
+}
+
+// working shows ticket id as picked up. A ticket back from a question keeps its row, which no
+// longer needs the maintainer; title "" keeps the row's.
+func (m *Dashboard) working(id, title string) {
+	i := m.rowIndex(id)
+	if i < 0 {
+		m.rows = append(m.rows, ticketRow{id: id, title: title, state: rowWorking})
+		return
+	}
+	if m.rows[i].state == rowAsked {
+		m.asked--
+	}
+	m.rows[i].state, m.rows[i].note = rowWorking, ""
+	if title != "" {
+		m.rows[i].title = title
+	}
 }
 
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
@@ -584,6 +728,9 @@ func (m Dashboard) statsTable(w int) string {
 	if m.queued >= 0 {
 		queued = fmt.Sprint(m.queued)
 	}
+	if m.draining {
+		queued += deferredStyle.Render(" · held") // not taken while the run winds down
+	}
 	labels := []string{"Completed", "Deferred", "Needs you", "Workers", "In queue"}
 	values := []string{
 		count(m.closed, "✓", closedStyle),
@@ -603,7 +750,7 @@ func (m Dashboard) statsTable(w int) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
 		BorderHeader(false).
-		StyleFunc(func(row, col int) lipgloss.Style {
+		StyleFunc(func(row, _ int) lipgloss.Style {
 			s := lipgloss.NewStyle().Padding(0, 1)
 			if row == table.HeaderRow {
 				return s.Faint(true)
@@ -647,8 +794,8 @@ func wordWrap(s string, width int) []string {
 	return lines
 }
 
-// wrapLines word-wraps s to width and keeps at most max lines, ending the last with … if cut.
-func wrapLines(s string, width, max int) []string {
+// wrapLines word-wraps s to width and keeps at most limit lines, ending the last with … if cut.
+func wrapLines(s string, width, limit int) []string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" || width < 1 {
 		return nil
@@ -657,9 +804,9 @@ func wrapLines(s string, width, max int) []string {
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	if len(lines) > max {
-		rest := strings.Join(lines[max-1:], " ")
-		lines = append(lines[:max-1], ansi.Truncate(rest, width, "…"))
+	if len(lines) > limit {
+		rest := strings.Join(lines[limit-1:], " ")
+		lines = append(lines[:limit-1], ansi.Truncate(rest, width, "…"))
 	}
 	return lines
 }
@@ -685,45 +832,46 @@ func shortVersion(v string) string {
 	return base + "-dev " + hash + dirty
 }
 
-// titleLine is the Orchestra pill, the version, the branch, the ticket a scoped run works on and
-// how long the run has gone, the solo ticket running alone or next, and whether the run is
-// stopping.
+// titleLine is the Orchestra pill, the version, whether the run is stopping, the solo ticket
+// running alone or next, the branch, the ticket a scoped run works on and how long the run has
+// gone. The states come first so a narrow pane cuts the branch and time instead. A run winding
+// down says so on its own line above the hint.
 func (m Dashboard) titleLine(w int) string {
-	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + "   " +
-		dimStyle.Render(fmt.Sprintf("%s%s · %s", m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
+	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version))
+	if m.stopping {
+		line += stopStyle.Render("  · stopping")
+	}
 	switch {
 	case m.solo.Next:
 		line += deferredStyle.Render("  · solo " + m.solo.Ticket + " next")
 	case m.solo.Ticket != "":
 		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
 	}
-	switch {
-	case m.stopping:
-		line += stopStyle.Render("  · stopping")
-	case m.draining:
-		line += stopStyle.Render("  · stopping after current")
-	}
+	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
+		m.cfg.Base, dispatch.ScopeLabel(m.cfg.Ticket), time.Since(m.began).Truncate(time.Second)))
 	return ansi.Truncate(line, w, "…")
 }
 
 // doingLabel is the worker's status, made precise by what it reported doing when it is working.
 func doingLabel(st dispatch.Status) string {
-	if st.Resolving {
+	switch {
+	case st.Resolving:
 		return "resolving"
-	}
-	if st.Agent == "working" && st.Doing != "" {
+	case st.Unreadable:
+		return "unreadable"
+	case st.Agent == dispatch.StateWorking && st.Doing != "":
 		return st.Doing
 	}
-	return st.Agent
+	return string(st.Agent)
 }
 
 func agentStyle(s string) string {
 	switch s {
-	case "working", "editing", "reading":
+	case string(dispatch.StateWorking), "editing", "reading":
 		return pickedStyle.Render(s)
 	case "testing":
 		return testingStyle.Render(s)
-	case "blocked":
+	case string(dispatch.StateBlocked):
 		return stopStyle.Render(s + " — waiting for you")
 	case "":
 		return ""
@@ -746,6 +894,7 @@ type ProgramSink struct {
 // NewProgramSink returns a sink for the dashboard program p.
 func NewProgramSink(p *tea.Program) *ProgramSink { return &ProgramSink{p: p} }
 
+// Event sends ev to the dashboard, or after Handoff to the next sink.
 func (s *ProgramSink) Event(ev dispatch.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -757,6 +906,7 @@ func (s *ProgramSink) Event(ev dispatch.Event) {
 	s.p.Send(eventMsg(ev)) // returns once received, or once the program has exited
 }
 
+// Status sends st to the dashboard, or after Handoff to the next sink.
 func (s *ProgramSink) Status(st dispatch.Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -786,6 +936,7 @@ type Printer struct {
 	Width  int
 }
 
+// Event prints ev as a line; the queue count, which only the dashboard shows, is skipped.
 func (p Printer) Event(ev dispatch.Event) {
 	if ev.Kind == dispatch.EvQueue {
 		return // the dashboard's count, not a line
@@ -796,6 +947,8 @@ func (p Printer) Event(ev dispatch.Event) {
 	}
 	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
+
+// Status does nothing: a printed run shows no live status.
 func (Printer) Status(dispatch.Status) {}
 
 // Say prints a line of the orchestrator's own progress outside the event stream.

@@ -12,7 +12,9 @@ func TestStopSignalsAreCaught(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGHUP} {
 		stopped := make(chan os.Signal, 1)
 		stop := watchSignals(func(s os.Signal) { stopped <- s })
-		syscall.Kill(os.Getpid(), sig)
+		if err := syscall.Kill(os.Getpid(), sig); err != nil {
+			t.Fatal(err)
+		}
 		select {
 		case s := <-stopped:
 			if got := stop(); s != sig || got != sig {
@@ -40,7 +42,9 @@ func TestDrainSignalIsCaught(t *testing.T) {
 	stop := watchDrain(func() { drained <- struct{}{} })
 	defer stop()
 	for i := 0; i < 2; i++ {
-		syscall.Kill(os.Getpid(), syscall.SIGUSR1)
+		if err := syscall.Kill(os.Getpid(), syscall.SIGUSR1); err != nil {
+			t.Fatal(err)
+		}
 		select {
 		case <-drained:
 		case <-time.After(5 * time.Second):

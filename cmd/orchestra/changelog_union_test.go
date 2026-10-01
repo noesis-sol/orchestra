@@ -9,7 +9,9 @@ import (
 
 func TestInitAddsChangelogUnionOnlyWhenTold(t *testing.T) {
 	repo, _ := gitRepo(t)
-	os.WriteFile(filepath.Join(repo, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	attrs := filepath.Join(repo, ".gitattributes")
 
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "make check", "-c", "1", "--check-timeout", "5m")

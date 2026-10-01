@@ -26,7 +26,9 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
 	repo, run := gitRepo(t)
 	run(repo, "branch", "-M", "main")
-	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run(repo, "add", ".")
 	run(repo, "commit", "-q", "-m", "shared file")
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
@@ -44,7 +46,9 @@ func (f *mergeFixture) ticket(t *testing.T, id, file, content string) string {
 	t.Helper()
 	wt := filepath.Join(t.TempDir(), id)
 	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/"+id, wt, "main")
-	os.WriteFile(filepath.Join(wt, file), []byte(content), 0o644)
+	if err := os.WriteFile(filepath.Join(wt, file), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.git(wt, "add", ".")
 	f.git(wt, "commit", "-q", "-m", id+": change "+file)
 	return wt
@@ -52,7 +56,9 @@ func (f *mergeFixture) ticket(t *testing.T, id, file, content string) string {
 
 func (f *mergeFixture) onMain(t *testing.T, file, content string) {
 	t.Helper()
-	os.WriteFile(filepath.Join(f.repo, file), []byte(content), 0o644)
+	if err := os.WriteFile(filepath.Join(f.repo, file), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.git(f.repo, "add", ".")
 	f.git(f.repo, "commit", "-q", "-m", "main moves on: "+file)
 }
@@ -61,7 +67,7 @@ func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
 	f := newMergeFixture(t, "exit 1") // must not run: nothing to re-check
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if !strings.Contains(f.git(f.repo, "log", "--oneline", "-1"), "k-1: change a.txt") {
 		t.Error("the ticket was not merged")
@@ -79,7 +85,7 @@ func TestMergeRebasesAndRechecksWhenMainMoved(t *testing.T) {
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
 	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	log := f.git(f.repo, "log", "--oneline")
 	if !strings.Contains(log, "k-1: change a.txt") || !strings.Contains(log, "main moves on: b.txt") {
@@ -97,7 +103,7 @@ func TestMergeLeavesAConflictForReview(t *testing.T) {
 	f.onMain(t, "shared.txt", "line 1 from main\n")
 	before := f.git(f.repo, "rev-parse", "main")
 	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if f.git(f.repo, "rev-parse", "main") != before {
 		t.Error("main must not change on a conflict")
@@ -118,7 +124,9 @@ func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
 	before := f.git(f.repo, "rev-parse", "main")
-	f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+		t.Fatal(s)
+	}
 	if f.git(f.repo, "rev-parse", "main") != before {
 		t.Error("main must not change when the checks fail")
 	}
@@ -137,7 +145,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 	f.onMain(t, "b.txt", "b\n")
 	start := time.Now()
 	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", hung, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	// The check's process group gets its grace period (5s) and WaitDelay (10s) at most.
 	if took := time.Since(start); took > f.orch.cfg.CheckTimeout+15*time.Second {
@@ -151,7 +159,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 		t.Errorf("set aside = %v", got)
 	}
 	if s := f.orch.merge(context.Background(), "k-2", "wt/k-2", next, "tab"); s != nil {
-		t.Fatal(s.text)
+		t.Fatal(s)
 	}
 	if !strings.Contains(f.sink.text(), "k-2 closed") {
 		t.Errorf("k-2 did not merge; events:\n%s", f.sink.text())
@@ -169,7 +177,9 @@ func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
 	f := newMergeFixture(t, "")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+		t.Fatal(s)
+	}
 	if ev := f.sink.text(); !strings.Contains(ev, "without checking the rebased code") || !strings.Contains(ev, "k-1 closed") {
 		t.Errorf("events:\n%s", ev)
 	}
@@ -184,7 +194,7 @@ func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
 	f.git(f.repo, "switch", "-q", "other")
 	main, other := f.git(f.repo, "rev-parse", "main"), f.git(f.repo, "rev-parse", "other")
 	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
-	if s == nil || s.code != ExitDirty || !strings.HasPrefix(s.text, "DIRTY_TREE:") {
+	if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree {
 		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
 	}
 	if f.git(f.repo, "rev-parse", "main") != main || f.git(f.repo, "rev-parse", "other") != other {
@@ -202,11 +212,16 @@ func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
 func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	before := f.git(f.repo, "rev-parse", "main")
 	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
-	if s == nil || s.code != ExitDirty || !strings.Contains(s.text, "uncommitted changes") {
+	if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree || !strings.Contains(s.Error(), "uncommitted changes") {
 		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
+	}
+	if why := f.orch.unmerged["k-1"]; why != "DIRTY_TREE" {
+		t.Errorf("k-1 left unmerged for %q, want DIRTY_TREE", why)
 	}
 	if f.git(f.repo, "rev-parse", "main") != before {
 		t.Error("main must not move")
@@ -229,7 +244,7 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			if s := f.orch.merge(context.Background(), fmt.Sprintf("k-%d", i), fmt.Sprintf("wt/k-%d", i), wts[i], "tab"); s != nil {
-				t.Errorf("k-%d: %s", i, s.text)
+				t.Errorf("k-%d: %s", i, s)
 			}
 		}(i)
 	}
@@ -246,7 +261,7 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 }
 
 // closesWithoutCommit claims the ticket and closes it, committing nothing.
-func closesWithoutCommit(w *fakeWorker) string {
+func closesWithoutCommit(w *fakeWorker) AgentState {
 	w.claim()
 	w.close()
 	return "idle"
@@ -255,7 +270,7 @@ func closesWithoutCommit(w *fakeWorker) string {
 // leavesUncommitted commits file, changes the tracked file edited without committing it, and
 // closes the ticket.
 func leavesUncommitted(file, edited string) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		w.claim()
 		w.commit(file)
 		if err := os.WriteFile(filepath.Join(w.wt, edited), []byte("changed\n"), 0o644); err != nil {
@@ -269,8 +284,12 @@ func leavesUncommitted(file, edited string) behaviour {
 func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	os.MkdirAll(filepath.Join(h.repo, ".claude", "commands"), 0o755)
-	os.WriteFile(filepath.Join(h.repo, ".claude", "commands", "ship.md"), []byte("ship\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(h.repo, ".claude", "commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.repo, ".claude", "commands", "ship.md"), []byte("ship\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".claude")
 	h.git(h.repo, "commit", "-q", "-m", "add a project command")
 	h.beads.add("A", "first", 1)
@@ -288,7 +307,7 @@ func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	if !exists(h.worktree("A")) {
 		t.Error("A's worktree should be left for review")
 	}
-	if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 		t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 	}
 }

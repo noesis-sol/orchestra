@@ -30,7 +30,8 @@ func inGroup(cmd *exec.Cmd, grace time.Duration) *group {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if !g.exited {
-			g.kill = time.AfterFunc(grace, func() { g.signal(syscall.SIGKILL) })
+			// Best effort: the group may have exited since, and nothing more can be done if not.
+			g.kill = time.AfterFunc(grace, func() { _ = g.signal(syscall.SIGKILL) })
 		}
 		return g.signalLocked(syscall.SIGTERM)
 	}
@@ -68,9 +69,13 @@ func (g *group) wait() {
 func (g *group) stop() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.signalLocked(syscall.SIGKILL)
+	_ = g.signalLocked(syscall.SIGKILL) // best effort: usually nothing is left in the group
 	g.exited = true
 	if g.kill != nil {
 		g.kill.Stop()
 	}
 }
+
+// terminate asks a process to stop, as Ctrl+C or a time limit does: SIGTERM, on which git removes
+// its lock files. Output's WaitDelay kills it if it doesn't.
+func terminate(p *os.Process) error { return p.Signal(syscall.SIGTERM) }

@@ -14,7 +14,7 @@ import (
 
 // givesUp is a worker whose environment fails it: it settles at once, without claiming its ticket
 // or changing anything.
-func givesUp(w *fakeWorker) string { return "idle" }
+func givesUp(w *fakeWorker) AgentState { return "idle" }
 
 func (h *harness) holdForEnvironment(window time.Duration) {
 	h.cfg.EnvHoldCount, h.cfg.EnvHoldWindow = 2, window
@@ -29,7 +29,7 @@ func (h *harness) dispatched() []string {
 }
 
 func (h *harness) statusOf(id string) string {
-	st, _ := h.beads.Status(id)
+	st, _ := h.beads.Status(context.Background(), id)
 	return st
 }
 
@@ -128,7 +128,7 @@ echo '{"structured_output":{"cause":"environment","confidence":"high","summary":
 func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 	h := newHarness(t)
 	h.holdForEnvironment(time.Minute)
-	defers := func(w *fakeWorker) string { w.claim(); w.deferIt(); return "idle" }
+	defers := func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" }
 	h.beads.add("A", "a", 1)
 	h.beads.add("B", "b", 2)
 	h.beads.add("C", "c", 3)
@@ -137,7 +137,7 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 	h.worker("B", defers)
 	// Triage runs beside the loop, so C may start before the second verdict: then it finishes once
 	// the run holds.
-	h.worker("C", func(w *fakeWorker) string {
+	h.worker("C", func(w *fakeWorker) AgentState {
 		select {
 		case <-h.sink.held:
 		case <-time.After(patience):
@@ -170,7 +170,7 @@ func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {
 }
 
 // runsProbe is a probe worker on a machine that works again: it runs the command it was given.
-func runsProbe(w *fakeWorker) string {
+func runsProbe(w *fakeWorker) AgentState {
 	if err := os.WriteFile(filepath.Join(w.wt, ".orchestra", "run", "probe"), []byte("ok\n"), 0o644); err != nil {
 		w.t.Error(err)
 	}
@@ -226,6 +226,49 @@ func TestAProbeThatRunsItsCommandEndsTheHold(t *testing.T) {
 	}
 	if exists(filepath.Join(h.repo, ".orchestra", "run", "probe")) {
 		t.Error("the probe's file is left behind")
+	}
+}
+
+// The probe runs one echo, so a Claude probe worker starts without MCP servers.
+func TestTheProbeStartsWithoutMCPServers(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp, finishes("a.txt"))
+	h.worker("B", givesUp, finishes("b.txt"))
+	h.worker(probeID, runsProbe)
+
+	if _, code := h.run(); code != ExitOK {
+		t.Fatalf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
+	}
+	if got := h.herdr.argsFor(probeID); len(got) != 1 || !equal(got[0], []string{"start", "--strict-mcp-config"}) {
+		t.Errorf("probe started with %q, want once with --strict-mcp-config", got)
+	}
+}
+
+// A Herdr that refuses arguments starts the probe worker plainly.
+func TestTheProbeStartsPlainlyWhenHerdrRefusesArguments(t *testing.T) {
+	h := newHarness(t)
+	h.holdForEnvironment(time.Minute)
+	h.cfg.EnvProbe = time.Millisecond
+	h.herdr.refuseArgs = true
+	h.beads.add("A", "a", 1)
+	h.beads.add("B", "b", 2)
+	h.worker("A", givesUp, finishes("a.txt"))
+	h.worker("B", givesUp, finishes("b.txt"))
+	h.worker(probeID, runsProbe)
+
+	if _, code := h.run(); code != ExitOK {
+		t.Fatalf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
+	}
+	got := h.herdr.argsFor(probeID)
+	if len(got) != 2 || !equal(got[0], []string{"start", "--strict-mcp-config"}) || !equal(got[1], []string{"start"}) {
+		t.Errorf("probe started with %q, want --strict-mcp-config, then no arguments", got)
+	}
+	if !strings.Contains(h.logged(), errRefused.Error()) {
+		t.Errorf("log lacks the refusal:\n%s", h.logged())
 	}
 }
 

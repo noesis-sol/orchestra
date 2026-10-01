@@ -102,13 +102,22 @@ func (o *Loop) prediction(id string) []string {
 }
 
 // predict asks the predictor for ticket t's files, caches them on the ticket and, when it is
-// already running with an empty footprint, gives it them.
+// already running with an empty footprint, gives it them. A panic loses that prediction, not the
+// run.
 func (o *Loop) predict(ctx context.Context, t Ticket) {
-	tracked := o.checkout.TrackedFiles(o.cfg.Repo)
+	defer func() {
+		if p := recover(); p != nil {
+			o.info("  %s footprint not predicted: panic: %s (the stack is in %s)",
+				t.ID, o.logPanic("predicting "+t.ID+"'s footprint", p), o.cfg.LogPath)
+		}
+	}()
+	tracked := o.checkout.TrackedFiles(ctx, o.cfg.Repo)
 	if len(tracked) == 0 {
 		return // no files to choose from
 	}
-	files, err := o.organ.PredictFiles(ctx, organ.Footprint{ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(t.ID), Files: tracked})
+	files, err := o.organ.PredictFiles(ctx, organ.Footprint{
+		ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked,
+	})
 	switch {
 	case ctx.Err() != nil:
 		return // the run ended
@@ -125,13 +134,18 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 	}
 	o.predicted[t.ID] = files
 	o.predictMu.Unlock()
-	if err := o.notes.SetMetadata(t.ID, PredictedKey, strings.Join(files, ",")); err != nil {
+	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, strings.Join(files, ",")); err != nil {
 		o.log.Raw("", err)
 	}
+	o.givePrediction(t.ID, files, tracked)
+	o.info("  %s footprint predicted: %s", t.ID, strings.Join(files, ", "))
+}
+
+// givePrediction gives a running ticket with an empty footprint its predicted files.
+func (o *Loop) givePrediction(id string, files, tracked []string) {
 	o.mu.Lock()
-	if r := o.footprints[t.ID]; r != nil && r.fp.Empty() {
+	defer o.mu.Unlock() // deferred: a panic must not leave the loop locked
+	if r := o.footprints[id]; r != nil && r.fp.Empty() {
 		r.fp = predictedFootprint(files, newRepoFiles(tracked))
 	}
-	o.mu.Unlock()
-	o.info("  %s footprint predicted: %s", t.ID, strings.Join(files, ", "))
 }

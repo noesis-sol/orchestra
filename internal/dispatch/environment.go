@@ -26,102 +26,111 @@ import (
 // tickets again. If not, the run ends as it would have. The machine is probed once per run, so an
 // environment that keeps failing ends the run the second time it holds.
 
-// failedAtOnce reports whether a worker settled as one failed by its environment does: soon after
-// started, its ticket still open, its branch still at head and its worktree clean.
-func (o *Loop) failedAtOnce(status string, started time.Time, br, head, wt string) bool {
+// failedAtOnce reports whether a worker settled as one failed by its environment does: idle for good
+// (from idleAt) soon after started, its ticket still open, its branch still at head and its
+// worktree clean. Going idle counts, not settling: an idle worker with its ticket open is given
+// startGrace before it settles, which can outlast the window.
+func (o *Loop) failedAtOnce(ctx context.Context, status string, started, idleAt time.Time, br, head, wt string) bool {
 	c := o.cfg
-	return c.EnvHoldCount > 0 && status == "open" && time.Since(started) < c.EnvHoldWindow &&
-		o.checkout.Head(c.Repo, br) == head && o.checkout.DirtyWorktree(wt) == ""
+	return c.EnvHoldCount > 0 && status == "open" && idleAt.Sub(started) < c.EnvHoldWindow &&
+		o.checkout.Head(ctx, c.Repo, br) == head && o.checkout.DirtyWorktree(ctx, wt) == ""
 }
 
-// settledFast counts a settled worker toward the hold: one that failed at once adds to the tickets
+// settling is how a worker settled, as the hold counts it.
+type settling int
+
+const (
+	unsettled   settling = iota // it never settled with its ticket read: the row goes on
+	settledFast                 // it failed at once, as one its environment fails does
+	settledSlow                 // any other way, which ends the row
+)
+
+// settled counts a settled worker toward the hold: one that failed at once adds to the tickets
 // failing in a row, and any other ends the row. A ticket failing this way once the run holds is
-// reopened too.
-func (o *Loop) settledFast(id string, fast bool) {
+// reopened too. Run calls it with each result.
+func (o *Loop) settled(ctx context.Context, id string, how settling) {
 	n := o.cfg.EnvHoldCount
-	if n == 0 {
+	if n == 0 || how == unsettled {
 		return
 	}
-	o.mu.Lock()
-	if !fast {
+	if how != settledFast {
 		o.fastFails = nil
-		o.mu.Unlock()
 		return
 	}
 	o.fastFails = append(o.fastFails, id)
-	ids := append([]string(nil), o.fastFails...)
-	held := o.envStop != nil
-	o.mu.Unlock()
 	switch {
-	case held:
-		o.reopenFailed(id)
-	case len(ids) >= n:
-		o.holdForEnvironment(fmt.Sprintf("the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
-			len(ids), strings.Join(ids, ", "), ShortDuration(o.cfg.EnvHoldWindow)))
+	case o.envStop != nil:
+		o.reopenFailed(ctx, id)
+	case len(o.fastFails) >= n:
+		o.holdForEnvironment(ctx, fmt.Sprintf(
+			"the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
+			len(o.fastFails), strings.Join(o.fastFails, ", "), ShortDuration(o.cfg.EnvHoldWindow)))
+	}
+}
+
+// verdict is triage's verdict on a deferred ticket, as the hold counts it.
+type verdict struct {
+	id, cause, confidence, summary string
+}
+
+// blamed hands a triage verdict to Run, waiting until Run takes it; once Run has returned, triage
+// counts it itself.
+func (o *Loop) blamed(ctx context.Context, v verdict) {
+	if o.cfg.EnvHoldCount == 0 {
+		return
+	}
+	select {
+	case o.verdicts <- v:
+	case <-o.runDone:
+		o.triaged(ctx, v)
 	}
 }
 
 // triaged counts a triage verdict toward the hold: one blaming the environment with high
 // confidence adds to the row, any other ends it.
-func (o *Loop) triaged(id, cause, confidence, summary string) {
+func (o *Loop) triaged(ctx context.Context, v verdict) {
 	n := o.cfg.EnvHoldCount
 	if n == 0 {
 		return
 	}
-	o.mu.Lock()
-	if cause != "environment" || confidence != "high" {
+	if v.cause != "environment" || v.confidence != "high" {
 		o.envVerdicts = nil
-		o.mu.Unlock()
 		return
 	}
-	o.envVerdicts = append(o.envVerdicts, id)
-	ids := append([]string(nil), o.envVerdicts...)
-	o.mu.Unlock()
-	if len(ids) >= n {
-		o.holdForEnvironment(fmt.Sprintf("triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
-			len(ids), strings.Join(ids, ", "), strings.TrimSuffix(strings.TrimSpace(summary), ".")))
+	o.envVerdicts = append(o.envVerdicts, v.id)
+	if len(o.envVerdicts) >= n {
+		o.holdForEnvironment(ctx, fmt.Sprintf(
+			"triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
+			len(o.envVerdicts), strings.Join(o.envVerdicts, ", "), strings.TrimSuffix(strings.TrimSpace(v.summary), ".")))
 	}
 }
 
 // holdForEnvironment holds the run, once, and reopens the tickets in the current row of workers
 // that failed at once. Run picks the reason up before it starts another ticket.
-func (o *Loop) holdForEnvironment(why string) {
-	o.mu.Lock()
+func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 	if o.envStop != nil {
-		o.mu.Unlock()
 		return
 	}
 	o.envWhy = why
-	o.envStop = halt(ExitEnvironment, "ENVIRONMENT: %s; check the machine, then restart", why)
-	reopen := append([]string(nil), o.fastFails...)
-	o.mu.Unlock()
-	for _, id := range reopen {
-		o.reopenFailed(id)
+	o.envStop = halt(ExitEnvironment, stopEnvironment, ": %s; check the machine, then restart", why)
+	for _, id := range o.fastFails {
+		o.reopenFailed(ctx, id)
 	}
-	select {
-	case o.envWake <- struct{}{}:
-	default: // already told, or no Run to tell
-	}
-}
-
-// environmentStop is the reason the run holds for the environment, or nil.
-func (o *Loop) environmentStop() *stopReason {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.envStop
 }
 
 // reopenFailed puts a ticket whose worker failed at once back in the queue, keeping its notes: it
 // did nothing, and its worktree is clean.
-func (o *Loop) reopenFailed(id string) {
-	if err := o.notes.Reopen(id); err != nil {
+func (o *Loop) reopenFailed(ctx context.Context, id string) {
+	if err := o.notes.Reopen(ctx, id); err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; reopen it with: bd update %s --status open",
+			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; "+
+				"reopen it with: bd update %s --status open",
 			id, because(err), id)})
 		return
 	}
 	o.unmarkAside(id)
-	o.appendNotes(id, "Orchestra: reopened; its worker failed at once, like the tickets before it, so the run held for the environment rather than for this ticket.")
+	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, "+
+		"so the run held for the environment rather than for this ticket.")
 	o.info("  %s reopened: its worker failed at once, like the tickets before it", id)
 }
 
@@ -134,15 +143,19 @@ const probeLimit = 5 * time.Minute
 // probeEnvironment is Run's next step when nothing runs and stop is the only reason to stop: with
 // the run held for the environment, and not probed yet, it waits Config.EnvProbe and then probes
 // the machine. It returns nil when the probe ran its command and the hold has ended, or else the
-// reason to end the run with. winding says whether the maintainer asked to wind down.
-func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding func() bool) *stopReason {
+// reason to end the run with. winding says whether the maintainer asked to wind down, hearing any
+// request waiting; hear takes one as it comes, and says the same.
+func (o *Loop) probeEnvironment(
+	ctx context.Context, stop *stopReason, winding func() bool, hear func(drainRequest) bool,
+) *stopReason {
 	after := o.cfg.EnvProbe
-	if after <= 0 || o.envProbed || stop == nil || stop != o.environmentStop() || winding() || ctx.Err() != nil {
+	if after <= 0 || o.envProbed || stop == nil || stop != o.envStop || winding() || ctx.Err() != nil {
 		return stop
 	}
 	o.envProbed = true
 	o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-		"PROBE: the run holds for the environment; in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
+		"PROBE: the run holds for the environment; "+
+			"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
 		ShortDuration(after))})
 	wait := time.NewTimer(after)
 	defer wait.Stop()
@@ -150,10 +163,12 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		select {
 		case <-ctx.Done():
 			return stop
-		case <-o.drainWake:
-			if winding() {
+		case r := <-o.drainReqs:
+			if hear(r) {
 				return stop
 			}
+		case v := <-o.verdicts:
+			o.triaged(context.WithoutCancel(ctx), v) // held already: it changes nothing but the row
 		case <-wait.C:
 			waiting = false
 		}
@@ -163,13 +178,16 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		return stop
 	}
 	if err != nil {
-		return halt(ExitEnvironment, "ENVIRONMENT: %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
-			o.envWhy, ShortDuration(after), err)
+		return halt(ExitEnvironment, stopEnvironment,
+			": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
+			o.envWhy, ShortDuration(after), err).causedBy(err)
 	}
-	o.tabs.CloseTab(tab)
-	o.mu.Lock()
+	o.closeTab(ctx, tab)
+	select {
+	case <-o.verdicts: // given while the probe ran, about a ticket from before the hold: forgotten with the row
+	default:
+	}
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
-	o.mu.Unlock()
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
 		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again", ShortDuration(after))})
 	return nil
@@ -184,8 +202,10 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err := os.MkdirAll(filepath.Dir(proof), 0o755); err != nil {
 		return "", fmt.Errorf("cannot make %s: %w", filepath.Dir(proof), err)
 	}
-	os.Remove(proof)
-	defer os.Remove(proof)
+	if err := os.Remove(proof); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("cannot remove an earlier probe's %s: %w", proof, err)
+	}
+	defer func() { _ = os.Remove(proof) }() // best effort: the next probe removes it first
 	ran := func() bool {
 		b, err := os.ReadFile(proof)
 		return err == nil && strings.TrimSpace(string(b)) == "ok"
@@ -193,22 +213,33 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 
 	// An earlier probe's worker, left open because it failed, may hold the name.
 	agent := o.agentName(probeID)
-	if st, _ := o.readStatus(ctx, agent, 5); st != "gone" {
-		if name := o.namer.FreeName(agent); name == "" || o.namer.RenameAgent(agent, name) != nil {
+	if st, err := o.readStatus(ctx, agent, 5); err != nil || st != StateGone { // unreadable: the name may be taken
+		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
 	}
-	tab, pane, err := o.tabs.CreateTab(c.Workspace, c.Repo, probeID)
+	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, c.Repo, probeID)
 	if err != nil {
 		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
 	deadline := time.Now().Add(orDefault(o.wait.probe, probeLimit))
-	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
+	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
+	// refuses the argument.
+	var args []string
+	if c.AgentKind == "claude" {
+		args = []string{"--strict-mcp-config"}
+	}
+	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
+	if err != nil && len(args) > 0 && o.starter.IsArgumentRefused(err) {
 		o.log.Raw("", err)
+		err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil)
+	}
+	if err != nil {
 		// 'agent start' can fail while the agent still comes up.
-		if st, _ := o.agents.Status(agent); st == "gone" || st == "unreadable" {
+		if st, serr := o.agents.Status(ctx, agent); serr != nil || st == StateGone { // the start's error is the one to report
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
+		o.log.Raw("", err) // it came up all the same
 	}
 	o.info("  probe worker %s started in tab %s", agent, tab)
 	prompt := fmt.Sprintf("Orchestra is checking that commands run on this machine; there is no ticket. "+
@@ -220,14 +251,15 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		if ran() {
 			return tab, nil
 		}
-		st, _ := o.agents.Status(agent)
+		st, err := o.agents.Status(ctx, agent) // unreadable: asked again after the next poll
 		switch {
-		case st == "gone":
+		case err == nil && st == StateGone:
 			return tab, fmt.Errorf("it went away without running its command (tab %s)", tab)
-		case (st == "idle" || st == "done") && !ran():
+		case err == nil && (st == StateIdle || st == StateDone) && !ran():
 			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
-			return tab, fmt.Errorf("it ran no command within %s; see tab %s", ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)
+			return tab, fmt.Errorf("it ran no command within %s; see tab %s",
+				ShortDuration(orDefault(o.wait.probe, probeLimit)), tab)
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return tab, errors.New("interrupted")

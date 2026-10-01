@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
@@ -122,5 +124,72 @@ func TestDashboardShowsTheSoloTicket(t *testing.T) {
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 1})
 	if v := ansi.Strip(m.titleLine(m.width)); strings.Contains(v, "solo") {
 		t.Errorf("title line %q should drop the solo ticket once it is done", v)
+	}
+}
+
+func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {})
+	m.active = map[string]dispatch.Status{}
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprintf("kinieta-w%d", i)
+		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now().Add(-time.Duration(3-i) * time.Minute),
+			Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+	}
+	// labelAbove reports whether the line after the Current label opens the workers' box.
+	labelAbove := func(v string) bool {
+		lines := strings.Split(ansi.Strip(v), "\n")
+		for i, l := range lines {
+			if strings.TrimRight(l, " ") == "  Current" {
+				return i+1 < len(lines) && strings.HasPrefix(lines[i+1], "╭")
+			}
+		}
+		return false
+	}
+	m.width, m.height = 70, 40
+	if v := m.View(); !labelAbove(v) || strings.Count(ansi.Strip(v), "╭") < 4 { // totals, then a box per worker
+		t.Errorf("a box per worker should be headed Current:\n%s", ansi.Strip(v))
+	}
+	m.height = 16 // too short for a box each: one line per worker
+	if v := m.View(); !labelAbove(v) || !strings.Contains(ansi.Strip(v), "kinieta-w2") || strings.Count(ansi.Strip(v), "╭") != 2 {
+		t.Errorf("the one-line-per-worker box should be headed Current:\n%s", ansi.Strip(v))
+	}
+	// Title, totals on one line, the workers' box and the hint fill 9 lines: the label goes first.
+	m.width, m.height = 40, 10
+	if v := m.View(); !labelAbove(v) {
+		t.Errorf("10 lines are room for the label:\n%s", ansi.Strip(v))
+	}
+	m.height = 9
+	v := ansi.Strip(m.View())
+	if strings.Contains(v, "Current") || !strings.Contains(v, "kinieta-w2") || !strings.Contains(v, "ctrl+c") {
+		t.Errorf("the label should be dropped before anything else:\n%s", v)
+	}
+	m.active = nil
+	m.width, m.height = 70, 40
+	if v := m.View(); !labelAbove(v) || !strings.Contains(ansi.Strip(v), "picking the next ticket") {
+		t.Errorf("the idle box should be headed Current too:\n%s", ansi.Strip(v))
+	}
+}
+
+func TestCurrentLabelIsBoldInTheWorkingColour(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetHasDarkBackground(true)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {})
+	m.active = map[string]dispatch.Status{}
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprintf("kinieta-w%d", i)
+		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: "working"}
+	}
+	// Bold (1) and the exact dark-background cyan #22D3EE, which terminal themes can't remap.
+	label := "  \x1b[1;38;2;34;211;238mCurrent\x1b[0m"
+	for _, c := range []struct {
+		layout string
+		height int
+		boxes  int // the totals' and the workers'
+	}{{"a box per worker", 40, 4}, {"one line per worker", 16, 2}} {
+		m.width, m.height = 70, c.height
+		if v := m.View(); !strings.Contains(v, label) || strings.Count(ansi.Strip(v), "╭") != c.boxes {
+			t.Errorf("with %s the Current label should be bold cyan %q:\n%q", c.layout, label, v)
+		}
 	}
 }

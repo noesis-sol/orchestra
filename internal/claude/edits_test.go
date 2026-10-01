@@ -35,8 +35,12 @@ func TestHooksRecordEveryFileTheWorkerEdits(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "it's a worktree")
 	var r Reporter
 	stale := filepath.Join(wt, ".orchestra", "run", editsName)
-	os.MkdirAll(filepath.Dir(stale), 0o755)
-	os.WriteFile(stale, []byte(filepath.Join(wt, "old.go")+"\n"), 0o644)
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte(filepath.Join(wt, "old.go")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	args, err := r.ReportArgs(wt)
 	if err != nil {
@@ -69,13 +73,13 @@ func TestHooksRecordEveryFileTheWorkerEdits(t *testing.T) {
 }
 
 func TestEditedFilesByRealPath(t *testing.T) {
-	real := t.TempDir()
+	target := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skip(err)
 	}
-	real, _ = filepath.EvalSymlinks(real)
-	b := []byte(filepath.Join(real, "a.go") + "\n" + filepath.Join(link, "b.go") + "\nc.go\n\n" + filepath.Join(link, "..", "outside.go") + "\n")
+	target, _ = filepath.EvalSymlinks(target)
+	b := []byte(filepath.Join(target, "a.go") + "\n" + filepath.Join(link, "b.go") + "\nc.go\n\n" + filepath.Join(link, "..", "outside.go") + "\n")
 	if got := editedFiles(b, link); !slices.Equal(got, []string{"a.go", "b.go", "c.go"}) {
 		t.Errorf("got %q", got)
 	}

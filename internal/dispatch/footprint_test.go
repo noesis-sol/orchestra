@@ -147,8 +147,12 @@ func (b *fakeBeads) describe(id, text string) {
 // commitFiles adds files to the harness repository's main branch, so tickets can name them.
 func (h *harness) commitFiles(files ...string) {
 	for _, f := range files {
-		os.MkdirAll(filepath.Join(h.repo, filepath.Dir(f)), 0o755)
-		os.WriteFile(filepath.Join(h.repo, f), []byte("package x\n"), 0o644)
+		if err := os.MkdirAll(filepath.Join(h.repo, filepath.Dir(f)), 0o755); err != nil {
+			h.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(h.repo, f), []byte("package x\n"), 0o644); err != nil {
+			h.t.Fatal(err)
+		}
 	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "files")
@@ -170,7 +174,7 @@ func TestOverlappingTicketsNeverRunTogether(t *testing.T) {
 	h.beads.add("C", "pick faster", 3)
 	h.beads.describe("C", "Speed up pickNext().")
 	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 		eventually(t, "C never took the free slot", func() bool { return h.sink.dispatchedYet("C") })
 		time.Sleep(20 * time.Millisecond) // a few more polls, with C finished and a slot free
 		return finishes("a.txt")(w)
@@ -208,7 +212,7 @@ func TestEditsExtendARunningTicketsFootprint(t *testing.T) {
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "first", 1) // names nothing
 	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		edits.edit(w.wt, "internal/x.go")
 		w.beads.add("B", "second", 2)
@@ -253,7 +257,7 @@ func TestWithoutFootprintsTicketsRunAsBefore(t *testing.T) {
 			h.beads.describe("B", "Fix Loop.merge().")
 		}
 		var v overlap
-		h.worker("A", v.runs("A", func(w *fakeWorker) string {
+		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 			eventually(t, "B never ran beside A", func() bool { return h.sink.dispatchedYet("B") })
 			return finishes("a.txt")(w)
 		}))
@@ -288,7 +292,7 @@ func TestTwoWorkersEditingOneFileAreWarnedAbout(t *testing.T) {
 	h.beads.add("B", "second", 2)
 	const warning = "LIKELY_CONFLICT: A and B both edit internal/x.go; the second to merge may conflict"
 	both := func(file string) behaviour {
-		return func(w *fakeWorker) string {
+		return func(w *fakeWorker) AgentState {
 			edits.edit(w.wt, "internal/x.go")
 			eventually(t, "no warning", func() bool { return strings.Contains(h.sink.text(), warning) })
 			time.Sleep(20 * time.Millisecond) // a few more polls

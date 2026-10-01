@@ -3,6 +3,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -19,8 +20,9 @@ type Git struct{}
 // DirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
 // (agent settings, tracker data, and orchestra's own files). It returns git's error when git can't
 // tell, which is not the same as dirty.
-func (Git) DirtyTree(dir string) (string, error) {
-	out, err := command.Output("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
+func (Git) DirtyTree(ctx context.Context, dir string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain",
+		"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
 	if err != nil {
 		return "", err
 	}
@@ -30,8 +32,9 @@ func (Git) DirtyTree(dir string) (string, error) {
 // DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
 // ticket's scratch). Unlike DirtyTree it counts .claude/, .beads/ and the rest of .orchestra/: a
 // change a worker left there is its ticket's work. A failed git call counts as dirty.
-func (Git) DirtyWorktree(dir string) string {
-	out, err := command.Output("", "git", "-C", dir, "status", "--porcelain", "--", ".", ":(exclude).orchestra/run")
+func (Git) DirtyWorktree(ctx context.Context, dir string) string {
+	out, err := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "status", "--porcelain",
+		"--", ".", ":(exclude).orchestra/run")
 	if err != nil {
 		return err.Error()
 	}
@@ -40,8 +43,8 @@ func (Git) DirtyWorktree(dir string) string {
 
 // CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD. It returns git's
 // error when git can't tell, which is not the same as detached.
-func (Git) CurrentBranch(repo string) (string, error) {
-	out, err := command.Output(repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
+func (Git) CurrentBranch(ctx context.Context, repo string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 1 { // --quiet: HEAD is not a branch
 		return "", nil
@@ -75,27 +78,30 @@ func parseWorktreeOf(porcelain, branch string) string {
 }
 
 // WorktreeOf returns the path of the worktree that has branch checked out, or "".
-func (Git) WorktreeOf(repo, branch string) string {
-	out, _ := command.Output(repo, "git", "worktree", "list", "--porcelain")
+func (Git) WorktreeOf(ctx context.Context, repo, branch string) string {
+	// On failure none is found, and adding one fails with git's reason.
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "worktree", "list", "--porcelain")
 	return parseWorktreeOf(out, branch)
 }
 
 // HasBranch reports whether repo has the local branch.
-func (Git) HasBranch(repo, branch string) bool {
-	_, err := command.Output(repo, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+func (Git) HasBranch(ctx context.Context, repo, branch string) bool {
+	_, err := command.Output(ctx, command.ReadLimit, repo, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return err == nil
 }
 
 // CommitNaming returns the latest commit on branch (not on base) whose message names the ticket,
 // as "<hash> <subject>" cut to 70 characters, or "".
-func (g Git) CommitNaming(repo, base, branch, ticket string) string {
-	return g.CommitNamingOn(repo, base+".."+branch, ticket)
+func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
+	return g.CommitNamingOn(ctx, repo, base+".."+branch, ticket)
 }
 
 // CommitNamingOn returns the latest commit reachable from rev (or in a range such as a..b) whose
 // message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
-func (Git) CommitNamingOn(repo, rev, ticket string) string {
-	out, _ := command.Output(repo, "git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev)
+func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
+	// On failure none is found: nothing is merged.
+	out, _ := command.Output(ctx, command.ReadLimit, repo,
+		"git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev)
 	return latestNaming(out, ticket)
 }
 
@@ -144,20 +150,20 @@ func isIDChar(c byte) bool {
 }
 
 // IsAncestor reports whether ancestor is an ancestor of rev (or the same commit).
-func (Git) IsAncestor(repo, ancestor, rev string) bool {
-	_, err := command.Output(repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
+func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
+	_, err := command.Output(ctx, command.ReadLimit, repo, "git", "merge-base", "--is-ancestor", ancestor, rev)
 	return err == nil
 }
 
 // Head returns the commit rev points at, or "".
-func (Git) Head(repo, rev string) string {
-	out, _ := command.Output(repo, "git", "rev-parse", rev)
+func (Git) Head(ctx context.Context, repo, rev string) string {
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", rev) // "" on failure, as documented
 	return strings.TrimSpace(out)
 }
 
 // TrackedFiles lists the files git tracks in repo, or nil if git can't.
-func (Git) TrackedFiles(repo string) []string {
-	out, err := command.Output(repo, "git", "ls-files", "-z")
+func (Git) TrackedFiles(ctx context.Context, repo string) []string {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "-z")
 	if err != nil {
 		return nil
 	}
@@ -171,53 +177,57 @@ func (Git) TrackedFiles(repo string) []string {
 }
 
 // Prune forgets worktrees whose folders are gone.
-func (Git) Prune(repo string) {
-	command.Output(repo, "git", "worktree", "prune")
+func (Git) Prune(ctx context.Context, repo string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "prune")
 }
 
 // AddWorktree checks out the existing branch in a new worktree at path.
-func (Git) AddWorktree(repo, path, branch string) (string, error) {
-	return command.Output(repo, "git", "worktree", "add", "--quiet", path, branch)
+func (Git) AddWorktree(ctx context.Context, repo, path, branch string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "add", "--quiet", path, branch)
 }
 
 // NewWorktree creates branch from base, checked out in a new worktree at path.
-func (Git) NewWorktree(repo, path, branch, base string) (string, error) {
-	return command.Output(repo, "git", "worktree", "add", "--quiet", "-b", branch, path, base)
+func (Git) NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "add", "--quiet", "-b", branch, path, base)
 }
 
 // RemoveWorktree removes the worktree at path.
-func (Git) RemoveWorktree(repo, path string) (string, error) {
-	return command.Output(repo, "git", "worktree", "remove", path)
+func (Git) RemoveWorktree(ctx context.Context, repo, path string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "remove", path)
 }
 
 // DeleteBranch deletes a branch that has been merged. Deleting a ref takes the repository's
 // packed-refs.lock, which a commit, rebase or merge in any worktree also takes for a moment; git
 // gives up after a second, too soon on a loaded machine while workers commit, so it waits longer.
-func (Git) DeleteBranch(repo, branch string) (string, error) {
-	return command.Output(repo, "git", "-c", "core.packedRefsTimeout=10000", "branch", "-d", branch)
+func (Git) DeleteBranch(ctx context.Context, repo, branch string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo,
+		"git", "-c", "core.packedRefsTimeout=10000", "branch", "-d", branch)
 }
 
 // Rebase rebases the branch checked out in worktree onto onto.
-func (Git) Rebase(worktree, onto string) (string, error) {
-	return command.Output("", "git", "-C", worktree, "rebase", onto)
+func (Git) Rebase(ctx context.Context, worktree, onto string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "rebase", onto)
 }
 
 // AbortRebase gives up a rebase in progress in worktree.
-func (Git) AbortRebase(worktree string) {
-	command.Output("", "git", "-C", worktree, "rebase", "--abort")
+func (Git) AbortRebase(ctx context.Context, worktree string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "rebase", "--abort")
 }
 
 // ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or nil.
-func (Git) ConflictedFiles(worktree string) []string {
-	out, _ := command.Output("", "git", "-C", worktree, "diff", "--name-only", "--diff-filter=U")
+func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
+	// Nil on failure: the files only explain the conflict.
+	out, _ := command.Output(ctx, command.ReadLimit, "",
+		"git", "-C", worktree, "diff", "--name-only", "--diff-filter=U")
 	return strings.Fields(out)
 }
 
 // RebaseInProgress reports whether a rebase has stopped in worktree and not been finished or
 // aborted. A git call that fails counts as one in progress: it can't be shown to be over.
-func (Git) RebaseInProgress(worktree string) bool {
+func (Git) RebaseInProgress(ctx context.Context, worktree string) bool {
 	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
-		out, err := command.Output("", "git", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
+		out, err := command.Output(ctx, command.ReadLimit, "",
+			"git", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
 		if err != nil {
 			return true
 		}
@@ -229,8 +239,8 @@ func (Git) RebaseInProgress(worktree string) bool {
 }
 
 // CountCommits counts the commits in revs, such as base..branch, or returns -1 if git can't.
-func (Git) CountCommits(repo, revs string) int {
-	out, err := command.Output(repo, "git", "rev-list", "--count", revs)
+func (Git) CountCommits(ctx context.Context, repo, revs string) int {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-list", "--count", revs)
 	if err != nil {
 		return -1
 	}
@@ -242,35 +252,39 @@ func (Git) CountCommits(repo, revs string) int {
 }
 
 // ResetBranch moves the branch checked out in worktree to rev, with its files.
-func (Git) ResetBranch(worktree, rev string) (string, error) {
-	return command.Output("", "git", "-C", worktree, "reset", "--hard", "--quiet", rev)
+func (Git) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "reset", "--hard", "--quiet", rev)
 }
 
 // FastForward merges branch into the checked-out branch of repo, only if that is a fast-forward.
-func (Git) FastForward(repo, branch string) (string, error) {
-	return command.Output(repo, "git", "merge", "--ff-only", "--quiet", branch)
+func (Git) FastForward(ctx context.Context, repo, branch string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "merge", "--ff-only", "--quiet", branch)
 }
 
 // ShortStatus is 'git status --short' in worktree.
-func (Git) ShortStatus(worktree string) string {
-	out, _ := command.Output("", "git", "-C", worktree, "status", "--short")
+func (Git) ShortStatus(ctx context.Context, worktree string) string {
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "status", "--short")
 	return out
 }
 
 // OneLineLog is 'git log --oneline revs' in dir.
-func (Git) OneLineLog(dir, revs string) string {
-	out, _ := command.Output("", "git", "-C", dir, "log", "--oneline", revs)
+func (Git) OneLineLog(ctx context.Context, dir, revs string) string {
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "log", "--oneline", revs)
 	return out
 }
 
 // DiffStat is the diff stat of worktree's uncommitted changes.
-func (Git) DiffStat(worktree string) string {
-	out, _ := command.Output("", "git", "-C", worktree, "diff", "--stat", "HEAD")
+func (Git) DiffStat(ctx context.Context, worktree string) string {
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--stat", "HEAD")
 	return out
 }
 
 // Subjects lists revs as "<hash> <subject>" lines, run in repo.
-func (Git) Subjects(repo, revs string) string {
-	out, _ := command.Output(repo, "git", "log", "--format=%h %s", revs)
+func (Git) Subjects(ctx context.Context, repo, revs string) string {
+	// For people and the organs: "" on failure.
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--format=%h %s", revs)
 	return out
 }

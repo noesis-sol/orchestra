@@ -23,6 +23,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -103,40 +104,72 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // and collects every setup problem, so they can be reported together. The error is the flag
 // package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
 // argument such as 'init' after a flag; both have been reported to output.
-func loadConfig(args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
+func loadConfig(
+	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
+) (options, []string, error) {
 	var c options
 	var problems []string
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
 	fs.SetOutput(output)
 
-	fs.StringVar(&c.Workspace, "workspace", "", "Herdr workspace for the worker tabs (default: the one orchestra runs in; list IDs with: herdr workspace list)")
+	fs.StringVar(&c.Workspace, "workspace", "",
+		"Herdr workspace for the worker tabs (default: the one orchestra runs in; "+
+			"list IDs with: herdr workspace list)")
 	limit, limitProblem := envInt(getenv, "LIMIT", 40)
 	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")
 	doneSoFar, doneSoFarProblem := envInt(getenv, "DONE_SO_FAR", 0)
-	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar, "tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
-	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"), "Herdr agent kind for the workers [AGENT_KIND]")
-	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"), "worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
-	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0", "macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
-	fs.StringVar(&c.WTRoot, "worktrees", getenv("WT_ROOT"), "folder for the per-ticket worktrees, outside the repository (default: <repo>-worktrees next to it) [WT_ROOT]")
-	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0", "triage each deferred ticket with claude and note a recommendation on it [TRIAGE=0 turns off]")
-	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0", "write a run report with claude when the loop stops [REVIEW=0 turns off]")
-	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"), "model for triage and the report (default: the claude CLI's default) [ORGAN_MODEL]")
+	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar,
+		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
+	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"),
+		"Herdr agent kind for the workers [AGENT_KIND]")
+	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"),
+		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
+			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
+	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0",
+		"macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
+	fs.StringVar(&c.WTRoot, "worktrees", getenv("WT_ROOT"),
+		"folder for the per-ticket worktrees, outside the repository "+
+			"(default: <repo>-worktrees next to it) [WT_ROOT]")
+	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0",
+		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
+	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0",
+		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
+	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"),
+		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
-	fs.IntVar(&c.Concurrency, "concurrent", concurrent, "tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
+	fs.IntVar(&c.Concurrency, "concurrent", concurrent,
+		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
 	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT", false)
-	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit, "stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none (default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
+	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit,
+		"stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none "+
+			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
 	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
-	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout, "stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m (default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
-	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"), "work on this ticket and its subtickets only, each parent after its children; nothing else is started [ORCHESTRA_TICKET]")
-	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true, "when a finished ticket's rebase onto work merged while it ran stops on conflicts, ask its worker to resolve them before setting it aside; needs a check command (default: .orchestra/settings.json, else on)")
-	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0", "start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
+	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout,
+		"stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
+			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"),
+		"work on this ticket and its subtickets only, each parent after its children; "+
+			"nothing else is started [ORCHESTRA_TICKET]")
+	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true,
+		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
+			"ask its worker to resolve them before setting it aside; needs a check command "+
+			"(default: .orchestra/settings.json, else on)")
+	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0",
+		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	showVersion := fs.Bool("version", false, "print the version and exit")
-	fs.BoolVar(&c.Plain, "plain", false, "print plain log lines instead of the interactive view (automatic when not on a terminal)")
+	fs.BoolVar(&c.Plain, "plain", false,
+		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]\n       orchestra plan [--apply]\n\nWork through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, one agent per Herdr tab and git worktree.\n\n")
+		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
+			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--mcp names] [--force]\n"+
+			"       orchestra plan [--apply]\n\n"+
+			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, "+
+			"one worker (a coding agent) per Herdr tab and git worktree.\n\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, 4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, 130 Ctrl+C.\n")
+		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
+			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
+			"7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
@@ -144,7 +177,8 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 	if rest := fs.Args(); len(rest) > 0 {
 		switch rest[0] {
 		case "init":
-			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
+			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: "+
+				"orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
 		case "plan":
 			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
 		default:
@@ -184,19 +218,21 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		problems = append(problems, checkTimeoutProblem)
 	}
 
-	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
+	if out, err := command.Output(ctx, command.ReadLimit, "", "git", "rev-parse", "--show-toplevel"); err == nil {
 		c.Repo = strings.TrimSpace(out)
 	} else {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
 	if c.Workspace == "" {
-		c.Workspace = herdr.CurrentWorkspace(getenv)
+		c.Workspace = herdr.CurrentWorkspace(ctx, getenv)
 	}
 	if c.Workspace == "" && getenv("HERDR_ENV") == "1" {
-		problems = append(problems, "Could not tell which Herdr workspace this pane is in. Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
+		problems = append(problems, "Could not tell which Herdr workspace this pane is in. "+
+			"Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
 	}
 	if getenv("HERDR_ENV") != "1" {
-		problems = append(problems, "Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane.")
+		problems = append(problems,
+			"Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane.")
 	}
 	for _, cmd := range []string{"bd", "herdr", "git"} {
 		if _, err := exec.LookPath(cmd); err != nil {
@@ -218,22 +254,26 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		}
 		c.Check = settings.Check
 		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
+		c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.Concurrency = n
 		}
-		if d, err := project.ResolveTicketLimit(c.TicketLimit, set["ticket-limit"] || ticketLimitGiven, settings); err != nil {
+		ticketLimitSet := set["ticket-limit"] || ticketLimitGiven
+		if d, err := project.ResolveTicketLimit(c.TicketLimit, ticketLimitSet, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.TicketLimit = d
 		}
-		if d, err := project.ResolveCheckTimeout(c.CheckTimeout, set["check-timeout"] || checkTimeoutGiven, settings); err != nil {
+		checkTimeoutSet := set["check-timeout"] || checkTimeoutGiven
+		if d, err := project.ResolveCheckTimeout(c.CheckTimeout, checkTimeoutSet, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.CheckTimeout = d
 		}
-		if on, d, err := project.ResolveConflictResolution(c.ResolveConflicts, set["resolve-conflicts"], settings); err != nil {
+		on, d, err := project.ResolveConflictResolution(c.ResolveConflicts, set["resolve-conflicts"], settings)
+		if err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
 			c.ResolveConflicts, c.ResolveTimeout = on, d
@@ -253,6 +293,25 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		} else {
 			c.ExcludeTypes = types
 		}
+		// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
+		// config; one this machine can't give them is for the maintainer to fix before they start.
+		switch {
+		case settings.MCPServers == nil:
+		case c.AgentKind != "claude": // only named: the loop says they aren't passed to such workers
+			named := []mcp.Server{}
+			for _, name := range *settings.MCPServers {
+				named = append(named, mcp.Server{Name: name})
+			}
+			c.MCP = &named
+		default:
+			if servers, err := mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, c.Repo)...); err != nil {
+				problems = append(problems, "Cannot read Claude Code's MCP config for the workers' MCP servers: "+err.Error()+".")
+			} else if chosen, err := project.ResolveMCP(*settings.MCPServers, servers); err != nil {
+				problems = append(problems, err.Error()+".")
+			} else {
+				c.MCP = &chosen
+			}
+		}
 		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
 			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
 		} else if !strings.Contains(string(b), "TICKET_ID") {
@@ -261,21 +320,22 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
 		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" {
-			if p := scopeProblem(beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+			if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
 				problems = append(problems, p)
 			}
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		gitDir, _ := command.Output(c.Repo, "git", "rev-parse", "--absolute-git-dir")
-		commonDir, _ := command.Output(c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
+		if linked, err := linkedWorktree(ctx, c.Repo); err != nil {
+			problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
+		} else if linked {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if base, err := (git.Git{}).CurrentBranch(c.Repo); err != nil {
+		if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
 			problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
 		} else if c.Base = base; c.Base == "" {
-			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
+			problems = append(problems,
+				"The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
 		}
 
 		if c.WTRoot == "" {
@@ -285,25 +345,43 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 			c.WTRoot = filepath.Join(c.Repo, c.WTRoot)
 		}
 		if within(c.WTRoot, c.Repo) {
-			problems = append(problems, fmt.Sprintf("WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
+			problems = append(problems, fmt.Sprintf(
+				"WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
 		}
 	}
 	return c, problems, nil
 }
 
+// linkedWorktree reports whether repo is a linked worktree rather than the main checkout: its git
+// directory is not the common one.
+func linkedWorktree(ctx context.Context, repo string) (bool, error) {
+	gitDir, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return false, err
+	}
+	commonDir, err := command.Output(ctx, command.ReadLimit, repo,
+		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir), nil
+}
+
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
 // must exist, be open and be work rather than a question for the maintainer.
-func scopeProblem(tickets interface {
-	Show(id string) (dispatch.Ticket, error)
+func scopeProblem(ctx context.Context, tickets interface {
+	Show(ctx context.Context, id string) (dispatch.Ticket, error)
 }, id string) string {
-	t, err := tickets.Show(id)
+	t, err := tickets.Show(ctx, id)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("Cannot read ticket %s (--ticket): %s", id, strings.Join(strings.Fields(err.Error()), " "))
 	case t.Status == "closed":
-		return fmt.Sprintf("Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
+		return fmt.Sprintf(
+			"Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
 	case dispatch.HasLabel(t, dispatch.HumanLabel):
-		return fmt.Sprintf("Ticket %s (--ticket) is a question for you (label %s), not work. Answer it with: bd human respond %s", id, dispatch.HumanLabel, id)
+		return fmt.Sprintf("Ticket %s (--ticket) is a question for you (label %s), not work. "+
+			"Answer it with: bd human respond %s", id, dispatch.HumanLabel, id)
 	}
 	return ""
 }
@@ -347,14 +425,16 @@ func status(code int) error {
 }
 
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
-func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
+func run(
+	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
+) error {
 	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(".", args[2:], stdin, stdout, stderr))
+		return status(runInit(ctx, ".", args[2:], getenv, stdin, stdout, stderr))
 	}
 	if len(args) > 1 && args[1] == "plan" {
-		return status(runPlan(".", args[2:], stdout, stderr))
+		return status(runPlan(ctx, ".", args[2:], stdout, stderr))
 	}
-	cfg, problems, err := loadConfig(args[1:], getenv, stderr)
+	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
 	switch {
 	case err == flag.ErrHelp:
 		return nil
@@ -372,15 +452,28 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		return exitStatus(dispatch.ExitSetup)
 	}
 
-	prompt, _ := os.ReadFile(cfg.WorkerPrompt)
-	os.MkdirAll(cfg.WTRoot, 0o755)
-	os.MkdirAll(filepath.Dir(cfg.LogPath), 0o755)
+	prompt, err := os.ReadFile(cfg.WorkerPrompt)
+	if err != nil {
+		fmt.Fprintln(stderr, "orchestra cannot read the worker prompt:", err)
+		return exitStatus(dispatch.ExitSetup)
+	}
+	for _, dir := range []string{cfg.WTRoot, filepath.Dir(cfg.LogPath)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Fprintln(stderr, "orchestra cannot create its folder:", err)
+			return exitStatus(dispatch.ExitSetup)
+		}
+	}
 	log, err := dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(dispatch.ExitSetup)
 	}
-	if err := project.EnsureRunExcluded(cfg.Repo); err != nil {
+	defer func() { // shows the run's last notifications before orchestra exits
+		if err := log.Close(); err != nil {
+			fmt.Fprintln(stderr, "orchestra cannot close its log:", err)
+		}
+	}()
+	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
@@ -433,7 +526,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 			if s == os.Interrupt {
 				why = "with Ctrl+C"
 			}
-			cancelRun(dispatch.Interrupted(why))
+			cancelRun(dispatch.InterruptedError(why))
 		})
 		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 		sink := tui.Printer{Out: stdout}
@@ -461,15 +554,29 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
 		tea.WithoutSignalHandler())
 	stopWatching := watchSignals(func(os.Signal) { p.Quit() })
-	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) }) // the dashboard hears it from the loop
+	// the dashboard hears it from the loop
+	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 	progSink := tui.NewProgramSink(p)
 	orch.SetSink(progSink)
 	codes := make(chan int, 1)
+	ran := make(chan struct{}) // closed once the dashboard has exited and the terminal is restored
 	go func() {
+		// The loop recovers its workers' panics; one in the loop itself is a bug that ends
+		// orchestra, but not with the terminal left in raw mode. Panicking again from here keeps
+		// the original stack in the crash.
+		defer func() {
+			if v := recover(); v != nil {
+				log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
+				p.Kill()
+				<-ran
+				panic(v)
+			}
+		}()
 		codes <- orch.Run(ctx)
 		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
+	close(ran)
 	sig := stopWatching()
 	stopDrain()
 	if err != nil {
@@ -490,11 +597,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		log.Alert(ev.Time, msg)
 		sink.Event(ev)
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
-		// Run itself gives its workers up to SettleWait.
-		select {
-		case <-codes:
-		case <-time.After(dispatch.SettleWait + 5*time.Second):
-		}
+		// Run waits for its workers, whose commands stop with it or at their time limits, and names
+		// any not back within a second below the INTERRUPTED line.
+		<-codes
 		if !leaving(sig) {
 			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
 		}
@@ -610,7 +715,9 @@ type organs interface {
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
 // the run report. Ctrl+C, or another of stopSignals, skips whatever is left.
-func organPhase(orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func()) {
+func organPhase(
+	orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func(),
+) {
 	if !c.Triage && !c.Review {
 		return
 	}

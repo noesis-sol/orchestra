@@ -1,18 +1,21 @@
 package dispatch
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
 // saying why once. Workers close their ticket before it merges, and bd ready counts a closed
 // blocker as done, but until the blocker merges its code is not on Base, which the ticket's
 // worktree is cut from. A parent in parents (see openParents) runs last: its worker couldn't close
 // it while it has open children, and its work builds on theirs.
-func (o *Loop) held(t Ticket, running, parents map[string]bool) bool {
+func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]bool) bool {
 	why := ""
 	if parents[t.ID] {
 		why = "its subtickets are not all closed and merged"
 	} else if len(running) > 0 || o.anyUnmerged() {
-		why = o.waitsFor(t, running)
+		why = o.waitsFor(ctx, t, running)
 	}
 	o.mu.Lock()
 	said := o.holdSaid[t.ID]
@@ -28,8 +31,8 @@ func (o *Loop) held(t Ticket, running, parents map[string]bool) bool {
 }
 
 // waitsFor returns why ready ticket t can't start yet, or "" if nothing blocking it is unmerged.
-func (o *Loop) waitsFor(t Ticket, running map[string]bool) string {
-	ids, ok := o.blockersOf(t)
+func (o *Loop) waitsFor(ctx context.Context, t Ticket, running map[string]bool) string {
+	ids, ok := o.blockersOf(ctx, t)
 	if !ok {
 		return "its dependencies could not be read"
 	}
@@ -53,14 +56,14 @@ type blockLinks struct {
 // blockersOf returns the IDs of the tickets blocking ready ticket t, or false if bd show can't say.
 // They are read once per run: bd ready's count of t's blockers changes whenever a blocks link is
 // added or removed, and only then are they read again. Without a count they are read every time.
-func (o *Loop) blockersOf(t Ticket) ([]string, bool) {
+func (o *Loop) blockersOf(ctx context.Context, t Ticket) ([]string, bool) {
 	o.mu.Lock()
 	b, seen := o.blockers[t.ID]
 	o.mu.Unlock()
 	if seen && t.DependencyCount != nil && b.count == *t.DependencyCount {
 		return b.ids, true
 	}
-	info, err := o.tickets.Show(t.ID)
+	info, err := o.tickets.Show(ctx, t.ID)
 	if err != nil || info.Status == "unknown" {
 		if err != nil {
 			o.log.Raw("", err)
@@ -91,26 +94,29 @@ const earlierRun = "left unmerged by an earlier run"
 // tickets they block wait in this run too. One that has merged since, by hand, loses its label: its
 // branch is on Base with a commit naming it, or its branch is gone and a commit on Base names it.
 // It returns a reason to stop when bd can't say which they are.
-func (o *Loop) loadUnmerged() *stopReason {
+func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	c := o.cfg
-	closed, err := o.tickets.Closed(UnmergedLabel)
+	closed, err := o.tickets.Closed(ctx, UnmergedLabel)
 	if err != nil {
-		return halt(ExitTool, "READY_UNREADABLE: could not list the tickets labelled '%s'%s", UnmergedLabel, because(err))
+		return halt(ExitTool, stopReadyUnreadable, ": could not list the tickets labelled '%s'%s",
+			UnmergedLabel, because(err)).causedBy(err)
 	}
 	for _, t := range closed {
 		id, br := t.ID, "wt/"+t.ID
 		rev := c.Base
-		if o.worktrees.HasBranch(c.Repo, br) {
+		if o.worktrees.HasBranch(ctx, c.Repo, br) {
 			rev = br
 		}
-		if o.merger.IsAncestor(c.Repo, rev, c.Base) {
-			if commit := o.merger.CommitNamingOn(c.Repo, rev, id); commit != "" {
-				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed", id, c.Base, commit, UnmergedLabel)
-				o.unlabel(id)
+		if o.merger.IsAncestor(ctx, c.Repo, rev, c.Base) {
+			if commit := o.merger.CommitNamingOn(ctx, c.Repo, rev, id); commit != "" {
+				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
+					id, c.Base, commit, UnmergedLabel)
+				o.unlabel(ctx, id)
 				continue
 			}
 		}
-		o.info("  %s was left unmerged by an earlier run; tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
+		o.info("  %s was left unmerged by an earlier run; "+
+			"tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
 			id, br, c.Base, UnmergedLabel)
 		o.setParent(id, t.Parent)
 		o.mu.Lock()
@@ -126,7 +132,7 @@ func (o *Loop) loadUnmerged() *stopReason {
 
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
 // this run and, through its UnmergedLabel, in later ones.
-func (o *Loop) leaveUnmerged(id, why string) {
+func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) {
 	o.markAside(id)
 	o.mu.Lock()
 	if o.unmerged == nil {
@@ -134,10 +140,11 @@ func (o *Loop) leaveUnmerged(id, why string) {
 	}
 	o.unmerged[id] = why
 	o.mu.Unlock()
-	if err := o.notes.AddLabel(id, UnmergedLabel); err != nil {
+	if err := o.notes.AddLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  LABEL_FAILED: bd could not label %s '%s'%s; later runs may start the tickets it blocks before it merges (bd label add %s %s)",
+			"  LABEL_FAILED: bd could not label %s '%s'%s; "+
+				"later runs may start the tickets it blocks before it merges (bd label add %s %s)",
 			id, UnmergedLabel, because(err), id, UnmergedLabel)})
 		return
 	}
@@ -145,22 +152,23 @@ func (o *Loop) leaveUnmerged(id, why string) {
 }
 
 // merged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
-func (o *Loop) merged(id string) {
+func (o *Loop) merged(ctx context.Context, id string) {
 	o.mu.Lock()
 	delete(o.unmerged, id)
 	labelled := o.labelled[id]
 	o.mu.Unlock()
 	if labelled {
-		o.unlabel(id)
+		o.unlabel(ctx, id)
 	}
 }
 
 // unlabel removes the ticket's UnmergedLabel, warning when bd can't.
-func (o *Loop) unlabel(id string) {
-	if err := o.notes.RemoveLabel(id, UnmergedLabel); err != nil {
+func (o *Loop) unlabel(ctx context.Context, id string) {
+	if err := o.notes.RemoveLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
+			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; "+
+				"later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
 			id, UnmergedLabel, because(err), id, UnmergedLabel)})
 		return
 	}
@@ -182,20 +190,41 @@ func (o *Loop) unmergedWhy(id string) string {
 	return o.unmerged[id]
 }
 
-// setAsked records whether ticket id is set aside waiting on a question.
-func (o *Loop) setAsked(id string, asked bool) {
+// askedWorker is where a ticket set aside to wait on a question left its worker, which may carry
+// on once the question is answered, and the question.
+type askedWorker struct {
+	tab, wt  string
+	question string // its ID
+	title    string
+	hooks    bool // it reports through hooks
+}
+
+// setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
+// longer.
+func (o *Loop) setAsked(id string, w *askedWorker) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.askedIDs == nil {
-		o.askedIDs = map[string]bool{}
+	if w == nil {
+		delete(o.askedIDs, id)
+		return
 	}
-	o.askedIDs[id] = asked
+	if o.askedIDs == nil {
+		o.askedIDs = map[string]askedWorker{}
+	}
+	o.askedIDs[id] = *w
+}
+
+// asked returns where ticket id, set aside waiting on a question, left its worker.
+func (o *Loop) asked(id string) (askedWorker, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	w, ok := o.askedIDs[id]
+	return w, ok
 }
 
 func (o *Loop) isAsked(id string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.askedIDs[id]
+	_, ok := o.asked(id)
+	return ok
 }
 
 func (o *Loop) anyUnmerged() bool {
@@ -205,22 +234,18 @@ func (o *Loop) anyUnmerged() bool {
 }
 
 // appendNotes adds a note to the ticket, logging a failure: a lost note doesn't stop the run.
-func (o *Loop) appendNotes(id, note string) {
-	if err := o.notes.AppendNotes(id, note); err != nil {
+func (o *Loop) appendNotes(ctx context.Context, id, note string) {
+	if err := o.notes.AppendNotes(ctx, id, note); err != nil {
 		o.log.Raw("", err)
 	}
 }
 
 // deferAside defers the ticket and keeps it out of the rest of the run, which matters most when
-// bd fails to defer it: it would still be ready and dispatched again at once. The error is logged
-// and returned so the caller can warn.
-func (o *Loop) deferAside(id, reason string) error {
+// bd fails to defer it: it would still be ready and dispatched again at once. The error is
+// returned for the caller to warn with.
+func (o *Loop) deferAside(ctx context.Context, id, reason string) error {
 	o.markAside(id)
-	err := o.notes.Defer(id, reason)
-	if err != nil {
-		o.log.Raw("", err)
-	}
-	return err
+	return o.notes.Defer(ctx, id, reason)
 }
 
 // setAside lists tickets deferred or left unmerged in this run, in order, without repeats.

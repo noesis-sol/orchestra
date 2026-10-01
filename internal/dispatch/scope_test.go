@@ -31,7 +31,7 @@ type prompted struct{ got map[string]string }
 
 // then reads the worker's launch prompt, then does b.
 func (p *prompted) then(b behaviour) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		raw, err := os.ReadFile(filepath.Join(w.wt, ".orchestra", "run", "prompt.md"))
 		if err != nil {
 			w.t.Error(err)
@@ -74,7 +74,7 @@ func TestScopedRunTakesOnlyTheTicketAndItsSubtickets(t *testing.T) {
 	if !equal(order, []string{"R.1.1", "R.1", "R.2", "R"}) {
 		t.Errorf("dispatched %v, want R.1.1 R.1 R.2 R", order)
 	}
-	if st, _ := h.beads.Status("U"); st != "open" {
+	if st, _ := h.beads.Status(context.Background(), "U"); st != "open" {
 		t.Errorf("U is %s; a scoped run must leave it alone", st)
 	}
 	ev := h.sink.text()
@@ -131,7 +131,7 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	h := scopedHarness(t, "R")
 	h.beads.add("R", "root", 2)
 	h.beads.sub("R.1", "R", "child", 1)
-	h.worker("R.1", func(w *fakeWorker) string {
+	h.worker("R.1", func(w *fakeWorker) AgentState {
 		w.beads.sub("R.2", "R", "follow-up in scope", 1)
 		w.beads.filed("X", "follow-up elsewhere", 0)
 		return finishes("r1.txt")(w)
@@ -151,7 +151,7 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	if ev, want := h.sink.text(), "filed during the run outside R's scope, left for a later run: X (follow-up elsewhere)"; !strings.Contains(ev, want) {
 		t.Errorf("events lack %q:\n%s", want, ev)
 	}
-	in := o.reviewInput(code, o.Final())
+	in := o.reviewInput(context.Background(), code, o.Final())
 	for _, want := range []string{"Run of ticket R and its subtickets only, on branch main",
 		"## Follow-ups filed in this run outside the scope of R, left for a later run\n\nX: follow-up elsewhere [open]"} {
 		if !strings.Contains(in, want) {
@@ -173,8 +173,8 @@ func TestScopeOpenSaysWhyEachSubticketIsNotDone(t *testing.T) {
 	h.beads.sub("E.3", "E", "set aside", 2)
 	h.beads.sub("E.4", "E", "asks", 3)
 	h.worker("E.1", finishes("e1.txt"))
-	h.worker("E.3", func(w *fakeWorker) string { w.claim(); w.deferIt(); return "idle" })
-	h.worker("E.4", func(w *fakeWorker) string { w.claim(); w.ask("Q", "which way?"); return "idle" })
+	h.worker("E.3", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
+	h.worker("E.4", func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" })
 	o, code := h.run()
 	want := "READY_EMPTY after 3 tickets; SCOPE_OPEN: E: 3 of its 4 subtickets not done: " +
 		"E.2 (blocked by B outside the scope), E.3 (set aside in this run), E.4 (waiting on your answer to Q)"
@@ -199,7 +199,7 @@ func TestScopedEpicIsLeftToClose(t *testing.T) {
 	if code != ExitOK || o.Final() != want {
 		t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
 	}
-	if st, _ := h.beads.Status("E"); st != "open" {
+	if st, _ := h.beads.Status(context.Background(), "E"); st != "open" {
 		t.Errorf("E is %s; orchestra doesn't close an epic itself", st)
 	}
 }
@@ -235,11 +235,11 @@ func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
 	o := New(Config{}, nil, "", Deps{Tickets: fakeTickets{}})
 	o.setParent("C", "P")
 	o.setParent("D", "Q")
-	if parents, err := o.openParents(map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
+	if parents, err := o.openParents(context.Background(), map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
 		t.Errorf("C running: %v %v, want P only", parents, err)
 	}
 	o.unmerged = map[string]string{"D": "MERGE_CONFLICT"}
-	if parents, _ := o.openParents(nil); parents["P"] || !parents["Q"] {
+	if parents, _ := o.openParents(context.Background(), nil); parents["P"] || !parents["Q"] {
 		t.Errorf("D unmerged: %v, want Q only", parents)
 	}
 }

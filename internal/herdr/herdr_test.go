@@ -1,12 +1,16 @@
 package herdr
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 func TestReadAgent(t *testing.T) {
@@ -18,39 +22,71 @@ func TestReadAgent(t *testing.T) {
 	if n, _, s, err := readAgent(named, nil); n != "kinieta-9g6" || s != "idle" || err != nil {
 		t.Errorf("named: %q %q %v", n, s, err)
 	}
-	failed := errors.New("exit status 1")
-	notFound := `{"error":{"code":"agent_not_found","message":"agent target x not found"},"id":"cli:agent:get"}`
-	if _, _, s, err := readAgent(notFound, failed); s != "gone" || err != nil {
+	notFound := &Error{Code: AgentNotFound, Err: errors.New("herdr agent get x: exit status 1")}
+	if _, _, s, err := readAgent("", notFound); s != "gone" || err != nil {
 		t.Errorf("no agent: %q %v", s, err)
 	}
-	// What Herdr really does: the answer goes to stderr, which command.Output puts in the error.
-	onStderr := errors.New(`herdr agent get x: exit status 1: ` + notFound)
-	if _, _, s, err := readAgent("", onStderr); s != "gone" || err != nil {
-		t.Errorf("no agent, answered on stderr: %q %v", s, err)
-	}
-	busy := errors.New(`herdr agent get x: exit status 1: {"error":{"code":"server_busy"}}`)
-	if _, _, s, err := readAgent("", busy); s != "unreadable" || err != busy {
-		t.Errorf("Herdr busy, answered on stderr: %q %v", s, err)
-	}
 	// A failed call that doesn't say the agent is missing tells nothing about it.
-	for _, out := range []string{"", `{"error":{"code":"server_busy"}}`} {
-		if _, k, s, err := readAgent(out, failed); s != "unreadable" || k != "" || err != failed {
-			t.Errorf("failed call with %q: %q %q %v", out, k, s, err)
+	for _, failed := range []error{errors.New("exit status 1"), &Error{Code: "server_busy", Err: errors.New("exit status 1")}} {
+		if _, k, s, err := readAgent("", failed); s != "" || k != "" || err != failed {
+			t.Errorf("failed call %v: %q %q %v", failed, k, s, err)
 		}
 	}
-	if _, _, s, err := readAgent("not json", nil); s != "unreadable" || err == nil {
+	if _, _, s, err := readAgent("not json", nil); s != "" || err == nil {
 		t.Errorf("garbled output: %q %v", s, err)
+	}
+}
+
+// What Herdr really answers, on stderr with exit status 1.
+const (
+	notFoundStderr = `{"error":{"code":"agent_not_found","message":"agent target x not found"},"id":"cli:agent:get"}`
+	badNameStderr  = `{"error":{"code":"invalid_agent_name","message":"agent name must start with a lowercase letter and contain only lowercase letters, digits, '-' or '_' (1-32 characters)"},"id":"cli:agent:start"}`
+)
+
+// failingHerdr puts a herdr on PATH that writes stderr to stderr and exits 1.
+func failingHerdr(t *testing.T, stderr string) {
+	t.Helper()
+	herdrScript(t, "#!/bin/sh\nprintf '%s\\n' "+command.ShellQuote(stderr)+" >&2\nexit 1\n")
+}
+
+func TestHerdrErrorsAreDecodedFromStderr(t *testing.T) {
+	failingHerdr(t, notFoundStderr)
+	err := (Terminal{}).RenameAgent(context.Background(), "x", "y")
+	var he *Error
+	if !errors.As(err, &he) || he.Code != AgentNotFound || he.Message != "agent target x not found" {
+		t.Fatalf("got %#v", err)
+	}
+	var ce *command.Error
+	if !errors.As(err, &ce) || err.Error() != ce.Error() {
+		t.Errorf("the command's error should be underneath, with its text: %v", err)
+	}
+	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "gone" || err != nil {
+		t.Errorf("a missing agent is gone: %q %v", st, err)
+	}
+
+	failingHerdr(t, `{"error":{"code":"server_busy","message":"try again"}}`)
+	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "" || !HasCode(err, "server_busy") {
+		t.Errorf("Herdr busy: %q %v", st, err)
+	}
+
+	failingHerdr(t, "panic: not JSON")
+	err = (Terminal{}).RenameAgent(context.Background(), "x", "y")
+	if errors.As(err, &he) || !errors.As(err, &ce) || ce.Stderr != "panic: not JSON" {
+		t.Errorf("stderr that isn't Herdr's error stays a command error: %#v", err)
+	}
+	if st, err := (Terminal{}).Status(context.Background(), "x"); st != "" || err == nil {
+		t.Errorf("unexplained failure: %q %v", st, err)
 	}
 }
 
 func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
 	t.Setenv("HERDR_WORKSPACE_ID", "w9Z")
-	if got := CurrentWorkspace(os.Getenv); got != "w9Z" {
+	if got := CurrentWorkspace(context.Background(), os.Getenv); got != "w9Z" {
 		t.Errorf("got %q", got)
 	}
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("HERDR_ENV", "")
-	if got := CurrentWorkspace(os.Getenv); got != "" {
+	if got := CurrentWorkspace(context.Background(), os.Getenv); got != "" {
 		t.Errorf("outside Herdr there is no current workspace, got %q", got)
 	}
 }
@@ -102,11 +138,15 @@ func TestLongAgentNamesDoNotCollide(t *testing.T) {
 
 func TestIsNameRefused(t *testing.T) {
 	var term Terminal
-	if !term.IsNameRefused(errors.New(`herdr agent start X.1: exit status 1: {"error":{"code":"invalid_agent_name"}}`)) {
-		t.Error("invalid_agent_name should count as refused")
+	failingHerdr(t, badNameStderr)
+	err := term.StartAgent(context.Background(), "X.1", "claude", "p1", nil)
+	if !term.IsNameRefused(err) || term.IsArgumentRefused(err) {
+		t.Errorf("invalid_agent_name should count as a refused name: %v", err)
 	}
-	if term.IsNameRefused(errors.New("agent_not_ready")) || term.IsNameRefused(nil) {
-		t.Error("only invalid_agent_name counts as refused")
+	failingHerdr(t, notFoundStderr)
+	err = term.StartAgent(context.Background(), "x", "claude", "p1", nil)
+	if term.IsNameRefused(err) || term.IsNameRefused(errors.New("invalid_agent_name")) || term.IsNameRefused(nil) {
+		t.Error("only Herdr's invalid_agent_name counts as refused")
 	}
 }
 
@@ -127,29 +167,34 @@ func validName(s string) bool {
 // scrollback, as Herdr does while the agent works. It returns the log's path.
 func fakeHerdr(t *testing.T) string {
 	t.Helper()
+	calls := filepath.Join(t.TempDir(), "calls")
+	herdrScript(t, "#!/bin/sh\necho \"$*\" >> '"+calls+"'\n"+
+		"case \"$*\" in *recent-unwrapped*) exit 1;; esac\necho screen\n")
+	return calls
+}
+
+// herdrScript puts a herdr on PATH that runs script.
+func herdrScript(t *testing.T, script string) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake herdr is a shell script")
 	}
 	dir := t.TempDir()
-	calls := filepath.Join(dir, "calls")
-	script := "#!/bin/sh\necho \"$*\" >> '" + calls + "'\n" +
-		"case \"$*\" in *recent-unwrapped*) exit 1;; esac\necho screen\n"
 	if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return calls
 }
 
 func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
-	for status, want := range map[string]string{
+	for status, want := range map[dispatch.AgentState]string{
 		"working": "agent read a --source visible\n",
 		"blocked": "agent read a --source visible\n",
 		"idle":    "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
 		"":        "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
 	} {
 		calls := fakeHerdr(t)
-		if got := (Terminal{}).Screen("a", status); got != "screen\n" {
+		if got := (Terminal{}).Screen(context.Background(), "a", status); got != "screen\n" {
 			t.Errorf("Screen(%q) = %q", status, got)
 		}
 		if got, _ := os.ReadFile(calls); string(got) != want {

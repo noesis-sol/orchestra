@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // runHook runs the command of the event's hook in settings as Claude Code would, with input on stdin.
@@ -25,8 +26,12 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "it's a worktree")
 	var r Reporter
 	stale := filepath.Join(wt, ".orchestra", "run", activityName)
-	os.MkdirAll(filepath.Dir(stale), 0o755)
-	os.WriteFile(stale, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Edit"}`), 0o644)
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Edit"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	args, err := r.ReportArgs(wt)
 	if err != nil || len(args) != 2 || args[0] != "--settings" {
@@ -51,8 +56,8 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 		t.Errorf("after the tool: %+v %v", u, ok)
 	}
 	runHook(t, settings, "Stop", `{"hook_event_name":"Stop"}`)
-	if u, _ := r.LastToolUse(wt); u.Event != "Stop" {
-		t.Errorf("at the end of the turn: %+v", u)
+	if u, _ := r.LastToolUse(wt); u.Event != "Stop" || time.Since(u.At) > time.Minute || time.Until(u.At) > time.Minute {
+		t.Errorf("at the end of the turn, reported just now: %+v", u)
 	}
 	if _, err := os.Stat(filepath.Join(wt, ".orchestra", "run")); err != nil {
 		t.Fatal(err)

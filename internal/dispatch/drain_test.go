@@ -34,10 +34,10 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 	h.beads.add("B", "second", 2)
 	h.beads.add("C", "third", 3) // no behaviours: a worker on C or D fails the test
 	h.beads.add("D", "fourth", 4)
-	drainLine := "DRAIN: stopping after the 2 running tickets (A, B), asked from the dashboard"
+	drainLine := "DRAIN: stopping after the 2 running tickets finish (A, B): no new tickets will start, asked from the dashboard"
 	drained := func() bool { return strings.Contains(h.sink.text(), drainLine) }
 	var o *Loop
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		eventually(t, "B never started", func() bool { return len(h.sink.dispatched()) == 2 })
 		o.Drain("from the dashboard")
@@ -45,7 +45,7 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 		time.Sleep(20 * time.Millisecond) // a few ready checks
 		return finishes("a.txt")(w)
 	})
-	h.worker("B", func(w *fakeWorker) string {
+	h.worker("B", func(w *fakeWorker) AgentState {
 		w.claim()
 		eventually(t, "the drain was never logged", drained)
 		return finishes("b.txt")(w)
@@ -67,7 +67,7 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 		t.Errorf("main:\n%s", log)
 	}
 	for _, id := range []string{"C", "D"} {
-		if st, _ := h.beads.Status(id); st != "open" {
+		if st, _ := h.beads.Status(context.Background(), id); st != "open" {
 			t.Errorf("%s is %s, want open", id, st)
 		}
 	}
@@ -100,11 +100,11 @@ func TestResumeAfterDrainDispatchesAgain(t *testing.T) {
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "first", 1)
 	var o *Loop
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		o.Drain("from the dashboard")
 		eventually(t, "the drain was never logged", func() bool {
-			return strings.Contains(h.sink.text(), "DRAIN: stopping after the running ticket (A), asked from the dashboard")
+			return strings.Contains(h.sink.text(), "DRAIN: stopping after A finishes: no new tickets will start, asked from the dashboard")
 		})
 		w.beads.add("B", "follow-up", 2)  // ready, with a slot free
 		time.Sleep(20 * time.Millisecond) // a few ready checks

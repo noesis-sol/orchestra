@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -26,18 +27,18 @@ func (o *Loop) setParent(id, parent string) {
 	o.parentOf[id] = parent
 }
 
-// listUnreadable is openParents' error: bd could not list the tickets that aren't closed.
-type listUnreadable struct{ err error }
+// listUnreadableError is openParents' error: bd could not list the tickets that aren't closed.
+type listUnreadableError struct{ err error }
 
-func (e listUnreadable) Error() string { return e.err.Error() }
-func (e listUnreadable) Unwrap() error { return e.err }
+func (e listUnreadableError) Error() string { return e.err.Error() }
+func (e listUnreadableError) Unwrap() error { return e.err }
 
 // openParents returns the tickets with a subticket not yet closed and merged: one bd lists as not
 // closed, one running (its worker closes it before it merges) or one left unmerged.
-func (o *Loop) openParents(running map[string]bool) (map[string]bool, error) {
-	open, err := o.tickets.Unclosed()
+func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[string]bool, error) {
+	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
-		return nil, listUnreadable{err}
+		return nil, listUnreadableError{err}
 	}
 	parents := map[string]bool{}
 	for _, t := range open {
@@ -62,7 +63,7 @@ func (o *Loop) excluded(t Ticket) bool {
 
 // parentDone says, once, when the ticket that just finished was the last of an epic's subtickets
 // to merge. An epic is never dispatched, and orchestra leaves closing it to the maintainer.
-func (o *Loop) parentDone(id string, running map[string]bool) {
+func (o *Loop) parentDone(ctx context.Context, id string, running map[string]bool) {
 	o.mu.Lock()
 	p := o.parentOf[id]
 	said := o.doneSaid[p]
@@ -70,11 +71,11 @@ func (o *Loop) parentDone(id string, running map[string]bool) {
 	if p == "" || said || o.unmergedWhy(id) != "" {
 		return
 	}
-	parent, err := o.tickets.Show(p)
+	parent, err := o.tickets.Show(ctx, p)
 	if err != nil || parent.Status == "closed" || !o.excluded(parent) {
 		return
 	}
-	parents, err := o.openParents(running)
+	parents, err := o.openParents(ctx, running)
 	if err != nil {
 		o.log.Raw("", err)
 		return
@@ -99,7 +100,9 @@ func (o *Loop) scopeNote(id string) string {
 	if r == "" || id == r {
 		return ""
 	}
-	return fmt.Sprintf("\n\nThis run works on %s and its subtickets only. File a follow-up that belongs to this work as a child of %s (bd create --parent %s …) so this run picks it up; anything else waits for a later run.\n", r, r, r)
+	return fmt.Sprintf("\n\nThis run works on %s and its subtickets only. "+
+		"File a follow-up that belongs to this work as a child of %s (bd create --parent %s …) "+
+		"so this run picks it up; anything else waits for a later run.\n", r, r, r)
 }
 
 // ScopeLabel is how a run's scope is shown after the branch: " · ticket <id>", or "".
@@ -122,7 +125,7 @@ func subtickets(n int) string {
 // (err if they couldn't be): SCOPE_DONE when the ticket and all of them are closed and merged (an
 // epic, never dispatched, is left for the maintainer to close), else SCOPE_OPEN naming each one
 // not done and why. It is "" for a run of all of bd ready.
-func (o *Loop) scopeEnd(subs []Ticket, err error) string {
+func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 	root := o.cfg.Ticket
 	if root == "" {
 		return ""
@@ -130,7 +133,7 @@ func (o *Loop) scopeEnd(subs []Ticket, err error) string {
 	if err != nil {
 		return fmt.Sprintf("; SCOPE_UNREADABLE: could not list %s's subtickets%s", root, because(err))
 	}
-	top, err := o.tickets.Show(root)
+	top, err := o.tickets.Show(ctx, root)
 	if err != nil {
 		return fmt.Sprintf("; SCOPE_UNREADABLE: could not read %s%s", root, because(err))
 	}
@@ -149,13 +152,14 @@ func (o *Loop) scopeEnd(subs []Ticket, err error) string {
 	var open []string
 	for _, t := range subs {
 		if !done(t) {
-			open = append(open, fmt.Sprintf("%s (%s)", t.ID, o.notDoneWhy(t, in, openKids[t.ID])))
+			open = append(open, fmt.Sprintf("%s (%s)", t.ID, o.notDoneWhy(ctx, t, in, openKids[t.ID])))
 		}
 	}
 	n := len(subs)
 	switch {
 	case len(open) > 0:
-		return fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s", root, len(open), subtickets(n), strings.Join(open, ", "))
+		return fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s",
+			root, len(open), subtickets(n), strings.Join(open, ", "))
 	case done(top):
 		return fmt.Sprintf("; SCOPE_DONE: %s and its %s are merged", root, subtickets(n))
 	case o.excluded(top):
@@ -165,16 +169,17 @@ func (o *Loop) scopeEnd(subs []Ticket, err error) string {
 		}
 		return fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; close it with: bd close %s", root, subtickets(n), verb, root)
 	}
-	return fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)", root, subtickets(n), root, o.notDoneWhy(top, in, false))
+	return fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)",
+		root, subtickets(n), root, o.notDoneWhy(ctx, top, in, false))
 }
 
 // notDoneWhy says why ticket t of the scope (in) is not closed and merged; openKids says it has
 // subtickets that aren't.
-func (o *Loop) notDoneWhy(t Ticket, in map[string]bool, openKids bool) string {
+func (o *Loop) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool, openKids bool) string {
 	if why := o.unmergedWhy(t.ID); why != "" {
 		return "closed but not merged: " + why
 	}
-	info, err := o.tickets.Show(t.ID)
+	info, err := o.tickets.Show(ctx, t.ID)
 	if err == nil {
 		t = info
 	}
@@ -217,8 +222,8 @@ func (o *Loop) notDoneWhy(t Ticket, in map[string]bool, openKids bool) string {
 // filedOutside returns the tickets filed since the run started that a scoped run left out, as
 // they aren't among the scope's descendants (subs): they wait for a later run. Questions for the
 // maintainer aren't follow-ups.
-func (o *Loop) filedOutside(subs []Ticket) ([]Ticket, error) {
-	open, err := o.tickets.Unclosed()
+func (o *Loop) filedOutside(ctx context.Context, subs []Ticket) ([]Ticket, error) {
+	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -248,17 +253,17 @@ func listTickets(ts []Ticket) string {
 }
 
 // endScope logs the follow-ups a scoped run left out and returns what its last line adds.
-func (o *Loop) endScope() string {
+func (o *Loop) endScope(ctx context.Context) string {
 	if o.cfg.Ticket == "" {
 		return ""
 	}
-	subs, err := o.tickets.Descendants(o.cfg.Ticket)
+	subs, err := o.tickets.Descendants(ctx, o.cfg.Ticket)
 	if err == nil {
-		if out, err := o.filedOutside(subs); err != nil {
+		if out, err := o.filedOutside(ctx, subs); err != nil {
 			o.log.Raw("", err)
 		} else if len(out) > 0 {
 			o.info("  filed during the run outside %s's scope, left for a later run: %s", o.cfg.Ticket, listTickets(out))
 		}
 	}
-	return o.scopeEnd(subs, err)
+	return o.scopeEnd(ctx, subs, err)
 }

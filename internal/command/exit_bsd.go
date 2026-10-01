@@ -10,7 +10,7 @@ func awaitExit(pid int) error {
 	if err != nil {
 		return err
 	}
-	defer unix.Close(kq)
+	defer func() { _ = unix.Close(kq) }() // best effort: the wait is over either way
 	ev := make([]unix.Kevent_t, 1)
 	unix.SetKevent(&ev[0], pid, unix.EVFILT_PROC, unix.EV_ADD|unix.EV_ONESHOT)
 	ev[0].Fflags = unix.NOTE_EXIT

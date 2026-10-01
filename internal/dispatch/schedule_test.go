@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -60,7 +61,7 @@ type onceReady struct {
 	calls *atomic.Int32
 }
 
-func (o onceReady) Ready(string) ([]Ticket, error) {
+func (o onceReady) Ready(context.Context, string) ([]Ticket, error) {
 	if o.calls.Add(1) == 1 {
 		return []Ticket{{ID: "A"}}, nil
 	}
@@ -68,6 +69,7 @@ func (o onceReady) Ready(string) ([]Ticket, error) {
 }
 
 func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
+	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
@@ -105,7 +107,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 // unreadableReady can't list the ready queue.
 type unreadableReady struct{ brokenBd }
 
-func (unreadableReady) Ready(string) ([]Ticket, error) { return nil, errBd }
+func (unreadableReady) Ready(context.Context, string) ([]Ticket, error) { return nil, errBd }
 
 func TestReadyUnreadableSaysWhy(t *testing.T) {
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
@@ -113,9 +115,9 @@ func TestReadyUnreadableSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: unreadableReady{}, Checkout: cleanCheckout{}})
-	_, _, s := o.next(nil)
+	_, _, s := o.next(context.Background(), nil)
 	want := "READY_UNREADABLE: could not read 'bd ready --json': bd defer A: exit status 1: Error: database is locked (another bd holds it)"
-	if s == nil || s.text != want {
+	if s == nil || s.kind != stopReadyUnreadable || !errors.Is(s, errBd) || s.Error() != want {
 		t.Errorf("got %+v, want %q", s, want)
 	}
 }
@@ -141,7 +143,7 @@ func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "first", 1)
 	bStarted := make(chan struct{})
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		w.beads.add("B", "follow-up", 2) // the worker files a follow-up
 		select {
@@ -151,7 +153,7 @@ func TestTicketReadyMidRunTakesAFreeSlot(t *testing.T) {
 		}
 		return finishes("a.txt")(w)
 	})
-	h.worker("B", func(w *fakeWorker) string { close(bStarted); return finishes("b.txt")(w) })
+	h.worker("B", func(w *fakeWorker) AgentState { close(bStarted); return finishes("b.txt")(w) })
 	o := h.loop()
 	o.wait.ready = 5 * time.Millisecond
 	if code := o.Run(context.Background()); code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
@@ -168,7 +170,7 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		w.claim()
 		w.beads.mu.Lock() // both at once: a poll between them would report a queue of 1 first
 		w.beads.addLocked("B", "second", 2)
@@ -206,7 +208,7 @@ type overlap struct {
 
 // runs wraps b to record id's worker as running while it works.
 func (v *overlap) runs(id string, b behaviour) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		v.mu.Lock()
 		if v.running == nil {
 			v.running, v.beside = map[string]bool{}, map[string][]string{}
@@ -269,7 +271,7 @@ func TestSoloTicketNeverRunsAlongsideAnother(t *testing.T) {
 	h.beads.add("A", "first", 2)
 	h.beads.add("B", "second", 3)
 	var v overlap
-	h.worker("S", v.runs("S", func(w *fakeWorker) string {
+	h.worker("S", v.runs("S", func(w *fakeWorker) AgentState {
 		eventually(t, "the loop never said A and B wait for S", func() bool {
 			return strings.Contains(h.sink.text(), "waiting for solo ticket S to finish")
 		})
@@ -310,7 +312,7 @@ func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 	h.beads.add("S", "split the loop", 2, SoloLabel)
 	h.beads.add("B", "second", 3)
 	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 		eventually(t, "the loop never said S is next", func() bool {
 			return strings.Contains(h.sink.text(), "solo ticket S is next")
 		})
@@ -348,11 +350,11 @@ func TestSoloTicketWithOneWorkerChangesNothing(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("S", "split the loop", 2, SoloLabel)
 	h.beads.add("B", "second", 3)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		time.Sleep(20 * time.Millisecond) // a few polls with S next
 		return finishes("a.txt")(w)
 	})
-	h.worker("S", func(w *fakeWorker) string {
+	h.worker("S", func(w *fakeWorker) AgentState {
 		time.Sleep(20 * time.Millisecond) // a few polls with S running
 		return finishes("s.txt")(w)
 	})

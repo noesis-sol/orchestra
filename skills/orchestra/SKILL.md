@@ -1,16 +1,22 @@
 ---
 name: orchestra
-description: Run and look after orchestra, which works through a Beads backlog one ticket at a time with a coding agent per Herdr tab and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
+description: Run and look after orchestra, which works through a Beads backlog one ticket at a time with a worker (a coding agent) per Herdr tab and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
 ---
 
 # orchestra
 
 `orchestra` picks the highest-priority ticket from `bd ready`, gives it a git worktree
 (`<repo>-worktrees/<ticket>` on branch `wt/<ticket>`) and a Herdr tab labelled with the ticket ID,
-starts a coding agent (a "worker") there with the project's worker prompt, waits for it to settle,
-then reads the ticket's status in Beads. A closed ticket with a commit naming it is fast-forwarded
+starts a worker there (a coding agent: Claude Code by default, with its tools and the project's
+MCP servers) with the project's worker prompt, waits for it to settle, then reads the ticket's
+status in Beads. A closed ticket with a commit naming it is fast-forwarded
 into the branch the main checkout is on, and its worktree, branch and tab are removed. Anything else
 is left for review, and the loop moves on or stops. It never pushes.
+
+Two words, kept apart: **workers** do tickets, one per Herdr tab and worktree; **organs** are
+orchestra's own one-shot advisers (triage, the predictor, the reviewer that writes the run report),
+each a `claude -p` call with no tools and no MCP servers that only reads what it is given and
+answers. Organs never change a ticket or the code.
 
 ## First, find out where the project stands
 
@@ -36,7 +42,8 @@ Where the project's orchestra files are:
 | neither | not set up | run `orchestra init` | | |
 
 `-prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
-`.orchestra/settings.json` holds the check command and `concurrent`, how many tickets run at the
+`.orchestra/settings.json` holds the check command, `mcp_servers` (the MCP servers workers get, by
+name; see [Workers' MCP servers](#workers-mcp-servers)) and `concurrent`, how many tickets run at the
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
 `--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_timeout`, how long the check
@@ -58,7 +65,9 @@ It writes `.orchestra/worker-prompt.md` from the built-in template (or moves an 
 missing (`bd`, `bd init`, `herdr`, `claude`), and writes `.orchestra/settings.json`. Ask the user
 for the check command if you don't know it (the command that runs lint, build and tests) and how
 many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
-interactively and would default to 1. `--check-timeout 5m` sets the check's time limit (default
+interactively and would default to 1. Ask which MCP servers workers need for the project's work
+(`claude mcp list` shows what this machine defines) and pass `--mcp a,b`, or `--mcp ""` for none;
+without it, an agent's `init` leaves them unchosen and workers get every server. `--check-timeout 5m` sets the check's time limit (default
 30m): a few times the check's usual running time. More than 1 needs checks that can run side by side; say so.
 Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge=union` to
 `.gitattributes` (so tickets that each add an entry at the same spot don't conflict) and pass
@@ -150,6 +159,45 @@ them with `bd dep add`) only when they approve.
 - **Don't type into a worker's tab or press keys on its dialogs** unless the user asks; Enter on a
   dialog picks an option (on Claude Code's trust dialog, "No, exit").
 
+## Workers' MCP servers
+
+Workers get only the MCP servers named in `mcp_servers` in `.orchestra/settings.json`: names only,
+each resolved on this machine from Claude Code's config (local scope for this repository or its main
+checkout in `~/.claude.json`, then project scope in `.mcp.json`, then user scope in `~/.claude.json`;
+`$CLAUDE_CONFIG_DIR/.claude.json` when that is set). Workers read ticket text orchestra can't fully
+trust, so they should get only what the work needs.
+
+To check:
+
+```
+jq '.mcp_servers' .orchestra/settings.json   # null: not chosen (workers get every server); []: none
+claude mcp list                              # what this machine defines, run in the main checkout
+grep 'MCP servers:' .orchestra/orchestra.log | tail -1   # what the last run's workers got
+```
+
+The `START` line says `MCP servers: <names>`, `none`, or `all, not configured`. The last also comes
+with a warning: `workers load every MCP server Claude Code finds on this machine; choose theirs with
+orchestra init`. Suggest choosing them.
+
+To change: `orchestra init --mcp a,b` (or `--mcp ""` for none). It keeps the other settings and the
+prompt. Show the user the change to `settings.json` and commit it if they agree. A run reads it
+when it starts, so a run already going keeps the servers it started with.
+
+A setup problem (exit 2) naming the workers' MCP servers means a chosen name can't be resolved here:
+
+- `<name> isn't defined on this machine (define it: claude mcp add <name> …)`: the server is defined
+  on a teammate's machine, or was removed. Ask the user for its command or URL and credentials, and
+  have them run `claude mcp add <name> …` (local scope, this repository) or `claude mcp add --scope
+  user <name> …`; don't invent a definition. Or, if workers don't need it, drop it with
+  `orchestra init --mcp <the others>`.
+- `<name> is a claude.ai connector, which workers can't get`: connectors come with the user's
+  claude.ai login and have no definition orchestra can pass on. Drop it with `orchestra init --mcp …`,
+  or have the user define an MCP server for the same service with `claude mcp add`.
+- `Cannot read Claude Code's MCP config …`: `~/.claude.json` or `.mcp.json` isn't valid JSON; the
+  message names the file. Tell the user; don't edit `~/.claude.json` yourself.
+
+Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never get any server.
+
 ## When a ticket is set aside or the run stops
 
 Read the run report first (`reports/<start time>.md`: Finished, Set aside, Needs you), then the log,
@@ -164,7 +212,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
-| `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its agent's status undetectable. Tell the user what you see. |
+| `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, merge by hand (below). |
 | `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
@@ -182,7 +230,9 @@ Lines about single tickets, which don't stop the run:
 - `PROMPT_FAILED`: the worker never started on its prompt; deferred, safe to reopen.
 - `ASKED`: the worker asked the user a question, as a ticket labelled `human` that blocks the work.
   Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
-  the queue, and its branch is rebased onto the current one when it is picked up.
+  the queue, and its branch is rebased onto the current one when it is picked up. `ANSWERED` says it
+  came back. If its worker is still in its tab (answered there, say), orchestra adopts it instead,
+  or tells it, idle, that the question is answered, and merges its work as usual.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which

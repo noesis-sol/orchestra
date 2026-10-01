@@ -42,6 +42,10 @@ type Settings struct {
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
+	// MCPServers names the MCP servers workers get, defined in each machine's Claude Code config
+	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
+	// server Claude Code finds; [] gives them none.
+	MCPServers *[]string `json:"mcp_servers,omitempty"`
 }
 
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
@@ -56,7 +60,9 @@ type EnvironmentHold struct {
 }
 
 const (
-	SettingsName   = "settings.json"
+	// SettingsName is the settings file's name in Dir.
+	SettingsName = "settings.json"
+	// MaxConcurrency is the most workers a run may have at once.
 	MaxConcurrency = 16
 	// DefaultCheckTimeout is how long the check command may run when settings.json sets no limit.
 	DefaultCheckTimeout = 30 * time.Minute
@@ -165,7 +171,8 @@ func ResolveTicketLimit(flagValue time.Duration, given bool, s Settings) (time.D
 	}
 	d, err := time.ParseDuration(s.TicketLimit)
 	if err != nil || d < 0 {
-		return 0, fmt.Errorf("%s: ticket_limit must be a duration such as 2h, or 0 for none (got '%s')", SettingsPath("."), s.TicketLimit)
+		return 0, fmt.Errorf("%s: ticket_limit must be a duration such as 2h, or 0 for none (got '%s')",
+			SettingsPath("."), s.TicketLimit)
 	}
 	return d, nil
 }
@@ -210,7 +217,8 @@ func ResolveConflictResolution(flagValue, given bool, s Settings) (on bool, limi
 		return on, DefaultResolveTimeout, nil
 	}
 	if limit, err = time.ParseDuration(s.ResolveTimeout); err != nil || limit <= 0 {
-		return false, 0, fmt.Errorf("%s: resolve_timeout must be a positive duration such as 20m (got '%s')", SettingsPath("."), s.ResolveTimeout)
+		return false, 0, fmt.Errorf("%s: resolve_timeout must be a positive duration such as 20m (got '%s')",
+			SettingsPath("."), s.ResolveTimeout)
 	}
 	return on, limit, nil
 }
@@ -224,7 +232,8 @@ func ResolveExcludeTypes(s Settings) ([]string, error) {
 	types := []string{}
 	for _, t := range *s.ExcludeTypes {
 		if t == "" || strings.ContainsAny(t, ", \t\n") {
-			return nil, fmt.Errorf("%s: exclude_types must be a list of issue types such as [\"epic\"] (got %q)", SettingsPath("."), t)
+			return nil, fmt.Errorf("%s: exclude_types must be a list of issue types such as [\"epic\"] (got %q)",
+				SettingsPath("."), t)
 		}
 		types = append(types, t)
 	}
@@ -246,7 +255,8 @@ func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err er
 	}
 	if h.Window != "" {
 		if window, err = time.ParseDuration(h.Window); err != nil || window <= 0 {
-			return 0, 0, fmt.Errorf("%s: environment_hold window must be a positive duration such as 2m (got '%s')", SettingsPath("."), h.Window)
+			return 0, 0, fmt.Errorf("%s: environment_hold window must be a positive duration such as 2m (got '%s')",
+				SettingsPath("."), h.Window)
 		}
 	}
 	return count, window, nil
@@ -264,7 +274,8 @@ func ResolveEnvironmentProbe(s Settings) (time.Duration, error) {
 		d, err = 0, nil
 	}
 	if err != nil || d < 0 {
-		return 0, fmt.Errorf("%s: environment_hold probe must be a duration such as 10m, or 0 for none (got '%s')", SettingsPath("."), h.Probe)
+		return 0, fmt.Errorf("%s: environment_hold probe must be a duration such as 10m, or 0 for none (got '%s')",
+			SettingsPath("."), h.Probe)
 	}
 	return d, nil
 }

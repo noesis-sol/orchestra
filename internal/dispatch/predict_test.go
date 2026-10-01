@@ -39,12 +39,12 @@ func TestPredictedFootprintKeepsATicketApart(t *testing.T) {
 	h.beads.add("C", "fourth", 4)
 	h.beads.describe("C", "Change internal/y.go.")
 	var v overlap
-	h.worker("A", v.runs("A", func(w *fakeWorker) string {
+	h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 		eventually(t, "C never took the free slot", func() bool { return h.sink.dispatchedYet("C") })
 		time.Sleep(20 * time.Millisecond) // a few more polls, with a slot free
 		return finishes("a.txt")(w)
 	}))
-	h.worker("Z", v.runs("Z", func(w *fakeWorker) string {
+	h.worker("Z", v.runs("Z", func(w *fakeWorker) AgentState {
 		eventually(t, "B's files were never cached", func() bool { return h.beads.metadata("B", PredictedKey) != "" })
 		return finishes("z.txt")(w)
 	}))
@@ -89,7 +89,7 @@ func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	h.cfg.Predict = true
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		eventually(t, "B never ran beside A", func() bool { return h.sink.dispatchedYet("B") })
 		return finishes("a.txt")(w)
 	})

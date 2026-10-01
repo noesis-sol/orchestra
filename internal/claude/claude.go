@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,8 +34,11 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 		return nil, err
 	}
 	activity, edits := filepath.Join(dir, activityName), filepath.Join(dir, editsName)
-	os.Remove(activity)
-	os.Remove(edits)
+	for _, f := range []string{activity, edits} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
 	b, err := json.MarshalIndent(hookSettings(activity, edits), "", "  ")
 	if err != nil {
 		return nil, err
@@ -75,15 +79,19 @@ func hookSettings(activity, edits string) map[string]any {
 	}}
 }
 
-// LastToolUse returns what the worker in worktree reported last, and false when it has reported
-// nothing readable.
+// LastToolUse returns what the worker in worktree reported last, and when, and false when it has
+// reported nothing readable.
 func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	path := filepath.Join(worktree, project.Dir, project.RunName, activityName)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
-	return parseToolUse(b)
+	u, ok := parseToolUse(b)
+	if fi, err := os.Stat(path); ok && err == nil {
+		u.At = fi.ModTime() // each report replaces the file, so it was written then
+	}
+	return u, ok
 }
 
 // EditedFiles returns the files the worker in worktree has edited, as paths in the repository, in
@@ -98,8 +106,8 @@ func (Reporter) EditedFiles(worktree string) []string {
 
 func editedFiles(b []byte, worktree string) []string {
 	roots := []string{worktree}
-	if real, err := filepath.EvalSymlinks(worktree); err == nil && real != worktree {
-		roots = append(roots, real) // the worker may name it by its real path
+	if resolved, err := filepath.EvalSymlinks(worktree); err == nil && resolved != worktree {
+		roots = append(roots, resolved) // the worker may name it by its real path
 	}
 	seen := map[string]bool{}
 	var files []string
@@ -115,7 +123,8 @@ func editedFiles(b []byte, worktree string) []string {
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(worktree, path)
 			}
-			if r, err := filepath.Rel(root, path); err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			r, err := filepath.Rel(root, path)
+			if err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 				rel = filepath.ToSlash(r)
 				break
 			}

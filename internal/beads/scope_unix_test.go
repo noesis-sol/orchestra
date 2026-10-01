@@ -3,6 +3,7 @@
 package beads
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ func ids(t *testing.T, what string, got []string, err error, want ...string) {
 func TestScopedReadyIsTheTicketAndItsReadyDescendants(t *testing.T) {
 	calls := scopeBd(t)
 	b := Tracker{Repo: t.TempDir()}
-	ready, err := b.Ready("k-1")
+	ready, err := b.Ready(context.Background(), "k-1")
 	var got []string
 	for _, tk := range ready {
 		got = append(got, tk.ID)
@@ -56,7 +57,7 @@ func TestScopedReadyIsTheTicketAndItsReadyDescendants(t *testing.T) {
 
 func TestDescendantsAreListedLevelByLevel(t *testing.T) {
 	calls := scopeBd(t)
-	subs, err := Tracker{Repo: t.TempDir()}.Descendants("k-1")
+	subs, err := Tracker{Repo: t.TempDir()}.Descendants(context.Background(), "k-1")
 	var got []string
 	for _, tk := range subs {
 		got = append(got, tk.ID+"<"+tk.Parent)
@@ -69,7 +70,7 @@ func TestDescendantsAreListedLevelByLevel(t *testing.T) {
 
 func TestUnclosedCarriesEachTicketsParent(t *testing.T) {
 	scopeBd(t)
-	open, err := Tracker{Repo: t.TempDir()}.Unclosed()
+	open, err := Tracker{Repo: t.TempDir()}.Unclosed(context.Background())
 	if err != nil || len(open) != 1 || open[0].Parent != "k-1" || open[0].CreatedAt != "2026-09-30T14:53:21Z" {
 		t.Errorf("Unclosed = %+v, %v", open, err)
 	}
@@ -79,9 +80,9 @@ func TestScopeReadsCarryBdsStderr(t *testing.T) {
 	failingBd(t)
 	b := Tracker{Repo: t.TempDir()}
 	for what, err := range map[string]error{
-		"Ready(scope)": func() error { _, err := b.Ready("k-1"); return err }(),
-		"Unclosed":     func() error { _, err := b.Unclosed(); return err }(),
-		"Descendants":  func() error { _, err := b.Descendants("k-1"); return err }(),
+		"Ready(scope)": func() error { _, err := b.Ready(context.Background(), "k-1"); return err }(),
+		"Unclosed":     func() error { _, err := b.Unclosed(context.Background()); return err }(),
+		"Descendants":  func() error { _, err := b.Descendants(context.Background(), "k-1"); return err }(),
 	} {
 		if err == nil || !strings.Contains(err.Error(), "database is locked") {
 			t.Errorf("%s: error %v, want bd's stderr", what, err)

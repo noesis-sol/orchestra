@@ -18,7 +18,9 @@ import (
 func conflictHarness(t *testing.T) *harness {
 	t.Helper()
 	h := newHarness(t)
-	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("line 1\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "shared file")
 	h.cfg.Check = "! grep -q '<<<<<<<' shared.txt"
@@ -29,7 +31,7 @@ func conflictHarness(t *testing.T) *harness {
 
 // gitIn runs git in dir for a worker, failing its test on an error.
 func (w *fakeWorker) gitIn(dir string, args ...string) {
-	if out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.editor=true"}, args...)...); err != nil {
+	if out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.editor=true"}, args...)...); err != nil {
 		w.t.Errorf("git %v in %s: %v\n%s", args, dir, err, out)
 	}
 }
@@ -51,7 +53,7 @@ func landsOnMain(w *fakeWorker, repo, file, content string) {
 // conflicting claims the ticket, has main change shared.txt while it works, commits its own
 // change to it and closes the ticket.
 func conflicting(repo string) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		w.claim()
 		landsOnMain(w, repo, "shared.txt", "main\n")
 		w.commit("shared.txt")
@@ -62,7 +64,7 @@ func conflicting(repo string) behaviour {
 
 // resolvesWith resolves the stopped rebase with shared.txt as content and finishes it.
 func resolvesWith(content string) behaviour {
-	return func(w *fakeWorker) string {
+	return func(w *fakeWorker) AgentState {
 		w.write(w.wt, "shared.txt", content)
 		w.gitIn(w.wt, "add", "shared.txt")
 		w.gitIn(w.wt, "rebase", "--continue")
@@ -73,7 +75,7 @@ func resolvesWith(content string) behaviour {
 func rebaseInProgress(t *testing.T, wt string) bool {
 	t.Helper()
 	for _, d := range []string{"rebase-merge", "rebase-apply"} {
-		out, err := command.Output(wt, "git", "rev-parse", "--path-format=absolute", "--git-path", d)
+		out, err := command.Output(context.Background(), 0, wt, "git", "rev-parse", "--path-format=absolute", "--git-path", d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +117,7 @@ func TestAConflictResolvedByItsWorkerMerges(t *testing.T) {
 	if exists(h.worktree("A")) {
 		t.Error("A's worktree should be removed once merged")
 	}
-	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); HasLabel(a, UnmergedLabel) {
 		t.Errorf("A should not be labelled %q", UnmergedLabel)
 	}
 }
@@ -130,14 +132,14 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 		timeout time.Duration
 		why     string
 	}{
-		{"extra commit", func(w *fakeWorker) string {
+		{"extra commit", func(w *fakeWorker) AgentState {
 			resolvesWith("main\nA\n")(w)
 			w.commit("extra.txt")
 			return "idle"
 		}, 0, "wt/A has 2 commits where the ticket had 1 (a commit made besides the rebase?)"},
-		{"unfinished", func(w *fakeWorker) string { return "idle" }, 0, "its worker left the rebase unfinished"},
+		{"unfinished", func(w *fakeWorker) AgentState { return "idle" }, 0, "its worker left the rebase unfinished"},
 		{"markers left", resolvesWith("<<<<<<< ours\nmain\n=======\nA\n>>>>>>> theirs\n"), 0, "'! grep -q '<<<<<<<' shared.txt' fails on the resolved wt/A"},
-		{"timed out", func(w *fakeWorker) string { return "working" }, 50 * time.Millisecond, "its worker was still working after 50ms"},
+		{"timed out", func(w *fakeWorker) AgentState { return "working" }, 50 * time.Millisecond, "its worker was still working after 50ms"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -171,7 +173,7 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 			if log := h.git(h.repo, "log", "--format=%s", "main..wt/A"); log != "A: add shared.txt\n" {
 				t.Errorf("wt/A should be as the ticket closed it:\n%s", log)
 			}
-			if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+			if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 				t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 			}
 		})
@@ -197,7 +199,7 @@ func TestAConflictIsNotHandedBackWhenItsWorkerIsGone(t *testing.T) {
 	t.Parallel()
 	h := conflictHarness(t)
 	h.beads.add("A", "first", 1)
-	h.worker("A", func(w *fakeWorker) string {
+	h.worker("A", func(w *fakeWorker) AgentState {
 		conflicting(h.repo)(w)
 		return "gone"
 	})
@@ -239,7 +241,7 @@ func TestBaseMovingDuringAResolutionIsRebasedAgain(t *testing.T) {
 			t.Parallel()
 			h := conflictHarness(t)
 			h.beads.add("A", "first", 1)
-			h.worker("A", conflicting(h.repo), func(w *fakeWorker) string {
+			h.worker("A", conflicting(h.repo), func(w *fakeWorker) AgentState {
 				landsOnMain(w, h.repo, tc.file, tc.text)
 				return resolvesWith("main\nA\n")(w)
 			})
@@ -276,15 +278,15 @@ func TestOtherTicketsMergeWhileOneIsResolving(t *testing.T) {
 	resolving := make(chan struct{})
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", conflicting(h.repo), func(w *fakeWorker) string {
+	h.worker("A", conflicting(h.repo), func(w *fakeWorker) AgentState {
 		close(resolving)
 		eventually(t, "B never merged while A was resolving", func() bool {
-			out, _ := command.Output(h.repo, "git", "log", "--format=%s", "main")
+			out, _ := command.Output(context.Background(), 0, h.repo, "git", "log", "--format=%s", "main")
 			return strings.Contains(out, "B: add b.txt")
 		})
 		return resolvesWith("main\nA\n")(w)
 	})
-	h.worker("B", func(w *fakeWorker) string {
+	h.worker("B", func(w *fakeWorker) AgentState {
 		w.claim()
 		<-resolving
 		w.commit("b.txt")
@@ -310,7 +312,7 @@ func TestInterruptDuringAResolutionLeavesTheRebase(t *testing.T) {
 	h := conflictHarness(t)
 	h.beads.add("A", "first", 1)
 	started, release := make(chan struct{}), make(chan struct{})
-	h.worker("A", conflicting(h.repo), func(w *fakeWorker) string { close(started); <-release; return "idle" })
+	h.worker("A", conflicting(h.repo), func(w *fakeWorker) AgentState { close(started); <-release; return "idle" })
 	defer close(release)
 	o := h.loop()
 	o.ReportInterrupt = true

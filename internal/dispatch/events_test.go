@@ -1,20 +1,56 @@
 package dispatch
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The osascript command takes the text and project as arguments, so quotes in them can't break
 // the script, and a leading - isn't taken for an option.
 func TestNotificationPassesTextAsArguments(t *testing.T) {
-	cmd := notification(`my "repo"\`, `-x "closed" \ it`)
-	n := len(cmd.Args)
-	if n < 3 || cmd.Args[n-3] != "--" || cmd.Args[n-2] != `-x "closed" \ it` || cmd.Args[n-1] != `Orchestra: my "repo"\` {
-		t.Errorf("args: %q", cmd.Args)
+	args := notification(`my "repo"\`, `-x "closed" \ it`)
+	n := len(args)
+	if n < 3 || args[n-3] != "--" || args[n-2] != `-x "closed" \ it` || args[n-1] != `Orchestra: my "repo"\` {
+		t.Errorf("args: %q", args)
 	}
-	if script := strings.Join(cmd.Args[:n-3], " "); strings.Contains(script, "repo") || strings.Contains(script, "closed") {
+	if script := strings.Join(args[:n-3], " "); strings.Contains(script, "repo") || strings.Contains(script, "closed") {
 		t.Errorf("text in the script: %q", script)
+	}
+}
+
+// Close waits for the notifications still being shown, so the run's last one isn't lost when
+// orchestra exits, and drops any raised after it.
+func TestCloseWaitsForNotifications(t *testing.T) {
+	t.Parallel()
+	l, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, shown := make(chan struct{}), make(chan string, 2)
+	l.alert = l.inBackground(func(text string) {
+		<-release
+		shown <- text
+	})
+	l.Alert(time.Now(), "ALL MERGED")
+	closed := make(chan error)
+	go func() { closed <- l.Close() }()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a notification was still being shown")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if got := <-shown; got != "ALL MERGED" {
+		t.Errorf("shown %q", got)
+	}
+	l.Alert(time.Now(), "after close")
+	if len(shown) != 0 {
+		t.Errorf("shown after Close: %q", <-shown)
 	}
 }
 

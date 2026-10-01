@@ -8,6 +8,30 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Claude workers get only the MCP servers the project chose (`"mcp_servers"`
+  in `.orchestra/settings.json`, set with `orchestra init`): each is resolved
+  at start-up from this machine's Claude Code config, written to the worktree's
+  `.orchestra/run/mcp.json` (readable by its owner only) and passed with
+  `--strict-mcp-config --mcp-config`, so no definition shows on the command
+  line. `[]` gives workers none. A chosen server this machine doesn't define,
+  or a claude.ai connector, is a setup problem (exit code 2). Without
+  `"mcp_servers"`, workers load every server as before, and the run warns once.
+  The `START` line names the servers workers get.
+- `orchestra init` asks which MCP servers workers get, offering those Claude
+  Code defines for the repository on this machine (local scope for the
+  repository or its main checkout, project scope in `.mcp.json`, user scope;
+  `CLAUDE_CONFIG_DIR` honoured), and saves their names only, never their
+  definitions. `--mcp a,b` chooses without asking and `--mcp ""` chooses none.
+  claude.ai connectors are listed as not available to workers. A chosen name
+  this machine doesn't define is reported with `claude mcp add` as the fix,
+  and saved anyway.
+- The README defines **workers** (the coding agents that do tickets) and
+  **organs** (orchestra's one-shot advisers, with no tools and no MCP servers)
+  and explains workers' MCP servers: how they're chosen and resolved, why
+  claude.ai connectors aren't available, and why workers should get only what
+  the work needs. The skill says how to check and change them and how to fix a
+  server a machine doesn't define. `orchestra -h` uses the same words and lists
+  exit code 7.
 - A finished ticket whose rebase onto work merged while it ran stops on
   conflicts goes back to its own worker instead of straight to review: the
   rebase is left stopped in its worktree, and the worker, still idle in its tab,
@@ -23,7 +47,8 @@ All notable changes to orchestra are documented here. The format follows
   `.orchestra/settings.json` or `--resolve-conflicts=false` turns it off.
 - After a run holds for the environment, it probes the machine once the running
   tickets finish: 10 minutes later one worker without a ticket is started in
-  the main checkout and asked to run a single command. If it does, the log and
+  the main checkout and asked to run a single command (a Claude worker starts
+  without MCP servers, with `--strict-mcp-config`). If it does, the log and
   a notification say `PROBE_OK: …; taking tickets again`, and the run goes on
   with the reopened tickets. If not, the run ends with `ENVIRONMENT` (exit code
   7) as before, the line saying how the probe failed and its tab left open. A
@@ -167,6 +192,19 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard heads the boxes of the tickets being worked on with a faint
+  `Current` label, like the tickets table's `Tickets` header, in the boxed and
+  the one-line-per-worker layouts and over the `picking the next ticket…` box.
+  It is the first thing left out when the pane is too short.
+- A run winding down after **s** → **y** (or SIGUSR1) says so on its own line
+  above the dashboard's hint, in the stop colour:
+  `■ Stopping after the 2 running tickets finish (…): no new tickets will start`,
+  updated as tickets finish and wrapped rather than cut in a narrow pane (only
+  the IDs are shortened). It replaces `· stopping after current` on the title
+  line, which a narrow pane cut off. The hint reads `s cancels the stop`
+  instead of `s keeps going`, the queue count is marked `held`, and the title
+  line puts `stopping` and `solo` before the branch and time. The question, the
+  line and the `DRAIN` log line use the same words.
 - The built-in worker prompt tells workers never to stop processes by name or
   pattern (`pkill -f dispatch.test` from one worker ended another's check with
   `signal: terminated`), only the ones they started, by PID.
@@ -230,6 +268,67 @@ All notable changes to orchestra are documented here. The format follows
   `-race` build spinning before exec, which hung the test suite
   ([golang/go#79804](https://github.com/golang/go/issues/79804)); Go 1.26 is
   still the minimum.
+- A worker that has only just started is no longer taken for one that has
+  finished. Herdr can show a worker as idle while it starts up, with its ticket
+  still open, and its ticket was deferred while it went on to do the work,
+  which was then never merged. A Claude worker now counts as settled only at
+  its Stop hook (the end of its turn); while its last hook was a tool use it is
+  mid-turn whatever Herdr says, for up to 10 minutes. Without hooks, or before
+  its first one, an idle worker gets 3 minutes from its start to claim its
+  ticket. The log says what decided it: `<ticket> settled: Stop hook at
+  20:48:39`, `… idle 3m after it started, with the ticket still open`. The
+  environment hold counts a worker by when it went idle, so the grace doesn't
+  hide one that failed at once.
+- Every `bd`, `git` and `herdr` command orchestra runs stops on Ctrl+C and has
+  a time limit: 30 seconds for a read or a Herdr call, 2 minutes for a git
+  write (worktree, rebase, merge, branch) or a `bd` update, and Herdr's own
+  waits their timeout with 30 seconds to spare. A hung command (`bd` waiting on
+  Dolt's lock, git on a lock or a hook, Herdr restarting) used to hold its
+  worker for good; it now fails with `<command>: timed out after 30s`, reported
+  like any failure of it (`STATUS_UNREADABLE`, `HERDR_FAILED`, `GIT_FAILED`, …).
+  After Ctrl+C the run waits for its workers to return rather than giving up
+  after 10 seconds and leaving them behind; a merge already under way, and the
+  notes after it, finish first, so the repository is never left half merged.
+  A worker not back within a second is named under the `INTERRUPTED` line (in
+  `-plain`, above it), with what it is finishing: `waiting for <ticket>'s merge
+  to finish…`, its `worktree setup`, or its `last command`, which stops by its
+  time limit.
+
+### Fixed
+
+- A panic while working on one ticket (a nil pointer, an index out of range)
+  no longer kills orchestra and leaves the other workers running unsupervised:
+  the run holds with `PANIC in <ticket>: <value>; its worktree and tab … are
+  left for review`, the running tickets finish and merge, and the run ends with
+  that line (exit code 4) and its report. The stack is in the log. A panic in
+  triage only fails that ticket's triage (`TRIAGE_FAILED … panic: …`), one in
+  the footprint predictor only that prediction, and one watching a starting
+  worker only stops its status showing (`WATCH_FAILED`). A panic in the loop
+  itself still ends orchestra, now with the dashboard's terminal restored.
+- Failures orchestra used to ignore now show. A git that can't say where the
+  repository's git directories are is a setup problem (exit code 2) instead of
+  passing the linked-worktree check, as are a worktree or log folder that can't
+  be created and a worker prompt that vanished after the setup check. A `git
+  rebase --abort` that fails no longer goes unmentioned: the ticket set aside
+  says its worktree is left mid-rebase, and a returning ticket whose refresh
+  can't be aborted logs `REBASE_ABORT_FAILED`. A Herdr tab that won't close, an
+  Enter that can't be pressed into a worker and a failed `git worktree prune`
+  are logged. A `.git/info/exclude` that can't be read is no longer rewritten
+  without its entries, and stale worker or probe records that can't be removed
+  stop the start rather than being read later.
+
+### Fixed
+
+- A ticket back from a question whose worker is still in its tab no longer
+  stops the run with `AGENT_BUSY`. Answering in the worker's tab lets it carry
+  on before orchestra sees the answer; the run now adopts that worker when the
+  ticket comes back: it waits for it to settle and merges its work as usual.
+  A worker idle in its tab is told the question is answered and to carry on,
+  keeping what it knows; only if it doesn't is a new worker started. The log
+  says `ANSWERED: <question> (…) is answered, so <id> comes back`, and the
+  dashboard turns the ticket's own row from "? for you" back to working rather
+  than adding a second one. An earlier worker is now looked at before its
+  worktree is touched, so a branch is never rebased under a live worker.
 
 ## [0.1.1] - 2026-09-29
 

@@ -1,0 +1,49 @@
+# golangci-lint v2: the linters the Uber Go style guide asks for, plus predeclared.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - lll
+    - predeclared
+    - revive # its default rules
+    - staticcheck
+  settings:
+    lll:
+      line-length: 120 # a ceiling; the Uber guide's 99 is the goal where it reads naturally
+    errcheck:
+      exclude-functions: # terminal writes
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Print
+        - fmt.Printf
+        - fmt.Println
+    staticcheck:
+      checks: # golangci-lint's defaults, without the De Morgan rewrite: the negated forms read better
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF1001
+  exclusions:
+    rules:
+      # The test fakes implement interfaces whose arguments they mostly ignore.
+      - path: _test\.go
+        linters: [revive]
+        text: "^unused-parameter:"
+      # The line limit is for production code.
+      - path: _test\.go
+        linters: [lll]
+      # A URL can't be wrapped.
+      - source: "https?://"
+        linters: [lll]
+
+formatters:
+  enable:
+    - goimports

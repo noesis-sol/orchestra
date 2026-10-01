@@ -1,16 +1,21 @@
 package dispatch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
+// Kind is what an Event reports.
 type Kind int
 
+// The kinds of event.
 const (
 	EvInfo     Kind = iota // progress detail (start, worktree)
 	EvDispatch             // a ticket was picked up
@@ -26,8 +31,10 @@ const (
 	EvResume               // the maintainer took that back
 	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
 	EvProbed               // a probe found the machine working after an environment hold: tickets start again
+	EvAnswered             // an asked ticket's question was answered: it comes back, dispatched next
 )
 
+// Event is one thing that happened in the run, for the log and the sink.
 type Event struct {
 	Time   time.Time
 	Kind   Kind
@@ -47,13 +54,14 @@ type Status struct {
 	Title    string
 	Tab      string
 	Started  time.Time
-	Agent    string // Herdr agent status
-	Activity string // the worker's latest action line
-	Doing    string // what a working worker is doing, from its reports: testing, editing, reading or ""
+	Agent    AgentState // as Herdr last reported it; "" before the first read or when it failed
+	Activity string     // the worker's latest action line
+	Doing    string     // what a working worker is doing, from its reports: testing, editing, reading or ""
 	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
 	// worker, and is left in progress until the worker finishes it.
-	Resolving bool
-	Gone      bool
+	Resolving  bool
+	Unreadable bool // the last read of Agent failed
+	Gone       bool
 }
 
 // Sink receives events and live status; the terminal UI and the plain printer implement it.
@@ -62,13 +70,21 @@ type Sink interface {
 	Status(Status)
 }
 
+// notifyLimit is how long a notification may take to show before its osascript is stopped.
+const notifyLimit = 10 * time.Second
+
+// Log is the run's log file, with its notifications.
 type Log struct {
-	mu    sync.Mutex
-	f     *os.File
-	alert func(text string) // shows a notification; nil when they are off
-	lines []string          // this run's lines, for the reviewer
+	mu     sync.Mutex
+	f      *os.File
+	alert  func(text string) // shows a notification; nil when they are off
+	lines  []string          // this run's lines, for the reviewer
+	shown  sync.WaitGroup    // notifications still being shown
+	closed bool              // Close has been called: no more notifications start
 }
 
+// OpenLog opens the log file at path for appending. With notify, alerts also show as macOS
+// notifications titled with project.
 func OpenLog(path string, notify bool, project string) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -76,9 +92,41 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 	}
 	l := &Log{f: f}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
-		l.alert = func(text string) { go notification(project, text).Run() }
+		l.alert = l.inBackground(func(text string) {
+			// Best effort: the text is in the log already, a notification that fails is only not shown.
+			_, _ = command.Output(context.Background(), notifyLimit, "", "osascript", notification(project, text)...)
+		})
 	}
 	return l, nil
+}
+
+// inBackground makes show run on its own goroutine, so a slow notification doesn't hold up the
+// loop, and has Close wait for it. Notifications raised after Close are dropped.
+func (l *Log) inBackground(show func(text string)) func(text string) {
+	return func(text string) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.closed {
+			return
+		}
+		l.shown.Add(1)
+		go func() {
+			defer l.shown.Done()
+			show(text)
+		}()
+	}
+}
+
+// Close waits for the notifications still being shown, each at most notifyLimit, so the run's
+// last one isn't lost when orchestra exits, then closes the log file.
+func (l *Log) Close() error {
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
+	l.shown.Wait()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.f.Close()
 }
 
 // Line logs text.
@@ -127,14 +175,15 @@ func notifies(k Kind) bool {
 	return false
 }
 
-// notification is the osascript command showing text, titled with the project. Both go in as
+// notification is the osascript arguments showing text, titled with the project. Both go in as
 // arguments rather than into the script, so no quoting in them can break it.
-func notification(project, text string) *exec.Cmd {
-	return exec.Command("osascript",
+func notification(project, text string) []string {
+	return []string{
 		"-e", "on run argv",
 		"-e", "display notification (item 1 of argv) with title (item 2 of argv)",
 		"-e", "end run",
-		"--", text, "Orchestra: "+project) // -- so text starting with - isn't taken for an option
+		"--", text, "Orchestra: " + project, // -- so text starting with - isn't taken for an option
+	}
 }
 
 func (o *Loop) emit(ev Event) {

@@ -3,7 +3,9 @@
 package project
 
 import (
+	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 )
 
 // A project keeps everything orchestra owns in .orchestra/:
@@ -72,13 +75,17 @@ func fileExists(p string) bool {
 // info/exclude (shared by all worktrees, never committed), so it is ignored even on a branch cut
 // before .orchestra/.gitignore was committed. Earlier versions excluded all of .orchestra/, which
 // would hide the committed prompt; that entry is narrowed to run/.
-func EnsureRunExcluded(repo string) error {
-	common, err := command.Output(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+func EnsureRunExcluded(ctx context.Context, repo string) error {
+	common, err := command.Output(ctx, command.ReadLimit, repo,
+		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
 	exclude := filepath.Join(strings.TrimSpace(common), "info", "exclude")
-	b, _ := os.ReadFile(exclude)
+	b, err := os.ReadFile(exclude)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err // rewriting it would lose the entries it holds
+	}
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(b) == 0 {
 		lines = nil
@@ -111,6 +118,7 @@ func EnsureRunExcluded(repo string) error {
 // StepKind is how a Step of 'orchestra init' went.
 type StepKind int
 
+// The ways a Step can go.
 const (
 	StepDone    StepKind = iota // done now
 	StepKept                    // already there, left as it is
@@ -125,8 +133,8 @@ type Step struct {
 	Template      bool // the worker prompt was written from the template, for the project to adjust
 }
 
-// Choice is what init sets up: the check command, its time limit and the default number of
-// tickets at once.
+// Choice is what init sets up: the check command, its time limit, the default number of tickets
+// at once and the MCP servers workers get.
 type Choice struct {
 	Check        string
 	CheckTimeout string // as in settings.json; "" for DefaultCheckTimeout
@@ -140,6 +148,14 @@ type Choice struct {
 	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
 	// when init could neither ask nor take --changelog-union.
 	Union, UnionUnasked bool
+	// MCP names the MCP servers workers get; nil leaves mcp_servers unset. MCPUnasked is set when
+	// init could neither ask nor take --mcp.
+	MCP        *[]string
+	MCPUnasked bool
+	// Servers are the MCP servers Claude Code knows for the repository, and ServersErr why they
+	// couldn't all be read.
+	Servers    []mcp.Server
+	ServersErr error
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
@@ -147,6 +163,10 @@ type Choice struct {
 // would reject, is replaced by 1; a check_timeout every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
 	c := Choice{Check: s.Check, CheckTimeout: s.CheckTimeout, Concurrent: s.Concurrency, CheckFrom: "settings"}
+	if s.MCPServers != nil {
+		names := append([]string{}, *s.MCPServers...)
+		c.MCP = &names
+	}
 	if _, err := ParseCheckTimeout(c.CheckTimeout); c.CheckTimeout != "" && err != nil {
 		c.ReplacedTimeout, c.CheckTimeout = c.CheckTimeout, ""
 	}
@@ -180,7 +200,7 @@ func DetectCheck(prompt string) string {
 }
 
 // Init creates .orchestra/ in repo, with the worker prompt and its .gitignore.
-func Init(repo, check string, force bool) ([]Step, error) {
+func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 	var done []Step
 	dir := filepath.Join(repo, Dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -192,9 +212,10 @@ func Init(repo, check string, force bool) ([]Step, error) {
 	rel := Dir + "/" + promptName
 	switch {
 	case fileExists(prompt) && !force:
-		done = append(done, Step{Kind: StepKept, Label: "worker prompt", Detail: rel + " is there; left as it is (--force replaces it with the template)"})
+		done = append(done, Step{Kind: StepKept, Label: "worker prompt",
+			Detail: rel + " is there; left as it is (--force replaces it with the template)"})
 	case !fileExists(prompt) && fileExists(legacy) && !force:
-		if err := movePrompt(repo, legacy, prompt); err != nil {
+		if err := movePrompt(ctx, repo, legacy, prompt); err != nil {
 			return done, err
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "moved " + legacyPrompt + " to " + rel})
@@ -202,7 +223,8 @@ func Init(repo, check string, force bool) ([]Step, error) {
 		if err := os.WriteFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "wrote " + rel + " from the template", Template: true})
+		done = append(done, Step{Kind: StepDone, Label: "worker prompt",
+			Detail: "wrote " + rel + " from the template", Template: true})
 	}
 
 	gi := filepath.Join(dir, ".gitignore")
@@ -210,23 +232,28 @@ func Init(repo, check string, force bool) ([]Step, error) {
 		if err := os.WriteFile(gi, []byte(orchGitignore), 0o644); err != nil {
 			return done, err
 		}
-		done = append(done, Step{Kind: StepDone, Label: ".gitignore", Detail: "the log, reports and per-ticket files stay out of git"})
+		done = append(done, Step{Kind: StepDone, Label: ".gitignore",
+			Detail: "the log, reports and per-ticket files stay out of git"})
 	} else {
 		done = append(done, Step{Kind: StepKept, Label: ".gitignore", Detail: Dir + "/.gitignore is there"})
 	}
-	if err := EnsureRunExcluded(repo); err != nil {
+	if err := EnsureRunExcluded(ctx, repo); err != nil {
 		return done, err
 	}
 	if fileExists(filepath.Join(repo, legacyLog)) || fileExists(filepath.Join(repo, legacyReports)) {
-		done = append(done, Step{Kind: StepKept, Label: "history", Detail: "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
+		done = append(done, Step{Kind: StepKept, Label: "history",
+			Detail: "the old " + legacyLog + " and reports stay where they are; new runs write to " + Dir + "/"})
 	}
 	return done, nil
 }
 
 // ApplySettings saves the choice to .orchestra/settings.json.
 func ApplySettings(repo string, c Choice) (Step, error) {
-	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about
-	s.Check, s.CheckTimeout, s.Concurrency = c.Check, c.CheckTimeout, c.Concurrent
+	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
+	s.Check, s.CheckTimeout, s.Concurrency, s.MCPServers = c.Check, c.CheckTimeout, c.Concurrent, c.MCP
+	if c.MCP != nil && *c.MCP == nil {
+		s.MCPServers = &[]string{} // none, not null
+	}
 	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
 	}
@@ -264,11 +291,11 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 }
 
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
-func movePrompt(repo, from, to string) error {
-	rel, _ := filepath.Rel(repo, from)
-	if _, err := command.Output(repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
+func movePrompt(ctx context.Context, repo, from, to string) error {
+	rel, _ := filepath.Rel(repo, from) // both paths are under repo, so Rel can't fail
+	if _, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
 		relTo, _ := filepath.Rel(repo, to)
-		_, err := command.Output(repo, "git", "mv", rel, relTo)
+		_, err := command.Output(ctx, command.WriteLimit, repo, "git", "mv", rel, relTo)
 		return err
 	}
 	return os.Rename(from, to)
@@ -304,7 +331,7 @@ func Prerequisites(repo string) []Step {
 }
 
 // NextSteps lists what is left for the user, in order.
-func NextSteps(repo string, steps []Step, pre []Step) []string {
+func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Choice) []string {
 	var next []string
 	for _, p := range pre {
 		if p.Kind == StepMissing {
@@ -312,18 +339,27 @@ func NextSteps(repo string, steps []Step, pre []Step) []string {
 			break
 		}
 	}
-	prompt, _ := os.ReadFile(filepath.Join(repo, Dir, promptName))
+	prompt, _ := os.ReadFile(filepath.Join(repo, Dir, promptName)) // a step above says if it is missing
 	switch {
 	case strings.Contains(string(prompt), "<check command>") || strings.Contains(string(prompt), "<What it runs"):
 		next = append(next, "Fill in the <…> placeholders in "+Dir+"/"+promptName+".")
 	case wroteTemplate(steps):
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
 	}
+	if c.MCP == nil || len(*c.MCP) == 0 {
+		if names := AvailableServers(c.Servers); len(names) > 0 {
+			next = append(next, "Choose the MCP servers workers need from those defined here ("+
+				strings.Join(names, ", ")+"):\norchestra init --mcp <name>,<name>")
+		}
+	}
+	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
-	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt)
+	if strings.TrimSpace(out) != "" {
 		commit = append(commit, Dir+"/")
 	}
-	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", attributesName); strings.TrimSpace(out) != "" {
+	out, _ = command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", attributesName)
+	if strings.TrimSpace(out) != "" {
 		commit = append(commit, attributesName)
 	}
 	if len(commit) > 0 {
@@ -352,5 +388,6 @@ func WriteLaunchPrompt(wt, ticket, prompt string) (string, error) {
 	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. Read that file and follow it exactly.", ticket, Dir, RunName), nil
+	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. "+
+		"Read that file and follow it exactly.", ticket, Dir, RunName), nil
 }

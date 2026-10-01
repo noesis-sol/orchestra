@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,11 +19,19 @@ import (
 func configFixture(t *testing.T, settings string) string {
 	t.Helper()
 	repo, _ := gitRepo(t)
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
-	os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if settings != "" {
-		os.WriteFile(filepath.Join(repo, ".orchestra", "settings.json"), []byte(settings), 0o644)
+		if err := os.WriteFile(filepath.Join(repo, ".orchestra", "settings.json"), []byte(settings), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
@@ -39,20 +48,20 @@ func samePath(a, b string) bool {
 	if a == b {
 		return true
 	}
-	real := func(p string) string {
+	resolve := func(p string) string {
 		d, err := filepath.EvalSymlinks(filepath.Dir(p))
 		if err != nil {
 			return p
 		}
 		return filepath.Join(d, filepath.Base(p))
 	}
-	return real(a) == real(b)
+	return resolve(a) == resolve(b)
 }
 
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
 func loadWith(t *testing.T, args ...string) (options, []string) {
 	t.Helper()
-	c, problems, err := loadConfig(args, os.Getenv, io.Discard)
+	c, problems, err := loadConfig(context.Background(), args, os.Getenv, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +87,9 @@ func TestConfigConcurrencyPrecedence(t *testing.T) {
 		t.Errorf("out of range: %v", p)
 	}
 	t.Setenv("ORCHESTRA_CONCURRENT", "")
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, _ := loadWith(t); c.Concurrency != 1 {
 		t.Errorf("no settings: %d", c.Concurrency)
 	}
@@ -107,11 +118,15 @@ func TestConfigTicketLimitPrecedence(t *testing.T) {
 		t.Errorf("invalid variable: %v", p)
 	}
 	t.Setenv("TICKET_LIMIT", "")
-	os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ticket_limit must be a duration") {
 		t.Errorf("invalid setting: %v", p)
 	}
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
 		t.Errorf("no settings: %s %v", c.TicketLimit, p)
 	}
@@ -140,11 +155,15 @@ func TestConfigCheckTimeoutPrecedence(t *testing.T) {
 		t.Errorf("the flag over an invalid variable: %s %v", c.CheckTimeout, p)
 	}
 	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "")
-	os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "check_timeout must be a positive duration") {
 		t.Errorf("invalid setting: %v", p)
 	}
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 30*time.Minute {
 		t.Errorf("no settings: %s %v", c.CheckTimeout, p)
 	}
@@ -155,17 +174,42 @@ func TestConfigExcludeTypes(t *testing.T) {
 	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic" {
 		t.Errorf("default: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic decision" {
 		t.Errorf("settings: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || len(c.ExcludeTypes) != 0 {
 		t.Errorf("none: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "exclude_types must be a list") {
 		t.Errorf("invalid setting: %v", p)
+	}
+}
+
+// Claude Code turns Chrome on by itself, so workers are started with --no-chrome once the project
+// chose its MCP servers without it, and --chrome when it chose it.
+func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
+	configFixture(t, `{"concurrent": 1}`)
+	for _, tc := range []struct{ settings, want string }{
+		{`{}`, ""}, // not chosen: whatever Claude Code finds
+		{`{"mcp_servers": []}`, "--no-chrome"},
+		{`{"mcp_servers": ["exa"]}`, "--no-chrome"},
+		{`{"mcp_servers": ["exa", "claude-in-chrome"]}`, "--chrome"},
+	} {
+		if err := os.WriteFile(".orchestra/settings.json", []byte(tc.settings), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if c, p := loadWith(t); len(p) > 0 || strings.Join(c.WorkerArgs, " ") != tc.want {
+			t.Errorf("%s: worker arguments %q, want %q (problems %v)", tc.settings, c.WorkerArgs, tc.want, p)
+		}
 	}
 }
 
@@ -208,9 +252,15 @@ func TestConfigDefaultsAndLayout(t *testing.T) {
 
 func TestConfigLegacyLayout(t *testing.T) {
 	repo := configFixture(t, "")
-	os.RemoveAll(filepath.Join(repo, ".orchestra"))
-	os.MkdirAll(filepath.Join(repo, ".claude"), 0o755)
-	os.WriteFile(filepath.Join(repo, ".claude", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644)
+	if err := os.RemoveAll(filepath.Join(repo, ".orchestra")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	c, p := loadWith(t)
 	if len(p) > 0 || !strings.HasSuffix(c.LogPath, ".claude/orchestrate.log") || !strings.HasSuffix(c.ReportsDir, ".claude/orchestrate-reports") {
 		t.Errorf("legacy project.Layout: %s %s %v", c.LogPath, c.ReportsDir, p)
@@ -220,8 +270,12 @@ func TestConfigLegacyLayout(t *testing.T) {
 // Every setup problem is reported, together; main exits with code 2 when there are any.
 func TestConfigSetupProblems(t *testing.T) {
 	repo := configFixture(t, "")
-	os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md"))
-	os.RemoveAll(filepath.Join(repo, ".beads"))
+	if err := os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".beads")); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("LIMIT", "many")
@@ -295,7 +349,9 @@ func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {
 // orchestra runs.
 func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
 	repo := configFixture(t, "")
-	os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755)
+	if err := os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(filepath.Join(repo, "sub", "dir"))
 	t.Setenv("WT_ROOT", "../wt")
 	c, p := loadWith(t)
@@ -329,5 +385,72 @@ func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
 		if _, p := loadWith(t); len(p) > 0 {
 			t.Errorf("WT_ROOT=%s refused: %v", root, p)
 		}
+	}
+}
+
+// mcp_servers is resolved to this machine's definitions at start-up; a name it can't give workers
+// is a setup problem naming the fix.
+func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
+	repo := configFixture(t, `{"mcp_servers": ["postgres", "exa"]}`)
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	user := `{"mcpServers": {"postgres": {"command": "pg-mcp"}}, "claudeAiMcpEverConnected": ["claude.ai Gmail"]}`
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".mcp.json"), []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, p := loadWith(t)
+	if len(p) > 0 || c.MCP == nil || len(*c.MCP) != 2 {
+		t.Fatalf("resolved: %v %v", c.MCP, p)
+	}
+	if s := (*c.MCP)[0]; s.Name != "postgres" || string(s.Definition) != `{"command": "pg-mcp"}` {
+		t.Errorf("postgres: %+v", s)
+	}
+	if s := (*c.MCP)[1]; s.Name != "exa" || !strings.Contains(string(s.Definition), "exa.example") {
+		t.Errorf("exa: %+v", s)
+	}
+
+	settings := func(s string) {
+		t.Helper()
+		if err := os.WriteFile(".orchestra/settings.json", []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings(`{"mcp_servers": ["postgres", "redis", "claude.ai Gmail"]}`)
+	_, p = loadWith(t)
+	if len(p) != 1 {
+		t.Fatalf("unresolvable: %v", p)
+	}
+	for _, want := range []string{"mcp_servers in .orchestra/settings.json", "redis isn't defined on this machine (define it: claude mcp add redis …)",
+		"claude.ai Gmail is a claude.ai connector, which workers can't get", "orchestra init"} {
+		if !strings.Contains(p[0], want) {
+			t.Errorf("%q lacks %q", p[0], want)
+		}
+	}
+	if strings.Contains(p[0], "postgres") {
+		t.Errorf("names a resolved server: %q", p[0])
+	}
+	t.Setenv("AGENT_KIND", "codex") // not passed to it, so not resolved
+	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 3 || (*c.MCP)[1].Definition != nil {
+		t.Errorf("another agent: %v %v", c.MCP, p)
+	}
+	t.Setenv("AGENT_KIND", "")
+
+	settings(`{"mcp_servers": []}`)
+	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 0 {
+		t.Errorf("none: %v %v", c.MCP, p)
+	}
+	settings(`{}`)
+	if c, p := loadWith(t); len(p) > 0 || c.MCP != nil {
+		t.Errorf("unset: %v %v", c.MCP, p)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings(`{"mcp_servers": ["postgres"]}`)
+	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "Cannot read Claude Code's MCP config") {
+		t.Errorf("unreadable: %v", p)
 	}
 }

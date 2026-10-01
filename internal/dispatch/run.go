@@ -1,9 +1,12 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 )
@@ -15,17 +18,17 @@ type SoloState struct {
 	Next   bool
 }
 
-// Interrupted is the cause a run's context is cancelled with to say what stopped the run, as in
-// "by SIGTERM". Without it the loop reports Ctrl+C.
-type Interrupted string
+// InterruptedError is the cause a run's context is cancelled with to say what stopped the run, as
+// in "by SIGTERM". Without it the loop reports Ctrl+C.
+type InterruptedError string
 
-func (i Interrupted) Error() string { return "stopped " + string(i) }
+func (i InterruptedError) Error() string { return "stopped " + string(i) }
 
 func (o *Loop) interrupted(ctx context.Context) int {
 	if !o.ReportInterrupt {
 		return ExitInterrupted
 	}
-	why := Interrupted("with Ctrl+C")
+	why := InterruptedError("with Ctrl+C")
 	errors.As(context.Cause(ctx), &why)
 	o.emit(Event{Kind: EvStop, Text: InterruptLine(string(why), o.activeList())})
 	return ExitInterrupted
@@ -41,12 +44,14 @@ func InterruptLine(why string, running []Status) string {
 	for _, st := range running {
 		if st.Resolving {
 			// Its worker may still finish the rebase; either way it is resumed by hand.
-			names = append(names, fmt.Sprintf("%s (tab %s, resolving conflicts: its rebase is left in progress: finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
+			names = append(names, fmt.Sprintf("%s (tab %s, resolving conflicts: its rebase is left in progress: "+
+				"finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
 			continue
 		}
 		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
 	}
-	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open", why, strings.Join(names, ", "))
+	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open",
+		why, strings.Join(names, ", "))
 }
 
 // readyPoll is how often Run reads bd ready while workers run: tickets become ready mid-run (a
@@ -58,23 +63,28 @@ const readyPoll = 30 * time.Second
 type result struct {
 	id   string
 	stop *stopReason
+	how  settling // for the hold for the environment
 }
 
 // Run works through bd ready (in a scoped run, one ticket and its descendants) with up to
 // Concurrency workers at a time and returns the exit code.
 func (o *Loop) Run(ctx context.Context) int {
+	defer close(o.runDone) // triage counts its verdicts itself from here
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
-	o.startHead = o.checkout.Head(c.Repo, c.Base)
+	o.startHead = o.checkout.Head(ctx, c.Repo, c.Base)
 	ticketLimit := "none"
 	if c.TicketLimit > 0 {
 		ticketLimit = ShortDuration(c.TicketLimit)
 	}
-	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
-		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
-	if s := o.loadUnmerged(); s != nil {
-		return o.stop(s.code, "%s", s.text)
+	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
+		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s, MCP servers: %s)",
+		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit,
+		ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot, c.mcpLabel())
+	o.sayMCP()
+	if s := o.loadUnmerged(ctx); s != nil {
+		return o.stop(s.code, "%s", s)
 	}
 	defer o.startPredicting()()
 
@@ -87,40 +97,51 @@ func (o *Loop) Run(ctx context.Context) int {
 	var alsoStopped []string
 	envSaid := false
 	drained := false // the maintainer asked to stop after the running tickets, as last said
-	// winding reads and logs a request to wind down or to take tickets again; asked just before a
-	// ticket would start, it keeps that ticket from starting.
-	winding := func() bool {
-		if on, how := o.draining(); on != drained {
-			drained = on
-			o.emit(drainEvent(on, how, inflight))
+	// hear logs a request to wind down or to take tickets again, when it changes anything, and says
+	// whether the run winds down.
+	hear := func(r drainRequest) bool {
+		if r.on != drained {
+			drained = r.on
+			o.emit(drainEvent(r.on, r.how, inflight))
 		}
 		return drained
 	}
+	// winding hears a request waiting, if any; asked just before a ticket would start, it keeps
+	// that ticket from starting.
+	winding := func() bool {
+		select {
+		case r := <-o.drainReqs:
+			return hear(r)
+		default:
+			return drained
+		}
+	}
+	keep := context.WithoutCancel(ctx) // for reopening tickets as the run holds
 	for {
 		winding()
 		// Workers failing at once, whichever ticket they have, hold the run: said once, before
 		// another ticket starts.
-		if s := o.environmentStop(); s != nil && !envSaid {
+		if s := o.envStop; s != nil && !envSaid {
 			envSaid = true
 			if stop == nil {
 				stop = s
 			} else {
-				alsoStopped = append(alsoStopped, s.text)
+				alsoStopped = append(alsoStopped, s.Error())
 			}
 			if len(inflight) > 0 {
 				o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-					"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+					"HOLD: %s; no new tickets while the %d running finish", s, len(inflight))})
 			}
 		}
 		// Start tickets while there are free slots, unless something has stopped the run or the
 		// maintainer asked it to wind down.
 		for stop == nil && !drained && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
-			t, queued, s := o.next(inflight)
+			t, queued, s := o.next(ctx, inflight)
 			if s != nil {
 				stop = s
 				if len(inflight) > 0 {
 					o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-						"HOLD: %s; no new tickets while the %d running finish", s.text, len(inflight))})
+						"HOLD: %s; no new tickets while the %d running finish", s, len(inflight))})
 				}
 				break
 			}
@@ -138,18 +159,26 @@ func (o *Loop) Run(ctx context.Context) int {
 			if HasLabel(*t, SoloLabel) {
 				o.solo, how = t.ID, "dispatching solo"
 			}
+			if w, ok := o.asked(t.ID); ok {
+				o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
+					"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
+			}
 			o.queued, o.soloShown = queued, o.soloState()
-			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued, Solo: o.soloShown,
-				Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
+			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
+				Queued: queued, Solo: o.soloShown, Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
 			o.startFootprint(*t)
-			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
+			go func(t Ticket) {
+				r := result{id: t.ID}
+				r.stop = o.work(ctx, t, &r.how)
+				results <- r
+			}(*t)
 		}
 		if len(inflight) == 0 {
 			// Held for the environment, the run may probe the machine and take tickets again.
 			if stop == nil || len(alsoStopped) > 0 {
 				break
 			}
-			if stop = o.probeEnvironment(ctx, stop, winding); stop != nil {
+			if stop = o.probeEnvironment(ctx, stop, winding, hear); stop != nil {
 				break
 			}
 			envSaid = false
@@ -159,11 +188,12 @@ func (o *Loop) Run(ctx context.Context) int {
 		case r := <-results:
 			delete(inflight, r.id)
 			o.endFootprint(r.id)
+			o.settled(keep, r.id, r.how)
 			if r.id == o.solo {
 				o.solo = ""
 			}
 			if r.stop == nil {
-				o.parentDone(r.id, inflight)
+				o.parentDone(ctx, r.id, inflight)
 			}
 			if r.stop == nil || r.stop == errInterrupted {
 				continue
@@ -174,17 +204,19 @@ func (o *Loop) Run(ctx context.Context) int {
 			if first {
 				stop = r.stop
 			} else {
-				alsoStopped = append(alsoStopped, r.stop.text)
+				alsoStopped = append(alsoStopped, r.stop.Error())
 			}
 			switch {
 			case len(inflight) > 0:
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: fmt.Sprintf(
-					"HOLD: %s; no new tickets while the %d running finish", r.stop.text, len(inflight))})
+					"HOLD: %s; no new tickets while the %d running finish", r.stop, len(inflight))})
 			case !first:
-				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
+				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.Error()})
 			}
-		case <-o.envWake: // the hold is picked up above
-		case <-o.drainWake: // so is the request to wind down
+		case v := <-o.verdicts:
+			o.triaged(keep, v) // a hold is picked up above
+		case r := <-o.drainReqs:
+			hear(r)
 		case <-poll.C:
 			if o.footprintOn() && len(inflight) > 1 {
 				o.readEdits() // warns when two workers edit the same file
@@ -192,7 +224,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			// With a free slot, the loop above reads bd ready again. With none, the queue count is
 			// brought up to date; a failed read waits for the next poll, as nothing depends on it.
 			if stop == nil && !drained && len(inflight) >= c.Concurrency && o.count < c.Limit {
-				if t, queued, err := o.pick(inflight); err == nil {
+				if t, queued, err := o.pick(ctx, inflight); err == nil {
 					if t != nil {
 						queued++
 					}
@@ -200,7 +232,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				}
 			}
 		case <-ctx.Done():
-			o.settle(results, inflight)
+			o.settle(keep, results, inflight)
 			return o.interrupted(ctx)
 		}
 	}
@@ -208,57 +240,83 @@ func (o *Loop) Run(ctx context.Context) int {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)
 	case stop != nil:
-		text := stop.text
+		text := stop.Error()
 		for _, t := range alsoStopped {
 			text += "; also " + t
 		}
 		return o.stop(stop.code, "%s", text)
 	case drained:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope(ctx)})
 	case o.count >= c.Limit:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope(ctx)})
 	default:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope(ctx)})
 	}
 	return ExitOK
 }
 
-// SettleWait is how long Run waits after Ctrl+C for its workers to return, so what follows (triage,
-// the run report) reads a loop that has stopped changing. A worker notices the cancellation within
-// seconds unless a command it runs hangs.
-const SettleWait = 10 * time.Second
-
-// settle waits for the workers in flight to return, or for SettleWait.
-func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
-	timeout := time.NewTimer(orDefault(o.wait.settle, SettleWait))
-	defer timeout.Stop()
+// settle waits after Ctrl+C for the workers in flight to return, so what follows (triage, the run
+// report) reads a loop that has stopped changing and no worker is left behind. Each command a
+// worker runs stops with the run or at its time limit, and only what must finish once begun (a
+// merge under way, the notes after it) goes on, so they return within seconds, or within a
+// command's time limit when one hangs. Those not back within settleSay are named, so the terminal
+// doesn't sit silent meanwhile. A worker that settled still counts toward the hold.
+func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[string]bool) {
+	slow := time.NewTimer(orDefault(o.wait.settleSay, settleSay))
+	defer slow.Stop()
 	for len(inflight) > 0 {
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
-		case <-timeout.C:
-			return
+			o.settled(ctx, r.id, r.how)
+		case <-slow.C:
+			o.sayWaiting(inflight)
 		}
+	}
+}
+
+// settleSay is how long settle waits after Ctrl+C before naming the workers it waits for: most
+// return within milliseconds.
+const settleSay = time.Second
+
+// sayWaiting names each worker settle waits for, with what it is finishing: its merge, say, or a
+// command that has yet to stop or reach its time limit.
+func (o *Loop) sayWaiting(inflight map[string]bool) {
+	ids := slices.Sorted(maps.Keys(inflight))
+	o.mu.Lock()
+	what := make([]string, len(ids))
+	for i, id := range ids {
+		what[i] = cmp.Or(o.finishing[id], "last command")
+	}
+	o.mu.Unlock()
+	for i, id := range ids {
+		o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf("  waiting for %s's %s to finish…", id, what[i])})
 	}
 }
 
 // next returns the highest-priority ready ticket not already running, with how many others are
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; the check waits for any merge in progress.
-func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
+func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int, *stopReason) {
 	o.repoMu.Lock()
-	s := o.checkoutUnready("")
+	s := o.checkoutUnready(ctx, "")
 	o.repoMu.Unlock()
+	if ctx.Err() != nil {
+		return nil, 0, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
+	}
 	if s != nil {
 		return nil, 0, s
 	}
-	t, queued, err := o.pick(running)
+	t, queued, err := o.pick(ctx, running)
+	if ctx.Err() != nil {
+		return nil, 0, nil
+	}
 	if err != nil {
 		what := "'bd ready --json'"
-		if errors.As(err, new(listUnreadable)) {
+		if errors.As(err, new(listUnreadableError)) {
 			what = "'bd list --json'"
 		}
-		return nil, 0, halt(ExitTool, "READY_UNREADABLE: could not read %s%s", what, because(err))
+		return nil, 0, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
 	}
 	return t, queued, nil
 }
@@ -288,12 +346,12 @@ func (o *Loop) soloState() SoloState {
 // pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
 // ticket that can start, with how many others could; with none, how many wait for a solo ticket.
 // It says once why they wait.
-func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
-	ready, err := o.tickets.Ready(o.cfg.Ticket)
+func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int, error) {
+	ready, err := o.tickets.Ready(ctx, o.cfg.Ticket)
 	if err != nil {
 		return nil, 0, err
 	}
-	parents, err := o.openParents(running)
+	parents, err := o.openParents(ctx, running)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -313,7 +371,7 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	slot := len(running) < o.cfg.Concurrency
 	overlaps := func(Ticket) bool { return false }
 	if slot && o.footprintOn() {
-		o.readFiles()
+		o.readFiles(ctx)
 		if len(running) > 0 {
 			o.readEdits()
 			overlaps = func(t Ticket) bool { return o.overlapsRunning(t, running) }
@@ -322,7 +380,8 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	if o.footprintOn() {
 		o.queuePredictions(ready, skip)
 	}
-	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running, parents) || overlaps(t) }, len(running), o.solo)
+	held := func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }
+	t, queued, next := pickNext(ready, skip, held, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway.
 	if !slot {
@@ -334,7 +393,8 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	case slot && t == nil && queued > 0 && o.solo != "":
 		why = fmt.Sprintf("waiting for solo ticket %s to finish", o.solo)
 	case next != "":
-		why = fmt.Sprintf("solo ticket %s is next: no new tickets start until the running ones finish, then it runs alone", next)
+		why = fmt.Sprintf(
+			"solo ticket %s is next: no new tickets start until the running ones finish, then it runs alone", next)
 	}
 	if why != "" && why != o.soloSaid {
 		o.info("  %s", why)
@@ -346,17 +406,20 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
 // not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
 // Base. held, when set, says what is left for review. The caller holds repoMu.
-func (o *Loop) checkoutUnready(held string) *stopReason {
+func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 	c := o.cfg
-	dirty, branch, err := o.readCheckout()
+	dirty, branch, err := o.readCheckout(ctx)
 	if err != nil {
-		return halt(ExitTool, "GIT_FAILED: could not read the state of %s%s; stopping%s", c.Repo, because(err), held)
+		return halt(ExitTool, stopGitFailed,
+			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err)
 	}
 	if dirty != "" {
-		return halt(ExitDirty, "DIRTY_TREE: uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
+		return halt(ExitDirty, stopDirtyTree,
+			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
 	}
 	if branch != c.Base {
-		return halt(ExitDirty, "DIRTY_TREE: %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
+		return halt(ExitDirty, stopDirtyTree,
+			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
 	}
 	return nil
 }
@@ -366,19 +429,18 @@ func (o *Loop) checkoutUnready(held string) *stopReason {
 const gitTries = 3
 
 // readCheckout returns the main checkout's uncommitted changes and its branch, or git's error.
-func (o *Loop) readCheckout() (dirty, branch string, err error) {
+func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err error) {
 	c := o.cfg
 	for try := 1; ; try++ {
-		if dirty, err = o.checkout.DirtyTree(c.Repo); err == nil {
-			if branch, err = o.checkout.CurrentBranch(c.Repo); err == nil {
+		if dirty, err = o.checkout.DirtyTree(ctx, c.Repo); err == nil {
+			if branch, err = o.checkout.CurrentBranch(ctx, c.Repo); err == nil {
 				return dirty, branch, nil
 			}
 		}
-		if try == gitTries {
+		if try == gitTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return "", "", err
 		}
-		o.log.Raw("", err)
-		time.Sleep(o.pollEvery())
+		o.log.Raw("", err) // tried again; only the error returned is the caller's to report
 	}
 }
 
@@ -387,7 +449,9 @@ func (o *Loop) readCheckout() (dirty, branch string, err error) {
 // (the one running, or "") runs nothing starts, and one first in line starts only once none of
 // the running tickets are left, holding back the tickets behind it until then so it isn't
 // starved; next names it. With no ticket to start, queued is how many wait.
-func pickNext(ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string) (t *Ticket, queued int, next string) {
+func pickNext(
+	ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string,
+) (t *Ticket, queued int, next string) {
 	var free []Ticket
 	for _, t := range ready {
 		if !skip[t.ID] && !held(t) {
