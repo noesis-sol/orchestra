@@ -3,10 +3,14 @@
 package beads
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // failingBd puts a bd on PATH that fails every command with a lock error on stderr.
@@ -29,25 +33,45 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 			t.Errorf("%s: error %v, want bd's stderr", what, err)
 		}
 	}
-	_, err := b.Ready("")
+	_, err := b.Ready(context.Background(), "")
 	check("Ready", err)
-	tk, err := b.Show("k-1")
+	tk, err := b.Show(context.Background(), "k-1")
 	check("Show", err)
 	if tk.Status != "unknown" {
 		t.Errorf("Show status = %q", tk.Status)
 	}
-	st, err := b.Status("k-1")
+	st, err := b.Status(context.Background(), "k-1")
 	check("Status", err)
 	if st != "unknown" {
 		t.Errorf("Status = %q", st)
 	}
-	check("AppendNotes", b.AppendNotes("k-1", "note"))
-	check("Defer", b.Defer("k-1", "reason"))
-	check("Reopen", b.Reopen("k-1"))
-	check("AddLabel", b.AddLabel("k-1", "unmerged"))
-	check("RemoveLabel", b.RemoveLabel("k-1", "unmerged"))
-	_, err = b.Closed("unmerged")
+	check("AppendNotes", b.AppendNotes(context.Background(), "k-1", "note"))
+	check("Defer", b.Defer(context.Background(), "k-1", "reason"))
+	check("Reopen", b.Reopen(context.Background(), "k-1"))
+	check("AddLabel", b.AddLabel(context.Background(), "k-1", "unmerged"))
+	check("RemoveLabel", b.RemoveLabel(context.Background(), "k-1", "unmerged"))
+	_, err = b.Closed(context.Background(), "unmerged")
 	check("Closed", err)
+}
+
+// A bd that hangs (waiting on Dolt's lock, say) is stopped by Ctrl+C within a second, and the
+// ticket's status is unknown, with the reason, as when bd fails.
+func TestHungBdIsStoppedByCtrlC(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte("#!/bin/sh\nsleep 5\necho '[]'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithCancelCause(context.Background())
+	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.Interrupted("with Ctrl+C")) })
+	start := time.Now()
+	st, err := Tracker{Repo: t.TempDir()}.Status(ctx, "k-1")
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("returned %s after Ctrl+C", took-100*time.Millisecond)
+	}
+	if st != "unknown" || err == nil || err.Error() != "bd show k-1 --json: stopped with Ctrl+C" {
+		t.Errorf("got %q, %v; want unknown and why bd stopped", st, err)
+	}
 }
 
 func TestStatusWithoutOneIsAnError(t *testing.T) {
@@ -56,7 +80,7 @@ func TestStatusWithoutOneIsAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if st, err := (Tracker{Repo: t.TempDir()}).Status("k-1"); st != "unknown" || err == nil {
+	if st, err := (Tracker{Repo: t.TempDir()}).Status(context.Background(), "k-1"); st != "unknown" || err == nil {
 		t.Errorf("got %q, %v; want unknown and an error", st, err)
 	}
 }
@@ -76,7 +100,7 @@ func TestReadyPassesTheExcludedTypesToBd(t *testing.T) {
 		{[]string{"epic", "decision"}, "--exclude-type epic,decision"},
 		{nil, ""},
 	} {
-		if _, err := (Tracker{Repo: t.TempDir(), ExcludeTypes: c.types}).Ready(""); err != nil {
+		if _, err := (Tracker{Repo: t.TempDir(), ExcludeTypes: c.types}).Ready(context.Background(), ""); err != nil {
 			t.Fatal(err)
 		}
 		b, _ := os.ReadFile(args)

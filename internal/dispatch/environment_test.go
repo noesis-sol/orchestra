@@ -29,7 +29,7 @@ func (h *harness) dispatched() []string {
 }
 
 func (h *harness) statusOf(id string) string {
-	st, _ := h.beads.Status(id)
+	st, _ := h.beads.Status(context.Background(), id)
 	return st
 }
 

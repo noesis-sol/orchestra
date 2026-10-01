@@ -15,21 +15,21 @@ type fakeTickets struct {
 	shown map[string]Ticket
 }
 
-func (f fakeTickets) Ready(string) ([]Ticket, error)       { return f.ready, nil }
-func (f fakeTickets) Unclosed() ([]Ticket, error)          { return nil, nil }
-func (f fakeTickets) Descendants(string) ([]Ticket, error) { return nil, nil }
-func (f fakeTickets) Show(id string) (Ticket, error) {
+func (f fakeTickets) Ready(context.Context, string) ([]Ticket, error)       { return f.ready, nil }
+func (f fakeTickets) Unclosed(ctx context.Context) ([]Ticket, error)        { return nil, nil }
+func (f fakeTickets) Descendants(context.Context, string) ([]Ticket, error) { return nil, nil }
+func (f fakeTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	if t, ok := f.shown[id]; ok {
 		return t, nil
 	}
 	return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: not found", id)
 }
-func (f fakeTickets) Status(id string) (string, error) {
-	t, err := f.Show(id)
+func (f fakeTickets) Status(ctx context.Context, id string) (string, error) {
+	t, err := f.Show(ctx, id)
 	return t.Status, err
 }
-func (f fakeTickets) Describe(id string) string { return id }
-func (f fakeTickets) Closed(label string) ([]Ticket, error) {
+func (f fakeTickets) Describe(ctx context.Context, id string) string { return id }
+func (f fakeTickets) Closed(ctx context.Context, label string) ([]Ticket, error) {
 	var closed []Ticket
 	for _, t := range f.shown {
 		if t.Status == "closed" && HasLabel(t, label) {
@@ -51,7 +51,7 @@ func aBlocksB() fakeTickets {
 
 func (f *mergeFixture) next(t *testing.T, running map[string]bool) string {
 	t.Helper()
-	tk, _, s := f.orch.next(running)
+	tk, _, s := f.orch.next(context.Background(), running)
 	if s != nil {
 		t.Fatal(s.text)
 	}
@@ -167,9 +167,9 @@ type countingTickets struct {
 	shows map[string]int
 }
 
-func (c countingTickets) Show(id string) (Ticket, error) {
+func (c countingTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	c.shows[id]++
-	return c.fakeTickets.Show(id)
+	return c.fakeTickets.Show(ctx, id)
 }
 
 func TestBlockersAreReadOncePerRun(t *testing.T) {
@@ -236,11 +236,11 @@ func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
 	o.markAside("deferred")
 	o.markAside("answered")
 	o.setAsked("answered", true)
-	if tk, _, s := o.next(nil); s != nil || tk == nil || tk.ID != "answered" {
+	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "answered" {
 		t.Fatalf("got %v (%v), want the ticket whose question was answered", tk, s)
 	}
 	o.setAsked("answered", false) // dispatched again, then set aside for another reason
-	if tk, _, s := o.next(nil); s != nil || tk == nil || tk.ID != "fresh" {
+	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "fresh" {
 		t.Fatalf("got %v (%v), want the fresh ticket", tk, s)
 	}
 }
@@ -256,7 +256,7 @@ func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	f.orch.tickets = labelledA()
 	f.git(f.repo, "branch", "wt/k-a") // cut, never committed to
-	if s := f.orch.loadUnmerged(); s != nil {
+	if s := f.orch.loadUnmerged(context.Background()); s != nil {
 		t.Fatal(s.text)
 	}
 	if got := f.next(t, nil); got != "" {
@@ -267,7 +267,7 @@ func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
 	f.orch.tickets = labelledA()
 	f.onMain(t, "a.txt", "a\n")
 	f.git(f.repo, "commit", "-q", "--amend", "-m", "k-a: add a.txt") // merged by hand, branch deleted
-	if s := f.orch.loadUnmerged(); s != nil {
+	if s := f.orch.loadUnmerged(context.Background()); s != nil {
 		t.Fatal(s.text)
 	}
 	if got := f.next(t, nil); got != "k-b" {
@@ -278,7 +278,9 @@ func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
 // closedUnreadable is Beads that can't list closed tickets.
 type closedUnreadable struct{ readyTickets }
 
-func (closedUnreadable) Closed(label string) ([]Ticket, error) { return nil, errBd }
+func (closedUnreadable) Closed(ctx context.Context, label string) ([]Ticket, error) {
+	return nil, errBd
+}
 
 func TestRunStopsWhenTheUnmergedTicketsCannotBeListed(t *testing.T) {
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
@@ -322,7 +324,7 @@ func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
 	if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 		t.Fatalf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 	}
 
@@ -347,7 +349,7 @@ func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
 	if ev := h.sink.text(); !strings.Contains(ev, "A, left unmerged by an earlier run, is on main now") {
 		t.Errorf("events:\n%s", ev)
 	}
-	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); HasLabel(a, UnmergedLabel) {
 		t.Errorf("A's label should be removed: %v", a.Labels)
 	}
 	if log := h.mainLog(); !strings.Contains(log, "B: add b.txt") {
@@ -371,7 +373,7 @@ func TestReopenedUnmergedTicketLosesItsLabelWhenItMerges(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 		t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); HasLabel(a, UnmergedLabel) {
 		t.Errorf("A merged, so its label should be removed: %v", a.Labels)
 	}
 	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "B: add b.txt") {

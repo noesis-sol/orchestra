@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	repo := t.TempDir()
 	git := func(dir string, args ...string) string {
 		t.Helper()
-		out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +40,7 @@ func read(t *testing.T, p string) string {
 
 func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	repo, git := gitRepo(t)
-	steps, err := Init(repo, "make check", false)
+	steps, err := Init(context.Background(), repo, "make check", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +71,11 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 
 	// A second run leaves the prompt alone; -force replaces it.
 	os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644)
-	Init(repo, "", false)
+	Init(context.Background(), repo, "", false)
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "mine TICKET_ID" {
 		t.Errorf("init overwrote an existing prompt: %q", got)
 	}
-	Init(repo, "", true)
+	Init(context.Background(), repo, "", true)
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != promptTemplate {
 		t.Error("-force should restore the template")
 	}
@@ -93,7 +94,7 @@ func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	if Layout := Locate(repo); !Layout.Legacy {
 		t.Error("before init the legacy Layout should be used")
 	}
-	steps, err := Init(repo, "", false)
+	steps, err := Init(context.Background(), repo, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +121,10 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 	repo, git := gitRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	git(repo, "worktree", "add", "-q", "-b", "wt/k-1", wt)
-	if err := EnsureRunExcluded(repo); err != nil {
+	if err := EnsureRunExcluded(context.Background(), repo); err != nil {
 		t.Fatal(err)
 	}
-	EnsureRunExcluded(repo) // idempotent
+	EnsureRunExcluded(context.Background(), repo) // idempotent
 	line, err := WriteLaunchPrompt(wt, "k-1", "You are responsible for k-1.\n- Run `ls`.\n")
 	if err != nil {
 		t.Fatal(err)
@@ -328,8 +329,8 @@ func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 
 func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	repo, git := gitRepo(t)
-	steps, _ := Init(repo, "make check", false)
-	next := NextSteps(repo, steps, Prerequisites(repo))
+	steps, _ := Init(context.Background(), repo, "make check", false)
+	next := NextSteps(context.Background(), repo, steps, Prerequisites(repo))
 	joined := strings.Join(next, "\n")
 	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
 		t.Errorf("fresh init: %q", next)
@@ -342,8 +343,8 @@ func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	}
 	git(repo, "add", ".orchestra")
 	git(repo, "commit", "-q", "-m", "setup")
-	steps, _ = Init(repo, "", false)
-	if joined := strings.Join(NextSteps(repo, steps, nil), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
+	steps, _ = Init(context.Background(), repo, "", false)
+	if joined := strings.Join(NextSteps(context.Background(), repo, steps, nil), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
 		t.Errorf("nothing to commit or read on a second run: %q", joined)
 	}
 }

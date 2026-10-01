@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,15 +82,15 @@ func TestCommitNamingIgnoresLongerIDs(t *testing.T) {
 	commit(t, repo, "x-123: Fix a follow-up")
 	commit(t, repo, "x-12.1: Fix the child")
 	g := Git{}
-	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12"); got != "" {
+	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12"); got != "" {
 		t.Errorf("commits naming x-123 and x-12.1 must not count as naming x-12, got %q", got)
 	}
-	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12.1"); !strings.HasSuffix(got, " x-12.1: Fix the child") {
+	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12.1"); !strings.HasSuffix(got, " x-12.1: Fix the child") {
 		t.Errorf("got %q", got)
 	}
 	commit(t, repo, "x-12: Fix the loop\n\nAlso see x-123.")
 	commit(t, repo, "Tidy up after x-12.1")
-	if got := g.CommitNaming(repo, "main", "wt/x-12", "x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
+	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
 		t.Errorf("got %q, want the commit naming x-12", got)
 	}
 }
@@ -98,7 +99,7 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 	dir := t.TempDir()
 	git := func(args ...string) {
 		t.Helper()
-		if out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
+		if out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
@@ -117,16 +118,16 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 	git("add", ".")
 	git("commit", "-q", "-m", "init")
 	write(".orchestra/run/prompt.md", "Work on it.\n") // the ticket's scratch
-	if d := (Git{}).DirtyWorktree(dir); d != "" {
+	if d := (Git{}).DirtyWorktree(context.Background(), dir); d != "" {
 		t.Errorf(".orchestra/run/ should not count: %q", d)
 	}
 
 	write(".claude/settings.json", "{\"model\": \"opus\"}\n")
 	write(".beads/config.yaml", "prefix: t\n")
-	if d, err := (Git{}).DirtyTree(dir); d != "" || err != nil {
+	if d, err := (Git{}).DirtyTree(context.Background(), dir); d != "" || err != nil {
 		t.Errorf("the main checkout's check should leave out .claude/ and .beads/: %q", d)
 	}
-	d := (Git{}).DirtyWorktree(dir)
+	d := (Git{}).DirtyWorktree(context.Background(), dir)
 	if !strings.Contains(d, ".claude/settings.json") || !strings.Contains(d, ".beads/") {
 		t.Errorf("a worktree's check should count .claude/ and .beads/: %q", d)
 	}
@@ -143,7 +144,7 @@ func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
 		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "--allow-empty", "-m", "Start"},
 		{"branch", "wt/x-12"},
 	} {
-		if out, err := command.Output(repo, "git", args...); err != nil {
+		if out, err := command.Output(context.Background(), 0, repo, "git", args...); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
@@ -152,10 +153,10 @@ func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.AfterFunc(1500*time.Millisecond, func() { os.Remove(lock) })
-	if out, err := (Git{}).DeleteBranch(repo, "wt/x-12"); err != nil {
+	if out, err := (Git{}).DeleteBranch(context.Background(), repo, "wt/x-12"); err != nil {
 		t.Fatalf("DeleteBranch: %v\n%s", err, out)
 	}
-	if (Git{}).HasBranch(repo, "wt/x-12") {
+	if (Git{}).HasBranch(context.Background(), repo, "wt/x-12") {
 		t.Error("wt/x-12 should be deleted")
 	}
 }

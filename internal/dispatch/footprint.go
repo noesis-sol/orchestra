@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -311,7 +312,9 @@ type runFootprint struct {
 func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFootprint }
 
 // readFiles lists the repository's files for the footprints of the tickets about to be compared.
-func (o *Loop) readFiles() { o.files = newRepoFiles(o.checkout.TrackedFiles(o.cfg.Repo)) }
+func (o *Loop) readFiles(ctx context.Context) {
+	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo))
+}
 
 // footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the
 // prediction made in this run when bd hasn't handed back the one cached on the ticket.

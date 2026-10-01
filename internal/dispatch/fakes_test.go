@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -90,7 +91,7 @@ func (b *fakeBeads) notesOf(id string) string {
 	return strings.Join(b.notes[id], "\n")
 }
 
-func (b *fakeBeads) Ready(scope string) ([]Ticket, error) {
+func (b *fakeBeads) Ready(ctx context.Context, scope string) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var ready []Ticket
@@ -116,7 +117,7 @@ func (b *fakeBeads) Ready(scope string) ([]Ticket, error) {
 	return ready, nil
 }
 
-func (b *fakeBeads) Unclosed() ([]Ticket, error) {
+func (b *fakeBeads) Unclosed(ctx context.Context) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var open []Ticket
@@ -128,7 +129,7 @@ func (b *fakeBeads) Unclosed() ([]Ticket, error) {
 	return open, nil
 }
 
-func (b *fakeBeads) Descendants(root string) ([]Ticket, error) {
+func (b *fakeBeads) Descendants(ctx context.Context, root string) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var subs []Ticket
@@ -140,7 +141,7 @@ func (b *fakeBeads) Descendants(root string) ([]Ticket, error) {
 	return subs, nil
 }
 
-func (b *fakeBeads) Show(id string) (Ticket, error) {
+func (b *fakeBeads) Show(ctx context.Context, id string) (Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	t, ok := b.tickets[id]
@@ -156,34 +157,34 @@ func (b *fakeBeads) Show(id string) (Ticket, error) {
 	return show, nil
 }
 
-func (b *fakeBeads) Status(id string) (string, error) {
-	t, err := b.Show(id)
+func (b *fakeBeads) Status(ctx context.Context, id string) (string, error) {
+	t, err := b.Show(ctx, id)
 	return t.Status, err
 }
 
-func (b *fakeBeads) Describe(id string) string {
-	t, _ := b.Show(id)
+func (b *fakeBeads) Describe(ctx context.Context, id string) string {
+	t, _ := b.Show(ctx, id)
 	return fmt.Sprintf("%s: %s [%s]", id, t.Title, t.Status)
 }
 
-func (b *fakeBeads) AppendNotes(id, note string) error {
+func (b *fakeBeads) AppendNotes(ctx context.Context, id, note string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.notes[id] = append(b.notes[id], note)
 	return nil
 }
 
-func (b *fakeBeads) Defer(id, reason string) error {
+func (b *fakeBeads) Defer(ctx context.Context, id, reason string) error {
 	b.set(id, "deferred")
-	return b.AppendNotes(id, "deferred: "+reason)
+	return b.AppendNotes(ctx, id, "deferred: "+reason)
 }
 
-func (b *fakeBeads) Reopen(id string) error {
+func (b *fakeBeads) Reopen(ctx context.Context, id string) error {
 	b.set(id, "open")
 	return nil
 }
 
-func (b *fakeBeads) Closed(label string) ([]Ticket, error) {
+func (b *fakeBeads) Closed(ctx context.Context, label string) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var closed []Ticket
@@ -195,7 +196,7 @@ func (b *fakeBeads) Closed(label string) ([]Ticket, error) {
 	return closed, nil
 }
 
-func (b *fakeBeads) AddLabel(id, label string) error {
+func (b *fakeBeads) AddLabel(ctx context.Context, id, label string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if t, ok := b.tickets[id]; ok && !HasLabel(*t, label) {
@@ -204,7 +205,7 @@ func (b *fakeBeads) AddLabel(id, label string) error {
 	return nil
 }
 
-func (b *fakeBeads) RemoveLabel(id, label string) error {
+func (b *fakeBeads) RemoveLabel(ctx context.Context, id, label string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if t, ok := b.tickets[id]; ok {
@@ -220,7 +221,7 @@ func (b *fakeBeads) RemoveLabel(id, label string) error {
 }
 
 // SetMetadata sets one key of the ticket's metadata, as bd update --set-metadata does.
-func (b *fakeBeads) SetMetadata(id, key, value string) error {
+func (b *fakeBeads) SetMetadata(ctx context.Context, id, key, value string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	t, ok := b.tickets[id]
@@ -268,7 +269,7 @@ func (w *fakeWorker) commit(file string) {
 		w.t.Error(err)
 	}
 	for _, args := range [][]string{{"add", file}, {"commit", "-q", "-m", w.id + ": add " + file}} {
-		if out, err := command.Output(w.wt, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
+		if out, err := command.Output(context.Background(), 0, w.wt, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
 			w.t.Errorf("git %v in %s: %v\n%s", args, w.wt, err, out)
 		}
 	}
@@ -361,6 +362,13 @@ func (s *runSink) Status(st Status) {
 		s.gone = append(s.gone, st.Ticket)
 		s.mu.Unlock()
 	}
+}
+
+// goneIDs returns the tickets whose workers have returned (their status removed), in order.
+func (s *runSink) goneIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.gone...)
 }
 
 // of returns "<ticket> <text>" for each event of kind k, in order.

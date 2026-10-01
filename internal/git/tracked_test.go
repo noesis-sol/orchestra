@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,14 +17,14 @@ func TestTrackedFiles(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"add", "a.go", "sub dir/b.md"}} {
-		if out, err := command.Output(dir, "git", args...); err != nil {
+		if out, err := command.Output(context.Background(), 0, dir, "git", args...); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	if got := (Git{}).TrackedFiles(dir); !slices.Equal(got, []string{"a.go", "sub dir/b.md"}) {
+	if got := (Git{}).TrackedFiles(context.Background(), dir); !slices.Equal(got, []string{"a.go", "sub dir/b.md"}) {
 		t.Errorf("got %q", got)
 	}
-	if got := (Git{}).TrackedFiles(t.TempDir()); got != nil {
+	if got := (Git{}).TrackedFiles(context.Background(), t.TempDir()); got != nil {
 		t.Errorf("not a repository: %q", got)
 	}
 }

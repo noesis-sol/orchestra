@@ -30,16 +30,16 @@ import (
 // (from idleAt) soon after started, its ticket still open, its branch still at head and its
 // worktree clean. Going idle counts, not settling: an idle worker with its ticket open is given
 // startGrace before it settles, which can outlast the window.
-func (o *Loop) failedAtOnce(status string, started, idleAt time.Time, br, head, wt string) bool {
+func (o *Loop) failedAtOnce(ctx context.Context, status string, started, idleAt time.Time, br, head, wt string) bool {
 	c := o.cfg
 	return c.EnvHoldCount > 0 && status == "open" && idleAt.Sub(started) < c.EnvHoldWindow &&
-		o.checkout.Head(c.Repo, br) == head && o.checkout.DirtyWorktree(wt) == ""
+		o.checkout.Head(ctx, c.Repo, br) == head && o.checkout.DirtyWorktree(ctx, wt) == ""
 }
 
 // settledFast counts a settled worker toward the hold: one that failed at once adds to the tickets
 // failing in a row, and any other ends the row. A ticket failing this way once the run holds is
 // reopened too.
-func (o *Loop) settledFast(id string, fast bool) {
+func (o *Loop) settledFast(ctx context.Context, id string, fast bool) {
 	n := o.cfg.EnvHoldCount
 	if n == 0 {
 		return
@@ -56,16 +56,16 @@ func (o *Loop) settledFast(id string, fast bool) {
 	o.mu.Unlock()
 	switch {
 	case held:
-		o.reopenFailed(id)
+		o.reopenFailed(ctx, id)
 	case len(ids) >= n:
-		o.holdForEnvironment(fmt.Sprintf("the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
+		o.holdForEnvironment(ctx, fmt.Sprintf("the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
 			len(ids), strings.Join(ids, ", "), ShortDuration(o.cfg.EnvHoldWindow)))
 	}
 }
 
 // triaged counts a triage verdict toward the hold: one blaming the environment with high
 // confidence adds to the row, any other ends it.
-func (o *Loop) triaged(id, cause, confidence, summary string) {
+func (o *Loop) triaged(ctx context.Context, id, cause, confidence, summary string) {
 	n := o.cfg.EnvHoldCount
 	if n == 0 {
 		return
@@ -80,14 +80,14 @@ func (o *Loop) triaged(id, cause, confidence, summary string) {
 	ids := append([]string(nil), o.envVerdicts...)
 	o.mu.Unlock()
 	if len(ids) >= n {
-		o.holdForEnvironment(fmt.Sprintf("triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
+		o.holdForEnvironment(ctx, fmt.Sprintf("triage blamed the environment for the last %d tickets (%s) with high confidence (%s)",
 			len(ids), strings.Join(ids, ", "), strings.TrimSuffix(strings.TrimSpace(summary), ".")))
 	}
 }
 
 // holdForEnvironment holds the run, once, and reopens the tickets in the current row of workers
 // that failed at once. Run picks the reason up before it starts another ticket.
-func (o *Loop) holdForEnvironment(why string) {
+func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 	o.mu.Lock()
 	if o.envStop != nil {
 		o.mu.Unlock()
@@ -98,7 +98,7 @@ func (o *Loop) holdForEnvironment(why string) {
 	reopen := append([]string(nil), o.fastFails...)
 	o.mu.Unlock()
 	for _, id := range reopen {
-		o.reopenFailed(id)
+		o.reopenFailed(ctx, id)
 	}
 	select {
 	case o.envWake <- struct{}{}:
@@ -115,15 +115,15 @@ func (o *Loop) environmentStop() *stopReason {
 
 // reopenFailed puts a ticket whose worker failed at once back in the queue, keeping its notes: it
 // did nothing, and its worktree is clean.
-func (o *Loop) reopenFailed(id string) {
-	if err := o.notes.Reopen(id); err != nil {
+func (o *Loop) reopenFailed(ctx context.Context, id string) {
+	if err := o.notes.Reopen(ctx, id); err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; reopen it with: bd update %s --status open",
 			id, because(err), id)})
 		return
 	}
 	o.unmarkAside(id)
-	o.appendNotes(id, "Orchestra: reopened; its worker failed at once, like the tickets before it, so the run held for the environment rather than for this ticket.")
+	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, so the run held for the environment rather than for this ticket.")
 	o.info("  %s reopened: its worker failed at once, like the tickets before it", id)
 }
 
@@ -168,7 +168,7 @@ func (o *Loop) probeEnvironment(ctx context.Context, stop *stopReason, winding f
 		return halt(ExitEnvironment, "ENVIRONMENT: %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
 			o.envWhy, ShortDuration(after), err)
 	}
-	o.tabs.CloseTab(tab)
+	o.tabs.CloseTab(ctx, tab)
 	o.mu.Lock()
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
 	o.mu.Unlock()
@@ -196,11 +196,11 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	// An earlier probe's worker, left open because it failed, may hold the name.
 	agent := o.agentName(probeID)
 	if st, _ := o.readStatus(ctx, agent, 5); st != "gone" {
-		if name := o.namer.FreeName(agent); name == "" || o.namer.RenameAgent(agent, name) != nil {
+		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
 	}
-	tab, pane, err := o.tabs.CreateTab(c.Workspace, c.Repo, probeID)
+	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, c.Repo, probeID)
 	if err != nil {
 		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
@@ -208,7 +208,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil); err != nil {
 		o.log.Raw("", err)
 		// 'agent start' can fail while the agent still comes up.
-		if st, _ := o.agents.Status(agent); st == "gone" || st == "unreadable" {
+		if st, _ := o.agents.Status(ctx, agent); st == "gone" || st == "unreadable" {
 			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
 	}
@@ -222,7 +222,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		if ran() {
 			return tab, nil
 		}
-		st, _ := o.agents.Status(agent)
+		st, _ := o.agents.Status(ctx, agent)
 		switch {
 		case st == "gone":
 			return tab, fmt.Errorf("it went away without running its command (tab %s)", tab)

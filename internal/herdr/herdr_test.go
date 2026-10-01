@@ -1,6 +1,7 @@
 package herdr
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -45,12 +46,12 @@ func TestReadAgent(t *testing.T) {
 
 func TestCurrentWorkspaceComesFromHerdr(t *testing.T) {
 	t.Setenv("HERDR_WORKSPACE_ID", "w9Z")
-	if got := CurrentWorkspace(os.Getenv); got != "w9Z" {
+	if got := CurrentWorkspace(context.Background(), os.Getenv); got != "w9Z" {
 		t.Errorf("got %q", got)
 	}
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("HERDR_ENV", "")
-	if got := CurrentWorkspace(os.Getenv); got != "" {
+	if got := CurrentWorkspace(context.Background(), os.Getenv); got != "" {
 		t.Errorf("outside Herdr there is no current workspace, got %q", got)
 	}
 }
@@ -149,7 +150,7 @@ func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
 		"":        "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
 	} {
 		calls := fakeHerdr(t)
-		if got := (Terminal{}).Screen("a", status); got != "screen\n" {
+		if got := (Terminal{}).Screen(context.Background(), "a", status); got != "screen\n" {
 			t.Errorf("Screen(%q) = %q", status, got)
 		}
 		if got, _ := os.ReadFile(calls); string(got) != want {

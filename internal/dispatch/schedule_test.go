@@ -60,7 +60,7 @@ type onceReady struct {
 	calls *atomic.Int32
 }
 
-func (o onceReady) Ready(string) ([]Ticket, error) {
+func (o onceReady) Ready(context.Context, string) ([]Ticket, error) {
 	if o.calls.Add(1) == 1 {
 		return []Ticket{{ID: "A"}}, nil
 	}
@@ -105,7 +105,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 // unreadableReady can't list the ready queue.
 type unreadableReady struct{ brokenBd }
 
-func (unreadableReady) Ready(string) ([]Ticket, error) { return nil, errBd }
+func (unreadableReady) Ready(context.Context, string) ([]Ticket, error) { return nil, errBd }
 
 func TestReadyUnreadableSaysWhy(t *testing.T) {
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
@@ -113,7 +113,7 @@ func TestReadyUnreadableSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: unreadableReady{}, Checkout: cleanCheckout{}})
-	_, _, s := o.next(nil)
+	_, _, s := o.next(context.Background(), nil)
 	want := "READY_UNREADABLE: could not read 'bd ready --json': bd defer A: exit status 1: Error: database is locked (another bd holds it)"
 	if s == nil || s.text != want {
 		t.Errorf("got %+v, want %q", s, want)

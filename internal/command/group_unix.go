@@ -74,3 +74,7 @@ func (g *group) stop() {
 		g.kill.Stop()
 	}
 }
+
+// terminate asks a process to stop, as Ctrl+C or a time limit does: SIGTERM, on which git removes
+// its lock files. Output's WaitDelay kills it if it doesn't.
+func terminate(p *os.Process) error { return p.Signal(syscall.SIGTERM) }

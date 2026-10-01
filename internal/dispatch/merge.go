@@ -15,14 +15,15 @@ import (
 // uncommitted changes.
 func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 	c := o.cfg
-	commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
-	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(wt) != "") {
+	keep := context.WithoutCancel(ctx) // a read cut short would look like no commit
+	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
+	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoCommit:
-		o.leaveUnmerged(id, "CLOSED_WITHOUT_COMMIT")
+		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
 	case closedDirty:
-		o.leaveUnmerged(id, "CLOSED_WITHOUT_COMMIT")
+		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab)})
 	case closedMerge:
@@ -39,6 +40,9 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 // review and the run goes on.
 func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	c := o.cfg
+	// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
+	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
+	keep := context.WithoutCancel(ctx)
 	o.mergeMu.Lock()
 	defer o.mergeMu.Unlock() // held on every return; a hand-back lets go of it and takes it again
 	handedBack := 0
@@ -46,32 +50,32 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
 		o.repoMu.Lock()
-		if o.merger.IsAncestor(c.Repo, c.Base, br) {
-			if s := o.checkoutUnready(fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
+		if o.merger.IsAncestor(keep, c.Repo, c.Base, br) {
+			if s := o.checkoutUnready(keep, fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)); s != nil {
 				o.repoMu.Unlock()
 				why, _, _ := strings.Cut(s.text, ":")
-				o.leaveUnmerged(id, why) // DIRTY_TREE or GIT_FAILED
+				o.leaveUnmerged(keep, id, why) // DIRTY_TREE or GIT_FAILED
 				return s
 			}
-			commit := o.merger.CommitNaming(c.Repo, c.Base, br, id)
-			out, err := o.merger.FastForward(c.Repo, br)
+			commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
+			out, err := o.merger.FastForward(keep, c.Repo, br)
 			o.log.Raw(out, err)
 			if err != nil {
 				o.repoMu.Unlock()
-				o.leaveUnmerged(id, "MERGE_FAILED")
+				o.leaveUnmerged(keep, id, "MERGE_FAILED")
 				return halt(ExitMerge, "MERGE_FAILED: %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
 			}
-			o.merged(id)
-			out, err = o.worktrees.RemoveWorktree(c.Repo, wt)
+			o.merged(keep, id)
+			out, err = o.worktrees.RemoveWorktree(keep, c.Repo, wt)
 			o.log.Raw(out, err)
 			if err == nil {
-				out, err = o.worktrees.DeleteBranch(c.Repo, br)
+				out, err = o.worktrees.DeleteBranch(keep, c.Repo, br)
 				o.log.Raw(out, err)
 			}
 			o.repoMu.Unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			if err == nil {
-				o.tabs.CloseTab(tab)
+				o.tabs.CloseTab(keep, tab)
 				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
 			} else {
@@ -82,16 +86,16 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		}
 
 		// Base moved on while the ticket ran: rebase it, still under the lock.
-		r := rebaseStop{id: id, br: br, wt: wt, tab: tab, onto: o.checkout.Head(c.Repo, c.Base), head: o.checkout.Head(c.Repo, br)}
-		r.own = o.merger.CountCommits(c.Repo, r.onto+".."+br)
-		out, err := o.merger.Rebase(wt, c.Base)
+		r := rebaseStop{id: id, br: br, wt: wt, tab: tab, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, br)}
+		r.own = o.merger.CountCommits(keep, c.Repo, r.onto+".."+br)
+		out, err := o.merger.Rebase(keep, wt, c.Base)
 		o.log.Raw(out, err)
 		if err != nil {
-			r.files = o.merger.ConflictedFiles(wt)
-			if why := o.whyNotHandBack(r, handedBack); why != "" {
-				o.merger.AbortRebase(wt)
+			r.files = o.merger.ConflictedFiles(keep, wt)
+			if why := o.whyNotHandBack(keep, r, handedBack); why != "" {
+				o.merger.AbortRebase(keep, wt)
 				o.repoMu.Unlock()
-				o.leaveConflict(r, "not handed back to its worker: "+why)
+				o.leaveConflict(keep, r, "not handed back to its worker: "+why)
 				return nil
 			}
 			o.repoMu.Unlock()
@@ -106,11 +110,11 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			}
 			if why != "" {
 				o.repoMu.Lock()
-				undone := o.undoResolution(r)
+				undone := o.undoResolution(keep, r)
 				o.repoMu.Unlock()
-				o.appendNotes(id, fmt.Sprintf("Orchestra: %s conflicted with %s in %s; its worker was asked to resolve the rebase, but %s, so %s was set aside for review; %s.",
+				o.appendNotes(keep, id, fmt.Sprintf("Orchestra: %s conflicted with %s in %s; its worker was asked to resolve the rebase, but %s, so %s was set aside for review; %s.",
 					br, c.Base, strings.Join(r.files, ", "), why, id, undone))
-				o.leaveConflict(r, fmt.Sprintf("handed back to its worker, but %s; %s", why, undone))
+				o.leaveConflict(keep, r, fmt.Sprintf("handed back to its worker, but %s; %s", why, undone))
 				return nil
 			}
 			attempt-- // resolved and checked: merge, or rebase again if Base moved meanwhile
@@ -126,7 +130,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
-			o.leaveUnmerged(id, "CHECKS_FAILED")
+			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
 			how := "fails"
 			if errors.Is(err, errCheckTimedOut) {
 				how = "did not finish within " + ShortDuration(o.checkTimeout())
@@ -139,7 +143,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		o.info("  '%s' passes on the rebased %s", c.Check, br)
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
-	o.leaveUnmerged(id, "MERGE_CONFLICT")
+	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
@@ -147,9 +151,9 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 
 // leaveConflict sets aside a ticket whose branch conflicts with Base, saying why it was not
 // resolved.
-func (o *Loop) leaveConflict(r rebaseStop, why string) {
+func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 	c := o.cfg
-	o.leaveUnmerged(r.id, "MERGE_CONFLICT")
+	o.leaveUnmerged(ctx, r.id, "MERGE_CONFLICT")
 	o.emit(Event{Kind: EvWarn, Ticket: r.id, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); worktree %s and tab %s left for review (rebase onto %s, check, merge)",
 		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
@@ -183,19 +187,19 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 // refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch
 // was cut, so its worker starts from current code. A failed rebase is undone and it returns false:
 // the branch conflicts with Base.
-func (o *Loop) refreshBranch(wt, br string) bool {
+func (o *Loop) refreshBranch(ctx context.Context, wt, br string) bool {
 	c := o.cfg
-	if o.merger.IsAncestor(c.Repo, c.Base, br) {
+	if o.merger.IsAncestor(ctx, c.Repo, c.Base, br) {
 		return true // already on top of Base
 	}
-	if d := o.checkout.DirtyWorktree(wt); d != "" {
+	if d := o.checkout.DirtyWorktree(ctx, wt); d != "" {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base)})
 		return true
 	}
-	out, err := o.merger.Rebase(wt, c.Base)
+	out, err := o.merger.Rebase(ctx, wt, c.Base)
 	o.log.Raw(out, err)
 	if err != nil {
-		o.merger.AbortRebase(wt)
+		o.merger.AbortRebase(ctx, wt)
 		return false
 	}
 	o.info("  rebased %s onto %s", br, c.Base)

@@ -29,7 +29,7 @@ func conflictHarness(t *testing.T) *harness {
 
 // gitIn runs git in dir for a worker, failing its test on an error.
 func (w *fakeWorker) gitIn(dir string, args ...string) {
-	if out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.editor=true"}, args...)...); err != nil {
+	if out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.editor=true"}, args...)...); err != nil {
 		w.t.Errorf("git %v in %s: %v\n%s", args, dir, err, out)
 	}
 }
@@ -73,7 +73,7 @@ func resolvesWith(content string) behaviour {
 func rebaseInProgress(t *testing.T, wt string) bool {
 	t.Helper()
 	for _, d := range []string{"rebase-merge", "rebase-apply"} {
-		out, err := command.Output(wt, "git", "rev-parse", "--path-format=absolute", "--git-path", d)
+		out, err := command.Output(context.Background(), 0, wt, "git", "rev-parse", "--path-format=absolute", "--git-path", d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +115,7 @@ func TestAConflictResolvedByItsWorkerMerges(t *testing.T) {
 	if exists(h.worktree("A")) {
 		t.Error("A's worktree should be removed once merged")
 	}
-	if a, _ := h.beads.Show("A"); HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); HasLabel(a, UnmergedLabel) {
 		t.Errorf("A should not be labelled %q", UnmergedLabel)
 	}
 }
@@ -171,7 +171,7 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 			if log := h.git(h.repo, "log", "--format=%s", "main..wt/A"); log != "A: add shared.txt\n" {
 				t.Errorf("wt/A should be as the ticket closed it:\n%s", log)
 			}
-			if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+			if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 				t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 			}
 		})
@@ -279,7 +279,7 @@ func TestOtherTicketsMergeWhileOneIsResolving(t *testing.T) {
 	h.worker("A", conflicting(h.repo), func(w *fakeWorker) string {
 		close(resolving)
 		eventually(t, "B never merged while A was resolving", func() bool {
-			out, _ := command.Output(h.repo, "git", "log", "--format=%s", "main")
+			out, _ := command.Output(context.Background(), 0, h.repo, "git", "log", "--format=%s", "main")
 			return strings.Contains(out, "B: add b.txt")
 		})
 		return resolvesWith("main\nA\n")(w)

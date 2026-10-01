@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -17,7 +18,7 @@ import (
 // runInit sets up .orchestra/ in the repository around dir, asking what it needs when run in a
 // terminal, and returns the exit code. It reads the form's answers from stdin and prints to stdout
 // and stderr.
-func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runInit(ctx context.Context, dir string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	check := fs.String("check", "", "the project's check command (lint, build, tests)")
@@ -58,7 +59,7 @@ func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Write
 		return dispatch.ExitSetup
 	}
 
-	out, err := command.Output(dir, "git", "rev-parse", "--show-toplevel")
+	out, err := command.Output(ctx, command.ReadLimit, dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra init: not inside a git repository")
 		return dispatch.ExitSetup
@@ -80,7 +81,7 @@ func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Write
 	if timeoutGiven {
 		choice.CheckTimeout, choice.ReplacedTimeout = dispatch.ShortDuration(*checkTimeout), ""
 	}
-	askUnion := !unionGiven && project.OffersUnion(repo)
+	askUnion := !unionGiven && project.OffersUnion(ctx, repo)
 	choice.Union = *union || askUnion // offered as yes
 
 	ui := tui.NewInitScreen(stdout)
@@ -94,7 +95,7 @@ func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Write
 		choice.Union, choice.UnionUnasked = false, true
 	}
 
-	steps, err := project.Init(repo, choice.Check, *force)
+	steps, err := project.Init(ctx, repo, choice.Check, *force)
 	if err == nil {
 		var s project.Step
 		s, err = project.ApplySettings(repo, choice)
@@ -103,7 +104,7 @@ func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Write
 	if err == nil {
 		var s project.Step
 		var ok bool
-		if s, ok, err = project.ApplyUnion(repo, choice); ok && err == nil {
+		if s, ok, err = project.ApplyUnion(ctx, repo, choice); ok && err == nil {
 			steps = append(steps, s)
 		}
 	}
@@ -115,7 +116,7 @@ func runInit(dir string, args []string, stdin io.Reader, stdout, stderr io.Write
 	pre := project.Prerequisites(repo)
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
-	ui.Next(project.NextSteps(repo, steps, pre))
+	ui.Next(project.NextSteps(ctx, repo, steps, pre))
 	ready := true
 	for _, p := range pre {
 		ready = ready && p.Kind != project.StepMissing

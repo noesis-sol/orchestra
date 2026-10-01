@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ func TestTicketsAddingAtTheSameSpotRebaseCleanly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()
 			git := func(args ...string) (string, error) {
-				return command.Output(repo, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+				return command.Output(context.Background(), 0, repo, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
 			}
 			must := func(args ...string) {
 				t.Helper()
@@ -63,7 +64,7 @@ func TestTicketsAddingAtTheSameSpotRebaseCleanly(t *testing.T) {
 				if err == nil {
 					t.Fatalf("without merge=union the entries should conflict; the test proves nothing\n%s", out)
 				}
-				(Git{}).AbortRebase(repo)
+				(Git{}).AbortRebase(context.Background(), repo)
 				return
 			}
 			if err != nil {

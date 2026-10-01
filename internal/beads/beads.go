@@ -4,6 +4,7 @@ package beads
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -118,12 +119,12 @@ type Tracker struct {
 // still seen. With a scope, only that ticket and its descendants (bd ready --parent) are returned.
 // Like the bash version it judges by the output; when that can't be read, the error carries bd's
 // stderr.
-func (b Tracker) Ready(scope string) ([]dispatch.Ticket, error) {
-	all, err := b.ready()
+func (b Tracker) Ready(ctx context.Context, scope string) ([]dispatch.Ticket, error) {
+	all, err := b.ready(ctx)
 	if err != nil || scope == "" {
 		return all, err
 	}
-	under, err := b.ready("--parent", scope)
+	under, err := b.ready(ctx, "--parent", scope)
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +138,12 @@ func (b Tracker) Ready(scope string) ([]dispatch.Ticket, error) {
 }
 
 // ready runs bd ready with the filters every read uses and these extra arguments.
-func (b Tracker) ready(extra ...string) ([]dispatch.Ticket, error) {
+func (b Tracker) ready(ctx context.Context, extra ...string) ([]dispatch.Ticket, error) {
 	args := []string{"ready", "--json", "--limit", "0", "--exclude-label", dispatch.HumanLabel}
 	if len(b.ExcludeTypes) > 0 {
 		args = append(args, "--exclude-type", strings.Join(b.ExcludeTypes, ","))
 	}
-	out, runErr := command.Output(b.Repo, "bd", append(args, extra...)...)
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", append(args, extra...)...)
 	ready, err := parseReady([]byte(out), b.ExcludeTypes)
 	switch {
 	case err != nil && runErr != nil:
@@ -155,23 +156,23 @@ func (b Tracker) ready(extra ...string) ([]dispatch.Ticket, error) {
 
 // Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
 // carries bd's stderr.
-func (b Tracker) Closed(label string) ([]dispatch.Ticket, error) {
-	return b.list("closed", "--status", "closed", "--label", label)
+func (b Tracker) Closed(ctx context.Context, label string) ([]dispatch.Ticket, error) {
+	return b.list(ctx, "closed", "--status", "closed", "--label", label)
 }
 
 // Unclosed returns every ticket that isn't closed, without its text: what the loop needs is each
 // one's parent.
-func (b Tracker) Unclosed() ([]dispatch.Ticket, error) {
-	return b.list("", "--brief")
+func (b Tracker) Unclosed(ctx context.Context) ([]dispatch.Ticket, error) {
+	return b.list(ctx, "", "--brief")
 }
 
 // Descendants returns the ticket's subtickets, their subtickets and so on, closed or not, without
 // their text. bd lists one level at a time.
-func (b Tracker) Descendants(id string) ([]dispatch.Ticket, error) {
+func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
 	seen := map[string]bool{id: true}
 	for queue := []string{id}; len(queue) > 0; queue = queue[1:] {
-		children, err := b.list("", "--all", "--brief", "--parent", queue[0])
+		children, err := b.list(ctx, "", "--all", "--brief", "--parent", queue[0])
 		if err != nil {
 			return nil, err
 		}
@@ -188,8 +189,8 @@ func (b Tracker) Descendants(id string) ([]dispatch.Ticket, error) {
 
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
 // ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
-func (b Tracker) list(status string, args ...string) ([]dispatch.Ticket, error) {
-	out, runErr := command.Output(b.Repo, "bd", append([]string{"list", "--json", "--limit", "0"}, args...)...)
+func (b Tracker) list(ctx context.Context, status string, args ...string) ([]dispatch.Ticket, error) {
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", append([]string{"list", "--json", "--limit", "0"}, args...)...)
 	tickets, err := parseList([]byte(out), status)
 	switch {
 	case err != nil && runErr != nil:
@@ -203,8 +204,8 @@ func (b Tracker) list(status string, args ...string) ([]dispatch.Ticket, error) 
 // Open returns the open tickets, leaving out questions for the maintainer and tickets of the
 // excluded types, and the blocks links bd already has for them. When bd's output can't be read,
 // the error carries bd's stderr.
-func (b Tracker) Open() ([]dispatch.Ticket, []dispatch.Link, error) {
-	out, runErr := command.Output(b.Repo, "bd", "list", "--json", "--status", "open", "--limit", "0")
+func (b Tracker) Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "list", "--json", "--status", "open", "--limit", "0")
 	open, links, err := parseOpen([]byte(out), b.ExcludeTypes)
 	switch {
 	case err != nil && runErr != nil:
@@ -216,8 +217,8 @@ func (b Tracker) Open() ([]dispatch.Ticket, []dispatch.Link, error) {
 }
 
 // AddBlock links two tickets so that blocked waits for blocker.
-func (b Tracker) AddBlock(blocker, blocked string) error {
-	_, err := command.Output(b.Repo, "bd", "dep", "add", blocked, blocker)
+func (b Tracker) AddBlock(ctx context.Context, blocker, blocked string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "dep", "add", blocked, blocker)
 	return err
 }
 
@@ -240,8 +241,8 @@ func parseTicket(raw []byte) (dispatch.Ticket, bool) {
 
 // Show returns the ticket with its dependencies. If it cannot be read, Status is "unknown" and the
 // error says why.
-func (b Tracker) Show(id string) (dispatch.Ticket, error) {
-	out, err := command.Output(b.Repo, "bd", "show", id, "--json")
+func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
+	out, err := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	if !ok {
 		return dispatch.Ticket{ID: id, Status: "unknown"}, unreadable(id, out, err)
@@ -250,8 +251,8 @@ func (b Tracker) Show(id string) (dispatch.Ticket, error) {
 }
 
 // Status returns the ticket's status. If it cannot be read, it is "unknown" and the error says why.
-func (b Tracker) Status(id string) (string, error) {
-	t, err := b.Show(id)
+func (b Tracker) Status(ctx context.Context, id string) (string, error) {
+	t, err := b.Show(ctx, id)
 	return t.Status, err
 }
 
@@ -269,43 +270,43 @@ func unreadable(id, out string, err error) error {
 }
 
 // AppendNotes adds a note to the ticket.
-func (b Tracker) AppendNotes(id, note string) error {
-	_, err := command.Output(b.Repo, "bd", "update", id, "--append-notes", note)
+func (b Tracker) AppendNotes(ctx context.Context, id, note string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "update", id, "--append-notes", note)
 	return err
 }
 
 // Defer sets the ticket aside, with the reason.
-func (b Tracker) Defer(id, reason string) error {
-	_, err := command.Output(b.Repo, "bd", "defer", id, "--reason="+reason)
+func (b Tracker) Defer(ctx context.Context, id, reason string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "defer", id, "--reason="+reason)
 	return err
 }
 
 // Describe returns 'bd show' for the ticket, as a person reads it.
-func (b Tracker) Describe(id string) string {
-	out, _ := command.Output(b.Repo, "bd", "show", id)
+func (b Tracker) Describe(ctx context.Context, id string) string {
+	out, _ := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "show", id)
 	return out
 }
 
 // Reopen puts the ticket back in the queue.
-func (b Tracker) Reopen(id string) error {
-	_, err := command.Output(b.Repo, "bd", "update", id, "--status", "open")
+func (b Tracker) Reopen(ctx context.Context, id string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "update", id, "--status", "open")
 	return err
 }
 
 // AddLabel adds the label to the ticket.
-func (b Tracker) AddLabel(id, label string) error {
-	_, err := command.Output(b.Repo, "bd", "label", "add", id, label)
+func (b Tracker) AddLabel(ctx context.Context, id, label string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "label", "add", id, label)
 	return err
 }
 
 // RemoveLabel removes the label from the ticket.
-func (b Tracker) RemoveLabel(id, label string) error {
-	_, err := command.Output(b.Repo, "bd", "label", "remove", id, label)
+func (b Tracker) RemoveLabel(ctx context.Context, id, label string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "label", "remove", id, label)
 	return err
 }
 
 // SetMetadata sets one key of the ticket's metadata, keeping the others.
-func (b Tracker) SetMetadata(id, key, value string) error {
-	_, err := command.Output(b.Repo, "bd", "update", id, "--set-metadata", key+"="+value)
+func (b Tracker) SetMetadata(ctx context.Context, id, key, value string) error {
+	_, err := command.Output(ctx, command.WriteLimit, b.Repo, "bd", "update", id, "--set-metadata", key+"="+value)
 	return err
 }

@@ -26,7 +26,7 @@ type rebaseStop struct {
 
 // whyNotHandBack says why a stopped rebase can't be handed back to the ticket's worker, or "" if
 // it can. The caller holds repoMu.
-func (o *Loop) whyNotHandBack(r rebaseStop, handedBack int) string {
+func (o *Loop) whyNotHandBack(ctx context.Context, r rebaseStop, handedBack int) string {
 	c := o.cfg
 	switch {
 	case !c.ResolveConflicts:
@@ -38,7 +38,7 @@ func (o *Loop) whyNotHandBack(r rebaseStop, handedBack int) string {
 	case r.onto == "" || r.head == "" || r.own < 1 || len(r.files) == 0:
 		return "git could not say what the rebase stopped on"
 	}
-	switch st, err := o.agents.Status(o.agentName(r.id)); {
+	switch st, err := o.agents.Status(ctx, o.agentName(r.id)); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
 	case st == "gone":
@@ -95,12 +95,12 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 // waitResolved waits for the worker to settle after its hand-back: idle with the rebase over, idle
 // for idleGrace with it still in progress (its own background command may keep it idle), gone, or
 // still busy after limit, which it returns as the reason. Each status read goes to report.
-func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Duration, report func(string)) string {
+func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, string)) string {
 	deadline := time.Now().Add(limit)
 	var idleSince time.Time
 	for {
-		st, err := o.agents.Status(agent)
-		report(st)
+		st, err := o.agents.Status(ctx, agent)
+		report(ctx, st)
 		if err != nil {
 			o.log.Raw("", err)
 		}
@@ -113,7 +113,7 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Du
 		case idleSince.IsZero():
 			idleSince = time.Now()
 		}
-		if idle && (!o.merger.RebaseInProgress(wt) || time.Since(idleSince) >= orDefault(o.wait.idleGrace, idleGrace)) {
+		if idle && (!o.merger.RebaseInProgress(ctx, wt) || time.Since(idleSince) >= orDefault(o.wait.idleGrace, idleGrace)) {
 			return ""
 		}
 		if time.Now().After(deadline) {
@@ -133,17 +133,18 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, limit time.Du
 // that the check passes on it. It returns why not, or errInterrupted.
 func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopReason) {
 	c := o.cfg
+	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed resolution
 	switch {
-	case o.merger.RebaseInProgress(r.wt):
+	case o.merger.RebaseInProgress(keep, r.wt):
 		return "its worker left the rebase unfinished", nil
-	case o.checkout.DirtyWorktree(r.wt) != "":
+	case o.checkout.DirtyWorktree(keep, r.wt) != "":
 		return "its worker left uncommitted changes in " + r.wt, nil
-	case !o.merger.IsAncestor(c.Repo, r.onto, r.br):
+	case !o.merger.IsAncestor(keep, c.Repo, r.onto, r.br):
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base), nil
-	case o.merger.CommitNaming(c.Repo, r.onto, r.br, r.id) == "":
+	case o.merger.CommitNaming(keep, c.Repo, r.onto, r.br, r.id) == "":
 		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id), nil
 	}
-	if n := o.merger.CountCommits(c.Repo, r.onto+".."+r.br); n != r.own {
+	if n := o.merger.CountCommits(keep, c.Repo, r.onto+".."+r.br); n != r.own {
 		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)", r.br, n, r.own), nil
 	}
 	o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
@@ -163,20 +164,20 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 // undoResolution puts the branch back as the ticket closed it after a failed hand-back: the
 // rebase aborted, or, finished but rejected, the branch reset to its earlier commit when the
 // worktree is clean. It says what it did. The caller holds repoMu.
-func (o *Loop) undoResolution(r rebaseStop) string {
+func (o *Loop) undoResolution(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
-	if o.merger.RebaseInProgress(r.wt) {
-		o.merger.AbortRebase(r.wt)
+	if o.merger.RebaseInProgress(ctx, r.wt) {
+		o.merger.AbortRebase(ctx, r.wt)
 		return "the rebase was aborted"
 	}
-	now := o.checkout.Head(c.Repo, r.br)
+	now := o.checkout.Head(ctx, c.Repo, r.br)
 	if now == r.head {
 		return r.br + " is as the ticket closed it"
 	}
-	if o.checkout.DirtyWorktree(r.wt) != "" {
+	if o.checkout.DirtyWorktree(ctx, r.wt) != "" {
 		return fmt.Sprintf("%s is left as its worker left it (it was at %s before the rebase)", r.br, short(r.head))
 	}
-	out, err := o.merger.ResetBranch(r.wt, r.head)
+	out, err := o.merger.ResetBranch(ctx, r.wt, r.head)
 	o.log.Raw(out, err)
 	if err != nil {
 		return fmt.Sprintf("%s could not be reset to %s, where it was before the rebase; it is left at %s", r.br, short(r.head), short(now))

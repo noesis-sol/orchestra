@@ -19,7 +19,9 @@ type refusingHerdr struct {
 
 var errNameRefused = errors.New(`herdr agent start: exit status 1: {"error":{"code":"invalid_agent_name","message":"agent names must be lowercase"}}`)
 
-func (h *refusingHerdr) LaunchInPane(pane, kind string, args []string) error { return nil }
+func (h *refusingHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
+	return nil
+}
 func (h *refusingHerdr) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
 	h.starts = append(h.starts, name)
 	return errNameRefused
@@ -34,18 +36,20 @@ func (h *refusingHerdr) AdoptAgent(ctx context.Context, pane, kind, name string)
 	h.adopts = append(h.adopts, name)
 	return "working", errNameRefused
 }
-func (h *refusingHerdr) PaneAgent(pane string) (string, string, string) {
+func (h *refusingHerdr) PaneAgent(ctx context.Context, pane string) (string, string, string) {
 	return "", "claude", "working"
 }
-func (h *refusingHerdr) RenameAgent(name, to string) error  { return errNameRefused }
-func (h *refusingHerdr) FreeName(name string) string        { return name + "-1" }
-func (h *refusingHerdr) Status(name string) (string, error) { return "gone", nil }
-func (h *refusingHerdr) Screen(name, status string) string  { return "" }
+func (h *refusingHerdr) RenameAgent(ctx context.Context, name, to string) error {
+	return errNameRefused
+}
+func (h *refusingHerdr) FreeName(ctx context.Context, name string) string        { return name + "-1" }
+func (h *refusingHerdr) Status(ctx context.Context, name string) (string, error) { return "gone", nil }
+func (h *refusingHerdr) Screen(ctx context.Context, name, status string) string  { return "" }
 func (h *refusingHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	return errors.New("no agent")
 }
-func (h *refusingHerdr) SendKeys(name string, keys ...string) error        { return nil }
-func (h *refusingHerdr) WaitStarted(ctx context.Context, name string) bool { return false }
+func (h *refusingHerdr) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
+func (h *refusingHerdr) WaitStarted(ctx context.Context, name string) bool               { return false }
 
 func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 	for _, launch := range []bool{false, true} {
@@ -78,7 +82,7 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.orch.cfg.WTRoot = t.TempDir()
-	wt, conflicts, s := f.orch.prepareWorktree("k-1", "wt/k-1")
+	wt, conflicts, s := f.orch.prepareWorktree(context.Background(), "k-1", "wt/k-1")
 	if s != nil || conflicts {
 		t.Fatalf("stop %v, conflicts %v", s, conflicts)
 	}
@@ -100,7 +104,7 @@ func TestAnUnreadableStatusIsNotAClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := New(Config{}, log, "", Deps{Tickets: brokenBd{}})
-	if o.claimed("A") {
+	if o.claimed(context.Background(), "A") {
 		t.Error("an unreadable status was taken for a claim")
 	}
 	if !strings.Contains(read(t, logPath), "database is locked") {
@@ -133,7 +137,7 @@ func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
 	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "REBASE_FAILED: wt/A conflicts with main -> A deferred without starting a worker") {
 		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
 	}
-	if st, _ := h.beads.Status("A"); st != "deferred" {
+	if st, _ := h.beads.Status(context.Background(), "A"); st != "deferred" {
 		t.Errorf("A is %s, want deferred", st)
 	}
 	if n := h.beads.notesOf("A"); !strings.Contains(n, "git rebase main") || !strings.Contains(n, "bd undefer A") {
@@ -289,7 +293,7 @@ func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 	if got := h.herdr.pastedTo(); !equal(got, []string{"A", "A", "B"}) {
 		t.Errorf("pasted to %v: A's prompt should be sent twice, never more", got)
 	}
-	if st, _ := h.beads.Status("A"); st != "deferred" || !strings.Contains(h.beads.notesOf("A"), "never started on its prompt") {
+	if st, _ := h.beads.Status(context.Background(), "A"); st != "deferred" || !strings.Contains(h.beads.notesOf("A"), "never started on its prompt") {
 		t.Errorf("A is %s, notes %q", st, h.beads.notesOf("A"))
 	}
 	if !strings.Contains(h.mainLog(), "B: add b.txt") {

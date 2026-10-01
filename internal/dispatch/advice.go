@@ -21,14 +21,14 @@ func lastLines(s string, n int) string {
 }
 
 // gatherDeferral collects the evidence for one deferred ticket.
-func (o *Loop) gatherDeferral(id, title, how, wt string) organ.Deferral {
+func (o *Loop) gatherDeferral(ctx context.Context, id, title, how, wt string) organ.Deferral {
 	c := o.cfg
-	show := o.tickets.Describe(id)
-	status := o.history.ShortStatus(wt)
-	commits := o.history.OneLineLog(wt, c.Base+"..HEAD")
-	stat := o.history.DiffStat(wt)
+	show := o.tickets.Describe(ctx, id)
+	status := o.history.ShortStatus(ctx, wt)
+	commits := o.history.OneLineLog(ctx, wt, c.Base+"..HEAD")
+	stat := o.history.DiffStat(ctx, wt)
 	return organ.Deferral{ID: id, Title: title, How: how, Ticket: show,
-		Screen: lastLines(o.agents.Screen(o.agentName(id), ""), 80),
+		Screen: lastLines(o.agents.Screen(ctx, o.agentName(id), ""), 80),
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
 			orNone(commits) + "\n\nDiff against its last commit:\n" + orNone(stat)}
 }
@@ -116,14 +116,17 @@ func (o *Loop) FinishTriage(ctx context.Context) {
 
 func (o *Loop) triage(d organ.Deferral) {
 	t, err := o.organ.Triage(o.organCtx, d)
+	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
+	// time limit.
+	ctx := context.Background()
 	if err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})
 		return
 	}
-	o.appendNotes(d.ID, t.Note())
+	o.appendNotes(ctx, d.ID, t.Note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
-	o.triaged(d.ID, t.Cause, t.Confidence, t.Summary)
+	o.triaged(ctx, d.ID, t.Cause, t.Confidence, t.Summary)
 }
 
 // FirstLine returns the first line of s, trimmed: enough of an error for a one-line message.
@@ -133,21 +136,21 @@ func FirstLine(s string) string {
 }
 
 // reviewInput gathers the evidence for the reviewer.
-func (o *Loop) reviewInput(code int, final string) string {
+func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	c := o.cfg
-	commits := o.history.Subjects(c.Repo, o.startHead+".."+c.Base)
+	commits := o.history.Subjects(ctx, c.Repo, o.startHead+".."+c.Base)
 	var setAside strings.Builder
 	for _, id := range o.setAside() {
-		show := o.tickets.Describe(id)
+		show := o.tickets.Describe(ctx, id)
 		setAside.WriteString(show + "\n")
 	}
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
-		show := o.tickets.Describe(st.Ticket)
+		show := o.tickets.Describe(ctx, st.Ticket)
 		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n%s\n\nEnd of its worker's terminal:\n%s\n\n",
-			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(o.agentName(st.Ticket), ""), 60))
+			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(ctx, o.agentName(st.Ticket), ""), 60))
 	}
-	ready, _ := o.tickets.Ready(c.Ticket)
+	ready, _ := o.tickets.Ready(ctx, c.Ticket)
 	meaning := exitMeaning(code)
 	if strings.HasPrefix(final, "DRAINED") {
 		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
@@ -155,10 +158,10 @@ func (o *Loop) reviewInput(code int, final string) string {
 	scope, outside := "Run", ""
 	if c.Ticket != "" {
 		scope = fmt.Sprintf("Run of ticket %s and its subtickets only", c.Ticket)
-		if subs, err := o.tickets.Descendants(c.Ticket); err == nil {
-			if filed, err := o.filedOutside(subs); err == nil {
+		if subs, err := o.tickets.Descendants(ctx, c.Ticket); err == nil {
+			if filed, err := o.filedOutside(ctx, subs); err == nil {
 				for _, t := range filed {
-					outside += o.tickets.Describe(t.ID) + "\n"
+					outside += o.tickets.Describe(ctx, t.ID) + "\n"
 				}
 				outside = organ.Section(fmt.Sprintf("Follow-ups filed in this run outside the scope of %s, left for a later run", c.Ticket), outside)
 			}
@@ -175,7 +178,7 @@ func (o *Loop) reviewInput(code int, final string) string {
 
 // Review has the reviewer write the run report.
 func (o *Loop) Review(ctx context.Context, code int, final string) (string, error) {
-	result, err := o.organ.Review(ctx, o.reviewInput(code, final))
+	result, err := o.organ.Review(ctx, o.reviewInput(ctx, code, final))
 	if err != nil {
 		return "", err
 	}

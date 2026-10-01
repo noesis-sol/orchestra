@@ -3,6 +3,7 @@
 package project
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -72,8 +73,8 @@ func fileExists(p string) bool {
 // info/exclude (shared by all worktrees, never committed), so it is ignored even on a branch cut
 // before .orchestra/.gitignore was committed. Earlier versions excluded all of .orchestra/, which
 // would hide the committed prompt; that entry is narrowed to run/.
-func EnsureRunExcluded(repo string) error {
-	common, err := command.Output(repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+func EnsureRunExcluded(ctx context.Context, repo string) error {
+	common, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return err
 	}
@@ -180,7 +181,7 @@ func DetectCheck(prompt string) string {
 }
 
 // Init creates .orchestra/ in repo, with the worker prompt and its .gitignore.
-func Init(repo, check string, force bool) ([]Step, error) {
+func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 	var done []Step
 	dir := filepath.Join(repo, Dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -194,7 +195,7 @@ func Init(repo, check string, force bool) ([]Step, error) {
 	case fileExists(prompt) && !force:
 		done = append(done, Step{Kind: StepKept, Label: "worker prompt", Detail: rel + " is there; left as it is (--force replaces it with the template)"})
 	case !fileExists(prompt) && fileExists(legacy) && !force:
-		if err := movePrompt(repo, legacy, prompt); err != nil {
+		if err := movePrompt(ctx, repo, legacy, prompt); err != nil {
 			return done, err
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "moved " + legacyPrompt + " to " + rel})
@@ -214,7 +215,7 @@ func Init(repo, check string, force bool) ([]Step, error) {
 	} else {
 		done = append(done, Step{Kind: StepKept, Label: ".gitignore", Detail: Dir + "/.gitignore is there"})
 	}
-	if err := EnsureRunExcluded(repo); err != nil {
+	if err := EnsureRunExcluded(ctx, repo); err != nil {
 		return done, err
 	}
 	if fileExists(filepath.Join(repo, legacyLog)) || fileExists(filepath.Join(repo, legacyReports)) {
@@ -264,11 +265,11 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 }
 
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
-func movePrompt(repo, from, to string) error {
+func movePrompt(ctx context.Context, repo, from, to string) error {
 	rel, _ := filepath.Rel(repo, from)
-	if _, err := command.Output(repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
+	if _, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
 		relTo, _ := filepath.Rel(repo, to)
-		_, err := command.Output(repo, "git", "mv", rel, relTo)
+		_, err := command.Output(ctx, command.WriteLimit, repo, "git", "mv", rel, relTo)
 		return err
 	}
 	return os.Rename(from, to)
@@ -304,7 +305,7 @@ func Prerequisites(repo string) []Step {
 }
 
 // NextSteps lists what is left for the user, in order.
-func NextSteps(repo string, steps []Step, pre []Step) []string {
+func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step) []string {
 	var next []string
 	for _, p := range pre {
 		if p.Kind == StepMissing {
@@ -320,10 +321,10 @@ func NextSteps(repo string, steps []Step, pre []Step) []string {
 		next = append(next, "Read "+Dir+"/"+promptName+" and adjust it to the project.")
 	}
 	var commit []string
-	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
+	if out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt); strings.TrimSpace(out) != "" {
 		commit = append(commit, Dir+"/")
 	}
-	if out, _ := command.Output(repo, "git", "status", "--porcelain", "--", attributesName); strings.TrimSpace(out) != "" {
+	if out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", attributesName); strings.TrimSpace(out) != "" {
 		commit = append(commit, attributesName)
 	}
 	if len(commit) > 0 {

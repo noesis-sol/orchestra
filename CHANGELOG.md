@@ -241,6 +241,16 @@ All notable changes to orchestra are documented here. The format follows
   20:48:39`, `… idle 3m after it started, with the ticket still open`. The
   environment hold counts a worker by when it went idle, so the grace doesn't
   hide one that failed at once.
+- Every `bd`, `git` and `herdr` command orchestra runs stops on Ctrl+C and has
+  a time limit: 30 seconds for a read or a Herdr call, 2 minutes for a git
+  write (worktree, rebase, merge, branch) or a `bd` update, and Herdr's own
+  waits their timeout with 30 seconds to spare. A hung command (`bd` waiting on
+  Dolt's lock, git on a lock or a hook, Herdr restarting) used to hold its
+  worker for good; it now fails with `<command>: timed out after 30s`, reported
+  like any failure of it (`STATUS_UNREADABLE`, `HERDR_FAILED`, `GIT_FAILED`, …).
+  After Ctrl+C the run waits for its workers to return rather than giving up
+  after 10 seconds and leaving them behind; a merge already under way, and the
+  notes after it, finish first, so the repository is never left half merged.
 
 ## [0.1.1] - 2026-09-29
 

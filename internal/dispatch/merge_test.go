@@ -288,7 +288,7 @@ func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	if !exists(h.worktree("A")) {
 		t.Error("A's worktree should be left for review")
 	}
-	if a, _ := h.beads.Show("A"); !HasLabel(a, UnmergedLabel) {
+	if a, _ := h.beads.Show(context.Background(), "A"); !HasLabel(a, UnmergedLabel) {
 		t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 	}
 }

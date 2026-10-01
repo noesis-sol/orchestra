@@ -17,7 +17,7 @@ const lateAdopt = 2 * time.Minute
 func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, adopted bool, err error) {
 	deadline := time.Now().Add(orDefault(o.wait.adopt, lateAdopt))
 	for {
-		name, kind, st := o.namer.PaneAgent(pane)
+		name, kind, st := o.namer.PaneAgent(ctx, pane)
 		switch {
 		case st == "gone":
 			held = ""
@@ -28,7 +28,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 		case name == agent:
 			return "", true, nil
 		default:
-			err := o.namer.RenameAgent(pane, agent)
+			err := o.namer.RenameAgent(ctx, pane, agent)
 			if err == nil {
 				return "", true, nil
 			}
@@ -53,29 +53,29 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 // prepareWorktree creates the ticket's worktree, or reuses the one left by an earlier attempt and
 // brings its branch up to date, holding the repository lock. conflicts reports a branch that could
 // not be rebased onto Base.
-func (o *Loop) prepareWorktree(id, br string) (wt string, conflicts bool, stop *stopReason) {
+func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, conflicts bool, stop *stopReason) {
 	c := o.cfg
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
-	o.worktrees.Prune(c.Repo) // forget a worktree whose folder was deleted, so it isn't reused
-	if wt := o.worktrees.WorktreeOf(c.Repo, br); wt != "" {
+	o.worktrees.Prune(ctx, c.Repo) // forget a worktree whose folder was deleted, so it isn't reused
+	if wt := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
-		return wt, !o.refreshBranch(wt, br), nil
+		return wt, !o.refreshBranch(ctx, wt, br), nil
 	}
 	wt = filepath.Join(c.WTRoot, id)
 	var out string
 	var err error
-	if o.worktrees.HasBranch(c.Repo, br) {
-		out, err = o.worktrees.AddWorktree(c.Repo, wt, br)
+	if o.worktrees.HasBranch(ctx, c.Repo, br) {
+		out, err = o.worktrees.AddWorktree(ctx, c.Repo, wt, br)
 	} else {
-		out, err = o.worktrees.NewWorktree(c.Repo, wt, br, c.Base)
+		out, err = o.worktrees.NewWorktree(ctx, c.Repo, wt, br, c.Base)
 	}
 	o.log.Raw(out, err)
 	if err != nil {
 		return "", false, halt(ExitTool, "WORKTREE_FAILED for %s at %s (git output is in %s)", id, wt, c.LogPath)
 	}
 	o.info("  worktree %s on %s", wt, br)
-	return wt, !o.refreshBranch(wt, br), nil
+	return wt, !o.refreshBranch(ctx, wt, br), nil
 }
 
 // agentName is the Herdr name of ticket id's worker; without a Namer (in tests), the ID itself.
@@ -91,7 +91,7 @@ func (o *Loop) agentName(id string) string {
 // it is delivered by pasting.
 func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch bool) bool {
 	if atLaunch {
-		if o.agents.WaitStarted(ctx, agent) || o.claimed(id) || lastActivity(o.agents.Screen(agent, "")) != "" {
+		if o.agents.WaitStarted(ctx, agent) || o.claimed(ctx, id) || lastActivity(o.agents.Screen(ctx, agent, "")) != "" {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -104,8 +104,8 @@ func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaun
 
 // claimed reports whether the worker has taken its ticket out of "open". A status bd can't give
 // doesn't count.
-func (o *Loop) claimed(id string) bool {
-	st, err := o.tickets.Status(id)
+func (o *Loop) claimed(ctx context.Context, id string) bool {
+	st, err := o.tickets.Status(ctx, id)
 	if err != nil {
 		o.log.Raw("", err)
 		return false
@@ -133,8 +133,8 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		case "working", "blocked":
 			return true // it started; a block is handled by the settle loop
 		case "idle", "done":
-			if inputHolds(o.agents.Screen(agent, st), prompt) {
-				o.agents.SendKeys(agent, "enter")
+			if inputHolds(o.agents.Screen(ctx, agent, st), prompt) {
+				o.agents.SendKeys(ctx, agent, "enter")
 				return o.agents.WaitStarted(ctx, agent)
 			}
 			// The box is empty: the paste itself was lost, so send it again.

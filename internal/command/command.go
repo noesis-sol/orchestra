@@ -13,24 +13,65 @@ import (
 	"time"
 )
 
-// Output runs a command in dir and returns its stdout. The error carries stderr, so callers can
-// log it.
-func Output(dir, name string, args ...string) (string, error) {
-	return OutputContext(context.Background(), dir, name, args...)
-}
+// Time limits on the commands orchestra runs, by kind. A command still running at its limit is
+// stopped and fails, so a hung bd, git or herdr can't hold a worker forever. Waits that have a
+// time limit of their own (herdr agent wait, prompt --wait) are given that one, with ReadLimit to
+// spare.
+const (
+	ReadLimit  = 30 * time.Second // a read, and any herdr call
+	WriteLimit = 2 * time.Minute  // a write: git worktrees, rebases, merges and branches, bd updates
+)
 
-// OutputContext is Output, stopped when ctx is cancelled.
-func OutputContext(ctx context.Context, dir, name string, args ...string) (string, error) {
+// stopGrace is how long a command that is stopped has between SIGTERM and SIGKILL (git removes its
+// lock files on SIGTERM, not on SIGKILL), and how long Output then waits for output pipes that a
+// process the command started still holds.
+const stopGrace = 500 * time.Millisecond
+
+// Output runs a command in dir and returns its stdout. The command is stopped when ctx is done or
+// once it has run for limit (0 for no limit). The error carries stderr, and for a command that was
+// stopped why: the limit it ran into, or the cause ctx was cancelled with.
+func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
+	if limit > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, limit, fmt.Errorf("timed out after %s", shortDuration(limit)))
+		defer cancel()
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "BD_JSON_ENVELOPE=0") // pin the bd --json shape
+	cmd.Cancel = func() error { return terminate(cmd.Process) }
+	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, strings.TrimSpace(stderr.String()))
+	err := cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
+		err = nil // exited 0, leaving a process behind that holds the output
 	}
-	return stdout.String(), nil
+	if err == nil {
+		return stdout.String(), nil
+	}
+	why := strings.TrimSpace(stderr.String())
+	if cause := context.Cause(ctx); cause != nil {
+		err = cause
+		if why != "" {
+			return stdout.String(), fmt.Errorf("%s %s: %w (%s)", name, shortArgs(args), err, why)
+		}
+		return stdout.String(), fmt.Errorf("%s %s: %w", name, shortArgs(args), err)
+	}
+	return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, why)
+}
+
+// shortDuration is d as a person would write it: 2m, 30s, 500ms.
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
+	}
+	return s
 }
 
 // GroupOutput runs a command in dir in its own process group and returns its combined stdout

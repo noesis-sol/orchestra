@@ -103,7 +103,7 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // and collects every setup problem, so they can be reported together. The error is the flag
 // package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
 // argument such as 'init' after a flag; both have been reported to output.
-func loadConfig(args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
+func loadConfig(ctx context.Context, args []string, getenv func(string) string, output io.Writer) (options, []string, error) {
 	var c options
 	var problems []string
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
@@ -184,13 +184,13 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		problems = append(problems, checkTimeoutProblem)
 	}
 
-	if out, err := command.Output("", "git", "rev-parse", "--show-toplevel"); err == nil {
+	if out, err := command.Output(ctx, command.ReadLimit, "", "git", "rev-parse", "--show-toplevel"); err == nil {
 		c.Repo = strings.TrimSpace(out)
 	} else {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
 	if c.Workspace == "" {
-		c.Workspace = herdr.CurrentWorkspace(getenv)
+		c.Workspace = herdr.CurrentWorkspace(ctx, getenv)
 	}
 	if c.Workspace == "" && getenv("HERDR_ENV") == "1" {
 		problems = append(problems, "Could not tell which Herdr workspace this pane is in. Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
@@ -261,18 +261,18 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
 		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" {
-			if p := scopeProblem(beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+			if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
 				problems = append(problems, p)
 			}
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		gitDir, _ := command.Output(c.Repo, "git", "rev-parse", "--absolute-git-dir")
-		commonDir, _ := command.Output(c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+		gitDir, _ := command.Output(ctx, command.ReadLimit, c.Repo, "git", "rev-parse", "--absolute-git-dir")
+		commonDir, _ := command.Output(ctx, command.ReadLimit, c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir) {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
 		}
-		if base, err := (git.Git{}).CurrentBranch(c.Repo); err != nil {
+		if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
 			problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
 		} else if c.Base = base; c.Base == "" {
 			problems = append(problems, "The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
@@ -293,10 +293,10 @@ func loadConfig(args []string, getenv func(string) string, output io.Writer) (op
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
 // must exist, be open and be work rather than a question for the maintainer.
-func scopeProblem(tickets interface {
-	Show(id string) (dispatch.Ticket, error)
+func scopeProblem(ctx context.Context, tickets interface {
+	Show(ctx context.Context, id string) (dispatch.Ticket, error)
 }, id string) string {
-	t, err := tickets.Show(id)
+	t, err := tickets.Show(ctx, id)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("Cannot read ticket %s (--ticket): %s", id, strings.Join(strings.Fields(err.Error()), " "))
@@ -349,12 +349,12 @@ func status(code int) error {
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(".", args[2:], stdin, stdout, stderr))
+		return status(runInit(ctx, ".", args[2:], stdin, stdout, stderr))
 	}
 	if len(args) > 1 && args[1] == "plan" {
-		return status(runPlan(".", args[2:], stdout, stderr))
+		return status(runPlan(ctx, ".", args[2:], stdout, stderr))
 	}
-	cfg, problems, err := loadConfig(args[1:], getenv, stderr)
+	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
 	switch {
 	case err == flag.ErrHelp:
 		return nil
@@ -380,7 +380,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(dispatch.ExitSetup)
 	}
-	if err := project.EnsureRunExcluded(cfg.Repo); err != nil {
+	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
@@ -490,11 +490,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		log.Alert(ev.Time, msg)
 		sink.Event(ev)
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
-		// Run itself gives its workers up to SettleWait.
-		select {
-		case <-codes:
-		case <-time.After(dispatch.SettleWait + 5*time.Second):
-		}
+		// Run waits for its workers, whose commands stop with it or at their time limits.
+		<-codes
 		if !leaving(sig) {
 			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
 		}

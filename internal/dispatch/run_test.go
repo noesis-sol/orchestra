@@ -18,13 +18,13 @@ type gatedTabs struct {
 	release chan struct{}
 }
 
-func (g gatedTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+func (g gatedTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	if label == g.gated {
 		<-g.release
 	}
 	return "", "", fmt.Errorf("no such workspace")
 }
-func (gatedTabs) CloseTab(tab string) {}
+func (gatedTabs) CloseTab(ctx context.Context, tab string) {}
 
 // holdSink records events and closes release on the first HOLD.
 type holdSink struct {
@@ -88,19 +88,21 @@ type deferringTickets struct {
 	once             *sync.Once
 }
 
-func (d deferringTickets) Ready(string) ([]Ticket, error) {
+func (d deferringTickets) Ready(context.Context, string) ([]Ticket, error) {
 	return []Ticket{{ID: "A", Title: "a"}}, nil
 }
-func (deferringTickets) Unclosed() ([]Ticket, error) { return nil, nil }
-func (deferringTickets) Descendants(string) ([]Ticket, error) {
+func (deferringTickets) Unclosed(context.Context) ([]Ticket, error) { return nil, nil }
+func (deferringTickets) Descendants(context.Context, string) ([]Ticket, error) {
 	return nil, nil
 }
-func (deferringTickets) Show(id string) (Ticket, error) {
+func (deferringTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "deferred"}, nil
 }
-func (deferringTickets) Status(id string) (string, error)      { return "deferred", nil }
-func (deferringTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
-func (d deferringTickets) Describe(id string) string {
+func (deferringTickets) Status(ctx context.Context, id string) (string, error) {
+	return "deferred", nil
+}
+func (deferringTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }
+func (d deferringTickets) Describe(ctx context.Context, id string) string {
 	d.once.Do(func() { close(d.entered) })
 	<-d.release
 	return id
@@ -295,8 +297,91 @@ func TestInterruptLeavesAWorkingWorker(t *testing.T) {
 	if got := activeIDs(o); !equal(got, []string{"A"}) {
 		t.Errorf("active: %v", got)
 	}
+	if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
+		t.Errorf("workers returned before Run: %v, want A's", got)
+	}
 	if len(h.herdr.tabsClosed()) != 0 || !exists(h.worktree("A")) {
 		t.Error("the worker's tab and worktree should be left")
+	}
+}
+
+// Ctrl+C while a worker waits on a Herdr that doesn't answer: the call is cancelled, and Run
+// returns within a second, once the worker has.
+func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.herdr.statusHangs["A"] = true
+	started, release := make(chan struct{}), make(chan struct{})
+	h.worker("A", func(w *fakeWorker) string { w.claim(); close(started); <-release; return "idle" })
+	defer close(release)
+	o := h.loop()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	codes := make(chan int, 1)
+	go func() { codes <- o.Run(ctx) }()
+	<-started
+	time.Sleep(50 * time.Millisecond) // the settle loop is waiting on Herdr
+	cancel(Interrupted("with Ctrl+C"))
+	select {
+	case code := <-codes:
+		if code != ExitInterrupted {
+			t.Errorf("exit %d, want %d", code, ExitInterrupted)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return within a second of Ctrl+C")
+	}
+	if got := h.sink.goneIDs(); !equal(got, []string{"A"}) {
+		t.Errorf("workers returned before Run: %v, want A's", got)
+	}
+	if got := activeIDs(o); !equal(got, []string{"A"}) {
+		t.Errorf("active: %v, want A left running", got)
+	}
+}
+
+// interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded.
+type interruptingMerger struct {
+	Merger
+	t      *testing.T
+	cancel context.CancelCauseFunc
+}
+
+func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string) (string, error) {
+	m.cancel(Interrupted("with Ctrl+C"))
+	if ctx.Err() != nil {
+		m.t.Error("the merge was cut short by Ctrl+C")
+	}
+	return m.Merger.FastForward(ctx, repo, branch)
+}
+
+// Ctrl+C during a merge: the merge and its cleanup finish, so the repository isn't left half
+// merged, and then the run stops.
+func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A", finishes("a.txt"))
+	o := h.loop()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel}
+	if code := o.Run(ctx); code != ExitInterrupted {
+		t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
+	}
+	if got := h.sink.of(EvClosed); len(got) != 1 || !strings.Contains(got[0], "A closed (") {
+		t.Errorf("closed:\n%s", strings.Join(got, "\n"))
+	}
+	if !strings.Contains(h.mainLog(), "A: add a.txt") {
+		t.Errorf("A should be merged:\n%s", h.mainLog())
+	}
+	if exists(h.worktree("A")) || h.git(h.repo, "branch", "--list", "wt/A") != "" || !equal(h.herdr.tabsClosed(), []string{"tab1"}) {
+		t.Error("A's worktree, branch and tab should be removed")
+	}
+	if got := h.sink.of(EvDispatch); len(got) != 1 {
+		t.Errorf("dispatched after Ctrl+C:\n%s", strings.Join(got, "\n"))
+	}
+	if got := activeIDs(o); len(got) != 0 {
+		t.Errorf("active: %v", got)
 	}
 }
 

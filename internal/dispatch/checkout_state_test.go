@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ type flakyCheckout struct {
 	fails *int
 }
 
-func (f flakyCheckout) DirtyTree(dir string) (string, error) {
+func (f flakyCheckout) DirtyTree(ctx context.Context, dir string) (string, error) {
 	if *f.fails > 0 {
 		*f.fails--
 		return "", errors.New("git -C repo status --porcelain: signal: killed")
@@ -38,7 +39,7 @@ func TestFailingGitIsNotADirtyTree(t *testing.T) {
 		fails := tc.fails
 		o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: readyTickets{{ID: "A"}}, Checkout: flakyCheckout{fails: &fails}})
 		o.wait.poll = time.Millisecond
-		tk, _, s := o.next(nil)
+		tk, _, s := o.next(context.Background(), nil)
 		switch {
 		case tc.want == "" && (s != nil || tk == nil || tk.ID != "A"):
 			t.Errorf("%d failures: got %v (%+v), want A", tc.fails, tk, s)

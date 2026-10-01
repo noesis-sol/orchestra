@@ -16,7 +16,7 @@ import (
 // run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
 // without a limit, one still going after longRunning is reported once. Each status read goes to
 // report (nil: none), for the dashboard.
-func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(status string)) (idleAt time.Time, stop *stopReason) {
+func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, report func(ctx context.Context, status string)) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince time.Time
 	failed := 0
 	warned := false
@@ -24,9 +24,9 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 		if ctx.Err() != nil {
 			return time.Time{}, errInterrupted
 		}
-		st, err := o.agents.Status(agent)
+		st, err := o.agents.Status(ctx, agent)
 		if report != nil {
-			report(st)
+			report(ctx, st)
 		}
 		if err != nil {
 			if failed++; failed == 1 {
@@ -52,7 +52,10 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			if idleSince.IsZero() {
 				idleSince = time.Now()
 			}
-			ts, err := o.tickets.Status(id)
+			ts, err := o.tickets.Status(ctx, id)
+			if ctx.Err() != nil {
+				return time.Time{}, errInterrupted // the status read was cut short, and says nothing
+			}
 			if err != nil {
 				o.log.Raw("", err)
 			}
@@ -84,7 +87,7 @@ func (o *Loop) waitSettled(ctx context.Context, id, agent, tab, wt string, start
 			unknownSince = time.Time{}
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
-			o.appendNotes(id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
+			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf("Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).", tab, st, ShortDuration(limit), wt))
 			return time.Time{}, halt(ExitStuck, "TICKET_LIMIT: %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at", id, st, ShortDuration(limit), tab, wt)
 		}
 		if long := orDefault(o.wait.longRun, longRunning); o.cfg.TicketLimit == 0 && !warned && time.Since(started) > long {
@@ -117,7 +120,7 @@ const maxFailedReads = 20
 // worker's Herdr name.
 func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (string, error) {
 	for try := 1; ; try++ {
-		st, err := o.agents.Status(agent)
+		st, err := o.agents.Status(ctx, agent)
 		if err == nil || try == tries {
 			return st, err
 		}
@@ -179,12 +182,12 @@ func (o *Loop) newWatcher(wt string, base Status) *watcher {
 }
 
 // report shows the worker in status st, as just read, reading its screen for its latest action.
-func (w *watcher) report(st string) {
+func (w *watcher) report(ctx context.Context, st string) {
 	o := w.o
 	s := w.base
 	s.Agent = st
 	if st != "gone" && st != "unreadable" {
-		w.activity = lastActivity(o.agents.Screen(o.agentName(w.base.Ticket), st))
+		w.activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.base.Ticket), st))
 	}
 	s.Activity = w.activity
 	if o.reporter != nil && st == "working" {
@@ -208,11 +211,11 @@ func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 		tick := time.NewTicker(o.pollEvery())
 		defer tick.Stop()
 		for {
-			st, _ := o.agents.Status(agent) // a failure shows as unreadable; the start logs its own
+			st, _ := o.agents.Status(ctx, agent) // a failure shows as unreadable; the start logs its own
 			if ctx.Err() != nil {
 				return
 			}
-			w.report(st)
+			w.report(ctx, st)
 			select {
 			case <-ctx.Done():
 				return

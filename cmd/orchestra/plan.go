@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -18,7 +19,7 @@ import (
 
 // runPlan proposes blocks links between the open tickets that touch the same code, in the
 // repository around dir, and adds them with --apply. It returns the exit code.
-func runPlan(dir string, args []string, stdout, stderr io.Writer) int {
+func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	apply := fs.Bool("apply", false, "add the proposed links with bd dep add")
@@ -40,7 +41,7 @@ func runPlan(dir string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "orchestra plan: unexpected argument %q (see orchestra plan -h)\n", rest[0])
 		return dispatch.ExitSetup
 	}
-	out, err := command.Output(dir, "git", "rev-parse", "--show-toplevel")
+	out, err := command.Output(ctx, command.ReadLimit, dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra plan: not inside a git repository")
 		return dispatch.ExitSetup
@@ -58,12 +59,12 @@ func runPlan(dir string, args []string, stdout, stderr io.Writer) int {
 	}
 
 	tracker := beads.Tracker{Repo: repo, ExcludeTypes: types}
-	open, existing, err := tracker.Open()
+	open, existing, err := tracker.Open(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(repo), func(p string) int {
+	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), func(p string) int {
 		b, _ := os.ReadFile(filepath.Join(repo, p))
 		return bytes.Count(b, []byte("\n"))
 	})
@@ -86,7 +87,7 @@ func runPlan(dir string, args []string, stdout, stderr io.Writer) int {
 		if !*apply {
 			continue
 		}
-		if err := tracker.AddBlock(l.Blocker, l.Blocked); err != nil {
+		if err := tracker.AddBlock(ctx, l.Blocker, l.Blocked); err != nil {
 			failed++
 			fmt.Fprintf(stderr, "orchestra plan: bd dep add %s %s: %v\n", l.Blocked, l.Blocker, err)
 		}

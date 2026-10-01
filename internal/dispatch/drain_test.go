@@ -67,7 +67,7 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 		t.Errorf("main:\n%s", log)
 	}
 	for _, id := range []string{"C", "D"} {
-		if st, _ := h.beads.Status(id); st != "open" {
+		if st, _ := h.beads.Status(context.Background(), id); st != "open" {
 			t.Errorf("%s is %s, want open", id, st)
 		}
 	}

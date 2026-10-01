@@ -66,14 +66,14 @@ func (o *Loop) Run(ctx context.Context) int {
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
-	o.startHead = o.checkout.Head(c.Repo, c.Base)
+	o.startHead = o.checkout.Head(ctx, c.Repo, c.Base)
 	ticketLimit := "none"
 	if c.TicketLimit > 0 {
 		ticketLimit = ShortDuration(c.TicketLimit)
 	}
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, check timeout: %s, workspace: %s, agent: %s, worktrees: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c.Ticket), o.count, c.Limit, c.Concurrency, ticketLimit, ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot)
-	if s := o.loadUnmerged(); s != nil {
+	if s := o.loadUnmerged(ctx); s != nil {
 		return o.stop(s.code, "%s", s.text)
 	}
 	defer o.startPredicting()()
@@ -115,7 +115,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		// Start tickets while there are free slots, unless something has stopped the run or the
 		// maintainer asked it to wind down.
 		for stop == nil && !drained && ctx.Err() == nil && len(inflight) < c.Concurrency && o.count < c.Limit {
-			t, queued, s := o.next(inflight)
+			t, queued, s := o.next(ctx, inflight)
 			if s != nil {
 				stop = s
 				if len(inflight) > 0 {
@@ -163,7 +163,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.solo = ""
 			}
 			if r.stop == nil {
-				o.parentDone(r.id, inflight)
+				o.parentDone(ctx, r.id, inflight)
 			}
 			if r.stop == nil || r.stop == errInterrupted {
 				continue
@@ -192,7 +192,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			// With a free slot, the loop above reads bd ready again. With none, the queue count is
 			// brought up to date; a failed read waits for the next poll, as nothing depends on it.
 			if stop == nil && !drained && len(inflight) >= c.Concurrency && o.count < c.Limit {
-				if t, queued, err := o.pick(inflight); err == nil {
+				if t, queued, err := o.pick(ctx, inflight); err == nil {
 					if t != nil {
 						queued++
 					}
@@ -214,45 +214,44 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 		return o.stop(stop.code, "%s", text)
 	case drained:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope(ctx)})
 	case o.count >= c.Limit:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope(ctx)})
 	default:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope()})
+		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope(ctx)})
 	}
 	return ExitOK
 }
 
-// SettleWait is how long Run waits after Ctrl+C for its workers to return, so what follows (triage,
-// the run report) reads a loop that has stopped changing. A worker notices the cancellation within
-// seconds unless a command it runs hangs.
-const SettleWait = 10 * time.Second
-
-// settle waits for the workers in flight to return, or for SettleWait.
+// settle waits after Ctrl+C for the workers in flight to return, so what follows (triage, the run
+// report) reads a loop that has stopped changing and no worker is left behind. Each command a
+// worker runs stops with the run or at its time limit, and only what must finish once begun (a
+// merge under way, the notes after it) goes on, so they return within seconds, or within a
+// command's time limit when one hangs.
 func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
-	timeout := time.NewTimer(orDefault(o.wait.settle, SettleWait))
-	defer timeout.Stop()
 	for len(inflight) > 0 {
-		select {
-		case r := <-results:
-			delete(inflight, r.id)
-		case <-timeout.C:
-			return
-		}
+		r := <-results
+		delete(inflight, r.id)
 	}
 }
 
 // next returns the highest-priority ready ticket not already running, with how many others are
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; the check waits for any merge in progress.
-func (o *Loop) next(running map[string]bool) (*Ticket, int, *stopReason) {
+func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int, *stopReason) {
 	o.repoMu.Lock()
-	s := o.checkoutUnready("")
+	s := o.checkoutUnready(ctx, "")
 	o.repoMu.Unlock()
+	if ctx.Err() != nil {
+		return nil, 0, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
+	}
 	if s != nil {
 		return nil, 0, s
 	}
-	t, queued, err := o.pick(running)
+	t, queued, err := o.pick(ctx, running)
+	if ctx.Err() != nil {
+		return nil, 0, nil
+	}
 	if err != nil {
 		what := "'bd ready --json'"
 		if errors.As(err, new(listUnreadable)) {
@@ -288,12 +287,12 @@ func (o *Loop) soloState() SoloState {
 // pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
 // ticket that can start, with how many others could; with none, how many wait for a solo ticket.
 // It says once why they wait.
-func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
-	ready, err := o.tickets.Ready(o.cfg.Ticket)
+func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int, error) {
+	ready, err := o.tickets.Ready(ctx, o.cfg.Ticket)
 	if err != nil {
 		return nil, 0, err
 	}
-	parents, err := o.openParents(running)
+	parents, err := o.openParents(ctx, running)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -313,7 +312,7 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	slot := len(running) < o.cfg.Concurrency
 	overlaps := func(Ticket) bool { return false }
 	if slot && o.footprintOn() {
-		o.readFiles()
+		o.readFiles(ctx)
 		if len(running) > 0 {
 			o.readEdits()
 			overlaps = func(t Ticket) bool { return o.overlapsRunning(t, running) }
@@ -322,7 +321,7 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 	if o.footprintOn() {
 		o.queuePredictions(ready, skip)
 	}
-	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(t, running, parents) || overlaps(t) }, len(running), o.solo)
+	t, queued, next := pickNext(ready, skip, func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway.
 	if !slot {
@@ -346,9 +345,9 @@ func (o *Loop) pick(running map[string]bool) (*Ticket, int, error) {
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
 // not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
 // Base. held, when set, says what is left for review. The caller holds repoMu.
-func (o *Loop) checkoutUnready(held string) *stopReason {
+func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 	c := o.cfg
-	dirty, branch, err := o.readCheckout()
+	dirty, branch, err := o.readCheckout(ctx)
 	if err != nil {
 		return halt(ExitTool, "GIT_FAILED: could not read the state of %s%s; stopping%s", c.Repo, because(err), held)
 	}
@@ -366,19 +365,21 @@ func (o *Loop) checkoutUnready(held string) *stopReason {
 const gitTries = 3
 
 // readCheckout returns the main checkout's uncommitted changes and its branch, or git's error.
-func (o *Loop) readCheckout() (dirty, branch string, err error) {
+func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err error) {
 	c := o.cfg
 	for try := 1; ; try++ {
-		if dirty, err = o.checkout.DirtyTree(c.Repo); err == nil {
-			if branch, err = o.checkout.CurrentBranch(c.Repo); err == nil {
+		if dirty, err = o.checkout.DirtyTree(ctx, c.Repo); err == nil {
+			if branch, err = o.checkout.CurrentBranch(ctx, c.Repo); err == nil {
 				return dirty, branch, nil
 			}
 		}
-		if try == gitTries {
+		if try == gitTries || ctx.Err() != nil {
 			return "", "", err
 		}
 		o.log.Raw("", err)
-		time.Sleep(o.pollEvery())
+		if !sleep(ctx, o.pollEvery()) {
+			return "", "", err
+		}
 	}
 }
 

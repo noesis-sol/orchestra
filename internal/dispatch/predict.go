@@ -104,11 +104,11 @@ func (o *Loop) prediction(id string) []string {
 // predict asks the predictor for ticket t's files, caches them on the ticket and, when it is
 // already running with an empty footprint, gives it them.
 func (o *Loop) predict(ctx context.Context, t Ticket) {
-	tracked := o.checkout.TrackedFiles(o.cfg.Repo)
+	tracked := o.checkout.TrackedFiles(ctx, o.cfg.Repo)
 	if len(tracked) == 0 {
 		return // no files to choose from
 	}
-	files, err := o.organ.PredictFiles(ctx, organ.Footprint{ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(t.ID), Files: tracked})
+	files, err := o.organ.PredictFiles(ctx, organ.Footprint{ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked})
 	switch {
 	case ctx.Err() != nil:
 		return // the run ended
@@ -125,7 +125,7 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 	}
 	o.predicted[t.ID] = files
 	o.predictMu.Unlock()
-	if err := o.notes.SetMetadata(t.ID, PredictedKey, strings.Join(files, ",")); err != nil {
+	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, strings.Join(files, ",")); err != nil {
 		o.log.Raw("", err)
 	}
 	o.mu.Lock()

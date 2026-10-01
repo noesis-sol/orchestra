@@ -74,7 +74,7 @@ func TestScopedRunTakesOnlyTheTicketAndItsSubtickets(t *testing.T) {
 	if !equal(order, []string{"R.1.1", "R.1", "R.2", "R"}) {
 		t.Errorf("dispatched %v, want R.1.1 R.1 R.2 R", order)
 	}
-	if st, _ := h.beads.Status("U"); st != "open" {
+	if st, _ := h.beads.Status(context.Background(), "U"); st != "open" {
 		t.Errorf("U is %s; a scoped run must leave it alone", st)
 	}
 	ev := h.sink.text()
@@ -151,7 +151,7 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 	if ev, want := h.sink.text(), "filed during the run outside R's scope, left for a later run: X (follow-up elsewhere)"; !strings.Contains(ev, want) {
 		t.Errorf("events lack %q:\n%s", want, ev)
 	}
-	in := o.reviewInput(code, o.Final())
+	in := o.reviewInput(context.Background(), code, o.Final())
 	for _, want := range []string{"Run of ticket R and its subtickets only, on branch main",
 		"## Follow-ups filed in this run outside the scope of R, left for a later run\n\nX: follow-up elsewhere [open]"} {
 		if !strings.Contains(in, want) {
@@ -199,7 +199,7 @@ func TestScopedEpicIsLeftToClose(t *testing.T) {
 	if code != ExitOK || o.Final() != want {
 		t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
 	}
-	if st, _ := h.beads.Status("E"); st != "open" {
+	if st, _ := h.beads.Status(context.Background(), "E"); st != "open" {
 		t.Errorf("E is %s; orchestra doesn't close an epic itself", st)
 	}
 }
@@ -235,11 +235,11 @@ func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
 	o := New(Config{}, nil, "", Deps{Tickets: fakeTickets{}})
 	o.setParent("C", "P")
 	o.setParent("D", "Q")
-	if parents, err := o.openParents(map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
+	if parents, err := o.openParents(context.Background(), map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
 		t.Errorf("C running: %v %v, want P only", parents, err)
 	}
 	o.unmerged = map[string]string{"D": "MERGE_CONFLICT"}
-	if parents, _ := o.openParents(nil); parents["P"] || !parents["Q"] {
+	if parents, _ := o.openParents(context.Background(), nil); parents["P"] || !parents["Q"] {
 		t.Errorf("D unmerged: %v, want Q only", parents)
 	}
 }

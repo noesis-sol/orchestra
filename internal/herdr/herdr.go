@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,8 +21,8 @@ type Terminal struct{}
 
 // CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
 // returns the tab's ID and its first pane's.
-func (t Terminal) CreateTab(workspace, cwd, label string) (tab, pane string, err error) {
-	out, err := command.Output("", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
+func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error) {
+	out, err := command.Output(ctx, command.ReadLimit, "", "herdr", "tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
 		return "", "", err
 	}
@@ -45,19 +46,26 @@ func (t Terminal) CreateTab(workspace, cwd, label string) (tab, pane string, err
 }
 
 // CloseTab closes a Herdr tab.
-func (t Terminal) CloseTab(tab string) { command.Output("", "herdr", "tab", "close", tab) }
+func (t Terminal) CloseTab(ctx context.Context, tab string) {
+	command.Output(ctx, command.ReadLimit, "", "herdr", "tab", "close", tab)
+}
 
 // StartAgent starts an agent in the pane, passing it args; a prompt among them starts it with the
 // prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
 // with line breaks, so each must be one line.
 func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
-	a := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "60000"}
+	const wait = time.Minute
+	a := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", millis(wait)}
 	if len(args) > 0 {
 		a = append(append(a, "--"), args...)
 	}
-	_, err := command.OutputContext(ctx, "", "herdr", a...)
+	_, err := command.Output(ctx, wait+command.ReadLimit, "", "herdr", a...)
 	return err
 }
+
+// millis is d in milliseconds, as Herdr's --timeout takes it. Herdr's own wait gets
+// command.ReadLimit to spare before the call to it is stopped.
+func millis(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }
 
 // IsArgumentRefused reports Herdr refusing agent arguments it cannot pass through the shell; a
 // retry cannot succeed.
@@ -104,12 +112,12 @@ func (t Terminal) AgentName(id string) string { return AgentName(id) }
 
 // LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
 // returns at once. Each argument must be one line.
-func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
+func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	line := kind
 	for _, a := range args {
 		line += " " + command.ShellQuote(a)
 	}
-	_, err := command.Output("", "herdr", "pane", "run", pane, line)
+	_, err := command.Output(ctx, command.ReadLimit, "", "herdr", "pane", "run", pane, line)
 	return err
 }
 
@@ -118,9 +126,9 @@ func (t Terminal) LaunchInPane(pane, kind string, args []string) error {
 func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (string, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
-		if n, k, st := t.PaneAgent(pane); st != "gone" && k == kind {
+		if n, k, st := t.PaneAgent(ctx, pane); st != "gone" && k == kind {
 			if n != name {
-				if err := t.RenameAgent(pane, name); err != nil {
+				if err := t.RenameAgent(ctx, pane, name); err != nil {
 					return st, err
 				}
 			}
@@ -139,8 +147,8 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (stri
 
 // PaneAgent returns the agent in a pane: its name ("" if Herdr gave it none), kind and status, with
 // status "gone" if the pane holds no agent and "unreadable" if Herdr could not be asked.
-func (t Terminal) PaneAgent(pane string) (name, kind, status string) {
-	name, kind, status, _ = readAgent(command.Output("", "herdr", "agent", "get", pane))
+func (t Terminal) PaneAgent(ctx context.Context, pane string) (name, kind, status string) {
+	name, kind, status, _ = readAgent(command.Output(ctx, command.ReadLimit, "", "herdr", "agent", "get", pane))
 	return name, kind, status
 }
 
@@ -183,21 +191,21 @@ func readAgent(out string, err error) (name, kind, status string, _ error) {
 }
 
 // RenameAgent gives the agent (by name or pane) a new name.
-func (t Terminal) RenameAgent(name, to string) error {
-	_, err := command.Output("", "herdr", "agent", "rename", name, to)
+func (t Terminal) RenameAgent(ctx context.Context, name, to string) error {
+	_, err := command.Output(ctx, command.ReadLimit, "", "herdr", "agent", "rename", name, to)
 	return err
 }
 
 // FreeName returns an unused agent name for an earlier worker that holds name: name-1, name-2, …,
 // within Herdr's 32-character limit, or "" if none is free.
-func (t Terminal) FreeName(name string) string {
+func (t Terminal) FreeName(ctx context.Context, name string) string {
 	for n := 1; n <= 20; n++ {
 		suffix := fmt.Sprintf("-%d", n)
 		base := name
 		if len(base)+len(suffix) > maxName {
 			base = base[:maxName-len(suffix)]
 		}
-		if st, _ := t.Status(base + suffix); st == "gone" { // not "unreadable": that name may be taken
+		if st, _ := t.Status(ctx, base+suffix); st == "gone" { // not "unreadable": that name may be taken
 			return base + suffix
 		}
 	}
@@ -206,58 +214,61 @@ func (t Terminal) FreeName(name string) string {
 
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
-	_, err := command.OutputContext(ctx, "", "herdr", "agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", "60000")
+	const wait = time.Minute
+	_, err := command.Output(ctx, wait+command.ReadLimit, "", "herdr", "agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", millis(wait))
 	return err == nil
 }
 
 // Prompt submits the prompt and waits (up to 10 minutes) for the agent to first settle.
 func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
-	_, err := command.OutputContext(ctx, "", "herdr", "agent", "prompt", name, prompt, "--wait", "--timeout", "600000")
+	const wait = 10 * time.Minute
+	_, err := command.Output(ctx, wait+command.ReadLimit, "", "herdr", "agent", "prompt", name, prompt, "--wait", "--timeout", millis(wait))
 	return err
 }
 
 // SendKeys presses keys in the agent's terminal.
-func (t Terminal) SendKeys(name string, keys ...string) error {
-	_, err := command.Output("", "herdr", append([]string{"agent", "send-keys", name}, keys...)...)
+func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) error {
+	_, err := command.Output(ctx, command.ReadLimit, "", "herdr", append([]string{"agent", "send-keys", name}, keys...)...)
 	return err
 }
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
-	_, err := command.OutputContext(ctx, "", "herdr", "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", "20000")
+	const wait = 20 * time.Second
+	_, err := command.Output(ctx, wait+command.ReadLimit, "", "herdr", "agent", "wait", name, "--until", "working", "--until", "blocked", "--timeout", millis(wait))
 	return err == nil
 }
 
 // Status returns idle, working, blocked, done or unknown, or "gone" if Herdr has no such agent. If
 // Herdr cannot be asked it returns "unreadable" and the error: the agent may well be there.
-func (t Terminal) Status(name string) (string, error) {
-	_, _, st, err := readAgent(command.Output("", "herdr", "agent", "get", name))
+func (t Terminal) Status(ctx context.Context, name string) (string, error) {
+	_, _, st, err := readAgent(command.Output(ctx, command.ReadLimit, "", "herdr", "agent", "get", name))
 	return st, err
 }
 
 // Screen returns the end of the agent's terminal, given its status as just read ("" if not known).
 // Herdr can capture scrollback only while the agent is idle, so for a working or blocked agent this
 // reads the visible screen at once, and otherwise falls back to it when scrollback fails.
-func (t Terminal) Screen(name, status string) string {
+func (t Terminal) Screen(ctx context.Context, name, status string) string {
 	if status != "working" && status != "blocked" {
-		if out, err := command.Output("", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
+		if out, err := command.Output(ctx, command.ReadLimit, "", "herdr", "agent", "read", name, "--source", "recent-unwrapped", "--lines", "60"); err == nil {
 			return out
 		}
 	}
-	out, _ := command.Output("", "herdr", "agent", "read", name, "--source", "visible")
+	out, _ := command.Output(ctx, command.ReadLimit, "", "herdr", "agent", "read", name, "--source", "visible")
 	return out
 }
 
 // CurrentWorkspace returns the Herdr workspace orchestra runs in: from HERDR_WORKSPACE_ID, which
 // Herdr sets in its panes, or else from Herdr itself. "" if neither knows.
-func CurrentWorkspace(getenv func(string) string) string {
+func CurrentWorkspace(ctx context.Context, getenv func(string) string) string {
 	if ws := getenv("HERDR_WORKSPACE_ID"); ws != "" {
 		return ws
 	}
 	if getenv("HERDR_ENV") != "1" {
 		return ""
 	}
-	out, err := command.Output("", "herdr", "pane", "current", "--current")
+	out, err := command.Output(ctx, command.ReadLimit, "", "herdr", "pane", "current", "--current")
 	if err != nil {
 		return ""
 	}

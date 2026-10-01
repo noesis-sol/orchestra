@@ -19,7 +19,7 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	repo := t.TempDir()
 	git := func(dir string, args ...string) string {
 		t.Helper()
-		out, err := command.Output(dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func (h *harness) loop() *Loop {
 		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
 	o.SetSink(h.sink)
 	o.wait = timing{poll: time.Millisecond, startRetry: time.Millisecond, adopt: patience, blocked: 30 * time.Millisecond,
-		idleGrace: 30 * time.Millisecond, startGrace: 30 * time.Millisecond, settle: patience}
+		idleGrace: 30 * time.Millisecond, startGrace: 30 * time.Millisecond}
 	return o
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func samePath(a, b string) bool {
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
 func loadWith(t *testing.T, args ...string) (options, []string) {
 	t.Helper()
-	c, problems, err := loadConfig(args, os.Getenv, io.Discard)
+	c, problems, err := loadConfig(context.Background(), args, os.Getenv, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -37,12 +37,12 @@ type scriptedAgents struct {
 	screens []string // the status each screen read was given
 }
 
-func (a *scriptedAgents) Screen(name, status string) string {
+func (a *scriptedAgents) Screen(ctx context.Context, name, status string) string {
 	a.screens = append(a.screens, status)
 	return ""
 }
 
-func (a *scriptedAgents) Status(name string) (string, error) {
+func (a *scriptedAgents) Status(ctx context.Context, name string) (string, error) {
 	a.reads++
 	if len(a.script) == 0 {
 		return "gone", nil

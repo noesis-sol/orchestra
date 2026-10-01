@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,27 +20,27 @@ const (
 
 // OffersUnion reports whether init should offer to merge the changelog by union: the project keeps
 // a CHANGELOG.md, and .gitattributes doesn't merge it by union yet.
-func OffersUnion(repo string) bool {
-	return fileExists(filepath.Join(repo, changelogName)) && !mergesByUnion(repo)
+func OffersUnion(ctx context.Context, repo string) bool {
+	return fileExists(filepath.Join(repo, changelogName)) && !mergesByUnion(ctx, repo)
 }
 
 // mergesByUnion reports whether git merges the repository's CHANGELOG.md by union, however
 // .gitattributes says so (CHANGELOG.md merge=union, *.md merge=union, …).
-func mergesByUnion(repo string) bool {
-	out, err := command.Output(repo, "git", "check-attr", "merge", "--", changelogName)
+func mergesByUnion(ctx context.Context, repo string) bool {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "check-attr", "merge", "--", changelogName)
 	return err == nil && strings.HasSuffix(strings.TrimSpace(out), ": merge: union")
 }
 
 // ApplyUnion adds CHANGELOG.md merge=union to .gitattributes when the choice says so, and returns
 // the step for init's summary; ok is false when the project has no CHANGELOG.md.
-func ApplyUnion(repo string, c Choice) (s Step, ok bool, err error) {
+func ApplyUnion(ctx context.Context, repo string, c Choice) (s Step, ok bool, err error) {
 	if !fileExists(filepath.Join(repo, changelogName)) {
 		return Step{}, false, nil
 	}
 	const label = "changelog"
 	const why = "two tickets adding entries at the same spot"
 	switch {
-	case mergesByUnion(repo):
+	case mergesByUnion(ctx, repo):
 		return Step{Kind: StepKept, Label: label, Detail: changelogName + " merges by union: " + why + " keep both"}, true, nil
 	case c.UnionUnasked:
 		return Step{Kind: StepCaution, Label: label, Detail: "not asked (no terminal): with " + why + ", the second one's rebase " +

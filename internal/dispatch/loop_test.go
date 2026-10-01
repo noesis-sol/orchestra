@@ -31,66 +31,78 @@ func (r *recordSink) text() string {
 // noTabs stands in for Herdr's tabs: merging closes the worker's tab.
 type noTabs struct{}
 
-func (noTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+func (noTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	return "tab", "pane", nil
 }
-func (noTabs) CloseTab(tab string) {}
+func (noTabs) CloseTab(ctx context.Context, tab string) {}
 
 // Fakes for a run whose workers stop before their agents start.
 
 type readyTickets []Ticket
 
-func (r readyTickets) Ready(string) ([]Ticket, error)      { return r, nil }
-func (readyTickets) Unclosed() ([]Ticket, error)           { return nil, nil }
-func (readyTickets) Descendants(string) ([]Ticket, error)  { return nil, nil }
-func (readyTickets) Show(id string) (Ticket, error)        { return Ticket{ID: id, Status: "open"}, nil }
-func (readyTickets) Status(id string) (string, error)      { return "open", nil }
-func (readyTickets) Describe(id string) string             { return id }
-func (readyTickets) Closed(label string) ([]Ticket, error) { return nil, nil }
+func (r readyTickets) Ready(context.Context, string) ([]Ticket, error)     { return r, nil }
+func (readyTickets) Unclosed(context.Context) ([]Ticket, error)            { return nil, nil }
+func (readyTickets) Descendants(context.Context, string) ([]Ticket, error) { return nil, nil }
+func (readyTickets) Show(ctx context.Context, id string) (Ticket, error) {
+	return Ticket{ID: id, Status: "open"}, nil
+}
+func (readyTickets) Status(ctx context.Context, id string) (string, error)      { return "open", nil }
+func (readyTickets) Describe(ctx context.Context, id string) string             { return id }
+func (readyTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }
 
 type cleanCheckout struct{}
 
-func (cleanCheckout) DirtyTree(dir string) (string, error)      { return "", nil }
-func (cleanCheckout) DirtyWorktree(dir string) string           { return "" }
-func (cleanCheckout) CurrentBranch(repo string) (string, error) { return "main", nil }
-func (cleanCheckout) Head(repo, rev string) string              { return "abc" }
-func (cleanCheckout) TrackedFiles(repo string) []string         { return nil }
+func (cleanCheckout) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
+func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) string      { return "" }
+func (cleanCheckout) CurrentBranch(ctx context.Context, repo string) (string, error) {
+	return "main", nil
+}
+func (cleanCheckout) Head(ctx context.Context, repo, rev string) string      { return "abc" }
+func (cleanCheckout) TrackedFiles(ctx context.Context, repo string) []string { return nil }
 
 // newWorktrees creates every worktree.
 type newWorktrees struct{}
 
-func (newWorktrees) WorktreeOf(repo, branch string) string { return "" }
-func (newWorktrees) HasBranch(repo, branch string) bool    { return false }
-func (newWorktrees) Prune(repo string)                     {}
-func (newWorktrees) AddWorktree(repo, path, branch string) (string, error) {
+func (newWorktrees) WorktreeOf(ctx context.Context, repo, branch string) string { return "" }
+func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) bool    { return false }
+func (newWorktrees) Prune(ctx context.Context, repo string)                     {}
+func (newWorktrees) AddWorktree(ctx context.Context, repo, path, branch string) (string, error) {
 	return "", nil
 }
-func (newWorktrees) NewWorktree(repo, path, branch, base string) (string, error) {
+func (newWorktrees) NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error) {
 	return "", nil
 }
-func (newWorktrees) RemoveWorktree(repo, path string) (string, error) { return "", nil }
-func (newWorktrees) DeleteBranch(repo, branch string) (string, error) { return "", nil }
+func (newWorktrees) RemoveWorktree(ctx context.Context, repo, path string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) DeleteBranch(ctx context.Context, repo, branch string) (string, error) {
+	return "", nil
+}
 
 type upToDate struct{}
 
-func (upToDate) IsAncestor(repo, ancestor, rev string) bool            { return true }
-func (upToDate) CommitNaming(repo, base, branch, ticket string) string { return "" }
-func (upToDate) CommitNamingOn(repo, rev, ticket string) string        { return "" }
-func (upToDate) Rebase(worktree, onto string) (string, error)          { return "", nil }
-func (upToDate) AbortRebase(worktree string)                           {}
-func (upToDate) ConflictedFiles(worktree string) []string              { return nil }
-func (upToDate) RebaseInProgress(worktree string) bool                 { return false }
-func (upToDate) CountCommits(repo, revs string) int                    { return 0 }
-func (upToDate) ResetBranch(worktree, rev string) (string, error)      { return "", nil }
-func (upToDate) FastForward(repo, branch string) (string, error)       { return "", nil }
+func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool { return true }
+func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
+	return ""
+}
+func (upToDate) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string { return "" }
+func (upToDate) Rebase(ctx context.Context, worktree, onto string) (string, error)   { return "", nil }
+func (upToDate) AbortRebase(ctx context.Context, worktree string)                    {}
+func (upToDate) ConflictedFiles(ctx context.Context, worktree string) []string       { return nil }
+func (upToDate) RebaseInProgress(ctx context.Context, worktree string) bool          { return false }
+func (upToDate) CountCommits(ctx context.Context, repo, revs string) int             { return 0 }
+func (upToDate) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
+	return "", nil
+}
+func (upToDate) FastForward(ctx context.Context, repo, branch string) (string, error) { return "", nil }
 
 type noAgents struct{}
 
-func (noAgents) Status(name string) (string, error)                    { return "gone", nil }
-func (noAgents) Screen(name, status string) string                     { return "" }
-func (noAgents) Prompt(ctx context.Context, name, prompt string) error { return nil }
-func (noAgents) SendKeys(name string, keys ...string) error            { return nil }
-func (noAgents) WaitStarted(ctx context.Context, name string) bool     { return true }
+func (noAgents) Status(ctx context.Context, name string) (string, error)         { return "gone", nil }
+func (noAgents) Screen(ctx context.Context, name, status string) string          { return "" }
+func (noAgents) Prompt(ctx context.Context, name, prompt string) error           { return nil }
+func (noAgents) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
+func (noAgents) WaitStarted(ctx context.Context, name string) bool               { return true }
 
 // Fakes for a run whose workers start, against a bd that fails.
 
@@ -100,33 +112,37 @@ var errBd = fmt.Errorf("bd defer A: exit status 1: Error: database is locked\n  
 // brokenBd lists its tickets as ready but can't show their status, defer, note or reopen them.
 type brokenBd []Ticket
 
-func (b brokenBd) Ready(string) ([]Ticket, error)        { return b, nil }
-func (brokenBd) Unclosed() ([]Ticket, error)             { return nil, nil }
-func (brokenBd) Descendants(string) ([]Ticket, error)    { return nil, nil }
-func (brokenBd) Show(id string) (Ticket, error)          { return Ticket{ID: id, Status: "unknown"}, errBd }
-func (brokenBd) Status(id string) (string, error)        { return "unknown", errBd }
-func (brokenBd) Describe(id string) string               { return id }
-func (brokenBd) AppendNotes(id, note string) error       { return errBd }
-func (brokenBd) Defer(id, reason string) error           { return errBd }
-func (brokenBd) Reopen(id string) error                  { return errBd }
-func (brokenBd) AddLabel(id, label string) error         { return errBd }
-func (brokenBd) RemoveLabel(id, label string) error      { return errBd }
-func (brokenBd) SetMetadata(id, key, value string) error { return errBd }
-func (brokenBd) Closed(label string) ([]Ticket, error)   { return nil, nil } // so the run gets as far as the workers
+func (b brokenBd) Ready(context.Context, string) ([]Ticket, error)     { return b, nil }
+func (brokenBd) Unclosed(context.Context) ([]Ticket, error)            { return nil, nil }
+func (brokenBd) Descendants(context.Context, string) ([]Ticket, error) { return nil, nil }
+func (brokenBd) Show(ctx context.Context, id string) (Ticket, error) {
+	return Ticket{ID: id, Status: "unknown"}, errBd
+}
+func (brokenBd) Status(ctx context.Context, id string) (string, error)        { return "unknown", errBd }
+func (brokenBd) Describe(ctx context.Context, id string) string               { return id }
+func (brokenBd) AppendNotes(ctx context.Context, id, note string) error       { return errBd }
+func (brokenBd) Defer(ctx context.Context, id, reason string) error           { return errBd }
+func (brokenBd) Reopen(ctx context.Context, id string) error                  { return errBd }
+func (brokenBd) AddLabel(ctx context.Context, id, label string) error         { return errBd }
+func (brokenBd) RemoveLabel(ctx context.Context, id, label string) error      { return errBd }
+func (brokenBd) SetMetadata(ctx context.Context, id, key, value string) error { return errBd }
+func (brokenBd) Closed(ctx context.Context, label string) ([]Ticket, error)   { return nil, nil } // so the run gets as far as the workers
 
 type okTabs struct{}
 
-func (okTabs) CreateTab(workspace, cwd, label string) (string, string, error) {
+func (okTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	return "tab-" + label, "pane-" + label, nil
 }
-func (okTabs) CloseTab(tab string) {}
+func (okTabs) CloseTab(ctx context.Context, tab string) {}
 
 // Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
 // (Describe) until release is closed.
 
 type okStarter struct{}
 
-func (okStarter) LaunchInPane(pane, kind string, args []string) error { return nil }
+func (okStarter) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
+	return nil
+}
 func (okStarter) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
 	return nil
 }
@@ -136,21 +152,21 @@ func (okStarter) WaitReady(ctx context.Context, name string) bool { return true 
 
 type quietHistory struct{}
 
-func (quietHistory) ShortStatus(worktree string) string { return "" }
-func (quietHistory) OneLineLog(dir, revs string) string { return "" }
-func (quietHistory) DiffStat(worktree string) string    { return "" }
-func (quietHistory) Subjects(repo, revs string) string  { return "" }
+func (quietHistory) ShortStatus(ctx context.Context, worktree string) string { return "" }
+func (quietHistory) OneLineLog(ctx context.Context, dir, revs string) string { return "" }
+func (quietHistory) DiffStat(ctx context.Context, worktree string) string    { return "" }
+func (quietHistory) Subjects(ctx context.Context, repo, revs string) string  { return "" }
 
 // promptAgents take their prompt (or refuse it, with promptErr) and are gone once they have.
 type promptAgents struct{ promptErr error }
 
-func (promptAgents) Status(name string) (string, error) { return "gone", nil }
-func (promptAgents) Screen(name, status string) string  { return "" }
+func (promptAgents) Status(ctx context.Context, name string) (string, error) { return "gone", nil }
+func (promptAgents) Screen(ctx context.Context, name, status string) string  { return "" }
 func (a promptAgents) Prompt(ctx context.Context, name, prompt string) error {
 	return a.promptErr
 }
-func (promptAgents) SendKeys(name string, keys ...string) error        { return nil }
-func (promptAgents) WaitStarted(ctx context.Context, name string) bool { return false }
+func (promptAgents) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
+func (promptAgents) WaitStarted(ctx context.Context, name string) bool               { return false }
 
 func brokenBdRun(t *testing.T, agents Agents) (*Loop, *recordSink, string, int) {
 	t.Helper()

@@ -42,6 +42,7 @@ type fakeHerdr struct {
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
 	showsAs      map[string]string      // the status these tickets' workers show from their prompt on, instead of working
+	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
 	refuseArgs   bool                   // StartAgent takes no arguments
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
 }
@@ -49,7 +50,7 @@ type fakeHerdr struct {
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
-		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]string{}}
+		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]string{}, statusHangs: map[string]bool{}}
 }
 
 // agent returns the agent named name, or nil. The caller holds mu.
@@ -122,7 +123,7 @@ func (h *fakeHerdr) pastedTo() []string {
 
 // Tabs
 
-func (h *fakeHerdr) CreateTab(workspace, cwd, label string) (string, string, error) {
+func (h *fakeHerdr) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tabs++
@@ -131,7 +132,7 @@ func (h *fakeHerdr) CreateTab(workspace, cwd, label string) (string, string, err
 	return tab, pane, nil
 }
 
-func (h *fakeHerdr) CloseTab(tab string) {
+func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = append(h.closed, tab)
@@ -146,7 +147,7 @@ func (h *fakeHerdr) CloseTab(tab string) {
 
 // Starter
 
-func (h *fakeHerdr) LaunchInPane(pane, kind string, args []string) error {
+func (h *fakeHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.launchFails[h.panes[pane].ticket] {
@@ -223,7 +224,7 @@ func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (st
 	return name, nil
 }
 
-func (h *fakeHerdr) PaneAgent(pane string) (string, string, string) {
+func (h *fakeHerdr) PaneAgent(ctx context.Context, pane string) (string, string, string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if a := h.inPane(pane); a != nil && !a.late {
@@ -235,7 +236,7 @@ func (h *fakeHerdr) PaneAgent(pane string) (string, string, string) {
 }
 
 // RenameAgent renames the agent called name, or the one in the pane called name.
-func (h *fakeHerdr) RenameAgent(name, to string) error {
+func (h *fakeHerdr) RenameAgent(ctx context.Context, name, to string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := errLongName(to); err != nil {
@@ -252,7 +253,7 @@ func (h *fakeHerdr) RenameAgent(name, to string) error {
 	return nil
 }
 
-func (h *fakeHerdr) FreeName(id string) string {
+func (h *fakeHerdr) FreeName(ctx context.Context, id string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for i := 1; ; i++ {
@@ -264,8 +265,13 @@ func (h *fakeHerdr) FreeName(id string) string {
 
 // Agents
 
-func (h *fakeHerdr) Status(name string) (string, error) {
+func (h *fakeHerdr) Status(ctx context.Context, name string) (string, error) {
 	h.mu.Lock()
+	if a := h.agent(name); a != nil && a.prompted && h.statusHangs[h.panes[a.pane].ticket] {
+		h.mu.Unlock()
+		<-ctx.Done() // as a Herdr that doesn't answer, stopped by the call's context
+		return "unreadable", fmt.Errorf("herdr agent get %s: %w", name, context.Cause(ctx))
+	}
 	defer h.mu.Unlock()
 	if a := h.agent(name); a != nil {
 		return a.status, nil
@@ -273,7 +279,7 @@ func (h *fakeHerdr) Status(name string) (string, error) {
 	return "gone", nil
 }
 
-func (h *fakeHerdr) Screen(name, status string) string { return "" }
+func (h *fakeHerdr) Screen(ctx context.Context, name, status string) string { return "" }
 
 func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	h.mu.Lock()
@@ -290,7 +296,7 @@ func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	return nil
 }
 
-func (h *fakeHerdr) SendKeys(name string, keys ...string) error { return nil }
+func (h *fakeHerdr) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
 
 func (h *fakeHerdr) WaitStarted(ctx context.Context, name string) bool {
 	h.mu.Lock()
