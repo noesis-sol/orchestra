@@ -100,23 +100,23 @@ type Loop struct {
 	triageFinish context.CancelFunc
 	triageDone   chan struct{}
 
-	// Holding for the environment, under mu: the tickets whose workers failed at once in a row, the
-	// tickets triage blamed on the environment in a row, and the reason once the run holds, with
-	// why. envWake (buffered 1) tells Run. envProbed, Run's own: the machine was probed in this run.
+	// Holding for the environment, Run's own: the tickets whose workers failed at once in a row, the
+	// tickets triage blamed on the environment in a row, the reason once the run holds, with why,
+	// and whether the machine was probed in this run. Workers say how they settled on their result;
+	// triage hands its verdicts over on verdicts until Run has returned (runDone), then counts them
+	// itself, as nothing else does by then.
 	fastFails   []string
 	envVerdicts []string
 	envStop     *stopReason
 	envWhy      string
-	envWake     chan struct{}
 	envProbed   bool
+	verdicts    chan verdict
+	runDone     chan struct{}
 
-	// Winding down, under drainMu: the maintainer asked to stop after the running tickets, and how
-	// they last asked either way. drainWake (buffered 1) tells Run. Its own lock, as the dashboard
-	// sets it while the loop may be waiting on the dashboard.
-	drainMu   sync.Mutex
-	drain     bool
-	drainHow  string
-	drainWake chan struct{}
+	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
+	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
+	// the run winds down is Run's own.
+	drainReqs chan drainRequest
 
 	wait timing // how long it waits on things; tests shorten it
 
@@ -129,7 +129,7 @@ type Loop struct {
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 	return &Loop{cfg: cfg, log: log, prompt: prompt, tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents, reporter: d.Reporter,
 		checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
-		envWake: make(chan struct{}, 1), drainWake: make(chan struct{}, 1)}
+		verdicts: make(chan verdict), runDone: make(chan struct{}), drainReqs: make(chan drainRequest, 1)}
 }
 
 // Final is the line the run ended with.

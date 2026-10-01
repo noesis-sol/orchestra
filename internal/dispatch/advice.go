@@ -105,7 +105,7 @@ func (o *Loop) triage(d organ.Deferral) {
 	o.appendNotes(ctx, d.ID, t.Note())
 	o.emit(Event{Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence, Text: fmt.Sprintf(
 		"  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary)})
-	o.triaged(ctx, d.ID, t.Cause, t.Confidence, t.Summary)
+	o.blamed(ctx, verdict{d.ID, t.Cause, t.Confidence, t.Summary})
 }
 
 // FirstLine returns the first line of s, trimmed: enough of an error for a one-line message.

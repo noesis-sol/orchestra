@@ -15,21 +15,27 @@ func (o *Loop) Drain(how string) { o.setDrain(true, how) }
 // Resume takes back a Drain: the run takes new tickets again.
 func (o *Loop) Resume(how string) { o.setDrain(false, how) }
 
-func (o *Loop) setDrain(on bool, how string) {
-	o.drainMu.Lock()
-	o.drain, o.drainHow = on, how
-	o.drainMu.Unlock()
-	select {
-	case o.drainWake <- struct{}{}:
-	default: // already told
-	}
+// drainRequest is the maintainer asking the run to wind down (on) or to take tickets again, and how
+// they asked.
+type drainRequest struct {
+	on  bool
+	how string
 }
 
-// draining says whether the run is winding down, and who last asked either way.
-func (o *Loop) draining() (bool, string) {
-	o.drainMu.Lock()
-	defer o.drainMu.Unlock()
-	return o.drain, o.drainHow
+// setDrain hands the request to Run, replacing one it hasn't heard yet: only the latest counts.
+func (o *Loop) setDrain(on bool, how string) {
+	r := drainRequest{on, how}
+	for {
+		select {
+		case o.drainReqs <- r:
+			return
+		default:
+		}
+		select {
+		case <-o.drainReqs: // an earlier request, unheard
+		default: // or Run just took it
+		}
+	}
 }
 
 // drainEvent is the line saying the run winds down after the tickets in flight, or, with on

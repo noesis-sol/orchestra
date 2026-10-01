@@ -58,11 +58,13 @@ const readyPoll = 30 * time.Second
 type result struct {
 	id   string
 	stop *stopReason
+	how  settling // for the hold for the environment
 }
 
 // Run works through bd ready (in a scoped run, one ticket and its descendants) with up to
 // Concurrency workers at a time and returns the exit code.
 func (o *Loop) Run(ctx context.Context) int {
+	defer close(o.runDone) // triage counts its verdicts itself from here
 	c := o.cfg
 	o.count = c.DoneSoFar
 	o.started = time.Now()
@@ -87,20 +89,31 @@ func (o *Loop) Run(ctx context.Context) int {
 	var alsoStopped []string
 	envSaid := false
 	drained := false // the maintainer asked to stop after the running tickets, as last said
-	// winding reads and logs a request to wind down or to take tickets again; asked just before a
-	// ticket would start, it keeps that ticket from starting.
-	winding := func() bool {
-		if on, how := o.draining(); on != drained {
-			drained = on
-			o.emit(drainEvent(on, how, inflight))
+	// hear logs a request to wind down or to take tickets again, when it changes anything, and says
+	// whether the run winds down.
+	hear := func(r drainRequest) bool {
+		if r.on != drained {
+			drained = r.on
+			o.emit(drainEvent(r.on, r.how, inflight))
 		}
 		return drained
 	}
+	// winding hears a request waiting, if any; asked just before a ticket would start, it keeps
+	// that ticket from starting.
+	winding := func() bool {
+		select {
+		case r := <-o.drainReqs:
+			return hear(r)
+		default:
+			return drained
+		}
+	}
+	keep := context.WithoutCancel(ctx) // for reopening tickets as the run holds
 	for {
 		winding()
 		// Workers failing at once, whichever ticket they have, hold the run: said once, before
 		// another ticket starts.
-		if s := o.environmentStop(); s != nil && !envSaid {
+		if s := o.envStop; s != nil && !envSaid {
 			envSaid = true
 			if stop == nil {
 				stop = s
@@ -142,14 +155,18 @@ func (o *Loop) Run(ctx context.Context) int {
 			o.emit(Event{Kind: EvDispatch, N: o.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, Queued: queued, Solo: o.soloShown,
 				Text: fmt.Sprintf("[%d/%d] %s %s: %s", o.count, c.Limit, t.ID, how, t.Title)})
 			o.startFootprint(*t)
-			go func(t Ticket) { results <- result{t.ID, o.work(ctx, t)} }(*t)
+			go func(t Ticket) {
+				r := result{id: t.ID}
+				r.stop = o.work(ctx, t, &r.how)
+				results <- r
+			}(*t)
 		}
 		if len(inflight) == 0 {
 			// Held for the environment, the run may probe the machine and take tickets again.
 			if stop == nil || len(alsoStopped) > 0 {
 				break
 			}
-			if stop = o.probeEnvironment(ctx, stop, winding); stop != nil {
+			if stop = o.probeEnvironment(ctx, stop, winding, hear); stop != nil {
 				break
 			}
 			envSaid = false
@@ -159,6 +176,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		case r := <-results:
 			delete(inflight, r.id)
 			o.endFootprint(r.id)
+			o.settled(keep, r.id, r.how)
 			if r.id == o.solo {
 				o.solo = ""
 			}
@@ -183,8 +201,10 @@ func (o *Loop) Run(ctx context.Context) int {
 			case !first:
 				o.emit(Event{Kind: EvHold, Ticket: r.id, Text: "HOLD: " + r.stop.text})
 			}
-		case <-o.envWake: // the hold is picked up above
-		case <-o.drainWake: // so is the request to wind down
+		case v := <-o.verdicts:
+			o.triaged(keep, v) // a hold is picked up above
+		case r := <-o.drainReqs:
+			hear(r)
 		case <-poll.C:
 			if o.footprintOn() && len(inflight) > 1 {
 				o.readEdits() // warns when two workers edit the same file
@@ -200,7 +220,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				}
 			}
 		case <-ctx.Done():
-			o.settle(results, inflight)
+			o.settle(keep, results, inflight)
 			return o.interrupted(ctx)
 		}
 	}
@@ -227,11 +247,12 @@ func (o *Loop) Run(ctx context.Context) int {
 // report) reads a loop that has stopped changing and no worker is left behind. Each command a
 // worker runs stops with the run or at its time limit, and only what must finish once begun (a
 // merge under way, the notes after it) goes on, so they return within seconds, or within a
-// command's time limit when one hangs.
-func (o *Loop) settle(results <-chan result, inflight map[string]bool) {
+// command's time limit when one hangs. A worker that settled still counts toward the hold.
+func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[string]bool) {
 	for len(inflight) > 0 {
 		r := <-results
 		delete(inflight, r.id)
+		o.settled(ctx, r.id, r.how)
 	}
 }
 

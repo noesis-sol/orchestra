@@ -10,8 +10,9 @@ import (
 )
 
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
-// ticket then stays listed as active (still being worked on).
-func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
+// ticket then stays listed as active (still being worked on). It sets how to how the worker
+// settled, for the hold for the environment.
+func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopReason) {
 	c := o.cfg
 	id, br := t.ID, "wt/"+t.ID
 	defer func() {
@@ -256,8 +257,7 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	// worker has settled: what follows is bookkeeping, on keep, but for the waits merging has (a
 	// check, a worker resolving conflicts) and evidence for triage, which Ctrl+C skips.
 	info, showErr := o.tickets.Show(keep, id)
-	fast := false // the worker failed at once, as one its environment fails does
-	defer func() { o.settledFast(keep, id, fast) }()
+	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
 		o.markAside(id)
 		o.setAsked(id, true)
@@ -290,7 +290,9 @@ func (o *Loop) work(ctx context.Context, t Ticket) (stop *stopReason) {
 	case outcomeUnreadable:
 		return halt(ExitTool, "STATUS_UNREADABLE for %s%s; stopping rather than guessing (worktree %s and tab %s left open)", id, because(showErr), wt, tab)
 	case outcomeUnfinished:
-		fast = o.failedAtOnce(keep, s, started, idleAt, br, head, wt)
+		if o.failedAtOnce(keep, s, started, idleAt, br, head, wt) {
+			*how = settledFast
+		}
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; deferred for review (worktree %s).", tab, s, wt))
 		if err := o.deferAside(keep, id, fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
