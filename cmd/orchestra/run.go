@@ -253,6 +253,7 @@ func loadConfig(
 		}
 		c.Check = settings.Check
 		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
+		c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {

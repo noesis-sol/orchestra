@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -87,6 +88,11 @@ func TestMCPStepExplainsWhatWorkersGet(t *testing.T) {
 			[]string{"workers get postgres", "redis isn't defined on this machine (define it: claude mcp add redis", "saved anyway"}},
 		{"connector", Choice{MCP: names("claude.ai Gmail"), Servers: testServers}, StepCaution,
 			[]string{"chosen: claude.ai Gmail", "is a claude.ai connector, which workers can't get"}},
+		{"chrome", Choice{MCP: names("exa", mcp.Chrome), Servers: append(testServers,
+			mcp.Server{Name: mcp.Chrome, Scope: mcp.ScopeBuiltIn})}, StepDone,
+			[]string{"workers get exa (user, http), claude-in-chrome (built into Claude Code)"}},
+		{"chrome not set up", Choice{MCP: names(mcp.Chrome), Servers: testServers}, StepCaution,
+			[]string{"claude-in-chrome isn't set up on this machine (set it up: claude --chrome)"}},
 		{"unasked", Choice{MCPUnasked: true, Servers: testServers}, StepCaution,
 			[]string{"not chosen: workers load every MCP server", "not asked: no terminal; --mcp sets them"}},
 		{"unreadable", Choice{MCP: names(), ServersErr: errors.New("bad json")}, StepCaution,
@@ -145,7 +151,7 @@ func TestWriteMCPConfigIsForItsOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(path, []byte("earlier"), 0o644); err != nil { // an earlier worker's, readable by all
 		t.Fatal(err)
 	}
-	got, err := WriteMCPConfig(wt, testServers[:2])
+	got, err := WriteMCPConfig(wt, append(slices.Clip(testServers[:2]), mcp.Server{Name: mcp.Chrome, Scope: mcp.ScopeBuiltIn}))
 	if err != nil || got != path {
 		t.Fatalf("%s %v", got, err)
 	}
@@ -159,5 +165,13 @@ func TestWriteMCPConfigIsForItsOwnerOnly(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if err := json.Unmarshal(b, &f); err != nil || len(f.MCPServers) != 2 || !strings.Contains(string(f.MCPServers["postgres"]), "secret") {
 		t.Errorf("%s %v", b, err)
+	}
+}
+
+// Chrome resolves as built in, set up on this machine or not: --chrome gives it, not a definition.
+func TestResolveMCPTakesChromeAsBuiltIn(t *testing.T) {
+	chosen, err := ResolveMCP([]string{"exa", mcp.Chrome}, testServers)
+	if err != nil || len(chosen) != 2 || chosen[1].Name != mcp.Chrome || chosen[1].Scope != mcp.ScopeBuiltIn {
+		t.Errorf("chosen %+v, err %v", chosen, err)
 	}
 }

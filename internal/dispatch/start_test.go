@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -325,5 +326,60 @@ func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 	}
 	if !strings.Contains(h.mainLog(), "B: add b.txt") {
 		t.Error("B should be merged")
+	}
+}
+
+// Every Claude worker starts with the run's worker arguments first, ahead of its reporting hooks
+// and its prompt file, and keeps them when Herdr refuses the others: --no-chrome must not be lost
+// on the way to a plain start.
+func TestStartGivesEveryWorkerTheRunsArguments(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.WorkerArgs = []string{"--no-chrome"}
+	h.reporter = fakeReporter{}
+	h.herdr.launchFails["B"] = true
+	h.herdr.refusePaths = true
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A", finishes("a.txt"))
+	h.worker("B", finishes("b.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if a := h.herdr.argsFor("A"); len(a) != 1 || len(a[0]) != 5 || a[0][0] != "launch" || a[0][1] != "--no-chrome" ||
+		a[0][2] != "--settings" || !strings.Contains(a[0][4], "prompt.md") {
+		t.Errorf("A's launch: %q", a)
+	}
+	b := h.herdr.argsFor("B") // the launch, the refused starts, then a plain one
+	if len(b) < 3 {
+		t.Fatalf("B's starts: %q", b)
+	}
+	for _, a := range b {
+		if len(a) < 2 || a[1] != "--no-chrome" {
+			t.Errorf("B's start without --no-chrome: %q (all: %q)", a, b)
+		}
+	}
+	if last := b[len(b)-1]; !equal(last, []string{"start", "--no-chrome"}) {
+		t.Errorf("B's plain start: %q", last)
+	}
+}
+
+// A worker of another kind gets no worker arguments: they are Claude Code's.
+func TestStartGivesOtherAgentsNoWorkerArguments(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.cfg.WorkerArgs = []string{"--no-chrome"}
+	h.cfg.AgentKind = "codex"
+	h.beads.add("A", "first", 1)
+	h.worker("A", finishes("a.txt"))
+	o, code := h.run()
+	if code != ExitOK {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	for _, a := range h.herdr.argsFor("A") {
+		if slices.Contains(a, "--no-chrome") {
+			t.Errorf("codex started with %q", a)
+		}
 	}
 }

@@ -194,6 +194,25 @@ func TestConfigExcludeTypes(t *testing.T) {
 	}
 }
 
+// Claude Code turns Chrome on by itself, so workers are started with --no-chrome once the project
+// chose its MCP servers without it, and --chrome when it chose it.
+func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
+	configFixture(t, `{"concurrent": 1}`)
+	for _, tc := range []struct{ settings, want string }{
+		{`{}`, ""}, // not chosen: whatever Claude Code finds
+		{`{"mcp_servers": []}`, "--no-chrome"},
+		{`{"mcp_servers": ["exa"]}`, "--no-chrome"},
+		{`{"mcp_servers": ["exa", "claude-in-chrome"]}`, "--chrome"},
+	} {
+		if err := os.WriteFile(".orchestra/settings.json", []byte(tc.settings), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if c, p := loadWith(t); len(p) > 0 || strings.Join(c.WorkerArgs, " ") != tc.want {
+			t.Errorf("%s: worker arguments %q, want %q (problems %v)", tc.settings, c.WorkerArgs, tc.want, p)
+		}
+	}
+}
+
 func TestConfigDefaultsAndLayout(t *testing.T) {
 	repo := configFixture(t, `{"check": "make check"}`)
 	c, p := loadWith(t)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,16 @@ func TestMCPOptionsPreselectTheCurrentSetting(t *testing.T) {
 	}
 	if strings.Join(selected, ",") != "postgres,redis" {
 		t.Errorf("selected = %v", selected)
+	}
+	chrome := append(slices.Clip(testServers), mcp.Server{Name: mcp.Chrome, Scope: mcp.ScopeBuiltIn})
+	if opts, _ = mcpOptions(project.Choice{Servers: chrome}); !strings.Contains(keys(opts),
+		"claude-in-chrome  · built into Claude Code, drives Chrome on this machine") {
+		t.Errorf("Chrome set up: options\n%s", keys(opts))
+	}
+	chosen := []string{mcp.Chrome}
+	if opts, _ = mcpOptions(project.Choice{Servers: testServers, MCP: &chosen}); !strings.Contains(keys(opts),
+		"claude-in-chrome  · Claude in Chrome isn't set up on this machine") {
+		t.Errorf("Chrome chosen, not set up: options\n%s", keys(opts))
 	}
 	// The field shows the current setting selected.
 	view := ansi.Strip(huh.NewMultiSelect[string]().Options(opts...).Value(&selected).WithTheme(huh.ThemeBase()).View())

@@ -154,10 +154,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			report = nil
 		}
 	}
-	// startArgs are the worker's arguments: its MCP servers, which it always gets, then its reports
-	// and its prompt, if it has them.
+	// startArgs are the worker's arguments: its MCP servers and the run's arguments for every Claude
+	// worker (--no-chrome or --chrome), which it always gets, then its reports and its prompt, if it
+	// has them.
+	fixed := mcpArgs[:len(mcpArgs):len(mcpArgs)]
+	if c.AgentKind == "claude" {
+		fixed = append(fixed, c.WorkerArgs...)
+	}
 	startArgs := func() []string {
-		args := append(append([]string{}, mcpArgs...), report...)
+		args := append(append([]string{}, fixed...), report...)
 		if launch != "" {
 			args = append(args, launch)
 		}
@@ -227,7 +232,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			return nameRefused(err)
 		}
 		o.log.Raw("", err)
-		if o.starter.IsArgumentRefused(err) && len(args) > len(mcpArgs) {
+		if o.starter.IsArgumentRefused(err) && len(args) > len(fixed) {
 			// Start it plainly: paste the prompt instead, and do without reports if need be.
 			if launch != "" {
 				launch = ""

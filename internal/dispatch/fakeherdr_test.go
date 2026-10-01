@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -46,6 +48,7 @@ type fakeHerdr struct {
 	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
 	refuseArgs   bool                   // StartAgent takes no arguments
+	refusePaths  bool                   // StartAgent takes no arguments but plain flags, such as --no-chrome
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
 }
 
@@ -182,7 +185,8 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	if err := errLongName(name); err != nil {
 		return err
 	}
-	if h.refuseArgs && len(args) > 0 {
+	if h.refuseArgs && len(args) > 0 ||
+		h.refusePaths && slices.ContainsFunc(args, func(a string) bool { return !plainFlag.MatchString(a) }) {
 		return errRefused
 	}
 	if ticket := h.panes[pane].ticket; h.startUnnamed[ticket] {
@@ -196,6 +200,9 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	h.agents = append(h.agents, &fakeAgent{name: name, kind: kind, pane: pane, status: "idle"})
 	return nil
 }
+
+// plainFlag is an argument Herdr passes through the shell as it is.
+var plainFlag = regexp.MustCompile(`^--[a-z-]+$`)
 
 func (h *fakeHerdr) IsArgumentRefused(err error) bool                { return errors.Is(err, errRefused) }
 func (h *fakeHerdr) IsNameRefused(err error) bool                    { return false }

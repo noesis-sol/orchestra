@@ -345,6 +345,8 @@ type Config struct {
 	ResolveConflicts bool
 	// ResolveTimeout is how long the worker may take to resolve it; 0 for DefaultResolveTimeout.
 	ResolveTimeout time.Duration
+	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome.
+	WorkerArgs []string
 	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
 	// worker without a ticket is started to see whether commands run again; 0 for none.
 	EnvProbe time.Duration

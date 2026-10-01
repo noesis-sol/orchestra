@@ -133,3 +133,41 @@ func TestParseNames(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoverOffersChromeOnceClaudeCodeHasItSetUp(t *testing.T) {
+	for _, key := range []string{"claudeInChromeDefaultEnabled", "cachedChromeExtensionInstalled",
+		"hasCompletedClaudeInChromeOnboarding"} {
+		config := filepath.Join(t.TempDir(), ".claude.json")
+		write(t, config, `{"`+key+`": true, "mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`)
+		servers, err := Discover(config, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, ok := Find(servers, Chrome)
+		if !ok || s.Scope != ScopeBuiltIn || !s.Available() || s.Definition != nil {
+			t.Errorf("%s: Chrome = %+v, %v; want it offered, built in, with no definition", key, s, ok)
+		}
+	}
+	config := filepath.Join(t.TempDir(), ".claude.json")
+	write(t, config, `{"claudeInChromeDefaultEnabled": false, "cachedChromeExtensionInstalled": false}`)
+	if servers, err := Discover(config, t.TempDir()); err != nil || len(servers) != 0 {
+		t.Errorf("Chrome not set up: servers = %v, err = %v", servers, err)
+	}
+}
+
+func TestChromeArgs(t *testing.T) {
+	names := func(n ...string) *[]string { return &n }
+	for _, tc := range []struct {
+		names *[]string
+		want  string
+	}{
+		{nil, ""},
+		{names(), "--no-chrome"},
+		{names("exa"), "--no-chrome"},
+		{names("exa", Chrome), "--chrome"},
+	} {
+		if got := strings.Join(ChromeArgs(tc.names), " "); got != tc.want {
+			t.Errorf("ChromeArgs(%v) = %q, want %q", tc.names, got, tc.want)
+		}
+	}
+}

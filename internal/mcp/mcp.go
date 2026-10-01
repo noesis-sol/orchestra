@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -20,20 +21,40 @@ const (
 	ScopeProject  = "project"   // <repo>/.mcp.json: committed, shared with the team
 	ScopeUser     = "user"      // ~/.claude.json, mcpServers: this machine, every repository
 	ScopeClaudeAI = "claude.ai" // a claude.ai connector: no definition orchestra can pass on
+	ScopeBuiltIn  = "built-in"  // part of Claude Code, turned on and off with a flag: Chrome
 )
+
+// Chrome is Claude Code's Claude in Chrome integration, which drives the browser on this machine.
+// It isn't defined in any config file: --chrome gives it to a worker and --no-chrome keeps it out.
+const Chrome = "claude-in-chrome"
 
 // Server is one MCP server Claude Code knows for the repository.
 type Server struct {
 	Name  string
-	Scope string // ScopeLocal, ScopeProject, ScopeUser or ScopeClaudeAI
-	Type  string // stdio, http or sse; empty for a claude.ai connector
+	Scope string // ScopeLocal, ScopeProject, ScopeUser, ScopeClaudeAI or ScopeBuiltIn
+	Type  string // stdio, http or sse; empty for a claude.ai connector or a built-in server
 	// Definition is the server's entry in its config file, as Claude Code's --mcp-config takes it;
-	// nil for a claude.ai connector.
+	// nil for a claude.ai connector or a built-in server.
 	Definition json.RawMessage
 }
 
 // Available reports whether the server can be given to workers: claude.ai connectors can't.
 func (s Server) Available() bool { return s.Scope != ScopeClaudeAI }
+
+// ChromeArgs are the arguments that give Claude workers Chrome when names, the servers the project
+// chose, include it, and keep it out when they don't: Claude Code turns Chrome on by itself, past
+// --strict-mcp-config, once it is set up. None when nothing was chosen (nil): workers then get
+// whatever Claude Code finds, Chrome included.
+func ChromeArgs(names *[]string) []string {
+	switch {
+	case names == nil:
+		return nil
+	case slices.Contains(*names, Chrome):
+		return []string{"--chrome"}
+	default:
+		return []string{"--no-chrome"}
+	}
+}
 
 // connectorPrefix starts a claude.ai connector's name in claude mcp list and ~/.claude.json.
 const connectorPrefix = "claude.ai "
@@ -58,13 +79,18 @@ type userFile struct {
 	} `json:"projects"`
 	// ClaudeAIConnectors are the claude.ai connectors this machine's Claude Code has connected to.
 	ClaudeAIConnectors []string `json:"claudeAiMcpEverConnected"`
+	// Claude Code records that Claude in Chrome is set up on this machine in any of these.
+	ChromeOn        bool `json:"claudeInChromeDefaultEnabled"`
+	ChromeInstalled bool `json:"cachedChromeExtensionInstalled"`
+	ChromeOnboarded bool `json:"hasCompletedClaudeInChromeOnboarding"`
 }
 
 // Discover lists the MCP servers Claude Code knows for the repository checked out at roots[0], by
 // name: user and local scope from userConfig (local scope under any of roots, such as the main
-// checkout of a worktree), project scope from roots[0]/.mcp.json, and the claude.ai connectors,
-// which aren't Available. A name in more than one scope is listed once, from the scope Claude Code
-// uses: local, then project, then user. Missing files name no servers.
+// checkout of a worktree), project scope from roots[0]/.mcp.json, the claude.ai connectors,
+// which aren't Available, and Chrome when Claude Code has it set up. A name in more than one scope
+// is listed once, from the scope Claude Code uses: local, then project, then user. Missing files
+// name no servers.
 func Discover(userConfig string, roots ...string) ([]Server, error) {
 	byName := map[string]Server{}
 	add := func(scope string, defs map[string]json.RawMessage) {
@@ -102,6 +128,9 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 		if _, ok := byName[c]; !ok && strings.HasPrefix(c, connectorPrefix) {
 			byName[c] = Server{Name: c, Scope: ScopeClaudeAI}
 		}
+	}
+	if _, ok := byName[Chrome]; !ok && (user.ChromeOn || user.ChromeInstalled || user.ChromeOnboarded) {
+		byName[Chrome] = Server{Name: Chrome, Scope: ScopeBuiltIn}
 	}
 	servers := make([]Server, 0, len(byName))
 	for _, s := range byName {

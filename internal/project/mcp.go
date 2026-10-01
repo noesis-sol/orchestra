@@ -80,11 +80,15 @@ func MCPStep(c Choice) Step {
 		var got, missing []string
 		for _, name := range *c.MCP {
 			switch s, ok := mcp.Find(c.Servers, name); {
+			case !ok && name == mcp.Chrome:
+				missing = append(missing, name+" isn't set up on this machine (set it up: claude --chrome)")
 			case !ok:
 				missing = append(missing, fmt.Sprintf("%s isn't defined on this machine (define it: claude mcp add %s …)",
 					name, name))
 			case !s.Available():
 				missing = append(missing, name+" is a claude.ai connector, which workers can't get")
+			case s.Scope == mcp.ScopeBuiltIn:
+				got = append(got, name+" (built into Claude Code)")
 			default:
 				got = append(got, fmt.Sprintf("%s (%s, %s)", name, s.Scope, s.Type))
 			}
@@ -109,14 +113,16 @@ func MCPStep(c Choice) Step {
 }
 
 // ResolveMCP finds the definitions of the MCP servers named in mcp_servers among servers, as
-// mcp.Discover lists them on this machine. A name that isn't defined here, or names a claude.ai
-// connector, is an error naming each such server and how to fix it: workers would otherwise start
-// without a server their project chose for them.
+// mcp.Discover lists them on this machine, with Chrome as a built-in server: --chrome gives it. A
+// name that isn't defined here, or names a claude.ai connector, is an error naming each such server
+// and how to fix it: workers would otherwise start without a server their project chose for them.
 func ResolveMCP(names []string, servers []mcp.Server) ([]mcp.Server, error) {
 	chosen := []mcp.Server{}
 	var missing, connectors []string
 	for _, name := range names {
 		switch s, ok := mcp.Find(servers, name); {
+		case name == mcp.Chrome: // given with --chrome, whether or not Claude Code has it set up yet
+			chosen = append(chosen, mcp.Server{Name: name, Scope: mcp.ScopeBuiltIn})
 		case !ok:
 			missing = append(missing, name)
 		case !s.Available():
@@ -147,7 +153,9 @@ func ResolveMCP(names []string, servers []mcp.Server) ([]mcp.Server, error) {
 func WriteMCPConfig(wt string, servers []mcp.Server) (string, error) {
 	defs := map[string]json.RawMessage{}
 	for _, s := range servers {
-		defs[s.Name] = s.Definition
+		if s.Scope != mcp.ScopeBuiltIn { // Chrome: given with --chrome, not defined
+			defs[s.Name] = s.Definition
+		}
 	}
 	b, err := json.MarshalIndent(map[string]any{"mcpServers": defs}, "", "  ")
 	if err != nil {

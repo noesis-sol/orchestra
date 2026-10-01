@@ -168,13 +168,21 @@ func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string)
 		current = *c.MCP
 	}
 	for _, s := range c.Servers {
-		if s.Available() {
+		switch {
+		case s.Scope == mcp.ScopeBuiltIn:
+			label := s.Name + "  · built into Claude Code, drives Chrome on this machine"
+			opts = append(opts, huh.NewOption(label, s.Name))
+		case s.Available():
 			opts = append(opts, huh.NewOption(fmt.Sprintf("%s  · %s scope, %s", s.Name, s.Scope, s.Type), s.Name))
 		}
 	}
 	for _, name := range current {
 		if _, ok := mcp.Find(c.Servers, name); !ok {
-			opts = append(opts, huh.NewOption(name+"  · not defined on this machine", name))
+			missing := "  · not defined on this machine"
+			if name == mcp.Chrome {
+				missing = "  · Claude in Chrome isn't set up on this machine"
+			}
+			opts = append(opts, huh.NewOption(name+missing, name))
 		}
 		if s, ok := mcp.Find(c.Servers, name); !ok || s.Available() {
 			selected = append(selected, name)
