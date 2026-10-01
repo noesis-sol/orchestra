@@ -3,9 +3,7 @@ package project
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -161,17 +159,18 @@ func WriteMCPConfig(wt string, servers []mcp.Server) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(wt, Dir, RunName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	root, err := OpenRun(wt)
+	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, MCPConfigName)
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
+	rel := RunPath(MCPConfigName)
 	// WriteFile keeps an earlier file's mode, so that file goes first.
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := RemoveRun(root, wt, rel); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, b, 0o600); err != nil {
-		return "", err
+	if err := root.WriteFile(rel, b, 0o600); err != nil {
+		return "", RunError(wt, rel, err)
 	}
-	return path, nil
+	return filepath.Join(wt, rel), nil
 }

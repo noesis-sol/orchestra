@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // An environment-wide failure (a safety classifier that refuses every command, say) fails each
@@ -198,16 +198,22 @@ func (o *Loop) probeEnvironment(
 // the worker could not be started, never took its prompt, or stopped or timed out without the file.
 func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	c := o.cfg
-	proof := filepath.Join(c.Repo, ".orchestra", "run", "probe")
-	if err := os.MkdirAll(filepath.Dir(proof), 0o755); err != nil {
-		return "", fmt.Errorf("cannot make %s: %w", filepath.Dir(proof), err)
+	// The probe's worker writes the file, so it is reached through an os.Root at the main checkout,
+	// which won't follow a symlink out of it.
+	root, err := project.OpenRun(c.Repo)
+	if err != nil {
+		return "", fmt.Errorf("cannot make %s in %s: %w", project.RunPath(""), c.Repo, err)
 	}
-	if err := os.Remove(proof); err != nil && !errors.Is(err, os.ErrNotExist) {
+	proof := project.RunPath("probe")
+	defer func() {
+		_ = root.Remove(proof) // best effort: the next probe removes it first
+		_ = root.Close()       // nothing written through it is lost
+	}()
+	if err := project.RemoveRun(root, c.Repo, proof); err != nil {
 		return "", fmt.Errorf("cannot remove an earlier probe's %s: %w", proof, err)
 	}
-	defer func() { _ = os.Remove(proof) }() // best effort: the next probe removes it first
 	ran := func() bool {
-		b, err := os.ReadFile(proof)
+		b, err := root.ReadFile(proof)
 		return err == nil && strings.TrimSpace(string(b)) == "ok"
 	}
 
@@ -243,7 +249,8 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	}
 	o.info("  probe worker %s started in tab %s", agent, tab)
 	prompt := fmt.Sprintf("Orchestra is checking that commands run on this machine; there is no ticket. "+
-		"Run exactly this one shell command, then stop without doing anything else: echo ok > %s", command.ShellQuote(proof))
+		"Run exactly this one shell command, then stop without doing anything else: echo ok > %s",
+		command.ShellQuote(filepath.Join(c.Repo, proof)))
 	if !o.deliverPrompt(ctx, agent, prompt) {
 		return tab, fmt.Errorf("it never started on its prompt (tab %s)", tab)
 	}

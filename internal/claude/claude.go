@@ -7,7 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,24 +29,26 @@ type Reporter struct{}
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
 func (Reporter) ReportArgs(worktree string) ([]string, error) {
-	dir := filepath.Join(worktree, project.Dir, project.RunName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	root, err := project.OpenRun(worktree)
+	if err != nil {
 		return nil, err
 	}
-	activity, edits := filepath.Join(dir, activityName), filepath.Join(dir, editsName)
-	for _, f := range []string{activity, edits} {
-		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
+	for _, name := range []string{activityName, editsName} {
+		if err := project.RemoveRun(root, worktree, project.RunPath(name)); err != nil {
 			return nil, err
 		}
 	}
+	activity := filepath.Join(worktree, project.RunPath(activityName))
+	edits := filepath.Join(worktree, project.RunPath(editsName))
 	b, err := json.MarshalIndent(hookSettings(activity, edits), "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, settingsName)
-	if err := os.WriteFile(path, b, 0o644); err != nil {
-		return nil, err
+	if err := root.WriteFile(project.RunPath(settingsName), b, 0o644); err != nil {
+		return nil, project.RunError(worktree, project.RunPath(settingsName), err)
 	}
+	path := filepath.Join(worktree, project.RunPath(settingsName))
 	return []string{"--settings", path}, nil
 }
 
@@ -82,13 +84,12 @@ func hookSettings(activity, edits string) map[string]any {
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
 // reported nothing readable.
 func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
-	path := filepath.Join(worktree, project.Dir, project.RunName, activityName)
-	b, err := os.ReadFile(path)
+	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
 	u, ok := parseToolUse(b)
-	if fi, err := os.Stat(path); ok && err == nil {
+	if ok {
 		u.At = fi.ModTime() // each report replaces the file, so it was written then
 	}
 	return u, ok
@@ -97,11 +98,32 @@ func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 // EditedFiles returns the files the worker in worktree has edited, as paths in the repository, in
 // the order it first edited them. Files outside the worktree and in .orchestra/run/ are left out.
 func (Reporter) EditedFiles(worktree string) []string {
-	b, err := os.ReadFile(filepath.Join(worktree, project.Dir, project.RunName, editsName))
+	b, _, err := readRun(worktree, editsName)
 	if err != nil {
 		return nil
 	}
 	return editedFiles(b, worktree)
+}
+
+// readRun reads the file name in worktree's .orchestra/run/ through an os.Root, which won't follow
+// a symlink out of the worktree, and returns it with its details as it was read.
+func readRun(worktree, name string) ([]byte, os.FileInfo, error) {
+	root, err := os.OpenRoot(worktree)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = root.Close() }() // read-only: nothing to lose
+	f, err := root.Open(project.RunPath(name))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only: nothing to lose
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err := io.ReadAll(f)
+	return b, fi, err
 }
 
 func editedFiles(b []byte, worktree string) []string {

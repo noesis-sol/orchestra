@@ -2,7 +2,9 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -112,8 +114,39 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
 	// every server on the machine, so a file it can't have stops the run rather than the worker.
 	mcpArgs, err := o.mcpArgs(wt)
+	if e := escapeOf(err); e != nil {
+		return o.setAsideEscaped(keep, id, wt, e)
+	}
 	if err != nil {
 		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
+	}
+
+	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
+	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
+	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote()
+	launch := ""
+	if c.LaunchPrompt && c.AgentKind == "claude" {
+		launch, err = project.WriteLaunchPrompt(wt, id, prompt)
+		if e := escapeOf(err); e != nil {
+			return o.setAsideEscaped(keep, id, wt, e)
+		}
+		if err != nil {
+			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
+			launch = ""
+		}
+	}
+
+	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
+	var report []string
+	if o.reporter != nil && c.AgentKind == "claude" {
+		report, err = o.reporter.ReportArgs(wt)
+		if e := escapeOf(err); e != nil {
+			return o.setAsideEscaped(keep, id, wt, e)
+		}
+		if err != nil {
+			o.log.Raw("", fmt.Errorf("cannot set up %s's worker to report what it does: %w", id, err))
+			report = nil
+		}
 	}
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
@@ -133,27 +166,6 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	o.status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
 	defer o.status(Status{Ticket: id, Gone: true})
 
-	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
-	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote()
-	launch := ""
-	if c.LaunchPrompt && c.AgentKind == "claude" {
-		var err error
-		if launch, err = project.WriteLaunchPrompt(wt, id, prompt); err != nil {
-			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
-			launch = ""
-		}
-	}
-
-	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
-	var report []string
-	if o.reporter != nil && c.AgentKind == "claude" {
-		var err error
-		if report, err = o.reporter.ReportArgs(wt); err != nil {
-			o.log.Raw("", fmt.Errorf("cannot set up %s's worker to report what it does: %w", id, err))
-			report = nil
-		}
-	}
 	// startArgs are the worker's arguments: its MCP servers and the run's arguments for every Claude
 	// worker (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
 	// has them.
@@ -488,4 +500,36 @@ func (o *Loop) closeTab(ctx context.Context, tab string) {
 	if err := o.tabs.CloseTab(ctx, tab); err != nil {
 		o.log.Raw("", fmt.Errorf("cannot close tab %s: %w", tab, err))
 	}
+}
+
+// escapeOf is the *project.EscapeError in err's chain, or nil.
+func escapeOf(err error) *project.EscapeError {
+	var e *project.EscapeError
+	if errors.As(err, &e) {
+		return e
+	}
+	return nil
+}
+
+// setAsideEscaped sets ticket id aside without starting a worker: part of the path to its run files
+// in worktree wt leads out of the worktree through a symlink, which orchestra won't follow (see
+// project.OpenRun). The worker's own files are its to change, so only the user can say whether the
+// link is safe to remove.
+func (o *Loop) setAsideEscaped(ctx context.Context, id, wt string, e *project.EscapeError) *stopReason {
+	o.log.Raw("", fmt.Errorf("%s: %w", id, e))
+	why := fmt.Sprintf("its worktree's %s points outside the worktree", e.Path)
+	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s (%s), so no worker was started on it: "+
+		"orchestra writes a worker's run files only inside its worktree. "+
+		"Look at what it points to, remove the link (rm %s), then bring it back with: bd undefer %s",
+		why, filepath.Join(wt, e.Path), filepath.Join(wt, e.Path), id))
+	if err := o.deferAside(ctx, id, why); err != nil {
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  DEFER_FAILED: %s, and bd could not defer %s%s; kept out of this run, remove the link in %s",
+			why, id, because(err), wt)})
+		return nil
+	}
+	o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: why, Text: fmt.Sprintf(
+		"  RUN_FILES_OUTSIDE: %s -> %s deferred without starting a worker; remove the link %s, then bd undefer %s",
+		why, id, filepath.Join(wt, e.Path), id)})
+	return nil
 }

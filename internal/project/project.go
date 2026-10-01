@@ -385,12 +385,13 @@ func wroteTemplate(steps []Step) bool {
 // WriteLaunchPrompt puts the worker prompt in the worktree at .orchestra/run/prompt.md, which
 // EnsureRunExcluded keeps out of git, and returns the one-line instruction to start the worker with.
 func WriteLaunchPrompt(wt, ticket, prompt string) (string, error) {
-	dir := filepath.Join(wt, Dir, RunName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	root, err := OpenRun(wt)
+	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "prompt.md"), []byte(prompt), 0o644); err != nil {
-		return "", err
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
+	if err := root.WriteFile(RunPath("prompt.md"), []byte(prompt), 0o644); err != nil {
+		return "", RunError(wt, RunPath("prompt.md"), err)
 	}
 	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. "+
 		"Read that file and follow it exactly.", ticket, Dir, RunName), nil

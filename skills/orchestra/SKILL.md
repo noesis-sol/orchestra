@@ -280,6 +280,10 @@ Lines about single tickets, which don't stop the run:
   rather than a failing test.
 - `REBASE_FAILED`: a returning ticket's branch conflicts with the base branch, so it was deferred
   without starting a worker. Rebase it in its worktree, resolve, then `bd undefer <id>`.
+- `RUN_FILES_OUTSIDE`: the ticket's worktree has `.orchestra/run`, or a file orchestra writes in
+  it, as a symlink leading out of the worktree, so it was deferred without starting a worker:
+  orchestra writes those files only inside the worktree. Look at the link with the user, remove it,
+  then `bd undefer <id>`.
 - `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, so its branch wasn't
   rebased before its worker started; it is rebased when it merges.
 

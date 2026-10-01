@@ -314,6 +314,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- orchestra no longer follows a symlink out of a worktree when it writes,
+  removes or reads the files in `.orchestra/run/` (`mcp.json`, with the MCP
+  servers' secrets, `prompt.md`, `hooks.json`, `activity.json`, `edits`), nor
+  out of the main checkout for the environment probe's file: each goes through
+  an `os.Root` at the checkout. A worktree whose `.orchestra/run`, or a file in
+  it, leads outside is set aside without a worker (`RUN_FILES_OUTSIDE: its
+  worktree's .orchestra/run points outside the worktree -> <id> deferred …`),
+  with a note on the ticket, and the run goes on.
 - A panic while working on one ticket (a nil pointer, an index out of range)
   no longer kills orchestra and leaves the other workers running unsupervised:
   the run holds with `PANIC in <ticket>: <value>; its worktree and tab … are
