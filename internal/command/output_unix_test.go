@@ -5,6 +5,7 @@ package command
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -66,5 +67,22 @@ func TestOutputReportsAFailure(t *testing.T) {
 	_, err := Output(context.Background(), ReadLimit, "", "sh", "-c", "echo locked >&2; exit 3")
 	if err == nil || err.Error() != "sh -c echo locked >&2; exit 3: exit status 3: locked" {
 		t.Errorf("error %v", err)
+	}
+}
+
+// A failure is an *Error with the command, its stderr and exec's error underneath.
+func TestOutputFailureIsTyped(t *testing.T) {
+	_, err := Output(context.Background(), ReadLimit, "", "sh", "-c", "echo locked >&2; exit 3")
+	var e *Error
+	if !errors.As(err, &e) || e.Name != "sh" || e.Stderr != "locked" || e.Stopped {
+		t.Fatalf("error %#v", err)
+	}
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Errorf("exec's error should be underneath: %v", err)
+	}
+	_, err = Output(context.Background(), 200*time.Millisecond, "", "sh", hang...)
+	if !errors.As(err, &e) || !e.Stopped || e.Err.Error() != "timed out after 200ms" {
+		t.Errorf("stopped command: %#v", err)
 	}
 }

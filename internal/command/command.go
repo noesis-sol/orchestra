@@ -28,8 +28,8 @@ const (
 const stopGrace = 500 * time.Millisecond
 
 // Output runs a command in dir and returns its stdout. The command is stopped when ctx is done or
-// once it has run for limit (0 for no limit). The error carries stderr, and for a command that was
-// stopped why: the limit it ran into, or the cause ctx was cancelled with.
+// once it has run for limit (0 for no limit). The error is an *Error carrying stderr, and for a
+// command that was stopped why: the limit it ran into, or the cause ctx was cancelled with.
 func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
 	if limit > 0 {
 		var cancel context.CancelFunc
@@ -51,16 +51,36 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 	if err == nil {
 		return stdout.String(), nil
 	}
-	why := strings.TrimSpace(stderr.String())
+	e := &Error{Name: name, Args: args, Err: err, Stderr: strings.TrimSpace(stderr.String())}
 	if cause := context.Cause(ctx); cause != nil {
-		err = cause
-		if why != "" {
-			return stdout.String(), fmt.Errorf("%s %s: %w (%s)", name, shortArgs(args), err, why)
-		}
-		return stdout.String(), fmt.Errorf("%s %s: %w", name, shortArgs(args), err)
+		e.Err, e.Stopped = cause, true
 	}
-	return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, shortArgs(args), err, why)
+	return stdout.String(), e
 }
+
+// Error is a command that failed: what ran, why it failed, and what it said on stderr. Callers that
+// react to a particular failure read its fields (or Err, through errors.As) instead of its text.
+type Error struct {
+	Name    string
+	Args    []string
+	Err     error  // how the command failed (*exec.ExitError, say), or why it was stopped
+	Stderr  string // trimmed
+	Stopped bool   // stopped by its time limit or a cancelled context, Err saying which
+}
+
+// Error reads "git rebase main: exit status 1: <stderr>", or for a stopped command
+// "git rebase main: timed out after 2m (<stderr>)".
+func (e *Error) Error() string {
+	switch {
+	case !e.Stopped:
+		return fmt.Sprintf("%s %s: %v: %s", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+	case e.Stderr != "":
+		return fmt.Sprintf("%s %s: %v (%s)", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+	}
+	return fmt.Sprintf("%s %s: %v", e.Name, shortArgs(e.Args), e.Err)
+}
+
+func (e *Error) Unwrap() error { return e.Err }
 
 // shortDuration is d as a person would write it: 2m, 30s, 500ms.
 func shortDuration(d time.Duration) string {
