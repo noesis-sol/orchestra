@@ -60,18 +60,48 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+scripts/check.sh                       # the full check: go vet, go test -race, golangci-lint (pinned, via go run)
+go test ./internal/dispatch/...        # one package while iterating
+go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra -version
 ```
+
+- `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that
+  fails lint is not merged. Run it in full before closing a ticket.
+- Go 1.26 with `toolchain go1.26.8` in go.mod: keep it at 1.26.5 or later, which fixes a race-detector hang in
+  fork on darwin/arm64 (golang/go#79804).
+- `TestLiveOrgans` calls the real `claude`; it is skipped unless enabled (its comment says how).
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+orchestra is a Go CLI that works through a Beads backlog: it hands each ready ticket to a **worker** (a Claude Code
+agent) in its own Herdr tab and git worktree, and fast-forwards finished tickets into the branch it runs on.
+**Organs** are its one-shot advisers (triage, the run report): `claude -p` with no tools and no MCP servers. The
+README defines both terms; use them consistently.
+
+- `cmd/orchestra`: flags and settings, `orchestra init`, `orchestra plan`, the dashboard or plain output, signals,
+  the organ phase after a run.
+- `internal/dispatch`: the run loop, one file per concern (the README's Development section lists them). It
+  reaches Beads, Herdr, git and workers' reports only through the interfaces in `deps.go`.
+- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/git` (git), `internal/command` (every
+  external command: context, time limit, process group), `internal/claude` (workers' hooks), `internal/mcp`
+  (discovering MCP servers for workers).
+- `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
+  `internal/tui`: the Bubble Tea dashboard and init's screen.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Commit messages: `orchestra-<id>: <imperative summary>`, naming the Beads ticket, with a body that says why.
+- Lines up to 120 columns (lll); doc comments on exported identifiers; `golangci-lint` clean.
+- Errors: wrap with `%w`; inspect with `errors.Is`/`errors.As` on typed errors (e.g. `herdr.Error`), never by
+  matching error text; a loop stop is a `halt(code, kind, …)` with its cause. Check every error that changes
+  behaviour; comment the deliberate discards.
+- Every external command goes through `internal/command` with a context and a time limit (`ReadLimit`,
+  `WriteLimit`); nothing blocks without watching for cancellation.
+- Agent status is the typed `AgentState`, not strings.
+- Tests: whole-run scenarios use the fakes (`fakes_test.go`, `fakeherdr_test.go`) and the harness in
+  `helpers_test.go`; goroutine leaks fail the dispatch tests (goleak). Put new tests in a file named after the
+  feature rather than at the end of a shared test file; add changelog entries as new lines (`.gitattributes` has
+  `CHANGELOG.md merge=union`), so parallel tickets don't conflict.
+- Workers never push; orchestra merges. `.orchestra/settings.json` and `.orchestra/worker-prompt.md` are committed;
+  `.orchestra/run/` (per-ticket files, including workers' MCP definitions) never is.
