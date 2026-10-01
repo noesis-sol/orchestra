@@ -141,3 +141,76 @@ func TestWithoutHooksAnOpenTicketGetsAStartUpGrace(t *testing.T) {
 		}
 	})
 }
+
+// An adopted worker's hooks' record may still end with the Stop of the turn it asked in: a report
+// from before it was adopted (or of unknown time) doesn't count, one since does.
+func TestIdleSettledIgnoresReportsBeforeTheAdoption(t *testing.T) {
+	since := time.Now()
+	cases := []struct {
+		name    string
+		u       ToolUse
+		since   time.Time
+		settled bool
+	}{
+		{"stale Stop", ToolUse{Event: "Stop", At: since.Add(-time.Hour)}, since, false},
+		{"Stop of unknown time", ToolUse{Event: "Stop"}, since, false},
+		{"Stop since", ToolUse{Event: "Stop", At: since.Add(time.Second)}, since, true},
+		{"not adopted", ToolUse{Event: "Stop", At: since.Add(-time.Hour)}, time.Time{}, true},
+	}
+	for _, c := range cases {
+		hooks := &hookReporter{last: map[string]ToolUse{"wt": c.u}}
+		o := &Loop{reporter: hooks}
+		if settled, why := o.idleSettled("open", "wt", true, c.since, time.Minute, time.Second); settled != c.settled {
+			t.Errorf("%s: settled = %v (%s), want %v", c.name, settled, why, c.settled)
+		}
+	}
+}
+
+// An asked worker that reports through hooks, adopted once its question is answered, is not
+// settled by the Stop of the turn it asked in: it is waited on while it starts on the answer, idle
+// with its ticket open, and settles at its own Stop hook.
+func TestAdoptedWorkerSettlesAtItsOwnStopHook(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	hooks := &hookReporter{}
+	h.reporter = hooks
+	h.beads.add("A", "first", 1)
+	h.beads.add("B", "second", 2)
+	h.worker("A",
+		func(w *fakeWorker) AgentState {
+			w.claim()
+			w.ask("Q", "which way?")
+			w.beads.set(w.id, "open")
+			hooks.report(w.wt, "Stop")
+			return "idle"
+		},
+		func(w *fakeWorker) AgentState { // once told the answer is in
+			w.shows("idle")
+			time.Sleep(100 * time.Millisecond) // many polls, before its first hook
+			hooks.report(w.wt, "PreToolUse")   // bd show Q
+			w.claim()
+			w.commit("a.txt")
+			w.close()
+			hooks.report(w.wt, "Stop")
+			return "idle"
+		})
+	h.worker("B", func(w *fakeWorker) AgentState {
+		w.beads.set("Q", "closed") // the maintainer answers meanwhile
+		return finishes("b.txt")(w)
+	})
+	o := h.loop()
+	o.wait.startGrace = patience // only the stale Stop could settle it while it starts on the answer
+	o.wait.idleGrace = patience  // idle while it commits, too
+	if code := o.Run(t.Context()); code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+	}
+	if got := h.sink.of(EvDeferred); len(got) != 0 {
+		t.Errorf("deferred: %q", got)
+	}
+	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") {
+		t.Errorf("main:\n%s", log)
+	}
+	if logged := h.logged(); strings.Count(logged, "A settled: Stop hook at ") != 2 {
+		t.Errorf("both of A's turns should be settled by their own Stop hook:\n%s", logged)
+	}
+}

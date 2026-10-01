@@ -45,6 +45,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in. Any
 	// other is renamed so the new worker can have the name; its tab stays as it is.
 	st, err := o.readStatus(ctx, agent, 5)
+	adopted := time.Now() // an adopted worker's hooks reported anything older in its earlier turns
 	if ctx.Err() != nil {
 		return errInterrupted
 	}
@@ -58,7 +59,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if asked {
 			o.info("  %s's earlier worker is still %s in tab %s; adopting it rather than starting another",
 				id, st, earlier.tab)
-			return o.adopt(ctx, t, agent, earlier, st, how)
+			return o.adopt(ctx, t, agent, earlier, st, adopted, how)
 		}
 		return halt(ExitTool, stopAgentBusy,
 			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
@@ -67,7 +68,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		if asked && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, earlier) {
 			o.info("  %s's earlier worker in tab %s was told %s is answered and carries on; adopting it",
 				id, earlier.tab, earlier.question)
-			return o.adopt(ctx, t, agent, earlier, StateWorking, how)
+			return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
@@ -286,13 +287,14 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	stopWatch() // the settle loop reports from here on
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
-	return o.conclude(ctx, t, agent, tab, wt, head, started, report != nil, w.report, how)
+	return o.conclude(ctx, t, agent, tab, wt, head, started, report != nil, time.Time{}, w.report, how)
 }
 
 // adopt takes on the worker an asked ticket left in its tab, which carries on with the ticket now
 // its question is answered, as if it had just been started on it: it waits for it to settle and
-// merges or sets aside its work as usual. st is its status, as just read; how is set as in work.
-func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState,
+// merges or sets aside its work as usual. st is its status, as just read, at adopted; how is set as
+// in work.
+func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState, adopted time.Time,
 	how *settling) *stopReason {
 	id := t.ID
 	o.footprintWorktree(id, w.wt)
@@ -304,9 +306,9 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 	running.Agent = st
 	o.status(running)
 	defer o.status(Status{Ticket: id, Gone: true})
-	// Its hooks' record still ends with the Stop of the turn it asked in, which would pass for the
-	// end of this one, so it is waited on as a worker without them.
-	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, false, o.newWatcher(w.wt, base).report, how)
+	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
+	// end of this one: only what they reported once it was adopted counts.
+	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, w.hooks, adopted, o.newWatcher(w.wt, base).report, how)
 }
 
 // resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
@@ -326,12 +328,13 @@ func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool
 }
 
 // conclude waits for ticket t's worker, started (or adopted) at started, to settle, and then does
-// what its ticket's status says: merge it, set it aside, or stop the run. It sets how to how the
-// worker settled, as work does.
+// what its ticket's status says: merge it, set it aside, or stop the run. hooks says it reports
+// through them, and since from when (zero: any report counts). It sets how to how the worker
+// settled, as work does.
 func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head string, started time.Time, hooks bool,
-	report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
+	since time.Time, report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
 	id, br := t.ID, "wt/"+t.ID
-	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), hooks, report)
+	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), hooks, since, report)
 	if stop != nil {
 		return stop
 	}
@@ -345,7 +348,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
 		o.markAside(id)
-		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title})
+		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: hooks})
 		if info.Status != "open" { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

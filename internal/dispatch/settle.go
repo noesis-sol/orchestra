@@ -11,13 +11,14 @@ import (
 // its prompts; stop if it stays blocked for 4 minutes, or in a status Herdr can't tell (unknown) for
 // 5. An idle worker has settled only once idleSettled says so: Herdr takes a worker for idle while
 // it starts up, and while it waits on its own background command. hooks says it reports through
-// them, begun when it was confirmed started on its prompt. A status Herdr fails to read says
+// them, since from when (zero: any report counts); begun is when it was confirmed started on its
+// prompt. A status Herdr fails to read says
 // nothing about the worker, so the wait goes on through maxFailedReads of them in a row before the
 // run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
 // without a limit, one still going after longRunning is reported once. Each status read goes to
 // report (nil: none), for the dashboard.
 func (o *Loop) waitSettled(
-	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool,
+	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, since time.Time,
 	report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince time.Time
@@ -64,7 +65,7 @@ func (o *Loop) waitSettled(
 			if err != nil {
 				o.log.Raw("", err)
 			}
-			if done, why := o.idleSettled(ts, wt, hooks, time.Since(idleSince), time.Since(begun)); done {
+			if done, why := o.idleSettled(ts, wt, hooks, since, time.Since(idleSince), time.Since(begun)); done {
 				o.info("  %s settled: %s", id, why)
 				return idleSince, nil
 			}
@@ -154,16 +155,23 @@ const startGrace = 3 * time.Minute
 // what decided it. A ticket in progress gets idleGrace, as its worker may be waiting on its own
 // background command. Otherwise a worker that reports through hooks has settled at its Stop hook,
 // the end of its turn: the record is removed before it starts, so any Stop came after its prompt.
-// While its last report is a tool use it is mid-turn, whatever Herdr says, for up to idleGrace (a
-// turn that fails ends without a Stop). Before its first report, or without hooks, an open ticket
-// gets startGrace; any other status means the worker is done with it.
-func (o *Loop) idleSettled(ticket, wt string, hooks bool, idleFor, running time.Duration) (settled bool, why string) {
+// An adopted worker's record is not, so a report before since (or of unknown time, with since set)
+// is of an earlier turn, and doesn't count. While its last report is a tool use it is mid-turn,
+// whatever Herdr says, for up to idleGrace (a turn that fails ends without a Stop). Before its first
+// report, or without hooks, an open ticket gets startGrace; any other status means the worker is
+// done with it.
+func (o *Loop) idleSettled(ticket, wt string, hooks bool, since time.Time, idleFor, running time.Duration) (
+	settled bool, why string) {
 	grace := orDefault(o.wait.idleGrace, idleGrace)
 	if ticket == "in_progress" {
 		return idleFor >= grace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(grace))
 	}
 	if hooks && o.reporter != nil {
-		if u, ok := o.reporter.LastToolUse(wt); ok {
+		u, ok := o.reporter.LastToolUse(wt)
+		if ok && !since.IsZero() && (u.At.IsZero() || u.At.Before(since)) {
+			ok = false // of a turn before it was adopted
+		}
+		if ok {
 			if u.Event == "Stop" {
 				return true, "Stop hook at " + u.At.Format("15:04:05")
 			}

@@ -196,6 +196,7 @@ type askedWorker struct {
 	tab, wt  string
 	question string // its ID
 	title    string
+	hooks    bool // it reports through hooks
 }
 
 // setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
