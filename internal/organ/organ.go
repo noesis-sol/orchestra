@@ -27,6 +27,7 @@ import (
 //             set aside and why, and what needs the maintainer.
 //   predictor each ready ticket that names no files: the files it will likely change, which the
 //             orchestrator caches on the ticket and schedules it by.
+//   screen    a feature request typed or pasted: ok to plan, reject (malicious or inappropriate) or unclear.
 
 // Client runs organs through the claude CLI.
 type Client struct {
