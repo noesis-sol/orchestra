@@ -1,4 +1,6 @@
 {
   "check": "scripts/check.sh",
-  "concurrent": 2
+  "check_timeout": "30m",
+  "concurrent": 4,
+  "mcp_servers": []
 }
