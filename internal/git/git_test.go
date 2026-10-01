@@ -152,7 +152,7 @@ func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
 	if err := os.WriteFile(lock, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	time.AfterFunc(1500*time.Millisecond, func() { os.Remove(lock) })
+	time.AfterFunc(1500*time.Millisecond, func() { _ = os.Remove(lock) }) // a failure shows as DeleteBranch failing
 	if out, err := (Git{}).DeleteBranch(context.Background(), repo, "wt/x-12"); err != nil {
 		t.Fatalf("DeleteBranch: %v\n%s", err, out)
 	}

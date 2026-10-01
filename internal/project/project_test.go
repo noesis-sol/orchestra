@@ -55,8 +55,12 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	// The log, reports and run files are ignored; the prompt and .gitignore are not.
 	for _, f := range []string{"orchestra.log", "reports/r.md", "run/prompt.md"} {
 		p := filepath.Join(repo, ".orchestra", f)
-		os.MkdirAll(filepath.Dir(p), 0o755)
-		os.WriteFile(p, []byte("x"), 0o644)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	status := git(repo, "status", "--porcelain", "--untracked-files=all")
 	if strings.Contains(status, "orchestra.log") || strings.Contains(status, "reports/") || strings.Contains(status, "run/") {
@@ -70,12 +74,18 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	}
 
 	// A second run leaves the prompt alone; -force replaces it.
-	os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644)
-	Init(context.Background(), repo, "", false)
+	if err := os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(context.Background(), repo, "", false); err != nil {
+		t.Fatal(err)
+	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "mine TICKET_ID" {
 		t.Errorf("init overwrote an existing prompt: %q", got)
 	}
-	Init(context.Background(), repo, "", true)
+	if _, err := Init(context.Background(), repo, "", true); err != nil {
+		t.Fatal(err)
+	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != promptTemplate {
 		t.Error("-force should restore the template")
 	}
@@ -83,13 +93,19 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 
 func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	repo, git := gitRepo(t)
-	os.MkdirAll(filepath.Join(repo, ".claude"), 0o755)
-	os.WriteFile(filepath.Join(repo, legacyPrompt), []byte("legacy TICKET_ID"), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, legacyPrompt), []byte("legacy TICKET_ID"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	git(repo, "add", legacyPrompt)
 	git(repo, "commit", "-q", "-m", "prompt")
 	// Earlier versions excluded all of .orchestra/, which would hide the committed prompt.
 	exclude := filepath.Join(repo, ".git", "info", "exclude")
-	os.WriteFile(exclude, []byte("# mine\n*.tmp\n# worker prompts written by orchestra\n/.orchestra/\n"), 0o644)
+	if err := os.WriteFile(exclude, []byte("# mine\n*.tmp\n# worker prompts written by orchestra\n/.orchestra/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	if Layout := Locate(repo); !Layout.Legacy {
 		t.Error("before init the legacy Layout should be used")
@@ -124,7 +140,9 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 	if err := EnsureRunExcluded(context.Background(), repo); err != nil {
 		t.Fatal(err)
 	}
-	EnsureRunExcluded(context.Background(), repo) // idempotent
+	if err := EnsureRunExcluded(context.Background(), repo); err != nil { // idempotent
+		t.Fatal(err)
+	}
 	line, err := WriteLaunchPrompt(wt, "k-1", "You are responsible for k-1.\n- Run `ls`.\n")
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +274,9 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 		t.Errorf("check timeout soon: %+v", c)
 	}
 	repo := t.TempDir()
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	st, _ := ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 20}, ""))
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
 		t.Errorf("replaced concurrency: %+v", st)
@@ -272,14 +292,18 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 
 func TestApplySettingsSavesAndExplains(t *testing.T) {
 	repo := t.TempDir()
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
+	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	st, err := ApplySettings(repo, Choice{Check: "make check", CheckTimeout: "5m", Concurrent: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(SettingsPath(repo))
 	var m map[string]any
-	json.Unmarshal(raw, &m)
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
 	if m["concurrent"] != float64(3) || m["check"] != "make check" || m["check_timeout"] != "5m" {
 		t.Errorf("settings.json = %s", raw)
 	}
@@ -299,8 +323,12 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	}
 	// Settings init doesn't ask about are kept.
 	none := []string{}
-	SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none})
-	ApplySettings(repo, Choice{Check: "make test", Concurrent: 2})
+	if err := SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplySettings(repo, Choice{Check: "make test", Concurrent: 2}); err != nil {
+		t.Fatal(err)
+	}
 	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 ||
 		s.ExcludeTypes == nil || len(*s.ExcludeTypes) != 0 {
 		t.Errorf("after init: %+v", s)
@@ -309,19 +337,27 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 
 func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 	repo := t.TempDir()
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	os.WriteFile(SettingsPath(repo), []byte(`{"check": "make check", "ticket_limit": "2h", "future": {"a": [1, 2]}}`), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(SettingsPath(repo), []byte(`{"check": "make check", "ticket_limit": "2h", "future": {"a": [1, 2]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := SaveSettings(repo, Settings{Concurrency: 2}); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(SettingsPath(repo))
 	var m map[string]any
-	json.Unmarshal(raw, &m)
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
 	if len(m) != 2 || m["concurrent"] != float64(2) || m["future"] == nil {
 		t.Errorf("known keys follow Settings, unknown ones stay: %s", raw)
 	}
 	// Broken JSON is not overwritten.
-	os.WriteFile(SettingsPath(repo), []byte(`{"concurrent": `), 0o644)
+	if err := os.WriteFile(SettingsPath(repo), []byte(`{"concurrent": `), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := SaveSettings(repo, Settings{Concurrency: 2}); err == nil {
 		t.Error("saved over a settings.json it could not read")
 	}

@@ -26,7 +26,9 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
 	repo, run := gitRepo(t)
 	run(repo, "branch", "-M", "main")
-	os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run(repo, "add", ".")
 	run(repo, "commit", "-q", "-m", "shared file")
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
@@ -44,7 +46,9 @@ func (f *mergeFixture) ticket(t *testing.T, id, file, content string) string {
 	t.Helper()
 	wt := filepath.Join(t.TempDir(), id)
 	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/"+id, wt, "main")
-	os.WriteFile(filepath.Join(wt, file), []byte(content), 0o644)
+	if err := os.WriteFile(filepath.Join(wt, file), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.git(wt, "add", ".")
 	f.git(wt, "commit", "-q", "-m", id+": change "+file)
 	return wt
@@ -52,7 +56,9 @@ func (f *mergeFixture) ticket(t *testing.T, id, file, content string) string {
 
 func (f *mergeFixture) onMain(t *testing.T, file, content string) {
 	t.Helper()
-	os.WriteFile(filepath.Join(f.repo, file), []byte(content), 0o644)
+	if err := os.WriteFile(filepath.Join(f.repo, file), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.git(f.repo, "add", ".")
 	f.git(f.repo, "commit", "-q", "-m", "main moves on: "+file)
 }
@@ -202,7 +208,9 @@ func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
 func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	before := f.git(f.repo, "rev-parse", "main")
 	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
 	if s == nil || s.code != ExitDirty || !strings.Contains(s.text, "uncommitted changes") {
@@ -269,8 +277,12 @@ func leavesUncommitted(file, edited string) behaviour {
 func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	os.MkdirAll(filepath.Join(h.repo, ".claude", "commands"), 0o755)
-	os.WriteFile(filepath.Join(h.repo, ".claude", "commands", "ship.md"), []byte("ship\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(h.repo, ".claude", "commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.repo, ".claude", "commands", "ship.md"), []byte("ship\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".claude")
 	h.git(h.repo, "commit", "-q", "-m", "add a project command")
 	h.beads.add("A", "first", 1)

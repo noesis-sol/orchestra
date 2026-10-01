@@ -19,11 +19,19 @@ import (
 func configFixture(t *testing.T, settings string) string {
 	t.Helper()
 	repo, _ := gitRepo(t)
-	os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755)
-	os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
-	os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if settings != "" {
-		os.WriteFile(filepath.Join(repo, ".orchestra", "settings.json"), []byte(settings), 0o644)
+		if err := os.WriteFile(filepath.Join(repo, ".orchestra", "settings.json"), []byte(settings), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL",
@@ -40,14 +48,14 @@ func samePath(a, b string) bool {
 	if a == b {
 		return true
 	}
-	real := func(p string) string {
+	resolve := func(p string) string {
 		d, err := filepath.EvalSymlinks(filepath.Dir(p))
 		if err != nil {
 			return p
 		}
 		return filepath.Join(d, filepath.Base(p))
 	}
-	return real(a) == real(b)
+	return resolve(a) == resolve(b)
 }
 
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
@@ -79,7 +87,9 @@ func TestConfigConcurrencyPrecedence(t *testing.T) {
 		t.Errorf("out of range: %v", p)
 	}
 	t.Setenv("ORCHESTRA_CONCURRENT", "")
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, _ := loadWith(t); c.Concurrency != 1 {
 		t.Errorf("no settings: %d", c.Concurrency)
 	}
@@ -108,11 +118,15 @@ func TestConfigTicketLimitPrecedence(t *testing.T) {
 		t.Errorf("invalid variable: %v", p)
 	}
 	t.Setenv("TICKET_LIMIT", "")
-	os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ticket_limit must be a duration") {
 		t.Errorf("invalid setting: %v", p)
 	}
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
 		t.Errorf("no settings: %s %v", c.TicketLimit, p)
 	}
@@ -141,11 +155,15 @@ func TestConfigCheckTimeoutPrecedence(t *testing.T) {
 		t.Errorf("the flag over an invalid variable: %s %v", c.CheckTimeout, p)
 	}
 	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "")
-	os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "check_timeout must be a positive duration") {
 		t.Errorf("invalid setting: %v", p)
 	}
-	os.Remove(".orchestra/settings.json")
+	if err := os.Remove(".orchestra/settings.json"); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 30*time.Minute {
 		t.Errorf("no settings: %s %v", c.CheckTimeout, p)
 	}
@@ -156,15 +174,21 @@ func TestConfigExcludeTypes(t *testing.T) {
 	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic" {
 		t.Errorf("default: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic decision" {
 		t.Errorf("settings: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if c, p := loadWith(t); len(p) > 0 || len(c.ExcludeTypes) != 0 {
 		t.Errorf("none: %v %v", c.ExcludeTypes, p)
 	}
-	os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644)
+	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "exclude_types must be a list") {
 		t.Errorf("invalid setting: %v", p)
 	}
@@ -209,9 +233,15 @@ func TestConfigDefaultsAndLayout(t *testing.T) {
 
 func TestConfigLegacyLayout(t *testing.T) {
 	repo := configFixture(t, "")
-	os.RemoveAll(filepath.Join(repo, ".orchestra"))
-	os.MkdirAll(filepath.Join(repo, ".claude"), 0o755)
-	os.WriteFile(filepath.Join(repo, ".claude", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644)
+	if err := os.RemoveAll(filepath.Join(repo, ".orchestra")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "worker-prompt.md"), []byte("Work on TICKET_ID."), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	c, p := loadWith(t)
 	if len(p) > 0 || !strings.HasSuffix(c.LogPath, ".claude/orchestrate.log") || !strings.HasSuffix(c.ReportsDir, ".claude/orchestrate-reports") {
 		t.Errorf("legacy project.Layout: %s %s %v", c.LogPath, c.ReportsDir, p)
@@ -221,8 +251,12 @@ func TestConfigLegacyLayout(t *testing.T) {
 // Every setup problem is reported, together; main exits with code 2 when there are any.
 func TestConfigSetupProblems(t *testing.T) {
 	repo := configFixture(t, "")
-	os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md"))
-	os.RemoveAll(filepath.Join(repo, ".beads"))
+	if err := os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".beads")); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("LIMIT", "many")
@@ -296,7 +330,9 @@ func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {
 // orchestra runs.
 func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
 	repo := configFixture(t, "")
-	os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755)
+	if err := os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(filepath.Join(repo, "sub", "dir"))
 	t.Setenv("WT_ROOT", "../wt")
 	c, p := loadWith(t)

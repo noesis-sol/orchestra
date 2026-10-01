@@ -26,8 +26,12 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "it's a worktree")
 	var r Reporter
 	stale := filepath.Join(wt, ".orchestra", "run", activityName)
-	os.MkdirAll(filepath.Dir(stale), 0o755)
-	os.WriteFile(stale, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Edit"}`), 0o644)
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte(`{"hook_event_name":"PreToolUse","tool_name":"Edit"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	args, err := r.ReportArgs(wt)
 	if err != nil || len(args) != 2 || args[0] != "--settings" {

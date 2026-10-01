@@ -102,8 +102,8 @@ func (Reporter) EditedFiles(worktree string) []string {
 
 func editedFiles(b []byte, worktree string) []string {
 	roots := []string{worktree}
-	if real, err := filepath.EvalSymlinks(worktree); err == nil && real != worktree {
-		roots = append(roots, real) // the worker may name it by its real path
+	if resolved, err := filepath.EvalSymlinks(worktree); err == nil && resolved != worktree {
+		roots = append(roots, resolved) // the worker may name it by its real path
 	}
 	seen := map[string]bool{}
 	var files []string

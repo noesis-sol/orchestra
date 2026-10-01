@@ -107,7 +107,9 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 		}, "CLOSED_WITHOUT_COMMIT"},
 		{"dirty", "true", func(f *mergeFixture) string {
 			wt := f.ticket(t, "k-a", "a.txt", "a\n")
-			os.WriteFile(filepath.Join(wt, "a.txt"), []byte("unfinished\n"), 0o644)
+			if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("unfinished\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 			return wt
 		}, "CLOSED_WITHOUT_COMMIT"},
 	}
@@ -339,7 +341,9 @@ func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
 
 	// The maintainer finishes A by hand, keeping its branch; run 3 sees it on main.
 	wt := h.worktree("A")
-	os.WriteFile(filepath.Join(wt, "a.txt"), []byte("a\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(wt, "add", "a.txt")
 	h.git(wt, "commit", "-q", "-m", "A: add a.txt")
 	h.git(h.repo, "merge", "-q", "--ff-only", "wt/A")

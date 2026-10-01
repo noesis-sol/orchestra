@@ -56,7 +56,9 @@ type EnvironmentHold struct {
 }
 
 const (
-	SettingsName   = "settings.json"
+	// SettingsName is the settings file's name in Dir.
+	SettingsName = "settings.json"
+	// MaxConcurrency is the most workers a run may have at once.
 	MaxConcurrency = 16
 	// DefaultCheckTimeout is how long the check command may run when settings.json sets no limit.
 	DefaultCheckTimeout = 30 * time.Minute

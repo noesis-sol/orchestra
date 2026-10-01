@@ -229,7 +229,7 @@ func (b *fakeBeads) SetMetadata(ctx context.Context, id, key, value string) erro
 		return fmt.Errorf("bd update %s: no such issue", id)
 	}
 	meta := map[string]any{}
-	json.Unmarshal(t.Metadata, &meta)
+	_ = json.Unmarshal(t.Metadata, &meta) // no metadata yet leaves meta empty
 	meta[key] = value
 	t.Metadata, _ = json.Marshal(meta)
 	return nil
@@ -240,7 +240,7 @@ func (b *fakeBeads) metadata(id, key string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var meta map[string]string
-	json.Unmarshal(b.tickets[id].Metadata, &meta)
+	_ = json.Unmarshal(b.tickets[id].Metadata, &meta) // no metadata yet leaves meta empty
 	return meta[key]
 }
 

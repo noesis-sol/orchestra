@@ -52,7 +52,7 @@ func noLeaks(t *testing.T) {
 // profile: one entry per distinct stack, led by how many goroutines share it.
 func labelled(test string) []string {
 	var b bytes.Buffer
-	pprof.Lookup("goroutine").WriteTo(&b, 1)
+	_ = pprof.Lookup("goroutine").WriteTo(&b, 1)   // writing to a bytes.Buffer cannot fail
 	_, profile, _ := strings.Cut(b.String(), "\n") // after the "goroutine profile: total N" header
 	label := fmt.Sprintf("%q:%q", testLabel, test)
 	var stacks []string

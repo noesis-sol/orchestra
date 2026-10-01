@@ -25,6 +25,7 @@ const (
 	ExitInterrupted = 130 // stopped with Ctrl+C
 )
 
+// Loop is one orchestra run: it picks ready tickets, hands them to workers and merges them.
 type Loop struct {
 	cfg    Config
 	log    *Log

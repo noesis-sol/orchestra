@@ -119,11 +119,15 @@ func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
 	h := newHarness(t)
 	h.git(h.repo, "branch", "wt/A")
 	h.git(h.repo, "checkout", "-q", "wt/A")
-	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("A\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "A: earlier attempt")
 	h.git(h.repo, "checkout", "-q", "main")
-	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("main\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "main moves on")
 	h.beads.add("A", "first", 1)

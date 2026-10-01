@@ -93,8 +93,11 @@ func renderEvent(ev dispatch.Event) string {
 
 type eventMsg dispatch.Event
 type statusMsg dispatch.Status
+
+// Finished tells the dashboard the run has returned, so it quits.
 type Finished struct{}
 
+// Dashboard is the live view of a run, a Bubble Tea model.
 type Dashboard struct {
 	cfg         dispatch.Config
 	spin        spinner.Model
@@ -126,8 +129,10 @@ func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool)) Dashb
 	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain}
 }
 
+// Init starts the spinner.
 func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 
+// Update handles the loop's events and statuses, keys and the window's size.
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -714,7 +719,7 @@ func (m Dashboard) statsTable(w int) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
 		BorderHeader(false).
-		StyleFunc(func(row, col int) lipgloss.Style {
+		StyleFunc(func(row, _ int) lipgloss.Style {
 			s := lipgloss.NewStyle().Padding(0, 1)
 			if row == table.HeaderRow {
 				return s.Faint(true)
@@ -758,8 +763,8 @@ func wordWrap(s string, width int) []string {
 	return lines
 }
 
-// wrapLines word-wraps s to width and keeps at most max lines, ending the last with … if cut.
-func wrapLines(s string, width, max int) []string {
+// wrapLines word-wraps s to width and keeps at most limit lines, ending the last with … if cut.
+func wrapLines(s string, width, limit int) []string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" || width < 1 {
 		return nil
@@ -768,9 +773,9 @@ func wrapLines(s string, width, max int) []string {
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	if len(lines) > max {
-		rest := strings.Join(lines[max-1:], " ")
-		lines = append(lines[:max-1], ansi.Truncate(rest, width, "…"))
+	if len(lines) > limit {
+		rest := strings.Join(lines[limit-1:], " ")
+		lines = append(lines[:limit-1], ansi.Truncate(rest, width, "…"))
 	}
 	return lines
 }
@@ -855,6 +860,7 @@ type ProgramSink struct {
 // NewProgramSink returns a sink for the dashboard program p.
 func NewProgramSink(p *tea.Program) *ProgramSink { return &ProgramSink{p: p} }
 
+// Event sends ev to the dashboard, or after Handoff to the next sink.
 func (s *ProgramSink) Event(ev dispatch.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -866,6 +872,7 @@ func (s *ProgramSink) Event(ev dispatch.Event) {
 	s.p.Send(eventMsg(ev)) // returns once received, or once the program has exited
 }
 
+// Status sends st to the dashboard, or after Handoff to the next sink.
 func (s *ProgramSink) Status(st dispatch.Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -895,6 +902,7 @@ type Printer struct {
 	Width  int
 }
 
+// Event prints ev as a line; the queue count, which only the dashboard shows, is skipped.
 func (p Printer) Event(ev dispatch.Event) {
 	if ev.Kind == dispatch.EvQueue {
 		return // the dashboard's count, not a line
@@ -905,6 +913,8 @@ func (p Printer) Event(ev dispatch.Event) {
 	}
 	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
+
+// Status does nothing: a printed run shows no live status.
 func (Printer) Status(dispatch.Status) {}
 
 // Say prints a line of the orchestrator's own progress outside the event stream.

@@ -18,7 +18,9 @@ import (
 func conflictHarness(t *testing.T) *harness {
 	t.Helper()
 	h := newHarness(t)
-	os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("line 1\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(h.repo, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "shared file")
 	h.cfg.Check = "! grep -q '<<<<<<<' shared.txt"

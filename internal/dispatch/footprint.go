@@ -34,6 +34,7 @@ const FilesKey = "files"
 // nothing to change, kept apart from the maintainer's FilesKey.
 const PredictedKey = "predicted_files"
 
+// Empty reports whether the footprint names nothing.
 func (f Footprint) Empty() bool { return len(f.Files)+len(f.Funcs)+len(f.Areas) == 0 }
 
 // String lists the footprint for the log: functions, files, then areas.

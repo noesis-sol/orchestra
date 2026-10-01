@@ -200,10 +200,10 @@ After a 3, answer the worker in its tab, then resume with `DONE_SO_FAR=<n>`.
 ```
 go test ./...
 go vet ./...
-staticcheck ./...
+golangci-lint run
 ```
 
-`staticcheck` installs with `go install honnef.co/go/tools/cmd/staticcheck@latest`.
+`golangci-lint run` runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared. It installs with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`. Orchestra's own check command (`.orchestra/settings.json`) leaves it out, so a worker's machine needs only Go.
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 

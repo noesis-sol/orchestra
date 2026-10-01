@@ -60,7 +60,9 @@ func newHarness(t *testing.T) *harness {
 	noLeaks(t) // checked once the workers below have returned
 	repo, run := gitRepo(t)
 	run(repo, "branch", "-M", "main")
-	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".orchestra/\n"), 0o644) // the launch prompt
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".orchestra/\n"), 0o644); err != nil { // the launch prompt
+		t.Fatal(err)
+	}
 	run(repo, "add", ".")
 	run(repo, "commit", "-q", "-m", "ignore .orchestra")
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")

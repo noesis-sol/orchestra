@@ -147,8 +147,12 @@ func (b *fakeBeads) describe(id, text string) {
 // commitFiles adds files to the harness repository's main branch, so tickets can name them.
 func (h *harness) commitFiles(files ...string) {
 	for _, f := range files {
-		os.MkdirAll(filepath.Join(h.repo, filepath.Dir(f)), 0o755)
-		os.WriteFile(filepath.Join(h.repo, f), []byte("package x\n"), 0o644)
+		if err := os.MkdirAll(filepath.Join(h.repo, filepath.Dir(f)), 0o755); err != nil {
+			h.t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(h.repo, f), []byte("package x\n"), 0o644); err != nil {
+			h.t.Fatal(err)
+		}
 	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "files")

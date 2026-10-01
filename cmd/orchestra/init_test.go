@@ -14,8 +14,12 @@ import (
 
 func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 	repo, _ := gitRepo(t)
-	os.MkdirAll(filepath.Join(repo, project.Dir), 0o755)
-	os.WriteFile(project.SettingsPath(repo), []byte(`{"concurrent": 20, "notes": "ours"}`), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, project.Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(project.SettingsPath(repo), []byte(`{"concurrent": 20, "notes": "ours"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "  make check \n")
 	if err != nil || !strings.Contains(stdout, "Sets this project up for orchestra") {
 		t.Fatalf("init: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)

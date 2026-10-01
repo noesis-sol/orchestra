@@ -76,14 +76,14 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	case "working", "blocked":
 		return halt(ExitTool, "AGENT_BUSY: an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s", id, st, wt)
 	default:
-		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
+		name := o.namer.FreeName(ctx, agent)
+		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
 			return halt(ExitTool, "AGENT_NAME_TAKEN: an earlier worker for %s holds its name and could not be renamed", id)
-		} else {
-			o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 		}
+		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 	}
 
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, wt, id)

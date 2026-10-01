@@ -17,9 +17,13 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 		t.Errorf("no CHANGELOG.md: ok = %v, err = %v", ok, err)
 	}
 
-	os.WriteFile(filepath.Join(repo, changelogName), []byte("# Changelog\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, changelogName), []byte("# Changelog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	attrs := filepath.Join(repo, attributesName)
-	os.WriteFile(attrs, []byte("*.png binary"), 0o644) // no final newline
+	if err := os.WriteFile(attrs, []byte("*.png binary"), 0o644); err != nil { // no final newline
+		t.Fatal(err)
+	}
 	if !OffersUnion(context.Background(), repo) {
 		t.Fatal("not offered for a CHANGELOG.md without merge=union")
 	}
@@ -53,7 +57,9 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 	git(repo, "commit", "-q", "-m", "attributes")
 
 	// However .gitattributes says it, a union merge is not offered again.
-	os.WriteFile(attrs, []byte("*.md merge=union\n"), 0o644)
+	if err := os.WriteFile(attrs, []byte("*.md merge=union\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if OffersUnion(context.Background(), repo) {
 		t.Error("offered although *.md merges by union")
 	}

@@ -112,6 +112,7 @@ func EnsureRunExcluded(ctx context.Context, repo string) error {
 // StepKind is how a Step of 'orchestra init' went.
 type StepKind int
 
+// The ways a Step can go.
 const (
 	StepDone    StepKind = iota // done now
 	StepKept                    // already there, left as it is

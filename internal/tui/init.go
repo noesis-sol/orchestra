@@ -19,6 +19,7 @@ type InitScreen struct {
 	width int
 }
 
+// NewInitScreen returns the screen for out, as wide as its terminal (at most 100), or 80.
 func NewInitScreen(out io.Writer) InitScreen {
 	w := 80
 	if f, ok := out.(interface{ Fd() uintptr }); ok {
@@ -36,6 +37,7 @@ var (
 	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
 )
 
+// Header prints the title and the repository being set up.
 func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
 	fmt.Fprintln(u.out, titleStyle.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(Tildify(repo)))
@@ -43,6 +45,7 @@ func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
 }
 
+// Cancelled says init was cancelled with nothing changed.
 func (u InitScreen) Cancelled() {
 	fmt.Fprintln(u.out, deferredStyle.Render("  Cancelled; nothing was changed."))
 }

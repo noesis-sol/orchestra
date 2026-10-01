@@ -26,11 +26,13 @@ import (
 //   predictor each ready ticket that names no files: the files it will likely change, which the
 //             orchestrator caches on the ticket and schedules it by.
 
+// Client runs organs through the claude CLI.
 type Client struct {
 	Bin   string // "claude"; tests substitute a fake
 	Model string // "" uses the claude CLI's default
 }
 
+// Result is the claude CLI's JSON output.
 type Result struct {
 	IsError    bool            `json:"is_error"`
 	Result     string          `json:"result"`
@@ -51,6 +53,8 @@ func (g Client) args(system, schema string) []string {
 	return a
 }
 
+// Ask runs claude -p with the system prompt and the JSON schema (none when empty) on input,
+// stopping it after timeout. A run that fails or reports an error is an error.
 func (g Client) Ask(ctx context.Context, timeout time.Duration, system, input, schema string) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -94,6 +98,7 @@ Use only the evidence given. Recommend the single most useful next step for the 
 
 const triageSchema = `{"type":"object","properties":{"cause":{"type":"string","enum":["environment","instructions","problem"]},"confidence":{"type":"string","enum":["high","medium","low"]},"summary":{"type":"string"},"recommendation":{"type":"string"}},"required":["cause","confidence","summary","recommendation"]}`
 
+// Verdict is the triage organ's answer.
 type Verdict struct {
 	Cause          string `json:"cause"`
 	Confidence     string `json:"confidence"`
@@ -133,7 +138,7 @@ func parseTriage(r Result) (Verdict, error) {
 	return t, nil
 }
 
-// note is what goes into the ticket: advice only, the status is untouched.
+// Note is what goes into the ticket: advice only, the status is untouched.
 func (t Verdict) Note() string {
 	return fmt.Sprintf("Triage (orchestra): cause = %s (%s confidence). %s Recommendation: %s",
 		t.Cause, t.Confidence, strings.TrimSpace(t.Summary), strings.TrimSpace(t.Recommendation))

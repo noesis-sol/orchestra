@@ -12,8 +12,10 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
+// Kind is what an Event reports.
 type Kind int
 
+// The kinds of event.
 const (
 	EvInfo     Kind = iota // progress detail (start, worktree)
 	EvDispatch             // a ticket was picked up
@@ -31,6 +33,7 @@ const (
 	EvProbed               // a probe found the machine working after an environment hold: tickets start again
 )
 
+// Event is one thing that happened in the run, for the log and the sink.
 type Event struct {
 	Time   time.Time
 	Kind   Kind
@@ -68,6 +71,7 @@ type Sink interface {
 // notifyLimit is how long a notification may take to show before its osascript is stopped.
 const notifyLimit = 10 * time.Second
 
+// Log is the run's log file, with its notifications.
 type Log struct {
 	mu     sync.Mutex
 	f      *os.File
@@ -77,6 +81,8 @@ type Log struct {
 	closed bool              // Close has been called: no more notifications start
 }
 
+// OpenLog opens the log file at path for appending. With notify, alerts also show as macOS
+// notifications titled with project.
 func OpenLog(path string, notify bool, project string) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

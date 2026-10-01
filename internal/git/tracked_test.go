@@ -13,8 +13,12 @@ import (
 func TestTrackedFiles(t *testing.T) {
 	dir := t.TempDir()
 	for _, f := range []string{"a.go", "sub dir/b.md", "untracked.txt"} {
-		os.MkdirAll(filepath.Join(dir, filepath.Dir(f)), 0o755)
-		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"add", "a.go", "sub dir/b.md"}} {
 		if out, err := command.Output(context.Background(), 0, dir, "git", args...); err != nil {
