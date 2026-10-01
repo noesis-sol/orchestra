@@ -322,6 +322,13 @@ All notable changes to orchestra are documented here. The format follows
   it, leads outside is set aside without a worker (`RUN_FILES_OUTSIDE: its
   worktree's .orchestra/run points outside the worktree -> <id> deferred …`),
   with a note on the ticket, and the run goes on.
+- A ticket whose ID isn't a plain name, such as `x-a/b` or `x-../../y` (Beads
+  checks only the prefix, and workers file tickets themselves), is set aside
+  before its ID is made a worktree folder or a branch (`BAD_TICKET_ID: IDs
+  with path characters can't be run: <id> -> deferred …`), with a note on the
+  ticket saying to `bd rename` it, and the run goes on. It used to nest folders
+  under the worktree root, or stop the run with `WORKTREE_FAILED`. `--ticket`
+  with such an ID is a setup problem (exit code 2).
 - A panic while working on one ticket (a nil pointer, an index out of range)
   no longer kills orchestra and leaves the other workers running unsupervised:
   the run holds with `PANIC in <ticket>: <value>; its worktree and tab … are

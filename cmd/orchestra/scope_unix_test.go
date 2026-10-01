@@ -28,7 +28,7 @@ esac
 }
 
 // --ticket (or ORCHESTRA_TICKET) scopes the run; an unknown, closed or question ticket is a setup
-// problem, listed with the others.
+// problem, listed with the others, as is an ID that isn't a plain name.
 func TestConfigTicketScope(t *testing.T) {
 	configFixture(t, `{"concurrent": 1}`)
 	showBd(t)
@@ -47,6 +47,10 @@ func TestConfigTicketScope(t *testing.T) {
 		"k-none":   "Cannot read ticket k-none (--ticket): ",
 		"k-closed": "Ticket k-closed (--ticket) is closed: nothing to run. Reopen it with: bd update k-closed --status open",
 		"k-q":      "Ticket k-q (--ticket) is a question for you (label human), not work. Answer it with: bd human respond k-q",
+		"k-a/b": "Ticket k-a/b (--ticket): IDs with path characters can't be run: a ticket's ID names its worktree " +
+			"folder and its branch wt/<id>. Give it a plain ID with: bd rename k-a/b <new-id>",
+		"k-../../y": "Ticket k-../../y (--ticket): IDs with path characters can't be run",
+		"k-a.lock":  "Ticket k-a.lock (--ticket): IDs that can't name a git branch can't be run",
 	} {
 		_, p := loadWith(t, "--ticket", id, "--limit", "-1")
 		if len(p) != 2 || !strings.Contains(strings.Join(p, "\n"), want) {

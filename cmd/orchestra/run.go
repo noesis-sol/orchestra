@@ -335,9 +335,17 @@ func loadConfig(
 		} else if !strings.Contains(string(b), "TICKET_ID") {
 			problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+c.WorkerPrompt)
 		}
+		idProblem := ""
+		if c.Ticket != "" {
+			if idProblem = dispatch.IDProblem(c.Ticket); idProblem != "" {
+				problems = append(problems, fmt.Sprintf("Ticket %s (--ticket): %s: a ticket's ID names its worktree "+
+					"folder and its branch wt/<id>. Give it a plain ID with: bd rename %s <new-id>",
+					c.Ticket, idProblem, c.Ticket))
+			}
+		}
 		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
-		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" {
+		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
 			if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
 				problems = append(problems, p)
 			}

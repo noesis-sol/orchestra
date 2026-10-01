@@ -366,6 +366,8 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	for id := range running {
 		skip[id] = true
 	}
+	// A ticket whose ID isn't a plain name is set aside before its ID is made a path or a branch.
+	o.setAsideBadIDs(context.WithoutCancel(ctx), ready, skip)
 	// With a free slot, a ticket whose footprint overlaps a running ticket's is skipped for the next
 	// one that doesn't; with none free, the tickets wait for a slot anyway.
 	slot := len(running) < o.cfg.Concurrency

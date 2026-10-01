@@ -197,6 +197,8 @@ Claude workers also start with `--settings .orchestra/run/hooks.json`: hooks, fo
 
 A worktree is its worker's to change, so `orchestra` reaches the files in its `.orchestra/run/` (and the environment probe's file in the main checkout's) through an `os.Root` at the checkout, which won't follow a symlink out of it. A worktree whose `.orchestra/run`, or a file `orchestra` writes there, is a symlink leading outside is set aside without a worker: `RUN_FILES_OUTSIDE: its worktree's .orchestra/run points outside the worktree -> <id> deferred …`, with a note on the ticket. Remove the link, then `bd undefer <id>`.
 
+A ticket's ID names its worktree (a folder under the worktree root) and its branch, `wt/<id>`, and workers file tickets themselves, while Beads checks only an ID's prefix. A ready ticket whose ID isn't a plain name (one with a `/`, a `\` or `..`, or one git won't take in a branch name) is set aside before anything is made from it: `BAD_TICKET_ID: IDs with path characters can't be run: <id> -> deferred …`, with a note on the ticket, and the run goes on. Give it a plain ID with `bd rename <id> <new-id>`, then `bd undefer <new-id>`. `--ticket` with such an ID is a setup problem (exit code 2).
+
 Workers of another agent kind (`--agent` / `AGENT_KIND`, any kind Herdr can start) are dispatched, watched and merged the same way, but these features only work with `claude`:
 - **Prompt at launch.** Workers of other kinds always get the prompt pasted.
 - **Recovering a paste whose Enter didn't register.** `orchestra` only recognises Claude Code's `❯` input box, so it pastes the prompt once more instead of pressing Enter, and if the worker still doesn't start, defers the ticket (`PROMPT_FAILED`).
@@ -254,6 +256,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | --- | --- |
 | `loop.go` | the `Loop` type, `Config`, exit codes, timings and shared helpers |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts (tests in `run_test.go` and `schedule_test.go`) |
+| `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `work.go` | one ticket from start to outcome: asked, deferred, paused or closed |
 | `settle.go` | waiting for a worker to settle (Herdr's status, its Stop hook or the start-up grace), telling one that stopped with its ticket in progress to continue, reading its status, the dashboard watcher |
