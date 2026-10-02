@@ -22,6 +22,11 @@ func fakeScript(t *testing.T, body string) (bin, dir string) {
 	return bin, dir
 }
 
+// soon is how long Ask may take to return once the fake claude has exited or been stopped, under the
+// race detector on a machine loaded by other tests: well short of the 20 seconds the fakes sleep, so an
+// Ask that waits for one still fails.
+const soon = 10 * time.Second
+
 // A claude that answers and exits, leaving a process behind that holds its output, gives its answer
 // at once.
 func TestAskKeepsTheAnswerWhenALeftoverHoldsTheOutput(t *testing.T) {
@@ -46,7 +51,7 @@ echo '{"type":"result","is_error":false,"result":"ok"}'
 	if err != nil || r.Result != "ok" {
 		t.Fatalf("got %+v, %v; want the answer", r, err)
 	}
-	if took := time.Since(start); took > 3*time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned after %s, want soon after claude exited", took)
 	}
 }
@@ -62,7 +67,7 @@ func TestAskSaysItTimedOut(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("errors.Is(%v, context.DeadlineExceeded) = false", err)
 	}
-	if took := time.Since(start); took > 3*time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned after %s", took)
 	}
 }
