@@ -76,21 +76,58 @@ func (p Printer) Event(ev dispatch.Event) {
 		return // the dashboard's count, not a line
 	}
 	if p.Styled {
-		fmt.Fprintln(p.Out, ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
+		p.wrapped(renderEvent(ev))
 		return
 	}
 	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
 
+// End prints the event the run ended with, if any, below the final dashboard d: as Event does, but
+// on a terminal a run that ended by itself also says how long it took.
+func (p Printer) End(d Dashboard) {
+	switch ev := d.Final(); {
+	case ev == nil:
+	case p.Styled && ev.Kind == dispatch.EvDone:
+		var took time.Duration
+		if !d.began.IsZero() && ev.Time.After(d.began) {
+			took = ev.Time.Sub(d.began)
+		}
+		p.wrapped(closing(*ev, took))
+	default:
+		p.Event(*ev)
+	}
+}
+
+// wrapped prints styled lines wrapped to the terminal's width.
+func (p Printer) wrapped(lines string) {
+	fmt.Fprintln(p.Out, ansi.Wrap(lines, max(p.Width, 20), ""))
+}
+
 // Status does nothing: a printed run shows no live status.
 func (Printer) Status(dispatch.Status) {}
 
-// Say prints a line of the orchestrator's own progress outside the event stream.
-func (p Printer) Say(text string) {
+// Say prints a line of the orchestrator's own progress outside the event stream: on a terminal the
+// styled sentence, in a light colour after the organs' ◆, else the plain line, worded as the log
+// words it.
+func (p Printer) Say(plain, styled string) {
 	if p.Styled {
-		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+dimStyle.Render(text))
+		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+sayStyle.Render(styled))
 		return
 	}
+	p.sayPlain(plain)
+}
+
+// Warn is Say for a warning, worded the same in both and in the warning colour on a terminal.
+func (p Printer) Warn(text string) {
+	if p.Styled {
+		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+deferredStyle.Render(text))
+		return
+	}
+	p.sayPlain(text)
+}
+
+// sayPlain prints text as Say and Warn do outside a terminal: after the time, as the log has it.
+func (p Printer) sayPlain(text string) {
 	fmt.Fprintf(p.Out, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
 }
 
@@ -138,11 +175,68 @@ func renderEvent(ev dispatch.Event) string {
 	case dispatch.EvStop:
 		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvDone:
-		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
+		return closing(ev, 0)
 	case dispatch.EvDrain, dispatch.EvResume:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
 	case dispatch.EvProbed:
 		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
 	}
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
+}
+
+// closing is a terminal's line for a run that ended by itself (ev, an EvDone), in place of its log
+// line: a headline in the done colour, with the ♪ of init's sign-off, then, quieter, how many
+// tickets and how long the run took (took, when known). A scoped run's SCOPE_ part follows on its
+// own line: in the done colour when the scope is finished, else in the deferred colour, as work left.
+func closing(ev dispatch.Event, took time.Duration) string {
+	text, scope, scoped := strings.Cut(ev.Text, "; SCOPE_")
+	facts := tickets(ev.N)
+	if took >= time.Second {
+		facts += " · " + runTime(took)
+	}
+	line := doneStyle.Bold(true).Render("♪ "+headline(text, ev.Limit)) + "  " + dimStyle.Render(facts)
+	if !scoped {
+		return line
+	}
+	scope = "SCOPE_" + scope
+	style := deferredStyle
+	if strings.HasPrefix(scope, "SCOPE_DONE") {
+		style = doneStyle
+	}
+	return line + "\n" + style.Render("  "+scope)
+}
+
+// headline says how a run ended by itself, from the word its line starts with, as the event stream
+// documents it; a word it doesn't know leaves the line as it is.
+func headline(text string, limit int) string {
+	switch word, _, _ := strings.Cut(text, " "); word {
+	case "READY_EMPTY":
+		return "Completed the Run"
+	case "LIMIT_REACHED":
+		return fmt.Sprintf("Reached the ticket limit (%d)", limit)
+	case "DRAINED":
+		return "Stopped after the running tickets, as asked"
+	}
+	return text
+}
+
+// tickets is "no tickets", "1 ticket" or "n tickets".
+func tickets(n int) string {
+	switch n {
+	case 0:
+		return "no tickets"
+	case 1:
+		return "1 ticket"
+	}
+	return fmt.Sprintf("%d tickets", n)
+}
+
+// runTime is d to the second, as the dashboard's title line shows it, without the zero seconds of
+// a whole minute: "1h12m", not "1h12m0s".
+func runTime(d time.Duration) string {
+	d = d.Truncate(time.Second)
+	if d >= time.Minute && d%time.Minute == 0 {
+		return strings.TrimSuffix(d.String(), "0s")
+	}
+	return d.String()
 }

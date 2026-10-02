@@ -124,7 +124,7 @@ beside yours and keep your own pane free (the pane ID is read from Herdr's JSON 
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
     | jq -r .result.pane.pane_id)
 herdr pane run "$P" "orchestra"
-herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY" --timeout 60000
+herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY|Completed the Run" --timeout 60000
 herdr pane read "$P" --source visible
 ```
 

@@ -733,9 +733,7 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	}
 	sink := tui.Printer{Out: stdout, Styled: true, Width: width}
 	m, _ := final.(tui.Dashboard)
-	if m.Final() != nil {
-		sink.Event(*m.Final())
-	}
+	sink.End(m)
 	// From here the loop's events are printed, starting with any the dashboard never received.
 	progSink.Handoff(sink, m.Received())
 	// With the terminal restored, a stop signal while the stopped loop winds down can end orchestra.
@@ -821,30 +819,30 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 		cancelOrgans()
 	}()
 	if c.Triage {
-		out.Say("finishing triage…")
+		out.Say("finishing triage…", "Finishing triage…")
 		orch.FinishTriage(ctx)
 	}
 	if !c.Review || ctx.Err() != nil {
 		return
 	}
-	out.Say("writing the run report with claude… (ctrl+c skips)")
+	out.Say("writing the run report with claude… (ctrl+c skips)", "Writing the run report with Claude… (Ctrl+C skips)")
 	report, err := orch.Review(ctx, code, final)
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
 			log.Alert(time.Now(), msg)
-			out.Say(msg)
+			out.Warn(msg)
 		}
 		return
 	}
 	out.Report(report)
 	path, err := orch.SaveReport(report)
 	if err != nil {
-		msg := "report not saved: " + dispatch.FirstLine(err.Error())
-		log.Line(time.Now(), msg)
-		out.Say(msg)
+		why := dispatch.FirstLine(err.Error())
+		log.Line(time.Now(), "report not saved: "+why)
+		out.Say("report not saved: "+why, "Report not saved: "+why)
 		return
 	}
 	log.Alert(time.Now(), "REPORT written to "+path)
-	out.Say("report saved to " + tui.Tildify(path))
+	out.Say("report saved to "+tui.Tildify(path), "Report saved to "+tui.Tildify(path))
 }

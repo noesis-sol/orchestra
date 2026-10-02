@@ -58,8 +58,8 @@ func (k Kind) String() string {
 type Event struct {
 	Time   time.Time
 	Kind   Kind
-	N      int
-	Limit  int
+	N      int // EvDispatch: the ticket's number in the run; EvDone: the tickets in all, as Text counts them
+	Limit  int // EvDispatch and EvDone: the ticket limit
 	Ticket string
 	Title  string    // EvDispatch only
 	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot

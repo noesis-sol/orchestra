@@ -330,6 +330,8 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 	}
 	o.leaveBehind(keep) // the workers that stopped the run, if any, and those waiting on a question
+	// How the loop ended by itself, if it did.
+	var end string
 	switch {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)
@@ -340,12 +342,13 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 		return o.stop(stop.code, "%s", text)
 	case drained:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("DRAINED after %d tickets", o.count) + o.endScope(ctx)})
+		end = fmt.Sprintf("DRAINED after %d tickets", o.count)
 	case o.count >= c.Limit:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count) + o.endScope(ctx)})
+		end = fmt.Sprintf("LIMIT_REACHED at %d tickets", o.count)
 	default:
-		o.emit(Event{Kind: EvDone, Text: fmt.Sprintf("READY_EMPTY after %d tickets", o.count) + o.endScope(ctx)})
+		end = fmt.Sprintf("READY_EMPTY after %d tickets", o.count)
 	}
+	o.emit(Event{Kind: EvDone, N: o.count, Limit: c.Limit, Text: end + o.endScope(ctx)})
 	return ExitOK
 }
 

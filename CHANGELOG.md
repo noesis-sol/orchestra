@@ -272,6 +272,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- On a terminal, a run that ends by itself closes with a bold green
+  `♪ Completed the Run`, then, quieter, its tickets and how long it took
+  (`2 tickets · 1h12m`), instead of `■ READY_EMPTY after 2 tickets`;
+  `LIMIT_REACHED` and `DRAINED` read `♪ Reached the ticket limit (40)` and
+  `♪ Stopped after the running tickets, as asked`. A scoped run's
+  `SCOPE_DONE` or `SCOPE_OPEN` follows on its own line, `SCOPE_OPEN` in
+  yellow, as work is left. The organ phase's lines are sentences in light
+  purple rather than faint (`Finishing triage…`, `Writing the run report with
+  Claude… (Ctrl+C skips)`), and `REVIEW_FAILED` is in the warning colour. The
+  log, the event stream, plain output and the run report keep their wording.
 - `orchestra init` offers 1 to 4 tickets at the same time, and `Custom…`,
   which asks for a whole number from 1 to 16 (6 and 8 are no longer options).
   A saved setting above 4 opens on `Custom…` with its number filled in.
