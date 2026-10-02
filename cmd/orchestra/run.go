@@ -239,6 +239,11 @@ func loadConfig(
 			"a feature run is scoped to the epic it files.")
 	case !set["feature"] && c.Yes:
 		problems = append(problems, "--yes only applies with --feature.")
+	case set["feature"] && c.Limit >= 0 && c.DoneSoFar >= c.Limit:
+		// The loop would end at once, the plan filed and none of it started.
+		problems = append(problems, fmt.Sprintf("--feature would file a plan and run none of it: "+
+			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT] or lower -done-so-far [DONE_SO_FAR].",
+			c.DoneSoFar, c.Limit))
 	}
 
 	if out, err := command.Output(ctx, command.ReadLimit, "", "git", "rev-parse", "--show-toplevel"); err == nil {

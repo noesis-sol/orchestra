@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
@@ -101,12 +102,24 @@ func (f fakeOrganFeature) PlanFeature(context.Context, organ.FeatureEvidence) (o
 }
 
 // fakeFeatureTracker files tickets as f-1 (the epic), f-1.1 and so on, failing the create numbered
-// failCreate (from 1) or any dep add when failDep is set.
+// failCreate or the dep add numbered failDep (both from 1; 0 fails none) with failWith, or else as
+// a bd that exits 1 on a locked database.
 type fakeFeatureTracker struct {
 	created    []beads.NewTicket
 	blocks     [][2]string
 	failCreate int
-	failDep    bool
+	failDep    int
+	failWith   error
+}
+
+func (f *fakeFeatureTracker) failure(args ...string) error {
+	if f.failWith != nil {
+		return f.failWith
+	}
+	// Any command that exits 1 gives the *exec.ExitError; git, with a command it doesn't know, does
+	// wherever the tests run.
+	err := exec.Command("git", "orchestra-no-such-command").Run()
+	return &command.Error{Name: "bd", Args: args, Err: err, Stderr: "database is locked"}
 }
 
 func (*fakeFeatureTracker) Open(context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
@@ -115,7 +128,7 @@ func (*fakeFeatureTracker) Open(context.Context) ([]dispatch.Ticket, []dispatch.
 
 func (f *fakeFeatureTracker) Create(_ context.Context, t beads.NewTicket) (string, error) {
 	if len(f.created)+1 == f.failCreate {
-		return "", errors.New("bd create: exit status 1: database is locked")
+		return "", f.failure("create")
 	}
 	f.created = append(f.created, t)
 	if len(f.created) == 1 {
@@ -125,8 +138,8 @@ func (f *fakeFeatureTracker) Create(_ context.Context, t beads.NewTicket) (strin
 }
 
 func (f *fakeFeatureTracker) AddBlock(_ context.Context, blocker, blocked string) error {
-	if f.failDep {
-		return errors.New("bd dep add: exit status 1: database is locked")
+	if len(f.blocks)+1 == f.failDep {
+		return f.failure("dep", "add", blocked, blocker)
 	}
 	f.blocks = append(f.blocks, [2]string{blocker, blocked})
 	return nil
@@ -196,10 +209,11 @@ func TestFeatureFilingFailureListsWhatWasFiled(t *testing.T) {
 		{"epic", &fakeFeatureTracker{failCreate: 1}, []string{"couldn't file the epic: bd create", "Nothing was filed."}},
 		{"second ticket", &fakeFeatureTracker{failCreate: 3}, []string{
 			"couldn't file ticket t2: bd create: exit status 1: database is locked",
-			"Filed before it:\n  f-1 (epic) JSON output\n  f-1.1 Add the JSON encoder\n",
+			"Filed before it:\n  f-1 (epic) JSON output\n  f-1.1 (t1) Add the JSON encoder\n",
 			"Remove them with: bd delete f-1.1 f-1 --force", "carry on with: orchestra --ticket f-1"}},
-		{"link", &fakeFeatureTracker{failDep: true}, []string{
-			"couldn't file the link t2 after t1: bd dep add", "Remove them with: bd delete f-1.2 f-1.1 f-1 --force"}},
+		{"link", &fakeFeatureTracker{failDep: 1}, []string{
+			"couldn't file the link f-1.2 (t2) after f-1.1 (t1): bd dep add",
+			"Remove them with: bd delete f-1.2 f-1.1 f-1 --force"}},
 	} {
 		f, _, errOut := featureFixture(t, ok, tc.tracker, true, false, "")
 		if epic, code := f.run(context.Background()); epic != "" || code != dispatch.ExitTool {

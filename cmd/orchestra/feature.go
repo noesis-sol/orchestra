@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,8 +17,6 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/organ"
-
-	"golang.org/x/term"
 )
 
 // A feature run (--feature) takes a request from idea to a scoped run: the screen organ judges the
@@ -44,7 +43,7 @@ type featureRun struct {
 	request  string
 	repo     string
 	yes      bool // file without asking
-	terminal bool // in is a terminal to ask on
+	terminal bool // in and out are a terminal to ask on
 	organs   featureOrgans
 	tracker  featureTracker
 	log      *dispatch.Log // nil in tests
@@ -61,12 +60,13 @@ func runFeature(
 	// Ctrl+C stops the feature run as it does the loop; until the plan is filed, nothing is left.
 	ctx, stop := stops.context(ctx)
 	defer stop()
-	f, isFile := stdin.(*os.File)
 	return featureRun{
-		request:  c.Feature,
-		repo:     c.Repo,
-		yes:      c.Yes,
-		terminal: isFile && term.IsTerminal(int(f.Fd())),
+		request: c.Feature,
+		repo:    c.Repo,
+		yes:     c.Yes,
+		// The plan and the question go to stdout: asked with stdout sent to a file, the question
+		// would wait for an answer to something nobody sees.
+		terminal: isTerminal(stdin) && isTerminal(stdout),
 		organs:   organ.Client{Bin: "claude", Model: c.OrganModel, Effort: c.OrganEffort},
 		tracker:  beads.Tracker{Repo: c.Repo},
 		log:      log,
@@ -80,6 +80,9 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	// The loop checks the main checkout before each ticket; a feature run checks it before filing,
 	// so that a run that couldn't start files nothing.
 	if dirty, err := (git.Git{}).DirtyTree(ctx, f.repo); err != nil {
+		if code, stopped := f.interrupted(ctx); stopped {
+			return "", code
+		}
 		fmt.Fprintf(f.err, "orchestra couldn't read the state of %s: %v\n", f.repo, err)
 		return "", dispatch.ExitTool
 	} else if dirty != "" {
@@ -266,6 +269,13 @@ func confirm(ctx context.Context, in io.Reader, out io.Writer, question string) 
 	}
 }
 
+// planLink is a blocks link of a filed plan: ticket blocked waits for blocker. Both are bd IDs;
+// the plan calls them blockedKey and blockerKey.
+type planLink struct {
+	blocked, blocker       string
+	blockedKey, blockerKey string
+}
+
 // file files the plan with bd: the epic, its tickets as its children, then the blocks links. It
 // returns the epic's ID, or, when a step fails, "" and the exit code, having listed what was
 // filed and how to remove it or carry on with it.
@@ -279,7 +289,7 @@ func (f featureRun) file(ctx context.Context, p organ.FeaturePlan) (string, int)
 		Title: p.Epic.Title, Description: p.Epic.Description, Type: "epic", Priority: prio,
 	})
 	if err != nil {
-		return "", f.fileFailed(ctx, "the epic", err, "", nil)
+		return "", f.fileFailed(ctx, "the epic", err, "", nil, nil)
 	}
 	filed := []string{epic + " (epic) " + p.Epic.Title}
 	ids := map[string]string{}
@@ -289,16 +299,21 @@ func (f featureRun) file(ctx context.Context, p organ.FeaturePlan) (string, int)
 			Type: t.Type, Priority: t.Priority, Parent: epic, Files: t.Files,
 		})
 		if err != nil {
-			return "", f.fileFailed(ctx, "ticket "+t.Key, err, epic, filed)
+			return "", f.fileFailed(ctx, "ticket "+t.Key, err, epic, filed, nil)
 		}
 		ids[t.Key] = id
-		filed = append(filed, id+" "+t.Title)
+		filed = append(filed, id+" ("+t.Key+") "+t.Title)
 	}
+	var links []planLink
 	for _, t := range p.Tickets {
 		for _, b := range t.BlockedBy {
-			if err := f.tracker.AddBlock(ctx, ids[b], ids[t.Key]); err != nil {
-				return "", f.fileFailed(ctx, fmt.Sprintf("the link %s after %s", t.Key, b), err, epic, filed)
-			}
+			links = append(links, planLink{blocked: ids[t.Key], blocker: ids[b], blockedKey: t.Key, blockerKey: b})
+		}
+	}
+	for i, l := range links {
+		if err := f.tracker.AddBlock(ctx, l.blocker, l.blocked); err != nil {
+			what := fmt.Sprintf("the link %s (%s) after %s (%s)", l.blocked, l.blockedKey, l.blocker, l.blockerKey)
+			return "", f.fileFailed(ctx, what, err, epic, filed, links[i:])
 		}
 	}
 	fmt.Fprintf(f.out, "filed epic %s with %s\n", epic, plural(len(p.Tickets), "ticket"))
@@ -309,8 +324,10 @@ func (f featureRun) file(ctx context.Context, p organ.FeaturePlan) (string, int)
 
 // fileFailed reports that filing what stopped with err, listing what was filed before it (the
 // epic, then its tickets) with the commands to remove it or carry on with it, and returns the exit
-// code.
-func (f featureRun) fileFailed(ctx context.Context, what string, err error, epic string, filed []string) int {
+// code. unlinked is the links not added when a link failed, that one first.
+func (f featureRun) fileFailed(
+	ctx context.Context, what string, err error, epic string, filed []string, unlinked []planLink,
+) int {
 	fmt.Fprintf(f.err, "orchestra couldn't file %s: %s\n", what, dispatch.FirstLine(err.Error()))
 	code := dispatch.ExitTool
 	if ctx.Err() != nil {
@@ -319,10 +336,13 @@ func (f featureRun) fileFailed(ctx context.Context, what string, err error, epic
 	var cmdErr *command.Error
 	stopped := errors.As(err, &cmdErr) && cmdErr.Stopped
 	if epic == "" {
-		if stopped {
-			fmt.Fprintln(f.err, "bd was stopped and may have filed the epic before it did: check with: bd list --type epic")
-		} else {
+		switch {
+		case filedNothing(err):
 			fmt.Fprintln(f.err, "Nothing was filed.")
+		case stopped:
+			fmt.Fprintln(f.err, "bd was stopped and may have filed the epic before it did: check with: bd list --type epic")
+		default:
+			fmt.Fprintln(f.err, "bd may have filed the epic all the same: check with: bd list --type epic")
 		}
 		f.logLine("FEATURE not filed: " + dispatch.FirstLine(err.Error()))
 		return code
@@ -334,13 +354,35 @@ func (f featureRun) fileFailed(ctx context.Context, what string, err error, epic
 		id, _, _ := strings.Cut(line, " ")
 		ids = append(ids, id)
 	}
-	if stopped {
+	switch {
+	case unlinked != nil || filedNothing(err):
+	case stopped:
 		fmt.Fprintf(f.err, "bd was stopped and may have filed more before it did: check with: bd list --parent %s\n", epic)
+	default:
+		fmt.Fprintf(f.err, "bd may have filed %s all the same: check with: bd list --parent %s\n", what, epic)
 	}
 	slices.Reverse(ids) // children before their epic
 	fmt.Fprintf(f.err, "Remove them with: bd delete %s --force\n", strings.Join(ids, " "))
-	fmt.Fprintf(f.err, "Or file the rest with bd and carry on with: orchestra --ticket %s\n", epic)
+	if unlinked == nil {
+		fmt.Fprintf(f.err, "Or file the rest with bd and carry on with: orchestra --ticket %s\n", epic)
+	} else {
+		// Without its links the epic's tickets would run side by side, in no particular order.
+		fmt.Fprintln(f.err, "Or add the links that are missing and carry on:")
+		for _, l := range unlinked {
+			fmt.Fprintf(f.err, "  bd dep add %s %s\n", l.blocked, l.blocker)
+		}
+		fmt.Fprintf(f.err, "  orchestra --ticket %s\n", epic)
+	}
 	f.logLine(fmt.Sprintf("FEATURE filing stopped at %s, after %s: %s", what, strings.Join(ids, " "),
 		dispatch.FirstLine(err.Error())))
 	return code
+}
+
+// filedNothing reports whether bd, failing with err, surely filed nothing: it exited with an error
+// of its own. Stopped, or killed by a signal, it may have filed before it went; exiting 0 with
+// output that can't be read, it most likely did.
+func filedNothing(err error) bool {
+	var cmdErr *command.Error
+	var exit *exec.ExitError
+	return errors.As(err, &cmdErr) && !cmdErr.Stopped && errors.As(cmdErr.Err, &exit) && exit.Exited()
 }

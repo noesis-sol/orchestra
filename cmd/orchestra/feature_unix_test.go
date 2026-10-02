@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,6 +71,12 @@ esac
 // inside a Herdr pane, without notifications, triage or the run report.
 func runFeatureIn(t *testing.T, args ...string) (repo, stdout, stderr string, code int) {
 	t.Helper()
+	return runFeatureFrom(t, strings.NewReader(""), args...)
+}
+
+// runFeatureFrom is runFeatureIn reading stdin from in.
+func runFeatureFrom(t *testing.T, in io.Reader, args ...string) (repo, stdout, stderr string, code int) {
+	t.Helper()
 	repo = configFixture(t, `{"concurrent": 1}`)
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("# lister\n\nLists things.\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -82,7 +89,7 @@ func runFeatureIn(t *testing.T, args ...string) (repo, stdout, stderr string, co
 		t.Setenv(k, v)
 	}
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, strings.NewReader(""), &out, &errOut)
+	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, in, &out, &errOut)
 	return repo, out.String(), errOut.String(), exitOf(err)
 }
 
@@ -195,7 +202,7 @@ func TestFeatureFilingFailureStopsBeforeTheRun(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 3)
 	_, stdout, stderr, code := runFeatureIn(t, "--feature", "Add a --json flag", "--yes", "--plain")
 	for _, want := range []string{"orchestra couldn't file ticket t2: bd create", "database is locked",
-		"Filed before it:\n  f-1 (epic) JSON output\n  f-1.1 Add the JSON encoder\n",
+		"Filed before it:\n  f-1 (epic) JSON output\n  f-1.1 (t1) Add the JSON encoder\n",
 		"Remove them with: bd delete f-1.1 f-1 --force", "carry on with: orchestra --ticket f-1"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, stderr)

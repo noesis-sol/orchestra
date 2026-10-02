@@ -337,6 +337,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `--feature` asks to confirm its plan only when standard input and output are
+  both a terminal: `orchestra --feature "…" > run.log`, typed in a terminal,
+  waited on a question written to the file. Without `--yes` it now files
+  nothing and says so (exit code 2). "Nothing was filed." appears only when
+  `bd` exited with an error of its own; a `bd` that was stopped, was killed or
+  gave output orchestra couldn't read may have filed the epic or ticket, and
+  orchestra says to check with `bd list`. When a link fails, it is named by
+  its tickets' IDs, the tickets filed are listed with their plan keys, and
+  every link not added comes with its `bd dep add <blocked> <blocker>`, so the
+  epic's tickets still run in order. `--feature` with `DONE_SO_FAR` at or above
+  `LIMIT` is a setup problem rather than a plan filed and never started, and
+  Ctrl+C while the main checkout is checked exits 130, not 4.
 - Each dashboard line stays one line, within the pane. A ticket title, a
   question's title or a triage summary with a line break in it made its row
   in the tickets table, or its line in the worker list, two lines tall; with
