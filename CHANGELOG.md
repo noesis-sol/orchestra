@@ -219,6 +219,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` offers 1 to 4 tickets at the same time, and `Custom…`,
+  which asks for a whole number from 1 to 16 (6 and 8 are no longer options).
+  A saved setting above 4 opens on `Custom…` with its number filled in.
 - Organs run at an explicit effort: `low` for triage and the predictor,
   `medium` for the run report (measured: triage 7.9 s against 15.0 s at
   `high`, the predictor 4.3 s against 7.2 s, the report 7.3 s against 8.5 s).

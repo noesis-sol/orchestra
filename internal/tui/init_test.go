@@ -29,26 +29,18 @@ func TestPrerequisitesLeadWithACrossWhenOneIsMissing(t *testing.T) {
 }
 
 func TestConcurrencyOptionsOfferOnlyValidSettings(t *testing.T) {
-	has := func(opts []string, n string) bool {
-		for _, o := range opts {
-			if strings.HasPrefix(o, n+" ") {
-				return true
-			}
+	var values []int
+	for _, o := range concurrencyOptions() {
+		values = append(values, o.Value)
+		if o.Value != customConcurrency && (o.Value < 1 || o.Value > project.MaxConcurrency) {
+			t.Errorf("%q isn't a valid setting", o.Key)
 		}
-		return false
 	}
-	keys := func(current int) []string {
-		var ks []string
-		for _, o := range concurrencyOptions(current) {
-			ks = append(ks, o.Key)
-		}
-		return ks
+	if want := []int{1, 2, 3, 4, customConcurrency}; !slices.Equal(values, want) {
+		t.Errorf("values = %v, want %v", values, want)
 	}
-	if !has(keys(12), "12") {
-		t.Error("a valid current setting is offered")
-	}
-	if has(keys(project.MaxConcurrency+4), "20") {
-		t.Error("an out-of-range setting is offered")
+	if last := concurrencyOptions()[len(values)-1].Key; last != "Custom…  · type a number, up to 16" {
+		t.Errorf("last option = %q", last)
 	}
 }
 

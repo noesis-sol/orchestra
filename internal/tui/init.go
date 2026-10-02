@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -136,26 +138,89 @@ func (u InitScreen) SignOff(ready bool) {
 	fmt.Fprintln(u.out)
 }
 
-// concurrencyOptions are the choices offered for tickets at the same time.
-func concurrencyOptions(current int) []huh.Option[int] {
-	notes := map[int]string{
-		1: "one at a time (safest)",
-		2: "checks must cope with running side by side",
-		3: "checks must cope with running side by side",
-		4: "a busy machine",
-		6: "a big machine, and tickets that rarely touch the same files",
-		8: "a big machine, and tickets that rarely touch the same files",
-	}
-	values := []int{1, 2, 3, 4, 6, 8}
-	if _, ok := notes[current]; !ok && current > 0 && current <= project.MaxConcurrency {
-		values = append(values, current)
-		notes[current] = "the current setting"
-	}
+// concurrencyNotes are the notes of the options for tickets at the same time: 1, 2, 3 and 4.
+var concurrencyNotes = []string{
+	"one at a time (safest)",
+	"checks must cope with running side by side",
+	"checks must cope with running side by side",
+	"a busy machine",
+}
+
+// customConcurrency is the value of the "Custom…" option, whose number is typed in an input. It
+// isn't 0: huh scrolls a select's options to the one whose value is the zero value, hiding those
+// above it.
+const customConcurrency = -1
+
+// concurrencyOptions are the choices offered for tickets at the same time: 1 to 4, and a number
+// typed in.
+func concurrencyOptions() []huh.Option[int] {
 	var opts []huh.Option[int]
-	for _, v := range values {
-		opts = append(opts, huh.NewOption(fmt.Sprintf("%d  · %s", v, notes[v]), v))
+	for i, note := range concurrencyNotes {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%d  · %s", i+1, note), i+1))
 	}
-	return opts
+	custom := fmt.Sprintf("Custom…  · type a number, up to %d", project.MaxConcurrency)
+	return append(opts, huh.NewOption(custom, customConcurrency))
+}
+
+// concurrencyStart is where the choice of tickets at the same time starts for the current setting:
+// on its option, or on "Custom…" with the number typed in when no option offers it.
+func concurrencyStart(current int) (option int, custom string) {
+	if current > len(concurrencyNotes) {
+		return customConcurrency, strconv.Itoa(current)
+	}
+	return max(current, 1), ""
+}
+
+// parseConcurrency reads a typed number of tickets at the same time.
+func parseConcurrency(v string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 1 || n > project.MaxConcurrency {
+		return 0, fmt.Errorf("must be a whole number from 1 to %d (got '%s')", project.MaxConcurrency, v)
+	}
+	return n, nil
+}
+
+// formField is a field of the init form, which huh v1.0.0 can't hide on its own (it hides whole
+// groups). A hidden field is skipped, has no error and draws nothing. Each field draws the gap
+// above it, the form's theme drawing none, so a hidden one leaves no gap either.
+type formField struct {
+	huh.Field
+	gap       string      // drawn above the field: the theme's field separator, but not above the first
+	hidden    func() bool // nil: always shown
+	wasHidden bool        // whether it was hidden when last updated
+}
+
+func (f *formField) isHidden() bool { return f.hidden != nil && f.hidden() }
+
+// Update updates the field and, when it was just shown or hidden, has the form measure itself
+// again: huh sizes the form on a window size message only, so it would scroll its top away.
+func (f *formField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := f.Field.Update(msg)
+	f.Field = m.(huh.Field)
+	if hidden := f.isHidden(); hidden != f.wasHidden {
+		f.wasHidden = hidden
+		cmd = tea.Batch(cmd, tea.WindowSize())
+	}
+	return f, cmd
+}
+
+// View draws the field below its gap, or nothing when hidden.
+func (f *formField) View() string {
+	if f.isHidden() {
+		return ""
+	}
+	return f.gap + f.Field.View()
+}
+
+// Skip skips a hidden field.
+func (f *formField) Skip() bool { return f.isHidden() || f.Field.Skip() }
+
+// Error is the field's error, none when hidden.
+func (f *formField) Error() error {
+	if f.isHidden() {
+		return nil
+	}
+	return f.Field.Error()
 }
 
 // mcpOptions are the MCP servers offered to workers, each with where it is defined, and the names
@@ -206,11 +271,16 @@ func mcpDescription(c project.Choice) string {
 func AskInit(
 	in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion, askMCP bool,
 ) error {
-	var fields []huh.Field
+	var fields []*formField
+	add := func(f huh.Field) *formField {
+		ff := &formField{Field: f}
+		fields = append(fields, ff)
+		return ff
+	}
 	if askCheck {
-		fields = append(fields, huh.NewInput().
+		add(huh.NewInput().
 			Title("Check command").
-			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs "+
+			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs " +
 				"it again on a ticket rebased onto work merged meanwhile. Empty for none.").
 			Placeholder("e.g. make check").
 			Value(&c.Check))
@@ -219,10 +289,10 @@ func AskInit(
 		if c.CheckTimeout == "" {
 			c.CheckTimeout = project.DefaultCheckTimeoutText
 		}
-		fields = append(fields, huh.NewInput().
+		add(huh.NewInput().
 			Title("Check time limit").
-			Description("How long orchestra lets the check command run on a rebased ticket before it stops it "+
-				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override "+
+			Description("How long orchestra lets the check command run on a rebased ticket before it stops it " +
+				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override " +
 				"it with --check-timeout.").
 			Placeholder("e.g. 5m, 45m").
 			Validate(func(v string) error {
@@ -231,18 +301,31 @@ func AskInit(
 			}).
 			Value(&c.CheckTimeout))
 	}
+	option, custom := concurrencyStart(c.Concurrent)
 	if askConcurrent {
-		fields = append(fields, huh.NewSelect[int]().
+		add(huh.NewSelect[int]().
 			Title("Tickets at the same time").
 			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent.").
-			Options(concurrencyOptions(c.Concurrent)...).
-			Value(&c.Concurrent))
+			Options(concurrencyOptions()...).
+			Value(&option))
+		typed := add(huh.NewInput().
+			Title("Number of tickets at the same time").
+			Description(fmt.Sprintf("From 1 to %d. Above %d: a big machine, and tickets that rarely touch "+
+				"the same files.", project.MaxConcurrency, len(concurrencyNotes))).
+			Placeholder("e.g. 6").
+			Validate(func(v string) error {
+				_, err := parseConcurrency(v)
+				return err
+			}).
+			Value(&custom))
+		typed.hidden = func() bool { return option != customConcurrency }
+		typed.wasHidden = typed.isHidden()
 	}
 	if askUnion {
-		fields = append(fields, huh.NewConfirm().
+		add(huh.NewConfirm().
 			Title("Merge CHANGELOG.md by union").
-			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each "+
-				"add an entry at the same spot, and git stops the second one's rebase on a conflict; with "+
+			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each " +
+				"add an entry at the same spot, and git stops the second one's rebase on a conflict; with " +
 				"this line it keeps both sides' lines instead.").
 			Affirmative("Add it").
 			Negative("No").
@@ -250,7 +333,7 @@ func AskInit(
 	}
 	mcpOpts, servers := mcpOptions(*c)
 	if askMCP && len(mcpOpts) > 0 {
-		fields = append(fields, huh.NewMultiSelect[string]().
+		add(huh.NewMultiSelect[string]().
 			Title("MCP servers for workers").
 			Description(mcpDescription(*c)).
 			Options(mcpOpts...).
@@ -262,8 +345,17 @@ func AskInit(
 	if len(fields) == 0 {
 		return nil
 	}
+	theme := huh.ThemeCharm()
+	group := make([]huh.Field, len(fields))
+	for i, f := range fields {
+		if i > 0 {
+			f.gap = theme.FieldSeparator.Render()
+		}
+		group[i] = f
+	}
+	theme.FieldSeparator = lipgloss.NewStyle() // each formField draws its own
 	before := c.Check
-	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(huh.ThemeCharm()).WithInput(in).WithOutput(out)
+	form := huh.NewForm(huh.NewGroup(group...)).WithTheme(theme).WithInput(in).WithOutput(out)
 	if err := form.Run(); err != nil {
 		return err
 	}
@@ -272,7 +364,14 @@ func AskInit(
 		c.CheckFrom = "the form"
 	}
 	if askConcurrent {
-		c.Unasked = false
+		c.Concurrent, c.Unasked = option, false
+		if option == customConcurrency {
+			n, err := parseConcurrency(custom)
+			if err != nil {
+				return err // the form doesn't submit one
+			}
+			c.Concurrent = n
+		}
 	}
 	if askMCP && len(mcpOpts) > 0 {
 		chosen := append([]string{}, servers...)
