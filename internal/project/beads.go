@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 )
 
 // orchestra init sets Beads up before anything else: it installs bd where it is missing, with the
@@ -182,7 +183,7 @@ func runBdInit(ctx context.Context, repo string) Step {
 	after := readWorktree(ctx, repo)
 	var committed []string
 	if after.head != before.head {
-		committed = changedIn(ctx, repo, before.head, after.head)
+		committed = git.Git{}.ChangedFiles(ctx, repo, before.head, after.head)
 	}
 	var added []string
 	for p, st := range after.status {
@@ -211,32 +212,8 @@ type worktree struct {
 // readWorktree reads the repository's HEAD and status. It only names the files bd init added, so
 // a git that fails leaves them out.
 func readWorktree(ctx context.Context, repo string) worktree {
-	head, _ := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "-q", "--verify", "HEAD")
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "-z",
-		"--untracked-files=all")
-	w := worktree{head: strings.TrimSpace(head), status: map[string]string{}}
-	entries := strings.Split(out, "\x00")
-	for i := 0; i < len(entries); i++ {
-		e := entries[i]
-		if len(e) < 4 {
-			continue
-		}
-		w.status[e[3:]] = e[:2]
-		if e[0] == 'R' || e[0] == 'C' {
-			i++ // the path it was renamed or copied from
-		}
-	}
-	return w
-}
-
-// changedIn lists the files changed from commit from (or "" for none) to commit to.
-func changedIn(ctx context.Context, repo, from, to string) []string {
-	args := []string{"diff", "--name-only", "-z", from, to}
-	if from == "" {
-		args = []string{"ls-tree", "-r", "--name-only", "-z", to}
-	}
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", args...) // see readWorktree
-	return strings.FieldsFunc(out, func(r rune) bool { return r == 0 })
+	g := git.Git{}
+	return worktree{head: g.Head(ctx, repo, "HEAD"), status: g.Changes(ctx, repo)}
 }
 
 // topLevel shortens paths to what the repository's top holds, sorted: .beads/ for .beads/config.yaml.

@@ -14,7 +14,7 @@ import (
 )
 
 // Git is git as orchestra uses it: the state of checkouts and branches, worktrees, rebasing and
-// merging finished tickets, and the history the organs read.
+// merging finished tickets, the history the organs read, and what orchestra init reads and stages.
 type Git struct{}
 
 // DirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
@@ -41,6 +41,33 @@ func (Git) DirtyWorktree(ctx context.Context, dir string) string {
 	return strings.TrimSpace(out)
 }
 
+// Changes maps each changed or untracked file in repo, under paths when any are given, to its
+// two-letter code from 'git status --porcelain' ("M ", "??", …), listing each untracked file rather
+// than its folder. It is empty when git can't tell.
+func (Git) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
+	args := append([]string{"status", "--porcelain", "-z", "--untracked-files=all", "--"}, paths...)
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", args...) // empty on failure, as documented
+	return parseStatus(out)
+}
+
+// parseStatus reads 'git status --porcelain -z': a two-letter code, a space and the path, with a
+// renamed or copied file's former path in the next field.
+func parseStatus(out string) map[string]string {
+	status := map[string]string{}
+	entries := strings.Split(out, "\x00")
+	for i := 0; i < len(entries); i++ {
+		e := entries[i]
+		if len(e) < 4 {
+			continue
+		}
+		status[e[3:]] = e[:2]
+		if e[0] == 'R' || e[0] == 'C' {
+			i++ // the path it was renamed or copied from
+		}
+	}
+	return status
+}
+
 // CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD. It returns git's
 // error when git can't tell, which is not the same as detached.
 func (Git) CurrentBranch(ctx context.Context, repo string) (string, error) {
@@ -64,6 +91,30 @@ func (Git) CommonDir(ctx context.Context, repo string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// TopLevel returns the top folder of the checkout dir is in ("" for the working directory), or
+// git's error when dir is not in one.
+func (Git) TopLevel(ctx context.Context, dir string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, dir, "git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// LinkedWorktree reports whether repo is a linked worktree rather than the main checkout: its git
+// directory is not the common one. It returns git's error when git can't tell.
+func (g Git) LinkedWorktree(ctx context.Context, repo string) (bool, error) {
+	gitDir, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return false, err
+	}
+	commonDir, err := g.CommonDir(ctx, repo)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(gitDir) != commonDir, nil
 }
 
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from
@@ -166,10 +217,12 @@ func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
 	return err == nil
 }
 
-// Head returns the commit rev points at, or "".
+// Head returns the commit rev points at, or "" when there is none, such as HEAD before the first
+// commit.
 func (Git) Head(ctx context.Context, repo, rev string) string {
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", rev) // "" on failure, as documented
-	return strings.TrimSpace(out)
+	// --verify: without it, git prints a rev it can't find back as if it were the commit.
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "-q", "--verify", rev)
+	return strings.TrimSpace(out) // "" on failure, as documented
 }
 
 // TrackedFiles lists the files git tracks in repo, or nil if git can't.
@@ -179,6 +232,37 @@ func (Git) TrackedFiles(ctx context.Context, repo string) []string {
 		return nil
 	}
 	return splitNUL(out)
+}
+
+// Tracks reports whether git tracks the file at path, relative to repo.
+func (Git) Tracks(ctx context.Context, repo, path string) bool {
+	_, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "--error-unmatch", "--", path)
+	return err == nil
+}
+
+// ChangedFiles lists the files that differ between commits from and to in repo, or every file in
+// to when from is "" (to is the first commit). It lists none if git can't.
+func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {
+	args := []string{"diff", "--name-only", "-z", from, to, "--"}
+	if from == "" {
+		args = []string{"ls-tree", "-r", "--name-only", "-z", to}
+	}
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", args...) // none on failure, as documented
+	return splitNUL(out)
+}
+
+// Attribute returns the value .gitattributes gives attr for path, relative to repo: "unspecified",
+// "set", "unset" or the value it is set to, as 'git check-attr' says.
+func (Git) Attribute(ctx context.Context, repo, attr, path string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "check-attr", "-z", attr, "--", path)
+	if err != nil {
+		return "", err
+	}
+	// -z: path, attr and value, each ended by a NUL, so a path with ": " in it reads right.
+	if fields := strings.Split(out, "\x00"); len(fields) > 2 {
+		return fields[2], nil
+	}
+	return "", errors.New("git check-attr printed no value for " + attr + " of " + path)
 }
 
 // splitNUL splits the output of a git command run with -z into its file names, which -z leaves
@@ -191,6 +275,11 @@ func splitNUL(out string) []string {
 		}
 	}
 	return files
+}
+
+// Move moves the file at from to to, both relative to repo, with 'git mv', which stages the move.
+func (Git) Move(ctx context.Context, repo, from, to string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "mv", "--", from, to)
 }
 
 // Prune forgets worktrees whose folders are gone.

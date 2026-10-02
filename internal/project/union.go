@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 )
 
 // Tickets running side by side each add their changelog entry at the top of the same list, and
@@ -27,8 +27,8 @@ func OffersUnion(ctx context.Context, repo string) bool {
 // mergesByUnion reports whether git merges the repository's CHANGELOG.md by union, however
 // .gitattributes says so (CHANGELOG.md merge=union, *.md merge=union, …).
 func mergesByUnion(ctx context.Context, repo string) bool {
-	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "check-attr", "merge", "--", changelogName)
-	return err == nil && strings.HasSuffix(strings.TrimSpace(out), ": merge: union")
+	merge, err := git.Git{}.Attribute(ctx, repo, "merge", changelogName)
+	return err == nil && merge == "union"
 }
 
 // ApplyUnion adds CHANGELOG.md merge=union to .gitattributes when the choice says so, and returns

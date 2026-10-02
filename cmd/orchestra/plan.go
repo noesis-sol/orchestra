@@ -8,10 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -41,12 +39,11 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintf(stderr, "orchestra plan: unexpected argument %q (see orchestra plan -h)\n", rest[0])
 		return dispatch.ExitSetup
 	}
-	out, err := command.Output(ctx, command.ReadLimit, dir, "git", "rev-parse", "--show-toplevel")
+	repo, err := git.Git{}.TopLevel(ctx, dir)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra plan: not inside a git repository")
 		return dispatch.ExitSetup
 	}
-	repo := strings.TrimSpace(out)
 	settings, _, err := project.LoadSettings(repo)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra plan:", err)

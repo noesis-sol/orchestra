@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,11 +44,5 @@ func TestConfigSetupProblemWhenGitDirsAreUnreadable(t *testing.T) {
 				t.Errorf("problems lack %q with git's reason:\n%s", want, joined)
 			}
 		})
-	}
-}
-
-func TestLinkedWorktreeOutsideARepositoryIsAnError(t *testing.T) {
-	if linked, err := linkedWorktree(context.Background(), t.TempDir()); err == nil {
-		t.Errorf("outside a repository: linked %v, no error", linked)
 	}
 }

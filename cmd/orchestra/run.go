@@ -17,7 +17,6 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/claude"
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/herdr"
@@ -246,8 +245,8 @@ func loadConfig(
 			c.DoneSoFar, c.Limit))
 	}
 
-	if out, err := command.Output(ctx, command.ReadLimit, "", "git", "rev-parse", "--show-toplevel"); err == nil {
-		c.Repo = strings.TrimSpace(out)
+	if repo, err := (git.Git{}).TopLevel(ctx, ""); err == nil {
+		c.Repo = repo
 	} else {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
@@ -372,7 +371,7 @@ func loadConfig(
 		}
 
 		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		if linked, err := linkedWorktree(ctx, c.Repo); err != nil {
+		if linked, err := (git.Git{}).LinkedWorktree(ctx, c.Repo); err != nil {
 			problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
 		} else if linked {
 			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
@@ -396,20 +395,6 @@ func loadConfig(
 		}
 	}
 	return c, problems, nil
-}
-
-// linkedWorktree reports whether repo is a linked worktree rather than the main checkout: its git
-// directory is not the common one.
-func linkedWorktree(ctx context.Context, repo string) (bool, error) {
-	gitDir, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return false, err
-	}
-	commonDir, err := git.Git{}.CommonDir(ctx, repo)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(gitDir) != commonDir, nil
 }
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket

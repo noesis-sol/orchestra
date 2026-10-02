@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 )
@@ -300,9 +299,9 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
 func movePrompt(ctx context.Context, repo, from, to string) error {
 	rel, _ := filepath.Rel(repo, from) // both paths are under repo, so Rel can't fail
-	if _, err := command.Output(ctx, command.ReadLimit, repo, "git", "ls-files", "--error-unmatch", rel); err == nil {
+	if g := (git.Git{}); g.Tracks(ctx, repo, rel) {
 		relTo, _ := filepath.Rel(repo, to)
-		_, err := command.Output(ctx, command.WriteLimit, repo, "git", "mv", rel, relTo)
+		_, err := g.Move(ctx, repo, rel, relTo)
 		return err
 	}
 	return os.Rename(from, to)
@@ -370,12 +369,10 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", Dir, legacyPrompt)
-	if strings.TrimSpace(out) != "" {
+	if len(git.Git{}.Changes(ctx, repo, Dir, legacyPrompt)) > 0 {
 		commit = append(commit, Dir+"/")
 	}
-	out, _ = command.Output(ctx, command.ReadLimit, repo, "git", "status", "--porcelain", "--", attributesName)
-	if strings.TrimSpace(out) != "" {
+	if len(git.Git{}.Changes(ctx, repo, attributesName)) > 0 {
 		commit = append(commit, attributesName)
 	}
 	for _, s := range steps {

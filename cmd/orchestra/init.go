@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -75,12 +75,11 @@ func runInit(
 		return dispatch.ExitSetup
 	}
 
-	out, err := command.Output(ctx, command.ReadLimit, dir, "git", "rev-parse", "--show-toplevel")
+	repo, err := git.Git{}.TopLevel(ctx, dir)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra init: not inside a git repository")
 		return dispatch.ExitSetup
 	}
-	repo := strings.TrimSpace(out)
 	existing, _, err := project.LoadSettings(repo)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra init:", err)
