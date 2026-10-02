@@ -190,7 +190,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"(default: .orchestra/settings.json, else on)")
 	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0",
 		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
-	showVersion := fs.Bool("version", false, "print the version and exit")
+	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
+	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
 	fs.BoolVar(&c.Plain, "plain", false,
 		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
@@ -221,7 +222,6 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		}
 		return c, overrides{}, nil, errUnexpectedArgs
 	}
-	c.showVersion = *showVersion
 	if c.showVersion {
 		return c, overrides{}, nil, nil
 	}

@@ -63,7 +63,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 ```bash
 scripts/check.sh                       # the full check: go vet, go test -race, golangci-lint (pinned, via go run)
 go test ./internal/dispatch/...        # one package while iterating
-go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra -version
+go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 ```
 
 - `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that

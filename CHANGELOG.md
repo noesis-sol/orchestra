@@ -272,6 +272,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra --version`, or `-v` for short, prints the version; `-h` lists
+  `-v` as the shorthand for `--version`. The README and the skill show these
+  forms; `-version` still works.
 - A ticket left for review shows why on its dashboard row, in the few
   words its warning gives (`checks failed`, `conflicts with main`, `closed
   without a commit`, …), as a deferred one does, rather than `left for

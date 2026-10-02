@@ -86,7 +86,7 @@ An organ's evidence is text orchestra can't trust: tickets, worker terminals, lo
 go install github.com/noesis-sol/orchestra/cmd/orchestra@latest
 ```
 
-That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra ./cmd/orchestra` works too. `orchestra -version` shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd` (which `orchestra init` can install), `herdr`, `git` and, for the organs, `claude`.
+That puts `orchestra` in `$(go env GOPATH)/bin`, which must be on your `PATH`. From a clone, `go build -o /usr/local/bin/orchestra ./cmd/orchestra` works too. `orchestra --version` (or `-v`) shows which version you have. Requires Go 1.26 (fetched automatically by the Go toolchain if yours is older), plus `bd` (which `orchestra init` can install), `herdr`, `git` and, for the organs, `claude`.
 
 ## Set up a project
 

@@ -23,7 +23,7 @@ answers. Organs never change a ticket or the code.
 Run these before launching anything or answering questions about a run:
 
 ```
-orchestra -version                          # installed, and which build
+orchestra --version                         # installed, and which build (-v for short)
 git rev-parse --show-toplevel               # the repository (use the main checkout, not a worktree)
 git rev-parse --absolute-git-dir            # equal to --git-common-dir in the main checkout
 git branch --show-current                   # finished tickets land on this branch
