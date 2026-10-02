@@ -208,6 +208,11 @@ All notable changes to orchestra are documented here. The format follows
   progress, without a question or a deferral, is told to continue, at most
   twice, before the idle grace and `PAUSED` apply as before.
 - With a ticket limit, the worker's prompt says how long it has for the ticket.
+- A worker started on a branch an earlier attempt at its ticket left work on
+  is told, in its prompt, how many commits the base branch doesn't have
+  (`git log <base>..HEAD`) and whether there are uncommitted changes
+  (`git status`), and to build on them or revert them deliberately rather
+  than start over. A fresh worktree's worker, and an adopted one, get no note.
 - The worker prompt (template and this repository's) asks workers not to end a
   turn with a summary, an offer to go on or a non-blocking choice, and lets
   them keep a ticket's acceptance criteria as a todo checklist.

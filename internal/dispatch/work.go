@@ -123,7 +123,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote()
+	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.earlierNote(ctx, br, wt) + o.scopeNote(id) +
+		o.budgetNote()
 	launch := ""
 	if c.LaunchPrompt && c.AgentKind == "claude" {
 		launch, err = project.WriteLaunchPrompt(wt, id, prompt)

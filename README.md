@@ -197,7 +197,7 @@ Start at 1, and raise it once the checks run cleanly side by side.
 
 ## Worker prompt
 
-Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. In a `--ticket` run, orchestra adds a line asking the worker to file follow-ups that belong to the work as children of that ticket, so they join the run (not for the ticket's own worker, which runs last). `orchestra init` writes it from [`internal/project/worker-prompt.md`](internal/project/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
+Each worker gets the prompt at `-prompt` / `WORKER_PROMPT` (default `.orchestra/worker-prompt.md`), with every `TICKET_ID` replaced by its ticket. In a `--ticket` run, orchestra adds a line asking the worker to file follow-ups that belong to the work as children of that ticket, so they join the run (not for the ticket's own worker, which runs last). A worker started on a branch an earlier attempt left work on (a ticket that comes back) is told what it left, commits `<base>` doesn't have (`git log <base>..HEAD`) or uncommitted changes (`git status`), and to build on them or revert them deliberately rather than start over. `orchestra init` writes it from [`internal/project/worker-prompt.md`](internal/project/worker-prompt.md), which is built into the binary. Each rule prevents a way a run goes wrong:
 
 - **Own worktree, never push, the orchestrator merges.** Workers can't disturb each other or the branch that finished tickets land on.
 - **Commit with the ticket ID, closing only when the checks pass.** A ticket is merged only if a commit names it and its worktree is clean.

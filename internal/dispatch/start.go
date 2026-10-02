@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -82,6 +83,30 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, c
 	}
 	o.info("  worktree %s on %s", wt, br)
 	return wt, !o.refreshBranch(ctx, wt, br), nil
+}
+
+// earlierNote tells a new worker what an earlier attempt at its ticket left on branch br and in
+// worktree wt: commits Base doesn't have, uncommitted changes, or both. A worker told it is in its
+// own worktree takes the branch for a fresh one, and would redo that work, commit it unread or
+// discard it. It is "" when there is nothing, as in a new worktree.
+func (o *Loop) earlierNote(ctx context.Context, br, wt string) string {
+	base := o.cfg.Base
+	var left []string
+	switch n := o.merger.CountCommits(ctx, o.cfg.Repo, base+".."+br); {
+	case n == 1:
+		left = append(left, fmt.Sprintf("1 commit that %s doesn't have (git log %s..HEAD)", base, base))
+	case n > 1:
+		left = append(left, fmt.Sprintf("%d commits that %s doesn't have (git log %s..HEAD)", n, base, base))
+	}
+	if o.checkout.DirtyWorktree(ctx, wt) != "" {
+		left = append(left, "uncommitted changes (git status)")
+	}
+	if len(left) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nAn earlier attempt at this ticket left work on %s: %s. Read it before anything else, "+
+		"then build on it, or revert it deliberately; don't start over, and don't commit or discard it unread.\n",
+		br, strings.Join(left, " and "))
 }
 
 // startRetry is how long a failed 'agent start' is given, before the pane is looked at for the
