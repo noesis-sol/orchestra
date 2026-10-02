@@ -425,6 +425,14 @@ All notable changes to orchestra are documented here. The format follows
   `["internal/organ/screen.go"` that match no file, and an overlap with
   another ticket on those files went unseen. Quotes and brackets left on the
   paths of a list that isn't quite JSON are dropped too.
+- A Claude worker that asks the maintainer and ends its turn without reopening
+  its ticket (the question filed, `bd update <id> --status open` skipped or
+  failed) settles at that Stop hook: the log says `<id> settled: Stop hook at
+  <time>, waiting on <question>`, then `ASKED`, and orchestra reopens the
+  ticket and starts the next one at once. It used to wait out the 10-minute
+  idle grace first, its slot idle. A worker without hooks still gets the idle
+  grace, as Herdr's idle can't tell the end of its turn from a wait on its own
+  background command.
 
 ## [0.1.1] - 2026-09-29
 

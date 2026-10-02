@@ -18,12 +18,14 @@ import (
 // still going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still
 // going after longRunning is reported once. Each status read goes to report (nil: none), for the
 // dashboard. A worker whose turn ends with its ticket still in progress is told to continue, up to
-// maxNudges times, before its idle grace runs (see nudge).
+// maxNudges times, before its idle grace runs (see nudge); one whose turn ends with its ticket in
+// progress but waiting on a question it asked has settled at that Stop hook (see endOfTurn).
 func (o *Loop) waitSettled(
 	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, since time.Time,
 	report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
-	var blockedSince, idleSince, unknownSince, nudgedAt time.Time
+	var blockedSince, idleSince, unknownSince time.Time
+	var readTo time.Time // turns that ended before it have been read; the next turn's Stop comes after
 	failed, unread, nudges := 0, 0, 0
 	warned := false
 	for {
@@ -76,10 +78,19 @@ func (o *Loop) waitSettled(
 				}
 			} else {
 				unread = 0
-				if ts == "in_progress" && nudges < maxNudges &&
-					o.stoppedMidTicket(ctx, id, wt, hooks, later(since, nudgedAt)) {
+				var turn turnEnd
+				if ts == "in_progress" {
+					turn = o.endOfTurn(ctx, id, wt, hooks, later(since, readTo))
+				}
+				if turn.asked != nil { // conclude reopens the ticket left in progress
+					o.info("  %s settled: Stop hook at %s, waiting on %s", id, turn.at.Format("15:04:05"), turn.asked.ID)
+					return idleSince, nil
+				}
+				if turn.owes {
+					readTo = time.Now() // told to continue or not, only its next turn's end counts
+				}
+				if turn.owes && nudges < maxNudges {
 					nudges++
-					nudgedAt = time.Now() // its next turn's Stop comes after
 					if o.nudge(ctx, id, agent, nudges) {
 						idleSince = time.Time{}
 						if !sleep(ctx, o.pollEvery()) {
@@ -181,19 +192,31 @@ const startGrace = 3 * time.Minute
 // continue before the idle grace and the pause apply as to any other.
 const maxNudges = 2
 
-// stoppedMidTicket says whether a worker that reports through hooks ended a turn, after after (zero:
-// any), with its ticket id in progress, neither waiting on a question nor deferred: a turn that
-// ended with a progress report while the work is still owed.
-func (o *Loop) stoppedMidTicket(ctx context.Context, id, wt string, hooks bool, after time.Time) bool {
+// turnEnd is what a worker's ticket shows at the end of its turn: the work still owed, or a
+// question asked. A zero turnEnd says neither, as when the turn hasn't ended.
+type turnEnd struct {
+	at    time.Time // of its Stop hook
+	owes  bool      // the ticket is in progress, neither waiting on a question nor deferred
+	asked *Ticket   // the open question the ticket waits on, whatever its status
+}
+
+// endOfTurn reads ticket id as its worker, reporting through hooks, left it at the end of a turn,
+// after after (zero: any). Without hooks, before that turn's Stop, or when bd fails to show the
+// ticket, it says nothing: the worker neither settles nor is told to continue on it.
+func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after time.Time) turnEnd {
 	if !hooks || o.reporter == nil {
-		return false
+		return turnEnd{}
 	}
 	u, ok := o.reporter.LastToolUse(wt)
 	if !ok || u.Event != "Stop" || !after.IsZero() && (u.At.IsZero() || u.At.Before(after)) {
-		return false
+		return turnEnd{}
 	}
 	t, err := o.tickets.Show(ctx, id)
-	return err == nil && t.Status == "in_progress" && OpenQuestion(t) == nil
+	if err != nil {
+		return turnEnd{}
+	}
+	q := OpenQuestion(t)
+	return turnEnd{at: u.At, owes: t.Status == "in_progress" && q == nil, asked: q}
 }
 
 // nudge tells ticket id's worker, idle at the end of its turn, that its ticket is still open and
