@@ -153,10 +153,15 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deferred++
 			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
 		case dispatch.EvWarn:
-			// Only a ticket the warning sets aside is for review. The rest are about a ticket still
-			// running (LONG_RUNNING) or already deferred (TRIAGE_FAILED), whose row stays as it is.
+			// Only a ticket the warning sets aside is for review, its row saying why as a deferred
+			// one does. The rest are about a ticket still running (LONG_RUNNING) or already deferred
+			// (TRIAGE_FAILED), whose row stays as it is.
 			if ev.Ticket != "" && ev.Aside {
-				m.setRow(ev.Ticket, rowReview, "left for review, see the log")
+				why := ev.Detail
+				if why == "" {
+					why = "left for review, see the log"
+				}
+				m.setRow(ev.Ticket, rowReview, why)
 			}
 		case dispatch.EvAsked:
 			m.asked++

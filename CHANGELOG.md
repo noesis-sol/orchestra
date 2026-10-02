@@ -272,6 +272,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A ticket left for review shows why on its dashboard row, in the few
+  words its warning gives (`checks failed`, `conflicts with main`, `closed
+  without a commit`, …), as a deferred one does, rather than `left for
+  review, see the log`, which stays for a warning that gives no reason.
 - In a repository `orchestra init` hasn't set up (no `.orchestra/worker-prompt.md`
   or `settings.json`, nor a `.claude/worker-prompt.md` from before `init`),
   `orchestra` and `orchestra --feature …` say first `orchestra isn't set up in

@@ -45,7 +45,8 @@ func TestTriageFailureKeepsTheDeferralsReason(t *testing.T) {
 	}
 }
 
-// A warning that sets its ticket aside marks the row for review.
+// A warning that sets its ticket aside marks the row for review, sending the maintainer to the log
+// when it gives no reason.
 func TestWarningsThatSetATicketAsideShowItForReview(t *testing.T) {
 	for _, text := range []string{
 		"  CLOSED_WITHOUT_COMMIT: no commit on wt/k-1 names k-1; worktree wt and tab t1 left for review",
