@@ -418,6 +418,13 @@ All notable changes to orchestra are documented here. The format follows
   directly: a rebase killed this way passed for a conflict (`MERGE_CONFLICT`
   and the `unmerged` label on a clean ticket), and a killed fast-forward ended
   the run with `MERGE_FAILED`. Orchestra stops them itself, as before.
+- A ticket's `files` (or `predicted_files`) metadata stored as a string that
+  holds a JSON list, which is what `bd update <id> --set-metadata
+  'files=["a.go","b.go"]'` writes, is read as the list it holds. It used to be
+  split on its commas, so its footprint was made of names like
+  `["internal/organ/screen.go"` that match no file, and an overlap with
+  another ticket on those files went unseen. Quotes and brackets left on the
+  paths of a list that isn't quite JSON are dropped too.
 
 ## [0.1.1] - 2026-09-29
 

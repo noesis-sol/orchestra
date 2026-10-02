@@ -26,8 +26,8 @@ type Footprint struct {
 // the same one overlap.
 const AreaPrefix = "area:"
 
-// FilesKey is the metadata key listing the files a ticket works on, as a list or a string of
-// paths separated by commas or spaces (bd update <id> --set-metadata files=a.go,b.go).
+// FilesKey is the metadata key listing the files a ticket works on, as a list, a list in a string
+// or a string of paths separated by commas or spaces (bd update <id> --set-metadata files=a.go,b.go).
 const FilesKey = "files"
 
 // PredictedKey is the metadata key caching the files the predictor organ expects a ticket naming
@@ -233,7 +233,8 @@ func sortedKeys(m map[string]bool) []string {
 	return l
 }
 
-// metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, or
+// metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, a
+// list encoded in a string (bd update <id> --set-metadata 'files=["a.go","b.go"]' stores one), or
 // one string of them separated by commas or spaces. bd gives the metadata as an object or as one
 // encoded in a string.
 func metadataList(raw json.RawMessage, key string) []string {
@@ -249,10 +250,22 @@ func metadataList(raw json.RawMessage, key string) []string {
 	if json.Unmarshal(meta[key], &list) == nil {
 		return list
 	}
-	if json.Unmarshal(meta[key], &s) == nil {
-		return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' })
+	if json.Unmarshal(meta[key], &s) != nil {
+		return nil
 	}
-	return nil
+	var inString []string
+	if strings.HasPrefix(strings.TrimSpace(s), "[") && json.Unmarshal([]byte(s), &inString) == nil {
+		return inString
+	}
+	// A list that isn't quite JSON (["a.go", 'b.go'), with a missing bracket) leaves its quotes and
+	// brackets on the words it splits into: they aren't part of any path.
+	var words []string
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' }) {
+		if w = strings.Trim(w, "\"'`[]"); w != "" {
+			words = append(words, w)
+		}
+	}
+	return words
 }
 
 // funcsMeet reports whether two function names can mean the same function: the same name, and the
