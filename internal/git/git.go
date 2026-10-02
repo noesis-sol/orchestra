@@ -100,8 +100,8 @@ func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string
 // message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
 func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
 	// On failure none is found: nothing is merged.
-	out, _ := command.Output(ctx, command.ReadLimit, repo,
-		"git", "log", "--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev)
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--no-show-signature",
+		"--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev, "--")
 	return latestNaming(out, ticket)
 }
 
@@ -167,6 +167,12 @@ func (Git) TrackedFiles(ctx context.Context, repo string) []string {
 	if err != nil {
 		return nil
 	}
+	return splitNUL(out)
+}
+
+// splitNUL splits the output of a git command run with -z into its file names, which -z leaves
+// unquoted, spaces and all.
+func splitNUL(out string) []string {
 	files := []string{}
 	for _, f := range strings.Split(out, "\x00") {
 		if f != "" {
@@ -214,12 +220,12 @@ func (Git) AbortRebase(ctx context.Context, worktree string) (string, error) {
 	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "rebase", "--abort")
 }
 
-// ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or nil.
+// ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or none.
 func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
-	// Nil on failure: the files only explain the conflict.
+	// None on failure: the files only explain the conflict.
 	out, _ := command.Output(ctx, command.ReadLimit, "",
-		"git", "-C", worktree, "diff", "--name-only", "--diff-filter=U")
-	return strings.Fields(out)
+		"git", "-C", worktree, "diff", "--name-only", "-z", "--diff-filter=U")
+	return splitNUL(out)
 }
 
 // RebaseInProgress reports whether a rebase has stopped in worktree and not been finished or
@@ -240,7 +246,7 @@ func (Git) RebaseInProgress(ctx context.Context, worktree string) bool {
 
 // CountCommits counts the commits in revs, such as base..branch, or returns -1 if git can't.
 func (Git) CountCommits(ctx context.Context, repo, revs string) int {
-	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-list", "--count", revs)
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "rev-list", "--count", revs, "--")
 	if err != nil {
 		return -1
 	}
@@ -253,7 +259,7 @@ func (Git) CountCommits(ctx context.Context, repo, revs string) int {
 
 // ResetBranch moves the branch checked out in worktree to rev, with its files.
 func (Git) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
-	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "reset", "--hard", "--quiet", rev)
+	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "reset", "--hard", "--quiet", rev, "--")
 }
 
 // FastForward merges branch into the checked-out branch of repo, only if that is a fast-forward.
@@ -271,20 +277,22 @@ func (Git) ShortStatus(ctx context.Context, worktree string) string {
 // OneLineLog is 'git log --oneline revs' in dir.
 func (Git) OneLineLog(ctx context.Context, dir, revs string) string {
 	// For people and the organs: "" on failure.
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", dir, "log", "--oneline", revs)
+	out, _ := command.Output(ctx, command.ReadLimit, "",
+		"git", "-C", dir, "log", "--no-show-signature", "--oneline", revs, "--")
 	return out
 }
 
 // DiffStat is the diff stat of worktree's uncommitted changes.
 func (Git) DiffStat(ctx context.Context, worktree string) string {
 	// For people and the organs: "" on failure.
-	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--stat", "HEAD")
+	out, _ := command.Output(ctx, command.ReadLimit, "", "git", "-C", worktree, "diff", "--stat", "HEAD", "--")
 	return out
 }
 
 // Subjects lists revs as "<hash> <subject>" lines, run in repo.
 func (Git) Subjects(ctx context.Context, repo, revs string) string {
 	// For people and the organs: "" on failure.
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--format=%h %s", revs)
+	out, _ := command.Output(ctx, command.ReadLimit, repo,
+		"git", "log", "--no-show-signature", "--format=%h %s", revs, "--")
 	return out
 }

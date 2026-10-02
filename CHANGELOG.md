@@ -337,6 +337,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Three repository quirks no longer mislead orchestra's git calls. With
+  `log.showSignature` set, signed commits no longer put git's signature check
+  in place of a commit: the dashboard read `Good merged into …`, and the log and
+  the organs got the signature text. A base branch or ticket branch named like a
+  top-level file or folder (a base branch `docs` beside `docs/`) is no longer
+  read as a path, which made git fail and left a ticket merged by hand marked
+  unmerged, holding its dependents in every later run. A rebase conflict in a
+  file with a space or a non-ASCII character in its name (`docs/My Guide.md`,
+  `café.md`) now names that file, not two halves or quoted octal.
 - A worker's reporting hooks can no longer block it. Under dash (`/bin/sh` on
   Debian and Ubuntu) a hook whose write failed, as every write does once the
   worker has removed `.orchestra/run/` (`git clean -fdx`, `git stash --all`),
