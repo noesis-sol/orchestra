@@ -4,7 +4,7 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-02
 
 ### Added
 
@@ -772,6 +772,6 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
-[Unreleased]: https://github.com/noesis-sol/orchestra/compare/v0.1.1...HEAD
+[0.2.0]: https://github.com/noesis-sol/orchestra/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/noesis-sol/orchestra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/noesis-sol/orchestra/releases/tag/v0.1.0
