@@ -85,8 +85,8 @@ type Loop struct {
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
 	askedIDs map[string]askedWorker
-	// placed: where each worker started or adopted in this run is, and, once it stopped the run, why:
-	// the next run carries on with those left running (see saveCarried).
+	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
+	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
 	placed map[string]askedWorker
 	// keptOut: the workers the last run left behind on tickets outside this run's scope, saved again
 	// for a later run as they were.

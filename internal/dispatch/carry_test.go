@@ -481,48 +481,68 @@ func TestTicketLeftRunningWhoseWorkerIsGoneIsWarnedOnce(t *testing.T) {
 }
 
 // Ctrl+C leaves the running worker, saved for the next run as left running, INTERRUPTED; it closes
-// its ticket after the run, and the next run merges it.
+// its ticket after the run, and the next run merges it. It is saved wherever its start had got to:
+// Ctrl+C as the worker starts on its prompt, given at launch, may land before the run has heard from
+// Herdr that it did, or while Herdr is still to name it.
 func TestInterruptedRunLeavesItsWorkerToTheNext(t *testing.T) {
 	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		h := newTimedHarness(t)
-		h.beads.add("A", "first", 1)
-		started, release := make(chan struct{}), make(chan struct{})
-		h.worker("A", func(w *fakeWorker) AgentState {
-			w.claim()
-			close(started)
-			<-release
-			w.commit("a.txt")
-			w.close()
-			return "idle"
-		})
-		o := h.loop()
-		ctx, cancel := context.WithCancelCause(t.Context())
-		codes := make(chan int, 1)
-		go func() { codes <- o.Run(ctx) }()
-		<-started
-		cancel(InterruptedError("with Ctrl+C"))
-		if code := <-codes; code != ExitInterrupted {
-			t.Fatalf("run 1: exit %d, final %q", code, o.Final())
-		}
-		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
-		if got := saved(t, h); !reflect.DeepEqual(got, want) {
-			t.Fatalf("saved %+v\nwant %+v", got, want)
-		}
-		close(release)
-		synctest.Wait()
+	for _, c := range []struct {
+		name   string
+		naming bool // Ctrl+C lands as Herdr begins to name the worker, rather than as it starts work
+	}{
+		{"as the worker starts", false},
+		{"while Herdr names it", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				h := newTimedHarness(t)
+				h.beads.add("A", "first", 1)
+				started, release := make(chan struct{}), make(chan struct{})
+				h.worker("A", func(w *fakeWorker) AgentState {
+					w.claim()
+					close(started)
+					<-release
+					w.commit("a.txt")
+					w.close()
+					return "idle"
+				})
+				o := h.loop()
+				ctx, cancel := context.WithCancelCause(t.Context())
+				interrupt := func() { cancel(InterruptedError("with Ctrl+C")) }
+				if c.naming {
+					h.herdr.onAdopt = func(string) { interrupt() }
+				}
+				codes := make(chan int, 1)
+				go func() { codes <- o.Run(ctx) }()
+				if !c.naming {
+					<-started
+					interrupt()
+				}
+				if code := <-codes; code != ExitInterrupted {
+					t.Fatalf("run 1: exit %d, final %q", code, o.Final())
+				}
+				want := []project.LeftWorker{
+					{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
+				if got := saved(t, h); !reflect.DeepEqual(got, want) {
+					t.Fatalf("saved %+v\nwant %+v", got, want)
+				}
+				close(release)
+				synctest.Wait()
 
-		o, code := h.run()
-		if code != ExitOK || o.Final() != "READY_EMPTY after 0 tickets" {
-			t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-		}
-		if ev := h.sink.text(); !strings.Contains(ev, "  carried over from the last run: A (left running: INTERRUPTED)") {
-			t.Errorf("events:\n%s", ev)
-		}
-		if a, _ := h.beads.Show(t.Context(), "A"); !equal(closedIDs(h), []string{"A"}) || HasLabel(a, UnmergedLabel) {
-			t.Errorf("A should be merged and its label removed (%v):\n%s", a.Labels, h.sink.text())
-		}
-	})
+				o, code := h.run()
+				if code != ExitOK || o.Final() != "READY_EMPTY after 0 tickets" {
+					t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+				}
+				if ev := h.sink.text(); !strings.Contains(ev, "  carried over from the last run: A (left running: INTERRUPTED)") {
+					t.Errorf("events:\n%s", ev)
+				}
+				if a, _ := h.beads.Show(t.Context(), "A"); !equal(closedIDs(h), []string{"A"}) || HasLabel(a, UnmergedLabel) {
+					t.Errorf("A should be merged and its label removed (%v):\n%s", a.Labels, h.sink.text())
+				}
+			})
+		})
+	}
 }
 
 // A scoped run carries over only the workers on its own tickets; it keeps the others, as they

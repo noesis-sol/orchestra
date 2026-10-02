@@ -465,6 +465,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker launched just before Ctrl+C is carried over to the next run. The
+  run recorded where a worker was only once Herdr had named it, up to three
+  minutes after its launch, so Ctrl+C in that time left a worker at work in
+  its tab but not in `.orchestra/run/state.json`, and the next run never
+  adopted or merged it. A worker is now recorded as soon as its tab is open,
+  and kept however its start ends (`START_FAILED` included). Cut short
+  before Herdr named it, the run names it as it stops, so the next run finds
+  it; one that never came up is replaced by a new worker when its ticket
+  comes back.
 - Merging a ticket no longer closes a tab that may not be its worker's. A
   run merging a ticket the last run left behind closed the tab ID that run
   recorded, but Herdr numbers its tabs afresh when it starts without

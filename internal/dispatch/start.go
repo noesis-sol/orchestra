@@ -55,6 +55,25 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 	}
 }
 
+// nameLeft names agent the worker in pane, in ticket id's tab, whose start Ctrl+C cut short before it
+// was named: the next run looks for it by that name. Herdr may not have recognised it yet; it then
+// stays unnamed, and the next run takes it for gone.
+func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
+	name, kind, st, err := o.namer.PaneAgent(ctx, pane)
+	switch {
+	case err != nil:
+		o.log.Raw("", err)
+	case st == StateGone:
+		o.log.Raw("", fmt.Errorf("%s's start was cut short before Herdr saw a worker in tab %s to name %s: "+
+			"one still coming up there is left unnamed, and the next run won't find it", id, tab, agent))
+	case kind != o.cfg.AgentKind || name == agent:
+	default:
+		if err := o.namer.RenameAgent(ctx, pane, agent); err != nil {
+			o.log.Raw("", fmt.Errorf("cannot give %s's worker in tab %s the name %s as the run stops: %w", id, tab, agent, err))
+		}
+	}
+}
+
 // prepareWorktree creates the ticket's worktree, or reuses the one left by an earlier attempt and
 // brings its branch up to date, holding the repository lock. conflicts reports a branch that could
 // not be rebased onto Base.
@@ -125,7 +144,8 @@ type startedWorker struct {
 // from its prompt file launch if it has one and that works, or else with herdr agent start, its
 // prompt then to be pasted. mcpArgs give it its MCP servers and report its hooks; it does without
 // the hooks if Herdr refuses them. It shows the ticket as starting in that tab, and clears that
-// again unless it returns the worker started, which leaves clearing it to the caller.
+// again unless it returns the worker started, which leaves clearing it to the caller. It places the
+// worker as soon as the tab is open, and leaves it placed however the start ends.
 func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpArgs, report []string,
 	launch string) (startedWorker, *stopReason) {
 	c := o.cfg
@@ -150,6 +170,16 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 			o.status(Status{Ticket: id, Gone: true})
 		}
 	}()
+	// From here on a worker may be running in the tab, at work on its prompt, even if Ctrl+C or a
+	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried).
+	place := func() { o.place(id, askedWorker{tab: tab, wt: wt, hooks: report != nil}) }
+	place()
+	// Cut short once a worker may have been launched, the start names it if Herdr has it in the
+	// pane, so the next run, which looks for it by name, finds it.
+	interrupted := func() (startedWorker, *stopReason) {
+		o.nameLeft(context.WithoutCancel(ctx), id, tab, pane, agent)
+		return startedWorker{}, errInterrupted
+	}
 
 	// startArgs are the worker's arguments: its MCP servers and the run's arguments for every Claude
 	// worker (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
@@ -182,7 +212,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 			_, err = o.namer.AdoptAgent(ctx, pane, c.AgentKind, agent)
 		}
 		if ctx.Err() != nil {
-			return startedWorker{}, errInterrupted
+			return interrupted()
 		}
 		if o.starter.IsNameRefused(err) {
 			return startedWorker{}, nameRefused(err)
@@ -195,7 +225,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 				"%s's worker was not named %s after it was launched (%v); watching its tab for longer", id, agent, err))
 			held, adopted, err := o.adoptLate(ctx, pane, agent)
 			if ctx.Err() != nil {
-				return startedWorker{}, errInterrupted
+				return interrupted()
 			}
 			if o.starter.IsNameRefused(err) {
 				return startedWorker{}, nameRefused(err)
@@ -231,6 +261,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 		o.log.Raw("", err)
 		if o.starter.IsArgumentRefused(err) && len(args) > len(fixed) {
 			report = nil // start it plainly, without reports
+			place()
 			continue
 		}
 		if o.starter.IsArgumentRefused(err) && len(mcpArgs) > 0 {
@@ -239,7 +270,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", id, tab, err).causedBy(err)
 		}
 		if !sleep(ctx, startRetry) {
-			return startedWorker{}, errInterrupted
+			return interrupted()
 		}
 		st, err := o.agents.Status(ctx, agent)
 		if err != nil {

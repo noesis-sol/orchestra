@@ -209,7 +209,8 @@ func ticketsOf(left []project.LeftWorker) []string {
 	return ids
 }
 
-// place records where ticket id's worker is, as it was started or adopted in this run.
+// place records where ticket id's worker is, as it was adopted in this run, or from when its tab was
+// opened (see startWorker).
 func (o *Loop) place(id string, w askedWorker) {
 	o.mu.Lock()
 	defer o.mu.Unlock()

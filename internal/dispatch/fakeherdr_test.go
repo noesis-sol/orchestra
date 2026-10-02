@@ -48,6 +48,7 @@ type fakeHerdr struct {
 	promptFails  map[string]bool        // pasting the prompt never submits it
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
+	onAdopt      func(id string)        // called with the ticket's ID as AdoptAgent begins, where a test presses Ctrl+C; nil: none
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
 	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
@@ -253,7 +254,18 @@ func errLongName(name string) error {
 	return nil
 }
 
+// AdoptAgent names the agent in the pane at once, unless its context has ended: Herdr's own then
+// fails before it reads the pane.
 func (h *fakeHerdr) AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error) {
+	h.mu.Lock()
+	onAdopt, ticket := h.onAdopt, h.panes[pane].ticket
+	h.mu.Unlock()
+	if onAdopt != nil {
+		onAdopt(ticket)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := errLongName(name); err != nil {

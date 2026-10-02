@@ -159,7 +159,6 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
 	tab, started := worker.tab, worker.started
-	o.place(id, askedWorker{tab: tab, wt: wt, hooks: worker.hooks})
 
 	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	stopWatch := o.watch(ctx, w)
