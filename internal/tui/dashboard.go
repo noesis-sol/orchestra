@@ -4,16 +4,13 @@ package tui
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
@@ -52,44 +49,6 @@ func Tildify(s string) string {
 		return s
 	}
 	return strings.ReplaceAll(s, home+"/", "~/")
-}
-
-// renderEvent formats one event as a permanent line above the live status area.
-func renderEvent(ev dispatch.Event) string {
-	ts := dimStyle.Render(ev.Time.Format("15:04:05"))
-	switch ev.Kind {
-	case dispatch.EvDispatch:
-		solo := ""
-		if ev.Solo.Ticket == ev.Ticket && !ev.Solo.Next {
-			solo = dimStyle.Render(" solo")
-		}
-		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
-			pickedStyle.Render(ev.Ticket), solo, ev.Title)
-	case dispatch.EvClosed:
-		return fmt.Sprintf("%s %s  %s", ts, closedStyle.Render("✓ "+ev.Ticket+" completed"), dimStyle.Render(ev.Detail))
-	case dispatch.EvDeferred:
-		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
-	case dispatch.EvTriage:
-		return fmt.Sprintf("%s %s  %s",
-			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
-	case dispatch.EvAsked:
-		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
-	case dispatch.EvAnswered:
-		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
-	case dispatch.EvHold:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
-	case dispatch.EvWarn:
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+Tildify(strings.TrimSpace(ev.Text))))
-	case dispatch.EvStop:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
-	case dispatch.EvDone:
-		return fmt.Sprintf("%s %s", ts, doneStyle.Render("■ "+ev.Text))
-	case dispatch.EvDrain, dispatch.EvResume:
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
-	case dispatch.EvProbed:
-		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
-	}
-	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
 }
 
 // ---- Bubble Tea model ----------------------------------------------------------------
@@ -439,45 +398,51 @@ func (m Dashboard) runningIDs() []string {
 	return ids
 }
 
-// modal is the question s asks, in a box: whether to stop after the running tickets, or, while
-// the run winds down, whether to take tickets again.
-func (m Dashboard) modal(w int) string {
-	var question, about, keys string
-	switch n := len(m.active); {
-	case m.draining:
-		question, about = "Keep taking tickets?", "New tickets start again as slots free up."
-		keys = "y keep going · n keep stopping"
-	case n == 0:
-		question = "Stop after the running tickets?"
-		about = "No new tickets will start. Nothing is running, so the run ends now."
-		keys = "y stop · n keep going"
-	default:
-		lead, list, tail := dispatch.DrainWords(m.runningIDs())
-		question = "Stop after the running tickets?"
-		about = capitalize(lead+list+tail) + ". They merge as usual, then the run ends."
-		if n == 1 {
-			about = capitalize(lead+list+tail) + ". It merges as usual, then the run ends."
-		}
-		keys = "y stop after current · n keep going"
+// drainQuestion is the question s asks, worded once for the box and the one-line prompt: whether
+// to stop after the running tickets, or, while the run winds down, whether to take tickets again.
+type drainQuestion struct {
+	ask   string // the question
+	short string // the question where the prompt line has no room for ask
+	about string // what y does, in the DRAIN line's words
+	keys  string // what y and n do, for the box
+}
+
+func (m Dashboard) drainQuestion() drainQuestion {
+	if m.draining {
+		return drainQuestion{ask: "Keep taking tickets?", short: "Keep taking tickets?",
+			about: "New tickets start again as slots free up.", keys: "y keep going · n keep stopping"}
 	}
+	q := drainQuestion{ask: "Stop after the running tickets?", short: "Stop after current?",
+		keys: "y stop after current · n keep going"}
+	lead, list, tail := dispatch.DrainWords(m.runningIDs())
+	switch len(m.active) {
+	case 0:
+		q.about, q.keys = "No new tickets will start. Nothing is running, so the run ends now.", "y stop · n keep going"
+	case 1:
+		q.about = capitalize(lead+list+tail) + ". It merges as usual, then the run ends."
+	default:
+		q.about = capitalize(lead+list+tail) + ". They merge as usual, then the run ends."
+	}
+	return q
+}
+
+// modal is the drain question in a box.
+func (m Dashboard) modal(w int) string {
+	q := m.drainQuestion()
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		deferredStyle.Bold(true).Render(question), "", about, "", dimStyle.Render(keys))
+		deferredStyle.Bold(true).Render(q.ask), "", q.about, "", dimStyle.Render(q.keys))
 	return box(min(w-4, 64), yellow, body)
 }
 
-// promptLine is the question on one line, for a pane too small for the box; the keys come first
-// so a narrow pane keeps them.
+// promptLine is the drain question on one line, for a pane too small for the box; the question and
+// keys come first so a narrow pane keeps them.
 func (m Dashboard) promptLine(w int) string {
-	line := " Stop after current? y/n · "
-	switch n := len(m.active); {
-	case m.draining:
-		line = " Keep taking tickets? y/n · new tickets start again as slots free up"
-	case n == 0:
-		line += "nothing is running, so the run ends now"
-	default:
-		line += fmt.Sprintf("%d running (%s) finish and merge, then the run ends", n, strings.Join(m.runningIDs(), ", "))
+	q := m.drainQuestion()
+	ask := q.ask
+	if ansi.StringWidth(" "+ask+" y/n") > w {
+		ask = q.short
 	}
-	return deferredStyle.Bold(true).Render(ansi.Truncate(line, w, "…"))
+	return deferredStyle.Bold(true).Render(ansi.Truncate(" "+ask+" y/n · "+q.about, w, "…"))
 }
 
 // overlay draws fg over the middle of bg, a view w wide.
@@ -514,41 +479,28 @@ func (m Dashboard) workerList(w int) string {
 	if len(running) == 0 {
 		return m.workerPanels(w)
 	}
-	inner := w - 4
 	var lines []string
 	for _, st := range running {
-		elapsed := time.Since(st.Started).Truncate(time.Second)
-		lines = append(lines, ansi.Truncate(fmt.Sprintf("%s %s  %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
-			agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()), oneLine(st.Title)), inner, "…"))
+		lines = append(lines, ansi.Truncate(m.workerHead(st)+"  "+oneLine(st.Title), w-4, "…"))
 	}
-	border := lipgloss.TerminalColor(cyan)
-	for _, st := range running {
-		if st.Agent == dispatch.StateBlocked {
-			border = red
-		}
-	}
-	return box(w, border, strings.Join(lines, "\n"))
+	return box(w, workerBorder(running...), strings.Join(lines, "\n"))
 }
 
-// statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
-// branch, running time and stopping state are on the title line, the winding down above the hint.
-func (m Dashboard) statsLine(w int) string {
-	queued := "—"
-	if m.queued >= 0 {
-		queued = fmt.Sprint(m.queued)
+// workerHead is a running worker's first line: ID, worker status and time.
+func (m Dashboard) workerHead(st dispatch.Status) string {
+	elapsed := time.Since(st.Started).Truncate(time.Second)
+	return fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
+		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()))
+}
+
+// workerBorder colours a box of running workers red if any waits for the maintainer.
+func workerBorder(running ...dispatch.Status) lipgloss.TerminalColor {
+	for _, st := range running {
+		if st.Agent == dispatch.StateBlocked {
+			return red
+		}
 	}
-	if m.draining {
-		queued += " held" // not taken while the run winds down
-	}
-	parts := []string{
-		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
-		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
-		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
-		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
-			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
-		dimStyle.Render("queue " + queued),
-	}
-	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
+	return cyan
 }
 
 // Running returns the running workers, oldest first.
@@ -590,20 +542,14 @@ func (m Dashboard) workerPanels(w int) string {
 func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
-	border := lipgloss.TerminalColor(cyan)
-	if st.Agent == dispatch.StateBlocked {
-		border = red
-	}
-	elapsed := time.Since(st.Started).Truncate(time.Second)
-	lines := []string{fit(fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
-		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String())))}
+	lines := []string{fit(m.workerHead(st))}
 	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
 		lines = append(lines, "  "+l)
 	}
 	if st.Activity != "" {
 		lines = append(lines, fit("  "+dimStyle.Render(oneLine(st.Activity))))
 	}
-	return box(w, border, strings.Join(lines, "\n"))
+	return box(w, workerBorder(st), strings.Join(lines, "\n"))
 }
 
 func box(w int, border lipgloss.TerminalColor, content string) string {
@@ -670,8 +616,9 @@ func (m *Dashboard) working(id, title string) {
 }
 
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
-// its title; a completed one only its merged commit; a set-aside one why, with triage's verdict.
-func (r ticketRow) cells(width int) [3]string {
+// its title, and in its state what its worker is doing (doingLabel, or ""); a completed one only
+// its merged commit; a set-aside one why, with triage's verdict.
+func (r ticketRow) cells(width int, doing string) [3]string {
 	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, 8), "…") }
 	switch r.state {
 	case rowDone:
@@ -691,7 +638,16 @@ func (r ticketRow) cells(width int) [3]string {
 	case rowAsked:
 		return [3]string{stopStyle.Render("? for you"), stopStyle.Render(r.id), fit(r.note)}
 	}
-	return [3]string{pickedStyle.Render("▶ working"), pickedStyle.Render(r.id), fit(r.title)}
+	state := pickedStyle.Render("▶ working")
+	switch doing {
+	case "resolving":
+		state = deferredStyle.Render("⟳ resolving")
+	case "testing":
+		state = testingStyle.Render("▶ testing")
+	case "editing", "reading":
+		state = pickedStyle.Render("▶ " + doing)
+	}
+	return [3]string{state, pickedStyle.Render(r.id), fit(r.title)}
 }
 
 // ticketsTable lists this run's tickets, newest last, in at most maxLines lines of screen.
@@ -716,16 +672,11 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 		data = append(data, []string{"", dimStyle.Render(fmt.Sprintf("+%d", hidden)), dimStyle.Render(more)})
 	}
 	for _, r := range rows {
-		c := r.cells(aboutWidth)
-		if st, ok := m.active[r.id]; ok && r.state == rowWorking {
-			if d := doingLabel(st); d == "resolving" {
-				c[0] = deferredStyle.Render("⟳ resolving")
-			} else if d == "testing" {
-				c[0] = testingStyle.Render("▶ testing")
-			} else if d == "editing" || d == "reading" {
-				c[0] = pickedStyle.Render("▶ " + d)
-			}
+		doing := ""
+		if st, ok := m.active[r.id]; ok {
+			doing = doingLabel(st)
 		}
+		c := r.cells(aboutWidth, doing)
 		data = append(data, c[:])
 	}
 	return table.New().
@@ -799,6 +750,27 @@ func (m Dashboard) statsTable(w int) string {
 		Rows(values).
 		Width(w).
 		Render()
+}
+
+// statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
+// branch, running time and stopping state are on the title line, the winding down above the hint.
+func (m Dashboard) statsLine(w int) string {
+	queued := "—"
+	if m.queued >= 0 {
+		queued = fmt.Sprint(m.queued)
+	}
+	if m.draining {
+		queued += " held" // not taken while the run winds down
+	}
+	parts := []string{
+		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
+		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
+		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
+		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
+			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
+		dimStyle.Render("queue " + queued),
+	}
+	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }
 
 // titleLines is how many lines the active ticket's title may take before it is cut short.
@@ -919,102 +891,6 @@ func agentStyle(s string) string {
 		return ""
 	}
 	return deferredStyle.Render(s)
-}
-
-// ---- Sinks ---------------------------------------------------------------------------
-
-// ProgramSink sends the loop's events and statuses to the dashboard until Handoff passes them to
-// another sink. A program that has exited drops what it is sent, so the sink keeps every event it
-// sent: Handoff passes on those the dashboard never received.
-type ProgramSink struct {
-	p    *tea.Program
-	mu   sync.Mutex
-	sent []dispatch.Event
-	next dispatch.Sink // set by Handoff
-}
-
-// NewProgramSink returns a sink for the dashboard program p.
-func NewProgramSink(p *tea.Program) *ProgramSink { return &ProgramSink{p: p} }
-
-// Event sends ev to the dashboard, or after Handoff to the next sink.
-func (s *ProgramSink) Event(ev dispatch.Event) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.next != nil {
-		s.next.Event(ev)
-		return
-	}
-	s.sent = append(s.sent, ev)
-	s.p.Send(eventMsg(ev)) // returns once received, or once the program has exited
-}
-
-// Status sends st to the dashboard, or after Handoff to the next sink.
-func (s *ProgramSink) Status(st dispatch.Status) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.next != nil {
-		s.next.Status(st)
-		return
-	}
-	s.p.Send(statusMsg(st))
-}
-
-// Handoff sends next the events after the first received (the final dashboard's Received) and,
-// from then on, everything. Call it once the program has exited.
-func (s *ProgramSink) Handoff(next dispatch.Sink, received int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, ev := range s.sent[min(received, len(s.sent)):] {
-		next.Event(ev)
-	}
-	s.sent, s.next = nil, next
-}
-
-// Printer prints each event as a line to Out: styled for a terminal (after the live view has
-// closed), or as the plain log line for pipes and -plain.
-type Printer struct {
-	Out    io.Writer
-	Styled bool // colours and the rendered report, for a terminal
-	Width  int
-}
-
-// Event prints ev as a line; the queue count, which only the dashboard shows, is skipped.
-func (p Printer) Event(ev dispatch.Event) {
-	if ev.Kind == dispatch.EvQueue {
-		return // the dashboard's count, not a line
-	}
-	if p.Styled {
-		fmt.Fprintln(p.Out, ansi.Wrap(renderEvent(ev), max(p.Width, 20), ""))
-		return
-	}
-	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
-}
-
-// Status does nothing: a printed run shows no live status.
-func (Printer) Status(dispatch.Status) {}
-
-// Say prints a line of the orchestrator's own progress outside the event stream.
-func (p Printer) Say(text string) {
-	if p.Styled {
-		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+dimStyle.Render(text))
-		return
-	}
-	fmt.Fprintf(p.Out, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
-}
-
-// Report prints the reviewer's Markdown after a blank line, rendered with Glamour on a terminal.
-func (p Printer) Report(md string) {
-	fmt.Fprintln(p.Out)
-	if p.Styled {
-		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
-		if err == nil {
-			if out, err := r.Render(md); err == nil {
-				fmt.Fprint(p.Out, out)
-				return
-			}
-		}
-	}
-	fmt.Fprintln(p.Out, md)
 }
 
 // Interrupted reports whether the run was stopped with Ctrl+C.

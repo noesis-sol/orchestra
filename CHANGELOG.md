@@ -265,6 +265,11 @@ All notable changes to orchestra are documented here. The format follows
   instead of `s keeps going`, the queue count is marked `held`, and the title
   line puts `stopping` and `solo` before the branch and time. The question, the
   line and the `DRAIN` log line use the same words.
+- In a pane too small for the box, the drain question's line above the hint
+  uses the box's words: `Stop after the running tickets? y/n · Stopping after
+  the 2 running tickets finish (…): no new tickets will start. They merge as
+  usual, then the run ends.`, cut at the pane's edge, with `Stop after
+  current?` only where the question itself doesn't fit.
 - The built-in worker prompt tells workers never to stop processes by name or
   pattern (`pkill -f dispatch.test` from one worker ended another's check with
   `signal: terminated`), only the ones they started, by PID.
