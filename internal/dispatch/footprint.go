@@ -13,7 +13,9 @@ import (
 
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
 // the files its metadata lists. Two tickets whose footprints overlap are likely to conflict when
-// they run at the same time, so the loop doesn't start one beside the other.
+// they run at the same time, so the loop doesn't start one beside the other. The files the
+// project's check command names count only when the metadata lists them: nearly every ticket
+// names them, asking for the check to pass, without changing them.
 type Footprint struct {
 	Files []string // paths in the repository, sorted
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
@@ -83,19 +85,22 @@ func setOf(s string) map[string]bool {
 }
 
 // repoFiles are the repository's files, to tell a path named in a ticket from other words and to
-// find the file a bare name (run.go) or a partial path (dispatch/run.go) means.
+// find the file a bare name (run.go) or a partial path (dispatch/run.go) means, and the files the
+// project's check command names.
 type repoFiles struct {
-	set    map[string]bool
+	set    map[string]bool // nil when git couldn't list the files
 	byBase map[string][]string
 	dirs   map[string]bool
+	check  map[string]bool // the files the check command names (scripts/check.sh)
 }
 
-// newRepoFiles indexes the files git tracks; nil when git couldn't list them.
-func newRepoFiles(tracked []string) *repoFiles {
-	if tracked == nil {
-		return nil
+// newRepoFiles indexes the files git tracks (nil when git couldn't list them) and finds the files
+// the check command names among them.
+func newRepoFiles(tracked []string, check string) *repoFiles {
+	r := &repoFiles{check: map[string]bool{}}
+	if tracked != nil {
+		r.set, r.byBase, r.dirs = map[string]bool{}, map[string][]string{}, map[string]bool{".": true}
 	}
-	r := &repoFiles{set: map[string]bool{}, byBase: map[string][]string{}, dirs: map[string]bool{".": true}}
 	for _, f := range tracked {
 		r.set[f] = true
 		r.byBase[path.Base(f)] = append(r.byBase[path.Base(f)], f)
@@ -103,15 +108,23 @@ func newRepoFiles(tracked []string) *repoFiles {
 			r.dirs[d] = true
 		}
 	}
+	for _, tok := range pathTokens(check) {
+		for _, f := range r.resolve(tok, false) {
+			r.check[f] = true
+		}
+	}
 	return r
 }
+
+// checks reports whether f is a file the check command names.
+func (r *repoFiles) checks(f string) bool { return r != nil && r.check[f] }
 
 // resolve returns the repository files name means: itself, the files it ends, or a new file in an
 // existing folder. explicit keeps a name that means none of these (a files metadata entry says it
 // is one). Without the repository's files, a name with a folder or a known extension is kept.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = strings.TrimPrefix(name, "./")
-	if r == nil {
+	if r == nil || r.set == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 		if explicit || strings.Contains(name, "/") || sourceExtensions[ext] {
 			return []string{name}
@@ -168,22 +181,33 @@ func funcName(s string) string {
 // TicketFootprint is where ticket t works: the files and functions named in its title and text,
 // its area labels and the files its metadata lists; with none of these, the files predicted for it
 // (PredictedKey). Paths are checked against the repository's files (git ls-files), nil when they
-// aren't known. With nothing named or predicted it is empty, and the ticket runs beside anything.
-func TicketFootprint(t Ticket, tracked []string) Footprint {
-	return ticketFootprint(t, newRepoFiles(tracked))
+// aren't known. The files the project's check command (check) names count only when its metadata
+// lists them. With nothing named or predicted it is empty, and the ticket runs beside anything.
+func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
+	return ticketFootprint(t, newRepoFiles(tracked, check))
+}
+
+// pathTokens are the words of text that may be paths: with an extension, and neither an absolute
+// path nor a URL, which aren't in the repository.
+func pathTokens(text string) []string {
+	var toks []string
+	for _, tok := range pathToken.FindAllString(text, -1) {
+		if tok = strings.TrimRight(tok, "./-"); tok != "" && !strings.HasPrefix(tok, "/") && extension.MatchString(tok) {
+			toks = append(toks, tok)
+		}
+	}
+	return toks
 }
 
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	files, funcs := map[string]bool{}, map[string]bool{}
 	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria, t.Notes}, "\n")
-	for _, tok := range pathToken.FindAllString(text, -1) {
-		tok = strings.TrimRight(tok, "./-")
-		if tok == "" || strings.HasPrefix(tok, "/") || !extension.MatchString(tok) {
-			continue // not a file, or an absolute path or a URL, which isn't in the repository
-		}
+	for _, tok := range pathTokens(text) {
 		if found := repo.resolve(tok, false); len(found) > 0 {
 			for _, f := range found {
-				files[f] = true
+				if !repo.checks(f) { // "scripts/check.sh passes" says nothing about where a ticket works
+					files[f] = true
+				}
 			}
 		} else if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
 			funcs[tok] = true
@@ -224,12 +248,15 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	return fp
 }
 
-// predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it.
+// predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it
+// but those the check command names.
 func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
 	files := map[string]bool{}
 	for _, f := range predicted {
 		for _, p := range repo.resolve(f, false) {
-			files[p] = true
+			if !repo.checks(p) {
+				files[p] = true
+			}
 		}
 	}
 	return Footprint{Files: sortedKeys(files), Predicted: len(files) > 0}
@@ -336,7 +363,7 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 
 // readFiles lists the repository's files for the footprints of the tickets about to be compared.
 func (o *Loop) readFiles(ctx context.Context) {
-	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo))
+	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo), o.cfg.Check)
 }
 
 // footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the

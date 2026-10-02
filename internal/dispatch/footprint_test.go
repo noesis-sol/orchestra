@@ -24,7 +24,7 @@ func TestTicketFootprintNamesFilesAndFunctions(t *testing.T) {
 		Notes: "Moved to dispatch/merge.go; update settings.json and README.md. Add internal/dispatch/handback.go. " +
 			"Not /Users/me/Projects/x/y.go, nor internal/nowhere/z.go, nor (`solo`, `RESOLVING`).",
 		AcceptanceCriteria: "Tests in a new file(s)."}
-	fp := TicketFootprint(tk, trackedHere)
+	fp := TicketFootprint(tk, trackedHere, "")
 	wantFiles := []string{".orchestra/settings.json", "README.md", "internal/claude/claude.go", "internal/dispatch/handback.go",
 		"internal/dispatch/loop.go", "internal/dispatch/merge.go"}
 	if !slices.Equal(fp.Files, wantFiles) {
@@ -38,15 +38,15 @@ func TestTicketFootprintNamesFilesAndFunctions(t *testing.T) {
 	}
 
 	// A bare name means every file it can: run.go is in two folders.
-	if fp := TicketFootprint(Ticket{Description: "Picking lives in run.go."}, trackedHere); !slices.Equal(fp.Files, []string{"internal/dispatch/run.go", "internal/tui/run.go"}) {
+	if fp := TicketFootprint(Ticket{Description: "Picking lives in run.go."}, trackedHere, ""); !slices.Equal(fp.Files, []string{"internal/dispatch/run.go", "internal/tui/run.go"}) {
 		t.Errorf("bare name: %q", fp.Files)
 	}
 	// Without the repository's files, a name with a folder or a source extension is kept.
-	if fp := TicketFootprint(tk, nil); !slices.Contains(fp.Files, "internal/nowhere/z.go") || !slices.Contains(fp.Files, "settings.json") ||
+	if fp := TicketFootprint(tk, nil, ""); !slices.Contains(fp.Files, "internal/nowhere/z.go") || !slices.Contains(fp.Files, "settings.json") ||
 		!slices.Contains(fp.Files, "dispatch/merge.go") || slices.Contains(fp.Files, "Loop.merge") {
 		t.Errorf("unknown repository: %q", fp.Files)
 	}
-	if fp := TicketFootprint(Ticket{Title: "Say hello", Description: "Nothing in particular, e.g. a nicer greeting."}, trackedHere); !fp.Empty() || fp.String() != "nothing named" {
+	if fp := TicketFootprint(Ticket{Title: "Say hello", Description: "Nothing in particular, e.g. a nicer greeting."}, trackedHere, ""); !fp.Empty() || fp.String() != "nothing named" {
 		t.Errorf("a ticket naming nothing: %+v", fp)
 	}
 }
@@ -58,12 +58,12 @@ func TestTicketFootprintFromLabelsAndMetadata(t *testing.T) {
 		`"{\"files\":\"internal/tui/run.go docs/new.md\"}"`, // bd may give the object as a string
 	} {
 		tk := Ticket{Labels: []string{"scheduling", "area:tui", "area:"}, Metadata: []byte(meta)}
-		fp := TicketFootprint(tk, trackedHere)
+		fp := TicketFootprint(tk, trackedHere, "")
 		if !slices.Equal(fp.Files, []string{"docs/new.md", "internal/tui/run.go"}) || !slices.Equal(fp.Areas, []string{"area:tui"}) {
 			t.Errorf("%s: %+v", meta, fp)
 		}
 	}
-	if fp := TicketFootprint(Ticket{Metadata: []byte(`{"files": 3}`)}, trackedHere); !fp.Empty() {
+	if fp := TicketFootprint(Ticket{Metadata: []byte(`{"files": 3}`)}, trackedHere, ""); !fp.Empty() {
 		t.Errorf("unreadable files entry: %+v", fp)
 	}
 }
@@ -71,18 +71,18 @@ func TestTicketFootprintFromLabelsAndMetadata(t *testing.T) {
 // The predicted files count only for a ticket naming nothing else.
 func TestTicketFootprintFallsBackOnPredictedFiles(t *testing.T) {
 	predicted := []byte(`{"predicted_files": "internal/dispatch/run.go,internal/nowhere/z.go", "files": []}`)
-	fp := TicketFootprint(Ticket{Title: "Say hello", Metadata: predicted}, trackedHere)
+	fp := TicketFootprint(Ticket{Title: "Say hello", Metadata: predicted}, trackedHere, "")
 	if !slices.Equal(fp.Files, []string{"internal/dispatch/run.go"}) || !fp.Predicted {
 		t.Errorf("predicted: %+v", fp)
 	}
 	if got := fp.String(); got != "internal/dispatch/run.go (predicted)" {
 		t.Errorf("String() = %q", got)
 	}
-	fp = TicketFootprint(Ticket{Description: "Change README.md.", Metadata: predicted}, trackedHere)
+	fp = TicketFootprint(Ticket{Description: "Change README.md.", Metadata: predicted}, trackedHere, "")
 	if !slices.Equal(fp.Files, []string{"README.md"}) || fp.Predicted {
 		t.Errorf("a ticket naming a file: %+v", fp)
 	}
-	if fp := TicketFootprint(Ticket{Labels: []string{"area:tui"}, Metadata: predicted}, trackedHere); len(fp.Files) > 0 || fp.Predicted {
+	if fp := TicketFootprint(Ticket{Labels: []string{"area:tui"}, Metadata: predicted}, trackedHere, ""); len(fp.Files) > 0 || fp.Predicted {
 		t.Errorf("a ticket with an area: %+v", fp)
 	}
 }

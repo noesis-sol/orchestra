@@ -53,7 +53,7 @@ func TestTicketFootprintReadsAListInAString(t *testing.T) {
 	want := []string{"internal/organ/organ.go", "internal/organ/screen.go", "internal/organ/screen_test.go"}
 	inString := `"[\"internal/organ/screen.go\",\"internal/organ/screen_test.go\",\"internal/organ/organ.go\"]"`
 
-	fp := TicketFootprint(Ticket{Title: "Add the screen organ", Metadata: []byte(`{"files": ` + inString + `}`)}, tracked)
+	fp := TicketFootprint(Ticket{Title: "Add the screen organ", Metadata: []byte(`{"files": ` + inString + `}`)}, tracked, "")
 	if !slices.Equal(fp.Files, want) || fp.Predicted {
 		t.Errorf("files: %+v", fp)
 	}
@@ -61,7 +61,7 @@ func TestTicketFootprintReadsAListInAString(t *testing.T) {
 		t.Errorf("String() = %q", got)
 	}
 
-	fp = TicketFootprint(Ticket{Title: "Say hello", Metadata: []byte(`{"predicted_files": ` + inString + `}`)}, tracked)
+	fp = TicketFootprint(Ticket{Title: "Say hello", Metadata: []byte(`{"predicted_files": ` + inString + `}`)}, tracked, "")
 	if !slices.Equal(fp.Files, want) || !fp.Predicted {
 		t.Errorf("predicted files: %+v", fp)
 	}

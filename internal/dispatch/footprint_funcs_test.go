@@ -33,7 +33,7 @@ func TestTicketFootprintLeavesOutKeywordsAndStdCalls(t *testing.T) {
 			[]string{"Test", "TestLiveOrgans", "Wait"}},
 	}
 	for _, c := range cases {
-		fp := TicketFootprint(Ticket{ID: "x", Description: c.text}, trackedHere)
+		fp := TicketFootprint(Ticket{ID: "x", Description: c.text}, trackedHere, "")
 		if !slices.Equal(fp.Funcs, c.want) {
 			t.Errorf("%s: functions %q, want %q", c.name, fp.Funcs, c.want)
 		}
@@ -45,12 +45,12 @@ func TestTicketFootprintKeepsRealNamesBesideKeywords(t *testing.T) {
 	tk := Ticket{ID: "x", Title: "Settle Loop.merge in a bubble",
 		Description: "Run it in synctest.Test() as `synctest.Test(t, func(t *testing.T){…})` and call synctest.Wait() " +
 			"where `waitSettled` polled; func() literals stay. Loop.merge still calls `o.agentName(id)`."}
-	fp := TicketFootprint(tk, trackedHere)
+	fp := TicketFootprint(tk, trackedHere, "")
 	if want := []string{"Loop.merge", "agentName", "waitSettled"}; !slices.Equal(fp.Funcs, want) {
 		t.Errorf("functions %q, want %q", fp.Funcs, want)
 	}
 	other := TicketFootprint(Ticket{ID: "y", Description: "Wrap the probe in go func() and synctest.Wait() on it, " +
-		"then `pickNext`."}, trackedHere)
+		"then `pickNext`."}, trackedHere, "")
 	if what := shared(other, fp, nil); what != "" {
 		t.Errorf("unrelated tickets share %q", what)
 	}

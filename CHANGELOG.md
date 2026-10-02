@@ -344,6 +344,13 @@ All notable changes to orchestra are documented here. The format follows
   now name it by ID only, and the title stays in the ticket's `bd show` inside
   the tags. The run report's evidence moves the run's final line, which can
   quote a triage summary, into its own tagged section.
+- A ticket's footprint no longer takes in the files the project's check
+  command names (`scripts/check.sh`) from its text: nearly every ticket names
+  the check in "`scripts/check.sh` passes", so with several tickets at once
+  most of them refused to run beside each other (`skipping <id>: touches
+  scripts/check.sh, like running <other>`), and `orchestra plan` proposed
+  chaining the whole backlog. Predicted files leave them out too; a ticket
+  whose `files` metadata lists one still overlaps on it.
 - A ticket whose worker is left running when the run ends (`PAUSED`,
   `BLOCKED`, `TICKET_LIMIT` or another stop, or `INTERRUPTED`) is labelled
   `unmerged`. Its worker could close it after orchestra had gone, and nothing

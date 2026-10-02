@@ -146,6 +146,6 @@ func (o *Loop) givePrediction(id string, files, tracked []string) {
 	o.mu.Lock()
 	defer o.mu.Unlock() // deferred: a panic must not leave the loop locked
 	if r := o.footprints[id]; r != nil && r.fp.Empty() {
-		r.fp = predictedFootprint(files, newRepoFiles(tracked))
+		r.fp = predictedFootprint(files, newRepoFiles(tracked, o.cfg.Check))
 	}
 }
