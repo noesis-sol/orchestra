@@ -186,7 +186,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deferred++
 			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
 		case dispatch.EvWarn:
-			if ev.Ticket != "" {
+			// Only a ticket the warning sets aside is for review. The rest are about a ticket still
+			// running (LONG_RUNNING) or already deferred (TRIAGE_FAILED), whose row stays as it is.
+			if ev.Ticket != "" && ev.Aside {
 				m.setRow(ev.Ticket, rowReview, "left for review, see the log")
 			}
 		case dispatch.EvAsked:
@@ -196,7 +198,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.working(ev.Ticket, "")
 		case dispatch.EvTriage:
 			m.triaged++
-			if i := m.rowIndex(ev.Ticket); i >= 0 {
+			// A verdict on an earlier deferral, in after the ticket came back, would outlast the next.
+			if i := m.rowIndex(ev.Ticket); i >= 0 && m.rows[i].state == rowDeferred {
 				m.rows[i].triage = ev.Detail + " · " + ev.Title
 			}
 		case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
@@ -614,8 +617,9 @@ func (m *Dashboard) setRow(id string, state rowState, note string) {
 	m.rows[i].state, m.rows[i].note = state, note
 }
 
-// working shows ticket id as picked up. A ticket back from a question keeps its row, which no
-// longer needs the maintainer; title "" keeps the row's.
+// working shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
+// run, keeps its row, which no longer needs the maintainer and drops the old verdict; title ""
+// keeps the row's.
 func (m *Dashboard) working(id, title string) {
 	i := m.rowIndex(id)
 	if i < 0 {
@@ -625,7 +629,7 @@ func (m *Dashboard) working(id, title string) {
 	if m.rows[i].state == rowAsked {
 		m.asked--
 	}
-	m.rows[i].state, m.rows[i].note = rowWorking, ""
+	m.rows[i].state, m.rows[i].note, m.rows[i].triage = rowWorking, "", ""
 	if title != "" {
 		m.rows[i].title = title
 	}

@@ -21,7 +21,7 @@ const (
 	EvDispatch             // a ticket was picked up
 	EvClosed               // a ticket was completed and merged
 	EvDeferred             // a ticket was set aside
-	EvWarn                 // a ticket needs review, but the loop continues
+	EvWarn                 // something needs review, but the loop continues; Aside if a ticket is left for it
 	EvStop                 // the loop stopped and needs attention
 	EvDone                 // the loop finished normally
 	EvTriage               // the triage organ's verdict on a deferred ticket
@@ -46,6 +46,9 @@ type Event struct {
 	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
 	Detail string    // short suffix for EvClosed / EvDeferred
 	Text   string    // the full line written to the log file
+	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
+	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
+	Aside bool
 }
 
 // Status describes a ticket being worked on. Gone removes it from the display.

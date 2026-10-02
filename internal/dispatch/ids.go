@@ -46,7 +46,7 @@ func (o *Loop) setAsideBadIDs(ctx context.Context, ready []Ticket, skip map[stri
 			"Give it a plain ID (bd rename %s <new-id>), then bring it back with: bd undefer <new-id>",
 			why, id, id))
 		if err := o.deferAside(ctx, id, why); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s: %s, and bd could not defer it%s; "+
 					"kept out of this run, rename it with: bd rename %s <new-id>",
 				why, id, because(err), id)})

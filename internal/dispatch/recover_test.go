@@ -105,6 +105,11 @@ func TestTriagePanicOnlyFailsTriage(t *testing.T) {
 	if !strings.Contains(got, want) || !strings.Contains(got, "  triage B: environment (high confidence)") {
 		t.Errorf("A's triage should fail with the panic and B's go on; events:\n%s", got)
 	}
+	for _, ev := range sink.events {
+		if ev.Aside {
+			t.Errorf("A stays deferred, not set aside for review: %q", ev.Text)
+		}
+	}
 	if logged := read(t, logPath); !strings.Contains(logged, "panic in triage of A") || !strings.Contains(logged, "panickyNotes.AppendNotes") {
 		t.Errorf("log lacks the stack:\n%s", logged)
 	}
@@ -131,6 +136,11 @@ func TestWatcherPanicOnlyStopsWatching(t *testing.T) {
 	stop() // returns: the watcher ended
 	if got := sink.text(); !strings.Contains(got, "  WATCH_FAILED for A: panic: runtime error: index out of range") {
 		t.Errorf("events:\n%s", got)
+	}
+	for _, ev := range sink.events {
+		if ev.Aside {
+			t.Errorf("A's worker goes on, so A is not set aside: %q", ev.Text)
+		}
 	}
 }
 

@@ -20,11 +20,11 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoCommit:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
 	case closedDirty:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
 			id, commit, wt, tab)})
 	case closedMerge:
@@ -146,7 +146,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			if errors.Is(err, errCheckTimedOut) {
 				how = "did not finish within " + ShortDuration(o.checkTimeout())
 			}
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
 					"worktree %s and tab %s left for review (output is in %s)",
 				id, c.Check, how, br, c.Base, wt, tab, c.LogPath)})
@@ -156,7 +156,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
 	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
 			"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
@@ -167,7 +167,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 	c := o.cfg
 	o.leaveUnmerged(ctx, r.id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: r.id, Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
 			"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
 		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})

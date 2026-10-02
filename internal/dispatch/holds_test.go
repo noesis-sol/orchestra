@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -126,6 +127,11 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 			}
 			if ev := f.sink.text(); !strings.Contains(ev, "k-b waits: k-a closed but not merged ("+c.why+")") {
 				t.Errorf("events:\n%s", ev)
+			}
+			if !slices.ContainsFunc(f.sink.events, func(ev Event) bool {
+				return ev.Kind == EvWarn && ev.Ticket == "k-a" && ev.Aside && strings.Contains(ev.Text, c.why)
+			}) {
+				t.Errorf("the %s warning should set k-a aside; events:\n%s", c.why, f.sink.text())
 			}
 		})
 	}

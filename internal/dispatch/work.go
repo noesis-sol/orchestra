@@ -99,7 +99,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			"then bring it back with: bd undefer %s",
 			br, c.Base, wt, c.Base, id))
 		if err := o.deferAside(keep, id, fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt)); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s conflicts with %s, and bd could not defer %s%s; kept out of this run, rebase it in %s",
 				br, c.Base, id, because(err), wt)})
 			return nil
@@ -170,7 +170,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; "+
 			"deferred so it can be retried (worktree %s).", tab, wt))
 		if err := o.deferAside(keep, id, "the worker never started on its prompt"); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s's worker never started on its prompt, and bd could not defer it%s; "+
 					"kept out of this run, worktree %s and tab %s left open",
 				id, because(err), wt, tab)})
@@ -298,7 +298,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 			"deferred for review (worktree %s).", tab, s, wt))
 		why := fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)
 		if err := o.deferAside(keep, id, why); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; "+
 					"kept out of this run, worktree %s and tab %s left for review",
 				id, s, because(err), wt, tab)})
@@ -388,7 +388,7 @@ func (o *Loop) setAsideEscaped(ctx context.Context, id, wt string, e *project.Es
 		"Look at what it points to, remove the link (rm %s), then bring it back with: bd undefer %s",
 		why, filepath.Join(wt, e.Path), filepath.Join(wt, e.Path), id))
 	if err := o.deferAside(ctx, id, why); err != nil {
-		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
 			"  DEFER_FAILED: %s, and bd could not defer %s%s; kept out of this run, remove the link in %s",
 			why, id, because(err), wt)})
 		return nil

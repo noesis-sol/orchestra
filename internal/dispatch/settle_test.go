@@ -141,6 +141,9 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 			if ev.Kind == EvWarn {
 				warned = append(warned, ev.Text)
 			}
+			if ev.Aside {
+				t.Errorf("the ticket is still running, not set aside: %q", ev.Text)
+			}
 		}
 		if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 2h in tab tab") || !shown.has(warned[0]) {
 			t.Errorf("warnings: %q", warned)

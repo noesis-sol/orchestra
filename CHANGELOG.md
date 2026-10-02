@@ -337,6 +337,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard marks a ticket `! review` only when a warning sets it aside
+  (`CHECKS_FAILED`, `MERGE_CONFLICT`, `CLOSED_WITHOUT_COMMIT`,
+  `DEFER_FAILED`). `LONG_RUNNING` and `WATCH_FAILED` no longer turn a running
+  ticket's row to review while its worker goes on, hiding `testing`, `editing`
+  or `reading`, and `TRIAGE_FAILED` no longer replaces a deferred ticket's
+  reason. A ticket deferred again in the same run shows its new reason, not
+  the first deferral's triage verdict.
 - Three repository quirks no longer mislead orchestra's git calls. With
   `log.showSignature` set, signed commits no longer put git's signature check
   in place of a commit: the dashboard read `Good merged into …`, and the log and
