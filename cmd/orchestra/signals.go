@@ -142,14 +142,17 @@ func (w *stopWatch) further(s os.Signal) {
 		}
 		ev := dispatch.Event{Kind: dispatch.EvWarn, Text: dispatch.UnderWayLine(under, again), Time: time.Now()}
 		q.log.Line(ev.Time, ev.Text)
+		q.log.Record(ev)
 		q.out.Event(ev)
 		return
 	}
 	ev := dispatch.Event{Kind: dispatch.EvStop, Text: dispatch.QuitLine(stoppedHow(s), q.loop.Running(), under),
 		Time: time.Now()}
 	q.log.Line(ev.Time, ev.Text) // not as a notification: orchestra doesn't wait for one now
+	q.log.Record(ev)
 	q.out.Event(ev)
-	_ = q.log.CloseNow() // each line was written as it came: nothing is left to lose
+	q.log.End(dispatch.ExitInterrupted) // run's deferred End doesn't run: orchestra exits from here
+	_ = q.log.CloseNow()                // each line was written as it came: nothing is left to lose
 	q.exit(dispatch.ExitInterrupted)
 }
 

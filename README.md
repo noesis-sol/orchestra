@@ -48,7 +48,7 @@ One dashboard, updated in place: nothing is printed above it while the loop runs
 
 When the loop stops, the dashboard stays on screen as the run's summary, followed by the final line and the run report (see [Organs](#organs)).
 
-Everything is also appended to `.orchestra/orchestra.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view.
+Everything is also appended to `.orchestra/orchestra.log` in plain text, so `tail -f` works too. When output isn't a terminal, or with `-plain`, it prints those log lines instead of the live view. Scripts and agents should read the [event stream](#event-stream) instead, whose records don't change with the log's wording.
 
 ## Organs
 
@@ -90,7 +90,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
-.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's MCP servers, its hooks and what they report)
+.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's MCP servers, its hooks and what they report); in the main checkout, the run lock and the event stream
 ```
 
 First, `init` sets Beads up. Where `bd` isn't installed, it installs it: with Homebrew (`brew install beads`) where `brew` is on the `PATH`, as Beads recommends, otherwise, on macOS, Linux and FreeBSD, with the Beads install script (`curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash`), which checks what it downloads and falls back to `go install`. On Windows it installs nothing and says how: `irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex` in PowerShell. In a terminal the form asks first, offering yes; `--install-beads` installs without asking and `--install-beads=false` declines. Without a terminal or either flag, `init` installs nothing and reports `bd` missing. The install may take up to 15 minutes, and Ctrl+C stops it. If `bd` lands in a folder that isn't on your `PATH` (the script uses `~/.local/bin` where it can't write to `/usr/local/bin`), `init` says where it is and how to add the folder. Then, in a repository without `.beads/`, `init` runs `bd init --non-interactive --role maintainer --init-if-missing`: no questions, the answers being "not contributing to someone else's repo" and auto-export off. Otherwise `bd init` does what it does when run by hand: it adds `.beads/`, `AGENTS.md`, `CLAUDE.md` and other agents' integration files, and points git's hooks at `.beads/hooks`. bd 1.3.0 also commits what it adds, along with anything already staged, so `init` runs it before staging anything of its own, then lists what `bd` committed and what is left to commit with `.orchestra/`. A failed install or `bd init` shows the command's error, and the **Next** box keeps the fix.
@@ -237,11 +237,58 @@ Optional: [`skills/orchestra/SKILL.md`](skills/orchestra/SKILL.md) is a skill fo
 - choose, check and fix the MCP servers workers get;
 - launch a run in a Herdr pane beside its own;
 - leave the checkout alone during a run;
-- read the log, the run report and the tickets' triage notes when something is set aside or a run stops;
+- read the event stream, the log, the run report and the tickets' triage notes when something is set aside or a run stops;
 - finish a ticket by hand;
 - leave pushing, answering questions and worker dialogs to you.
 
 To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for every project, or `.claude/skills/orchestra/` in one project. Then ask the agent to "run orchestra", "set this project up for orchestra" or "why did the run stop?".
+
+## Event stream
+
+The log is written for people, and its wording changes. For scripts and agents, each run also appends its events to `.orchestra/run/events.jsonl` in the main checkout, out of git with the rest of `.orchestra/run/`: one JSON object per line, each appended in a single write, so a reader tailing the file never sees half a line. Like the log, the file keeps every run.
+
+```
+{"time":"2026-10-02T09:12:04.51+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"start","version":"v0.3.0","repo":"/Users/me/kinieta","branch":"batch/2026-10-02","concurrency":3}
+{"time":"2026-10-02T09:12:06.2+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"dispatch","ticket":"kinieta-kco","title":"Open the property model","text":"[1/40] kinieta-kco dispatching: Open the property model","n":1,"limit":40,"queued":12}
+{"time":"2026-10-02T09:31:40.07+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"closed","ticket":"kinieta-kco","detail":"ffd6ce4 merged into batch/2026-10-02","text":"  kinieta-kco closed (ffd6ce4 kinieta-kco: Open the property model); merged into batch/2026-10-02, worktree, branch and tab removed"}
+{"time":"2026-10-02T11:02:13.6+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"done","text":"READY_EMPTY after 12 tickets"}
+{"time":"2026-10-02T11:03:55.1+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"end","code":0}
+```
+
+Every record has `time`, when it was written, and `run`, when the run started: RFC 3339 with fractional seconds, in local time. `run` is the same in each of a run's records and in its lock's `started`, so it picks one run's records out of the file. `kind` says what the record is:
+
+| `kind` | What happened | Its other fields |
+|---|---|---|
+| `start` | the run's first record, once its startup checks pass (with `--feature`, once the plan is filed, or isn't) | `version`; `repo`, the main checkout; `branch`, where finished tickets land; `scope`, the ticket the run is scoped to (`--ticket`, or the epic a `--feature` request was filed as), absent for all of `bd ready`; `feature`, the `--feature` request; `concurrency` |
+| `info` | progress: the `START` line, worktrees, how workers settled… | `text`; `ticket` on some |
+| `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`; `queued`, how many ready tickets wait for a slot; `solo` |
+| `queue` | the number of ready tickets waiting for a slot changed: the dashboard's **In queue**, which the log doesn't have | `queued`, `solo` |
+| `closed` | a ticket closed and was merged | `ticket`; `detail`, as in `ffd6ce4 merged into main` |
+| `deferred` | a ticket was set aside | `ticket`; `detail`, why: `by the worker`, `still in_progress, noted for review`, … |
+| `asked` | a ticket waits on a question for you | `ticket`; `detail`, the question's ID and title |
+| `answered` | its question was answered: it comes back, dispatched next | `ticket`, `detail` |
+| `triage` | the triage organ's verdict on a deferred ticket | `ticket`; `title`, the verdict's summary; `detail`, as in `environment · high` |
+| `warn` | something to review, while the run goes on: `CHECKS_FAILED`, `MERGE_CONFLICT`, `LIKELY_CONFLICT`, … | `ticket` when it is about one; `aside: true` when that ticket is left for review, out of this run |
+| `hold` | something stopped the run: no new tickets while the running ones finish | `ticket` on some |
+| `drain`, `resume` | the run was asked to stop after the running tickets, or that was taken back | |
+| `probed` | a probe found the machine working after an environment hold: tickets start again | |
+| `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `INTERRUPTED`, … | |
+| `done` | the loop finished: `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, with `SCOPE_DONE` or `SCOPE_OPEN` in a scoped run | |
+| `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](#exit-codes) |
+
+Every record but `start`, `queue` and `end` also has `text`, its line in the log as it is there, without the time. A `stop` or `done` record's text starts with the word that says how the loop ended (`PAUSED: …`, `READY_EMPTY after 12 tickets`), a `hold` record's with `HOLD: ` and that word. `solo` is there while a ticket labelled `solo` runs (`{"ticket":"<id>"}`) or is next (`{"ticket":"<id>","next":true}`). A field without a value is left out, except `queued` and `code`, which can be 0. Kinds and fields may be added, but those here keep their names: read the ones you know and skip the rest.
+
+Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .orchestra/run/orchestra.lock` says which. A `--feature` run writes nothing there while it screens and plans the request. If the stream can't be written, the log says so once, and the run goes on.
+
+With `jq`, in the main checkout:
+
+```
+E=.orchestra/run/events.jsonl
+run=$(jq -r .started .orchestra/run/orchestra.lock)   # the latest run's start, as its lock gives it
+jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end")))' $E   # how it ended
+jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it merged
+tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run
+```
 
 ## Exit codes
 
@@ -289,7 +336,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |
-| `events.go` | the log file, notifications, events and status sent to the dashboard |
+| `events.go` | the log file, notifications, the event stream (`events.jsonl`), events and status sent to the dashboard |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
 | `advice.go` | triage and the run review |

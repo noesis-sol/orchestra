@@ -32,13 +32,18 @@ bd ready; bd list --status=in_progress      # what a run would pick up; what is 
 bd human list                               # questions waiting for the user
 lsof -t .orchestra/run/orchestra.lock       # is a run active here? its PID; nothing if not
 cat .orchestra/run/orchestra.lock           # which run holds it (or held it last)
+tail -n 1 .orchestra/run/events.jsonl | jq -c .   # the last run's last record: "end" with its exit code once over
 ```
 
-Run the last two in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
+Run the last three in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
 runs, and the system lets go of it when orchestra exits, even killed, so only a running orchestra
 has it open. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
 `feature` (the `--feature` request), and `pane`, the Herdr pane it runs in. It stays after the run;
 whether `lsof` lists a PID is what says a run is going. Runs in other repositories have their own.
+
+`.orchestra/run/events.jsonl`, next to the lock, is the runs' events for you to read: one JSON
+object per line, every run appended (see [Reading a run's events](#reading-a-runs-events)). Read it
+rather than grepping the log, whose wording is for people and may change.
 
 Where the project's orchestra files are:
 
@@ -157,7 +162,8 @@ them with `bd dep add`) only when they approve.
   A commit on the base branch is picked up: running tickets are rebased onto it and checked again
   before they merge. Beads changes (`bd update`, `bd create`) are fine.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
-- **Follow it** in its pane, or with `tail -f` on the log. With several at once, the dashboard shows
+- **Follow it** in its pane, or with `tail -f .orchestra/run/events.jsonl | jq -c 'select(.kind != "info"
+  and .kind != "queue") | {kind, ticket, text}'`. With several at once, the dashboard shows
   a box per worker (one line each in a short pane). Each worker is an agent named after its
   ticket, in a tab labelled with the ticket: `herdr agent get <name>`,
   `herdr agent read <name> --source visible` (its scrollback can only be read while it is idle).
@@ -173,7 +179,7 @@ them with `bd dep add`) only when they approve.
   is under way that a stop doesn't cut short; otherwise the second says what is
   (`<id>'s merge is under way; press Ctrl+C again to abandon it …`) and a third abandons it. Asked
   by the user to end such a run for them, `kill <pid>` it again rather than `kill -9`, which skips
-  the last log line; tell them first if a merge is under way.
+  the last log line and the `end` record; tell them first if a merge is under way.
 - **A `PROBE:` line means the run is still going**: it held for the environment, and after the
   wait it names, a worker without a ticket (tab `orchestra-probe`, in the main checkout) runs one
   command. `PROBE_OK` means the run takes tickets again; otherwise it ends with `ENVIRONMENT`. Don't
@@ -220,10 +226,35 @@ A setup problem (exit 2) naming the workers' MCP servers means a chosen name can
 
 Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never get any server.
 
+## Reading a run's events
+
+Each record has `kind`, `time` and `run`, the run's start time, which is the same in all its
+records and in the lock's `started`; the README's Event stream section lists every kind and field.
+A run's records go `start` (with `version`, `repo`, `branch`, `scope`, `feature`, `concurrency`),
+then its events, each with the log line as `text` (`dispatch`, `closed`, `deferred`, `asked`,
+`warn`, `hold`, `triage`, `info`, …), then `stop` or `done`, and last `end`, with `code`, the exit
+code, once orchestra has exited. No `end` yet: the run is still going (`lsof` lists its PID), or was
+killed. A `--feature` run writes its `start` only once the plan is filed (or isn't).
+
+```
+E=.orchestra/run/events.jsonl
+run=$(jq -r .started .orchestra/run/orchestra.lock)   # the latest run's start
+jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end"))) | {kind, code, text}' $E
+jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("deferred", "asked", "warn", "triage"))) | {kind, ticket, text}' $E
+jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E
+```
+
+The first says how the run ended: the `end` record's `code`, and the `stop` or `done` record's
+`text`, which starts with the word in the table below (`PAUSED: …`, `READY_EMPTY after …`), after
+any `hold` that came first. The second lists what was set aside or needs looking at, the third what
+was merged. A `warn` record with `"aside": true` left its ticket for review.
+
 ## When a ticket is set aside or the run stops
 
-Read the run report first (`reports/<start time>.md`: Finished, Set aside, Needs you), then the log,
-then the tickets. The final log line and the exit code say why the run ended:
+Read the run report first (`reports/<start time>.md`: Finished, Set aside, Needs you), then the run's
+events (above), then the tickets; the log has what the events don't: raw tool errors. The exit code
+(the `end` record's `code`) and the last `stop` or `done` record, whose `text` is the line the run
+ended with, say why it ended:
 
 | Last line | Exit | Meaning | What to do |
 |---|---|---|---|
@@ -244,7 +275,8 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled: label each ticket the line leaves running (`bd label add <id> unmerged`). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
 
-Lines about single tickets, which don't stop the run:
+Lines about single tickets, which don't stop the run (in the events, `closed`, `deferred`, `asked`,
+`answered`, `triage`, `warn` and `info` records with the line as `text`):
 
 - `closed (…); merged into …`: done.
 - `deferred by worker`, `still <status> -> noted and deferred`: set aside. A `triage` line follows
@@ -320,6 +352,7 @@ Lines about single tickets, which don't stop the run:
 
 | What | Where |
 |---|---|
+| every event, as JSON with its kind and ticket | `.orchestra/run/events.jsonl` in the main checkout |
 | every event, with raw tool errors | the log file (see the layout table) |
 | what finished, what was set aside and why, what needs the user | the latest run report |
 | why a ticket was deferred | `bd show <id>`: the worker's notes, orchestra's notes, `Triage (orchestra): cause = …` |

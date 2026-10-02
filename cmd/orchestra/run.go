@@ -470,10 +470,23 @@ func status(code int) error {
 	return exitStatus(code)
 }
 
+// exitCode is the code orchestra exits with when run returns err: an exitStatus's, 1 for another
+// error, 0 for none.
+func exitCode(err error) int {
+	var s exitStatus
+	switch {
+	case errors.As(err, &s):
+		return int(s)
+	case err != nil:
+		return 1
+	}
+	return dispatch.ExitOK
+}
+
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
-) error {
+) (err error) {
 	if len(args) > 1 && args[1] == "init" {
 		return status(runInit(ctx, ".", args[2:], getenv, stdin, stdout, stderr))
 	}
@@ -500,8 +513,9 @@ func run(
 	// One run at a time in a repository: a second would race this one for the same tickets, worktrees
 	// and branch. Taken before anything changes, a --feature request's screening included, and held
 	// until orchestra exits, after the organ phase.
+	started := time.Now() // the run's start, as its lock and each record of its event stream give it
 	lock, lockErr := project.LockRun(cfg.Repo, project.Holder{
-		PID: os.Getpid(), Started: time.Now(), Version: buildVersion(), Branch: cfg.Base,
+		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
 		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: getenv("HERDR_PANE_ID"),
 	})
 	var held *project.HeldError
@@ -536,7 +550,8 @@ func run(
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
 		return exitStatus(dispatch.ExitSetup)
 	}
-	defer func() { // shows the run's last notifications before orchestra exits
+	defer func() { // records how the run ended, and shows its last notifications before orchestra exits
+		log.End(exitCode(err))
 		if err := log.Close(); err != nil {
 			fmt.Fprintln(stderr, "orchestra cannot close its log:", err)
 		}
@@ -551,12 +566,14 @@ func run(
 		fmt.Fprintln(stderr, err)
 		return exitStatus(dispatch.ExitSetup)
 	}
-	if cfg.Feature != "" {
-		epic, code := runFeature(ctx, stops, cfg, log, stdin, stdout, stderr)
-		if epic == "" {
-			return status(code)
-		}
-		cfg.Ticket = epic
+	featureCode := dispatch.ExitOK
+	if cfg.Feature != "" { // the run is scoped to the epic it files
+		cfg.Ticket, featureCode = runFeature(ctx, stops, cfg, log, stdin, stdout, stderr)
+	}
+	log.Begin(cfg.Repo, dispatch.RunStart{Started: started, Version: buildVersion(), Repo: cfg.Repo, Branch: cfg.Base,
+		Scope: cfg.Ticket, Feature: cfg.Feature, Concurrency: cfg.Concurrency})
+	if cfg.Feature != "" && cfg.Ticket == "" { // nothing filed to run
+		return status(featureCode)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -681,6 +698,7 @@ func run(
 		msg := dispatch.InterruptLine(why, orch.Running())
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Alert(ev.Time, msg)
+		log.Record(ev)
 		sink.Event(ev)
 		stops.windDown()
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.

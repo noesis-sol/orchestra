@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Each run appends its events to `.orchestra/run/events.jsonl` in the main
+  checkout, for scripts and agents: one JSON object per line, each written in
+  a single append, with the time, the run's start (as its lock gives it), a
+  stable `kind` (`dispatch`, `closed`, `deferred`, `stop`, `done`, `queue`, …),
+  the ticket, title, detail and the log line as `text`, and the queue counts
+  the log never had. A `start` record (version, repo, branch, scope,
+  concurrency) opens each run and an `end` record with the exit code closes
+  it, quitting at once included. The README documents the records, and the
+  orchestra skill reads them instead of grepping the log, which is unchanged.
 - `orchestra init` sets Beads up itself. Where `bd` is missing it installs it,
   with Homebrew (`brew install beads`) where `brew` is on the PATH, otherwise
   on macOS, Linux and FreeBSD with the Beads install script; on Windows it

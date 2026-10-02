@@ -13,8 +13,8 @@
 //
 // Worker tabs open in the pane's own Herdr workspace unless --workspace says otherwise.
 //
-// Every event is shown in the terminal and appended to .orchestra/orchestra.log. Set a project up
-// with 'orchestra init'.
+// Every event is shown in the terminal and appended to .orchestra/orchestra.log, and as JSON, for
+// scripts and agents, to .orchestra/run/events.jsonl. Set a project up with 'orchestra init'.
 package main
 
 import (
@@ -26,11 +26,9 @@ import (
 
 func main() {
 	if err := run(context.Background(), os.Args, os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
-		var code exitStatus
-		if errors.As(err, &code) {
-			os.Exit(int(code))
+		if !errors.As(err, new(exitStatus)) {
+			fmt.Fprintln(os.Stderr, "orchestra:", err)
 		}
-		fmt.Fprintln(os.Stderr, "orchestra:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err)) // as the run's end record says
 	}
 }
