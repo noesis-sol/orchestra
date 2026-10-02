@@ -33,9 +33,10 @@ bd human list                               # questions waiting for the user
 lsof -t .orchestra/run/orchestra.lock       # is a run active here? its PID; nothing if not
 cat .orchestra/run/orchestra.lock           # which run holds it (or held it last)
 tail -n 1 .orchestra/run/events.jsonl | jq -c .   # the last run's last record: "end" with its exit code once over
+jq . .orchestra/run/state.json              # the workers the last run left behind, for the next to carry on with
 ```
 
-Run the last three in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
+Run the last four in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
 runs, and the system lets go of it when orchestra exits, even killed, so only a running orchestra
 has it open. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
 `feature` (the `--feature` request), and `pane`, the Herdr pane it runs in. It stays after the run;
@@ -44,6 +45,13 @@ whether `lsof` lists a PID is what says a run is going. Runs in other repositori
 `.orchestra/run/events.jsonl`, next to the lock, is the runs' events for you to read: one JSON
 object per line, every run appended (see [Reading a run's events](#reading-a-runs-events)). Read it
 rather than grepping the log, whose wording is for people and may change.
+
+`.orchestra/run/state.json`, there too, is what the last run left in worker tabs, written as it
+ended (it is absent when it left nothing): each worker's `ticket`, `agent`, `tab`, `worktree` and
+`hooks`, with the `question` (and `question_title`) its ticket waits on, or why the run `left` it
+running (`PAUSED`, `INTERRUPTED`, …). The next run carries them over: it merges a ticket closed
+meanwhile, adopts a worker at work again, and tells an idle one whose question is answered to carry
+on. Leave the file to orchestra; don't edit it.
 
 Where the project's orchestra files are:
 
@@ -263,16 +271,16 @@ ended with, say why it ended:
 | `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
 | `…; SCOPE_OPEN: …` | 0 | a `--ticket` run with subtickets not done; each is named with why | Handle each reason: answer a question, merge or rebase an unmerged one, unblock or rerun. The report lists follow-ups filed outside the scope. |
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
-| `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, merge by hand (below). |
+| `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, the next run merges it. |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
 | `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
-| `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, merge by hand (below). |
+| `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, the next run merges it. |
 | `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
-| `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, merge by hand (below). If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
-| `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled: label each ticket the line leaves running (`bd label add <id> unmerged`). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
+| `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, the next run merges it. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
+| `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled or left for the next run: label each ticket the line leaves running (`bd label add <id> unmerged`), and merge one its worker closes by hand (below). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
 
 Lines about single tickets, which don't stop the run (in the events, `closed`, `deferred`, `asked`,
@@ -287,7 +295,9 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
   the queue, and its branch is rebased onto the current one when it is picked up. `ANSWERED` says it
   came back. If its worker is still in its tab (answered there, say), orchestra adopts it instead,
-  or tells it, idle, that the question is answered, and merges its work as usual.
+  or tells it, idle, that the question is answered, and merges its work as usual. A run that ends
+  with the ticket still asked leaves it to the next run, which does the same: the user may answer
+  between runs, in the tab or with `bd human respond`.
 - `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
@@ -296,9 +306,29 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   `bd label remove <id> unmerged`.
 - `<id> is left running in tab <tab> and labelled 'unmerged'`, just before the last line: the run
   ended with that ticket's worker still on it (the worker that stopped the run, or any at
-  `INTERRUPTED`). If the worker closes it after the run, nothing merges it, so the label holds the
-  tickets it blocks until it is merged by hand (below) or dispatched again and merged. While the
-  ticket isn't closed the label holds nothing.
+  `INTERRUPTED`). If the worker closes it after the run, the next run merges it; until then the
+  label holds the tickets it blocks, and if no run can carry it over, until it is merged by hand
+  (below). While the ticket isn't closed the label holds nothing.
+- `left for the next run: <id> (asked <question>), <id> (left running: PAUSED)`, just before the
+  last line: the workers saved in `.orchestra/run/state.json` for the next run. That run's `START`
+  block says `carried over from the last run: …`, and then takes each up: `ANSWERED: <id> was closed
+  in tab …` (or `<id>, which the last run left running (PAUSED), is closed in tab …`) when it adopts
+  a worker, and merges its ticket as usual. One still waiting on its question, or left running with
+  its worker idle in its tab, is left for the user and saved again.
+- `<id>, carried over from the last run, is dropped: …`: its worktree is gone, its branch was merged
+  by hand, or bd can't show the ticket. Nothing to do unless the line surprises you.
+- `WORKER_GONE: <id> is in progress after …, but its worker is gone from tab <tab>`: a carried-over
+  ticket's worker has gone (its tab closed, Herdr restarted); said once, with a note on the ticket.
+  Look at its worktree with the user: reopen the ticket (`bd update <id> --status open`) to run it
+  again, or finish it by hand (below).
+- `kept for a later run, outside this run's scope: …`: a `--ticket` run leaves the workers on other
+  tickets saved for a run that takes them.
+- `ASKED_UNMERGED`, `LEFT_UNMERGED`: a ticket asked (or carried over as left running) was closed in
+  its tab, but the run stopped before merging it. It is labelled `unmerged`, and the next run
+  merges it.
+- `STATE_UNSAVED`: the run couldn't write `.orchestra/run/state.json` (the filesystem's
+  error is on the line); the next run carries nothing over, so finish what it names by hand (below)
+  once the workers are done.
 - `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
@@ -360,12 +390,16 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
 | the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json` |
+| the workers the last run left, for the next to carry on with | `.orchestra/run/state.json` in the main checkout |
 | questions for the user | `bd human list` |
 
 ## Finishing a ticket by hand
 
-When a worker finished after the run had stopped (the ticket is closed but nothing merged it; the
-run labelled it `unmerged` as it ended, so the tickets it blocks wait until it is merged):
+A worker that finishes after the run has stopped is merged by the next run, which carries it over
+(`.orchestra/run/state.json`). Finish a ticket by hand only when no run will: after a quit at once,
+a `STATE_UNSAVED` line, or a carried-over worker dropped or `WORKER_GONE`, or when the user wants it
+merged before the next run. The ticket is closed but nothing merged it; if the run labelled it
+`unmerged` as it ended, the tickets it blocks wait until it is merged:
 
 1. Check it: `bd show <id>` is closed, `git log --oneline <base>..wt/<id>` has a commit naming it,
    and `git -C <worktree> status --porcelain` is empty.

@@ -148,6 +148,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	if s := o.loadUnmerged(ctx); s != nil {
 		return o.stop(s.code, "%s", s)
 	}
+	o.loadCarried(ctx)
 	defer o.startPredicting()()
 
 	results := make(chan result, c.Concurrency) // buffered: a worker finishing after settle never blocks
@@ -201,6 +202,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 		return len(adopt) > 0
 	}
+	follow() // the workers carried over from the last run that closed their tickets, or work on them again
 	for {
 		winding()
 		// Workers failing at once, whichever ticket they have, hold the run: said once, before
@@ -243,7 +245,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			if HasLabel(*t, SoloLabel) {
 				o.solo, how = t.ID, "dispatching solo"
 			}
-			if w, ok := o.asked(t.ID); ok {
+			if w, ok := o.asked(t.ID); ok && w.question != "" {
 				o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 					"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 			}
@@ -275,6 +277,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
+			o.stoppedBy(r.id, r.stop)
 			o.endFootprint(r.id)
 			o.settled(keep, r.id, r.how)
 			if r.id == o.solo {
@@ -322,13 +325,11 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 		case <-ctx.Done():
 			o.settle(keep, results, inflight)
-			o.leaveRunning(keep)
-			o.leaveAsked(keep)
+			o.leaveBehind(keep)
 			return o.interrupted(ctx)
 		}
 	}
-	o.leaveRunning(keep) // the workers that stopped the run, if any
-	o.leaveAsked(keep)
+	o.leaveBehind(keep) // the workers that stopped the run, if any, and those waiting on a question
 	switch {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)
@@ -361,6 +362,7 @@ func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[s
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
+			o.stoppedBy(r.id, r.stop)
 			o.settled(ctx, r.id, r.how)
 		case <-slow.C:
 			o.sayWaiting(inflight)

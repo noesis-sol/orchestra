@@ -2,10 +2,13 @@ package dispatch
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
+
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // leftRunning is the line saying ticket id, left running in tab when the run ended, is labelled.
@@ -20,9 +23,10 @@ func before(s, a, b string) bool {
 	return i >= 0 && j >= 0 && i < j
 }
 
-// A worker left running when the run stops may close its ticket once orchestra has gone, and
-// nothing merges it then. Its ticket is labelled unmerged, so the tickets it blocks wait for it in
-// later runs, until it is merged by hand.
+// A worker left running when the run stops may close its ticket once orchestra has gone. The next
+// run merges it, from the state file (see carry_test.go); with that file lost, nothing does. Its
+// ticket is labelled unmerged, so the tickets it blocks wait for it in later runs all the same,
+// until it is merged by hand.
 func TestTicketLeftRunningHoldsItsDependentsInLaterRuns(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -48,6 +52,9 @@ func TestTicketLeftRunningHoldsItsDependentsInLaterRuns(t *testing.T) {
 			t.Fatal(err)
 		}
 		h.beads.set("A", "closed")
+		if err := os.Remove(filepath.Join(h.repo, project.RunPath(project.StateName))); err != nil {
+			t.Fatal(err) // the state file lost
+		}
 
 		// Run 2: bd ready lists B, since A is closed, but A's code is not on main.
 		if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 0 tickets" {

@@ -24,9 +24,11 @@ type adoption struct {
 // and the caller counts it running from then on, whatever the free slots. With taking false (the
 // run takes no more tickets) only a closed one is, to be merged; one in progress is left to
 // leaveAsked. One still in progress whose worker is idle with the question open waits on, as
-// does one Herdr can't tell about. One its worker deferred is set aside as deferred. One in
-// progress whose worker is gone stops the run, as a paused ticket does: the reason is returned
-// with the tickets adopted before it was found, and said at once. running is the tickets running.
+// does one Herdr can't tell about, and one the last run left running whose worker is idle: it
+// waits for the maintainer, as it did when that run stopped. One its worker deferred is set aside
+// as deferred. One in progress whose worker is gone stops the run, as a paused ticket does: the
+// reason is returned with the tickets adopted before it was found, and said at once. running is
+// the tickets running.
 func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking bool) ([]adoption, *stopReason) {
 	var adopt []adoption
 	for _, id := range o.askedList() {
@@ -57,7 +59,8 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 				o.log.Raw("", err)
 			case st == StateGone:
 				return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
-			case !taking, st == StateUnknown, (st == StateIdle || st == StateDone) && OpenQuestion(t) != nil:
+			case !taking, st == StateUnknown,
+				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || w.question == ""):
 				// left as it is: read again at the next poll, or labelled as the run ends
 			default:
 				adopt = append(adopt, o.answeredInTab(t, w))
@@ -68,17 +71,26 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 }
 
 // answeredInTab says asked ticket t comes back, its worker w having claimed it again or closed it
-// in its tab, and records its footprint; the caller counts it running.
+// in its tab, and records its footprint; the caller counts it running. One the last run left
+// running, with no question, comes back the same way.
 func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
 	id := t.ID
 	o.setAsked(id, nil) // back from a question: set aside again, it stays out
 	o.setParent(id, t.Parent)
 	what := "claimed again"
-	if t.Status == "closed" {
+	switch {
+	case t.Status == "closed":
 		what = "closed"
+	case w.question == "":
+		what = "at work again"
 	}
-	o.emit(Event{Kind: EvAnswered, Ticket: id, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
-		"  ANSWERED: %s was %s in tab %s after %s (%s), so its worker is adopted", id, what, w.tab, w.question, w.title)})
+	if w.question == "" { // no question was answered
+		o.info("  %s, which the last run left running (%s), is %s in tab %s, so its worker is adopted",
+			id, w.leftWhy(), what, w.tab)
+	} else {
+		o.emit(Event{Kind: EvAnswered, Ticket: id, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
+			"  ANSWERED: %s was %s in tab %s after %s (%s), so its worker is adopted", id, what, w.tab, w.question, w.title)})
+	}
 	o.startFootprint(t)
 	return adoption{t: t, w: w}
 }
@@ -88,7 +100,7 @@ func (o *Loop) askedDeferred(ctx context.Context, id string, w askedWorker) {
 	o.setAsked(id, nil)
 	o.markAside(id)
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
-		"  %s deferred by worker after its question %s; worktree %s and tab %s left open", id, w.question, w.wt, w.tab)})
+		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
 	o.triageDeferred(ctx, id, "the worker deferred it", w.wt)
 }
 
@@ -97,10 +109,10 @@ func (o *Loop) askedDeferred(ctx context.Context, id string, w askedWorker) {
 // ticket stays asked, so leaveAsked labels it.
 func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *stopReason {
 	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after its question %s "+
-			"(worktree %s).", w.tab, w.question, w.wt))
-	s := halt(ExitStuck, stopPaused, ": %s still in_progress after its question %s, its worker gone from tab %s "+
-		"(worktree %s); stopping so it can be looked at", id, w.question, w.tab, w.wt)
+		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
+		w.tab, w.after(), w.wt))
+	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
+		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt)
 	hold := "HOLD: " + s.Error()
 	if n > 0 {
 		hold += fmt.Sprintf("; no new tickets while the %d running finish", n)
@@ -126,9 +138,13 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 		case "deferred":
 			o.askedDeferred(ctx, id, w)
 		case "closed":
-			text := fmt.Sprintf("  ASKED_UNMERGED: %s was closed in tab %s after its question %s, "+
-				"and the run ends before merging it; worktree %s left for review", id, w.tab, w.question, w.wt)
-			if o.leaveUnmerged(ctx, id, "ASKED_UNMERGED") {
+			kind := "ASKED_UNMERGED"
+			if w.question == "" {
+				kind = "LEFT_UNMERGED" // carried over from the last run, which left it running
+			}
+			text := fmt.Sprintf("  %s: %s was closed in tab %s after %s, "+
+				"and the run ends before merging it; worktree %s left for review", kind, id, w.tab, w.after(), w.wt)
+			if o.leaveUnmerged(ctx, id, kind) {
 				text += fmt.Sprintf(", labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
 					"in later runs too", UnmergedLabel, id, c.Base)
 			}
@@ -140,10 +156,14 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 			if labelled || !o.label(ctx, id) {
 				continue
 			}
+			what := "after its question"
+			if w.question == "" {
+				what = "where the last run left it running"
+			}
 			o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
-				"  %s is in progress after its question (tab %s) and labelled '%s': "+
+				"  %s is in progress %s (tab %s) and labelled '%s': "+
 					"tickets it blocks wait until wt/%s is merged into %s, in later runs too",
-				id, w.tab, UnmergedLabel, id, c.Base)})
+				id, what, w.tab, UnmergedLabel, id, c.Base)})
 		}
 	}
 }

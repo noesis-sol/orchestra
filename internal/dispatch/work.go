@@ -68,8 +68,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			id, st, br)
 	default:
 		if asked && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, earlier) {
-			o.info("  %s's earlier worker in tab %s was told %s is answered and carries on; adopting it",
-				id, earlier.tab, earlier.question)
+			o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
+				id, earlier.tab, earlier.told())
 			return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
 		}
 		if ctx.Err() != nil {
@@ -158,6 +158,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
 	tab, started := worker.tab, worker.started
+	o.place(id, askedWorker{tab: tab, wt: wt, hooks: worker.hooks})
 
 	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	stopWatch := o.watch(ctx, w)
@@ -194,6 +195,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState, adopted time.Time,
 	how *settling) *stopReason {
 	id := t.ID
+	o.place(id, askedWorker{tab: w.tab, wt: w.wt, hooks: w.hooks})
 	o.footprintWorktree(id, w.wt)
 	head := o.checkout.Head(ctx, o.cfg.Repo, "wt/"+id)
 	started := time.Now()
@@ -241,7 +243,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 	}
 	switch {
 	case t.Status != "closed" && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, w):
-		o.info("  %s's worker in tab %s was told %s is answered and carries on; adopting it", id, w.tab, w.question)
+		o.info("  %s's worker in tab %s was told %s and carries on; adopting it", id, w.tab, w.told())
 		st = StateWorking
 	case ctx.Err() != nil:
 		return errInterrupted
@@ -263,19 +265,32 @@ func (o *Loop) budgetNote() string {
 }
 
 // resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
-// to carry on, so it keeps what it already knows of the ticket. It reports whether it took that up.
+// to carry on, so it keeps what it already knows of the ticket; one the last run left running, with
+// no question, is told its ticket is back. It reports whether it took that up.
 func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool {
 	msg := fmt.Sprintf("Orchestra: your question %s is answered. Read the answer with bd show %s, "+
 		"claim %s again with bd update %s --claim, and carry on with it where you left off, as your instructions say.",
 		w.question, w.question, id, id)
+	if w.question == "" {
+		msg = fmt.Sprintf("Orchestra: %s is yours again. Claim it with bd update %s --claim, "+
+			"and carry on with it where you left off, as your instructions say.", id, id)
+	}
 	if o.deliverPrompt(ctx, agent, msg) {
 		return true
 	}
 	if ctx.Err() == nil {
-		o.log.Raw("", fmt.Errorf("%s's earlier worker in tab %s did not take up the answer to %s; starting a new one",
-			id, w.tab, w.question))
+		o.log.Raw("", fmt.Errorf("%s's earlier worker in tab %s did not take up being told %s; starting a new one",
+			id, w.tab, w.told()))
 	}
 	return false
+}
+
+// told is what resume tells the worker: "Q is answered", or, with no question, "to carry on".
+func (w askedWorker) told() string {
+	if w.question == "" {
+		return "to carry on"
+	}
+	return w.question + " is answered"
 }
 
 // conclude waits for ticket t's worker, started (or adopted) at started, to settle, and then does

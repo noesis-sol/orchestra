@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 )
@@ -218,12 +219,28 @@ func (o *Loop) unmergedWhy(id string) string {
 }
 
 // askedWorker is where a ticket set aside to wait on a question left its worker, which may carry
-// on once the question is answered, and the question.
+// on once the question is answered, and the question. Carried over from the last run (see
+// loadCarried), it may instead be a worker that run left running when it stopped, with no question.
 type askedWorker struct {
 	tab, wt  string
 	question string // its ID
 	title    string
-	hooks    bool // it reports through hooks
+	hooks    bool     // it reports through hooks
+	left     stopKind // why the last run left it running; "" for a question
+}
+
+// after is what the worker was left after, for a line about it: "its question Q", or "the last run
+// left it running (PAUSED)".
+func (w askedWorker) after() string {
+	if w.question != "" {
+		return "its question " + w.question
+	}
+	return "the last run left it running (" + w.leftWhy() + ")"
+}
+
+// leftWhy is why the last run left the worker running, as its final line began.
+func (w askedWorker) leftWhy() string {
+	return cmp.Or(string(w.left), "stopped")
 }
 
 // setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no

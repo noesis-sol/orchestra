@@ -8,6 +8,22 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A run carries over the workers the last run left in their tabs. As a run
+  ends, however it ends, it writes those on tickets waiting on a question and
+  those it left running (with what stopped it: `PAUSED`, `INTERRUPTED`, …) to
+  `.orchestra/run/state.json` in the main checkout, atomically and under its
+  lock, and says `left for the next run: …`. The next run reads them in its
+  `START` block (`carried over from the last run: …`) and takes them up as
+  its own asked tickets: it merges a ticket closed meanwhile (rebased,
+  checked, its `unmerged` label removed) rather than leaving it to be merged
+  by hand, adopts a worker at work on its ticket again rather than stopping
+  with `AGENT_BUSY`, and tells an idle one whose question was answered to
+  carry on rather than starting a new worker. A carried-over worker whose
+  worktree is gone or whose ticket was merged by hand is dropped, and one
+  gone from its tab with the ticket in progress is warned about once
+  (`WORKER_GONE`) without stopping the run. A `--ticket` run keeps the others
+  for a later run. The `unmerged` labels still hold dependents if the file is
+  lost.
 - Each run appends its events to `.orchestra/run/events.jsonl` in the main
   checkout, for scripts and agents: one JSON object per line, each written in
   a single append, with the time, the run's start (as its lock gives it), a

@@ -12,6 +12,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // Exit codes, unchanged from orchestrate.sh.
@@ -78,8 +79,15 @@ type Loop struct {
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string     // why each held ticket waits, as last said
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
-	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left.
-	askedIDs  map[string]askedWorker
+	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
+	// also those the last run left behind, carried over (see loadCarried).
+	askedIDs map[string]askedWorker
+	// placed: where each worker started or adopted in this run is, and, once it stopped the run, why:
+	// the next run carries on with those left running (see saveCarried).
+	placed map[string]askedWorker
+	// keptOut: the workers the last run left behind on tickets outside this run's scope, saved again
+	// for a later run as they were.
+	keptOut   []project.LeftWorker
 	parentOf  map[string]string // the parent of each ticket dispatched or left unmerged, which waits for it
 	doneSaid  map[string]bool   // parents said to be ready to close
 	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say

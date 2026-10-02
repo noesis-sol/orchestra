@@ -153,8 +153,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case dispatch.EvAsked:
 			m.asked++
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
-		case dispatch.EvAnswered:
-			m.working(ev.Ticket, "")
+		case dispatch.EvAnswered: // its title for a ticket carried over from the last run, with no row yet
+			m.working(ev.Ticket, ev.Title)
 		case dispatch.EvTriage:
 			m.triaged++
 			// A verdict on an earlier deferral, in after the ticket came back, would outlast the next.
