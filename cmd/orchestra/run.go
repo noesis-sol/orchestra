@@ -107,6 +107,27 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 func loadConfig(
 	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
 ) (options, []string, error) {
+	c, given, problems, err := readFlags(args, getenv, output)
+	if err != nil || c.showVersion {
+		return c, nil, err
+	}
+	problems = append(problems, checkHost(ctx, &c, getenv)...)
+	if c.Repo != "" {
+		problems = append(problems, resolveProject(ctx, &c, given, getenv)...)
+		problems = append(problems, checkCheckout(ctx, &c)...)
+	}
+	return c, problems, nil
+}
+
+// overrides says which of the project's settings a flag or variable overrides where its value
+// can't tell: a duration of 0, -resolve-conflicts=true.
+type overrides struct {
+	ticketLimit, checkTimeout, resolveConflicts bool
+}
+
+// readFlags parses the flags in args, each defaulting to its environment variable, and reconciles
+// the two: a variable's problem counts only when no flag overrides it. Its error is loadConfig's.
+func readFlags(args []string, getenv func(string) string, output io.Writer) (options, overrides, []string, error) {
 	var c options
 	var problems []string
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
@@ -184,7 +205,7 @@ func loadConfig(
 			"7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
-		return c, nil, err
+		return c, overrides{}, nil, err
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		switch rest[0] {
@@ -196,15 +217,16 @@ func loadConfig(
 		default:
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}
-		return c, nil, errUnexpectedArgs
+		return c, overrides{}, nil, errUnexpectedArgs
 	}
 	c.showVersion = *showVersion
 	if c.showVersion {
-		return c, nil, nil
+		return c, overrides{}, nil, nil
 	}
 
-	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule.
-	// ResolveConcurrency checks the range of -concurrent (and -c) below.
+	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule,
+	// its value checked here when nothing else does (0 for the others: ResolveConcurrency checks
+	// -concurrent and -c, ResolveTicketLimit and ResolveCheckTimeout their flags).
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	for _, v := range []struct {
@@ -216,18 +238,14 @@ func loadConfig(
 		{"limit", set["limit"], c.Limit, limitProblem},
 		{"done-so-far", set["done-so-far"], c.DoneSoFar, doneSoFarProblem},
 		{"concurrent", set["concurrent"] || set["c"], 0, concurrentProblem},
+		{"ticket-limit", set["ticket-limit"], 0, ticketLimitProblem},
+		{"check-timeout", set["check-timeout"], 0, checkTimeoutProblem},
 	} {
 		if !v.isSet && v.problem != "" {
 			problems = append(problems, v.problem)
 		} else if v.isSet && v.value < 0 {
 			problems = append(problems, fmt.Sprintf("-%s must be a whole number (got %d).", v.flag, v.value))
 		}
-	}
-	if !set["ticket-limit"] && ticketLimitProblem != "" {
-		problems = append(problems, ticketLimitProblem)
-	}
-	if !set["check-timeout"] && checkTimeoutProblem != "" {
-		problems = append(problems, checkTimeoutProblem)
 	}
 	c.Feature = strings.TrimSpace(c.Feature)
 	switch {
@@ -244,7 +262,17 @@ func loadConfig(
 			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT] or lower -done-so-far [DONE_SO_FAR].",
 			c.DoneSoFar, c.Limit))
 	}
+	return c, overrides{
+		ticketLimit:      set["ticket-limit"] || ticketLimitGiven,
+		checkTimeout:     set["check-timeout"] || checkTimeoutGiven,
+		resolveConflicts: set["resolve-conflicts"],
+	}, problems, nil
+}
 
+// checkHost finds what a run needs around the project: its repository (c.Repo), the Herdr pane it
+// runs in and the workspace for the workers' tabs (c.Workspace), and the commands it calls.
+func checkHost(ctx context.Context, c *options, getenv func(string) string) []string {
+	var problems []string
 	if repo, err := (git.Git{}).TopLevel(ctx, ""); err == nil {
 		c.Repo = repo
 	} else {
@@ -266,135 +294,136 @@ func loadConfig(
 			problems = append(problems, "Required command not found: "+cmd)
 		}
 	}
+	return problems
+}
 
-	if c.Repo != "" {
-		lay := project.Locate(c.Repo)
-		if c.WorkerPrompt == "" {
-			c.WorkerPrompt = lay.Prompt
-		} else if !filepath.IsAbs(c.WorkerPrompt) {
-			c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
+// resolveProject reads what the project in c.Repo decides, under the flags and variables in c
+// that override it: its layout under .orchestra/ and its settings.
+func resolveProject(ctx context.Context, c *options, given overrides, getenv func(string) string) []string {
+	var problems []string
+	lay := project.Locate(c.Repo)
+	if c.WorkerPrompt == "" {
+		c.WorkerPrompt = lay.Prompt
+	} else if !filepath.IsAbs(c.WorkerPrompt) {
+		c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
+	}
+	c.LogPath, c.ReportsDir = lay.Log, lay.Reports
+	settings, _, err := project.LoadSettings(c.Repo)
+	if err != nil {
+		problems = append(problems, "Unreadable settings: "+err.Error())
+	}
+	c.Check = settings.Check
+	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
+	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
+	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
+	if ok && c.WorkerEffort != "" {
+		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
+	}
+	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
+	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(c.Concurrency, settings))
+	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(c.TicketLimit, given.ticketLimit, settings))
+	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(c.CheckTimeout, given.checkTimeout, settings))
+	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
+		project.ResolveConflictResolution(c.ResolveConflicts, given.resolveConflicts, settings))
+	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
+	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
+	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
+	// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
+	// config; one this machine can't give them is for the maintainer to fix before they start.
+	switch {
+	case settings.MCPServers == nil:
+	case c.AgentKind != "claude": // only named: the loop says they aren't passed to such workers
+		named := []mcp.Server{}
+		for _, name := range *settings.MCPServers {
+			named = append(named, mcp.Server{Name: name})
 		}
-		c.LogPath, c.ReportsDir = lay.Log, lay.Reports
-		settings, _, err := project.LoadSettings(c.Repo)
-		if err != nil {
-			problems = append(problems, "Unreadable settings: "+err.Error())
-		}
-		c.Check = settings.Check
-		c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
-		c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
-		if e, err := project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else if c.WorkerEffort = e; e != "" {
-			c.WorkerArgs = append(c.WorkerArgs, "--effort", e)
-		}
-		if e, err := project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.OrganEffort = e
-		}
-		if n, err := project.ResolveConcurrency(c.Concurrency, settings); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.Concurrency = n
-		}
-		ticketLimitSet := set["ticket-limit"] || ticketLimitGiven
-		if d, err := project.ResolveTicketLimit(c.TicketLimit, ticketLimitSet, settings); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.TicketLimit = d
-		}
-		checkTimeoutSet := set["check-timeout"] || checkTimeoutGiven
-		if d, err := project.ResolveCheckTimeout(c.CheckTimeout, checkTimeoutSet, settings); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.CheckTimeout = d
-		}
-		on, d, err := project.ResolveConflictResolution(c.ResolveConflicts, set["resolve-conflicts"], settings)
-		if err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.ResolveConflicts, c.ResolveTimeout = on, d
-		}
-		if n, d, err := project.ResolveEnvironmentHold(settings); err != nil {
+		c.MCP = &named
+	default:
+		if servers, err := mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, c.Repo)...); err != nil {
+			problems = append(problems, "Cannot read Claude Code's MCP config for the workers' MCP servers: "+err.Error()+".")
+		} else if chosen, err := project.ResolveMCP(*settings.MCPServers, servers); err != nil {
 			problems = append(problems, err.Error()+".")
 		} else {
-			c.EnvHoldCount, c.EnvHoldWindow = n, d
-		}
-		if d, err := project.ResolveEnvironmentProbe(settings); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.EnvProbe = d
-		}
-		if types, err := project.ResolveExcludeTypes(settings); err != nil {
-			problems = append(problems, err.Error()+".")
-		} else {
-			c.ExcludeTypes = types
-		}
-		// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
-		// config; one this machine can't give them is for the maintainer to fix before they start.
-		switch {
-		case settings.MCPServers == nil:
-		case c.AgentKind != "claude": // only named: the loop says they aren't passed to such workers
-			named := []mcp.Server{}
-			for _, name := range *settings.MCPServers {
-				named = append(named, mcp.Server{Name: name})
-			}
-			c.MCP = &named
-		default:
-			if servers, err := mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, c.Repo)...); err != nil {
-				problems = append(problems, "Cannot read Claude Code's MCP config for the workers' MCP servers: "+err.Error()+".")
-			} else if chosen, err := project.ResolveMCP(*settings.MCPServers, servers); err != nil {
-				problems = append(problems, err.Error()+".")
-			} else {
-				c.MCP = &chosen
-			}
-		}
-		if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
-			problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
-		} else if !strings.Contains(string(b), "TICKET_ID") {
-			problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+c.WorkerPrompt)
-		}
-		idProblem := ""
-		if c.Ticket != "" {
-			if idProblem = dispatch.IDProblem(c.Ticket); idProblem != "" {
-				problems = append(problems, fmt.Sprintf("Ticket %s (--ticket): %s: a ticket's ID names its worktree "+
-					"folder and its branch wt/<id>. Give it a plain ID with: bd rename %s <new-id>",
-					c.Ticket, idProblem, c.Ticket))
-			}
-		}
-		if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
-			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
-		} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
-			if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
-				problems = append(problems, p)
-			}
-		}
-
-		// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-		if linked, err := (git.Git{}).LinkedWorktree(ctx, c.Repo); err != nil {
-			problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
-		} else if linked {
-			problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
-		}
-		if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
-			problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
-		} else if c.Base = base; c.Base == "" {
-			problems = append(problems,
-				"The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
-		}
-
-		if c.WTRoot == "" {
-			c.WTRoot = filepath.Join(filepath.Dir(c.Repo), filepath.Base(c.Repo)+"-worktrees")
-		}
-		if !filepath.IsAbs(c.WTRoot) {
-			c.WTRoot = filepath.Join(c.Repo, c.WTRoot)
-		}
-		if within(c.WTRoot, c.Repo) {
-			problems = append(problems, fmt.Sprintf(
-				"WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
+			c.MCP = &chosen
 		}
 	}
-	return c, problems, nil
+	return problems
+}
+
+// keep returns what takes a Resolve function's results: it stores the setting in dst, or notes the
+// error as a problem and leaves dst as it is. It reports whether there was no error.
+func keep[T any](problems *[]string, dst *T) func(T, error) bool {
+	return func(v T, err error) bool {
+		if err != nil {
+			*problems = append(*problems, err.Error()+".")
+			return false
+		}
+		*dst = v
+		return true
+	}
+}
+
+// keep2 is keep for a Resolve function that returns two settings.
+func keep2[A, B any](problems *[]string, dstA *A, dstB *B) func(A, B, error) {
+	return func(a A, b B, err error) {
+		if err != nil {
+			*problems = append(*problems, err.Error()+".")
+			return
+		}
+		*dstA, *dstB = a, b
+	}
+}
+
+// checkCheckout checks that the project in c.Repo can be run: its worker prompt, its Beads
+// database and the ticket --ticket scopes the run to, a main checkout on a branch (c.Base), and a
+// folder for the worktrees outside it (c.WTRoot).
+func checkCheckout(ctx context.Context, c *options) []string {
+	var problems []string
+	if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
+		problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
+	} else if !strings.Contains(string(b), "TICKET_ID") {
+		problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+c.WorkerPrompt)
+	}
+	idProblem := ""
+	if c.Ticket != "" {
+		if idProblem = dispatch.IDProblem(c.Ticket); idProblem != "" {
+			problems = append(problems, fmt.Sprintf("Ticket %s (--ticket): %s: a ticket's ID names its worktree "+
+				"folder and its branch wt/<id>. Give it a plain ID with: bd rename %s <new-id>",
+				c.Ticket, idProblem, c.Ticket))
+		}
+	}
+	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
+		problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+	} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
+		if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+			problems = append(problems, p)
+		}
+	}
+
+	// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
+	if linked, err := (git.Git{}).LinkedWorktree(ctx, c.Repo); err != nil {
+		problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
+	} else if linked {
+		problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
+	}
+	if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
+		problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
+	} else if c.Base = base; c.Base == "" {
+		problems = append(problems,
+			"The main checkout is on a detached HEAD. Check out the branch finished tickets should land on.")
+	}
+
+	if c.WTRoot == "" {
+		c.WTRoot = filepath.Join(filepath.Dir(c.Repo), filepath.Base(c.Repo)+"-worktrees")
+	}
+	if !filepath.IsAbs(c.WTRoot) {
+		c.WTRoot = filepath.Join(c.Repo, c.WTRoot)
+	}
+	if within(c.WTRoot, c.Repo) {
+		problems = append(problems, fmt.Sprintf(
+			"WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
+	}
+	return problems
 }
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
@@ -468,6 +497,8 @@ func exitCode(err error) int {
 }
 
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
+// A run's setup, held until it ends (the lock, the stop signals' watch, the log), and a --feature
+// request are here; runPlain or runDashboard runs the loop and the organ phase after it.
 func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) (err error) {
@@ -560,15 +591,28 @@ func run(
 		return status(featureCode)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
+	orch := newLoop(organCtx, &cfg, log, string(prompt))
+	if cfg.Triage {
+		orch.StartTriage()
+	}
+	r := loopRun{orch: orch, cfg: cfg, stops: stops, log: log, cancelOrgans: cancelOrgans}
+	out, isFile := stdout.(*os.File)
+	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
+		return status(runPlain(ctx, r, stdout))
+	}
+	return status(runDashboard(ctx, r, stdin, out, stderr))
+}
+
+// newLoop makes the run's loop on Beads, Herdr, git and the workers' reports, its organs advising
+// under organCtx. Organs that can't run are turned off in cfg, and the log says so.
+func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt string) *dispatch.Loop {
 	cfg.Version = buildVersion()
 	organsOff := organ.Unavailable("claude")
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, herdr.Terminal{}, git.Git{}
-	orch := dispatch.New(cfg.Config, log, string(prompt), dispatch.Deps{
+	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
 		Tabs:      terminal,
@@ -587,55 +631,75 @@ func run(
 		log.Line(time.Now(), "organs off: "+organsOff)
 		cfg.Triage, cfg.Review = false, false
 	}
-	if cfg.Triage {
-		orch.StartTriage()
-	}
+	return orch
+}
 
+// loopRun is what the two ways of running the loop, plain and under the dashboard, share: the loop
+// and its configuration, the stop signals' watch, the log, and how to cancel the organs' context.
+type loopRun struct {
+	orch         *dispatch.Loop
+	cfg          options
+	stops        *stopWatch
+	log          *dispatch.Log
+	cancelOrgans func()
+}
+
+// organs runs the organ phase after the loop ended with code and its final line.
+func (r loopRun) organs(code int, final string, out tui.Printer) {
+	organPhase(r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
+}
+
+// runPlain runs the loop printing plain log lines (with --plain, or when stdout isn't a terminal),
+// then the organ phase. It returns the loop's exit code.
+func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
+	ctx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(nil)
+	sink := tui.Printer{Out: stdout}
+	// The signal that stops the loop is the first; one while it winds down ends orchestra.
+	r.stops.quitWith(quitter{loop: r.orch, log: r.log, out: sink, exit: os.Exit})
+	r.stops.on(func(s os.Signal) { cancelRun(dispatch.InterruptedError(stoppedHow(s))) })
+	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
+	r.orch.SetSink(sink)
+	r.orch.ReportInterrupt = true
+	code := r.orch.Run(ctx)
+	r.stops.on(nil)
+	stopDrain()
+	r.organs(code, r.orch.Final(), sink)
+	return code
+}
+
+// runDashboard runs the loop under the interactive dashboard, then, with the terminal restored,
+// prints the loop's events from where the dashboard left off and runs the organ phase. It returns
+// the loop's exit code, or ExitInterrupted when the dashboard closed before the loop ended.
+func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.File, stderr io.Writer) int {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	width := 80
-	out, isFile := stdout.(*os.File)
-	if isFile {
-		if w, _, err := term.GetSize(int(out.Fd())); err == nil {
-			width = w
-		}
+	if w, _, err := term.GetSize(int(stdout.Fd())); err == nil {
+		width = w
 	}
-	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
-		ctx, cancelRun := context.WithCancelCause(ctx)
-		sink := tui.Printer{Out: stdout}
-		// The signal that stops the loop is the first; one while it winds down ends orchestra.
-		stops.quitWith(quitter{loop: orch, log: log, out: sink, exit: os.Exit})
-		stops.on(func(s os.Signal) { cancelRun(dispatch.InterruptedError(stoppedHow(s))) })
-		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
-		orch.SetSink(sink)
-		orch.ReportInterrupt = true
-		code := orch.Run(ctx)
-		stops.on(nil)
-		stopDrain()
-		organPhase(orch, cfg, stops, log, code, orch.Final(), sink, cancelOrgans)
-		return status(code)
-	}
-
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
 	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
 	drain := func(on bool) {
 		if on {
-			orch.Drain("from the dashboard")
+			r.orch.Drain("from the dashboard")
 		} else {
-			orch.Resume("from the dashboard")
+			r.orch.Resume("from the dashboard")
 		}
 	}
-	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
+	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
 		tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
-	stops.on(func(s os.Signal) {
+	r.stops.on(func(s os.Signal) {
 		quitBy <- s // before the quit, so stoppedBy finds it
 		go p.Quit() // Quit waits for the dashboard to have started; a stop mustn't wait
 	})
 	// the dashboard hears it from the loop
-	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
+	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
 	progSink := tui.NewProgramSink(p)
-	orch.SetSink(progSink)
+	r.orch.SetSink(progSink)
 	codes := make(chan int, 1)
 	ran := make(chan struct{}) // closed once the dashboard has exited and the terminal is restored
 	go func() {
@@ -644,20 +708,20 @@ func run(
 		// the original stack in the crash.
 		defer func() {
 			if v := recover(); v != nil {
-				log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
+				r.log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
 				p.Kill()
 				<-ran
 				panic(v)
 			}
 		}()
-		codes <- orch.Run(ctx)
+		codes <- r.orch.Run(ctx)
 		p.Send(tui.Finished{})
 	}()
 	final, err := p.Run()
 	close(ran)
 	// A stop signal from here on goes to the organ phase, which it skips, until quitWith below: one
 	// that came while the dashboard closed was a further one, if a signal closed it.
-	stops.on(nil)
+	r.stops.on(nil)
 	var sig os.Signal // the one that closed the dashboard, if any
 	select {
 	case sig = <-quitBy:
@@ -675,26 +739,26 @@ func run(
 	// From here the loop's events are printed, starting with any the dashboard never received.
 	progSink.Handoff(sink, m.Received())
 	// With the terminal restored, a stop signal while the stopped loop winds down can end orchestra.
-	stops.quitWith(quitter{loop: orch, log: log, out: sink, exit: os.Exit})
+	r.stops.quitWith(quitter{loop: r.orch, log: r.log, out: sink, exit: os.Exit})
 	if why := stoppedBy(m, err, len(codes) > 0, sig); why != "" {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		cancel()
-		msg := dispatch.InterruptLine(why, orch.Running())
+		msg := dispatch.InterruptLine(why, r.orch.Running())
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
-		log.Alert(ev.Time, msg)
-		log.Record(ev)
+		r.log.Alert(ev.Time, msg)
+		r.log.Record(ev)
 		sink.Event(ev)
-		stops.windDown()
+		r.stops.windDown()
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
 		// Run waits for its workers, whose commands stop with it or at their time limits, and names
 		// any not back within a second below the INTERRUPTED line.
 		<-codes
-		organPhase(orch, cfg, stops, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
-		return exitStatus(dispatch.ExitInterrupted)
+		r.organs(dispatch.ExitInterrupted, msg, sink)
+		return dispatch.ExitInterrupted
 	}
 	code := <-codes
-	organPhase(orch, cfg, stops, log, code, orch.Final(), sink, cancelOrgans)
-	return status(code)
+	r.organs(code, r.orch.Final(), sink)
+	return code
 }
 
 // stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by
