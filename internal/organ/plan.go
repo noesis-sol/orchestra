@@ -320,6 +320,25 @@ type PlannedTicket struct {
 	BlockedBy   []string `json:"blocked_by"` // keys of the tickets that must finish first
 }
 
+// UnmarshalJSON reads a ticket of the plan organ's answer, whose priority must be given: without the
+// schema (older CLIs), a missing or null one would read as 0, critical.
+func (t *PlannedTicket) UnmarshalJSON(b []byte) error {
+	type fields PlannedTicket // without this method
+	var in struct {
+		fields
+		Priority *int `json:"priority"` // hides fields.Priority, to tell a missing one from 0
+	}
+	if err := json.Unmarshal(b, &in); err != nil {
+		return err
+	}
+	if in.Priority == nil {
+		return fmt.Errorf("ticket %q has no priority", strings.TrimSpace(in.Key))
+	}
+	*t = PlannedTicket(in.fields)
+	t.Priority = *in.Priority
+	return nil
+}
+
 // NeedsAnswers reports whether the organ couldn't plan the request without answers to Questions.
 func (p FeaturePlan) NeedsAnswers() bool { return len(p.Tickets) == 0 }
 
@@ -329,11 +348,7 @@ func (p FeaturePlan) NeedsAnswers() bool { return len(p.Tickets) == 0 }
 // with a note. Anything else wrong is an error naming the problem.
 func parsePlan(r Result, tracked []string) (FeaturePlan, error) {
 	var p FeaturePlan
-	raw := r.Structured
-	if len(raw) == 0 {
-		raw = json.RawMessage(r.Result) // older CLIs put the JSON in result
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
+	if err := r.decode(&p); err != nil {
 		return p, fmt.Errorf("unreadable plan: %w", err)
 	}
 	questions := []string{}

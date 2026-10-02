@@ -340,6 +340,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- An organ answer whose `structured_output` is `null` is read from `result`,
+  as one without `structured_output` is; it was read as an answer of zero
+  values, and failed as `unknown triage cause ""`. Where `result` carries the
+  answer, with no schema enforced, a plan ticket with no priority (or `null`)
+  is an error rather than P0, and a triage verdict's confidence must be high,
+  medium or low.
 - With triage off (`-triage=false`, or without `claude` installed), a ticket
   its worker defers or leaves open no longer has evidence gathered for triage
   only to be thrown away: a `bd show`, three git reads and a read of the

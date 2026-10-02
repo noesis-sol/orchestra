@@ -63,6 +63,17 @@ type Result struct {
 	Structured json.RawMessage `json:"structured_output"`
 }
 
+// decode reads an organ's structured answer into v: structured_output, or, when that is absent or
+// null, the JSON in result, where older CLIs put it. The fallback has no schema enforced, so each
+// parser checks what it reads.
+func (r Result) decode(v any) error {
+	raw := r.Structured
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = json.RawMessage(r.Result)
+	}
+	return json.Unmarshal(raw, v)
+}
+
 // args keeps an organ read-only and small: no built-in tools, no MCP servers (their tool lists
 // alone are ~180k tokens), a short system prompt in place of Claude Code's, and no saved session.
 // --strict-mcp-config with no --mcp-config is no MCP servers at all, whatever mcp_servers in
@@ -180,17 +191,14 @@ func triageInput(d Deferral) string {
 
 func parseTriage(r Result) (Verdict, error) {
 	var t Verdict
-	raw := r.Structured
-	if len(raw) == 0 {
-		raw = json.RawMessage(r.Result) // older CLIs put the JSON in result
-	}
-	if err := json.Unmarshal(raw, &t); err != nil {
+	if err := r.decode(&t); err != nil {
 		return t, fmt.Errorf("unreadable triage: %w", err)
 	}
-	switch t.Cause {
-	case "environment", "instructions", "problem":
-	default:
+	switch {
+	case !slices.Contains([]string{"environment", "instructions", "problem"}, t.Cause):
 		return t, fmt.Errorf("unknown triage cause %q", t.Cause)
+	case !slices.Contains([]string{"high", "medium", "low"}, t.Confidence):
+		return t, fmt.Errorf("unknown triage confidence %q", t.Confidence)
 	}
 	return t, nil
 }
@@ -299,11 +307,7 @@ func parsePrediction(r Result, tracked []string) ([]string, error) {
 	var p struct {
 		Files []string `json:"files"`
 	}
-	raw := r.Structured
-	if len(raw) == 0 {
-		raw = json.RawMessage(r.Result)
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
+	if err := r.decode(&p); err != nil {
 		return nil, fmt.Errorf("unreadable prediction: %w", err)
 	}
 	known := map[string]bool{}

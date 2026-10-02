@@ -2,7 +2,6 @@ package organ
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -79,11 +78,7 @@ func screenInput(r Request) string {
 
 func parseScreening(r Result) (Screening, error) {
 	var s Screening
-	raw := r.Structured
-	if len(raw) == 0 {
-		raw = json.RawMessage(r.Result) // older CLIs put the JSON in result
-	}
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := r.decode(&s); err != nil {
 		return s, fmt.Errorf("unreadable screening: %w", err)
 	}
 	switch s.Verdict {
