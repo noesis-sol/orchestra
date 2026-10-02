@@ -171,12 +171,13 @@ func TestAskedTicketWhoseWorkerCarriesOnIsAdopted(t *testing.T) {
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
 		answered := make(chan struct{})
+		showsA := make(chan func(AgentState), 1) // what Herdr shows A's worker as
 		h.worker("A", func(w *fakeWorker) AgentState {
 			w.claim()
 			w.ask("Q", "which way?")
+			showsA <- w.shows
 			w.shows("idle") // asked, and stopped
 			<-answered
-			w.shows("working")      // answered in its tab
 			time.Sleep(time.Minute) // the run adopts it meanwhile
 			w.claim()
 			w.commit("a.txt")
@@ -184,6 +185,9 @@ func TestAskedTicketWhoseWorkerCarriesOnIsAdopted(t *testing.T) {
 			return "idle"
 		})
 		h.worker("B", func(w *fakeWorker) AgentState {
+			// A is answered in its tab and works again before B is done: the run reads A's status
+			// as soon as it has merged B, at the same instant A's own goroutine would wake.
+			(<-showsA)("working")
 			w.beads.set("Q", "closed")
 			close(answered)
 			return finishes("b.txt")(w)
