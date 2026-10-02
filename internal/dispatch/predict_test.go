@@ -87,7 +87,9 @@ func TestPredictedFootprintKeepsATicketApart(t *testing.T) {
 
 // Dispatch never waits for a prediction: with the predictor hanging, tickets naming nothing run
 // side by side, and the run ends without waiting for it. On the real clock: a command that hangs
-// would hold a synctest bubble's clock until it ends.
+// would hold a synctest bubble's clock until it ends. A finishes only once the predictor has been
+// asked: ending the run cancels a prediction still on its way to the predictor, which on a loaded
+// machine could otherwise be before it was asked at all.
 func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -95,12 +97,13 @@ func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	h.cfg.Predict = true
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
+	bin, asked := fakePredictor(t, "exec sleep 60")
 	h.worker("A", func(w *fakeWorker) AgentState {
 		eventually(t, "B never ran beside A", func() bool { return h.sink.dispatchedYet("B") })
+		eventually(t, "the predictor was never asked", func() bool { _, err := os.Stat(asked); return err == nil })
 		return finishes("a.txt")(w)
 	})
 	h.worker("B", finishes("b.txt"))
-	bin, asked := fakePredictor(t, "exec sleep 60")
 	o := h.loop()
 	o.organ = organ.Client{Bin: bin}
 	start := time.Now()
@@ -110,7 +113,6 @@ func TestPredictionNeverDelaysDispatch(t *testing.T) {
 	if d := time.Since(start); d > 50*time.Second { // a loaded machine is slow, but not this slow
 		t.Errorf("the run took %s: it waited for the predictor", d)
 	}
-	eventually(t, "the predictor was never asked", func() bool { _, err := os.Stat(asked); return err == nil })
 	if got := h.beads.metadata("A", PredictedKey) + h.beads.metadata("B", PredictedKey); got != "" {
 		t.Errorf("cached %q", got)
 	}
