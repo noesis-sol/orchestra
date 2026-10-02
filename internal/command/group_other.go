@@ -17,5 +17,8 @@ func (g *group) wait() {}
 
 func (g *group) stop() {}
 
+// ownGroup does nothing: there are no process groups to start cmd in.
+func ownGroup(cmd *exec.Cmd) {}
+
 // terminate stops a process; without signals, by killing it.
 func terminate(p *os.Process) error { return p.Kill() }

@@ -29,7 +29,9 @@ const stopGrace = 500 * time.Millisecond
 
 // Output runs a command in dir and returns its stdout. The command is stopped when ctx is done or
 // once it has run for limit (0 for no limit). The error is an *Error carrying stderr, and for a
-// command that was stopped why: the limit it ran into, or the cause ctx was cancelled with.
+// command that was stopped why: the limit it ran into, or the cause ctx was cancelled with. The
+// command runs in its own process group, so a Ctrl+C at the terminal, or a SIGHUP from closing it,
+// reaches orchestra alone: a merge it has under way isn't killed halfway.
 func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
 	if limit > 0 {
 		var cancel context.CancelFunc
@@ -39,6 +41,7 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "BD_JSON_ENVELOPE=0") // pin the bd --json shape
+	ownGroup(cmd)
 	cmd.Cancel = func() error { return terminate(cmd.Process) }
 	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer

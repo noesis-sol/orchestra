@@ -25,7 +25,7 @@ type group struct {
 // SIGTERM now, SIGKILL after grace.
 func inGroup(cmd *exec.Cmd, grace time.Duration) *group {
 	g := &group{cmd: cmd}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	ownGroup(cmd)
 	cmd.Cancel = func() error {
 		g.mu.Lock()
 		defer g.mu.Unlock()
@@ -75,6 +75,10 @@ func (g *group) stop() {
 		g.kill.Stop()
 	}
 }
+
+// ownGroup starts cmd in a process group of its own, out of reach of the signals the terminal
+// sends to orchestra's.
+func ownGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
 // terminate asks a process to stop, as Ctrl+C or a time limit does: SIGTERM, on which git removes
 // its lock files. Output's WaitDelay kills it if it doesn't.

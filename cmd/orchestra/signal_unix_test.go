@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -7,32 +9,79 @@ import (
 	"time"
 )
 
+// kill sends sig to the test's own process.
+func kill(t *testing.T, sig syscall.Signal) {
+	t.Helper()
+	if err := syscall.Kill(os.Getpid(), sig); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // SIGTERM and SIGHUP are caught like Ctrl+C: nothing kills orchestra before it logs the stop.
 func TestStopSignalsAreCaught(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGHUP} {
+		stops := catchStops()
 		stopped := make(chan os.Signal, 1)
-		stop := watchSignals(func(s os.Signal) { stopped <- s })
-		if err := syscall.Kill(os.Getpid(), sig); err != nil {
-			t.Fatal(err)
-		}
+		stops.on(func(s os.Signal) { stopped <- s })
+		kill(t, sig)
 		select {
 		case s := <-stopped:
-			if got := stop(); s != sig || got != sig {
-				t.Errorf("%v: onStop got %v, stop returned %v", sig, s, got)
+			if s != sig || !stops.leaving() {
+				t.Errorf("%v: the phase got %v, leaving %v", sig, s, stops.leaving())
 			}
 		case <-time.After(5 * time.Second):
-			stop()
+			stops.release()
 			t.Fatalf("%v was not caught", sig)
 		}
-		if !leaving(sig) {
+		stops.release()
+		if !leaves(sig) {
 			t.Errorf("%v should skip the organ phase", sig)
 		}
 	}
-	if stop := watchSignals(func(os.Signal) {}); stop() != nil {
-		t.Error("no signal came, but stop returned one")
-	}
-	if leaving(os.Interrupt) || leaving(nil) {
+	if leaves(os.Interrupt) || leaves(nil) {
 		t.Error("Ctrl+C and the loop's own end keep the organ phase")
+	}
+}
+
+// Once the loop has been stopped, more stop signals don't end orchestra while it winds down,
+// which may be finishing a merge: the test process would die here if they did. They wait for the
+// next phase, the first of them stopping it.
+func TestStopSignalsStayCaughtWhileTheLoopWindsDown(t *testing.T) {
+	stops := catchStops()
+	defer stops.release()
+	stopped := make(chan os.Signal, 2)
+	stops.on(func(s os.Signal) { stopped <- s })
+	kill(t, syscall.SIGINT)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SIGINT was not caught")
+	}
+	stops.on(nil) // the dashboard has closed: the loop winds down
+	waitFor := func(what string, done func() bool) {
+		t.Helper()
+		for start := time.Now(); !done(); time.Sleep(10 * time.Millisecond) {
+			if time.Since(start) > 5*time.Second {
+				t.Fatalf("%s was not caught", what)
+			}
+		}
+	}
+	kill(t, syscall.SIGINT)
+	waitFor("the second SIGINT", func() bool {
+		stops.mu.Lock()
+		defer stops.mu.Unlock()
+		return stops.pending != nil
+	})
+	kill(t, syscall.SIGTERM)
+	kill(t, syscall.SIGHUP)
+	waitFor("SIGTERM or SIGHUP", stops.leaving)
+	if len(stopped) > 0 {
+		t.Errorf("%v went to the stopped loop", <-stopped)
+	}
+	var next os.Signal
+	stops.on(func(s os.Signal) { next = s })
+	if next != syscall.SIGINT {
+		t.Errorf("the next phase got %v, want the second SIGINT", next)
 	}
 }
 
@@ -42,9 +91,7 @@ func TestDrainSignalIsCaught(t *testing.T) {
 	stop := watchDrain(func() { drained <- struct{}{} })
 	defer stop()
 	for i := 0; i < 2; i++ {
-		if err := syscall.Kill(os.Getpid(), syscall.SIGUSR1); err != nil {
-			t.Fatal(err)
-		}
+		kill(t, syscall.SIGUSR1)
 		select {
 		case <-drained:
 		case <-time.After(5 * time.Second):

@@ -180,7 +180,10 @@ func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b strings.Builder
-		organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, log, dispatch.ExitOK, "", tui.Printer{Out: &b}, func() {})
+		stops := catchStops()
+		organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, stops, log, dispatch.ExitOK, "", tui.Printer{Out: &b},
+			func() {})
+		stops.release()
 		if out := b.String(); !strings.Contains(out, "ALL MERGED") || !strings.Contains(out, tc.printed) {
 			t.Errorf("save error %v: printed\n%s", tc.saveErr, out)
 		}

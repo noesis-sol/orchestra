@@ -398,6 +398,18 @@ All notable changes to orchestra are documented here. The format follows
   only a minute's worth of failed reads in a row stops the run, with
   `STATUS_UNREADABLE for <id>: its status could not be read 20 times in a row
   while its worker was idle: <error>`.
+- A second Ctrl+C, or closing the terminal or Herdr pane, no longer kills
+  orchestra in the middle of a merge. Once the dashboard had closed, while the
+  run waited for a merge (`waiting for <id>'s merge to finish…`), the stop
+  signals had their default effect again, so the merge's notes and label were
+  never written and the log wasn't closed. They now stay caught for the whole
+  run; one that comes while a stopped run winds down skips triage and the
+  report, as SIGTERM and SIGHUP do at any time. And the `git`, `bd` and `herdr`
+  commands orchestra runs no longer share its process group, so a Ctrl+C typed
+  at the terminal, or the SIGHUP of a closing pane, no longer reaches them
+  directly: a rebase killed this way passed for a conflict (`MERGE_CONFLICT`
+  and the `unmerged` label on a clean ticket), and a killed fast-forward ended
+  the run with `MERGE_FAILED`. Orchestra stops them itself, as before.
 
 ## [0.1.1] - 2026-09-29
 

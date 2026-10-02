@@ -8,13 +8,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -506,6 +504,9 @@ func run(
 			return exitStatus(dispatch.ExitSetup)
 		}
 	}
+	// From here to the end, closing the log included, a stop signal doesn't end orchestra outright.
+	stops := catchStops()
+	defer stops.release()
 	log, err := dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
@@ -524,7 +525,7 @@ func run(
 		return exitStatus(dispatch.ExitSetup)
 	}
 	if cfg.Feature != "" {
-		epic, code := runFeature(ctx, cfg, log, stdin, stdout, stderr)
+		epic, code := runFeature(ctx, stops, cfg, log, stdin, stdout, stderr)
 		if epic == "" {
 			return status(code)
 		}
@@ -571,7 +572,7 @@ func run(
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
 		ctx, cancelRun := context.WithCancelCause(ctx)
-		stopWatching := watchSignals(func(s os.Signal) {
+		stops.on(func(s os.Signal) {
 			why := "by " + signalName(s)
 			if s == os.Interrupt {
 				why = "with Ctrl+C"
@@ -583,10 +584,9 @@ func run(
 		orch.SetSink(sink)
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
+		stops.on(nil)
 		stopDrain()
-		if !leaving(stopWatching()) {
-			organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
-		}
+		organPhase(orch, cfg, stops, log, code, orch.Final(), sink, cancelOrgans)
 		return status(code)
 	}
 
@@ -603,7 +603,11 @@ func run(
 	}
 	p := tea.NewProgram(tui.NewDashboard(cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
 		tea.WithoutSignalHandler())
-	stopWatching := watchSignals(func(os.Signal) { p.Quit() })
+	quitBy := make(chan os.Signal, 1)
+	stops.on(func(s os.Signal) {
+		quitBy <- s // before the quit, so stoppedBy finds it
+		go p.Quit() // Quit waits for the dashboard to have started; a stop mustn't wait
+	})
 	// the dashboard hears it from the loop
 	stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 	progSink := tui.NewProgramSink(p)
@@ -627,7 +631,14 @@ func run(
 	}()
 	final, err := p.Run()
 	close(ran)
-	sig := stopWatching()
+	// A stop signal from here on doesn't end orchestra while the loop winds down: it goes to the
+	// organ phase, which it skips.
+	stops.on(nil)
+	var sig os.Signal // the one that closed the dashboard, if any
+	select {
+	case sig = <-quitBy:
+	default:
+	}
 	stopDrain()
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
@@ -650,13 +661,11 @@ func run(
 		// Run waits for its workers, whose commands stop with it or at their time limits, and names
 		// any not back within a second below the INTERRUPTED line.
 		<-codes
-		if !leaving(sig) {
-			organPhase(orch, cfg, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
-		}
+		organPhase(orch, cfg, stops, log, dispatch.ExitInterrupted, msg, sink, cancelOrgans)
 		return exitStatus(dispatch.ExitInterrupted)
 	}
 	code := <-codes
-	organPhase(orch, cfg, log, code, orch.Final(), sink, cancelOrgans)
+	organPhase(orch, cfg, stops, log, code, orch.Final(), sink, cancelOrgans)
 	return status(code)
 }
 
@@ -680,82 +689,6 @@ func stoppedBy(m tui.Dashboard, err error, loopDone bool, sig os.Signal) string 
 	}
 }
 
-// stopSignals stop a run the way Ctrl+C does: SIGINT, kill's SIGTERM, and SIGHUP from closing the
-// terminal or Herdr pane.
-var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
-
-// watchSignals calls onStop, once and from another goroutine, when orchestra receives one of
-// stopSignals. The function it returns stops watching and returns the signal that came, or nil;
-// from then on the signals have their default effect again.
-func watchSignals(onStop func(os.Signal)) (stop func() os.Signal) {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, stopSignals...)
-	got := make(chan os.Signal, 1)
-	done := make(chan struct{})
-	go func() {
-		select {
-		case s := <-sigs:
-			got <- s // before onStop, so whatever onStop makes happen finds it
-			onStop(s)
-		case <-done:
-		}
-	}()
-	return func() os.Signal {
-		signal.Stop(sigs)
-		close(done)
-		select {
-		case s := <-got:
-			return s
-		default:
-			return nil
-		}
-	}
-}
-
-// watchDrain calls onDrain, from another goroutine, each time orchestra receives one of
-// drainSignals. The function it returns stops watching.
-func watchDrain(onDrain func()) (stop func()) {
-	if len(drainSignals) == 0 {
-		return func() {} // signal.Notify with no signals would catch them all
-	}
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, drainSignals...)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-sigs:
-				onDrain()
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() {
-		signal.Stop(sigs)
-		close(done)
-	}
-}
-
-func signalName(s os.Signal) string {
-	switch s {
-	case os.Interrupt:
-		return "SIGINT"
-	case syscall.SIGTERM:
-		return "SIGTERM"
-	case syscall.SIGHUP:
-		return "SIGHUP"
-	}
-	if len(drainSignals) > 0 && s == drainSignals[0] {
-		return "SIGUSR1"
-	}
-	return s.String()
-}
-
-// leaving reports whether sig asks orchestra to go away rather than stop the run: SIGTERM, or
-// SIGHUP when nobody is left to read the report. The organ phase is skipped then.
-func leaving(sig os.Signal) bool { return sig == syscall.SIGTERM || sig == syscall.SIGHUP }
-
 // organs is what organPhase needs from the loop.
 type organs interface {
 	FinishTriage(ctx context.Context)
@@ -764,15 +697,19 @@ type organs interface {
 }
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
-// the run report. Ctrl+C, or another of stopSignals, skips whatever is left.
-func organPhase(
-	orch organs, c options, log *dispatch.Log, code int, final string, out tui.Printer, cancelOrgans func(),
+// the run report. Ctrl+C, or another of stopSignals, skips whatever is left, and one that came
+// while the loop wound down skips it all; so does SIGTERM or SIGHUP at any time in the run.
+func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, code int, final string, out tui.Printer,
+	cancelOrgans func(),
 ) {
-	if !c.Triage && !c.Review {
+	if !c.Triage && !c.Review || stops.leaving() {
 		return
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), stopSignals...)
+	ctx, stop := stops.context(context.Background())
 	defer stop()
+	if ctx.Err() != nil {
+		return
+	}
 	go func() {
 		<-ctx.Done()
 		cancelOrgans()

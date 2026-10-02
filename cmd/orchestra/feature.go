@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -57,8 +56,11 @@ type featureRun struct {
 // returns the epic's ID, which the run is then scoped to. When there is nothing to run it returns
 // "" and the exit code; what happened has been reported.
 func runFeature(
-	ctx context.Context, c options, log *dispatch.Log, stdin io.Reader, stdout, stderr io.Writer,
+	ctx context.Context, stops *stopWatch, c options, log *dispatch.Log, stdin io.Reader, stdout, stderr io.Writer,
 ) (string, int) {
+	// Ctrl+C stops the feature run as it does the loop; until the plan is filed, nothing is left.
+	ctx, stop := stops.context(ctx)
+	defer stop()
 	f, isFile := stdin.(*os.File)
 	return featureRun{
 		request:  c.Feature,
@@ -75,10 +77,6 @@ func runFeature(
 }
 
 func (f featureRun) run(ctx context.Context) (string, int) {
-	// Ctrl+C stops the feature run as it does the loop; until the plan is filed, nothing is left.
-	ctx, stop := signal.NotifyContext(ctx, stopSignals...)
-	defer stop()
-
 	// The loop checks the main checkout before each ticket; a feature run checks it before filing,
 	// so that a run that couldn't start files nothing.
 	if dirty, err := (git.Git{}).DirtyTree(ctx, f.repo); err != nil {

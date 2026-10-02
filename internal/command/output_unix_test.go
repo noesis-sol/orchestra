@@ -5,8 +5,12 @@ package command
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -84,5 +88,39 @@ func TestOutputFailureIsTyped(t *testing.T) {
 	_, err = Output(context.Background(), 200*time.Millisecond, "", "sh", hang...)
 	if !errors.As(err, &e) || !e.Stopped || e.Err.Error() != "timed out after 200ms" {
 		t.Errorf("stopped command: %#v", err)
+	}
+}
+
+// A command runs in a process group of its own, so a Ctrl+C typed at the terminal, which goes to
+// orchestra's group, doesn't reach it.
+func TestOutputRunsTheCommandInItsOwnProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := Output(ctx, ReadLimit, dir, "sh", "-c", "echo $$ > pid.tmp; mv pid.tmp pid; sleep 5")
+		done <- err
+	}()
+	defer func() {
+		cancel()
+		<-done // stopped by the cancel; the test is about its group
+	}()
+	var pid int
+	for start := time.Now(); pid == 0; time.Sleep(10 * time.Millisecond) {
+		if b, err := os.ReadFile(filepath.Join(dir, "pid")); err == nil {
+			if pid, err = strconv.Atoi(strings.TrimSpace(string(b))); err != nil {
+				t.Fatal(err)
+			}
+		} else if time.Since(start) > 5*time.Second {
+			t.Fatal("the command didn't start")
+		}
+	}
+	pgid, err := syscall.Getpgid(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pgid == syscall.Getpgrp() || pgid != pid {
+		t.Errorf("the command (pid %d) is in process group %d, the caller in %d; want a group of its own",
+			pid, pgid, syscall.Getpgrp())
 	}
 }
