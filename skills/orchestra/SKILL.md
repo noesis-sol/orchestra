@@ -218,7 +218,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
-| `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
+| `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, merge by hand (below). If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. |
 
 Lines about single tickets, which don't stop the run:
@@ -239,6 +239,11 @@ Lines about single tickets, which don't stop the run:
   holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or
   when a run starts and finds it merged by hand. If the ticket needs no merge after all, remove it:
   `bd label remove <id> unmerged`.
+- `<id> is left running in tab <tab> and labelled 'unmerged'`, just before the last line: the run
+  ended with that ticket's worker still on it (the worker that stopped the run, or any at
+  `INTERRUPTED`). If the worker closes it after the run, nothing merges it, so the label holds the
+  tickets it blocks until it is merged by hand (below) or dispatched again and merged. While the
+  ticket isn't closed the label holds nothing.
 - `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
@@ -302,7 +307,8 @@ Lines about single tickets, which don't stop the run:
 
 ## Finishing a ticket by hand
 
-When a worker finished after the run had stopped (the ticket is closed but nothing merged it):
+When a worker finished after the run had stopped (the ticket is closed but nothing merged it; the
+run labelled it `unmerged` as it ended, so the tickets it blocks wait until it is merged):
 
 1. Check it: `bd show <id>` is closed, `git log --oneline <base>..wt/<id>` has a commit naming it,
    and `git -C <worktree> status --porcelain` is empty.

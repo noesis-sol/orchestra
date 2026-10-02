@@ -140,15 +140,42 @@ func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) {
 	}
 	o.unmerged[id] = why
 	o.mu.Unlock()
+	o.label(ctx, id)
+}
+
+// leaveRunning labels UnmergedLabel each ticket whose worker is left running as the run ends, after
+// a stop or an interrupt. Its worker may still commit and close it once orchestra has gone, and
+// nothing merges it then: bd ready would count it done, and a later run would start the tickets it
+// blocks on a Base without its code. The label holds them (see loadUnmerged) until it merges, by
+// hand or when the ticket, still open, is dispatched again; while the ticket isn't closed it holds
+// nothing.
+func (o *Loop) leaveRunning(ctx context.Context) {
+	for _, st := range o.activeList() {
+		id := st.Ticket
+		o.mu.Lock()
+		labelled := o.labelled[id]
+		o.mu.Unlock()
+		if labelled || !o.label(ctx, id) {
+			continue
+		}
+		o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
+			"  %s is left running in tab %s and labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
+				"in later runs too", id, st.Tab, UnmergedLabel, id, o.cfg.Base)})
+	}
+}
+
+// label adds UnmergedLabel to the ticket, warning when bd can't, and reports whether it did.
+func (o *Loop) label(ctx context.Context, id string) bool {
 	if err := o.notes.AddLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 			"  LABEL_FAILED: bd could not label %s '%s'%s; "+
 				"later runs may start the tickets it blocks before it merges (bd label add %s %s)",
 			id, UnmergedLabel, because(err), id, UnmergedLabel)})
-		return
+		return false
 	}
 	o.setLabelled(id, true)
+	return true
 }
 
 // merged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.

@@ -236,9 +236,11 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 		case <-ctx.Done():
 			o.settle(keep, results, inflight)
+			o.leaveRunning(keep)
 			return o.interrupted(ctx)
 		}
 	}
+	o.leaveRunning(keep) // the workers that stopped the run, if any
 	switch {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)

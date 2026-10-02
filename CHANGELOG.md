@@ -332,6 +332,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket whose worker is left running when the run ends (`PAUSED`,
+  `BLOCKED`, `TICKET_LIMIT` or another stop, or `INTERRUPTED`) is labelled
+  `unmerged`. Its worker could close it after orchestra had gone, and nothing
+  merged it; the next run then counted it done and started the tickets it
+  blocks on a base without its code. They now wait, as for any ticket left
+  unmerged, until it is merged by hand or dispatched again and merged. The log
+  says `<id> is left running in tab <tab> and labelled 'unmerged'` before the
+  last line, or `LABEL_FAILED` when bd can't label it.
 - A prompt pasted to a worker (a conflict handed back, a nudge to continue, an
   answered question, the environment probe's command) returns once Herdr sees
   the worker start on it (`herdr agent prompt --wait --until working --until
