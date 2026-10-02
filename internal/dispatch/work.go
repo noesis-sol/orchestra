@@ -374,14 +374,17 @@ func escapeOf(err error) *project.EscapeError {
 }
 
 // setAsideEscaped sets ticket id aside without starting a worker: part of the path to its run files
-// in worktree wt leads out of the worktree through a symlink, which orchestra won't follow (see
-// project.OpenRun). The worker's own files are its to change, so only the user can say whether the
-// link is safe to remove.
+// in worktree wt is a symlink orchestra won't follow (see project.OpenRun), because it leads out of
+// the worktree or stands in place of .orchestra or .orchestra/run. The worker's own files are its to
+// change, so only the user can say whether the link is safe to remove.
 func (o *Loop) setAsideEscaped(ctx context.Context, id, wt string, e *project.EscapeError) *stopReason {
 	o.log.Raw("", fmt.Errorf("%s: %w", id, e))
 	why := fmt.Sprintf("its worktree's %s points outside the worktree", e.Path)
+	if errors.Is(e, project.ErrRunLink) {
+		why = fmt.Sprintf("its worktree's %s is a symlink", e.Path)
+	}
 	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s (%s), so no worker was started on it: "+
-		"orchestra writes a worker's run files only inside its worktree. "+
+		"orchestra writes a worker's run files only in its worktree's own .orchestra/run folder, which git ignores. "+
 		"Look at what it points to, remove the link (rm %s), then bring it back with: bd undefer %s",
 		why, filepath.Join(wt, e.Path), filepath.Join(wt, e.Path), id))
 	if err := o.deferAside(ctx, id, why); err != nil {

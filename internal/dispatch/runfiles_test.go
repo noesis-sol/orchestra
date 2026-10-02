@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// A worktree whose .orchestra/run, or a file orchestra writes there, is a symlink leading out of
-// the worktree has its ticket set aside without a worker: nothing is written or removed where the
+// A worktree whose .orchestra/run is a symlink, or a file orchestra writes there one leading out of
+// the worktree, has its ticket set aside without a worker: nothing is written or removed where the
 // link points, and the other tickets still run.
 func TestRunFilesOutsideTheWorktreeSetTheTicketAside(t *testing.T) {
 	t.Parallel()
@@ -61,6 +61,9 @@ func TestRunFilesOutsideTheWorktreeSetTheTicketAside(t *testing.T) {
 				t.Errorf("A is %s, want deferred", st)
 			}
 			why := "its worktree's " + filepath.FromSlash(tc.link) + " points outside the worktree"
+			if filepath.Base(tc.link) == "run" {
+				why = "its worktree's " + filepath.FromSlash(tc.link) + " is a symlink"
+			}
 			if notes := h.beads.notesOf("A"); !strings.Contains(notes, why) || !strings.Contains(notes, "bd undefer A") {
 				t.Errorf("A's notes don't say %q and how to bring it back:\n%s", why, notes)
 			}
@@ -88,7 +91,8 @@ func TestRunFilesOutsideTheWorktreeSetTheTicketAside(t *testing.T) {
 }
 
 // The probe's file in the main checkout is reached through an os.Root too: with the main
-// checkout's .orchestra/run a symlink out of it, the probe fails without touching what it points to.
+// checkout's .orchestra/run a symlink, here out of it, the probe fails without touching what it
+// points to.
 func TestProbeKeepsInsideTheMainCheckout(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -101,8 +105,8 @@ func TestProbeKeepsInsideTheMainCheckout(t *testing.T) {
 	}
 	o := h.loop()
 	_, err := o.probe(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "points outside") {
-		t.Errorf("probe: %v, want a failure naming the link that points outside", err)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(".orchestra", "run")+" in "+h.repo+" is a symlink") {
+		t.Errorf("probe: %v, want a failure naming the link", err)
 	}
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Errorf("the probe wrote outside the main checkout: %v", entries)

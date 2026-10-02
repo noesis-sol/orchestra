@@ -19,6 +19,13 @@ func plant(t *testing.T, wt, link, target string) {
 	}
 }
 
+// runWrites writes each run file orchestra writes in this package, by its name in .orchestra/run/,
+// in the worktree wt.
+var runWrites = map[string]func(wt string) error{
+	MCPConfigName: func(wt string) error { _, err := WriteMCPConfig(wt, slices.Clip(testServers[:2])); return err },
+	"prompt.md":   func(wt string) error { _, err := WriteLaunchPrompt(wt, "x-1", "Work on x-1."); return err },
+}
+
 // listing is every file under dir, with its content.
 func listing(t *testing.T, dir string) map[string]string {
 	t.Helper()
@@ -41,11 +48,7 @@ func listing(t *testing.T, dir string) map[string]string {
 // .orchestra, .orchestra/run or the file, is an *EscapeError naming it, and nothing outside is
 // written or removed.
 func TestRunFilesStayInsideTheWorktree(t *testing.T) {
-	writes := map[string]func(wt string) error{
-		MCPConfigName: func(wt string) error { _, err := WriteMCPConfig(wt, slices.Clip(testServers[:2])); return err },
-		"prompt.md":   func(wt string) error { _, err := WriteLaunchPrompt(wt, "x-1", "Work on x-1."); return err },
-	}
-	for name, write := range writes {
+	for name, write := range runWrites {
 		for _, link := range []string{Dir, filepath.Join(Dir, RunName), RunPath(name)} {
 			t.Run(name+" through "+link, func(t *testing.T) {
 				wt, outside := t.TempDir(), t.TempDir()
@@ -69,29 +72,5 @@ func TestRunFilesStayInsideTheWorktree(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// A symlink that stays inside the worktree is followed, and a link that leads nowhere is refused.
-func TestRunFilesThroughLinksInsideTheWorktree(t *testing.T) {
-	wt := t.TempDir()
-	plant(t, wt, filepath.Join(Dir, RunName), filepath.Join("..", "elsewhere"))
-	if err := os.MkdirAll(filepath.Join(wt, "elsewhere"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path, err := WriteMCPConfig(wt, slices.Clip(testServers[:2]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fi, err := os.Stat(filepath.Join(wt, "elsewhere", MCPConfigName))
-	if err != nil || fi.Mode().Perm() != 0o600 || path != filepath.Join(wt, RunPath(MCPConfigName)) {
-		t.Errorf("%s: %v %v", path, fi, err)
-	}
-
-	gone := t.TempDir()
-	plant(t, gone, Dir, filepath.Join(t.TempDir(), "missing"))
-	var e *EscapeError
-	if _, err := WriteLaunchPrompt(gone, "x-1", "Work on x-1."); !errors.As(err, &e) || e.Path != Dir {
-		t.Errorf("err = %v, want an *EscapeError for %s", err, Dir)
 	}
 }

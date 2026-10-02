@@ -346,6 +346,15 @@ All notable changes to orchestra are documented here. The format follows
   unmerged, holding its dependents in every later run. A rebase conflict in a
   file with a space or a non-ASCII character in its name (`docs/My Guide.md`,
   `café.md`) now names that file, not two halves or quoted octal.
+- orchestra no longer writes a worker's run files through a symlink in place
+  of its worktree's `.orchestra` or `.orchestra/run` that stays inside the
+  worktree. git's ignore rules for the folder match a directory, not a link,
+  so with `.orchestra/run -> ../docs`, `mcp.json` (with the MCP servers'
+  secrets) and `prompt.md` landed in `docs/` as untracked files, for the
+  worker's `git add -A` to commit and the merge to bring into the branch. Such
+  a link, wherever it points, now sets the ticket aside without a worker
+  (`RUN_FILES_OUTSIDE: its worktree's .orchestra/run is a symlink -> <id>
+  deferred …`), with a note on the ticket naming the link.
 - A worker's reporting hooks can no longer block it. Under dash (`/bin/sh` on
   Debian and Ubuntu) a hook whose write failed, as every write does once the
   worker has removed `.orchestra/run/` (`git clean -fdx`, `git stash --all`),
@@ -391,8 +400,8 @@ All notable changes to orchestra are documented here. The format follows
   out of the main checkout for the environment probe's file: each goes through
   an `os.Root` at the checkout. A worktree whose `.orchestra/run`, or a file in
   it, leads outside is set aside without a worker (`RUN_FILES_OUTSIDE: its
-  worktree's .orchestra/run points outside the worktree -> <id> deferred …`),
-  with a note on the ticket, and the run goes on.
+  worktree's .orchestra/run/mcp.json points outside the worktree -> <id>
+  deferred …`), with a note on the ticket, and the run goes on.
 - A ticket whose ID isn't a plain name, such as `x-a/b` or `x-../../y` (Beads
   checks only the prefix, and workers file tickets themselves), is set aside
   before its ID is made a worktree folder or a branch (`BAD_TICKET_ID: IDs
