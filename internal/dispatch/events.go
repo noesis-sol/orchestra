@@ -132,6 +132,15 @@ func (l *Log) Close() error {
 	return l.f.Close()
 }
 
+// CloseNow closes the log file without waiting for the notifications still being shown, which
+// show anyway: each runs in its own process group. It is for orchestra quitting at once.
+func (l *Log) CloseNow() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.closed = true
+	return l.f.Close()
+}
+
 // Line logs text.
 func (l *Log) Line(t time.Time, text string) {
 	line := t.Format("2006-01-02 15:04:05") + " " + text

@@ -364,6 +364,17 @@ All notable changes to orchestra are documented here. The format follows
   in `testing/synctest` bubbles, on the loop's real durations and git in
   memory, so they no longer depend on how loaded the machine is. The loop's
   test-only timing settings are gone, but for its status poll.
+- A second Ctrl+C (or SIGTERM, or SIGHUP) quits a stopped run that hangs while
+  it winds down, which before took `kill -9` from another terminal. With
+  nothing under way that a stop doesn't cut short, it quits at once with exit
+  code 130, logging and printing `INTERRUPTED: quit at once with Ctrl+C,
+  leaving <id> (tab <tab>) running with its tab and worktree open`. With a
+  merge or worktree setup under way, it says so and how to abandon it
+  (`<id>'s merge is under way; press Ctrl+C again to abandon it (the
+  repository may be left half merged)`) and skips triage and the report, as
+  before; a third quits, adding `abandoned <id>'s merge: git may still finish
+  it, so check git status before starting another run`. During triage and the
+  report, Ctrl+C skips them as before, and the one after it quits.
 
 ### Fixed
 

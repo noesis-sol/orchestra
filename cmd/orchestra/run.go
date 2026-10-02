@@ -599,15 +599,11 @@ func run(
 	}
 	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
 		ctx, cancelRun := context.WithCancelCause(ctx)
-		stops.on(func(s os.Signal) {
-			why := "by " + signalName(s)
-			if s == os.Interrupt {
-				why = "with Ctrl+C"
-			}
-			cancelRun(dispatch.InterruptedError(why))
-		})
-		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 		sink := tui.Printer{Out: stdout}
+		// The signal that stops the loop is the first; one while it winds down ends orchestra.
+		stops.quitWith(quitter{loop: orch, log: log, out: sink, exit: os.Exit})
+		stops.on(func(s os.Signal) { cancelRun(dispatch.InterruptedError(stoppedHow(s))) })
+		stopDrain := watchDrain(func() { orch.Drain("by " + signalName(drainSignals[0])) })
 		orch.SetSink(sink)
 		orch.ReportInterrupt = true
 		code := orch.Run(ctx)
@@ -658,8 +654,8 @@ func run(
 	}()
 	final, err := p.Run()
 	close(ran)
-	// A stop signal from here on doesn't end orchestra while the loop winds down: it goes to the
-	// organ phase, which it skips.
+	// A stop signal from here on goes to the organ phase, which it skips, until quitWith below: one
+	// that came while the dashboard closed was a further one, if a signal closed it.
 	stops.on(nil)
 	var sig os.Signal // the one that closed the dashboard, if any
 	select {
@@ -677,6 +673,8 @@ func run(
 	}
 	// From here the loop's events are printed, starting with any the dashboard never received.
 	progSink.Handoff(sink, m.Received())
+	// With the terminal restored, a stop signal while the stopped loop winds down can end orchestra.
+	stops.quitWith(quitter{loop: orch, log: log, out: sink, exit: os.Exit})
 	if why := stoppedBy(m, err, len(codes) > 0, sig); why != "" {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		cancel()
@@ -684,6 +682,7 @@ func run(
 		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
 		log.Alert(ev.Time, msg)
 		sink.Event(ev)
+		stops.windDown()
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
 		// Run waits for its workers, whose commands stop with it or at their time limits, and names
 		// any not back within a second below the INTERRUPTED line.
@@ -725,7 +724,8 @@ type organs interface {
 
 // organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
 // the run report. Ctrl+C, or another of stopSignals, skips whatever is left, and one that came
-// while the loop wound down skips it all; so does SIGTERM or SIGHUP at any time in the run.
+// while the loop wound down skips it all; so does SIGTERM or SIGHUP at any time in the run. The
+// one after the signal that skipped it ends orchestra (see stopWatch.further).
 func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, code int, final string, out tui.Printer,
 	cancelOrgans func(),
 ) {

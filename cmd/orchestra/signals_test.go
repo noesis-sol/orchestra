@@ -13,7 +13,7 @@ import (
 )
 
 // Each stop signal goes to one phase: the one listening, or the next to listen when it comes
-// between phases or while a stopped loop winds down.
+// between phases, or while a stopped loop winds down before the watch knows how to quit (quitWith).
 func TestEachStopSignalGoesToOnePhase(t *testing.T) {
 	stops := catchStops()
 	defer stops.release()

@@ -168,6 +168,12 @@ them with `bd dep add`) only when they approve.
   tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
   Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>` (the PID from
   `lsof -t .orchestra/run/orchestra.lock`); don't press keys in its pane. Ctrl+C stops at once instead, leaving the workers running.
+- **A stopped run that hangs** while it winds down (`waiting for <id>'s merge to finish…` for minutes)
+  quits on a second Ctrl+C, SIGTERM or SIGHUP, without triage or the report: at once when nothing
+  is under way that a stop doesn't cut short; otherwise the second says what is
+  (`<id>'s merge is under way; press Ctrl+C again to abandon it …`) and a third abandons it. Asked
+  by the user to end such a run for them, `kill <pid>` it again rather than `kill -9`, which skips
+  the last log line; tell them first if a merge is under way.
 - **A `PROBE:` line means the run is still going**: it held for the environment, and after the
   wait it names, a worker without a ticket (tab `orchestra-probe`, in the main checkout) runs one
   command. `PROBE_OK` means the run takes tickets again; otherwise it ends with `ENVIRONMENT`. Don't
@@ -235,6 +241,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, merge by hand (below). If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
+| `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled: label each ticket the line leaves running (`bd label add <id> unmerged`). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
 
 Lines about single tickets, which don't stop the run:

@@ -43,9 +43,9 @@ func TestStopSignalsAreCaught(t *testing.T) {
 	}
 }
 
-// Once the loop has been stopped, more stop signals don't end orchestra while it winds down,
-// which may be finishing a merge: the test process would die here if they did. They wait for the
-// next phase, the first of them stopping it.
+// Once the loop has been stopped, more stop signals stay caught while it winds down, which may be
+// finishing a merge: the test process would die here if they didn't. Until the watch knows how to
+// quit (quitWith), they wait for the next phase, the first of them stopping it.
 func TestStopSignalsStayCaughtWhileTheLoopWindsDown(t *testing.T) {
 	stops := catchStops()
 	defer stops.release()

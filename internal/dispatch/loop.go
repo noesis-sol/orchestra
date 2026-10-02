@@ -82,7 +82,7 @@ type Loop struct {
 	askedIDs  map[string]askedWorker
 	parentOf  map[string]string // the parent of each ticket dispatched or left unmerged, which waits for it
 	doneSaid  map[string]bool   // parents said to be ready to close
-	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop, such as "merge"
+	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
 
 	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
 	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
@@ -225,6 +225,19 @@ func (o *Loop) clearActive(id string) {
 	delete(o.active, id)
 }
 
+// What a worker does that Ctrl+C doesn't stop, once begun.
+const (
+	finishMerge    = "merge"          // rebasing, merging and the notes on it
+	finishWorktree = "worktree setup" // making or reusing the ticket's worktree
+)
+
+// Finishing is what a ticket's worker is doing that a stop doesn't cut short: What is "merge" or
+// "worktree setup".
+type Finishing struct {
+	Ticket string
+	What   string
+}
+
 // markFinishing marks what ticket id's worker is doing that Ctrl+C doesn't stop, for the wait
 // after it to name; the function it returns clears the mark.
 func (o *Loop) markFinishing(id, what string) func() {
@@ -256,6 +269,19 @@ func (o *Loop) activeList() []Status {
 // Running returns the tickets being worked on, oldest first: after an interrupt, those whose
 // workers were left running.
 func (o *Loop) Running() []Status { return o.activeList() }
+
+// Finishing returns what the workers are doing that a stop doesn't cut short, by ticket: after an
+// interrupt, what the run still waits for before it ends.
+func (o *Loop) Finishing() []Finishing {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	var l []Finishing
+	for id, what := range o.finishing {
+		l = append(l, Finishing{Ticket: id, What: what})
+	}
+	sort.Slice(l, func(i, j int) bool { return l[i].Ticket < l[j].Ticket })
+	return l
+}
 
 // orDefault is d, or def if d is zero.
 func orDefault(d, def time.Duration) time.Duration {

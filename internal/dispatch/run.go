@@ -40,6 +40,13 @@ func InterruptLine(why string, running []Status) string {
 	if len(running) == 0 {
 		return "INTERRUPTED: stopped " + why + "; a running worker keeps its tab and worktree"
 	}
+	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open",
+		why, workerNames(running))
+}
+
+// workerNames names the running workers with their tabs, for a line about the workers a stop
+// leaves running.
+func workerNames(running []Status) string {
 	var names []string
 	for _, st := range running {
 		if st.Resolving {
@@ -50,8 +57,60 @@ func InterruptLine(why string, running []Status) string {
 		}
 		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
 	}
-	return fmt.Sprintf("INTERRUPTED: stopped %s while %s were running; their tabs and worktrees are left open",
-		why, strings.Join(names, ", "))
+	return strings.Join(names, ", ")
+}
+
+// QuitLine is the INTERRUPTED line for orchestra quitting at once, the way why says, rather than
+// wait for a stopped run to wind down or its organs. It names the workers left running and what
+// was abandoned under way (Finishing): the commands it had started run on and may still finish,
+// so git may be left part way through, its lock files held.
+func QuitLine(why string, running []Status, abandoned []Finishing) string {
+	line := "INTERRUPTED: quit at once " + why
+	switch len(running) {
+	case 0:
+	case 1:
+		line += ", leaving " + workerNames(running) + " running with its tab and worktree open"
+	default:
+		line += ", leaving " + workerNames(running) + " running with their tabs and worktrees open"
+	}
+	if len(abandoned) > 0 {
+		line += fmt.Sprintf("; abandoned %s: git may still finish %s, so check git status before starting another run",
+			finishingList(abandoned), pronoun(abandoned))
+	}
+	return line
+}
+
+// UnderWayLine says what a stopped run is finishing (Finishing), which a further stop signal
+// would abandon: again says how to send one, as in "press Ctrl+C again".
+func UnderWayLine(under []Finishing, again string) string {
+	verb, risk := "is", "its worktree may be left half made"
+	if len(under) > 1 {
+		verb, risk = "are", "their worktrees may be left half made"
+	}
+	if slices.ContainsFunc(under, func(f Finishing) bool { return f.What == finishMerge }) {
+		risk = "the repository may be left half merged"
+	}
+	return fmt.Sprintf("  %s %s under way; %s to abandon %s (%s)", finishingList(under), verb, again, pronoun(under), risk)
+}
+
+// finishingList names what is under way, as in "A's merge and B's worktree setup".
+func finishingList(under []Finishing) string {
+	l := make([]string, len(under))
+	for i, f := range under {
+		l[i] = f.Ticket + "'s " + f.What
+	}
+	if len(l) == 1 {
+		return l[0]
+	}
+	return strings.Join(l[:len(l)-1], ", ") + " and " + l[len(l)-1]
+}
+
+// pronoun is "it" for one thing under way and "them" for several.
+func pronoun(under []Finishing) string {
+	if len(under) == 1 {
+		return "it"
+	}
+	return "them"
 }
 
 // readyPoll is how often Run reads bd ready while workers run: tickets become ready mid-run (a

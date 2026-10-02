@@ -44,7 +44,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 	// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 	keep := context.WithoutCancel(ctx)
-	defer o.markFinishing(id, "merge")()
+	defer o.markFinishing(id, finishMerge)()
 	repo, queue := &held{mu: &o.repoMu}, &held{mu: &o.mergeMu} // let go of even if the merge panics
 	defer repo.release()
 	queue.lock()
