@@ -380,6 +380,15 @@ All notable changes to orchestra are documented here. The format follows
   dashboard turns the ticket's own row from "? for you" back to working rather
   than adding a second one. An earlier worker is now looked at before its
   worktree is touched, so a branch is never rebased under a live worker.
+- A `bd` that fails to read a ticket's status while its worker is idle (another
+  `bd` holding the database, a 30-second time limit) no longer decides how the
+  worker settled. It used to count as an unknown status: the worker counted as
+  settled at once, so one whose turn ended mid-ticket wasn't told to continue
+  and the run paused, and one idle a moment with its ticket still open was
+  deferred while it carried on. The failure is logged, the wait goes on, and
+  only a minute's worth of failed reads in a row stops the run, with
+  `STATUS_UNREADABLE for <id>: its status could not be read 20 times in a row
+  while its worker was idle: <error>`.
 
 ## [0.1.1] - 2026-09-29
 

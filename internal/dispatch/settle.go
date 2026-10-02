@@ -12,18 +12,19 @@ import (
 // 5. An idle worker has settled only once idleSettled says so: Herdr takes a worker for idle while
 // it starts up, and while it waits on its own background command. hooks says it reports through
 // them, since from when (zero: any report counts); begun is when it was confirmed started on its
-// prompt. A status Herdr fails to read says
-// nothing about the worker, so the wait goes on through maxFailedReads of them in a row before the
-// run stops. A worker still going Config.TicketLimit after started (dispatch) stops the run;
-// without a limit, one still going after longRunning is reported once. Each status read goes to
-// report (nil: none), for the dashboard. A worker whose turn ends with its ticket still in progress
-// is told to continue, up to maxNudges times, before its idle grace runs (see nudge).
+// prompt. A status Herdr fails to read says nothing about the worker, so the wait goes on through
+// maxFailedReads of them in a row before the run stops; so does one of its ticket's that bd fails
+// to read while the worker is idle, which neither settles it nor tells it to continue. A worker
+// still going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still
+// going after longRunning is reported once. Each status read goes to report (nil: none), for the
+// dashboard. A worker whose turn ends with its ticket still in progress is told to continue, up to
+// maxNudges times, before its idle grace runs (see nudge).
 func (o *Loop) waitSettled(
 	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, since time.Time,
 	report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
 	var blockedSince, idleSince, unknownSince, nudgedAt time.Time
-	failed, nudges := 0, 0
+	failed, unread, nudges := 0, 0, 0
 	warned := false
 	for {
 		if ctx.Err() != nil {
@@ -64,25 +65,36 @@ func (o *Loop) waitSettled(
 				return time.Time{}, errInterrupted // the status read was cut short, and says nothing
 			}
 			if err != nil {
-				o.log.Raw("", err)
-			}
-			if ts == "in_progress" && nudges < maxNudges && o.stoppedMidTicket(ctx, id, wt, hooks, later(since, nudgedAt)) {
-				nudges++
-				nudgedAt = time.Now() // its next turn's Stop comes after
-				if o.nudge(ctx, id, agent, nudges) {
-					idleSince = time.Time{}
-					if !sleep(ctx, o.pollEvery()) {
+				if unread++; unread == 1 {
+					o.log.Raw("", fmt.Errorf("cannot read the status of %s; still waiting on its worker: %w", id, err))
+				}
+				if unread >= maxFailedReads {
+					return time.Time{}, halt(ExitTool, stopStatusUnreadable,
+						" for %s: its status could not be read %d times in a row while its worker was idle%s; "+
+							"stopping rather than guessing (worktree %s and tab %s left open)",
+						id, unread, because(err), wt, tab).causedBy(err)
+				}
+			} else {
+				unread = 0
+				if ts == "in_progress" && nudges < maxNudges &&
+					o.stoppedMidTicket(ctx, id, wt, hooks, later(since, nudgedAt)) {
+					nudges++
+					nudgedAt = time.Now() // its next turn's Stop comes after
+					if o.nudge(ctx, id, agent, nudges) {
+						idleSince = time.Time{}
+						if !sleep(ctx, o.pollEvery()) {
+							return time.Time{}, errInterrupted
+						}
+						continue
+					}
+					if ctx.Err() != nil {
 						return time.Time{}, errInterrupted
 					}
-					continue
 				}
-				if ctx.Err() != nil {
-					return time.Time{}, errInterrupted
+				if done, why := o.idleSettled(ts, wt, hooks, since, time.Since(idleSince), time.Since(begun)); done {
+					o.info("  %s settled: %s", id, why)
+					return idleSince, nil
 				}
-			}
-			if done, why := o.idleSettled(ts, wt, hooks, since, time.Since(idleSince), time.Since(begun)); done {
-				o.info("  %s settled: %s", id, why)
-				return idleSince, nil
 			}
 		} else {
 			idleSince = time.Time{}
@@ -138,8 +150,8 @@ const unknownLimit = 5 * time.Minute
 // longRunning is how long a worker may go on, without a ticket limit, before the run reports it.
 const longRunning = 2 * time.Hour
 
-// maxFailedReads is how many failed status reads in a row (a minute's worth) stop the wait on a
-// worker.
+// maxFailedReads is how many failed status reads in a row (a minute's worth), of the worker's from
+// Herdr or of its ticket's from bd, stop the wait on a worker.
 const maxFailedReads = 20
 
 // readStatus reads the worker's status, trying up to tries times while Herdr fails to answer. A
