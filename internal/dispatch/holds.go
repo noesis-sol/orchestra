@@ -131,8 +131,8 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 }
 
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
-// this run and, through its UnmergedLabel, in later ones.
-func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) {
+// this run and, through its UnmergedLabel, in later ones. It reports whether bd labelled it.
+func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) bool {
 	o.markAside(id)
 	o.mu.Lock()
 	if o.unmerged == nil {
@@ -140,7 +140,7 @@ func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) {
 	}
 	o.unmerged[id] = why
 	o.mu.Unlock()
-	o.label(ctx, id)
+	return o.label(ctx, id)
 }
 
 // leaveRunning labels UnmergedLabel each ticket whose worker is left running as the run ends, after

@@ -387,6 +387,20 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- An asked ticket whose worker, answered in its tab, claims it again and
+  closes it while every slot is busy is no longer stranded on its branch:
+  `bd ready` lists only open tickets, so it never came back, nothing merged
+  it, and the dashboard showed it as "? for you" to the end. The run now reads
+  each asked ticket every 30 seconds and before it ends. One closed, or in
+  progress again while the run takes tickets, is adopted at once, beside the
+  running tickets even beyond `--concurrent`, and merged as usual (`ANSWERED:
+  <id> was closed in tab <tab> after <question> (…), so its worker is
+  adopted`). One its worker defers shows as deferred; one in progress whose
+  worker has gone from its tab stops the run with `PAUSED`. As the run ends,
+  an asked ticket left in progress, or closed but unmerged because the run
+  stopped (`ASKED_UNMERGED`), is labelled `unmerged`, so later runs hold the
+  tickets it blocks. The dashboard's "Needs you" count also drops when an
+  asked ticket's row turns deferred, for review or stopped.
 - An organ answer whose `structured_output` is `null` is read from `result`,
   as one without `structured_output` is; it was read as an answer of zero
   values, and failed as `unknown triage cause ""`. Where `result` carries the

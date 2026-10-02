@@ -588,11 +588,16 @@ func (m *Dashboard) rowIndex(id string) int {
 	return -1
 }
 
+// setRow sets ticket id's row to state, with note. A row that leaves rowAsked (its worker deferred
+// the ticket in its tab, say) no longer needs the maintainer.
 func (m *Dashboard) setRow(id string, state rowState, note string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id})
 		i = len(m.rows) - 1
+	}
+	if m.rows[i].state == rowAsked && state != rowAsked {
+		m.asked--
 	}
 	m.rows[i].state, m.rows[i].note = state, note
 }

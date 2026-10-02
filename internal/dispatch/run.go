@@ -179,6 +179,28 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 	}
 	keep := context.WithoutCancel(ctx) // for reopening tickets as the run holds
+	// follow adopts the asked tickets whose workers claimed them again or closed them in their tabs
+	// (see followAsked), and reports whether it adopted any. Their workers are at work already, so
+	// they count as running at once, even beyond Concurrency. Once something has stopped the run,
+	// they are left to leaveAsked.
+	follow := func() bool {
+		if stop != nil || ctx.Err() != nil {
+			return false
+		}
+		adopt, s := o.followAsked(ctx, inflight, !drained && o.count < c.Limit)
+		for _, a := range adopt {
+			inflight[a.t.ID] = true
+			go func(a adoption) {
+				r := result{id: a.t.ID}
+				r.stop = o.adoptAsked(ctx, a, &r.how)
+				results <- r
+			}(a)
+		}
+		if s != nil {
+			stop = s
+		}
+		return len(adopt) > 0
+	}
 	for {
 		winding()
 		// Workers failing at once, whichever ticket they have, hold the run: said once, before
@@ -236,6 +258,10 @@ func (o *Loop) Run(ctx context.Context) int {
 			}(*t)
 		}
 		if len(inflight) == 0 {
+			// Before the run ends, the asked tickets are read once more.
+			if follow() {
+				continue
+			}
 			// Held for the environment, the run may probe the machine and take tickets again.
 			if stop == nil || len(alsoStopped) > 0 {
 				break
@@ -280,6 +306,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		case r := <-o.drainReqs:
 			hear(r)
 		case <-poll.C:
+			follow()
 			if o.footprintOn() && len(inflight) > 1 {
 				o.readEdits() // warns when two workers edit the same file
 			}
@@ -296,10 +323,12 @@ func (o *Loop) Run(ctx context.Context) int {
 		case <-ctx.Done():
 			o.settle(keep, results, inflight)
 			o.leaveRunning(keep)
+			o.leaveAsked(keep)
 			return o.interrupted(ctx)
 		}
 	}
 	o.leaveRunning(keep) // the workers that stopped the run, if any
+	o.leaveAsked(keep)
 	switch {
 	case ctx.Err() != nil:
 		return o.interrupted(ctx)

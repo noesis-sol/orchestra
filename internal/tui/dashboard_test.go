@@ -182,6 +182,33 @@ func TestAnsweredTicketGoesBackToWorkInItsRow(t *testing.T) {
 	}
 }
 
+// An asked ticket its worker deferred in its tab shows as deferred, and no longer counts as needing
+// the maintainer.
+func TestAskedTicketDeferredLeavesTheAskedCount(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m,
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
+		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
+		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-1", Detail: "by the worker"})
+	if len(m.rows) != 1 || m.rows[0].state != rowDeferred || m.asked != 0 || m.deferred != 1 {
+		t.Fatalf("rows %+v, asked %d, deferred %d; want k-1 deferred and nothing asked", m.rows, m.asked, m.deferred)
+	}
+}
+
+// An asked ticket whose worker closed it in its tab is adopted without a second dispatch: its row
+// goes from "? for you" to done.
+func TestAskedTicketAdoptedGoesToDone(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m = runEvents(m,
+		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
+		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
+		dispatch.Event{Kind: dispatch.EvAnswered, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
+		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-1", Detail: "abc123 merged into batch"})
+	if len(m.rows) != 1 || m.rows[0].state != rowDone || m.asked != 0 || m.closed != 1 {
+		t.Fatalf("rows %+v, asked %d, closed %d; want k-1 done and nothing asked", m.rows, m.asked, m.closed)
+	}
+}
+
 func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 	title := "Competing timelines on the same view and property fight each other every frame"
 	got := wrapLines(title, 30, titleLines)

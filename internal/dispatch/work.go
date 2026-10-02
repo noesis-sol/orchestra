@@ -208,6 +208,49 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, w.hooks, adopted, o.newWatcher(w.wt, base).report, how)
 }
 
+// adoptAsked takes on the worker an asked ticket left in its tab, which claimed the ticket again or
+// closed it there without it coming back through bd ready (see followAsked), as work takes on one
+// that is still working when its ticket comes back. One idle with its ticket in progress is told
+// the answer is in; one that closed it settles at once and its work is merged. It returns and sets
+// how as work does.
+func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop *stopReason) {
+	t, w := a.t, a.w
+	id := t.ID
+	defer func() {
+		if p := recover(); p != nil {
+			stop = o.panicStop(id, p)
+		} else if stop == nil {
+			o.clearActive(id)
+		}
+	}()
+	// Active from now on, so a stop or Ctrl+C before it settles leaves it labelled (see leaveRunning):
+	// it is no longer asked.
+	o.setActive(Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()})
+	if HasLabel(t, UnmergedLabel) {
+		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
+	}
+	agent := o.agentName(id)
+	st, err := o.readStatus(ctx, agent, 5)
+	adopted := time.Now() // its hooks reported anything older in its earlier turns
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	if err != nil {
+		return halt(ExitTool, stopHerdrFailed,
+			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
+	}
+	switch {
+	case t.Status != "closed" && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, w):
+		o.info("  %s's worker in tab %s was told %s is answered and carries on; adopting it", id, w.tab, w.question)
+		st = StateWorking
+	case ctx.Err() != nil:
+		return errInterrupted
+	default:
+		o.info("  %s's worker in tab %s is %s with the ticket %s; adopting it", id, w.tab, st, t.Status)
+	}
+	return o.adopt(ctx, t, agent, w, st, adopted, how)
+}
+
 // budgetNote tells a worker the time its ticket has when the run sets a ticket limit, as agents pace
 // themselves to a stated budget; "" without one.
 func (o *Loop) budgetNote() string {
