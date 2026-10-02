@@ -405,12 +405,11 @@ func linkedWorktree(ctx context.Context, repo string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	commonDir, err := command.Output(ctx, command.ReadLimit, repo,
-		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	commonDir, err := git.Git{}.CommonDir(ctx, repo)
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(gitDir) != strings.TrimSpace(commonDir), nil
+	return strings.TrimSpace(gitDir) != commonDir, nil
 }
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket

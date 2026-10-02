@@ -55,6 +55,17 @@ func (Git) CurrentBranch(ctx context.Context, repo string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// CommonDir returns the absolute path of the git directory repo's worktrees share: the main
+// checkout's .git, or a bare repository's own directory.
+func (Git) CommonDir(ctx context.Context, repo string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo,
+		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from
 // 'git worktree list --porcelain'. A worktree git marks prunable (its folder is gone) doesn't count.
 func parseWorktreeOf(porcelain, branch string) string {

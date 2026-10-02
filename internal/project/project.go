@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 )
 
@@ -78,12 +79,11 @@ func fileExists(p string) bool {
 // before .orchestra/.gitignore was committed. Earlier versions excluded all of .orchestra/, which
 // would hide the committed prompt; that entry is narrowed to run/.
 func EnsureRunExcluded(ctx context.Context, repo string) error {
-	common, err := command.Output(ctx, command.ReadLimit, repo,
-		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	common, err := git.Git{}.CommonDir(ctx, repo)
 	if err != nil {
 		return err
 	}
-	exclude := filepath.Join(strings.TrimSpace(common), "info", "exclude")
+	exclude := filepath.Join(common, "info", "exclude")
 	b, err := os.ReadFile(exclude)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err // rewriting it would lose the entries it holds

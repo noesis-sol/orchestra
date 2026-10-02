@@ -108,7 +108,7 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 	}
 	for key, p := range user.Projects {
 		for _, root := range roots {
-			if samePath(key, root) {
+			if SamePath(key, root) {
 				add(ScopeLocal, p.MCPServers)
 				break
 			}
@@ -194,8 +194,8 @@ func readJSON(path string, v any) error {
 	return nil
 }
 
-// samePath reports whether a and b are the same directory, following symbolic links.
-func samePath(a, b string) bool {
+// SamePath reports whether a and b are the same directory, following symbolic links.
+func SamePath(a, b string) bool {
 	if filepath.Clean(a) == filepath.Clean(b) {
 		return true
 	}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 )
 
@@ -19,21 +19,13 @@ const MCPConfigName = "mcp.json"
 // by: repo, then its main checkout when repo is a linked worktree. mcp.Discover takes them.
 func ConfigRoots(ctx context.Context, repo string) []string {
 	roots := []string{repo}
-	common, err := command.Output(ctx, command.ReadLimit, repo,
-		"git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if common = strings.TrimSpace(common); err == nil && filepath.Base(common) == ".git" {
-		if main := filepath.Dir(common); !sameDir(main, repo) {
+	common, err := git.Git{}.CommonDir(ctx, repo)
+	if err == nil && filepath.Base(common) == ".git" {
+		if main := filepath.Dir(common); !mcp.SamePath(main, repo) {
 			roots = append(roots, main)
 		}
 	}
 	return roots
-}
-
-// sameDir reports whether a and b are the same directory, following symbolic links.
-func sameDir(a, b string) bool {
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	return filepath.Clean(a) == filepath.Clean(b) || errA == nil && errB == nil && ra == rb
 }
 
 // AvailableServers names the servers that can be given to workers.
