@@ -11,7 +11,7 @@ import (
 
 // A command run with input reads it on its stdin.
 func TestOutputWithInputFeedsTheCommand(t *testing.T) {
-	out, err := OutputWithInput(context.Background(), ReadLimit, "", "the evidence\n", "sh", "-c", "echo got; cat")
+	out, err := OutputWithInput(context.Background(), ReadLimit, "", nil, "the evidence\n", "sh", "-c", "echo got; cat")
 	if err != nil || out != "got\nthe evidence\n" {
 		t.Errorf("got %q, %v", out, err)
 	}
@@ -21,7 +21,7 @@ func TestOutputWithInputFeedsTheCommand(t *testing.T) {
 // with Output.
 func TestOutputWithInputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
 	start := time.Now()
-	out, err := OutputWithInput(context.Background(), ReadLimit, "", "in", "sh", "-c", "sleep 5 & cat")
+	out, err := OutputWithInput(context.Background(), ReadLimit, "", nil, "in", "sh", "-c", "sleep 5 & cat")
 	if err != nil || out != "in" {
 		t.Errorf("got %q, %v", out, err)
 	}
@@ -33,7 +33,7 @@ func TestOutputWithInputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
 // A command stopped at its time limit fails with an error that names the limit and that errors.Is
 // takes for a deadline, while a cancelled one doesn't.
 func TestATimedOutCommandIsADeadline(t *testing.T) {
-	_, err := OutputWithInput(context.Background(), 200*time.Millisecond, "", "in", "sh", "-c", "exec sleep 5")
+	_, err := OutputWithInput(context.Background(), 200*time.Millisecond, "", nil, "in", "sh", "-c", "exec sleep 5")
 	if err == nil || err.Error() != "sh -c exec sleep 5: timed out after 200ms" {
 		t.Errorf("error %v, want it to name the limit", err)
 	}

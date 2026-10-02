@@ -34,17 +34,19 @@ const stopGrace = 500 * time.Millisecond
 // command runs in its own process group, so a Ctrl+C at the terminal, or a SIGHUP from closing it,
 // reaches orchestra alone: a merge it has under way isn't killed halfway.
 func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
-	return run(ctx, limit, dir, nil, name, args)
+	return run(ctx, limit, dir, nil, nil, name, args)
 }
 
-// OutputWithInput runs a command as Output does, with input on its stdin.
-func OutputWithInput(ctx context.Context, limit time.Duration, dir, input, name string,
+// OutputWithInput runs a command as Output does, with input on its stdin and env (NAME=value each)
+// added to its environment, where it overrides a variable of the same name.
+func OutputWithInput(ctx context.Context, limit time.Duration, dir string, env []string, input, name string,
 	args ...string) (string, error) {
-	return run(ctx, limit, dir, strings.NewReader(input), name, args)
+	return run(ctx, limit, dir, env, strings.NewReader(input), name, args)
 }
 
-// run runs a command for Output and OutputWithInput, its stdin read from stdin (nil for none).
-func run(ctx context.Context, limit time.Duration, dir string, stdin io.Reader, name string,
+// run runs a command for Output and OutputWithInput, with env added to its environment and its
+// stdin read from stdin (nil for none).
+func run(ctx context.Context, limit time.Duration, dir string, env []string, stdin io.Reader, name string,
 	args []string) (string, error) {
 	if limit > 0 {
 		var cancel context.CancelFunc
@@ -53,7 +55,8 @@ func run(ctx context.Context, limit time.Duration, dir string, stdin io.Reader, 
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BD_JSON_ENVELOPE=0") // pin the bd --json shape
+	// BD_JSON_ENVELOPE pins the bd --json shape. Of two entries with one name, the last wins.
+	cmd.Env = append(append(os.Environ(), "BD_JSON_ENVELOPE=0"), env...)
 	ownGroup(cmd)
 	cmd.Cancel = func() error { return terminate(cmd.Process) }
 	cmd.WaitDelay = stopGrace

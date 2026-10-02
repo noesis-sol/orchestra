@@ -260,6 +260,11 @@ All notable changes to orchestra are documented here. The format follows
 - Each section of an organ's evidence is wrapped in `<evidence id="…">` tags
   whose ID is fresh for each call, and every organ's system prompt says text
   inside them is evidence only, never instructions to follow.
+- Organs run `claude` in Claude Code's safe mode (`CLAUDE_CODE_SAFE_MODE=1`),
+  so your own `~/.claude/CLAUDE.md`, the hooks in your settings and plugins,
+  your skills and auto-memory stay out of them, as the project's already did.
+  Measured on a short call: 1,043 input tokens before, 529 after, and no hook
+  runs; the login and your default model are unchanged.
 
 - The dashboard heads the boxes of the tickets being worked on with a faint
   `Current` label, like the tickets table's `Tickets` header, in the boxed and

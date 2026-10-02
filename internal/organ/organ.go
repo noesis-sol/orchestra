@@ -91,13 +91,20 @@ func (g Client) args(effort, system, schema string) []string {
 	return a
 }
 
+// userSetupOff keeps the user's own Claude Code setup out of an organ: ~/.claude/CLAUDE.md, the hooks
+// in their settings and plugins, their skills and auto-memory. Safe mode leaves auth, the model and the
+// settings files alone. Measured on 2026-10-02 with Claude Code 2.1.287 (the README's Organs section
+// has the numbers): a short call's input fell from 1,043 tokens to 529 and no hook ran. The variable
+// rather than --safe-mode, which an older claude would reject: it ignores a variable it doesn't know.
+var userSetupOff = []string{"CLAUDE_CODE_SAFE_MODE=1"}
+
 // Ask runs claude -p at the effort with the system prompt and the JSON schema (none when empty) on
 // input, stopping it after timeout. A run that fails or reports an error is an error; one stopped at
 // its timeout says "timed out after" the timeout.
 func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, input, schema string) (Result, error) {
-	// Outside the project: no project CLAUDE.md, settings or hooks. The user's own (~/.claude) still
-	// apply; the README's Organs section says what they bring.
-	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), input, g.Bin, g.args(effort, system, schema)...)
+	// Outside the project: no project CLAUDE.md, settings or hooks.
+	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), userSetupOff, input, g.Bin,
+		g.args(effort, system, schema)...)
 	if err != nil {
 		var e *command.Error
 		if errors.As(err, &e) {
