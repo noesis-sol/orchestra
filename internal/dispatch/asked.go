@@ -50,7 +50,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 		case "closed":
 			adopt = append(adopt, o.answeredInTab(t, w))
 		case "in_progress":
-			st, err := o.agents.Status(ctx, o.agentName(id))
+			st, err := o.earlierState(ctx, id, w, 1)
 			if ctx.Err() != nil {
 				return adopt, nil
 			}

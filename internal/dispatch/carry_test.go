@@ -123,7 +123,8 @@ func TestTicketLeftRunningAndClosedBetweenRunsIsMergedByTheNext(t *testing.T) {
 		if o, code := h.run(); code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") {
 			t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "PAUSED"}}
+		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"),
+			Left: "PAUSED"}}
 		if got := saved(t, h); !reflect.DeepEqual(got, want) {
 			t.Fatalf("saved %+v\nwant %+v", got, want)
 		}
@@ -523,7 +524,7 @@ func TestInterruptedRunLeavesItsWorkerToTheNext(t *testing.T) {
 					t.Fatalf("run 1: exit %d, final %q", code, o.Final())
 				}
 				want := []project.LeftWorker{
-					{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
+					{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
 				if got := saved(t, h); !reflect.DeepEqual(got, want) {
 					t.Fatalf("saved %+v\nwant %+v", got, want)
 				}

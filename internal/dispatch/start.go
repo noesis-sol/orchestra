@@ -57,7 +57,8 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 
 // nameLeft names agent the worker in pane, in ticket id's tab, whose start Ctrl+C cut short before it
 // was named: the next run looks for it by that name. Herdr may not have recognised it yet; it then
-// stays unnamed, and the next run takes it for gone.
+// stays unnamed, and the next run, finding no agent by that name, looks for it in its pane (see
+// earlierState).
 func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 	name, kind, st, err := o.namer.PaneAgent(ctx, pane)
 	switch {
@@ -65,7 +66,7 @@ func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 		o.log.Raw("", err)
 	case st == StateGone:
 		o.log.Raw("", fmt.Errorf("%s's start was cut short before Herdr saw a worker in tab %s to name %s: "+
-			"one still coming up there is left unnamed, and the next run won't find it", id, tab, agent))
+			"one still coming up there is left unnamed, for the next run to look for in its pane", id, tab, agent))
 	case kind != o.cfg.AgentKind || name == agent:
 	default:
 		if err := o.namer.RenameAgent(ctx, pane, agent); err != nil {
@@ -172,7 +173,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 	}()
 	// From here on a worker may be running in the tab, at work on its prompt, even if Ctrl+C or a
 	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried).
-	place := func() { o.place(id, askedWorker{tab: tab, wt: wt, hooks: report != nil}) }
+	place := func() { o.place(id, askedWorker{tab: tab, pane: pane, wt: wt, hooks: report != nil}) }
 	place()
 	// Cut short once a worker may have been launched, the start names it if Herdr has it in the
 	// pane, so the next run, which looks for it by name, finds it.

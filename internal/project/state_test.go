@@ -17,7 +17,7 @@ func TestStateRoundTrip(t *testing.T) {
 	want := RunState{Saved: time.Date(2026, 10, 2, 9, 30, 0, 0, time.UTC), Workers: []LeftWorker{
 		{Ticket: "x-1", Agent: "x-1", Tab: "w1:t3", Worktree: "/wt/x-1", Hooks: true, Question: "x-9",
 			QuestionTitle: "which way?"},
-		{Ticket: "x-2", Agent: "x-2", Tab: "w1:t4", Worktree: "/wt/x-2", Left: "PAUSED"},
+		{Ticket: "x-2", Agent: "x-2", Tab: "w1:t4", Pane: "w1:p6", Worktree: "/wt/x-2", Left: "PAUSED"},
 	}}
 	if err := SaveState(repo, want); err != nil {
 		t.Fatal(err)

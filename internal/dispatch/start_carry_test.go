@@ -32,7 +32,8 @@ func runCutAtNaming(t *testing.T, h *harness) (*Loop, int) {
 
 // savedCut is what a run cut short as A's worker was being named saves for the next one.
 func savedCut(h *harness) []project.LeftWorker {
-	return []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
+	return []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"),
+		Left: "INTERRUPTED"}}
 }
 
 // The worker is still at work when the next run starts: the run cut short named it as it stopped,
@@ -131,7 +132,8 @@ func TestFailedStartLeavesItsWorkerToTheNext(t *testing.T) {
 		if o, code := h.run(); code != ExitTool || !strings.HasPrefix(o.Final(), "START_FAILED for A in tab tab1") {
 			t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "START_FAILED"}}
+		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"),
+			Left: "START_FAILED"}}
 		if got := saved(t, h); !reflect.DeepEqual(got, want) {
 			t.Fatalf("saved %+v\nwant %+v", got, want)
 		}

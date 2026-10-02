@@ -21,9 +21,12 @@ const StateName = "state.json"
 
 // LeftWorker is a worker a run left behind in its tab, as the next run reads it.
 type LeftWorker struct {
-	Ticket   string `json:"ticket"`
-	Agent    string `json:"agent"` // its Herdr name
-	Tab      string `json:"tab"`
+	Ticket string `json:"ticket"`
+	Agent  string `json:"agent"` // its Herdr name
+	Tab    string `json:"tab"`
+	// The pane it was started in, where the next run looks for it when Herdr has no agent under its
+	// name: one whose start the run cut short came up unnamed. Empty when not known.
+	Pane     string `json:"pane,omitempty"`
 	Worktree string `json:"worktree"`
 	Hooks    bool   `json:"hooks,omitempty"` // it reports through hooks
 	// For a ticket waiting on a question: the question's ID and title.

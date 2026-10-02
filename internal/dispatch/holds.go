@@ -223,6 +223,7 @@ func (o *Loop) unmergedWhy(id string) string {
 // loadCarried), it may instead be a worker that run left running when it stopped, with no question.
 type askedWorker struct {
 	tab, wt  string
+	pane     string // the pane it was started in, where it is looked for unnamed (see earlierState); "" if not known
 	question string // its ID
 	title    string
 	hooks    bool     // it reports through hooks

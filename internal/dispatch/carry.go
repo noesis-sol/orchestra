@@ -39,8 +39,8 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			o.log.Raw("", fmt.Errorf("not carrying over %q from the last run: %s", e.Ticket, why))
 			continue
 		}
-		w := askedWorker{tab: e.Tab, wt: e.Worktree, question: e.Question, title: e.QuestionTitle, hooks: e.Hooks,
-			left: stopKind(e.Left)}
+		w := askedWorker{tab: e.Tab, wt: e.Worktree, pane: e.Pane, question: e.Question, title: e.QuestionTitle,
+			hooks: e.Hooks, left: stopKind(e.Left)}
 		if !inScope(e.Ticket) {
 			o.keptOut = append(o.keptOut, e)
 			kept = append(kept, e.Ticket+" ("+w.state()+")")
@@ -89,10 +89,11 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
-// with its branch already on Base was merged by hand. A ticket in progress whose worker is gone has
-// nothing to carry on with it: it is warned about and noted, once, and the run goes on. Each of
-// those drops the worker. The question the ticket now waits on, if any, replaces the one in w, and a
-// ticket labelled UnmergedLabel loses the label when it merges.
+// with its branch already on Base was merged by hand. A worker left unnamed in its pane is named
+// (see earlierState). A ticket in progress whose worker is gone has nothing to carry on with it: it
+// is warned about and noted, once, and the run goes on. Each of those drops the worker. The
+// question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
+// UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
 	c := o.cfg
 	br := "wt/" + id
@@ -114,26 +115,60 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	if q := OpenQuestion(t); q != nil {
 		w.question, w.title, w.left = q.ID, q.Title, ""
 	}
-	if t.Status == "in_progress" {
-		st, err := o.agents.Status(ctx, o.agentName(id))
-		if err != nil {
-			o.log.Raw("", err) // followAsked reads it again
-		}
-		if err == nil && st == StateGone {
-			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-				"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
-				w.tab, w.after(), w.wt))
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
-				"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
-					"so it isn't carried over; reopen it to run it again (bd update %s --status open), or finish it by hand",
-				id, w.after(), w.tab, w.wt, id)})
-			return false
-		}
+	// Read whatever the ticket's status, so that a worker left unnamed is named before anything looks
+	// for it by its name.
+	st, err := o.earlierState(ctx, id, *w, 1)
+	if err != nil {
+		o.log.Raw("", err) // read again as the ticket is followed (followAsked) or comes back (work)
+	}
+	if t.Status == "in_progress" && err == nil && st == StateGone {
+		o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
+			"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
+			w.tab, w.after(), w.wt))
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
+			"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
+				"so it isn't carried over; reopen it to run it again (bd update %s --status open), or finish it by hand",
+			id, w.after(), w.tab, w.wt, id)})
+		return false
 	}
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true)
 	}
 	return true
+}
+
+// earlierState reads the state of ticket id's earlier worker by its Herdr name, as readStatus does
+// with tries; w says where it was left (zero if it wasn't). One whose start a run cut short before
+// Herdr saw it came up without that name (see nameLeft): with no agent under the name, an unnamed
+// agent of the configured kind in w's pane is named, and its state returned. Herdr numbers tabs and
+// panes afresh when it restarts, so the pane is looked in only while Herdr has w's tab labelled
+// with the ticket's ID, as merging checks before closing it. The error is Herdr not saying what is
+// there, or not taking the name.
+func (o *Loop) earlierState(ctx context.Context, id string, w askedWorker, tries int) (AgentState, error) {
+	agent := o.agentName(id)
+	st, err := o.readStatus(ctx, agent, tries)
+	if err != nil || st != StateGone || w.pane == "" {
+		return st, err
+	}
+	label, open, err := o.tabs.TabLabel(ctx, w.tab)
+	if err != nil {
+		return "", fmt.Errorf("cannot tell whether tab %s is still %s's, to look for its worker there: %w", w.tab, id, err)
+	}
+	if !open || label != id {
+		return StateGone, nil
+	}
+	name, kind, st, err := o.namer.PaneAgent(ctx, w.pane)
+	switch {
+	case err != nil:
+		return "", err
+	case st == StateGone || kind != o.cfg.AgentKind || name != "":
+		return StateGone, nil // nothing there, or another's
+	}
+	if err := o.namer.RenameAgent(ctx, w.pane, agent); err != nil {
+		return "", fmt.Errorf("cannot give %s's worker, unnamed in tab %s, the name %s: %w", id, w.tab, agent, err)
+	}
+	o.info("  %s's worker in tab %s came up without its name; named it %s", id, w.tab, agent)
+	return st, nil
 }
 
 // showTries reads ticket id, trying up to three times while bd fails, as when another bd holds the
@@ -165,8 +200,8 @@ func (o *Loop) saveCarried() {
 	var left []project.LeftWorker
 	var said []string
 	add := func(id string, w askedWorker) {
-		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Tab: w.tab, Worktree: w.wt,
-			Hooks: w.hooks, Question: w.question, QuestionTitle: w.title, Left: string(w.left)})
+		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Tab: w.tab, Pane: w.pane,
+			Worktree: w.wt, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title, Left: string(w.left)})
 		said = append(said, id+" ("+w.state()+")")
 	}
 	for _, id := range o.askedList() {

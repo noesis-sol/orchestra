@@ -42,11 +42,12 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	agent := o.agentName(id)
 
 	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
-	// Herdr keeps unique. It is looked at before the worktree is touched: one still at work there
+	// Herdr keeps unique, or, carried over from a run cut short as it started it, unnamed in its pane
+	// (see earlierState). It is looked at before the worktree is touched: one still at work there
 	// must not have its branch rebased under it. One left by a question asked in this run may have
 	// had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in. Any
 	// other is renamed so the new worker can have the name; its tab stays as it is.
-	st, err := o.readStatus(ctx, agent, 5)
+	st, err := o.earlierState(ctx, id, earlier, 5)
 	adopted := time.Now() // an adopted worker's hooks reported anything older in its earlier turns
 	if ctx.Err() != nil {
 		return errInterrupted
@@ -196,7 +197,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState, adopted time.Time,
 	how *settling) *stopReason {
 	id := t.ID
-	o.place(id, askedWorker{tab: w.tab, wt: w.wt, hooks: w.hooks})
+	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
 	o.footprintWorktree(id, w.wt)
 	head := o.checkout.Head(ctx, o.cfg.Repo, "wt/"+id)
 	started := time.Now()

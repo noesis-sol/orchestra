@@ -474,6 +474,16 @@ All notable changes to orchestra are documented here. The format follows
   before Herdr named it, the run names it as it stops, so the next run finds
   it; one that never came up is replaced by a new worker when its ticket
   comes back.
+- A worker launched just before Ctrl+C, and still unseen by Herdr as the run
+  stopped, is no longer dropped by the next run as gone. It came up without
+  the name the next run looks for it by, so once it had claimed its ticket
+  that run warned `WORKER_GONE` and dropped it while it was at work in its
+  tab, and before that it would start a second worker on the same worktree.
+  `.orchestra/run/state.json` now holds each worker's pane as well, and a run
+  that finds no worker under the name looks in that pane and names the
+  unnamed worker there (`<id>'s worker in tab <tab> came up without its
+  name; named it <name>`), only while Herdr still has the tab labelled with
+  the ticket's ID, since Herdr numbers tabs and panes afresh after a restart.
 - Merging a ticket no longer closes a tab that may not be its worker's. A
   run merging a ticket the last run left behind closed the tab ID that run
   recorded, but Herdr numbers its tabs afresh when it starts without
