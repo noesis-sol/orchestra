@@ -689,8 +689,8 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 			r.orch.Resume("from the dashboard")
 		}
 	}
-	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain), tea.WithInput(stdin), tea.WithOutput(stdout),
-		tea.WithoutSignalHandler())
+	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focusTab(ctx, r.log)),
+		tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
 		quitBy <- s // before the quit, so stoppedBy finds it
@@ -759,6 +759,19 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	code := <-codes
 	r.organs(code, r.orch.Final(), sink)
 	return code
+}
+
+// focusTab is the dashboard's callback for a worker's number: it switches Herdr to the worker's tab
+// in the background, as the dashboard mustn't wait on Herdr. A failure goes to the log and changes
+// nothing on screen.
+func focusTab(ctx context.Context, log *dispatch.Log) func(tab string) {
+	return func(tab string) {
+		go func() {
+			if err := (herdr.Terminal{}).FocusTab(ctx, tab); err != nil {
+				log.Raw("", fmt.Errorf("cannot switch to tab %s from the dashboard: %w", tab, err))
+			}
+		}()
+	}
 }
 
 // stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by

@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Number keys in the dashboard go to a worker's Herdr tab. The running
+  workers are numbered 1 to 9 in Current, oldest first, in the boxes and in
+  the one-line list, and pressing a number switches Herdr to that worker's
+  tab (`herdr tab focus`), in the background: a failure is logged and the
+  dashboard carries on. The hint names the keys (`1–3 go to a worker`); they
+  do nothing while the stop question is open.
 - A run carries over the workers the last run left in their tabs. As a run
   ends, however it ends, it writes those on tickets waiting on a question and
   those it left running (with what stopped it: `PAUSED`, `INTERRUPTED`, …) to

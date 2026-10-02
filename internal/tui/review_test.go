@@ -10,7 +10,7 @@ import (
 )
 
 func reviewDashboard() Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
 	m.width, m.height = 80, 40
 	return m
 }

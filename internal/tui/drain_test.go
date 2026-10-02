@@ -14,7 +14,7 @@ import (
 // drainDashboard is a dashboard with two workers running, recording the drain calls.
 func drainDashboard(calls *[]bool, cancelled *bool) Dashboard {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() { *cancelled = true },
-		func(on bool) { *calls = append(*calls, on) })
+		func(on bool) { *calls = append(*calls, on) }, func(string) {})
 	m.width, m.height = 80, 40
 	now := time.Now()
 	m.active = map[string]dispatch.Status{

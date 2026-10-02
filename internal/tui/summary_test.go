@@ -11,7 +11,7 @@ import (
 
 // endedRun is a dashboard whose run picked up and closed n tickets, then ended.
 func endedRun(n int) Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-10-02"}, func() {}, func(bool) {})
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-10-02"}, func() {}, func(bool) {}, func(string) {})
 	for i := range n {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},

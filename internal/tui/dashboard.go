@@ -30,6 +30,7 @@ var (
 
 var (
 	dimStyle      = lipgloss.NewStyle().Faint(true)
+	keyStyle      = lipgloss.NewStyle().Bold(true)                   // a key to press
 	pickedStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)  // picked up
 	closedStyle   = lipgloss.NewStyle().Foreground(green).Bold(true) // completed
 	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside
@@ -82,13 +83,16 @@ type Dashboard struct {
 	solo        dispatch.SoloState
 	began       time.Time
 	cancel      func()
-	drain       func(on bool) // asks the loop to stop after the running tickets, or with false to go on
+	drain       func(on bool)    // asks the loop to stop after the running tickets, or with false to go on
+	focus       func(tab string) // switches Herdr to a worker's tab; it must not block
 }
 
-// NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain.
-func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool)) Dashboard {
+// NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain;
+// a worker's number calls focus with its tab.
+func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus func(tab string)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain,
+		focus: focus}
 }
 
 // Init starts the spinner.
@@ -110,6 +114,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.drain(m.draining)
 		case m.asking && (key == "n" || key == "esc"):
 			m.asking = false
+		case !m.asking && len(key) == 1 && key >= "1" && key <= "9":
+			m.goTo(int(key[0] - '0'))
 		case key == "s" && (m.draining || !m.stopping): // a run already stopping has nothing to drain
 			m.asking = true
 		}
@@ -297,19 +303,32 @@ func current(panels string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, "  "+pickedStyle.Render("Current"), panels)
 }
 
-// hintLine says which keys do what: s stops after the running tickets, or once asked cancels
-// that; ctrl+c stops at once. A narrow pane gets a shorter form.
+// hintLine says which keys do what: the workers' numbers go to their tabs (not while the stop
+// question is open), s stops after the running tickets, or once asked cancels that; ctrl+c stops at
+// once. A narrow pane gets a shorter form, and then one without the numbers.
 func (m Dashboard) hintLine(w int) string {
-	long, short := "  s stops after current · ctrl+c stops now", " s: stop after · ctrl+c: now"
+	long, short := "s stops after current · ctrl+c stops now", "s: stop after · ctrl+c: now"
 	switch {
 	case m.draining:
-		long, short = "  s cancels the stop · ctrl+c stops now", " s: cancel stop · ctrl+c: now"
+		long, short = "s cancels the stop · ctrl+c stops now", "s: cancel stop · ctrl+c: now"
 	case m.stopping:
-		long, short = "  ctrl+c stops now", " ctrl+c: now"
+		long, short = "ctrl+c stops now", "ctrl+c: now"
 	}
-	hint := long
-	if ansi.StringWidth(long) > w {
-		hint = short
+	hints := []string{"  " + long, " " + short}
+	if n := min(len(m.active), numbered); n > 0 && !m.asking {
+		keys, goes, worker := "1", "goes to the worker", "worker"
+		if n > 1 {
+			keys, goes = fmt.Sprintf("1–%d", n), "go to a worker"
+		}
+		hints = append([]string{"  " + keys + " " + goes + " · " + long, " " + keys + ": " + worker + " · " + short},
+			hints...)
+	}
+	hint := hints[len(hints)-1]
+	for _, h := range hints {
+		if ansi.StringWidth(h) <= w {
+			hint = h
+			break
+		}
 	}
 	return dimStyle.Render(ansi.Truncate(hint, w, "…"))
 }
@@ -480,17 +499,33 @@ func (m Dashboard) workerList(w int) string {
 		return m.workerPanels(w)
 	}
 	var lines []string
-	for _, st := range running {
-		lines = append(lines, ansi.Truncate(m.workerHead(st)+"  "+oneLine(st.Title), w-4, "…"))
+	for i, st := range running {
+		lines = append(lines, ansi.Truncate(m.workerHead(i+1, st)+"  "+oneLine(st.Title), w-4, "…"))
 	}
 	return box(w, workerBorder(running...), strings.Join(lines, "\n"))
 }
 
-// workerHead is a running worker's first line: ID, worker status and time.
-func (m Dashboard) workerHead(st dispatch.Status) string {
+// numbered is how many running workers get a number, the key that goes to their tab.
+const numbered = 9
+
+// workerHead is the nth running worker's first line: its number, ID, worker status and time. A
+// worker beyond the ninth gets no number, only the room for one.
+func (m Dashboard) workerHead(n int, st dispatch.Status) string {
+	num := "  "
+	if n <= numbered {
+		num = keyStyle.Render(fmt.Sprint(n)) + " "
+	}
 	elapsed := time.Since(st.Started).Truncate(time.Second)
-	return fmt.Sprintf("%s %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
+	return fmt.Sprintf("%s%s %s  %s  %s", num, m.spin.View(), pickedStyle.Render(st.Ticket),
 		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()))
+}
+
+// goTo switches Herdr to the tab of the worker numbered n in Current, as the list stands now:
+// nothing if there is none or it has no tab yet. The callback runs Herdr in the background.
+func (m Dashboard) goTo(n int) {
+	if running := m.Running(); n <= min(len(running), numbered) && running[n-1].Tab != "" {
+		m.focus(running[n-1].Tab)
+	}
 }
 
 // workerBorder colours a box of running workers red if any waits for the maintainer.
@@ -503,13 +538,19 @@ func workerBorder(running ...dispatch.Status) lipgloss.TerminalColor {
 	return cyan
 }
 
-// Running returns the running workers, oldest first.
+// Running returns the running workers, oldest first; those started at the same time by ticket, so
+// their numbers stay put.
 func (m Dashboard) Running() []dispatch.Status {
 	var l []dispatch.Status
 	for _, st := range m.active {
 		l = append(l, st)
 	}
-	sort.Slice(l, func(i, j int) bool { return l[i].Started.Before(l[j].Started) })
+	sort.Slice(l, func(i, j int) bool {
+		if !l[i].Started.Equal(l[j].Started) {
+			return l[i].Started.Before(l[j].Started)
+		}
+		return l[i].Ticket < l[j].Ticket
+	})
 	return l
 }
 
@@ -532,17 +573,18 @@ func (m Dashboard) workerPanels(w int) string {
 		lines = 2 // keep several boxes within the pane
 	}
 	var boxes []string
-	for _, st := range running {
-		boxes = append(boxes, m.workerPanel(w, st, lines))
+	for i, st := range running {
+		boxes = append(boxes, m.workerPanel(w, i+1, st, lines))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, boxes...)
 }
 
-// workerPanel boxes one running ticket: ID, worker status and time, title, latest action.
-func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
+// workerPanel boxes the nth running ticket: its number, ID, worker status and time, title, latest
+// action.
+func (m Dashboard) workerPanel(w, n int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
-	lines := []string{fit(m.workerHead(st))}
+	lines := []string{fit(m.workerHead(n, st))}
 	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
 		lines = append(lines, "  "+l)
 	}

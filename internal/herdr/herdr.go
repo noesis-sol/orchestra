@@ -54,6 +54,12 @@ func (t Terminal) CloseTab(ctx context.Context, tab string) error {
 	return err
 }
 
+// FocusTab switches Herdr to the tab, as the maintainer would by clicking it.
+func (t Terminal) FocusTab(ctx context.Context, tab string) error {
+	_, err := run(ctx, command.ReadLimit, "tab", "focus", tab)
+	return err
+}
+
 // TabLabel returns the tab's label, and false if Herdr has no such tab (tab_not_found), which is no
 // error. Herdr numbers tabs afresh when it starts without restoring its last session, so an ID
 // recorded before may by then name another tab: its label tells them apart.
