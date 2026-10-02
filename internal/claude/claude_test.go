@@ -55,6 +55,11 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 	if u, ok := r.LastToolUse(wt); !ok || u.Event != "PostToolUse" || u.Tool != "" {
 		t.Errorf("after the tool: %+v %v", u, ok)
 	}
+	runHook(t, settings, "PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"x.go"}}`)
+	runHook(t, settings, "PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","tool_name":"Edit","error":"String to replace not found"}`)
+	if u, ok := r.LastToolUse(wt); !ok || u.Event != "PostToolUse" || u.Tool != "" {
+		t.Errorf("after a failed tool: %+v %v", u, ok)
+	}
 	runHook(t, settings, "Stop", `{"hook_event_name":"Stop"}`)
 	if u, _ := r.LastToolUse(wt); u.Event != "Stop" || time.Since(u.At) > time.Minute || time.Until(u.At) > time.Minute {
 		t.Errorf("at the end of the turn, reported just now: %+v", u)

@@ -337,6 +337,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker's reporting hooks can no longer block it. Under dash (`/bin/sh` on
+  Debian and Ubuntu) a hook whose write failed, as every write does once the
+  worker has removed `.orchestra/run/` (`git clean -fdx`, `git stash --all`),
+  exited 2, which Claude Code takes as "block": every tool call was refused and
+  the turn could not end, until the ticket limit or a person stopped it. Each
+  hook now ignores its errors, reads all its input and exits 0. A tool that
+  fails is now reported too (`PostToolUseFailure`), so the dashboard no longer
+  goes on showing the worker `editing` or `testing` while it thinks.
 - A ticket's title no longer reaches an organ outside the evidence tags.
   Triage's and the predictor's first line named the ticket by its ID and its
   title, where a title written to steer them (say, blaming the environment with

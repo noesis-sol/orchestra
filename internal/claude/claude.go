@@ -53,18 +53,26 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 }
 
 // hookSettings records the hook's input before each tool use (the tool and its arguments), and
-// only the event after a tool use and at the end of a turn: a finished tool's input carries its
-// whole output. Each write goes through a temporary file, so a reader never sees half of one.
-// Before each edit, the file's path is also appended to edits: the record of the last tool use is
-// replaced by the next one, and the scheduler needs every file the worker touches.
+// only the event after a tool use (failed or not) and at the end of a turn: a finished tool's input
+// carries its whole output. Each write goes through a temporary file, so a reader never sees half
+// of one. Before each edit, the file's path is also appended to edits: the record of the last tool
+// use is replaced by the next one, and the scheduler needs every file the worker touches.
+//
+// A reporting hook must never change what the worker does, and Claude Code takes a hook's exit
+// status 2 as "block": the tool call is refused, or the turn may not end. dash, /bin/sh on Debian
+// and Ubuntu, exits 2 when a redirection fails, as every write here does once the worker has
+// removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
+// stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
+// folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
 func hookSettings(activity, edits string) map[string]any {
 	write := func(from string) string {
 		return "f=" + command.ShellQuote(activity) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
 	event := func(name string) string {
-		return "cat >/dev/null; " + write(`printf '{"hook_event_name":"`+name+`"}'`)
+		return write(`printf '{"hook_event_name":"` + name + `"}'`)
 	}
 	hook := func(command string) []any {
+		command = "{ " + command + "; cat >/dev/null; } 2>/dev/null; exit 0"
 		return []any{map[string]any{"type": "command", "command": command}}
 	}
 	// The path is the first file_path (notebook_path for NotebookEdit) in the tool's input; a
@@ -77,7 +85,9 @@ func hookSettings(activity, edits string) map[string]any {
 			map[string]any{"matcher": "Edit|MultiEdit|Write|NotebookEdit", "hooks": hook(edited)},
 		},
 		"PostToolUse": []any{map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))}},
-		"Stop":        []any{map[string]any{"hooks": hook(event("Stop"))}},
+		// Claude Code runs PostToolUse after a tool that succeeded only; this is the other case.
+		"PostToolUseFailure": []any{map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))}},
+		"Stop":               []any{map[string]any{"hooks": hook(event("Stop"))}},
 	}}
 }
 
