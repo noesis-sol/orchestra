@@ -105,6 +105,11 @@ unless given `--force`; don't pass `--force` without the user's say-so. Afterwar
 
 Requirements, checked by `orchestra` at startup (it lists every problem, exit code 2):
 
+- set up with `orchestra init` (see above). In a repository without `.orchestra/worker-prompt.md`
+  or `.orchestra/settings.json` (or a legacy `.claude/worker-prompt.md`), `orchestra` and
+  `orchestra --feature` say first `orchestra isn't set up in this repository yet. Run this first:
+  orchestra init`, then any other problem under `Also fix before a run:`. Set the project up as
+  above, with the user's answers, rather than run `bd init` yourself;
 - inside a Herdr pane (`HERDR_ENV=1`). Worker tabs open in that pane's workspace, unless
   `--workspace ID` names another;
 - in the main checkout, on a branch, not a detached HEAD;
@@ -124,7 +129,7 @@ beside yours and keep your own pane free (the pane ID is read from Herdr's JSON 
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
     | jq -r .result.pane.pane_id)
 herdr pane run "$P" "orchestra"
-herdr pane wait-output "$P" --regex "dispatching|cannot start|READY_EMPTY|Completed the Run" --timeout 60000
+herdr pane wait-output "$P" --regex "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run" --timeout 60000
 herdr pane read "$P" --source visible
 ```
 

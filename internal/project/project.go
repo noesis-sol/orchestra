@@ -69,6 +69,14 @@ func Locate(repo string) Layout {
 	}
 }
 
+// IsSetUp reports whether the repository at repo was set up for orchestra: .orchestra/ has the
+// worker prompt or the settings, or .claude/ has the worker prompt of a project set up before
+// 'orchestra init'. A project with neither needs 'orchestra init' before it can run.
+func IsSetUp(repo string) bool {
+	return fileExists(filepath.Join(repo, Dir, promptName)) || fileExists(SettingsPath(repo)) ||
+		fileExists(filepath.Join(repo, legacyPrompt))
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil

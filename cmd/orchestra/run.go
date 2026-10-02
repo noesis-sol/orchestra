@@ -86,6 +86,8 @@ func envOr(getenv func(string) string, name, def string) string {
 type options struct {
 	dispatch.Config
 	WorkerPrompt string
+	ownPrompt    bool // WorkerPrompt came from -prompt or WORKER_PROMPT, not the project
+	notSetUp     bool // the project was never set up (see project.IsSetUp): run says to run orchestra init first
 	Notify       bool
 	Plain        bool
 	Triage       bool   // triage organ on each deferred ticket
@@ -302,7 +304,7 @@ func checkHost(ctx context.Context, c *options, getenv func(string) string) []st
 func resolveProject(ctx context.Context, c *options, given overrides, getenv func(string) string) []string {
 	var problems []string
 	lay := project.Locate(c.Repo)
-	if c.WorkerPrompt == "" {
+	if c.ownPrompt = c.WorkerPrompt != ""; !c.ownPrompt {
 		c.WorkerPrompt = lay.Prompt
 	} else if !filepath.IsAbs(c.WorkerPrompt) {
 		c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
@@ -374,15 +376,27 @@ func keep2[A, B any](problems *[]string, dstA *A, dstB *B) func(A, B, error) {
 	}
 }
 
-// checkCheckout checks that the project in c.Repo can be run: its worker prompt, its Beads
-// database and the ticket --ticket scopes the run to, a main checkout on a branch (c.Base), and a
-// folder for the worktrees outside it (c.WTRoot).
+// checkCheckout checks that the project in c.Repo can be run: that it was set up (c.notSetUp), its
+// worker prompt, its Beads database and the ticket --ticket scopes the run to, a main checkout on a
+// branch (c.Base), and a folder for the worktrees outside it (c.WTRoot).
 func checkCheckout(ctx context.Context, c *options) []string {
 	var problems []string
-	if b, err := os.ReadFile(c.WorkerPrompt); err != nil {
-		problems = append(problems, "Worker prompt not found: "+c.WorkerPrompt+". Set the project up with: orchestra init")
-	} else if !strings.Contains(string(b), "TICKET_ID") {
-		problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+c.WorkerPrompt)
+	// A project never set up is missing what orchestra init writes or sets up, the worker prompt and
+	// Beads: run says to run it, first, in place of those two problems.
+	c.notSetUp = !c.ownPrompt && !project.IsSetUp(c.Repo)
+	prompt := c.WorkerPrompt
+	if rel, err := filepath.Rel(c.Repo, prompt); err == nil && filepath.IsLocal(rel) {
+		prompt = rel
+	}
+	b, err := os.ReadFile(c.WorkerPrompt)
+	switch {
+	case c.notSetUp:
+	case err != nil && c.ownPrompt:
+		problems = append(problems, "Worker prompt not found: "+prompt+" (from -prompt or WORKER_PROMPT).")
+	case err != nil:
+		problems = append(problems, "Worker prompt not found: "+prompt+". Recreate it with: orchestra init")
+	case !strings.Contains(string(b), "TICKET_ID"):
+		problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+prompt)
 	}
 	idProblem := ""
 	if c.Ticket != "" {
@@ -393,7 +407,9 @@ func checkCheckout(ctx context.Context, c *options) []string {
 		}
 	}
 	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
-		problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+		if !c.notSetUp {
+			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+		}
 	} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
 		if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
 			problems = append(problems, p)
@@ -496,6 +512,11 @@ func exitCode(err error) int {
 	return dispatch.ExitOK
 }
 
+// notSetUpMessage is what a run says first in a project never set up, before its other problems.
+const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this first:\n" +
+	"  orchestra init\n" +
+	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
+
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 // A run's setup, held until it ends (the lock, the stop signals' watch, the log), and a --feature
 // request are here; runPlain or runDashboard runs the loop and the organ phase after it.
@@ -518,8 +539,15 @@ func run(
 		fmt.Fprintln(stdout, "orchestra", buildVersion())
 		return nil
 	}
-	if len(problems) > 0 {
-		fmt.Fprintln(stderr, "orchestra cannot start:")
+	if cfg.notSetUp || len(problems) > 0 {
+		heading := "orchestra cannot start:"
+		if cfg.notSetUp {
+			fmt.Fprintln(stderr, notSetUpMessage)
+			heading = "\nAlso fix before a run:"
+		}
+		if len(problems) > 0 {
+			fmt.Fprintln(stderr, heading)
+		}
 		for _, p := range problems {
 			fmt.Fprintln(stderr, "  - "+p)
 		}

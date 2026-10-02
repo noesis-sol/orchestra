@@ -269,7 +269,7 @@ func TestConfigLegacyLayout(t *testing.T) {
 
 // Every setup problem is reported, together; main exits with code 2 when there are any.
 func TestConfigSetupProblems(t *testing.T) {
-	repo := configFixture(t, "")
+	repo := configFixture(t, "{}") // set up, so the missing prompt and Beads are listed (see not_set_up_test.go)
 	if err := os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md")); err != nil {
 		t.Fatal(err)
 	}

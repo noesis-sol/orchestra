@@ -272,6 +272,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- In a repository `orchestra init` hasn't set up (no `.orchestra/worker-prompt.md`
+  or `settings.json`, nor a `.claude/worker-prompt.md` from before `init`),
+  `orchestra` and `orchestra --feature …` say first `orchestra isn't set up in
+  this repository yet. Run this first: orchestra init`, and exit 2, in place
+  of listing the missing worker prompt (by its absolute path) and Beads
+  database (`Run: bd init`), which `init` sets up. Other startup problems
+  follow it. A project with settings but no prompt names it as
+  `.orchestra/worker-prompt.md` and suggests `orchestra init` to recreate it.
 - On a terminal, a run that ends by itself closes with a bold green
   `♪ Completed the Run`, then, quieter, its tickets and how long it took
   (`2 tickets · 1h12m`), instead of `■ READY_EMPTY after 2 tickets`;
