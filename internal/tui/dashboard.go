@@ -237,7 +237,7 @@ func (m Dashboard) View() string {
 	w := max(m.width, 30)
 	title := m.titleLine(w)
 	if m.quitting {
-		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
+		return m.summary(w, title)
 	}
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
@@ -259,6 +259,29 @@ func (m Dashboard) View() string {
 		return overlay(v, modal, w)
 	}
 	return m.layout(w, title, lipgloss.JoinVertical(lipgloss.Left, m.promptLine(w), hint))
+}
+
+// summary is the last frame, which stays on screen as the run's summary: the title, the totals and the
+// tickets, ending with a newline for the line main prints below it. Bubble Tea drops the top lines of a
+// frame taller than the pane, never writing them, so in a pane of known height the tickets table shows
+// only its latest rows, or none, the totals take one line where their strip doesn't fit, and anything
+// still too tall is cut at the bottom: the title and the totals are what the summary is read for.
+func (m Dashboard) summary(w int, title string) string {
+	if m.height == 0 { // no pane to fit
+		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
+	}
+	keep := max(m.height-1, 1) // the frame's last line is the cursor's
+	stats := m.statsTable(w)
+	if lipgloss.Height(title)+lipgloss.Height(stats) > keep {
+		stats = m.statsLine(w)
+	}
+	parts := []string{title, stats}
+	room := keep - lipgloss.Height(title) - lipgloss.Height(stats)
+	if tickets := m.ticketsTable(w, room); lipgloss.Height(tickets) <= room {
+		parts = append(parts, tickets)
+	}
+	lines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, parts...), "\n")
+	return strings.Join(lines[:min(len(lines), keep)], "\n") + "\n"
 }
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea

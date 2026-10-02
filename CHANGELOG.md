@@ -344,6 +344,11 @@ All notable changes to orchestra are documented here. The format follows
   or `reading`, and `TRIAGE_FAILED` no longer replaces a deferred ticket's
   reason. A ticket deferred again in the same run shows its new reason, not
   the first deferral's triage verdict.
+- The dashboard's summary at the end of a run keeps its title line (the branch,
+  how long the run took) and its totals in a pane too short for every ticket:
+  the tickets table shows the latest ones and counts the earlier ones (`+N
+  earlier tickets, see the log`). The summary was drawn whole, and the terminal
+  lost its top lines, never writing them, not even to scrollback.
 - Three repository quirks no longer mislead orchestra's git calls. With
   `log.showSignature` set, signed commits no longer put git's signature check
   in place of a commit: the dashboard read `Good merged into …`, and the log and
