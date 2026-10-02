@@ -58,7 +58,7 @@ func TestLiveOrgans(t *testing.T) {
 		}
 	}
 
-	d := o.gatherDeferral(context.Background(), id, "", "the worker deferred it", os.Getenv("LIVE_WT"))
+	d := o.gatherDeferral(context.Background(), id, "the worker deferred it", os.Getenv("LIVE_WT"))
 	start := time.Now()
 	tr, err := o.organ.Triage(context.Background(), d)
 	if err != nil {

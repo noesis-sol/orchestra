@@ -417,7 +417,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
-		o.queueTriage(ctx, o.gatherDeferral(ctx, id, t.Title, "the worker deferred it", wt))
+		o.queueTriage(ctx, o.gatherDeferral(ctx, id, "the worker deferred it", wt))
 	case outcomePaused:
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf(
@@ -445,7 +445,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
 		settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
-		o.queueTriage(ctx, o.gatherDeferral(ctx, id, t.Title, settled, wt))
+		o.queueTriage(ctx, o.gatherDeferral(ctx, id, settled, wt))
 	}
 	return nil
 }

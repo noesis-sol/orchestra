@@ -78,7 +78,7 @@ func TestPredictedFootprintKeepsATicketApart(t *testing.T) {
 			}
 		}
 		b, _ := os.ReadFile(asked)
-		if n := strings.Count(string(b), "Predict the files ticket"); n != 1 || !strings.Contains(string(b), "ticket B (third)") ||
+		if n := strings.Count(string(b), "Predict the files ticket"); n != 1 || !strings.Contains(string(b), "Predict the files ticket B will change.\n") ||
 			!strings.Contains(string(b), "internal/x.go\ninternal/y.go") {
 			t.Errorf("the predictor was asked %d times, want once for B:\n%s", n, b)
 		}

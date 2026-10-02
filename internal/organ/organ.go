@@ -161,15 +161,17 @@ type Verdict struct {
 
 // Deferral is the evidence gathered when a ticket is set aside, while its tab is still open.
 type Deferral struct {
-	ID, Title, How string // How: who deferred it and why, as logged
-	Ticket         string // bd show
-	Screen         string // the end of the worker's terminal
-	Worktree       string // status, commits and diff stat
+	ID, How  string // How: who deferred it and why, as logged
+	Ticket   string // bd show
+	Screen   string // the end of the worker's terminal
+	Worktree string // status, commits and diff stat
 }
 
+// triageInput names the ticket by ID only: its title is ticket text, as untrusted as the rest, and
+// stays inside the evidence tags with bd show. How is orchestra's own words.
 func triageInput(d Deferral) string {
 	id := EvidenceID()
-	return "Ticket " + d.ID + " (" + d.Title + ") was set aside: " + d.How + "\n\n" +
+	return "Ticket " + d.ID + " was set aside: " + d.How + "\n\n" +
 		Section(id, "Ticket (bd show)", d.Ticket) +
 		Section(id, "End of the worker's terminal", d.Screen) +
 		Section(id, "Worktree state", d.Worktree)
@@ -272,11 +274,12 @@ const maxListed = 5000
 
 // Footprint is the evidence for predicting a ticket's files.
 type Footprint struct {
-	ID, Title string
-	Ticket    string   // bd show
-	Files     []string // git ls-files
+	ID     string
+	Ticket string   // bd show
+	Files  []string // git ls-files
 }
 
+// predictInput names the ticket by ID only, like triageInput: its title stays inside the tags.
 func predictInput(f Footprint) string {
 	listed := f.Files
 	more := ""
@@ -284,7 +287,7 @@ func predictInput(f Footprint) string {
 		listed, more = listed[:maxListed], fmt.Sprintf("\n(… and %d more)", len(f.Files)-maxListed)
 	}
 	id := EvidenceID()
-	return "Predict the files ticket " + f.ID + " (" + f.Title + ") will change.\n\n" +
+	return "Predict the files ticket " + f.ID + " will change.\n\n" +
 		Section(id, "Ticket (bd show)", f.Ticket) +
 		Section(id, "Repository files (git ls-files)", strings.Join(listed, "\n")+more)
 }

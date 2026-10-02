@@ -84,7 +84,7 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 		}
 		given := read(t, evidence)
 		for _, want := range []string{"the maintainer asked the run to stop after its running tickets",
-			"Final line: DRAINED after 2 tickets", drainLine} {
+			"## The run's final line\n\n<evidence id=\"", "\">\nDRAINED after 2 tickets\n</evidence id=\"", drainLine} {
 			if !strings.Contains(given, want) {
 				t.Errorf("the reviewer's evidence lacks %q:\n%s", want, given)
 			}

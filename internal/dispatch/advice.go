@@ -21,13 +21,13 @@ func lastLines(s string, n int) string {
 }
 
 // gatherDeferral collects the evidence for one deferred ticket.
-func (o *Loop) gatherDeferral(ctx context.Context, id, title, how, wt string) organ.Deferral {
+func (o *Loop) gatherDeferral(ctx context.Context, id, how, wt string) organ.Deferral {
 	c := o.cfg
 	show := o.tickets.Describe(ctx, id)
 	status := o.history.ShortStatus(ctx, wt)
 	commits := o.history.OneLineLog(ctx, wt, c.Base+"..HEAD")
 	stat := o.history.DiffStat(ctx, wt)
-	return organ.Deferral{ID: id, Title: title, How: how, Ticket: show,
+	return organ.Deferral{ID: id, How: how, Ticket: show,
 		Screen: lastLines(o.agents.Screen(ctx, o.agentName(id), ""), 80),
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
 			orNone(commits) + "\n\nDiff against its last commit:\n" + orNone(stat)}
@@ -170,8 +170,11 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 			}
 		}
 	}
-	return fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Final line: %s\n\n",
-		scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning, final) +
+	// The final line goes inside the tags: it can quote what the run gathered, such as a triage
+	// summary written from a ticket.
+	return fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s).\n\n",
+		scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning) +
+		organ.Section(tag, "The run's final line", final) +
 		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +

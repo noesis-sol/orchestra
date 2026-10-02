@@ -116,7 +116,7 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 		return // no files to choose from
 	}
 	files, err := o.organ.PredictFiles(ctx, organ.Footprint{
-		ID: t.ID, Title: t.Title, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked,
+		ID: t.ID, Ticket: o.tickets.Describe(ctx, t.ID), Files: tracked,
 	})
 	switch {
 	case ctx.Err() != nil:

@@ -332,6 +332,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket's title no longer reaches an organ outside the evidence tags.
+  Triage's and the predictor's first line named the ticket by its ID and its
+  title, where a title written to steer them (say, blaming the environment with
+  high confidence, which can hold the run) read as orchestra's own words; they
+  now name it by ID only, and the title stays in the ticket's `bd show` inside
+  the tags. The run report's evidence moves the run's final line, which can
+  quote a triage summary, into its own tagged section.
 - A ticket whose worker is left running when the run ends (`PAUSED`,
   `BLOCKED`, `TICKET_LIMIT` or another stop, or `INTERRUPTED`) is labelled
   `unmerged`. Its worker could close it after orchestra had gone, and nothing

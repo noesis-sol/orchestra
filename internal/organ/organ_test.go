@@ -86,10 +86,10 @@ func TestParseTriage(t *testing.T) {
 }
 
 func TestTriageInputCarriesTheEvidence(t *testing.T) {
-	in := triageInput(Deferral{ID: "k-1", Title: "Support visionOS", How: "the worker deferred it",
+	in := triageInput(Deferral{ID: "k-1", How: "the worker deferred it",
 		Ticket: "k-1 · Support visionOS", Screen: "⏺ The visionOS runtime is not installed.", Worktree: ""})
-	for _, want := range []string{"k-1 (Support visionOS) was set aside: the worker deferred it",
-		"## Ticket (bd show)", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n<evidence id=\"",
+	for _, want := range []string{"Ticket k-1 was set aside: the worker deferred it\n\n## Ticket (bd show)",
+		"\">\nk-1 · Support visionOS\n</evidence id=\"", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n<evidence id=\"",
 		"\n(none)\n</evidence id=\""} {
 		if !strings.Contains(in, want) {
 			t.Errorf("triage input lacks %q:\n%s", want, in)
@@ -124,13 +124,13 @@ func TestParsePredictionKeepsRepositoryFiles(t *testing.T) {
 
 func TestPredictFilesAsksWithTheTicketAndTheFiles(t *testing.T) {
 	bin, record := fakeClaude(t, `{"type":"result","is_error":false,"structured_output":{"files":["internal/b.go"]}}`)
-	got, err := Client{Bin: bin}.PredictFiles(context.Background(), Footprint{ID: "k-2", Title: "Faster picks",
+	got, err := Client{Bin: bin}.PredictFiles(context.Background(), Footprint{ID: "k-2",
 		Ticket: "k-2 · Faster picks", Files: []string{"a.go", "internal/b.go"}})
 	if err != nil || strings.Join(got, ",") != "internal/b.go" {
 		t.Fatalf("got %v, %v", got, err)
 	}
 	b, _ := os.ReadFile(record)
-	for _, want := range []string{"ticket k-2 (Faster picks)", "## Ticket (bd show)\n\n<evidence id=\"",
+	for _, want := range []string{"Predict the files ticket k-2 will change.\n\n## Ticket (bd show)\n\n<evidence id=\"",
 		"\nk-2 · Faster picks\n</evidence id=\"", "## Repository files (git ls-files)\n\n<evidence id=\"",
 		"\na.go\ninternal/b.go\n</evidence id=\"", "[--json-schema]"} {
 		if !strings.Contains(string(b), want) {
