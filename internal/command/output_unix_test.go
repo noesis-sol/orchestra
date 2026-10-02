@@ -17,18 +17,23 @@ import (
 
 // hang is a command that never finishes by itself. The shell runs sleep as its child rather than
 // in its place, so sleep goes on holding the output after the shell is stopped, as a git hook can.
-var hang = []string{"-c", "sleep 5; echo late"}
+var hang = []string{"-c", "sleep 30; echo late"}
 
-// Ctrl+C stops a hung command within a second, and the error says why it stopped.
+// soon is how long these tests allow for what takes a moment (a command stopped or finished, a killed
+// process gone), under the race detector on a machine loaded by other tests: well short of the 30
+// seconds their commands sleep, so a regression that waits for one still fails.
+const soon = 10 * time.Second
+
+// Ctrl+C stops a hung command at once, and the error says why it stopped.
 func TestOutputStopsAHungCommandWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(errors.New("stopped with Ctrl+C")) })
 	start := time.Now()
 	_, err := Output(ctx, ReadLimit, "", "sh", hang...)
-	if took := time.Since(start); took > time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned %s after the cancel", took-100*time.Millisecond)
 	}
-	if err == nil || err.Error() != "sh -c sleep 5; echo late: stopped with Ctrl+C" {
+	if err == nil || err.Error() != "sh -c sleep 30; echo late: stopped with Ctrl+C" {
 		t.Errorf("error %v, want it to name the command and why it stopped", err)
 	}
 }
@@ -37,10 +42,10 @@ func TestOutputStopsAHungCommandWhenCancelled(t *testing.T) {
 func TestOutputStopsAHungCommandAtItsLimit(t *testing.T) {
 	start := time.Now()
 	_, err := Output(context.Background(), 200*time.Millisecond, "", "sh", hang...)
-	if took := time.Since(start); took > time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned after %s", took)
 	}
-	if err == nil || err.Error() != "sh -c sleep 5; echo late: timed out after 200ms" {
+	if err == nil || err.Error() != "sh -c sleep 30; echo late: timed out after 200ms" {
 		t.Errorf("error %v, want it to name the command and the limit", err)
 	}
 }
@@ -57,11 +62,11 @@ func TestOutputStoppedKeepsStderr(t *testing.T) {
 // for that process.
 func TestOutputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
 	start := time.Now()
-	out, err := Output(context.Background(), ReadLimit, "", "sh", "-c", "sleep 5 & echo ok")
+	out, err := Output(context.Background(), ReadLimit, "", "sh", "-c", "sleep 30 & echo ok")
 	if err != nil || out != "ok\n" {
 		t.Errorf("got %q, %v", out, err)
 	}
-	if took := time.Since(start); took > time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned after %s", took)
 	}
 }
@@ -98,7 +103,7 @@ func TestOutputRunsTheCommandInItsOwnProcessGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := Output(ctx, ReadLimit, dir, "sh", "-c", "echo $$ > pid.tmp; mv pid.tmp pid; sleep 5")
+		_, err := Output(ctx, ReadLimit, dir, "sh", "-c", "echo $$ > pid.tmp; mv pid.tmp pid; sleep 30")
 		done <- err
 	}()
 	defer func() {
@@ -111,7 +116,7 @@ func TestOutputRunsTheCommandInItsOwnProcessGroup(t *testing.T) {
 			if pid, err = strconv.Atoi(strings.TrimSpace(string(b))); err != nil {
 				t.Fatal(err)
 			}
-		} else if time.Since(start) > 5*time.Second {
+		} else if time.Since(start) > soon {
 			t.Fatal("the command didn't start")
 		}
 	}

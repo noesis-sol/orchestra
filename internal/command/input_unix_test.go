@@ -21,11 +21,11 @@ func TestOutputWithInputFeedsTheCommand(t *testing.T) {
 // with Output.
 func TestOutputWithInputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
 	start := time.Now()
-	out, err := OutputWithInput(context.Background(), ReadLimit, "", nil, "in", "sh", "-c", "sleep 5 & cat")
+	out, err := OutputWithInput(context.Background(), ReadLimit, "", nil, "in", "sh", "-c", "sleep 30 & cat")
 	if err != nil || out != "in" {
 		t.Errorf("got %q, %v", out, err)
 	}
-	if took := time.Since(start); took > time.Second {
+	if took := time.Since(start); took > soon {
 		t.Errorf("returned after %s", took)
 	}
 }
