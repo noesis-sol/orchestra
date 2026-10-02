@@ -130,6 +130,8 @@ git switch -c batch/$(date +%F)
 orchestra
 ```
 
+One run at a time works on a repository: a second would race the first for the same tickets, worktrees and branch. Once its startup checks pass, a run holds a lock, `.orchestra/run/orchestra.lock` in the main checkout, until it exits after the run report. A second run in the same repository stops before changing anything, and a `--feature` request before it is screened, with exit code 2: `orchestra is already running in <repo> (pid 44497, since 08:31, main, pane w2B:p60)`. The lock is an `flock`, which the system releases when orchestra exits however it exits, `kill -9` included, so there is never a stale lock to remove. The file says which run holds it, or held it last: its PID, start time, version, branch, `ticket` or `feature` and Herdr `pane`. `lsof .orchestra/run/orchestra.lock` shows whether a run holds it. Runs in different repositories don't block each other. `orchestra plan --apply` warns when a run is going: a ticket the run has started keeps going whatever it now waits for.
+
 `--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). Worker tabs open in the Herdr workspace `orchestra` runs in; `--workspace ID` puts them in another, for example a separate space for workers. `orchestra -h` lists the flags. Most default to the environment variable `orchestrate.sh` used: `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`); a relative `WORKER_PROMPT` or `WT_ROOT`, or their flags, is relative to the repository. The organs add `TRIAGE`, `REVIEW`, `ORGAN_MODEL` and `ORGAN_EFFORT`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
 
 `--worker-effort medium` (or `WORKER_EFFORT=medium`, or `"worker_effort": "medium"` in `settings.json`) starts Claude workers with `--effort medium`; any of `low`, `medium`, `high`, `xhigh` and `max` will do. Without it they run at Claude Code's own default, and `orchestra init` says so. There is no recommended level yet: it waits on measuring `high` against `medium` on real tickets (time to close, tokens, the check passing first time).
@@ -242,7 +244,7 @@ To use it, copy the folder into your skills: `~/.claude/skills/orchestra/` for e
 | Code | Meaning |
 |---|---|
 | 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined |
-| 2 | setup problem found before starting (all problems are listed); with `--feature`, also a request the screen turned down or couldn't judge, a plan that failed or has questions, or no terminal to confirm on without `--yes` |
+| 2 | setup problem found before starting (all problems are listed), or another run going in the same repository; with `--feature`, also a request the screen turned down or couldn't judge, a plan that failed or has questions, or no terminal to confirm on without `--yes` |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure, or orchestra panicked while working on a ticket (`PANIC`) |
 | 5 | uncommitted changes in the main checkout, or it left the branch it started on |

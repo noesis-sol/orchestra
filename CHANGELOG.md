@@ -216,6 +216,16 @@ All notable changes to orchestra are documented here. The format follows
 - The worker prompt (template and this repository's) asks workers not to end a
   turn with a summary, an offer to go on or a non-blocking choice, and lets
   them keep a ticket's acceptance criteria as a todo checklist.
+- One run at a time in a repository: a run holds an flock on
+  `.orchestra/run/orchestra.lock` in the main checkout from its startup checks
+  until it exits, and writes its PID, start time, version, branch, scope and
+  Herdr pane there. A second run stops before changing anything (a `--feature`
+  request before it is screened) with exit code 2, naming the running one:
+  `orchestra is already running in <repo> (pid 44497, since 08:31, main, pane
+  w2B:p60)`. The system releases the lock when orchestra exits, `kill -9`
+  included, so nothing stale is left. `orchestra plan --apply` warns while a
+  run is going. The orchestra skill checks for a run with `lsof` on the lock
+  instead of `pgrep -x orchestra`, which matched a run in any repository.
 
 ### Changed
 

@@ -497,6 +497,25 @@ func run(
 		}
 		return exitStatus(dispatch.ExitSetup)
 	}
+	// One run at a time in a repository: a second would race this one for the same tickets, worktrees
+	// and branch. Taken before anything changes, a --feature request's screening included, and held
+	// until orchestra exits, after the organ phase.
+	lock, lockErr := project.LockRun(cfg.Repo, project.Holder{
+		PID: os.Getpid(), Started: time.Now(), Version: buildVersion(), Branch: cfg.Base,
+		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: getenv("HERDR_PANE_ID"),
+	})
+	var held *project.HeldError
+	switch {
+	case errors.As(lockErr, &held):
+		fmt.Fprintf(stderr, "orchestra cannot start:\n  - %v. One run at a time works on a repository: "+
+			"follow that one, or stop it first.\n", held)
+		return exitStatus(dispatch.ExitSetup)
+	case errors.Is(lockErr, errors.ErrUnsupported): // logged below
+	case lockErr != nil:
+		fmt.Fprintln(stderr, "orchestra cannot take its run lock:", lockErr)
+		return exitStatus(dispatch.ExitSetup)
+	}
+	defer func() { _ = lock.Close() }() // only releases it; orchestra exiting would too
 
 	prompt, err := os.ReadFile(cfg.WorkerPrompt)
 	if err != nil {
@@ -522,6 +541,9 @@ func run(
 			fmt.Fprintln(stderr, "orchestra cannot close its log:", err)
 		}
 	}()
+	if errors.Is(lockErr, errors.ErrUnsupported) {
+		log.Line(time.Now(), "no run lock on "+runtime.GOOS+": nothing stops a second run in this repository")
+	}
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}

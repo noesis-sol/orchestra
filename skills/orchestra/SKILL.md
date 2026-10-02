@@ -30,8 +30,15 @@ git branch --show-current                   # finished tickets land on this bran
 git worktree list                           # per-ticket worktrees still around
 bd ready; bd list --status=in_progress      # what a run would pick up; what is claimed
 bd human list                               # questions waiting for the user
-pgrep -x orchestra                          # is a run active?
+lsof -t .orchestra/run/orchestra.lock       # is a run active here? its PID; nothing if not
+cat .orchestra/run/orchestra.lock           # which run holds it (or held it last)
 ```
+
+Run the last two in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
+runs, and the system lets go of it when orchestra exits, even killed, so only a running orchestra
+has it open. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
+`feature` (the `--feature` request), and `pane`, the Herdr pane it runs in. It stays after the run;
+whether `lsof` lists a PID is what says a run is going. Runs in other repositories have their own.
 
 Where the project's orchestra files are:
 
@@ -82,7 +89,10 @@ Requirements, checked by `orchestra` at startup (it lists every problem, exit co
 - inside a Herdr pane (`HERDR_ENV=1`). Worker tabs open in that pane's workspace, unless
   `--workspace ID` names another;
 - in the main checkout, on a branch, not a detached HEAD;
-- no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`.
+- no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`;
+- no other run in the same repository. A second one stops before changing anything (a `--feature`
+  request before it is screened) with `orchestra is already running in <repo> (pid …, since …,
+  <branch>, pane …)`: follow that run in its pane instead, or ask the user before stopping it.
 
 Run it on the branch finished tickets should land on. Unless the user says otherwise, propose a
 batch branch from the main branch (`git switch -c batch/$(date +%F)`), so the work reaches main
@@ -150,8 +160,8 @@ them with `bd dep add`) only when they approve.
   and ends in a short hash.
 - **To wind the run down**, the user presses s in the dashboard and confirms with y: no new
   tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
-  Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>`; don't press keys in its
-  pane. Ctrl+C stops at once instead, leaving the workers running.
+  Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>` (the PID from
+  `lsof -t .orchestra/run/orchestra.lock`); don't press keys in its pane. Ctrl+C stops at once instead, leaving the workers running.
 - **A `PROBE:` line means the run is still going**: it held for the environment, and after the
   wait it names, a worker without a ticket (tab `orchestra-probe`, in the main checkout) runs one
   command. `PROBE_OK` means the run takes tickets again; otherwise it ends with `ENVIRONMENT`. Don't
@@ -219,7 +229,7 @@ then the tickets. The final log line and the exit code say why the run ended:
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, merge by hand (below). If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
-| (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. |
+| (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
 
 Lines about single tickets, which don't stop the run:
 
