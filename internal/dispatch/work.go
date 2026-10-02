@@ -98,13 +98,14 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			"Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), "+
 			"then bring it back with: bd undefer %s",
 			br, c.Base, wt, c.Base, id))
+		aside := "its branch conflicts with " + c.Base
 		if err := o.deferAside(keep, id, fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt)); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: aside, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s conflicts with %s, and bd could not defer %s%s; kept out of this run, rebase it in %s",
 				br, c.Base, id, because(err), wt)})
 			return nil
 		}
-		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its branch conflicts with " + c.Base, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: aside, Text: fmt.Sprintf(
 			"  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; "+
 				"rebase it in %s, then bd undefer %s",
 			br, c.Base, id, wt, id)})
@@ -115,7 +116,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// every server on the machine, so a file it can't have stops the run rather than the worker.
 	mcpArgs, err := o.mcpArgs(wt)
 	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, id, wt, e)
+		return o.setAsideEscaped(keep, t, wt, e)
 	}
 	if err != nil {
 		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
@@ -129,7 +130,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	if c.LaunchPrompt && c.AgentKind == "claude" {
 		launch, err = project.WriteLaunchPrompt(wt, id, prompt)
 		if e := escapeOf(err); e != nil {
-			return o.setAsideEscaped(keep, id, wt, e)
+			return o.setAsideEscaped(keep, t, wt, e)
 		}
 		if err != nil {
 			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
@@ -142,7 +143,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	if o.reporter != nil && c.AgentKind == "claude" {
 		report, err = o.reporter.ReportArgs(wt)
 		if e := escapeOf(err); e != nil {
-			return o.setAsideEscaped(keep, id, wt, e)
+			return o.setAsideEscaped(keep, t, wt, e)
 		}
 		if err != nil {
 			o.log.Raw("", fmt.Errorf("cannot set up %s's worker to report what it does: %w", id, err))
@@ -170,14 +171,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		}
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; "+
 			"deferred so it can be retried (worktree %s).", tab, wt))
+		aside := "its worker never started on the prompt"
 		if err := o.deferAside(keep, id, "the worker never started on its prompt"); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: aside, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s's worker never started on its prompt, and bd could not defer it%s; "+
 					"kept out of this run, worktree %s and tab %s left open",
 				id, because(err), wt, tab)})
 			return nil
 		}
-		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "its worker never started on the prompt", Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: aside, Text: fmt.Sprintf(
 			"  PROMPT_FAILED: %s's worker never started on its prompt -> deferred; worktree %s and tab %s left open",
 			id, wt, tab)})
 		return nil
@@ -323,7 +325,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 					id, info.Status, q.ID, because(err), id)})
 			}
 		}
-		o.emit(Event{Kind: EvAsked, Ticket: id, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvAsked, Ticket: id, Title: t.Title, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
 			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
 			id, q.ID, q.Title, q.ID, wt, tab)})
 		return nil
@@ -335,7 +337,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 		}
 	case outcomeDeferred:
 		o.markAside(id)
-		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
 		o.triageDeferred(ctx, id, "the worker deferred it", wt)
 	case outcomePaused:
@@ -355,14 +357,15 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; "+
 			"deferred for review (worktree %s).", tab, s, wt))
 		why := fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)
+		aside := "still " + s + ", noted for review"
 		if err := o.deferAside(keep, id, why); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: aside, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; "+
 					"kept out of this run, worktree %s and tab %s left for review",
 				id, s, because(err), wt, tab)})
 			return nil
 		}
-		o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "still " + s + ", noted for review", Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: aside, Text: fmt.Sprintf(
 			"  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab)})
 		settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
 		o.triageDeferred(ctx, id, settled, wt)
@@ -431,11 +434,12 @@ func escapeOf(err error) *project.EscapeError {
 	return nil
 }
 
-// setAsideEscaped sets ticket id aside without starting a worker: part of the path to its run files
+// setAsideEscaped sets ticket t aside without starting a worker: part of the path to its run files
 // in worktree wt is a symlink orchestra won't follow (see project.OpenRun), because it leads out of
 // the worktree or stands in place of .orchestra or .orchestra/run. The worker's own files are its to
 // change, so only the user can say whether the link is safe to remove.
-func (o *Loop) setAsideEscaped(ctx context.Context, id, wt string, e *project.EscapeError) *stopReason {
+func (o *Loop) setAsideEscaped(ctx context.Context, t Ticket, wt string, e *project.EscapeError) *stopReason {
+	id := t.ID
 	o.log.Raw("", fmt.Errorf("%s: %w", id, e))
 	why := fmt.Sprintf("its worktree's %s points outside the worktree", e.Path)
 	if errors.Is(e, project.ErrRunLink) {
@@ -446,12 +450,12 @@ func (o *Loop) setAsideEscaped(ctx context.Context, id, wt string, e *project.Es
 		"Look at what it points to, remove the link (rm %s), then bring it back with: bd undefer %s",
 		why, filepath.Join(wt, e.Path), filepath.Join(wt, e.Path), id))
 	if err := o.deferAside(ctx, id, why); err != nil {
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
 			"  DEFER_FAILED: %s, and bd could not defer %s%s; kept out of this run, remove the link in %s",
 			why, id, because(err), wt)})
 		return nil
 	}
-	o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: why, Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: why, Text: fmt.Sprintf(
 		"  RUN_FILES_OUTSIDE: %s -> %s deferred without starting a worker; remove the link %s, then bd undefer %s",
 		why, id, filepath.Join(wt, e.Path), id)})
 	return nil

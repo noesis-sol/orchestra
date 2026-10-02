@@ -280,6 +280,20 @@ All notable changes to orchestra are documented here. The format follows
   database (`Run: bd init`), which `init` sets up. Other startup problems
   follow it. A project with settings but no prompt names it as
   `.orchestra/worker-prompt.md` and suggests `orchestra init` to recreate it.
+- macOS notifications say in a few words which project did what, titled
+  with the repository folder's name alone (`jswallet`, no longer
+  `Orchestra: jswallet`), rather than repeating the whole log line:
+  `Closed jswallet-12 · Add a --json flag to list`, `Set aside jswallet-12 ·
+  checks failed` (deferred, or left for review), `jswallet-12 needs your
+  answer · <the question's title>`, `Stopped: PAUSED on jswallet-12` and
+  `Finished the run · 12 tickets closed · 2 set aside`, a title or reason cut
+  at 60 characters. Holds, probes, the warnings that set no ticket aside
+  (`LIKELY_CONFLICT`, `LONG_RUNNING`, …), triage, `REVIEW_FAILED` and
+  `REPORT written` no longer notify; the log, the dashboard and plain output
+  are unchanged. In the event stream, `closed`, `deferred`, `asked` and
+  `answered` records gain the ticket's `title`, a `warn` that sets its ticket
+  aside gains `detail` (why), and a `stop` record gains `detail` (its kind)
+  and the `ticket` it stopped over, if any.
 - On a terminal, a run that ends by itself closes with a bold green
   `♪ Completed the Run`, then, quieter, its tickets and how long it took
   (`2 tickets · 1h12m`), instead of `■ READY_EMPTY after 2 tickets`;

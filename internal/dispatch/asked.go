@@ -46,7 +46,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 		}
 		switch t.Status {
 		case "deferred":
-			o.askedDeferred(ctx, id, w)
+			o.askedDeferred(ctx, t, w)
 		case "closed":
 			adopt = append(adopt, o.answeredInTab(t, w))
 		case "in_progress":
@@ -95,11 +95,12 @@ func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
 	return adoption{t: t, w: w}
 }
 
-// askedDeferred sets aside an asked ticket its worker deferred in its tab.
-func (o *Loop) askedDeferred(ctx context.Context, id string, w askedWorker) {
+// askedDeferred sets aside asked ticket t, which its worker deferred in its tab.
+func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
+	id := t.ID
 	o.setAsked(id, nil)
 	o.markAside(id)
-	o.emit(Event{Kind: EvDeferred, Ticket: id, Detail: "by the worker", Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
 	o.triageDeferred(ctx, id, "the worker deferred it", w.wt)
 }
@@ -112,7 +113,7 @@ func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *
 		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
 		w.tab, w.after(), w.wt))
 	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
-		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt)
+		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
 	hold := "HOLD: " + s.Error()
 	if n > 0 {
 		hold += fmt.Sprintf("; no new tickets while the %d running finish", n)
@@ -136,7 +137,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 		}
 		switch t.Status {
 		case "deferred":
-			o.askedDeferred(ctx, id, w)
+			o.askedDeferred(ctx, t, w)
 		case "closed":
 			kind := "ASKED_UNMERGED"
 			if w.question == "" {
@@ -148,7 +149,8 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 				text += fmt.Sprintf(", labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
 					"in later runs too", UnmergedLabel, id, c.Base)
 			}
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: text})
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed, but the run ended before merging it",
+				Text: text})
 		case "in_progress":
 			o.mu.Lock()
 			labelled := o.labelled[id]

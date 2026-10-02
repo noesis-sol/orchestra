@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// The osascript command takes the text and project as arguments, so quotes in them can't break
-// the script, and a leading - isn't taken for an option.
+// The osascript command takes the notice and project as arguments, so quotes in them can't break
+// the script, and a leading - isn't taken for an option. The project alone is the title.
 func TestNotificationPassesTextAsArguments(t *testing.T) {
 	args := notification(`my "repo"\`, `-x "closed" \ it`)
 	n := len(args)
-	if n < 3 || args[n-3] != "--" || args[n-2] != `-x "closed" \ it` || args[n-1] != `Orchestra: my "repo"\` {
+	if n < 3 || args[n-3] != "--" || args[n-2] != `-x "closed" \ it` || args[n-1] != `my "repo"\` {
 		t.Errorf("args: %q", args)
 	}
 	if script := strings.Join(args[:n-3], " "); strings.Contains(script, "repo") || strings.Contains(script, "closed") {
@@ -29,11 +29,11 @@ func TestCloseWaitsForNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	release, shown := make(chan struct{}), make(chan string, 2)
-	l.alert = l.inBackground(func(text string) {
+	l.alert = l.inBackground(func(args []string) {
 		<-release
-		shown <- text
+		shown <- shownBy(args).body
 	})
-	l.Alert(time.Now(), "ALL MERGED")
+	l.Notify("ALL MERGED")
 	closed := make(chan error)
 	go func() { closed <- l.Close() }()
 	select {
@@ -48,7 +48,7 @@ func TestCloseWaitsForNotifications(t *testing.T) {
 	if got := <-shown; got != "ALL MERGED" {
 		t.Errorf("shown %q", got)
 	}
-	l.Alert(time.Now(), "after close")
+	l.Notify("after close")
 	if len(shown) != 0 {
 		t.Errorf("shown after Close: %q", <-shown)
 	}
@@ -66,11 +66,7 @@ func TestRunNotifiesByEventNotText(t *testing.T) {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
 	o.emit(Event{Kind: EvTriage, Ticket: "A", Text: "  triage A: flaky (high confidence) - deferred after FAILED checks, closed sockets"})
-	closed := h.sink.of(EvClosed)
-	if len(closed) != 1 {
-		t.Fatalf("closed: %q", closed)
-	}
-	want := []string{strings.TrimPrefix(closed[0], "A "), o.Final()}
+	want := []string{"Closed A · closed FAILED deferred", "Finished the run · 1 ticket closed"}
 	if got := h.alerts.list(); !equal(got, want) {
 		t.Errorf("notified:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}

@@ -30,7 +30,7 @@ func (o *Loop) interrupted(ctx context.Context) int {
 	}
 	why := InterruptedError("with Ctrl+C")
 	errors.As(context.Cause(ctx), &why)
-	o.emit(Event{Kind: EvStop, Text: InterruptLine(string(why), o.activeList())})
+	o.emit(Event{Kind: EvStop, Detail: Interrupted, Text: InterruptLine(string(why), o.activeList())})
 	return ExitInterrupted
 }
 
@@ -146,7 +146,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	}
 	o.sayMCP()
 	if s := o.loadUnmerged(ctx); s != nil {
-		return o.stop(s.code, "%s", s)
+		return o.stop(s, s.Error())
 	}
 	o.loadCarried(ctx)
 	defer o.startPredicting()()
@@ -246,7 +246,7 @@ func (o *Loop) Run(ctx context.Context) int {
 				o.solo, how = t.ID, "dispatching solo"
 			}
 			if w, ok := o.asked(t.ID); ok && w.question != "" {
-				o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
+				o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 					"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 			}
 			o.queued, o.soloShown = queued, o.soloState()
@@ -293,7 +293,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			// line gives it and then the others.
 			first := stop == nil
 			if first {
-				stop = r.stop
+				stop = r.stop.over(r.id)
 			} else {
 				alsoStopped = append(alsoStopped, r.stop.Error())
 			}
@@ -340,7 +340,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		for _, t := range alsoStopped {
 			text += "; also " + t
 		}
-		return o.stop(stop.code, "%s", text)
+		return o.stop(stop, text)
 	case drained:
 		end = fmt.Sprintf("DRAINED after %d tickets", o.count)
 	case o.count >= c.Limit:

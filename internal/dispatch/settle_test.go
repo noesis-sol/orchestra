@@ -145,8 +145,11 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 				t.Errorf("the ticket is still running, not set aside: %q", ev.Text)
 			}
 		}
-		if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 2h in tab tab") || !shown.has(warned[0]) {
+		if len(warned) != 1 || !strings.HasPrefix(warned[0], "  LONG_RUNNING: A still working after 2h in tab tab") {
 			t.Errorf("warnings: %q", warned)
+		}
+		if got := shown.list(); len(got) != 0 {
+			t.Errorf("notified %q: the warning needs nothing from the maintainer, it is for the log", got)
 		}
 		if !strings.Contains(read(t, logPath), "LONG_RUNNING") {
 			t.Error("the warning should be logged")
@@ -221,8 +224,8 @@ func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
 		if took := time.Since(start); took <= unknownLimit || took > unknownLimit+2*statusPoll {
 			t.Errorf("stopped after %s, want just past %s", took, unknownLimit)
 		}
-		if !h.alerts.has(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
-			t.Error("the stop should be logged and notified")
+		if !h.alerts.has("Stopped: UNKNOWN on A") || !strings.Contains(read(t, h.logPath), want) {
+			t.Errorf("the stop should be logged and notified: %q", h.alerts.list())
 		}
 		if got := activeIDs(o); !equal(got, []string{"A"}) {
 			t.Errorf("active: %v", got)
@@ -251,8 +254,8 @@ func TestRunStopsForAWorkerPastTheTicketLimit(t *testing.T) {
 				if code != ExitStuck || o.Final() != want {
 					t.Fatalf("exit %d, final %q, want %q", code, o.Final(), want)
 				}
-				if !h.alerts.has(o.Final()) || !strings.Contains(read(t, h.logPath), want) {
-					t.Error("the stop should be logged and notified")
+				if !h.alerts.has("Stopped: TICKET_LIMIT on A") || !strings.Contains(read(t, h.logPath), want) {
+					t.Errorf("the stop should be logged and notified: %q", h.alerts.list())
 				}
 				if got := h.sink.of(EvDispatch); len(got) != 1 {
 					t.Errorf("nothing should start after the stop:\n%s", strings.Join(got, "\n"))

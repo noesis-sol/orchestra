@@ -122,8 +122,9 @@ func TestCloseNowDoesNotWaitForNotifications(t *testing.T) {
 	}
 	release := make(chan struct{})
 	defer close(release)
-	l.alert = l.inBackground(func(string) { <-release })
-	l.Alert(time.Now(), "INTERRUPTED: stopped with Ctrl+C")
+	l.alert = l.inBackground(func([]string) { <-release })
+	l.Line(time.Now(), "INTERRUPTED: stopped with Ctrl+C")
+	l.Notify("Stopped: INTERRUPTED")
 	closed := make(chan error)
 	go func() { closed <- l.CloseNow() }()
 	select {

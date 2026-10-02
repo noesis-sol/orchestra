@@ -53,8 +53,8 @@ func TestWorkersFailingAtOnceHoldTheRun(t *testing.T) {
 			t.Errorf("dispatched %v, want A and B only", got)
 		}
 		final := "ENVIRONMENT: the last 2 tickets (A, B) each settled within 1m of starting without being claimed or changed; check the machine, then restart"
-		if o.Final() != final || !h.alerts.has(final) {
-			t.Errorf("final line %q, want %q, notified", o.Final(), final)
+		if o.Final() != final || !h.alerts.has("Stopped: ENVIRONMENT") {
+			t.Errorf("final line %q, want %q, notified as stopped: %q", o.Final(), final, h.alerts.list())
 		}
 		// The tickets did nothing: back in the queue, not set aside, their notes kept.
 		for _, id := range []string{"A", "B", "C"} {
@@ -227,8 +227,8 @@ func TestAProbeThatRunsItsCommandEndsTheHold(t *testing.T) {
 		}
 		probing := "PROBE: the run holds for the environment; in 1m one worker without a ticket runs a command, and if it does the run takes tickets again"
 		ok := "PROBE_OK: a worker without a ticket ran a command 1m after the hold; taking tickets again"
-		if !strings.Contains(h.logged(), probing) || !h.alerts.has(ok) {
-			t.Errorf("no PROBE line, or no PROBE_OK notification:\n%s", h.logged())
+		if !strings.Contains(h.logged(), probing) || !strings.Contains(h.logged(), ok) {
+			t.Errorf("no PROBE or PROBE_OK line:\n%s", h.logged())
 		}
 		if !strings.HasPrefix(o.Final(), "READY_EMPTY") {
 			t.Errorf("final line %q", o.Final())

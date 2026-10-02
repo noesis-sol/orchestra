@@ -99,8 +99,8 @@ func TestTheProbeWatchesItsWorkerWork(t *testing.T) {
 				}
 				switch tc.code {
 				case ExitOK:
-					if !h.alerts.has("PROBE_OK: a worker without a ticket ran a command 1m after the hold; taking tickets again") {
-						t.Errorf("no PROBE_OK notification:\n%s", h.logged())
+					if !strings.Contains(h.logged(), "PROBE_OK: a worker without a ticket ran a command 1m after the hold; taking tickets again") {
+						t.Errorf("no PROBE_OK line:\n%s", h.logged())
 					}
 				default:
 					if !strings.Contains(o.Final(), "it stopped without running its command; see tab "+h.probeTab()) {

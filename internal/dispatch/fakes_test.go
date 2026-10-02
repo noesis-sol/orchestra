@@ -315,24 +315,46 @@ func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
 // alerts records the notifications a Log shows.
 type alerts struct {
 	mu    sync.Mutex
-	shown []string
+	shown []shown
 }
+
+// shown is a notification as osascript would show it, from the arguments it is given.
+type shown struct{ title, body string }
 
 // recordAlerts turns l's notifications on, recording them instead of showing them.
 func recordAlerts(l *Log) *alerts {
 	a := &alerts{}
-	l.alert = func(text string) {
+	l.alert = func(args []string) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		a.shown = append(a.shown, text)
+		a.shown = append(a.shown, shownBy(args))
 	}
 	return a
 }
 
-func (a *alerts) list() []string {
+// shownBy is what osascript shows given args: the body, then the title, after "--".
+func shownBy(args []string) shown {
+	n := len(args)
+	if n < 3 || args[n-3] != "--" {
+		return shown{body: fmt.Sprintf("not a notification: %q", args)}
+	}
+	return shown{title: args[n-1], body: args[n-2]}
+}
+
+// all is the notifications shown, in order.
+func (a *alerts) all() []shown {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]string(nil), a.shown...)
+	return append([]shown(nil), a.shown...)
+}
+
+// list is the bodies of the notifications shown, in order.
+func (a *alerts) list() []string {
+	var bodies []string
+	for _, s := range a.all() {
+		bodies = append(bodies, s.body)
+	}
+	return bodies
 }
 
 func (a *alerts) has(text string) bool {

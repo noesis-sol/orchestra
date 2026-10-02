@@ -149,7 +149,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
 			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
 	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0",
-		"macOS notifications for finished tickets and stops [NOTIFY=0 turns off]")
+		"macOS notifications for tickets closed, set aside or waiting on you, and the run's end [NOTIFY=0 turns off]")
 	fs.StringVar(&c.WTRoot, "worktrees", getenv("WT_ROOT"),
 		"folder for the per-ticket worktrees, outside the repository "+
 			"(default: <repo>-worktrees next to it) [WT_ROOT]")
@@ -770,8 +770,9 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		cancel()
 		msg := dispatch.InterruptLine(why, r.orch.Running())
-		ev := dispatch.Event{Kind: dispatch.EvStop, Text: msg, Time: time.Now()}
-		r.log.Alert(ev.Time, msg)
+		ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted, Text: msg, Time: time.Now()}
+		r.log.Line(ev.Time, msg)
+		r.log.Notify(dispatch.Notice(ev))
 		r.log.Record(ev)
 		sink.Event(ev)
 		r.stops.windDown()
@@ -858,7 +859,7 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 	if err != nil {
 		if ctx.Err() == nil {
 			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
-			log.Alert(time.Now(), msg)
+			log.Line(time.Now(), msg)
 			out.Warn(msg)
 		}
 		return
@@ -871,6 +872,6 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 		out.Say("report not saved: "+why, "Report not saved: "+why)
 		return
 	}
-	log.Alert(time.Now(), "REPORT written to "+path)
+	log.Line(time.Now(), "REPORT written to "+path)
 	out.Say("report saved to "+tui.Tildify(path), "Report saved to "+tui.Tildify(path))
 }

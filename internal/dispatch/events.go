@@ -61,11 +61,19 @@ type Event struct {
 	N      int // EvDispatch: the ticket's number in the run; EvDone: the tickets in all, as Text counts them
 	Limit  int // EvDispatch and EvDone: the ticket limit
 	Ticket string
-	Title  string    // EvDispatch only
+	// Title: the ticket's title, for EvDispatch, EvClosed, EvDeferred, EvAsked and EvAnswered; the
+	// verdict's summary for EvTriage.
+	Title  string
 	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
 	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
-	Detail string    // short suffix for EvClosed / EvDeferred
-	Text   string    // the full line written to the log file
+	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
+	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvStop,
+	// what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
+	Detail string
+	Text   string // the full line written to the log file
+	// Closed and SetAside: for EvDone, the tickets merged in the run, and those set aside (deferred,
+	// or left for review), as their events said.
+	Closed, SetAside int
 	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
 	Aside bool
@@ -98,30 +106,31 @@ const notifyLimit = 10 * time.Second
 
 // Log is the run's log file, with its notifications, and its event stream (see Begin).
 type Log struct {
-	mu     sync.Mutex
-	f      *os.File
-	alert  func(text string) // shows a notification; nil when they are off
-	lines  []string          // this run's lines, for the reviewer
-	shown  sync.WaitGroup    // notifications still being shown
-	closed bool              // Close has been called: no more notifications start
+	mu      sync.Mutex
+	f       *os.File
+	project string              // what notifications are titled with: the repository folder's name
+	alert   func(args []string) // shows a notification, given osascript's arguments; nil when they are off
+	lines   []string            // this run's lines, for the reviewer
+	shown   sync.WaitGroup      // notifications still being shown
+	closed  bool                // Close has been called: no more notifications start
 
 	events     *os.File  // the event stream, from Begin to End; nil when it isn't open
 	run        time.Time // the run's start, in each of its records
 	eventsSaid bool      // the event stream failed, and the log has said so
 }
 
-// OpenLog opens the log file at path for appending. With notify, alerts also show as macOS
-// notifications titled with project.
+// OpenLog opens the log file at path for appending. With notify, Notify shows macOS notifications
+// titled with project.
 func OpenLog(path string, notify bool, project string) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	l := &Log{f: f}
+	l := &Log{f: f, project: project}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
-		l.alert = l.inBackground(func(text string) {
-			// Best effort: the text is in the log already, a notification that fails is only not shown.
-			_, _ = command.Output(context.Background(), notifyLimit, "", "osascript", notification(project, text)...)
+		l.alert = l.inBackground(func(args []string) {
+			// Best effort: the line is in the log already, a notification that fails is only not shown.
+			_, _ = command.Output(context.Background(), notifyLimit, "", "osascript", args...)
 		})
 	}
 	return l, nil
@@ -129,8 +138,8 @@ func OpenLog(path string, notify bool, project string) (*Log, error) {
 
 // inBackground makes show run on its own goroutine, so a slow notification doesn't hold up the
 // loop, and has Close wait for it. Notifications raised after Close are dropped.
-func (l *Log) inBackground(show func(text string)) func(text string) {
-	return func(text string) {
+func (l *Log) inBackground(show func(args []string)) func(args []string) {
+	return func(args []string) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		if l.closed {
@@ -139,7 +148,7 @@ func (l *Log) inBackground(show func(text string)) func(text string) {
 		l.shown.Add(1)
 		go func() {
 			defer l.shown.Done()
-			show(text)
+			show(args)
 		}()
 	}
 }
@@ -179,11 +188,11 @@ func (l *Log) Line(t time.Time, text string) {
 	l.mu.Unlock()
 }
 
-// Alert logs text and shows it as a notification, if they are on.
-func (l *Log) Alert(t time.Time, text string) {
-	l.Line(t, text)
-	if l.alert != nil {
-		l.alert(text)
+// Notify shows notice as a notification titled with the project, if they are on; "" shows none.
+// The notice is a few words (see Notice): the line it is about goes to the log.
+func (l *Log) Notify(notice string) {
+	if l.alert != nil && notice != "" {
+		l.alert(notification(l.project, notice))
 	}
 }
 
@@ -379,35 +388,87 @@ func (l *Log) closeEvents() {
 	l.events = nil
 }
 
-// notifies says whether events of kind k are shown as notifications: finished tickets and
-// anything that needs the maintainer or stops the loop, not progress, dispatches or triage.
-func notifies(k Kind) bool {
-	switch k {
-	case EvClosed, EvDeferred, EvWarn, EvStop, EvDone, EvAsked, EvHold, EvProbed:
-		return true
+// noticeWidth is how many characters of a title or reason a notification gives, cut with "…": it is
+// read at a glance, and the log has the rest.
+const noticeWidth = 60
+
+// Notice is what a notification says of ev, in a few words, or "" for an event that doesn't notify.
+// Only the outcomes that matter to the maintainer do: a ticket merged, set aside or waiting on a
+// question, and the run stopping or finishing. Holds, probes, the other warnings and triage are in
+// the log, the event stream and the dashboard.
+func Notice(ev Event) string {
+	switch ev.Kind {
+	case EvClosed:
+		return about("Closed "+ev.Ticket, ev.Title)
+	case EvDeferred:
+		return about("Set aside "+ev.Ticket, ev.Detail)
+	case EvWarn:
+		if ev.Aside && ev.Ticket != "" { // CHECKS_FAILED, MERGE_CONFLICT, …: not LONG_RUNNING and the like
+			return about("Set aside "+ev.Ticket, ev.Detail)
+		}
+	case EvAsked:
+		_, question, _ := strings.Cut(ev.Detail, ": ") // after the question's ID, its title
+		return about(ev.Ticket+" needs your answer", question)
+	case EvStop:
+		n := "Stopped"
+		if ev.Detail != "" {
+			n += ": " + ev.Detail
+		}
+		if ev.Ticket != "" {
+			n += " on " + ev.Ticket
+		}
+		return n
+	case EvDone:
+		n := "Finished the run · " + closedCount(ev.Closed)
+		if ev.SetAside > 0 {
+			n += fmt.Sprintf(" · %d set aside", ev.SetAside)
+		}
+		return n
 	}
-	return false
+	return ""
 }
 
-// notification is the osascript arguments showing text, titled with the project. Both go in as
+// about is what happened, then what it happened over (a title, a reason), shortened to noticeWidth.
+func about(what, over string) string {
+	over = strings.Join(strings.Fields(over), " ")
+	if over == "" {
+		return what
+	}
+	if r := []rune(over); len(r) > noticeWidth {
+		over = strings.TrimRight(string(r[:noticeWidth-1]), " ") + "…"
+	}
+	return what + " · " + over
+}
+
+// closedCount is "no tickets closed", "1 ticket closed" or "n tickets closed".
+func closedCount(n int) string {
+	switch n {
+	case 0:
+		return "no tickets closed"
+	case 1:
+		return "1 ticket closed"
+	}
+	return fmt.Sprintf("%d tickets closed", n)
+}
+
+// notification is the osascript arguments showing notice, titled with the project. Both go in as
 // arguments rather than into the script, so no quoting in them can break it.
-func notification(project, text string) []string {
+func notification(project, notice string) []string {
 	return []string{
 		"-e", "on run argv",
 		"-e", "display notification (item 1 of argv) with title (item 2 of argv)",
 		"-e", "end run",
-		"--", text, "Orchestra: " + project, // -- so text starting with - isn't taken for an option
+		"--", notice, project, // -- so a notice starting with - isn't taken for an option
 	}
 }
 
 func (o *Loop) emit(ev Event) {
 	ev.Time = time.Now()
-	switch {
-	case notifies(ev.Kind):
-		o.log.Alert(ev.Time, ev.Text)
-	case ev.Kind != EvQueue:
+	o.tally(&ev)
+	if ev.Kind != EvQueue {
 		o.log.Line(ev.Time, ev.Text)
 	}
+	o.log.Notify(Notice(ev))
 	o.log.Record(ev)
 	o.sinkMu.Lock()
 	defer o.sinkMu.Unlock()
@@ -415,6 +476,21 @@ func (o *Loop) emit(ev Event) {
 		o.final = ev.Text
 	}
 	o.sink.Event(ev)
+}
+
+// tally counts the tickets merged and set aside in the run, as their events say, and gives the
+// counts to the run's EvDone.
+func (o *Loop) tally(ev *Event) {
+	o.sinkMu.Lock()
+	defer o.sinkMu.Unlock()
+	switch {
+	case ev.Kind == EvClosed:
+		o.closedN++
+	case ev.Kind == EvDeferred, ev.Kind == EvWarn && ev.Aside && ev.Ticket != "":
+		o.asideN++
+	case ev.Kind == EvDone:
+		ev.Closed, ev.SetAside = o.closedN, o.asideN
+	}
 }
 
 func (o *Loop) status(st Status) {
@@ -434,7 +510,8 @@ func (o *Loop) info(format string, a ...any) {
 	o.emit(Event{Kind: EvInfo, Text: fmt.Sprintf(format, a...)})
 }
 
-func (o *Loop) stop(code int, format string, a ...any) int {
-	o.emit(Event{Kind: EvStop, Text: fmt.Sprintf(format, a...)})
-	return code
+// stop ends the run for s with text, its line, and returns the code orchestra exits with.
+func (o *Loop) stop(s *stopReason, text string) int {
+	o.emit(Event{Kind: EvStop, Ticket: s.ticket, Detail: string(s.kind), Text: text})
+	return s.code
 }

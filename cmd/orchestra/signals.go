@@ -146,8 +146,8 @@ func (w *stopWatch) further(s os.Signal) {
 		q.out.Event(ev)
 		return
 	}
-	ev := dispatch.Event{Kind: dispatch.EvStop, Text: dispatch.QuitLine(stoppedHow(s), q.loop.Running(), under),
-		Time: time.Now()}
+	ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted,
+		Text: dispatch.QuitLine(stoppedHow(s), q.loop.Running(), under), Time: time.Now()}
 	q.log.Line(ev.Time, ev.Text) // not as a notification: orchestra doesn't wait for one now
 	q.log.Record(ev)
 	q.out.Event(ev)

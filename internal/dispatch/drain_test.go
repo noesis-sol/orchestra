@@ -72,8 +72,8 @@ func TestDrainFinishesTheRunningTicketsAndStartsNoMore(t *testing.T) {
 		if !strings.Contains(h.logged(), drainLine) {
 			t.Errorf("log lacks %q:\n%s", drainLine, h.logged())
 		}
-		if h.alerts.has(drainLine) || !h.alerts.has("DRAINED after 2 tickets") {
-			t.Errorf("notifications: %v, want DRAINED and not the request", h.alerts.list())
+		if h.alerts.has(drainLine) || !h.alerts.has("Finished the run · 2 tickets closed") {
+			t.Errorf("notifications: %v, want the run finished and not the request", h.alerts.list())
 		}
 
 		// The organ phase: triage finishes, and the reviewer is told the maintainer asked for the end.

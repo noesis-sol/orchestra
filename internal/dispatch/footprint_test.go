@@ -314,8 +314,8 @@ func TestTwoWorkersEditingOneFileAreWarnedAbout(t *testing.T) {
 		if n := strings.Count(h.logged(), warning); n != 1 {
 			t.Errorf("warned %d times, want once:\n%s", n, h.logged())
 		}
-		if !h.alerts.has("  " + warning) {
-			t.Errorf("no notification: %q", h.alerts.list())
+		if got := strings.Join(h.alerts.list(), "\n"); strings.Contains(got, "LIKELY_CONFLICT") {
+			t.Errorf("notified:\n%s\nthe warning is for the log", got)
 		}
 	})
 }

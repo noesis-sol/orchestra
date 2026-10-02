@@ -20,11 +20,11 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoCommit:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed without a commit", Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
 	case closedDirty:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed with uncommitted changes", Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
 			id, commit, wt, tab)})
 	case closedMerge:
@@ -79,13 +79,14 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			}
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
+			title := o.titleOf(id)
 			if err == nil {
 				removed := o.closeWorkerTab(keep, id, tab)
-				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
+				o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, %s", id, commit, c.Base, removed)})
 			} else {
 				detail := hash + " merged; cleanup failed, tab " + tab + " left open"
-				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: detail, Text: fmt.Sprintf(
+				o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: detail, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, but CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open",
 					id, commit, c.Base, wt, br, c.LogPath, tab)})
 			}
@@ -142,11 +143,11 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 				return errInterrupted
 			}
 			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
-			how := "fails"
+			how, why := "fails", "checks failed"
 			if errors.Is(err, errCheckTimedOut) {
-				how = "did not finish within " + ShortDuration(o.checkTimeout())
+				how, why = "did not finish within "+ShortDuration(o.checkTimeout()), "checks timed out"
 			}
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
 					"worktree %s and tab %s left for review (output is in %s)",
 				id, c.Check, how, br, c.Base, wt, tab, c.LogPath)})
@@ -156,7 +157,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
 	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: c.Base + " kept changing", Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
 			"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
@@ -192,7 +193,7 @@ func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
 func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 	c := o.cfg
 	o.leaveUnmerged(ctx, r.id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Text: fmt.Sprintf(
+	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Detail: "conflicts with " + c.Base, Text: fmt.Sprintf(
 		"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
 			"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
 		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})

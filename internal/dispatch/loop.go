@@ -51,6 +51,9 @@ type Loop struct {
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
 	final     string // the stop or done line
+	// closedN and asideN: the tickets merged and set aside in the run, counted as their events go
+	// out, under sinkMu (see tally).
+	closedN, asideN int
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
@@ -170,6 +173,7 @@ type stopReason struct {
 	kind   stopKind
 	detail string // what follows the kind on the line
 	cause  error
+	ticket string // the ticket it stopped the run over, if any: its notification names it
 }
 
 // stopKind is what stopped the run, as the first word of its line says.
@@ -199,6 +203,9 @@ const (
 // errInterrupted is returned by a worker when Ctrl+C cancelled the run.
 var errInterrupted = &stopReason{code: ExitInterrupted, kind: stopInterrupted}
 
+// Interrupted is an EvStop's Detail when Ctrl+C or a signal stopped the run.
+const Interrupted = string(stopInterrupted)
+
 // halt is a reason to stop of the given kind, ending the run with code. Its line is the kind
 // followed by format, which begins with what separates them (": ", " for ").
 func halt(code int, kind stopKind, format string, a ...any) *stopReason {
@@ -209,6 +216,14 @@ func halt(code int, kind stopKind, format string, a ...any) *stopReason {
 // err already, if it should.
 func (s *stopReason) causedBy(err error) *stopReason {
 	s.cause = err
+	return s
+}
+
+// over says ticket id is what s stopped the run over, unless s names one already.
+func (s *stopReason) over(id string) *stopReason {
+	if s.ticket == "" {
+		s.ticket = id
+	}
 	return s
 }
 
@@ -231,6 +246,13 @@ func (o *Loop) clearActive(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	delete(o.active, id)
+}
+
+// titleOf is the title of ticket id, as its Status has it while it is worked on; "" once it isn't.
+func (o *Loop) titleOf(id string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.active[id].Title
 }
 
 // What a worker does that Ctrl+C doesn't stop, once begun.
