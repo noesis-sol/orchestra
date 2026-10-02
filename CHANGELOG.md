@@ -337,6 +337,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Each dashboard line stays one line, within the pane. A ticket title, a
+  question's title or a triage summary with a line break in it made its row
+  in the tickets table, or its line in the worker list, two lines tall; with
+  two such rows nothing fitted, and the dashboard fell back to one-line totals
+  and no tickets table for the rest of the run. Line breaks and tabs now show
+  as spaces. With a double-width character (CJK, emoji) cut by the edge of the
+  `s` question's box, a line came out one column wider than the pane, and the
+  terminal's wrapping left scraps on the screen; the cut character is now
+  blanked.
 - The dashboard marks a ticket `! review` only when a warning sets it aside
   (`CHECKS_FAILED`, `MERGE_CONFLICT`, `CLOSED_WITHOUT_COMMIT`,
   `DEFER_FAILED`). `LONG_RUNNING` and `WATCH_FAILED` no longer turn a running

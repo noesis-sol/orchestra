@@ -492,9 +492,20 @@ func overlay(bg, fg string, w int) string {
 		b := lines[top+i]
 		head := ansi.Truncate(b, left, "")
 		head += strings.Repeat(" ", max(left-ansi.StringWidth(head), 0))
-		lines[top+i] = head + "\x1b[0m" + l + "\x1b[0m" + ansi.TruncateLeft(b, left+fw, "")
+		lines[top+i] = head + "\x1b[0m" + l + "\x1b[0m" + rightOf(b, left+fw)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// rightOf is what shows of line b right of column end. A wide character the column cuts in half
+// becomes a space, so the line keeps b's width.
+func rightOf(b string, end int) string {
+	want := max(ansi.StringWidth(b)-end, 0)
+	tail := ansi.TruncateLeft(b, end, "")
+	for cut := end + 1; ansi.StringWidth(tail) > want; cut++ {
+		tail = ansi.TruncateLeft(b, cut, "")
+	}
+	return strings.Repeat(" ", want-ansi.StringWidth(tail)) + tail
 }
 
 // workerList is the compact form of the worker boxes: one box, one line per running worker.
@@ -508,7 +519,7 @@ func (m Dashboard) workerList(w int) string {
 	for _, st := range running {
 		elapsed := time.Since(st.Started).Truncate(time.Second)
 		lines = append(lines, ansi.Truncate(fmt.Sprintf("%s %s  %s  %s  %s", m.spin.View(), pickedStyle.Render(st.Ticket),
-			agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()), st.Title), inner, "…"))
+			agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()), oneLine(st.Title)), inner, "…"))
 	}
 	border := lipgloss.TerminalColor(cyan)
 	for _, st := range running {
@@ -590,7 +601,7 @@ func (m Dashboard) workerPanel(w int, st dispatch.Status, titleMax int) string {
 		lines = append(lines, "  "+l)
 	}
 	if st.Activity != "" {
-		lines = append(lines, fit("  "+dimStyle.Render(st.Activity)))
+		lines = append(lines, fit("  "+dimStyle.Render(oneLine(st.Activity))))
 	}
 	return box(w, border, strings.Join(lines, "\n"))
 }
@@ -661,7 +672,7 @@ func (m *Dashboard) working(id, title string) {
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
 // its title; a completed one only its merged commit; a set-aside one why, with triage's verdict.
 func (r ticketRow) cells(width int) [3]string {
-	fit := func(s string) string { return ansi.Truncate(s, max(width, 8), "…") }
+	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, 8), "…") }
 	switch r.state {
 	case rowDone:
 		return [3]string{closedStyle.Render("✓ done"), closedStyle.Render(r.id), dimStyle.Render(fit(r.note))}
@@ -821,9 +832,13 @@ func wordWrap(s string, width int) []string {
 	return lines
 }
 
+// oneLine collapses the whitespace in s, line breaks included, to single spaces: text from a
+// ticket, a worker or an organ that the dashboard shows on one line.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 // wrapLines word-wraps s to width and keeps at most limit lines, ending the last with … if cut.
 func wrapLines(s string, width, limit int) []string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = oneLine(s)
 	if s == "" || width < 1 {
 		return nil
 	}
