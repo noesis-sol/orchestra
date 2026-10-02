@@ -272,6 +272,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The README is a short overview (install, set up, run, the dashboard's keys,
+  exit codes), and the reference moved to `docs/` unchanged: `dashboard.md`,
+  `setup.md`, `running.md`, `workers.md`, `organs.md`, `events.md` and
+  `development.md`. It no longer says orchestra works one ticket at a time,
+  and its sample dashboard shows two workers.
 - `orchestra --version`, or `-v` for short, prints the version; `-h` lists
   `-v` as the shorthand for `--version`. The README and the skill show these
   forms; `-version` still works.

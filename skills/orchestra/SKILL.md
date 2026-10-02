@@ -242,7 +242,8 @@ Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never 
 ## Reading a run's events
 
 Each record has `kind`, `time` and `run`, the run's start time, which is the same in all its
-records and in the lock's `started`; the README's Event stream section lists every kind and field.
+records and in the lock's `started`; docs/events.md in the orchestra repository lists every kind and
+field.
 A run's records go `start` (with `version`, `repo`, `branch`, `scope`, `feature`, `concurrency`),
 then its events, each with the log line as `text` (`dispatch`, `closed`, `deferred`, `asked`,
 `warn`, `hold`, `triage`, `info`, …), then `stop` or `done`, and last `end`, with `code`, the exit

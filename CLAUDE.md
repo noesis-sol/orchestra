@@ -82,7 +82,7 @@ README defines both terms; use them consistently.
 
 - `cmd/orchestra`: flags and settings, `orchestra init`, `orchestra plan`, the dashboard or plain output, signals,
   the organ phase after a run.
-- `internal/dispatch`: the run loop, one file per concern (the README's Development section lists them). It
+- `internal/dispatch`: the run loop, one file per concern (docs/development.md lists them). It
   reaches Beads, Herdr, git and workers' reports only through the interfaces in `deps.go`.
 - Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/git` (git), `internal/command` (every
   external command: context, time limit, process group), `internal/claude` (workers' hooks), `internal/mcp`
