@@ -340,6 +340,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- With triage off (`-triage=false`, or without `claude` installed), a ticket
+  its worker defers or leaves open no longer has evidence gathered for triage
+  only to be thrown away: a `bd show`, three git reads and a read of the
+  worker's screen, each allowed up to 30 seconds. Ctrl+C during
+  `finishing triage…` skips the tickets still queued, and the one being
+  triaged, quietly: it logged and showed a `TRIAGE_FAILED` warning for each.
 - `--feature`'s plan organ sees every ticket that isn't closed, with its
   status: a ticket left in progress by a stopped run, or set aside with
   `bd defer`, was missing, so a request for the same change planned it again.

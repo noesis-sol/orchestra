@@ -69,10 +69,24 @@ func (o *Loop) StartTriage() {
 	}()
 }
 
-// queueTriage hands a deferral to triage. It does nothing without triage, after Ctrl+C, or once
-// FinishTriage has run: a worker may still be settling when the run ends.
+// triageDeferred hands a deferred ticket to triage. Its evidence takes a bd, three git and a Herdr
+// read, each allowed up to its time limit, so it is gathered only while triage takes deferrals.
+func (o *Loop) triageDeferred(ctx context.Context, id, how, wt string) {
+	if !o.triageTaking(ctx) {
+		return
+	}
+	o.queueTriage(ctx, o.gatherDeferral(ctx, id, how, wt))
+}
+
+// triageTaking says whether triage takes a deferral: not without triage, after Ctrl+C, once the
+// organs are skipped, or once FinishTriage has run (a worker may still be settling when the run ends).
+func (o *Loop) triageTaking(ctx context.Context) bool {
+	return o.triageQ != nil && ctx.Err() == nil && o.triageStop.Err() == nil && o.organCtx.Err() == nil
+}
+
+// queueTriage hands a deferral to triage, unless triage no longer takes one.
 func (o *Loop) queueTriage(ctx context.Context, d organ.Deferral) {
-	if o.triageQ == nil || ctx.Err() != nil || o.triageStop.Err() != nil {
+	if !o.triageTaking(ctx) {
 		return
 	}
 	select {
@@ -104,13 +118,20 @@ func (o *Loop) triage(d organ.Deferral) {
 				d.ID, o.logPanic("triage of "+d.ID, p), o.cfg.LogPath)})
 		}
 	}()
+	// Once the maintainer skips the organs, what is still queued is dropped without a word, and so
+	// is the triage they stopped: they asked for it.
+	if o.organCtx.Err() != nil {
+		return
+	}
 	t, err := o.organ.Triage(o.organCtx, d)
 	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
 	// time limit.
 	ctx := context.Background()
 	if err != nil {
-		o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf(
-			"  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})
+		if o.organCtx.Err() == nil {
+			o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf(
+				"  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})
+		}
 		return
 	}
 	o.appendNotes(ctx, d.ID, t.Note())
