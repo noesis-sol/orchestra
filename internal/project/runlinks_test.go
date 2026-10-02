@@ -85,3 +85,41 @@ func TestRunFilesInARealFolder(t *testing.T) {
 		}
 	}
 }
+
+// A run file that is a symlink staying inside the worktree is not written through: the file takes
+// the link's place, and what the link points to (a file, a folder or nothing) is left as it was.
+// Written through, the file would be an untracked one where the link points, for a worker to commit.
+func TestRunFilesReplaceLinksInside(t *testing.T) {
+	for name, write := range runWrites {
+		for _, to := range []string{"file", "folder", "nowhere"} {
+			t.Run(name+" to "+to, func(t *testing.T) {
+				wt := t.TempDir()
+				docs := filepath.Join(wt, "docs")
+				if err := os.MkdirAll(docs, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				kept := filepath.Join(docs, name)
+				if err := os.WriteFile(kept, []byte("kept"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				target := map[string]string{"file": kept, "folder": docs, "nowhere": filepath.Join(docs, "missing")}[to]
+				// As a worker would make it: relative to the link's folder.
+				rel, err := filepath.Rel(filepath.Join(wt, Dir, RunName), target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plant(t, wt, RunPath(name), rel)
+
+				if err := write(wt); err != nil {
+					t.Fatalf("err = %v, want the file written in place of the link", err)
+				}
+				if fi, err := os.Lstat(filepath.Join(wt, RunPath(name))); err != nil || !fi.Mode().IsRegular() {
+					t.Errorf("%s: %v %v, want a file in place of the link", RunPath(name), fi, err)
+				}
+				if got := listing(t, docs); len(got) != 1 || got[kept] != "kept" {
+					t.Errorf("where the link pointed: %v, want only %s, as it was", got, kept)
+				}
+			})
+		}
+	}
+}

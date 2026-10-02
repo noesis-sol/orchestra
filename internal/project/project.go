@@ -407,9 +407,9 @@ func WriteLaunchPrompt(wt, ticket, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
-	if err := root.WriteFile(RunPath("prompt.md"), []byte(prompt), 0o644); err != nil {
-		return "", RunError(wt, RunPath("prompt.md"), err)
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	if err := WriteRun(root, wt, RunPath("prompt.md"), []byte(prompt), 0o644); err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("Your instructions for ticket %s are in %s/%s/prompt.md in this directory. "+
 		"Read that file and follow it exactly.", ticket, Dir, RunName), nil

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -60,5 +61,39 @@ func TestReportsStayInsideTheWorktree(t *testing.T) {
 				t.Errorf("%s outside was overwritten: %q", settingsName, b)
 			}
 		})
+	}
+}
+
+// A hooks.json that is a symlink staying inside the worktree is replaced, not written through: the
+// hooks would otherwise land where it points, as an untracked file for the worker to commit.
+func TestHooksReplaceALinkInside(t *testing.T) {
+	wt := t.TempDir()
+	kept := filepath.Join(wt, "docs", settingsName)
+	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kept, []byte("kept"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(wt, project.RunPath(settingsName))
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "..", "docs", settingsName), link); err != nil {
+		t.Fatal(err)
+	}
+
+	args, err := Reporter{}.ReportArgs(wt)
+	if err != nil {
+		t.Fatalf("ReportArgs: %v", err)
+	}
+	if fi, err := os.Lstat(link); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("%s: %v %v, want a file in place of the link", link, fi, err)
+	}
+	if want := []string{"--settings", link}; !slices.Equal(args, want) {
+		t.Errorf("args = %q, want %q", args, want)
+	}
+	if b, err := os.ReadFile(kept); err != nil || string(b) != "kept" {
+		t.Errorf("%s where the link pointed: %q %v, want it as it was", kept, b, err)
 	}
 }

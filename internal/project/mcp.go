@@ -163,14 +163,10 @@ func WriteMCPConfig(wt string, servers []mcp.Server) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
 	rel := RunPath(MCPConfigName)
-	// WriteFile keeps an earlier file's mode, so that file goes first.
-	if err := RemoveRun(root, wt, rel); err != nil {
+	if err := WriteRun(root, wt, rel, b, 0o600); err != nil {
 		return "", err
-	}
-	if err := root.WriteFile(rel, b, 0o600); err != nil {
-		return "", RunError(wt, rel, err)
 	}
 	return filepath.Join(wt, rel), nil
 }

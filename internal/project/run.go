@@ -19,7 +19,9 @@ import (
 // A symlink in place of .orchestra or .orchestra/run is refused too, wherever it points: git's
 // ignore rules for the folder (/.orchestra/run/ in info/exclude, run/ in .orchestra/.gitignore) match
 // a directory only, not a link, so files written through one inside the worktree would show as
-// untracked where it points, and a worker's git add -A would commit them, secrets and all.
+// untracked where it points, and a worker's git add -A would commit them, secrets and all. For the
+// same reason a run file that is a symlink inside the worktree is not written through: WriteRun
+// removes the link and writes the file in its place.
 //
 // The files in folders the user controls (the settings, the worker prompt, the log, the reports,
 // git's info/exclude) stay on the plain os calls: no worker changes those, and the user may well
@@ -52,6 +54,21 @@ func OpenRun(dir string) (*os.Root, error) {
 		return nil, RunError(dir, filepath.Join(Dir, RunName), err)
 	}
 	return root, nil
+}
+
+// WriteRun writes b to the file rel in root, an os.Root at the checkout dir, with mode perm. An earlier
+// file is removed first (see RemoveRun): WriteFile would keep its mode, and would write through it if
+// it were a symlink. One that stays inside dir would get orchestra's file where it points, as an
+// untracked file that git's ignore rules for .orchestra/run/ don't cover, for a worker's git add -A to
+// commit; WriteRun puts the file in place of the link instead.
+func WriteRun(root *os.Root, dir, rel string, b []byte, perm fs.FileMode) error {
+	if err := RemoveRun(root, dir, rel); err != nil {
+		return err
+	}
+	if err := root.WriteFile(rel, b, perm); err != nil {
+		return RunError(dir, rel, err)
+	}
+	return nil
 }
 
 // RemoveRun removes the file rel from root, an os.Root at the checkout dir, if it is there. Removing a

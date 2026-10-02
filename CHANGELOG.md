@@ -445,6 +445,12 @@ All notable changes to orchestra are documented here. The format follows
   a link, wherever it points, now sets the ticket aside without a worker
   (`RUN_FILES_OUTSIDE: its worktree's .orchestra/run is a symlink -> <id>
   deferred …`), with a note on the ticket naming the link.
+- orchestra no longer writes a worker's `prompt.md` or `hooks.json` through a
+  symlink in their place that stays inside the worktree
+  (`.orchestra/run/prompt.md -> ../../docs/prompt.md`): the file landed where
+  the link pointed, untracked and not ignored, for the worker's `git add -A` to
+  commit. It now removes the link and writes the file in its place, as it
+  already did for `mcp.json`.
 - A worker's reporting hooks can no longer block it. Under dash (`/bin/sh` on
   Debian and Ubuntu) a hook whose write failed, as every write does once the
   worker has removed `.orchestra/run/` (`git clean -fdx`, `git stash --all`),

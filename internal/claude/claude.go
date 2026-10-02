@@ -33,7 +33,7 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = root.Close() }() // nothing written is lost: WriteFile closed its file
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
 	for _, name := range []string{activityName, editsName} {
 		if err := project.RemoveRun(root, worktree, project.RunPath(name)); err != nil {
 			return nil, err
@@ -45,8 +45,8 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := root.WriteFile(project.RunPath(settingsName), b, 0o644); err != nil {
-		return nil, project.RunError(worktree, project.RunPath(settingsName), err)
+	if err := project.WriteRun(root, worktree, project.RunPath(settingsName), b, 0o644); err != nil {
+		return nil, err
 	}
 	path := filepath.Join(worktree, project.RunPath(settingsName))
 	return []string{"--settings", path}, nil
