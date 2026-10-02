@@ -67,9 +67,15 @@ when workers failing the same way hold the run (default `{"count": 2, "window": 
 orchestra init --check "<the project's check command>" --concurrent 1
 ```
 
-It writes `.orchestra/worker-prompt.md` from the built-in template (or moves an existing
-`.claude/worker-prompt.md`, staged with `git mv`), adds `.orchestra/.gitignore`, and reports what is
-missing (`bd`, `bd init`, `herdr`, `claude`), and writes `.orchestra/settings.json`. Ask the user
+It sets Beads up first: where `bd` is missing it can install it (Homebrew, otherwise the Beads
+install script), and in a repository without `.beads/` it runs `bd init` with no questions
+(maintainer, auto-export off). Installing software is the user's call: ask, then pass
+`--install-beads` or `--install-beads=false`; without either, an agent's `init` installs nothing and
+reports `bd` missing. `bd init` commits the files it adds along with anything already staged, so
+check `git status` before `init`. It then writes `.orchestra/worker-prompt.md` from the built-in
+template (or moves an existing `.claude/worker-prompt.md`, staged with `git mv`), adds
+`.orchestra/.gitignore`, reports what is missing (`bd`, Beads, `herdr`, `claude`), and writes
+`.orchestra/settings.json`. Ask the user
 for the check command if you don't know it (the command that runs lint, build and tests) and how
 many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
 interactively and would default to 1. Ask which MCP servers workers need for the project's work
@@ -80,7 +86,7 @@ Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge
 `.gitattributes` (so tickets that each add an entry at the same spot don't conflict) and pass
 `--changelog-union` or `--changelog-union=false`; without either, `init` leaves it alone.
 Without `--check`, fill in the `<…>` placeholders in the prompt. It never replaces an existing prompt
-unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` (and `.gitattributes`, if it changed) if they agree.
+unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 
 ## Launching a run
 

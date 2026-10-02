@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -130,11 +131,12 @@ const (
 type Step struct {
 	Kind          StepKind
 	Label, Detail string
-	Template      bool // the worker prompt was written from the template, for the project to adjust
+	Template      bool     // the worker prompt was written from the template, for the project to adjust
+	Commit        []string // what the step added for the user to commit, as at the repository's top
 }
 
 // Choice is what init sets up: the check command, its time limit, the default number of tickets
-// at once and the MCP servers workers get.
+// at once, the MCP servers workers get and whether it installs bd.
 type Choice struct {
 	Check        string
 	CheckTimeout string // as in settings.json; "" for DefaultCheckTimeout
@@ -156,6 +158,10 @@ type Choice struct {
 	// couldn't all be read.
 	Servers    []mcp.Server
 	ServersErr error
+	// Install is how init would install bd (see FindBeadsInstall), InstallBeads whether it does where
+	// bd is missing, and InstallUnasked is set when init could neither ask nor take --install-beads.
+	Install                      BeadsInstall
+	InstallBeads, InstallUnasked bool
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
@@ -312,8 +318,9 @@ func fillTemplate(t, check string) string {
 	return strings.Replace(t, " <What it runs, e.g. lint, build and the test suites.>", "", 1)
 }
 
-// Prerequisites reports what orchestra needs and whether it is there.
-func Prerequisites(repo string) []Step {
+// Prerequisites reports what orchestra needs and whether it is there. getenv gives the environment
+// where bd may be installed off the PATH (see LocateBd).
+func Prerequisites(repo string, getenv func(string) string) []Step {
 	var steps []Step
 	mark := func(ok bool, what, fix string) {
 		if ok {
@@ -323,7 +330,11 @@ func Prerequisites(repo string) []Step {
 		}
 	}
 	has := func(cmd string) bool { _, err := exec.LookPath(cmd); return err == nil }
-	mark(has("bd"), "bd", "install Beads")
+	if bd, onPath := LocateBd(getenv); bd != "" && !onPath {
+		mark(false, "bd", offPath(bd))
+	} else {
+		mark(onPath, "bd", "install Beads")
+	}
 	mark(fileExists(filepath.Join(repo, ".beads")), "Beads", "set it up here: bd init")
 	mark(has("herdr"), "herdr", "install Herdr; workers run in its tabs")
 	mark(has("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
@@ -366,8 +377,15 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 	if strings.TrimSpace(out) != "" {
 		commit = append(commit, attributesName)
 	}
+	for _, s := range steps {
+		for _, p := range s.Commit {
+			if !slices.Contains(commit, p) {
+				commit = append(commit, p)
+			}
+		}
+	}
 	if len(commit) > 0 {
-		next = append(next, "Commit "+strings.Join(commit, " and ")+".")
+		next = append(next, "Commit "+joinAnd(commit)+".")
 	}
 	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
 	return next

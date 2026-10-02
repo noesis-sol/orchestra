@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -31,4 +32,15 @@ func read(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// initRepo is gitRepo with a .beads/ folder, so orchestra init in it runs no bd init: a bd on the
+// machine's PATH would otherwise set Beads up in the test's repository.
+func initRepo(t *testing.T) string {
+	t.Helper()
+	repo, _ := gitRepo(t)
+	if err := os.Mkdir(filepath.Join(repo, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return repo
 }

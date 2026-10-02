@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra init` sets Beads up itself. Where `bd` is missing it installs it,
+  with Homebrew (`brew install beads`) where `brew` is on the PATH, otherwise
+  on macOS, Linux and FreeBSD with the Beads install script; on Windows it
+  says how. In a terminal the form asks first (offering yes); `--install-beads`
+  (or `=false`) answers without asking, and without either `init` installs
+  nothing. A `bd` the script put off the PATH is reported with the folder to
+  add. In a repository without `.beads/`, `init` then runs `bd init
+  --non-interactive --role maintainer --init-if-missing` (no questions, not
+  contributing to someone else's repo, auto-export off), before writing
+  `.orchestra/`, and lists what `bd` committed and what is left to commit.
+  Both are steps in `init`'s summary; a failure shows the command's error, and
+  Ctrl+C stops an install under way.
 - `orchestra --feature "<request>"` takes a feature request from idea to a
   scoped run: after the usual startup checks, the screen organ judges it, the
   plan organ plans it as an epic and its tickets, orchestra shows the plan and

@@ -62,7 +62,9 @@ func askConcurrency(t *testing.T, current int, keys string) int {
 	t.Helper()
 	c := project.Choice{Concurrent: current}
 	done := make(chan error, 1)
-	go func() { done <- AskInit(strings.NewReader(keys), io.Discard, &c, false, false, true, false, false) }()
+	go func() {
+		done <- AskInit(strings.NewReader(keys), io.Discard, &c, false, false, true, false, false, false)
+	}()
 	select {
 	case err := <-done:
 		if err != nil {

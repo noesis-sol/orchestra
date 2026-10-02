@@ -49,6 +49,11 @@ func (u InitScreen) Header(repo string) {
 	fmt.Fprintln(u.out)
 }
 
+// Working says what init is doing while it takes a while.
+func (u InitScreen) Working(what string) {
+	fmt.Fprintln(u.out, dimStyle.Render("  … "+what))
+}
+
 // Cancelled says init was cancelled with nothing changed.
 func (u InitScreen) Cancelled() {
 	fmt.Fprintln(u.out, deferredStyle.Render("  Cancelled; nothing was changed."))
@@ -266,16 +271,30 @@ func mcpDescription(c project.Choice) string {
 	return d
 }
 
+// installField asks whether to install bd as c.Install says, naming the method and the command.
+func installField(c *project.Choice) *huh.Confirm {
+	return huh.NewConfirm().
+		Title("Install Beads with " + c.Install.Method + "?").
+		Description("orchestra works through a Beads backlog, and bd isn't installed. This runs:\n" +
+			c.Install.Command).
+		Affirmative("Install it").
+		Negative("No").
+		Value(&c.InstallBeads)
+}
+
 // AskInit asks for what the flags didn't give, starting from the current choice, reading the
 // answers from in and drawing the form on out. With no MCP servers to offer, askMCP chooses none.
-func AskInit(
-	in io.Reader, out io.Writer, c *project.Choice, askCheck, askTimeout, askConcurrent, askUnion, askMCP bool,
-) error {
+// askInstall asks whether to install bd as c.Install says.
+func AskInit(in io.Reader, out io.Writer, c *project.Choice,
+	askCheck, askTimeout, askConcurrent, askUnion, askMCP, askInstall bool) error {
 	var fields []*formField
 	add := func(f huh.Field) *formField {
 		ff := &formField{Field: f}
 		fields = append(fields, ff)
 		return ff
+	}
+	if askInstall {
+		add(installField(c))
 	}
 	if askCheck {
 		add(huh.NewInput().
