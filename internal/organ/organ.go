@@ -95,7 +95,8 @@ func (g Client) args(effort, system, schema string) []string {
 // input, stopping it after timeout. A run that fails or reports an error is an error; one stopped at
 // its timeout says "timed out after" the timeout.
 func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, input, schema string) (Result, error) {
-	// Outside the project: no CLAUDE.md, project settings or hooks.
+	// Outside the project: no project CLAUDE.md, settings or hooks. The user's own (~/.claude) still
+	// apply; the README's Organs section says what they bring.
 	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), input, g.Bin, g.args(effort, system, schema)...)
 	if err != nil {
 		var e *command.Error
