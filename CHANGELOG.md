@@ -306,6 +306,10 @@ All notable changes to orchestra are documented here. The format follows
   `ctrl+c stops now`: Ctrl+C needs no hint, and still stops the run at once. A
   run stopping for another reason names only the number keys, and with no
   worker running the hint line is left out.
+- The stop question names its keys as the hint does: in the box
+  (`y stop after current · n keep going`) and in the one-line prompt
+  (`y/n`), y and n are bold in the hint's key colour, and what they do faint.
+  The words and widths are unchanged.
 - On a terminal, a run that ends by itself closes with a bold green
   `♪ Completed the Run`, then, quieter, its tickets and how long it took
   (`2 tickets · 1h12m`), instead of `■ READY_EMPTY after 2 tickets`;

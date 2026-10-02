@@ -360,12 +360,20 @@ func (m Dashboard) hintLine(w int) string {
 type keyHint struct{ key, does, short string }
 
 // hintForm is the hint line naming keys, in full ("  s to stop after the current tickets") or short
-// (" s stop after current"): the keys in keyStyle, the rest faint.
+// (" s stop after current").
 func hintForm(keys []keyHint, short bool) string {
-	lead, parts := "  ", make([]string, len(keys))
+	lead := "  "
 	if short {
 		lead = " "
 	}
+	return lead + keyWords(keys, short)
+}
+
+// keyWords names keys as the dashboard does wherever it names them, in the hint and the stop
+// question alike: the keys in keyStyle, the rest faint; in full ("s to stop after the current
+// tickets") or short ("s stop after current").
+func keyWords(keys []keyHint, short bool) string {
+	parts := make([]string, len(keys))
 	for i, k := range keys {
 		does := " to " + k.does
 		if short {
@@ -373,7 +381,7 @@ func hintForm(keys []keyHint, short bool) string {
 		}
 		parts[i] = keyStyle.Render(k.key) + dimStyle.Render(does)
 	}
-	return lead + strings.Join(parts, dimStyle.Render(" · "))
+	return strings.Join(parts, dimStyle.Render(" · "))
 }
 
 // windDownLine says, while the run winds down, after which tickets it ends, in the DRAIN line's
@@ -463,23 +471,29 @@ func (m Dashboard) runningIDs() []string {
 // drainQuestion is the question s asks, worded once for the box and the one-line prompt: whether
 // to stop after the running tickets, or, while the run winds down, whether to take tickets again.
 type drainQuestion struct {
-	ask   string // the question
-	short string // the question where the prompt line has no room for ask
-	about string // what y does, in the DRAIN line's words
-	keys  string // what y and n do, for the box
+	ask   string    // the question
+	short string    // the question where the prompt line has no room for ask
+	about string    // what y does, in the DRAIN line's words
+	keys  []keyHint // y and n with what each does, which the box names short
+}
+
+// yesNo is the stop question's keys: y, then n, with what each does.
+func yesNo(y, n string) []keyHint {
+	return []keyHint{{key: "y", short: y}, {key: "n", short: n}}
 }
 
 func (m Dashboard) drainQuestion() drainQuestion {
 	if m.draining {
 		return drainQuestion{ask: "Keep taking tickets?", short: "Keep taking tickets?",
-			about: "New tickets start again as slots free up.", keys: "y keep going · n keep stopping"}
+			about: "New tickets start again as slots free up.", keys: yesNo("keep going", "keep stopping")}
 	}
 	q := drainQuestion{ask: "Stop after the running tickets?", short: "Stop after current?",
-		keys: "y stop after current · n keep going"}
+		keys: yesNo("stop after current", "keep going")}
 	lead, list, tail := dispatch.DrainWords(m.runningIDs())
 	switch len(m.active) {
 	case 0:
-		q.about, q.keys = "No new tickets will start. Nothing is running, so the run ends now.", "y stop · n keep going"
+		q.about = "No new tickets will start. Nothing is running, so the run ends now."
+		q.keys = yesNo("stop", "keep going")
 	case 1:
 		q.about = capitalize(lead+list+tail) + ". It merges as usual, then the run ends."
 	default:
@@ -488,23 +502,26 @@ func (m Dashboard) drainQuestion() drainQuestion {
 	return q
 }
 
-// modal is the drain question in a box.
+// modal is the drain question in a box, its keys named as the hint names its own.
 func (m Dashboard) modal(w int) string {
 	q := m.drainQuestion()
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		deferredStyle.Bold(true).Render(q.ask), "", q.about, "", dimStyle.Render(q.keys))
+		deferredStyle.Bold(true).Render(q.ask), "", q.about, "", keyWords(q.keys, true))
 	return box(min(w-4, 64), yellow, body)
 }
 
 // promptLine is the drain question on one line, for a pane too small for the box; the question and
-// keys come first so a narrow pane keeps them.
+// keys come first so a narrow pane keeps them. y and n are in keyStyle, as everywhere else.
 func (m Dashboard) promptLine(w int) string {
 	q := m.drainQuestion()
 	ask := q.ask
 	if ansi.StringWidth(" "+ask+" y/n") > w {
 		ask = q.short
 	}
-	return deferredStyle.Bold(true).Render(ansi.Truncate(" "+ask+" y/n · "+q.about, w, "…"))
+	asked := deferredStyle.Bold(true)
+	line := asked.Render(" "+ask+" ") + keyStyle.Render("y") + dimStyle.Render("/") + keyStyle.Render("n") +
+		asked.Render(" · "+q.about)
+	return ansi.Truncate(line, w, "…")
 }
 
 // overlay draws fg over the middle of bg, a view w wide.
