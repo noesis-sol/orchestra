@@ -78,6 +78,8 @@ type Agents interface {
 	// Screen is the end of the worker's terminal, given its state as just read ("" if not known):
 	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
 	Screen(ctx context.Context, name string, state AgentState) string
+	// Prompt submits a prompt and returns once the worker has started on it (working or blocked),
+	// not when its turn ends; an error means it was not seen to start.
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(ctx context.Context, name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool

@@ -64,11 +64,13 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 // handBack gives a stopped rebase to the ticket's worker and waits for it to finish, then checks
 // the result itself. It returns why the resolution failed, or "" once the branch is on top of
 // onto with the ticket's own commits and the check passes, or errInterrupted after Ctrl+C (the
-// rebase is left as it is). Neither lock is held: the worker may take minutes.
+// rebase is left as it is). Neither lock is held: the worker may take minutes. The resolve timeout
+// runs from the hand-back, not from when the worker is seen to take it.
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
 	c := o.cfg
 	agent := o.agentName(r.id)
 	limit := orDefault(c.ResolveTimeout, project.DefaultResolveTimeout)
+	deadline := time.Now().Add(limit)
 	base := o.setResolving(r.id, true)
 	w := o.newWatcher(r.wt, base)
 	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: fmt.Sprintf(
@@ -81,7 +83,7 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 		o.setResolving(r.id, false)
 		return "its worker did not take the prompt", nil
 	}
-	why := o.waitResolved(ctx, agent, r.wt, limit, w.report)
+	why := o.waitResolved(ctx, agent, r.wt, deadline, limit, w.report)
 	if ctx.Err() != nil {
 		return "", errInterrupted
 	}
@@ -92,13 +94,12 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 	return o.verifyResolved(ctx, r)
 }
 
-// waitResolved waits for the worker to settle after its hand-back: idle with the rebase over, idle
-// for idleGrace with it still in progress (its own background command may keep it idle), gone, or
-// still busy after limit, which it returns as the reason. Each status read goes to report.
-func (o *Loop) waitResolved(
-	ctx context.Context, agent, wt string, limit time.Duration, report func(context.Context, AgentState, error),
-) string {
-	deadline := time.Now().Add(limit)
+// waitResolved waits for the worker to settle after its hand-back, which it took and has started
+// on: idle with the rebase over, idle for idleGrace with it still in progress (its own background
+// command may keep it idle), gone, or still busy at deadline, limit after the hand-back, which it
+// returns as the reason. Each status read goes to report.
+func (o *Loop) waitResolved(ctx context.Context, agent, wt string, deadline time.Time, limit time.Duration,
+	report func(context.Context, AgentState, error)) string {
 	var idleSince time.Time
 	for {
 		st, err := o.agents.Status(ctx, agent)
@@ -204,7 +205,8 @@ func short(hash string) string {
 }
 
 // setResolving marks a running ticket as having its rebase handed back to its worker, or no
-// longer, and returns its status as the dashboard shows it.
+// longer, shows that on the dashboard at once, and returns its status as the dashboard shows it.
+// Its worker is idle then: before it takes the hand-back, and once it is done with it.
 func (o *Loop) setResolving(id string, on bool) Status {
 	o.mu.Lock()
 	st := o.active[id]
@@ -213,8 +215,7 @@ func (o *Loop) setResolving(id string, on bool) Status {
 		o.active[id] = st
 	}
 	o.mu.Unlock()
-	if !on {
-		o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: StateIdle})
-	}
+	o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: StateIdle,
+		Resolving: on})
 	return st
 }

@@ -273,10 +273,15 @@ func (t Terminal) WaitReady(ctx context.Context, name string) bool {
 	return err == nil
 }
 
-// Prompt submits the prompt and waits (up to 10 minutes) for the agent to first settle.
+// Prompt submits the prompt and returns once Herdr sees the agent start on it: working, or blocked
+// (on a permission dialog, say). It does not wait for the turn to end; the caller watches the agent
+// from there. Herdr fails the call (agent_prompt_stalled) if neither state shows within 5 seconds
+// of submitting, as when the paste is lost or Enter doesn't register; the 30 seconds are a limit
+// on Herdr itself.
 func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
-	const wait = 10 * time.Minute
-	_, err := run(ctx, wait+command.ReadLimit, "agent", "prompt", name, prompt, "--wait", "--timeout", millis(wait))
+	const wait = 30 * time.Second
+	_, err := run(ctx, wait+command.ReadLimit, "agent", "prompt", name, prompt, "--wait",
+		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked), "--timeout", millis(wait))
 	return err
 }
 

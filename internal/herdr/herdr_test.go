@@ -202,3 +202,17 @@ func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// Prompt returns once Herdr sees the agent start on the prompt, working or blocked, rather than at
+// the end of its turn (Herdr's default for --wait), so the caller can watch the turn.
+func TestPromptWaitsOnlyForTheAgentToStart(t *testing.T) {
+	args := filepath.Join(t.TempDir(), "args")
+	herdrScript(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+args+"'\n")
+	if err := (Terminal{}).Prompt(context.Background(), "a", "do the ticket"); err != nil {
+		t.Fatal(err)
+	}
+	want := "agent\nprompt\na\ndo the ticket\n--wait\n--until\nworking\n--until\nblocked\n--timeout\n30000\n"
+	if got, _ := os.ReadFile(args); string(got) != want {
+		t.Errorf("Prompt ran herdr with:\n%s\nwant:\n%s", got, want)
+	}
+}

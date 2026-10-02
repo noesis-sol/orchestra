@@ -351,6 +351,7 @@ type runSink struct {
 	mu     sync.Mutex
 	events []Event
 	gone   []string
+	last   map[string]Status // each ticket's latest status, as the dashboard shows it
 	held   chan struct{}
 	once   sync.Once
 }
@@ -365,11 +366,22 @@ func (s *runSink) Event(ev Event) {
 }
 
 func (s *runSink) Status(st Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if st.Gone {
-		s.mu.Lock()
 		s.gone = append(s.gone, st.Ticket)
-		s.mu.Unlock()
 	}
+	if s.last == nil {
+		s.last = map[string]Status{}
+	}
+	s.last[st.Ticket] = st
+}
+
+// lastStatus is the latest status shown for ticket id.
+func (s *runSink) lastStatus(id string) Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last[id]
 }
 
 // goneIDs returns the tickets whose workers have returned (their status removed), in order.

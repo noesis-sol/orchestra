@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 )
 
 // ---- Herdr ---------------------------------------------------------------------------
@@ -49,6 +50,7 @@ type fakeHerdr struct {
 	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
 	onPrompt     func(id string)        // told of each prompt pasted, with the ticket's ID; nil: none
+	promptTakes  time.Duration          // how long Prompt takes to return once the worker has started, as a slow Herdr would
 	refuseArgs   bool                   // StartAgent takes no arguments
 	refusePaths  bool                   // StartAgent takes no arguments but plain flags, such as --no-chrome
 	agentName    func(id string) string // names a ticket's worker; nil keeps the ID
@@ -303,7 +305,20 @@ func (h *fakeHerdr) Status(ctx context.Context, name string) (AgentState, error)
 
 func (h *fakeHerdr) Screen(ctx context.Context, name string, state AgentState) string { return "" }
 
+// Prompt starts the worker on its prompt and returns, as Herdr's does once it sees the worker
+// working, after promptTakes.
 func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
+	if err := h.submit(name); err != nil {
+		return err
+	}
+	if h.promptTakes > 0 && !sleep(ctx, h.promptTakes) {
+		return ctx.Err()
+	}
+	return nil
+}
+
+// submit pastes the prompt to the agent named name, and starts it on it unless the paste fails.
+func (h *fakeHerdr) submit(name string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	a := h.agent(name)

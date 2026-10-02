@@ -119,16 +119,18 @@ func (o *Loop) claimed(ctx context.Context, id string) bool {
 	return st != "open"
 }
 
-// deliverPrompt sends the worker its prompt and confirms it started on it. 'herdr agent prompt'
-// can paste the text without the Enter registering, leaving the worker idle with the prompt in
-// its input box; the worker then looks settled and its ticket would be deferred untouched.
-// Enter is pressed only when the box visibly holds the prompt (never on a dialog, where it would
-// pick an option), and the prompt is sent again only when the box is empty, so never twice.
+// deliverPrompt sends the worker its prompt and confirms it started on it, returning as soon as it
+// has (or plainly has not): it does not wait for the turn to end, so the caller watches the worker
+// through it. 'herdr agent prompt' can paste the text without the Enter registering, leaving the
+// worker idle with the prompt in its input box; the worker then looks settled and its ticket would
+// be deferred untouched. Enter is pressed only when the box visibly holds the prompt (never on a
+// dialog, where it would pick an option), and the prompt is sent again only when the box is empty,
+// so never twice.
 func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 	for attempt := 1; attempt <= 2; attempt++ {
 		err := o.agents.Prompt(ctx, agent, prompt)
 		if err == nil {
-			return true // herdr saw the worker start
+			return true // herdr saw the worker start: working, or blocked
 		}
 		o.log.Raw("", err)
 		if ctx.Err() != nil {

@@ -332,6 +332,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A prompt pasted to a worker (a conflict handed back, a nudge to continue, an
+  answered question, the environment probe's command) returns once Herdr sees
+  the worker start on it (`herdr agent prompt --wait --until working --until
+  blocked`), not at the end of its turn, up to 10 minutes later. Meanwhile
+  nothing read the worker's status: the dashboard showed a nudged worker idle
+  and a resumed one not at all, the ticket limit waited, and a hand-back's
+  `resolve_timeout` started only after the worker's first turn. The resolve
+  timeout now runs from the hand-back, and the dashboard shows the ticket as
+  `⟳ resolving` from then on.
 - orchestra no longer follows a symlink out of a worktree when it writes,
   removes or reads the files in `.orchestra/run/` (`mcp.json`, with the MCP
   servers' secrets, `prompt.md`, `hooks.json`, `activity.json`, `edits`), nor
