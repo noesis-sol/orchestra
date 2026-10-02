@@ -33,7 +33,7 @@ type featureOrgans interface {
 
 // featureTracker is what a feature run reads from and writes to Beads.
 type featureTracker interface {
-	Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, error)
+	Unclosed(ctx context.Context) ([]dispatch.Ticket, error)
 	Create(ctx context.Context, t beads.NewTicket) (string, error)
 	AddBlock(ctx context.Context, blocker, blocked string) error
 }
@@ -111,21 +111,25 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		return "", dispatch.ExitSetup
 	}
 
-	// Every open ticket, epics too, so the plan doesn't repeat one.
-	open, _, err := f.tracker.Open(ctx)
+	// Every ticket not closed, epics too, so the plan doesn't repeat one: one left in progress by a
+	// stopped run, or set aside with bd defer, is still to be done.
+	unclosed, err := f.tracker.Unclosed(ctx)
 	if err != nil {
 		if code, stopped := f.interrupted(ctx); stopped {
 			return "", code
 		}
-		fmt.Fprintln(f.err, "orchestra couldn't plan the request: cannot read the open tickets:", err)
+		fmt.Fprintln(f.err, "orchestra couldn't plan the request: cannot read the tickets:", err)
 		return "", dispatch.ExitTool
 	}
-	tickets := make([]organ.OpenTicket, len(open))
-	for i, t := range open {
-		tickets[i] = organ.OpenTicket{ID: t.ID, Title: t.Title}
+	tickets := make([]organ.UnclosedTicket, len(unclosed))
+	for i, t := range unclosed {
+		tickets[i] = organ.UnclosedTicket{ID: t.ID, Status: t.Status, Title: t.Title}
 	}
-	ev, err := organ.GatherFeature(f.repo, f.request, git.Git{}.TrackedFiles(ctx, f.repo), tickets)
+	ev, err := organ.GatherFeature(ctx, f.repo, f.request, git.Git{}.TrackedFiles(ctx, f.repo), tickets)
 	if err != nil {
+		if code, stopped := f.interrupted(ctx); stopped {
+			return "", code
+		}
 		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", err)
 		return "", dispatch.ExitSetup
 	}

@@ -80,7 +80,7 @@ func TestTicketTitlesStayInsideTheTags(t *testing.T) {
 	inputs := map[string]string{
 		"triage":    triageInput(Deferral{ID: "k-1", How: "the worker deferred it", Ticket: show}),
 		"predictor": predictInput(Footprint{ID: "k-1", Ticket: show, Files: []string{"a.go"}}),
-		"plan":      planInput(FeatureEvidence{Request: "Add a flag", Repo: "r", Open: []OpenTicket{{ID: "k-1", Title: title}}}),
+		"plan":      planInput(FeatureEvidence{Request: "Add a flag", Repo: "r", Unclosed: []UnclosedTicket{{ID: "k-1", Status: "open", Title: title}}}),
 	}
 	for name, in := range inputs {
 		evidenceIDs(t, in)

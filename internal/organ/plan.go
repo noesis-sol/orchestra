@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,7 +48,8 @@ const planSystem = "You plan feature requests for an automated coding pipeline. 
 	"its acceptance tells the worker to study the code, write the findings in the ticket's notes " +
 	"and file the implementation tickets as children of the epic, this ticket's parent (bd create " +
 	"--parent <the epic's ID>). Leave the tickets that depend on the findings to it; don't guess them.\n\n" +
-	"Don't plan what an open ticket already covers. keys are short names (t1, t2, …) that " +
+	"Don't plan what a ticket that isn't closed already covers, whatever its status: open, in " +
+	"progress, blocked or deferred. keys are short names (t1, t2, …) that " +
 	"blocked_by refers to. type is feature, task, bug or chore; priority is 0 (critical) to 4 " +
 	"(backlog), usually 2. Plan 1 to 12 tickets, the fewest that do the job; titles are plain " +
 	"summaries of at most 60 characters. The epic's description says what the feature is for and " +
@@ -75,25 +77,27 @@ const planSchema = `{"type":"object","properties":{` +
 
 // FeatureEvidence is what the plan organ plans a feature request from. GatherFeature reads it.
 type FeatureEvidence struct {
-	Request   string        // the request as typed or pasted
-	Repo      string        // the repository's name
-	README    string        // README.md; the input keeps its first maxPlanDoc bytes
-	Guide     string        // the agents' instructions, CLAUDE.md or AGENTS.md; capped likewise
-	GuideName string        // the guide's file name; "" is CLAUDE.md
-	Files     []TrackedFile // git ls-files; the input lists the first maxListed
-	Open      []OpenTicket  // the open tickets, so the plan doesn't repeat them
-	Named     []NamedFile   // the tracked files the request names by path
+	Request   string           // the request as typed or pasted
+	Repo      string           // the repository's name
+	README    string           // README.md; the input keeps its first maxPlanDoc bytes
+	Guide     string           // the agents' instructions, CLAUDE.md or AGENTS.md; capped likewise
+	GuideName string           // the guide's file name; "" is CLAUDE.md
+	Files     []TrackedFile    // git ls-files; the input lists the first maxListed
+	Unclosed  []UnclosedTicket // the tickets not closed, so the plan doesn't repeat them
+	Named     []NamedFile      // the tracked files the request names by path
 }
 
 // TrackedFile is a repository file and its length in lines, negative when not counted (binary,
-// unreadable or past the listed ones).
+// unreadable, larger than maxCounted or past the listed ones).
 type TrackedFile struct {
 	Path  string
 	Lines int
 }
 
-// OpenTicket is an open ticket the plan must not repeat.
-type OpenTicket struct{ ID, Title string }
+// UnclosedTicket is a ticket that isn't closed, whatever its status (open, in_progress, blocked,
+// deferred), which the plan must not repeat: one left in progress by a stopped run, or set aside,
+// is still to be done.
+type UnclosedTicket struct{ ID, Status, Title string }
 
 // NamedFile is a tracked file the request names, with the start of its contents.
 type NamedFile struct{ Path, Body string }
@@ -104,21 +108,23 @@ const (
 	maxPlanDoc    = 16000 // bytes of the README and of the guide
 	maxNamed      = 8     // files named in the request
 	maxNamedBytes = 16000 // bytes of each
-	maxOpen       = 500   // open tickets listed
+	maxUnclosed   = 500   // unclosed tickets listed
 	maxPlanned    = 12    // tickets in a plan
 )
 
 // GatherFeature reads the plan organ's evidence from the repository at repo, through an os.Root so
 // that no symbolic link leads outside it: README.md, CLAUDE.md (or AGENTS.md), the line counts of
 // the tracked files (git ls-files) and the tracked files the request names by path. A missing
-// README or guide is left empty.
-func GatherFeature(repo, request string, tracked []string, open []OpenTicket) (FeatureEvidence, error) {
+// README or guide is left empty. Once ctx is done it stops, with ctx's error.
+func GatherFeature(
+	ctx context.Context, repo, request string, tracked []string, unclosed []UnclosedTicket,
+) (FeatureEvidence, error) {
 	root, err := os.OpenRoot(repo)
 	if err != nil {
 		return FeatureEvidence{}, fmt.Errorf("reading the repository: %w", err)
 	}
 	defer func() { _ = root.Close() }() // opened read-only: nothing to flush
-	ev := FeatureEvidence{Request: request, Repo: filepath.Base(repo), Open: open}
+	ev := FeatureEvidence{Request: request, Repo: filepath.Base(repo), Unclosed: unclosed}
 	ev.README, _ = readStart(root, "README.md", maxPlanDoc+1)
 	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
 		if body, ok := readStart(root, name, maxPlanDoc+1); ok {
@@ -127,11 +133,17 @@ func GatherFeature(repo, request string, tracked []string, open []OpenTicket) (F
 		}
 	}
 	for i, f := range tracked {
+		if ctx.Err() != nil {
+			break
+		}
 		lines := -1
 		if i < maxListed {
-			lines = countLines(root, f)
+			lines = countLines(ctx, root, f)
 		}
 		ev.Files = append(ev.Files, TrackedFile{Path: f, Lines: lines})
+	}
+	if err := ctx.Err(); err != nil { // the counts stopped short
+		return FeatureEvidence{}, err
 	}
 	for _, f := range NamedPaths(request, tracked) {
 		body, ok := readStart(root, f, maxNamedBytes+1)
@@ -160,25 +172,37 @@ func readStart(root *os.Root, name string, n int64) (string, bool) {
 	return string(b), true
 }
 
+// maxCounted is the size of the largest file whose lines are counted: reading larger ones in full
+// would hold up the plan, and Ctrl+C with it.
+const maxCounted = 4 << 20
+
 // countLines counts the lines of the file name under root; -1 for a binary file (a NUL byte in its
-// first 8 KiB) or one that can't be read.
-func countLines(root *os.Root, name string) int {
+// first 8 KiB), one larger than maxCounted, one that can't be read, or when ctx ends first.
+func countLines(ctx context.Context, root *os.Root, name string) int {
 	f, err := root.Open(name)
 	if err != nil {
 		return -1
 	}
 	defer func() { _ = f.Close() }() // read-only
-	r := bufio.NewReaderSize(f, 8<<10)
+	if info, err := f.Stat(); err != nil || info.Size() > maxCounted {
+		return -1
+	}
+	// The limit holds for a file that grows while it is read.
+	r := bufio.NewReaderSize(io.LimitReader(f, maxCounted+1), 8<<10)
 	if head, err := r.Peek(8 << 10); bytes.IndexByte(head, 0) >= 0 || err != nil && !errors.Is(err, io.EOF) {
 		return -1
 	}
-	lines, last := 0, byte('\n')
+	lines, last, read := 0, byte('\n'), 0
 	buf := make([]byte, 32<<10)
 	for {
+		if ctx.Err() != nil {
+			return -1
+		}
 		n, err := r.Read(buf)
 		if n > 0 {
 			lines += bytes.Count(buf[:n], []byte{'\n'})
 			last = buf[n-1]
+			read += n
 		}
 		if errors.Is(err, io.EOF) {
 			break
@@ -187,15 +211,22 @@ func countLines(root *os.Root, name string) int {
 			return -1
 		}
 	}
+	if read > maxCounted {
+		return -1
+	}
 	if last != '\n' {
 		lines++ // a last line without a newline
 	}
 	return lines
 }
 
+// lineRef is a line reference after a path: merge.go:120, merge.go:120-140, merge.go:120:5,
+// merge.go#L120 or merge.go#L120-L140.
+var lineRef = regexp.MustCompile(`(?::\d+(?:[-:]\d+)?|#L\d+(?:-L?\d+)?)$`)
+
 // NamedPaths is the tracked files the request names by path, in the order it names them, at most
-// maxNamed: words of the request that are tracked paths once quotes, brackets and trailing
-// punctuation are taken off.
+// maxNamed: words of the request that are tracked paths once quotes, brackets, trailing
+// punctuation and a line reference are taken off.
 func NamedPaths(request string, tracked []string) []string {
 	known := make(map[string]bool, len(tracked))
 	for _, f := range tracked {
@@ -205,7 +236,7 @@ func NamedPaths(request string, tracked []string) []string {
 	for _, w := range strings.FieldsFunc(request, func(r rune) bool {
 		return strings.ContainsRune(" \t\r\n\"'`()[]{}<>,;", r)
 	}) {
-		w = strings.TrimPrefix(strings.TrimRight(w, ".:!?"), "./")
+		w = strings.TrimPrefix(lineRef.ReplaceAllLiteralString(strings.TrimRight(w, ".:!?"), ""), "./")
 		if known[w] && !slices.Contains(named, w) && len(named) < maxNamed {
 			named = append(named, w)
 		}
@@ -237,13 +268,13 @@ func planInput(ev FeatureEvidence) string {
 		}
 		files.WriteByte('\n')
 	}
-	var open strings.Builder
-	for i, t := range ev.Open {
-		if i == maxOpen {
-			fmt.Fprintf(&open, "(… and %d more)\n", len(ev.Open)-maxOpen)
+	var unclosed strings.Builder
+	for i, t := range ev.Unclosed {
+		if i == maxUnclosed {
+			fmt.Fprintf(&unclosed, "(… and %d more)\n", len(ev.Unclosed)-maxUnclosed)
 			break
 		}
-		open.WriteString(t.ID + "  " + t.Title + "\n")
+		unclosed.WriteString(t.ID + "  " + t.Status + "  " + t.Title + "\n")
 	}
 	guide := ev.GuideName
 	if guide == "" {
@@ -255,7 +286,7 @@ func planInput(ev FeatureEvidence) string {
 		Section(id, "README", cut(ev.README, maxPlanDoc)) +
 		Section(id, "Agent instructions ("+guide+")", cut(ev.Guide, maxPlanDoc)) +
 		Section(id, "Repository files (git ls-files), each with its line count", files.String()) +
-		Section(id, "Open tickets (ID and title)", open.String())
+		Section(id, "Tickets not closed (ID, status and title)", unclosed.String())
 	for _, f := range ev.Named {
 		in += Section(id, "File named in the request: "+f.Path, cut(f.Body, maxNamedBytes))
 	}
@@ -349,6 +380,8 @@ func parsePlan(r Result, tracked []string) (FeaturePlan, error) {
 		for _, b := range t.BlockedBy {
 			b = strings.TrimSpace(b)
 			switch {
+			case b == "":
+				continue
 			case b == t.Key:
 				return p, fmt.Errorf("ticket %s of the plan is blocked by itself", t.Key)
 			case !keys[b]:

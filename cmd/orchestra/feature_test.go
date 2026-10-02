@@ -101,10 +101,11 @@ func (f fakeOrganFeature) PlanFeature(context.Context, organ.FeatureEvidence) (o
 	return f.plan, nil
 }
 
-// fakeFeatureTracker files tickets as f-1 (the epic), f-1.1 and so on, failing the create numbered
-// failCreate or the dep add numbered failDep (both from 1; 0 fails none) with failWith, or else as
-// a bd that exits 1 on a locked database.
+// fakeFeatureTracker lists the unclosed tickets and files tickets as f-1 (the epic), f-1.1 and so
+// on, failing the create numbered failCreate or the dep add numbered failDep (both from 1; 0 fails
+// none) with failWith, or else as a bd that exits 1 on a locked database.
 type fakeFeatureTracker struct {
+	unclosed   []dispatch.Ticket
 	created    []beads.NewTicket
 	blocks     [][2]string
 	failCreate int
@@ -122,8 +123,8 @@ func (f *fakeFeatureTracker) failure(args ...string) error {
 	return &command.Error{Name: "bd", Args: args, Err: err, Stderr: "database is locked"}
 }
 
-func (*fakeFeatureTracker) Open(context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
-	return nil, nil, nil
+func (f *fakeFeatureTracker) Unclosed(context.Context) ([]dispatch.Ticket, error) {
+	return f.unclosed, nil
 }
 
 func (f *fakeFeatureTracker) Create(_ context.Context, t beads.NewTicket) (string, error) {

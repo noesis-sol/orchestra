@@ -128,7 +128,8 @@ func livePlan(t *testing.T) {
 	}
 	request := "Add a --json flag to todo list (cmd/list.go) that prints the items as a JSON array, and a " +
 		"--done flag that lists only finished items."
-	ev, err := organ.GatherFeature(dir, request, git.Git{}.TrackedFiles(context.Background(), dir), nil)
+	ctx := context.Background()
+	ev, err := organ.GatherFeature(ctx, dir, request, git.Git{}.TrackedFiles(ctx, dir), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

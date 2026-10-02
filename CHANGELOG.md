@@ -337,6 +337,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `--feature`'s plan organ sees every ticket that isn't closed, with its
+  status: a ticket left in progress by a stopped run, or set aside with
+  `bd defer`, was missing, so a request for the same change planned it again.
+  A plan with an empty `blocked_by` entry is no longer rejected (exit code 2
+  after a long plan); the entry is ignored. A request naming a file with a line
+  after it (`internal/x/y.go:120`, `y.go#L120`) gets that file's start as
+  evidence. Ctrl+C while the evidence is gathered stops at once (exit code
+  130), and a tracked file over 4 MB is no longer read to count its lines.
 - `--feature` asks to confirm its plan only when standard input and output are
   both a terminal: `orchestra --feature "…" > run.log`, typed in a terminal,
   waited on a question written to the file. Without `--yes` it now files

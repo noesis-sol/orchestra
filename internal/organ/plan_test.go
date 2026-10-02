@@ -25,7 +25,7 @@ func planOutput(plan string) string {
 
 func planEvidence() FeatureEvidence {
 	ev := FeatureEvidence{Request: "Add a --json flag to cmd/list.go.", Repo: "lister", README: "# lister",
-		Guide: "Run make check.", Open: []OpenTicket{{"l-1", "Faster listing"}}}
+		Guide: "Run make check.", Unclosed: []UnclosedTicket{{"l-1", "open", "Faster listing"}}}
 	for _, f := range planTracked {
 		ev.Files = append(ev.Files, TrackedFile{Path: f, Lines: 10})
 	}
@@ -52,7 +52,7 @@ func TestPlanFeatureParsesAGoodPlan(t *testing.T) {
 	b, _ := os.ReadFile(record)
 	for _, want := range []string{"repository lister as an epic", "## Feature request\n\n<evidence id=\"",
 		"\nAdd a --json flag to cmd/list.go.\n</evidence id=\"", "## README\n\n", "## Agent instructions (CLAUDE.md)",
-		"\nRun make check.\n", "\nREADME.md  10\ncmd/list.go  10\n", "\nl-1  Faster listing\n</evidence",
+		"\nRun make check.\n", "\nREADME.md  10\ncmd/list.go  10\n", "\nl-1  open  Faster listing\n</evidence",
 		"[--json-schema]", "[--effort]\n[high]\n"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("claude was not given %q:\n%s", want, b)
@@ -191,8 +191,8 @@ func TestPlanInputIsCapped(t *testing.T) {
 	for i := range maxListed + 3 {
 		ev.Files = append(ev.Files, TrackedFile{Path: fmt.Sprintf("f%d.go", i), Lines: -1})
 	}
-	for i := range maxOpen + 2 {
-		ev.Open = append(ev.Open, OpenTicket{fmt.Sprintf("o-%d", i), "t"})
+	for i := range maxUnclosed + 2 {
+		ev.Unclosed = append(ev.Unclosed, UnclosedTicket{fmt.Sprintf("o-%d", i), "open", "t"})
 	}
 	in := planInput(ev)
 	for _, want := range []string{"## Agent instructions (AGENTS.md)", "\nf0.go\nf1.go\n", "(… and 3 more)",
@@ -229,13 +229,14 @@ func TestGatherFeature(t *testing.T) {
 		t.Fatal(err)
 	}
 	tracked := []string{"AGENTS.md", "README.md", "bin.dat", "cmd/list.go", "empty.txt", "gone.go", "link.txt"}
-	open := []OpenTicket{{"l-1", "Faster listing"}}
-	ev, err := GatherFeature(dir, "Add --json to `cmd/list.go`, see link.txt and bin.dat.", tracked, open)
+	unclosed := []UnclosedTicket{{"l-1", "in_progress", "Faster listing"}}
+	ev, err := GatherFeature(context.Background(), dir, "Add --json to `cmd/list.go`, see link.txt and bin.dat.",
+		tracked, unclosed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ev.Repo != filepath.Base(dir) || ev.README != "# lister\n" || ev.Guide != "Run make check.\n" ||
-		ev.GuideName != "AGENTS.md" || !slices.Equal(ev.Open, open) {
+		ev.GuideName != "AGENTS.md" || !slices.Equal(ev.Unclosed, unclosed) {
 		t.Errorf("got %+v", ev)
 	}
 	lines := map[string]int{}
@@ -251,7 +252,7 @@ func TestGatherFeature(t *testing.T) {
 	if got := fmt.Sprint(ev.Named); got != "[{cmd/list.go package cmd\n\nfunc List() {}} {bin.dat (binary)}]" {
 		t.Errorf("named = %q", got)
 	}
-	if _, err := GatherFeature(filepath.Join(dir, "nowhere"), "r", nil, nil); err == nil {
+	if _, err := GatherFeature(context.Background(), filepath.Join(dir, "nowhere"), "r", nil, nil); err == nil {
 		t.Error("a missing repository should be an error")
 	}
 	if err := os.Remove(filepath.Join(dir, "AGENTS.md")); err != nil {
@@ -263,7 +264,8 @@ func TestGatherFeature(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("Agents'"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ev, _ := GatherFeature(dir, "r", nil, nil); ev.Guide != "Claude's" || ev.GuideName != "CLAUDE.md" {
+	ev, _ = GatherFeature(context.Background(), dir, "r", nil, nil)
+	if ev.Guide != "Claude's" || ev.GuideName != "CLAUDE.md" {
 		t.Errorf("CLAUDE.md should come first: %q from %s", ev.Guide, ev.GuideName)
 	}
 }
