@@ -98,19 +98,24 @@ func TestWorkersShowTheirNumbers(t *testing.T) {
 	}
 }
 
-// The hint names the numbers there are, and keeps them as long as it can in a narrow pane.
+// The hint names the numbers there are, and keeps them as long as it can in a narrow pane: the short
+// form first, then s alone.
 func TestHintNamesTheNumberKeys(t *testing.T) {
 	var focused []string
 	cases := []struct {
 		workers, w int
 		want       string
 	}{
-		{4, 80, "  1–4 go to a worker · s stops after current · ctrl+c stops now"},
-		{1, 80, "  1 goes to the worker · s stops after current · ctrl+c stops now"},
-		{12, 80, "  1–9 go to a worker · s stops after current · ctrl+c stops now"},
-		{4, 42, " 1–4: worker · s: stop after · ctrl+c: now"},
-		{4, 41, " s: stop after · ctrl+c: now"},
-		{0, 80, "  s stops after current · ctrl+c stops now"},
+		{4, 80, "  1–4 to go to a worker's tab · s to stop after the current tickets"},
+		{1, 80, "  1 to go to the worker's tab · s to stop after the current tickets"},
+		{12, 80, "  1–9 to go to a worker's tab · s to stop after the current tickets"},
+		{4, 67, "  1–4 to go to a worker's tab · s to stop after the current tickets"},
+		{4, 66, " 1–4 worker tab · s stop after current"},
+		{4, 38, " 1–4 worker tab · s stop after current"},
+		{4, 37, "  s to stop after the current tickets"},
+		{4, 36, " s stop after current"},
+		{4, 20, " s stop after curre…"},
+		{0, 80, "  s to stop after the current tickets"},
 	}
 	for _, c := range cases {
 		m := numberedDashboard(c.workers, &focused)
@@ -120,14 +125,20 @@ func TestHintNamesTheNumberKeys(t *testing.T) {
 	}
 	m := numberedDashboard(2, &focused)
 	m.stopping = true
-	if got := ansi.Strip(m.hintLine(80)); got != "  1–2 go to a worker · ctrl+c stops now" {
+	if got := ansi.Strip(m.hintLine(80)); got != "  1–2 to go to a worker's tab" {
 		t.Errorf("stopping: %q", got)
 	}
+	if got := ansi.Strip(m.hintLine(20)); got != " 1–2 worker tab" {
+		t.Errorf("stopping, 20 wide: %q", got)
+	}
 	m.stopping, m.draining = false, true
-	if got := ansi.Strip(m.hintLine(80)); got != "  1–2 go to a worker · s cancels the stop · ctrl+c stops now" {
+	if got := ansi.Strip(m.hintLine(80)); got != "  1–2 to go to a worker's tab · s to keep taking tickets" {
 		t.Errorf("winding down: %q", got)
 	}
-	if got := ansi.Strip(m.hintLine(42)); got != "  s cancels the stop · ctrl+c stops now" {
+	if got := ansi.Strip(m.hintLine(42)); got != " 1–2 worker tab · s keep going" {
 		t.Errorf("winding down, 42 wide: %q", got)
+	}
+	if got := ansi.Strip(m.hintLine(29)); got != "  s to keep taking tickets" {
+		t.Errorf("winding down, 29 wide: %q", got)
 	}
 }

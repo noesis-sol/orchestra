@@ -45,7 +45,7 @@ func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 	var calls []bool
 	cancelled := false
 	m := drainDashboard(&calls, &cancelled)
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "s stops after current · ctrl+c stops now") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "1–2 to go to a worker's tab · s to stop after the current tickets") {
 		t.Errorf("hint missing:\n%s", v)
 	}
 
@@ -66,7 +66,7 @@ func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 	}
 	v = ansi.Strip(m.View())
 	joined := strings.Join(strings.Fields(v), " ") // the line wraps at 80 columns
-	for _, want := range []string{"■ Stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start", "s cancels the stop · ctrl+c stops now"} {
+	for _, want := range []string{"■ Stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start", "s to keep taking tickets"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
 		}
@@ -84,7 +84,7 @@ func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 	if len(calls) != 2 || calls[1] {
 		t.Fatalf("drain calls %v, want [true false]", calls)
 	}
-	if v := ansi.Strip(m.View()); strings.Contains(v, "Stopping after") || strings.Contains(v, "held") || !strings.Contains(v, "s stops after current") {
+	if v := ansi.Strip(m.View()); strings.Contains(v, "Stopping after") || strings.Contains(v, "held") || !strings.Contains(v, "s to stop after the current tickets") {
 		t.Errorf("still winding down after going on:\n%s", v)
 	}
 	if cancelled {
@@ -136,7 +136,7 @@ func TestDrainQuestionFitsTheWindow(t *testing.T) {
 		if !strings.Contains(v, "Stop after the running tickets?") && !strings.Contains(v, "Stop after current? y/n") {
 			t.Errorf("%dx%d: the question is not shown:\n%s", size[0], size[1], v)
 		}
-		if !strings.Contains(v, "ctrl+c") {
+		if !strings.Contains(v, "stop after") {
 			t.Errorf("%dx%d: the hint is gone:\n%s", size[0], size[1], v)
 		}
 		t.Logf("%dx%d:\n%s", size[0], size[1], v)
@@ -161,8 +161,8 @@ func TestDrainEventsShowOnTheDashboard(t *testing.T) {
 }
 
 // Once confirmed, the dashboard says on a line of its own that the run winds down and after which
-// tickets, whatever the pane: the IDs may be shortened, the words never. The hint says s cancels
-// the stop and the queue is marked as held, until the stop is cancelled.
+// tickets, whatever the pane: the IDs may be shortened, the words never. The hint says s keeps taking
+// tickets and the queue is marked as held, until the stop is cancelled.
 func TestWindingDownIsShownInAnyPane(t *testing.T) {
 	// ids is how much of the running tickets' IDs shows: all of them, or the first and a cut.
 	sizes := []struct {
@@ -170,12 +170,12 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 		hint, ids string
 		held      bool
 	}{
-		{70, 40, "s cancels the stop · ctrl+c stops now", "orchestra-20w, orch", true},
-		{40, 40, "s cancels the stop · ctrl+c stops now", "orchestra-20w, orchestra-a", true},
-		{70, 8, "s cancels the stop · ctrl+c stops now", "orchestra-20w, orch", true},
-		{40, 9, "s cancels the stop · ctrl+c stops now", "orchestra-20w, orchestra-a", true},
-		{30, 12, "s: cancel stop · ctrl+c: now", "orchestra-20w, orchestr", false}, // the totals line is cut at 30
-		{30, 7, "s: cancel stop · ctrl+c: now", "orchestra-20w, orchestr", false},
+		{70, 40, "1–2 to go to a worker's tab · s to keep taking tickets", "orchestra-20w, orch", true},
+		{40, 40, "1–2 worker tab · s keep going", "orchestra-20w, orchestra-a", true},
+		{70, 8, "1–2 to go to a worker's tab · s to keep taking tickets", "orchestra-20w, orch", true},
+		{40, 9, "1–2 worker tab · s keep going", "orchestra-20w, orchestra-a", true},
+		{30, 12, "1–2 worker tab · s keep going", "orchestra-20w, orchestr", false}, // the totals line is cut at 30
+		{30, 7, "1–2 worker tab · s keep going", "orchestra-20w, orchestr", false},
 	}
 	for _, size := range sizes {
 		var calls []bool
@@ -222,10 +222,10 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 
 		m = press(m, "s", "y")
 		plain = ansi.Strip(m.View())
-		if strings.Contains(plain, "Stopping after") || strings.Contains(plain, "held") || strings.Contains(plain, "cancel stop") || strings.Contains(plain, "cancels the stop") {
+		if strings.Contains(plain, "Stopping after") || strings.Contains(plain, "held") || strings.Contains(plain, "keep taking") || strings.Contains(plain, "keep going") {
 			t.Errorf("%dx%d: still winding down after cancelling:\n%s", size.w, size.h, plain)
 		}
-		if size.w == 70 && !strings.Contains(plain, "s stops after current · ctrl+c stops now") {
+		if size.w == 70 && !strings.Contains(plain, "s to stop after the current tickets") {
 			t.Errorf("%dx%d: the normal hint is not back:\n%s", size.w, size.h, plain)
 		}
 	}

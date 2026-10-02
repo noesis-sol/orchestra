@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -113,19 +114,19 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvStop, Text: "PAUSED: kinieta-kco"})
 	final := ansi.Strip(m.View())
-	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "ctrl+c stops") {
+	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "to stop after the current tickets") {
 		t.Errorf("final view should keep the summary and drop the live parts:\n%s", final)
 	}
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {}, func(string) {})
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 50; i++ { // more than 120x50 shows
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
 			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
 	}
-	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-029", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
+	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-049", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
 	for _, size := range [][2]int{{40, 30}, {66, 36}, {120, 50}} {
 		m.width, m.height = size[0], size[1]
 		lines := strings.Split(m.View(), "\n")
@@ -137,7 +138,7 @@ func TestViewFitsThePaneHeight(t *testing.T) {
 				t.Errorf("%dx%d: line %d wide: %q", size[0], size[1], ansi.StringWidth(l), ansi.Strip(l))
 			}
 		}
-		if !strings.Contains(ansi.Strip(m.View()), "+") {
+		if !regexp.MustCompile(`│ \+\d+ +│`).MatchString(ansi.Strip(m.View())) {
 			t.Errorf("%dx%d: hidden tickets are not mentioned", size[0], size[1])
 		}
 		if size[0] == 66 {

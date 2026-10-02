@@ -160,7 +160,7 @@ func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
 	}
 	m.height = 9
 	v := ansi.Strip(m.View())
-	if strings.Contains(v, "Current") || !strings.Contains(v, "kinieta-w2") || !strings.Contains(v, "ctrl+c") {
+	if strings.Contains(v, "Current") || !strings.Contains(v, "kinieta-w2") || !strings.Contains(v, "s stop after current") {
 		t.Errorf("the label should be dropped before anything else:\n%s", v)
 	}
 	m.active = nil

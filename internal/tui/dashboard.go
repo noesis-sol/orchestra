@@ -5,6 +5,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -27,11 +28,12 @@ var (
 	grey   = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
 	purple = lipgloss.AdaptiveColor{Light: "#6D28D9", Dark: "#A78BFA"}
 	lilac  = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#C4B5FD"} // a lighter purple, for text
+	chalk  = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#E5E7EB"} // nearer the text's own colour than faint
 )
 
 var (
 	dimStyle      = lipgloss.NewStyle().Faint(true)
-	keyStyle      = lipgloss.NewStyle().Bold(true)                   // a key to press
+	keyStyle      = lipgloss.NewStyle().Foreground(chalk).Bold(true) // a key to press
 	pickedStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)  // picked up
 	closedStyle   = lipgloss.NewStyle().Foreground(green).Bold(true) // completed
 	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside
@@ -214,12 +216,12 @@ func (m Dashboard) View() string {
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
-	hint := m.hintLine(w)
+	hint := m.hintLine(w) // none with no key to name
 	if m.draining {
-		hint = lipgloss.JoinVertical(lipgloss.Left, m.windDownLine(w), hint)
+		hint = stack(m.windDownLine(w), hint)
 	}
 	if warn := m.cfg.MCPWarning(); warn != "" { // in the log once; here for the whole run
-		hint = lipgloss.JoinVertical(lipgloss.Left, deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
+		hint = stack(deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
 	}
 	if !m.asking {
 		return m.layout(w, title, hint)
@@ -230,7 +232,7 @@ func (m Dashboard) View() string {
 	if v := m.layout(w, title, hint); w >= 36 && lipgloss.Height(v) >= lipgloss.Height(modal)+2 {
 		return overlay(v, modal, w)
 	}
-	return m.layout(w, title, lipgloss.JoinVertical(lipgloss.Left, m.promptLine(w), hint))
+	return m.layout(w, title, stack(m.promptLine(w), hint))
 }
 
 // summary is the last frame, which stays on screen as the run's summary: the title, the totals and the
@@ -259,14 +261,17 @@ func (m Dashboard) summary(w int, title string) string {
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
 // can't redraw a view taller than the terminal. It gives way step by step: one line per worker
 // instead of a box each, then no tickets table, then the totals on one line, then the Current
-// label, then cut, keeping footer.
+// label, then cut, keeping footer. An empty footer takes no line.
 func (m Dashboard) layout(w int, title, footer string) string {
+	var foot []string
+	if footer != "" {
+		foot = strings.Split(footer, "\n")
+	}
 	stats := m.statsTable(w)
 	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
 	compose := func(stats, panels string) string {
 		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
-		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) -
-			lipgloss.Height(footer)
+		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - len(foot)
 		parts := []string{title, stats}
 		if room >= 7 {
 			parts = append(parts, m.ticketsTable(w, room))
@@ -274,7 +279,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		if panels != "" {
 			parts = append(parts, panels)
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, append(parts, footer)...)
+		return lipgloss.JoinVertical(lipgloss.Left, append(parts, foot...)...)
 	}
 	if v := compose(stats, current(m.workerPanels(w))); fits(v) {
 		return v
@@ -284,13 +289,12 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	}
 	top := []string{title, m.statsLine(w)}
 	if list := m.workerList(w); list != "" {
-		if v := lipgloss.JoinVertical(lipgloss.Left, append(top, current(list), footer)...); fits(v) {
+		if v := lipgloss.JoinVertical(lipgloss.Left, append(append(top, current(list)), foot...)...); fits(v) {
 			return v
 		}
 		top = append(top, list)
 	}
 	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, top...), "\n")
-	foot := strings.Split(footer, "\n")
 	if keep := max(m.height-len(foot), 0); len(body) > keep {
 		body = body[:keep]
 	}
@@ -310,34 +314,66 @@ func current(panels string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, "  "+pickedStyle.Render("Current"), panels)
 }
 
-// hintLine says which keys do what: the workers' numbers go to their tabs (not while the stop
-// question is open), s stops after the running tickets, or once asked cancels that; ctrl+c stops at
-// once. A narrow pane gets a shorter form, and then one without the numbers.
+// stack joins the parts that aren't empty, top to bottom.
+func stack(parts ...string) string {
+	return lipgloss.JoinVertical(lipgloss.Left, slices.DeleteFunc(parts, func(p string) bool { return p == "" })...)
+}
+
+// hintLine says which keys do what, each key brighter than what it does: the workers' numbers go to
+// their tabs (not while the stop question is open), and s stops after the running tickets, or once
+// asked goes on taking them; a run stopping for another reason has no s to offer. Ctrl+C needs no
+// hint. A narrow pane gets a shorter form, and then one without the numbers; with no key to name,
+// the line is empty.
 func (m Dashboard) hintLine(w int) string {
-	long, short := "s stops after current · ctrl+c stops now", "s: stop after · ctrl+c: now"
+	var keys []keyHint
+	if n := min(len(m.active), numbered); n > 0 && !m.asking {
+		k := keyHint{key: "1", does: "go to the worker's tab", short: "worker tab"}
+		if n > 1 {
+			k.key, k.does = fmt.Sprintf("1–%d", n), "go to a worker's tab"
+		}
+		keys = append(keys, k)
+	}
 	switch {
 	case m.draining:
-		long, short = "s cancels the stop · ctrl+c stops now", "s: cancel stop · ctrl+c: now"
-	case m.stopping:
-		long, short = "ctrl+c stops now", "ctrl+c: now"
+		keys = append(keys, keyHint{key: "s", does: "keep taking tickets", short: "keep going"})
+	case !m.stopping:
+		keys = append(keys, keyHint{key: "s", does: "stop after the current tickets", short: "stop after current"})
 	}
-	hints := []string{"  " + long, " " + short}
-	if n := min(len(m.active), numbered); n > 0 && !m.asking {
-		keys, goes, worker := "1", "goes to the worker", "worker"
-		if n > 1 {
-			keys, goes = fmt.Sprintf("1–%d", n), "go to a worker"
-		}
-		hints = append([]string{"  " + keys + " " + goes + " · " + long, " " + keys + ": " + worker + " · " + short},
-			hints...)
+	if len(keys) == 0 {
+		return ""
 	}
-	hint := hints[len(hints)-1]
-	for _, h := range hints {
-		if ansi.StringWidth(h) <= w {
-			hint = h
+	forms := []string{hintForm(keys, false), hintForm(keys, true)}
+	if len(keys) > 1 { // the numbers and s: then s alone
+		forms = append(forms, hintForm(keys[1:], false), hintForm(keys[1:], true))
+	}
+	hint := forms[len(forms)-1]
+	for _, f := range forms {
+		if ansi.StringWidth(f) <= w {
+			hint = f
 			break
 		}
 	}
-	return dimStyle.Render(ansi.Truncate(hint, w, "…"))
+	return ansi.Truncate(hint, w, "…")
+}
+
+// keyHint is a key the dashboard answers to and what it does, in full and in short for a narrow pane.
+type keyHint struct{ key, does, short string }
+
+// hintForm is the hint line naming keys, in full ("  s to stop after the current tickets") or short
+// (" s stop after current"): the keys in keyStyle, the rest faint.
+func hintForm(keys []keyHint, short bool) string {
+	lead, parts := "  ", make([]string, len(keys))
+	if short {
+		lead = " "
+	}
+	for i, k := range keys {
+		does := " to " + k.does
+		if short {
+			does = " " + k.short
+		}
+		parts[i] = keyStyle.Render(k.key) + dimStyle.Render(does)
+	}
+	return lead + strings.Join(parts, dimStyle.Render(" · "))
 }
 
 // windDownLine says, while the run winds down, after which tickets it ends, in the DRAIN line's

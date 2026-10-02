@@ -298,6 +298,14 @@ All notable changes to orchestra are documented here. The format follows
   `answered` records gain the ticket's `title`, a `warn` that sets its ticket
   aside gains `detail` (why), and a `stop` record gains `detail` (its kind)
   and the `ticket` it stopped over, if any.
+- The dashboard's key hint reads `<key> to <what it does>`, each key bold in a
+  colour brighter than its faint words, so the keys are what the eye finds:
+  `1–3 to go to a worker's tab · s to stop after the current tickets`, and
+  `s to keep taking tickets` while the run winds down; a narrow pane gets
+  `1–3 worker tab · s stop after current`. It no longer says
+  `ctrl+c stops now`: Ctrl+C needs no hint, and still stops the run at once. A
+  run stopping for another reason names only the number keys, and with no
+  worker running the hint line is left out.
 - On a terminal, a run that ends by itself closes with a bold green
   `♪ Completed the Run`, then, quieter, its tickets and how long it took
   (`2 tickets · 1h12m`), instead of `■ READY_EMPTY after 2 tickets`;
