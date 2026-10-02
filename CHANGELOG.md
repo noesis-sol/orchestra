@@ -440,6 +440,14 @@ All notable changes to orchestra are documented here. The format follows
   idle grace first, its slot idle. A worker without hooks still gets the idle
   grace, as Herdr's idle can't tell the end of its turn from a wait on its own
   background command.
+- A ticket's footprint no longer counts Go keywords and builtins as functions
+  it works on (`func()`, `len(x)`, `make()`, `string(b)`), nor calls into
+  more standard packages (`synctest.Test()`, `synctest.Wait()`, `testing`,
+  `atomic`, `signal`, `maps`, `cmp`, `utf8`, `rand`, `log`, `slog`, `runtime`,
+  …), which used to count by their bare name (`Test`, `Wait`). Two unrelated
+  tickets that both said `func()` or `synctest.Wait()` shared a function: the
+  run kept them apart, and `orchestra plan` proposed a blocks link between
+  them. A method named like a builtin (`o.close()`) still counts.
 
 ## [0.1.1] - 2026-09-29
 

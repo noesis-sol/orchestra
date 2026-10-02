@@ -137,19 +137,30 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 }
 
 // stdPackages are standard packages whose functions tickets name in passing (os.WriteFile,
-// strings.HasPrefix): they say nothing about where a ticket works.
-var stdPackages = setOf(`bufio bytes context errors exec filepath fmt http io json os path reflect
-	regexp slices sort strconv strings sync syscall time`)
+// strings.HasPrefix, synctest.Wait): they say nothing about where a ticket works.
+var stdPackages = setOf(`atomic base64 binary bits bufio bytes cmp context debug errors exec filepath flag
+	fmt gzip hash hex hmac http httptest io ioutil iter json log maps math md5 netip os path pprof rand
+	reflect regexp runtime sha1 sha256 signal slices slog sort strconv strings sync synctest syscall
+	tabwriter testing time unicode unsafe url utf16 utf8`)
+
+// goWords are Go's keywords and builtins, which a ticket calls bare (func(), len(x), string(b)) and
+// which are no function of the project's.
+var goWords = setOf(`break case chan const continue default defer else fallthrough for func go goto if
+	import interface map package range return select struct switch type var
+	append cap clear close complex copy delete imag len make max min new panic print println real recover
+	any bool byte comparable complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune
+	string uint uint8 uint16 uint32 uint64 uintptr`)
 
 // funcName is a function as the footprint keeps it: a lower-case qualifier is a package or a
-// variable (o.merge), not a type, and is left off. "" for a standard package's function.
+// variable (o.merge), not a type, and is left off. "" for a standard package's function and for a
+// Go keyword or builtin called bare; a method of the same name (o.close) is kept.
 func funcName(s string) string {
 	q, name, ok := strings.Cut(s, ".")
 	switch {
+	case !ok && goWords[s] || ok && stdPackages[q]:
+		return ""
 	case !ok || q[0] >= 'A' && q[0] <= 'Z':
 		return s
-	case stdPackages[q]:
-		return ""
 	}
 	return name
 }
