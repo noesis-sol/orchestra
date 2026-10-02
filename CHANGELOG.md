@@ -346,6 +346,13 @@ All notable changes to orchestra are documented here. The format follows
   `s` question's box, a line came out one column wider than the pane, and the
   terminal's wrapping left scraps on the screen; the cut character is now
   blanked.
+- Organ calls run `claude` the way orchestra runs `git`, `bd` and `herdr`.
+  An organ stopped at its time limit fails with `claude: timed out after
+  10m` (a plan that took too long said `claude: signal: killed:`), and one
+  stopped by Ctrl+C gets SIGTERM, then SIGKILL, in a process group of its
+  own. A `claude` that answered and exited, leaving a process behind that
+  held its output, failed after 5 seconds with `exec: WaitDelay expired
+  before I/O complete`, its answer thrown away; the answer now counts.
 - The dashboard marks a ticket `! review` only when a warning sets it aside
   (`CHECKS_FAILED`, `MERGE_CONFLICT`, `CLOSED_WITHOUT_COMMIT`,
   `DEFER_FAILED`). `LONG_RUNNING` and `WATCH_FAILED` no longer turn a running

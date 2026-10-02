@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -33,9 +34,21 @@ const stopGrace = 500 * time.Millisecond
 // command runs in its own process group, so a Ctrl+C at the terminal, or a SIGHUP from closing it,
 // reaches orchestra alone: a merge it has under way isn't killed halfway.
 func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
+	return run(ctx, limit, dir, nil, name, args)
+}
+
+// OutputWithInput runs a command as Output does, with input on its stdin.
+func OutputWithInput(ctx context.Context, limit time.Duration, dir, input, name string,
+	args ...string) (string, error) {
+	return run(ctx, limit, dir, strings.NewReader(input), name, args)
+}
+
+// run runs a command for Output and OutputWithInput, its stdin read from stdin (nil for none).
+func run(ctx context.Context, limit time.Duration, dir string, stdin io.Reader, name string,
+	args []string) (string, error) {
 	if limit > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeoutCause(ctx, limit, fmt.Errorf("timed out after %s", shortDuration(limit)))
+		ctx, cancel = context.WithTimeoutCause(ctx, limit, timedOut(limit))
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -45,6 +58,7 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 	cmd.Cancel = func() error { return terminate(cmd.Process) }
 	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer
+	cmd.Stdin = stdin
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
@@ -61,6 +75,14 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 	return stdout.String(), e
 }
 
+// timedOut is why a command was stopped at its time limit: it reads "timed out after 2m", and
+// errors.Is takes it for context.DeadlineExceeded.
+type timedOut time.Duration
+
+func (t timedOut) Error() string { return "timed out after " + shortDuration(time.Duration(t)) }
+
+func (t timedOut) Unwrap() error { return context.DeadlineExceeded }
+
 // Error is a command that failed: what ran, why it failed, and what it said on stderr. Callers that
 // react to a particular failure read its fields (or Err, through errors.As) instead of its text.
 type Error struct {
@@ -72,15 +94,19 @@ type Error struct {
 }
 
 // Error reads "git rebase main: exit status 1: <stderr>", or for a stopped command
-// "git rebase main: timed out after 2m (<stderr>)".
+// "git rebase main: timed out after 2m (<stderr>)". Without Args it names the command alone.
 func (e *Error) Error() string {
+	what := e.Name
+	if len(e.Args) > 0 {
+		what += " " + shortArgs(e.Args)
+	}
 	switch {
 	case !e.Stopped:
-		return fmt.Sprintf("%s %s: %v: %s", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+		return fmt.Sprintf("%s: %v: %s", what, e.Err, e.Stderr)
 	case e.Stderr != "":
-		return fmt.Sprintf("%s %s: %v (%s)", e.Name, shortArgs(e.Args), e.Err, e.Stderr)
+		return fmt.Sprintf("%s: %v (%s)", what, e.Err, e.Stderr)
 	}
-	return fmt.Sprintf("%s %s: %v", e.Name, shortArgs(e.Args), e.Err)
+	return fmt.Sprintf("%s: %v", what, e.Err)
 }
 
 func (e *Error) Unwrap() error { return e.Err }

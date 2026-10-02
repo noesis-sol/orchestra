@@ -3,17 +3,19 @@
 package organ
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // Organs are LLM-powered steps. The orchestrator gathers the evidence itself and hands it to
@@ -79,21 +81,20 @@ func (g Client) args(effort, system, schema string) []string {
 }
 
 // Ask runs claude -p at the effort with the system prompt and the JSON schema (none when empty) on
-// input, stopping it after timeout. A run that fails or reports an error is an error.
+// input, stopping it after timeout. A run that fails or reports an error is an error; one stopped at
+// its timeout says "timed out after" the timeout.
 func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, input, schema string) (Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, g.Bin, g.args(effort, system, schema)...)
-	cmd.Dir = os.TempDir() // outside the project: no CLAUDE.md, project settings or hooks
-	cmd.Stdin = strings.NewReader(input)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	cmd.WaitDelay = 5 * time.Second // don't wait on pipes a leftover child of the CLI still holds
-	if err := cmd.Run(); err != nil {
-		return Result{}, fmt.Errorf("%s: %w: %s", g.Bin, err, strings.TrimSpace(stderr.String()))
+	// Outside the project: no CLAUDE.md, project settings or hooks.
+	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), input, g.Bin, g.args(effort, system, schema)...)
+	if err != nil {
+		var e *command.Error
+		if errors.As(err, &e) {
+			e.Args = nil // the system prompt and the schema would bury why it failed
+		}
+		return Result{}, err
 	}
 	var r Result
-	if err := json.Unmarshal(stdout.Bytes(), &r); err != nil {
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return r, fmt.Errorf("unreadable %s output: %w", g.Bin, err)
 	}
 	if r.IsError {
