@@ -27,6 +27,9 @@ func (g gatedTabs) CreateTab(ctx context.Context, workspace, cwd, label string) 
 	return "", "", fmt.Errorf("no such workspace")
 }
 func (gatedTabs) CloseTab(ctx context.Context, tab string) error { return nil }
+func (gatedTabs) TabLabel(ctx context.Context, tab string) (string, bool, error) {
+	return "", false, nil // it opens none
+}
 
 // holdSink records events and closes release on the first HOLD.
 type holdSink struct {

@@ -36,12 +36,14 @@ type fakeHerdr struct {
 	panes      map[string]fakePane
 	agents     []*fakeAgent          // gone ones are removed
 	closed     []string              // tabs closed
+	labels     map[string]string     // the open tabs' labels, by tab
 	pasted     []string              // tickets whose prompt was pasted
 	starts     []string              // tickets StartAgent was asked to start a worker for
 	args       map[string][][]string // the arguments of each LaunchInPane and StartAgent, by ticket
 	behaviours map[string][]behaviour
 	running    sync.WaitGroup
 
+	labelFails   bool                   // TabLabel fails, as when Herdr is busy
 	launchFails  map[string]bool        // LaunchInPane fails for these tickets
 	promptFails  map[string]bool        // pasting the prompt never submits it
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
@@ -57,7 +59,7 @@ type fakeHerdr struct {
 }
 
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
-	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, behaviours: map[string][]behaviour{}, args: map[string][][]string{},
+	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, labels: map[string]string{}, behaviours: map[string][]behaviour{}, args: map[string][][]string{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
 		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
@@ -146,6 +148,7 @@ func (h *fakeHerdr) CreateTab(ctx context.Context, workspace, cwd, label string)
 	h.tabs++
 	tab, pane := fmt.Sprintf("tab%d", h.tabs), fmt.Sprintf("pane%d", h.tabs)
 	h.panes[pane] = fakePane{ticket: label, wt: cwd, tab: tab}
+	h.labels[tab] = label
 	return tab, pane, nil
 }
 
@@ -153,6 +156,7 @@ func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = append(h.closed, tab)
+	delete(h.labels, tab)
 	var left []*fakeAgent
 	for _, a := range h.agents {
 		if h.panes[a.pane].tab != tab {
@@ -161,6 +165,24 @@ func (h *fakeHerdr) CloseTab(ctx context.Context, tab string) error {
 	}
 	h.agents = left
 	return nil
+}
+
+func (h *fakeHerdr) TabLabel(ctx context.Context, tab string) (string, bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.labelFails {
+		return "", false, errors.New("herdr tab get: server busy")
+	}
+	label, open := h.labels[tab]
+	return label, open, nil
+}
+
+// restart is Herdr starting again without restoring its last session: its tabs and agents are
+// gone, and it numbers tabs from the first again.
+func (h *fakeHerdr) restart() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tabs, h.agents, h.labels = 0, nil, map[string]string{}
 }
 
 // Starter

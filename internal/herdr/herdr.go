@@ -54,6 +54,31 @@ func (t Terminal) CloseTab(ctx context.Context, tab string) error {
 	return err
 }
 
+// TabLabel returns the tab's label, and false if Herdr has no such tab (tab_not_found), which is no
+// error. Herdr numbers tabs afresh when it starts without restoring its last session, so an ID
+// recorded before may by then name another tab: its label tells them apart.
+func (t Terminal) TabLabel(ctx context.Context, tab string) (label string, open bool, err error) {
+	out, err := run(ctx, command.ReadLimit, "tab", "get", tab)
+	if HasCode(err, TabNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	var r struct {
+		Result struct {
+			Tab struct {
+				TabID string `json:"tab_id"`
+				Label string `json:"label"`
+			} `json:"tab"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Tab.TabID == "" {
+		return "", false, fmt.Errorf("unexpected 'herdr tab get' output: %s", out)
+	}
+	return r.Result.Tab.Label, true, nil
+}
+
 // StartAgent starts an agent in the pane, passing it args; a prompt among them starts it with the
 // prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
 // with line breaks, so each must be one line.
@@ -70,6 +95,7 @@ func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args 
 // Codes Herdr gives its errors, the ones orchestra reacts to.
 const (
 	AgentNotFound        = "agent_not_found"        // no agent by that name or in that pane
+	TabNotFound          = "tab_not_found"          // no tab by that ID
 	InvalidAgentName     = "invalid_agent_name"     // a name outside Herdr's rule for agent names
 	InvalidAgentArgument = "invalid_agent_argument" // an argument Herdr can't type into a shell
 )

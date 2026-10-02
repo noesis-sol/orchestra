@@ -286,7 +286,12 @@ ended with, say why it ended:
 Lines about single tickets, which don't stop the run (in the events, `closed`, `deferred`, `asked`,
 `answered`, `triage`, `warn` and `info` records with the line as `text`):
 
-- `closed (…); merged into …`: done.
+- `closed (…); merged into …`: done. The worker's tab is closed only while Herdr still has it labelled
+  with the ticket's ID: Herdr numbers tabs afresh when it starts without restoring its last
+  session, so the tab ID a run recorded may by then be another tab, the user's own included. The
+  line then ends `worktree and branch removed; tab <tab> left open: Herdr has it labelled '<label>'
+  now, …` (or `its tab <tab> was closed already`, or `… as Herdr can't say whose it is`): leave
+  that tab alone, and close the worker's own tab by hand if it is still open.
 - `deferred by worker`, `still <status> -> noted and deferred`: set aside. A `triage` line follows
   with the triage organ's verdict (cause: environment, instructions or problem), also appended to
   the ticket's notes. `TRIAGE_FAILED` means triage itself failed.

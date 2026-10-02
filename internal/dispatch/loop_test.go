@@ -28,13 +28,17 @@ func (r *recordSink) text() string {
 	return b.String()
 }
 
-// noTabs stands in for Herdr's tabs: merging closes the worker's tab.
+// noTabs stands in for Herdr's tabs, each called tab, whatever its label: one is gone by the time
+// its worker's work is merged, so merging closes none.
 type noTabs struct{}
 
 func (noTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (string, string, error) {
 	return "tab", "pane", nil
 }
 func (noTabs) CloseTab(ctx context.Context, tab string) error { return nil }
+func (noTabs) TabLabel(ctx context.Context, tab string) (string, bool, error) {
+	return "", false, nil
+}
 
 // Fakes for a run whose workers stop before their agents start.
 
@@ -134,6 +138,10 @@ func (okTabs) CreateTab(ctx context.Context, workspace, cwd, label string) (stri
 	return "tab-" + label, "pane-" + label, nil
 }
 func (okTabs) CloseTab(ctx context.Context, tab string) error { return nil }
+func (okTabs) TabLabel(ctx context.Context, tab string) (string, bool, error) {
+	label, open := strings.CutPrefix(tab, "tab-")
+	return label, open, nil
+}
 
 // Fakes for a run whose worker defers its ticket; the loop blocks gathering the evidence for triage
 // (Describe) until release is closed.

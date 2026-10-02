@@ -80,9 +80,9 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			if err == nil {
-				o.closeTab(keep, tab)
+				removed := o.closeWorkerTab(keep, id, tab)
 				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
-					"  %s closed (%s); merged into %s, worktree, branch and tab removed", id, commit, c.Base)})
+					"  %s closed (%s); merged into %s, %s", id, commit, c.Base, removed)})
 			} else {
 				detail := hash + " merged; cleanup failed, tab " + tab + " left open"
 				o.emit(Event{Kind: EvClosed, Ticket: id, Detail: detail, Text: fmt.Sprintf(
@@ -160,6 +160,31 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
 			"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
+}
+
+// closeWorkerTab closes tab, where ticket id's worker ran, once its work is merged and its worktree
+// and branch are removed, and says what was removed, for the line saying it merged. It closes the
+// tab only while Herdr has it labelled id, as the worker's tab was opened: Herdr numbers tabs afresh
+// when it starts without restoring its last session, so a tab the last run left a worker in, or one
+// recorded before Herdr restarted, may by now be another, the user's own included.
+func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
+	const removed = "worktree and branch removed; "
+	label, open, err := o.tabs.TabLabel(ctx, tab)
+	switch {
+	case err != nil:
+		o.log.Raw("", fmt.Errorf("cannot tell whether tab %s is still %s's, so it is left open: %w", tab, id, err))
+		return removed + "tab " + tab + " left open, as Herdr can't say whose it is"
+	case !open:
+		return removed + "its tab " + tab + " was closed already"
+	case label != id:
+		return fmt.Sprintf("%stab %s left open: Herdr has it labelled '%s' now, not %s, so it may not be its worker's",
+			removed, tab, label, id)
+	}
+	if err := o.tabs.CloseTab(ctx, tab); err != nil {
+		o.log.Raw("", fmt.Errorf("cannot close tab %s: %w", tab, err))
+		return removed + "tab " + tab + " could not be closed"
+	}
+	return "worktree, branch and tab removed"
 }
 
 // leaveConflict sets aside a ticket whose branch conflicts with Base, saying why it was not

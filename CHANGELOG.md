@@ -408,6 +408,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Merging a ticket no longer closes a tab that may not be its worker's. A
+  run merging a ticket the last run left behind closed the tab ID that run
+  recorded, but Herdr numbers its tabs afresh when it starts without
+  restoring its last session (and a crash loses a tab opened in the 5 seconds
+  before it), so by then the ID may be another tab, the user's own included.
+  orchestra now reads the tab's label first (`herdr tab get`) and closes the
+  tab only while the label is still the ticket's ID; the `closed` line says
+  when it left the tab open, and why.
 - An asked ticket whose worker, answered in its tab, claims it again and
   closes it while every slot is busy is no longer stranded on its branch:
   `bd ready` lists only open tickets, so it never came back, nothing merged

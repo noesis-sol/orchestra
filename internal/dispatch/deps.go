@@ -33,6 +33,8 @@ type Notes interface {
 type Tabs interface {
 	CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error)
 	CloseTab(ctx context.Context, tab string) error
+	// the tab's label, as CreateTab gave it unless renamed since; open is false when Herdr has no such tab
+	TabLabel(ctx context.Context, tab string) (label string, open bool, err error)
 }
 
 // Starter starts a worker agent in a tab's pane.
