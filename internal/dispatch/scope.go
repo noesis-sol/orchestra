@@ -57,8 +57,11 @@ func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[st
 }
 
 // excluded reports whether tickets of the type are never dispatched, as epics aren't.
-func (o *Loop) excluded(t Ticket) bool {
-	return slices.Contains(o.cfg.ExcludeTypes, t.IssueType)
+func (o *Loop) excluded(t Ticket) bool { return o.cfg.excludes(t) }
+
+// excludes reports whether the ticket is of a type never dispatched (ExcludeTypes).
+func (c Config) excludes(t Ticket) bool {
+	return slices.Contains(c.ExcludeTypes, t.IssueType)
 }
 
 // parentDone says, once, when the ticket that just finished was the last of an epic's subtickets
@@ -140,67 +143,135 @@ func subtickets(n int) string {
 // epic, never dispatched, is left for the maintainer to close), else SCOPE_OPEN naming each one
 // not done and why. It is "" for a run of all of bd ready.
 func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
-	root := o.cfg.Ticket
+	return o.scopeView().end(ctx, subs, err)
+}
+
+// scopeView is what is read to say where a scope stands: the tracker, the run's settings, and why
+// a ticket is closed but not merged and whether it was set aside in the run. A Loop has them from
+// its run (scopeView); the nothing-to-run check, before any Loop, has the tickets labelled
+// UnmergedLabel and none set aside.
+type scopeView struct {
+	tickets  Tickets
+	cfg      Config
+	unmerged func(id string) string // why the ticket is closed but not merged, or ""
+	aside    func(id string) bool   // whether the ticket was set aside in this run; nil for none
+}
+
+// scopeView is where the run's scope stands, as the run knows it.
+func (o *Loop) scopeView() scopeView {
+	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
+		aside: func(id string) bool { return slices.Contains(o.setAside(), id) }}
+}
+
+// end is scopeEnd's line.
+func (v scopeView) end(ctx context.Context, subs []Ticket, err error) string {
+	root := v.cfg.Ticket
 	if root == "" {
 		return ""
 	}
 	if err != nil {
 		return fmt.Sprintf("; SCOPE_UNREADABLE: could not list %s's subtickets%s", root, because(err))
 	}
-	top, err := o.tickets.Show(ctx, root)
+	l, err := v.left(ctx, subs)
 	if err != nil {
 		return fmt.Sprintf("; SCOPE_UNREADABLE: could not read %s%s", root, because(err))
 	}
-	in := map[string]bool{root: true}
-	for _, t := range subs {
-		in[t.ID] = true
+	return l.line
+}
+
+// NotDone is a ticket of a run's scope that isn't closed and merged, and why, as SCOPE_OPEN names
+// it.
+type NotDone struct {
+	ID  string
+	Why string // "blocked by Y", "in progress", "waiting for its subtickets", …
+}
+
+// String is "<id> (<why>)".
+func (n NotDone) String() string { return fmt.Sprintf("%s (%s)", n.ID, n.Why) }
+
+// scopeLeft is where a scope stands: done (SCOPE_DONE) or the tickets not done, as SCOPE_OPEN names
+// them, and the line scopeEnd adds.
+type scopeLeft struct {
+	done    bool
+	closeIt bool      // done, with the scope's own ticket, of an excluded type, left for the maintainer to close
+	notDone []NotDone // the subtickets not done, or, once they all are, the scope's own ticket
+	line    string
+}
+
+// left says where the scope stands, given its descendants (subs); the error is bd's when it can't
+// show the scope's own ticket.
+func (v scopeView) left(ctx context.Context, subs []Ticket) (scopeLeft, error) {
+	root := v.cfg.Ticket
+	top, err := v.tickets.Show(ctx, root)
+	if err != nil {
+		return scopeLeft{}, err
 	}
+	in := scopeIDs(root, subs)
 	// A ticket is done once closed and merged; a parent waits for its children to be.
-	done := func(t Ticket) bool { return t.Status == "closed" && o.unmergedWhy(t.ID) == "" }
+	done := func(t Ticket) bool { return t.Status == "closed" && v.unmerged(t.ID) == "" }
 	openKids := map[string]bool{}
 	for _, t := range subs {
 		if !done(t) {
 			openKids[t.Parent] = true
 		}
 	}
-	var open []string
+	var l scopeLeft
 	for _, t := range subs {
 		if !done(t) {
-			open = append(open, fmt.Sprintf("%s (%s)", t.ID, o.notDoneWhy(ctx, t, in, openKids[t.ID])))
+			l.notDone = append(l.notDone, NotDone{t.ID, v.notDoneWhy(ctx, t, in, openKids[t.ID])})
 		}
 	}
 	n := len(subs)
 	switch {
-	case len(open) > 0:
-		return fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s",
+	case len(l.notDone) > 0:
+		open := make([]string, len(l.notDone))
+		for i, d := range l.notDone {
+			open[i] = d.String()
+		}
+		l.line = fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s",
 			root, len(open), subtickets(n), strings.Join(open, ", "))
 	case done(top):
-		return fmt.Sprintf("; SCOPE_DONE: %s and its %s are merged", root, subtickets(n))
-	case o.excluded(top):
+		l.done = true
+		l.line = fmt.Sprintf("; SCOPE_DONE: %s and its %s are merged", root, subtickets(n))
+	case v.cfg.excludes(top):
 		verb := "are"
 		if n == 1 {
 			verb = "is"
 		}
-		return fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; close it with: bd close %s", root, subtickets(n), verb, root)
+		l.done, l.closeIt = true, true
+		l.line = fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; close it with: bd close %s", root, subtickets(n), verb, root)
+	default:
+		why := v.notDoneWhy(ctx, top, in, false)
+		l.notDone = []NotDone{{root, why}}
+		l.line = fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)",
+			root, subtickets(n), root, why)
 	}
-	return fmt.Sprintf("; SCOPE_OPEN: %s: its %s are merged, but %s itself is not done (%s)",
-		root, subtickets(n), root, o.notDoneWhy(ctx, top, in, false))
+	return l, nil
+}
+
+// scopeIDs is the tickets of the scope of root, whose descendants are subs: root and subs.
+func scopeIDs(root string, subs []Ticket) map[string]bool {
+	in := map[string]bool{root: true}
+	for _, t := range subs {
+		in[t.ID] = true
+	}
+	return in
 }
 
 // notDoneWhy says why ticket t of the scope (in) is not closed and merged; openKids says it has
 // subtickets that aren't.
-func (o *Loop) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool, openKids bool) string {
-	if why := o.unmergedWhy(t.ID); why != "" {
+func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool, openKids bool) string {
+	if why := v.unmerged(t.ID); why != "" {
 		return "closed but not merged: " + why
 	}
-	info, err := o.tickets.Show(ctx, t.ID)
+	info, err := v.tickets.Show(ctx, t.ID)
 	if err == nil {
 		t = info
 	}
 	if q := OpenQuestion(t); q != nil {
 		return "waiting on your answer to " + q.ID
 	}
-	if slices.Contains(o.setAside(), t.ID) {
+	if v.aside != nil && v.aside(t.ID) {
 		return "set aside in this run"
 	}
 	switch t.Status {
@@ -220,14 +291,14 @@ func (o *Loop) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool, ope
 		if d.Status != "closed" {
 			return "blocked by " + d.ID + where
 		}
-		if why := o.unmergedWhy(d.ID); why != "" {
+		if why := v.unmerged(d.ID); why != "" {
 			return fmt.Sprintf("blocked by %s%s, closed but not merged", d.ID, where)
 		}
 	}
 	switch {
 	case openKids:
 		return "waiting for its subtickets"
-	case o.excluded(t):
+	case v.cfg.excludes(t):
 		return fmt.Sprintf("its subtickets are merged; close it with: bd close %s", t.ID)
 	}
 	return "not started"
@@ -241,10 +312,7 @@ func (o *Loop) filedOutside(ctx context.Context, subs []Ticket) ([]Ticket, error
 	if err != nil {
 		return nil, err
 	}
-	in := map[string]bool{o.cfg.Ticket: true}
-	for _, t := range subs {
-		in[t.ID] = true
-	}
+	in := scopeIDs(o.cfg.Ticket, subs)
 	since := o.started.Truncate(time.Second)
 	var out []Ticket
 	for _, t := range open {
