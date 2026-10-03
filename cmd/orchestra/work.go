@@ -9,6 +9,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
@@ -51,7 +52,7 @@ func askWork(
 	return workQuestion{
 		tickets: tracker,
 		nothing: func(ctx context.Context) (*dispatch.NothingToRun, error) {
-			return dispatch.CheckNothingToRun(ctx, c.Config, tracker)
+			return dispatch.CheckNothingToRun(ctx, c.Config, tracker, git.Git{}, git.Git{})
 		},
 		in:  stdin,
 		out: stdout,

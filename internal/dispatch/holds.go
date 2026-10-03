@@ -92,9 +92,8 @@ func (o *Loop) blockersOf(ctx context.Context, t Ticket) ([]string, bool) {
 const earlierRun = "left unmerged by an earlier run"
 
 // loadUnmerged reads the tickets earlier runs left unmerged (closed, labelled UnmergedLabel), so the
-// tickets they block wait in this run too. One that has merged since, by hand, loses its label: its
-// branch is on Base with a commit naming it, or its branch is gone and a commit on Base names it.
-// It returns a reason to stop when bd can't say which they are.
+// tickets they block wait in this run too. One that has merged since, by hand (see mergedSince),
+// loses its label. It returns a reason to stop when bd can't say which they are.
 func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	c := o.cfg
 	closed, err := o.tickets.Closed(ctx, UnmergedLabel)
@@ -103,22 +102,16 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 			UnmergedLabel, because(err)).causedBy(err)
 	}
 	for _, t := range closed {
-		id, br := t.ID, "wt/"+t.ID
-		rev := c.Base
-		if o.worktrees.HasBranch(ctx, c.Repo, br) {
-			rev = br
-		}
-		if o.merger.IsAncestor(ctx, c.Repo, rev, c.Base) {
-			if commit := o.merger.CommitNamingOn(ctx, c.Repo, rev, id); commit != "" {
-				o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
-					id, c.Base, commit, UnmergedLabel)
-				o.unlabel(ctx, id)
-				continue
-			}
+		id := t.ID
+		if commit := mergedSince(ctx, c, o.worktrees, o.merger, id); commit != "" {
+			o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
+				id, c.Base, commit, UnmergedLabel)
+			o.unlabel(ctx, id)
+			continue
 		}
 		o.info("  %s was left unmerged by an earlier run; "+
-			"tickets it blocks wait until %s is merged into %s or its '%s' label is removed",
-			id, br, c.Base, UnmergedLabel)
+			"tickets it blocks wait until wt/%s is merged into %s or its '%s' label is removed",
+			id, id, c.Base, UnmergedLabel)
 		o.setParent(id, t.Parent)
 		o.mu.Lock()
 		if o.unmerged == nil {
@@ -129,6 +122,22 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 		o.setLabelled(id, true)
 	}
 	return nil
+}
+
+// mergedSince returns the commit on Base naming ticket id, which an earlier run left unmerged, when
+// it has merged since, by hand: its branch (wt/<id>) is on Base with a commit naming it, or its
+// branch is gone and a commit on Base names it. It returns "" when it hasn't, or git can't tell.
+// loadUnmerged and CheckNothingToRun both ask it, so that a run and its check agree on what is
+// merged.
+func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, id string) string {
+	rev := c.Base
+	if br := "wt/" + id; worktrees.HasBranch(ctx, c.Repo, br) {
+		rev = br
+	}
+	if !merger.IsAncestor(ctx, c.Repo, rev, c.Base) {
+		return ""
+	}
+	return merger.CommitNamingOn(ctx, c.Repo, rev, id)
 }
 
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in

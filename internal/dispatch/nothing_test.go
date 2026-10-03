@@ -20,9 +20,17 @@ func nothingConfig(t *testing.T, done int) Config {
 	return Config{Repo: t.TempDir(), Base: "main", Limit: 10, DoneSoFar: done, ExcludeTypes: []string{"epic"}}
 }
 
-// checkNothing runs the check on b, failing the test on an error or on anything it wrote: the
-// tickets, their labels and notes stay as they were, and no run files appear.
+// checkNothing runs the check on b, with git holding only c.Base's first commit, as checkNothingOn
+// does.
 func checkNothing(t *testing.T, c Config, b *fakeBeads) *NothingToRun {
+	t.Helper()
+	return checkNothingOn(t, c, b, newFakeGit(c.Base))
+}
+
+// checkNothingOn runs the check on b and g, failing the test on an error or on anything it wrote:
+// the tickets, their labels and notes stay as they were, git's branches too, and no run files
+// appear.
+func checkNothingOn(t *testing.T, c Config, b *fakeBeads, g *fakeGit) *NothingToRun {
 	t.Helper()
 	snapshot := func() map[string]Ticket {
 		b.mu.Lock()
@@ -35,13 +43,23 @@ func checkNothing(t *testing.T, c Config, b *fakeBeads) *NothingToRun {
 		}
 		return m
 	}
-	before := snapshot()
-	n, err := CheckNothingToRun(context.Background(), c, b)
+	branches := func() map[string]string {
+		m := map[string]string{}
+		for _, br := range g.branchList() {
+			m[br] = g.log(br)
+		}
+		return m
+	}
+	before, beforeGit := snapshot(), branches()
+	n, err := CheckNothingToRun(context.Background(), c, b, g, g)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if after := snapshot(); !reflect.DeepEqual(before, after) {
 		t.Errorf("the check changed the tickets:\nbefore %+v\nafter  %+v", before, after)
+	}
+	if after := branches(); !reflect.DeepEqual(beforeGit, after) {
+		t.Errorf("the check changed git:\nbefore %v\nafter  %v", beforeGit, after)
 	}
 	b.mu.Lock()
 	notes := len(b.notes)
@@ -82,7 +100,8 @@ func TestNothingToRunOnlyWithNothingReadyAndNothingCarried(t *testing.T) {
 		t.Fatal("nothing ready and nothing carried, yet something to run")
 	}
 	carry(t, c.Repo, "A")
-	if n, err := CheckNothingToRun(context.Background(), c, b); n != nil || err != nil {
+	g := newFakeGit(c.Base)
+	if n, err := CheckNothingToRun(context.Background(), c, b, g, g); n != nil || err != nil {
 		t.Errorf("a worker carried over on A, yet nothing to run: %+v %v", n, err)
 	}
 }
@@ -101,12 +120,13 @@ func TestNothingToRunCarriedInTheScopeOnly(t *testing.T) {
 		b.set(id, "in_progress")
 	}
 	carry(t, c.Repo, "X")
-	if n, err := CheckNothingToRun(context.Background(), c, b); n == nil || err != nil {
+	g := newFakeGit(c.Base)
+	if n, err := CheckNothingToRun(context.Background(), c, b, g, g); n == nil || err != nil {
 		t.Errorf("the worker on X is outside R's scope, yet something to run: %v", err)
 	}
 	for _, id := range []string{"R", "R.1.1"} {
 		carry(t, c.Repo, "X", id)
-		if n, err := CheckNothingToRun(context.Background(), c, b); n != nil || err != nil {
+		if n, err := CheckNothingToRun(context.Background(), c, b, g, g); n != nil || err != nil {
 			t.Errorf("a worker carried over on %s, in R's scope, yet nothing to run: %+v %v", id, n, err)
 		}
 	}
@@ -124,7 +144,8 @@ func (u unreadyBeads) Ready(context.Context, string) ([]Ticket, error) { return 
 func TestNothingToRunReturnsReadysError(t *testing.T) {
 	t.Parallel()
 	failed := errors.New("bd ready: database locked")
-	n, err := CheckNothingToRun(context.Background(), nothingConfig(t, 0), unreadyBeads{newFakeBeads(), failed})
+	g := newFakeGit("main")
+	n, err := CheckNothingToRun(context.Background(), nothingConfig(t, 0), unreadyBeads{newFakeBeads(), failed}, g, g)
 	if n != nil || !errors.Is(err, failed) {
 		t.Errorf("got %+v, %v; want bd ready's error", n, err)
 	}

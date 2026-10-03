@@ -48,10 +48,14 @@ func (n NothingToRun) Open() int {
 
 // CheckNothingToRun returns why a run as c sets it has nothing to run, or nil when it has
 // something: bd ready, in the run's scope and as the loop reads it, lists a ticket, or the last run
-// left a worker (on a ticket in the scope) for this one to carry on with. It only reads, so it can
-// run before any Loop exists. Its error is bd's, or the state file's, when it can't tell: the run
-// then goes ahead, and the loop reports it.
-func CheckNothingToRun(ctx context.Context, c Config, tickets Tickets) (*NothingToRun, error) {
+// left a worker (on a ticket in the scope) for this one to carry on with. A ticket labelled
+// UnmergedLabel that git finds merged since (see mergedSince) counts as merged, as the loop would
+// find it, though only the loop removes the label. It only reads, so it can run before any Loop
+// exists. Its error is bd's, or the state file's, when it can't tell: the run then goes ahead, and
+// the loop reports it.
+func CheckNothingToRun(
+	ctx context.Context, c Config, tickets Tickets, worktrees Worktrees, merger Merger,
+) (*NothingToRun, error) {
 	ready, err := tickets.Ready(ctx, c.Ticket)
 	if err != nil || len(ready) > 0 {
 		return nil, err
@@ -72,9 +76,15 @@ func CheckNothingToRun(ctx context.Context, c Config, tickets Tickets) (*Nothing
 			return nil, nil // carried over, as loadCarried does
 		}
 	}
-	unmerged, err := tickets.Closed(ctx, UnmergedLabel)
+	labelled, err := tickets.Closed(ctx, UnmergedLabel)
 	if err != nil {
 		return nil, err
+	}
+	var unmerged []Ticket
+	for _, t := range labelled {
+		if mergedSince(ctx, c, worktrees, merger, t.ID) == "" {
+			unmerged = append(unmerged, t)
+		}
 	}
 	if c.Ticket != "" {
 		return scopeNothing(ctx, c, tickets, subs, unmerged)

@@ -679,7 +679,8 @@ func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.W
 	if c.DoneSoFar >= c.Limit {
 		return false
 	}
-	n, err := dispatch.CheckNothingToRun(ctx, c.Config, beads.Tracker{Repo: c.Repo, ExcludeTypes: c.ExcludeTypes})
+	tracker, repo := beads.Tracker{Repo: c.Repo, ExcludeTypes: c.ExcludeTypes}, git.Git{}
+	n, err := dispatch.CheckNothingToRun(ctx, c.Config, tracker, repo, repo)
 	if err != nil || n == nil { // what the check couldn't read, the loop reads again and reports
 		return false
 	}
