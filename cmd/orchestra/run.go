@@ -567,10 +567,11 @@ func run(
 	// and branch. Taken before anything changes, a --feature request's screening included, and held
 	// until orchestra exits, after the organ phase.
 	started := time.Now() // the run's start, as its lock and each record of its event stream give it
-	lock, lockErr := project.LockRun(cfg.Repo, project.Holder{
+	holder := project.Holder{
 		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
 		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: getenv("HERDR_PANE_ID"),
-	})
+	}
+	lock, lockErr := project.LockRun(cfg.Repo, holder)
 	var held *project.HeldError
 	switch {
 	case errors.As(lockErr, &held):
@@ -626,6 +627,13 @@ func run(
 			return exitStatus(code)
 		}
 		cfg.Feature, typed = feature, feature != "" // "" for the current tickets
+		// The lock, taken before the question, says from now on what --feature would have.
+		if typed {
+			holder.Feature = feature
+			if err := lock.Rewrite(holder); err != nil {
+				log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
+			}
+		}
 	}
 	featureCode := dispatch.ExitOK
 	switch off := interviewOff(cfg); { // the run is scoped to the epic filed

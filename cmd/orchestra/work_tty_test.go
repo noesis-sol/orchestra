@@ -62,14 +62,19 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 // In a terminal, a run with nothing said asks what to work on. A run whose workers aren't Claude
 // Code can't talk the feature described through with claude (interview_tty_test.go), so it says
 // so and the feature goes to the --feature flow: screened, planned, shown, and filed if confirmed.
+// From the answer on, the run lock names the feature, as it does one given with --feature.
 func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
-	term, _, exit := runOnTerminal(t, "--agent", "codex")
+	term, repo, exit := runOnTerminal(t, "--agent", "codex")
 	term.waitFor(t, "> Current tickets: 0 ready")
 	term.typeKeys(t, keyDown+keyEnter, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, "Add a --json flag"+keyNewLine+"to the list command"+keyEnter, false)
 	term.waitFor(t, "File these 2 tickets and start the run? [y/N]")
+	if h, held, err := project.RunHolder(repo); err != nil || !held || h.PID != os.Getpid() ||
+		h.Feature != "Add a --json flag\nto the list command" {
+		t.Errorf("the run lock while the plan is shown: %+v, held %v, %v", h, held, err)
+	}
 	term.typeKeys(t, "n\n", false)
 	code, stderr := exit()
 	out := strings.ReplaceAll(term.screen.String(), "\r\n", "\n")

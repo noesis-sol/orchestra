@@ -35,6 +35,9 @@ All notable changes to orchestra are documented here. The format follows
   orchestra. Without `claude` on the PATH, or with `--agent` other than
   claude, `New feature` plans with the organs as before and says why.
   `orchestra --feature "<request>"` is unchanged.
+- A feature described at the question is recorded in the run lock
+  (`.orchestra/run/orchestra.lock`) once it is typed, as `--feature` records
+  it: a second run refused the lock names it.
 
 ## [0.2.0] - 2026-10-02
 

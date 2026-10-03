@@ -35,7 +35,8 @@ type Holder struct {
 
 // RunLock is a run's hold on the lock of its repository's main checkout (see LockRun).
 type RunLock struct {
-	f *os.File
+	f    *os.File
+	repo string // the main checkout, for errors
 }
 
 // HeldError is LockRun's error when another run holds the lock.
@@ -119,21 +120,34 @@ func LockRun(repo string, h Holder) (*RunLock, error) {
 		}
 		return nil, fmt.Errorf("cannot lock %s in %s: %w", rel, repo, err)
 	}
-	b, err := json.MarshalIndent(h, "", "  ")
-	if err != nil {
+	l := &RunLock{f: f, repo: repo}
+	if err := l.Rewrite(h); err != nil {
 		_ = f.Close() // releases the lock: the run doesn't start
 		return nil, err
 	}
-	// Emptied first, so a run refused meanwhile reads nothing rather than two runs' details mixed.
-	if err := f.Truncate(0); err != nil {
-		_ = f.Close() // releases the lock: the run doesn't start
-		return nil, fmt.Errorf("cannot write %s in %s: %w", rel, repo, err)
+	return l, nil
+}
+
+// Rewrite replaces what the lock says of its run with h, as when the run learns its feature after
+// taking the lock, at the question of what to work on. A nil RunLock holds nothing to write in.
+func (l *RunLock) Rewrite(h Holder) error {
+	if l == nil {
+		return nil
 	}
-	if _, err := f.WriteAt(append(b, '\n'), 0); err != nil {
-		_ = f.Close() // releases the lock: the run doesn't start
-		return nil, fmt.Errorf("cannot write %s in %s: %w", rel, repo, err)
+	b, err := json.MarshalIndent(h, "", "  ")
+	if err != nil {
+		return err
 	}
-	return &RunLock{f: f}, nil
+	// Emptied first, so that RunHolder or a run refused, reading meanwhile without the lock, reads
+	// nothing rather than old details mixed with new.
+	rel := RunPath(LockName)
+	if err := l.f.Truncate(0); err != nil {
+		return fmt.Errorf("cannot write %s in %s: %w", rel, l.repo, err)
+	}
+	if _, err := l.f.WriteAt(append(b, '\n'), 0); err != nil {
+		return fmt.Errorf("cannot write %s in %s: %w", rel, l.repo, err)
+	}
+	return nil
 }
 
 // Close releases the lock; a nil RunLock holds nothing. The file stays.
