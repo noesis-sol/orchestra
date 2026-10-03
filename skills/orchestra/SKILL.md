@@ -128,10 +128,15 @@ beside yours and keep your own pane free (the pane ID is read from Herdr's JSON 
 ```
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
     | jq -r .result.pane.pane_id)
-herdr pane run "$P" "orchestra"
+herdr pane run "$P" "orchestra --tickets"
 herdr pane wait-output "$P" --regex "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run" --timeout 60000
 herdr pane read "$P" --source visible
 ```
+
+Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
+should work on (`Current tickets: N ready`, or `New feature`, which asks the user to describe one
+and plans it as `--feature` does): the wait above would time out on the question. `--ticket <id>`
+and `--feature "<request>"` don't ask either. Leave the bare command to a user at the keyboard.
 
 Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
 time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),

@@ -96,6 +96,7 @@ type options struct {
 	OrganEffort  string // effort for every organ; "" gives each its own
 	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
 	Yes          bool   // file a --feature plan without asking
+	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 }
 
@@ -184,6 +185,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
 			"confirm, and run the epic as --ticket would")
 	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
+	fs.BoolVar(&c.Tickets, "tickets", getenv("ORCHESTRA_TICKETS") == "1",
+		"run the current tickets without first asking, in a terminal, whether to plan a new feature instead "+
+			"[ORCHESTRA_TICKETS=1]")
 	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true,
 		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
 			"ask its worker to resolve them before setting it aside; needs a check command "+
@@ -201,7 +205,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"       orchestra plan [--apply]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, "+
 			"one worker (a coding agent) per Herdr tab and git worktree.\n"+
-			"With --feature, plan the request as an epic and its tickets first, and run those.\n\n")
+			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
+			"In a terminal, without --feature, --ticket, --tickets or -plain, it first asks which: "+
+			"the current tickets, or a new feature you describe.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
 			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
@@ -256,6 +262,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	case set["feature"] && c.Ticket != "":
 		problems = append(problems, "--feature can't be combined with --ticket (or ORCHESTRA_TICKET): "+
 			"a feature run is scoped to the epic it files.")
+	case set["feature"] && set["tickets"] && c.Tickets:
+		problems = append(problems, "--feature can't be combined with --tickets: "+
+			"one runs a new feature, the other the current tickets.")
 	case !set["feature"] && c.Yes:
 		problems = append(problems, "--yes only applies with --feature.")
 	case set["feature"] && c.Limit >= 0 && c.DoneSoFar >= c.Limit:
@@ -518,8 +527,9 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
 
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
-// A run's setup, held until it ends (the lock, the stop signals' watch, the log), and a --feature
-// request are here; runPlain or runDashboard runs the loop and the organ phase after it.
+// A run's setup, held until it ends (the lock, the stop signals' watch, the log), the question of
+// what it works on and a --feature request are here; runPlain or runDashboard runs the loop and
+// the organ phase after it.
 func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) (err error) {
@@ -608,6 +618,13 @@ func run(
 	if err := os.Chdir(cfg.Repo); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitStatus(dispatch.ExitSetup)
+	}
+	if asksWork(cfg, isTerminal(stdin) && isTerminal(stdout)) {
+		feature, code := askWork(ctx, stops, cfg, stdin, stdout, stderr)
+		if code != dispatch.ExitOK { // before the run's start: nothing to record
+			return exitStatus(code)
+		}
+		cfg.Feature = feature // "" for the current tickets
 	}
 	featureCode := dispatch.ExitOK
 	if cfg.Feature != "" { // the run is scoped to the epic it files

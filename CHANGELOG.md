@@ -4,6 +4,21 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `orchestra` in a terminal asks first what the run should work on, once its
+  startup checks have passed and it holds the run lock: `Current tickets: N
+  ready` (the default, N from the run's own `bd ready` query) runs as before;
+  `New feature` asks for the feature's description, several lines and not
+  empty, and runs it as `--feature` would: screened, planned, shown and filed
+  once confirmed. Esc or Ctrl+C at the question exits 130 with nothing
+  changed. `--tickets` (or `ORCHESTRA_TICKETS=1`) skips it and runs the
+  current tickets; `--ticket`, `--feature`, `-plain` and a run without a
+  terminal don't ask either. The orchestra skill launches runs with
+  `orchestra --tickets`, since a Herdr pane is a terminal.
+
 ## [0.2.0] - 2026-10-02
 
 ### Added
