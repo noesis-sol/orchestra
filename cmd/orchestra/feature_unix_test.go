@@ -77,6 +77,14 @@ func runFeatureIn(t *testing.T, args ...string) (repo, stdout, stderr string, co
 // runFeatureFrom is runFeatureIn reading stdin from in.
 func runFeatureFrom(t *testing.T, in io.Reader, args ...string) (repo, stdout, stderr string, code int) {
 	t.Helper()
+	return runFeatureAfter(t, func(string) {}, in, args...)
+}
+
+// runFeatureAfter is runFeatureFrom with setup given the repository before orchestra runs in it.
+func runFeatureAfter(
+	t *testing.T, setup func(repo string), in io.Reader, args ...string,
+) (repo, stdout, stderr string, code int) {
+	t.Helper()
 	repo = configFixture(t, `{"concurrent": 1}`)
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("# lister\n\nLists things.\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -88,6 +96,7 @@ func runFeatureFrom(t *testing.T, in io.Reader, args ...string) (repo, stdout, s
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0"} {
 		t.Setenv(k, v)
 	}
+	setup(repo)
 	var out, errOut strings.Builder
 	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, in, &out, &errOut)
 	return repo, out.String(), errOut.String(), exitOf(err)
@@ -154,11 +163,13 @@ func TestFeatureWithoutATerminalNeedsYes(t *testing.T) {
 }
 
 // With --yes the plan is filed, the epic and its children with their parent, files and links,
-// and the run is scoped to the epic; the organs get the model and effort flags.
+// and the run is scoped to the epic; the organs get the model and effort flags. The fake bd has
+// none of the epic ready, so a worker the last run left on it has the run go to its loop, as the
+// epic's ready tickets would.
 func TestFeatureYesFilesThePlanAndRunsTheEpic(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
-	repo, stdout, stderr, code := runFeatureIn(t, "--feature", "Add a --json flag, see README.md", "--yes", "--plain",
-		"--organ-model", "opus-x", "--organ-effort", "medium")
+	repo, stdout, stderr, code := runFeatureAfter(t, leaveWorker(t, "f-1"), strings.NewReader(""),
+		"--feature", "Add a --json flag, see README.md", "--yes", "--plain", "--organ-model", "opus-x", "--organ-effort", "medium")
 	if code != 0 {
 		t.Errorf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}

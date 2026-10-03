@@ -129,15 +129,21 @@ beside yours and keep your own pane free (the pane ID is read from Herdr's JSON 
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
     | jq -r .result.pane.pane_id)
 herdr pane run "$P" "orchestra --tickets"
-herdr pane wait-output "$P" --regex "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run" --timeout 60000
+herdr pane wait-output "$P" --regex "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run|All done|Nothing ready|Nothing under" --timeout 60000
 herdr pane read "$P" --source visible
 ```
 
 Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
-should work on (`Current tickets: N ready`, or `New feature`, which asks the user to describe one
-and then talks it through with them in a Claude Code session): the wait above would time out on the
-question. `--ticket <id>`
+should work on (`Current tickets: N ready`, `none, all done` or `none ready (N open)`, or `New
+feature`, which asks the user to describe one and then talks it through with them in a Claude Code
+session): the wait above would time out on the question. `--ticket <id>`
 and `--feature "<request>"` don't ask either. Leave the bare command to a user at the keyboard.
+
+A run with nothing to run (nothing ready, and no worker the last run left to carry on with) doesn't
+open the dashboard: it shows a box, `✓ All done` (with `Still open: <ids> (bd close <ids>)` for
+epics left open) or `○ Nothing ready to run` with what holds the tickets left (`○ Nothing under
+<id> is ready to run` and each ticket's reason, with `--ticket`), and exits 0 without a report. Tell
+the user what it says.
 
 Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
 time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
@@ -278,7 +284,7 @@ ended with, say why it ended:
 
 | Last line | Exit | Meaning | What to do |
 |---|---|---|---|
-| `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached | Read the report; the next step is usually the batch PR. |
+| `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached; `READY_EMPTY after 0 tickets: everything is done` (or `: nothing ready`) is a run that had nothing to run, which showed why in place of the dashboard and wrote no report | Read the report; the next step is usually the batch PR. With nothing to run, there is no report: relay the box (close the epics it names, answer the questions in `bd human list`, see what `bd blocked` holds). |
 | `DRAINED`, after a `DRAIN: stopping after …` line | 0 | the user pressed s in the dashboard (or orchestra got SIGUSR1): no new tickets started, the running ones finished and merged | As for `READY_EMPTY`; the queue may still hold tickets for the next run. A `DRAIN cancelled` line means the user took it back. |
 | `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
 | `…; SCOPE_OPEN: …` | 0 | a `--ticket` run with subtickets not done; each is named with why | Handle each reason: answer a question, merge or rebase an unmerged one, unblock or rerun. The report lists follow-ups filed outside the scope. |

@@ -66,7 +66,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
 	term, repo, exit := runOnTerminal(t, "--agent", "codex")
-	term.waitFor(t, "> Current tickets: 0 ready")
+	term.waitFor(t, "> Current tickets: none, all done")
 	term.typeKeys(t, keyDown+keyEnter, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, "Add a --json flag"+keyNewLine+"to the list command"+keyEnter, false)
@@ -105,7 +105,7 @@ func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 func TestRunStoppedAtTheQuestionDoesNothing(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
 	term, repo, exit := runOnTerminal(t)
-	term.waitFor(t, "> Current tickets: 0 ready")
+	term.waitFor(t, "> Current tickets: none, all done")
 	term.typeKeys(t, keyDown+keyEnter, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, keyEsc, false)

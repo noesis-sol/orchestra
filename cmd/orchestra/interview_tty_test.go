@@ -80,7 +80,7 @@ esac
 // as claude's options do.
 func describeFeature(t *testing.T, term *fakeTerminal) {
 	t.Helper()
-	term.waitFor(t, "> Current tickets: 0 ready")
+	term.waitFor(t, "> Current tickets: none, all done")
 	term.typeKeys(t, keyDown+keyEnter, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, "- Add a --json flag"+keyNewLine+"- to the list command"+keyEnter, false)
@@ -94,7 +94,8 @@ func screenOf(term *fakeTerminal) string {
 // "New feature" hands the terminal to claude in the main checkout, in orchestra's process group,
 // with the interview's instructions appended to its system prompt and the description as its first
 // message; Ctrl+C meanwhile is claude's. Once it exits, orchestra shows the epic it filed and runs
-// it on y, as --feature runs the epic it files.
+// it on y, as --feature runs the epic it files: with none of its tickets ready, as bd answers here,
+// the run says so, scoped to the epic.
 func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 	dir := interviewTools(t, "f-1")
 	term, repo, exit := runOnTerminal(t)
@@ -149,7 +150,7 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 		"Epic: f-1 JSON output\n  Machine-readable output.\n",
 		"f-1.1  feature P1  Add the JSON encoder\n", "files: enc.go\n",
 		"f-1.2  task    P2  Add the --json flag\n", "files: main.go, README.md\n", "after: f-1.1\n",
-		"feature f-1",
+		"○ Nothing under f-1 is ready to run", "f-1.1 (not started)", "f-1.2 (not started)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the terminal lacks %q:\n%s", want, out)

@@ -13,27 +13,35 @@ import (
 
 // A run's event stream starts with what it runs and ends with its exit code, every record giving
 // the start its lock gives; a feature run's start record follows the filing, scoped to the epic, and
-// one that files nothing ends there.
+// one that files nothing ends there. A run with nothing to run, as the fake bd has none ready, has
+// its done record in between; one that goes to its loop, for a worker the last run left, the loop's.
 func TestARunsEventStreamStartsAndEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name, screen string
 		args         []string
+		left         string // the ticket a worker the last run left is on, if any
 		code         int
 		kinds        string // the records' kinds, info left out
 		start        map[string]any
 	}{
-		{"scoped", featureScreenOK, []string{"--plain", "--ticket", "f-1"}, 0, "start queue done end",
+		{"scoped", featureScreenOK, []string{"--plain", "--ticket", "f-1"}, "", 0, "start done end",
 			map[string]any{"scope": "f-1", "concurrency": 1.0}},
-		{"feature", featureScreenOK, []string{"--plain", "--feature", "Add a --json flag", "--yes"}, 0,
-			"start queue done end", map[string]any{"scope": "f-1", "feature": "Add a --json flag"}},
+		{"scoped, a worker left", featureScreenOK, []string{"--plain", "--ticket", "f-1"}, "f-1", 0,
+			"start queue done end", map[string]any{"scope": "f-1", "concurrency": 1.0}},
+		{"feature", featureScreenOK, []string{"--plain", "--feature", "Add a --json flag", "--yes"}, "", 0,
+			"start done end", map[string]any{"scope": "f-1", "feature": "Add a --json flag"}},
 		{"feature turned down",
 			`{"type":"result","is_error":false,"structured_output":{"verdict":"reject","reason":"No."}}`,
-			[]string{"--plain", "--feature", "Add a --json flag", "--yes"}, 2, "start end",
+			[]string{"--plain", "--feature", "Add a --json flag", "--yes"}, "", 2, "start end",
 			map[string]any{"feature": "Add a --json flag"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			featureTools(t, tc.screen, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
-			repo, stdout, stderr, code := runFeatureIn(t, tc.args...)
+			setup := func(string) {}
+			if tc.left != "" {
+				setup = leaveWorker(t, tc.left)
+			}
+			repo, stdout, stderr, code := runFeatureAfter(t, setup, strings.NewReader(""), tc.args...)
 			if code != tc.code {
 				t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 			}
@@ -71,9 +79,9 @@ func TestARunsEventStreamStartsAndEnds(t *testing.T) {
 			if end["code"] != float64(tc.code) {
 				t.Errorf("end record: %v", end)
 			}
-			if tc.code == 0 {
-				if text, _ := events[2]["text"].(string); !strings.HasPrefix(text, "READY_EMPTY after 0 tickets") {
-					t.Errorf("done record: %v", events[2])
+			if done := events[len(events)-2]; tc.code == 0 {
+				if text, _ := done["text"].(string); !strings.HasPrefix(text, "READY_EMPTY after 0 tickets") {
+					t.Errorf("done record: %v", done)
 				}
 			}
 		})

@@ -44,12 +44,13 @@ git switch -c batch/$(date +%F)
 orchestra
 ```
 
-In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default, showing how many are ready) runs the backlog as below. **New feature** asks you to describe a feature in a few lines, then hands the terminal to Claude Code, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Type `/exit` to come back: orchestra shows the tickets and runs them once you confirm. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
+In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default) runs the backlog as below; it reads `Current tickets: N ready`, or with none ready `Current tickets: none, all done` or `Current tickets: none ready (N open)`. **New feature** asks you to describe a feature in a few lines, then hands the terminal to Claude Code, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Type `/exit` to come back: orchestra shows the tickets and runs them once you confirm. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
 
 How a run goes:
 - **Dispatch.** Each ready ticket in `bd ready` goes to its own worker, up to `concurrent` at a time. Tickets that touch the same files or functions don't run side by side, and a ticket labelled `solo` runs alone.
 - **Merge.** A finished ticket is rebased onto the branch and the check runs again before it merges. A conflict goes back to its worker to resolve. A ticket that still can't merge is set aside for review.
 - **Questions.** A worker that needs your decision files a question (a ticket labelled `human`), and the run goes on. Answer it with `bd human respond <question> --response "…"`.
+- **Nothing to run.** A run with nothing ready, and no worker the last run left to carry on with, shows `✓ All done` or what holds the tickets left (questions for you, tickets waiting on others, in progress, deferred, closed but not merged), and exits 0 without opening the dashboard.
 - **Ending.** The run ends when nothing is left to start. Something that needs you (a worker blocked or idle with its ticket open, a tool failing) stops new tickets, lets the running ones finish, and ends the run. The next run carries on with any workers it left behind.
 - **One at a time.** One run at a time works on a repository. Run `orchestra init` first; `orchestra` says so if you haven't.
 
@@ -108,7 +109,7 @@ Everything is also logged to `.orchestra/orchestra.log`. Scripts and agents shou
 
 | Code | Meaning |
 |---|---|
-| 0 | done: nothing left to start, the limit reached, or stopped after the running tickets as asked |
+| 0 | done: nothing left to start, nothing to run from the start (`✓ All done` or `Nothing ready to run`), the limit reached, or stopped after the running tickets as asked |
 | 2 | a setup problem (all are listed), or another run going in the repository |
 | 3 | a worker needs you: blocked, idle with its ticket in progress, or past the ticket limit |
 | 4 | a Herdr, Beads or git failure |

@@ -4,6 +4,29 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- A run with nothing to run says so and exits 0, instead of opening the
+  dashboard, ending at once with `READY_EMPTY after 0 tickets` and asking
+  claude for a run report about nothing. It has nothing to run when its own
+  `bd ready` query finds nothing and `.orchestra/run/state.json` carries no
+  worker over from the last run (in its scope, with `--ticket`). It shows
+  `✓ All done`, with `Still open: <ids> (bd close <ids>)` for epics left
+  open, or `○ Nothing ready to run` with what holds the tickets left:
+  questions waiting for your answer, tickets waiting on others, in progress,
+  deferred, closed but not merged (`○ Nothing under <id> is ready to run`
+  and each ticket's `SCOPE_OPEN` reason, with `--ticket`). In a box on a
+  terminal, as plain lines with `-plain` or without one; no screen clear,
+  triage, report or notification. The event stream records `start`, `done`
+  (`READY_EMPTY after 0 tickets: everything is done`, or `: nothing ready`)
+  and `end` with code 0, and the log the done line. Runs that don't ask check
+  once they hold the run lock (a feature run once its epic is filed); a run
+  that asks checks when `Current tickets` is picked, and the option reads
+  `Current tickets: none, all done` or `none ready (N open)` when none is
+  ready. The orchestra skill's pane wait matches the new wording.
+
 ## [0.3.0] - 2026-10-03
 
 ### Added

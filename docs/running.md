@@ -17,10 +17,19 @@ One run at a time works on a repository: a second would race the first for the s
 
 In a terminal (its input and output both), `orchestra` then asks what the run should work on, once the startup checks have passed and it holds the lock, so that an answer is never followed by `orchestra cannot start`:
 
-- **Current tickets: N ready**, selected to start with, runs the backlog as this page describes. N is what the run's own `bd ready` query finds; the option leaves it out when `bd` can't say.
+- **Current tickets**, selected to start with, runs the backlog as this page describes. The option says what there is to run: `Current tickets: N ready`, N what the run's own `bd ready` query finds (`0 ready` when the last run left workers to carry on with); with none ready and none carried over, `Current tickets: none, all done` or `Current tickets: none ready (N open)`, N the tickets not closed, leaving out the `exclude_types`. It says only `Current tickets` when `bd` can't say. Picked with nothing to run, it shows why, as [below](#nothing-to-run).
 - **New feature** opens a field for the feature's description. Alt+Enter or Ctrl+J starts a new line, and Enter goes on; an empty description isn't taken. orchestra prints the description, then hands the terminal to Claude Code to [talk it through](#talked-through) with you and file its tickets.
 
 Esc or Ctrl+C at the question exits with code 130, with nothing changed and no run recorded in `.orchestra/run/events.jsonl`. `--tickets` (or `ORCHESTRA_TICKETS=1`) skips the question and runs the current tickets; `--ticket`, `--feature` and `-plain` skip it too, and a run without a terminal, or with `DONE_SO_FAR` at `LIMIT`, never asks. Scripts and agents that start `orchestra` in a terminal, such as a Herdr pane, pass `--tickets`, or `--feature` or `--ticket`: the bare command would wait at the question.
+
+### Nothing to run
+
+A run with nothing to run says so and exits 0, rather than open the dashboard only to end at once: no screen clear, no dashboard, no triage, no run report and no notification. It has nothing to run when its own `bd ready` query (in its scope, without questions and the `exclude_types`) finds nothing and `.orchestra/run/state.json` carries no worker over from the last run (with `--ticket`, none on a ticket in the scope); a worker to carry on with is something to run, and the run goes ahead. A run that asks checks once **Current tickets** is picked; the others (`--tickets`, `--ticket`, `-plain`, no terminal) check once the startup checks have passed and they hold the lock, and a feature run once its epic is filed. On a terminal the message is a box, otherwise the same lines, plain, after the time:
+
+- `✓ All done`: no ticket is left but those of the `exclude_types` (epics, never run), and none is closed but not merged. `Still open: <ids> (bd close <ids>)` follows when epics are still open.
+- `○ Nothing ready to run`: tickets are left, but none can start. A line for each of what holds them: `N questions wait for your answer: bd human list`, `N tickets wait on other tickets: bd blocked`, `N in progress · N deferred`, `N closed but not merged: bd list --label unmerged`.
+
+The [event stream](events.md) records the run's start, its done line, `READY_EMPTY after 0 tickets: everything is done` or `READY_EMPTY after 0 tickets: nothing ready`, and its end with code 0; the log has the done line too. When `bd` can't say, the run goes ahead, and the loop reports what it can't read (`READY_UNREADABLE`). A run whose `DONE_SO_FAR` has reached `LIMIT` ends `LIMIT_REACHED`, as before.
 
 `--concurrent N` (or `-c N`, or `ORCHESTRA_CONCURRENT=N`) sets how many tickets run at the same time for this run, overriding `settings.json`; see [Several tickets at once](#several-tickets-at-once). Worker tabs open in the Herdr workspace `orchestra` runs in; `--workspace ID` puts them in another, for example a separate space for workers. `orchestra -h` lists the flags. Most default to the environment variable `orchestrate.sh` used: `LIMIT` (40), `DONE_SO_FAR`, `AGENT_KIND` (claude), `WORKER_PROMPT` (`.orchestra/worker-prompt.md`), `NOTIFY`, and `WT_ROOT` (`<repo>-worktrees`); a relative `WORKER_PROMPT` or `WT_ROOT`, or their flags, is relative to the repository. The organs add `TRIAGE`, `REVIEW`, `ORGAN_MODEL` and `ORGAN_EFFORT`, and `PROMPT_AT_LAUNCH` controls how workers get their prompt.
 
@@ -50,6 +59,8 @@ Workers are told to file follow-ups that belong to the work as children of `<id>
 - `SCOPE_OPEN: <id>: 2 of its 5 subtickets not done: <id>.2 (blocked by other-7 outside the scope), <id>.4 (waiting on your answer to <question>)`, naming why each isn't: set aside in this run, deferred, closed but not merged, waiting for its own subtickets, not started.
 
 Both exit with 0.
+
+With nothing under `<id>` ready from the start, and no worker carried over on a ticket in the scope, the run has [nothing to run](#nothing-to-run): it shows `○ Nothing under <id> is ready to run`, then each ticket not done with why, as `SCOPE_OPEN` gives it, and its done line ends with the `SCOPE_OPEN` part (`READY_EMPTY after 0 tickets: nothing ready; SCOPE_OPEN: …`). An epic whose subtickets are all merged is `✓ All done`, with `Still open: <id> (bd close <id>)`.
 
 ### A feature from one request
 
@@ -114,7 +125,7 @@ Start at 1, and raise it once the checks run cleanly side by side.
 
 | Code | Meaning |
 |---|---|
-| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined; with **New feature**, also an epic you didn't start, or an interview that filed none |
+| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); also a run with [nothing to run](#nothing-to-run) from the start (`✓ All done` or `Nothing ready to run`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined; with **New feature**, also an epic you didn't start, or an interview that filed none |
 | 2 | setup problem found before starting (all problems are listed), or another run going in the same repository; with `--feature`, also a request the screen turned down or couldn't judge, a plan that failed or has questions, or no terminal to confirm on without `--yes` |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure, or orchestra panicked while working on a ticket (`PANIC`) |

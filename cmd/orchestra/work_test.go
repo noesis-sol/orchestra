@@ -22,14 +22,21 @@ const (
 	keyCtrlC   = "\x03"
 )
 
-// fakeReady is the run's ready query: n tickets, or err.
+// fakeReady is the run's ready query: n tickets, or err; and with none, the check for nothing to
+// run: nothing, or checkErr.
 type fakeReady struct {
-	n   int
-	err error
+	n        int
+	err      error
+	nothing  *dispatch.NothingToRun
+	checkErr error
 }
 
 func (f fakeReady) Ready(context.Context, string) ([]dispatch.Ticket, error) {
 	return make([]dispatch.Ticket, f.n), f.err
+}
+
+func (f fakeReady) check(context.Context) (*dispatch.NothingToRun, error) {
+	return f.nothing, f.checkErr
 }
 
 // screen is what the form draws, written from Bubble Tea's goroutines and read from the test's.
@@ -99,7 +106,7 @@ func askWorkOn(ctx context.Context, t *testing.T, ready fakeReady) (*fakeTermina
 	var errOut strings.Builder
 	done := make(chan workAnswer, 1)
 	go func() {
-		d, code := workQuestion{tickets: ready, in: in, out: &term.screen, err: &errOut}.ask(ctx)
+		d, code := workQuestion{tickets: ready, nothing: ready.check, in: in, out: &term.screen, err: &errOut}.ask(ctx)
 		done <- workAnswer{description: d, code: code}
 	}()
 	return term, func() workAnswer {

@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // ErrCancelled is AskWork's error when the user cancels the question with Ctrl+C or Esc.
@@ -27,14 +28,14 @@ var errNoDescription = errors.New("describe the feature first, or press Esc to c
 
 // AskWork asks what a run should work on, reading the answers from in and drawing the form on out:
 // the current tickets, ready of them ready (-1 when bd can't say), or a new feature, whose
-// description it then asks for. It returns the description, trimmed, or "" for the current
-// tickets. Ctrl+C or Esc cancels it with ErrCancelled; ctx ending stops it with ctx's error.
-func AskWork(ctx context.Context, in io.Reader, out io.Writer, ready int) (string, error) {
+// description it then asks for. With none ready, nothing is why the run has nothing to run (see
+// dispatch.CheckNothingToRun), or nil when it has, from workers carried over from the last run. It
+// returns the description, trimmed, or "" for the current tickets. Ctrl+C or Esc cancels it with
+// ErrCancelled; ctx ending stops it with ctx's error.
+func AskWork(
+	ctx context.Context, in io.Reader, out io.Writer, ready int, nothing *dispatch.NothingToRun,
+) (string, error) {
 	choice, description := workTickets, ""
-	tickets := "Current tickets"
-	if ready >= 0 {
-		tickets = fmt.Sprintf("Current tickets: %d ready", ready)
-	}
 	theme := huh.ThemeCharm()
 	describe := &formField{
 		Field: huh.NewText().
@@ -61,7 +62,7 @@ func AskWork(ctx context.Context, in io.Reader, out io.Writer, ready int) (strin
 			Title("What should this run work on?").
 			Description("orchestra --tickets runs the current tickets without asking.").
 			Options(
-				huh.NewOption(tickets, workTickets),
+				huh.NewOption(ticketsOption(ready, nothing), workTickets),
 				huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
 			).
 			Value(&choice),
@@ -83,4 +84,18 @@ func AskWork(ctx context.Context, in io.Reader, out io.Writer, ready int) (strin
 		return "", nil
 	}
 	return strings.TrimSpace(description), nil
+}
+
+// ticketsOption is the current tickets' option, as AskWork takes ready and nothing: how many are
+// ready, or why none is.
+func ticketsOption(ready int, nothing *dispatch.NothingToRun) string {
+	switch {
+	case ready < 0:
+		return "Current tickets"
+	case nothing != nil && nothing.AllDone:
+		return "Current tickets: none, all done"
+	case nothing != nil:
+		return fmt.Sprintf("Current tickets: none ready (%d open)", nothing.Open())
+	}
+	return fmt.Sprintf("Current tickets: %d ready", ready)
 }

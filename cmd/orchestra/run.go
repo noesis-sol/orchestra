@@ -651,6 +651,11 @@ func run(
 	if cfg.Feature != "" && cfg.Ticket == "" { // nothing filed to run
 		return status(featureCode)
 	}
+	out, isFile := stdout.(*os.File)
+	plain := cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd()))
+	if nothingToRun(ctx, cfg, log, stdout, plain) {
+		return nil
+	}
 
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
@@ -659,11 +664,42 @@ func run(
 		orch.StartTriage()
 	}
 	r := loopRun{orch: orch, cfg: cfg, stops: stops, log: log, cancelOrgans: cancelOrgans}
-	out, isFile := stdout.(*os.File)
-	if cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd())) {
+	if plain {
 		return status(runPlain(ctx, r, stdout))
 	}
 	return status(runDashboard(ctx, r, stdin, out, stderr))
+}
+
+// nothingToRun ends the run c before its loop when it has nothing to run (see
+// dispatch.CheckNothingToRun), and reports whether it did: it says why on stdout, plain or in a box,
+// and gives the run's done line to the log and the event stream, as the loop's end would, without
+// a notification; run's deferred End records the end, with code 0. Nothing is cleared, opened or
+// asked of claude. A run whose limit is reached is left to the loop, which ends it LIMIT_REACHED.
+func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.Writer, plain bool) bool {
+	if c.DoneSoFar >= c.Limit {
+		return false
+	}
+	n, err := dispatch.CheckNothingToRun(ctx, c.Config, beads.Tracker{Repo: c.Repo, ExcludeTypes: c.ExcludeTypes})
+	if err != nil || n == nil { // what the check couldn't read, the loop reads again and reports
+		return false
+	}
+	ev := dispatch.Event{Kind: dispatch.EvDone, N: c.DoneSoFar, Limit: c.Limit, Text: n.Done, Time: time.Now()}
+	log.Line(ev.Time, ev.Text)
+	log.Record(ev)
+	sink := tui.Printer{Out: stdout}
+	if out, ok := stdout.(*os.File); ok && !plain {
+		sink.Styled, sink.Width = true, termWidth(out)
+	}
+	sink.Nothing(*n)
+	return true
+}
+
+// termWidth is the width of the terminal out, or 80 when it can't be read.
+func termWidth(out *os.File) int {
+	if w, _, err := term.GetSize(int(out.Fd())); err == nil {
+		return w
+	}
+	return 80
 }
 
 // newLoop makes the run's loop on Beads, Herdr, git and the workers' reports, its organs advising
@@ -735,10 +771,7 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.File, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	width := 80
-	if w, _, err := term.GetSize(int(stdout.Fd())); err == nil {
-		width = w
-	}
+	width := termWidth(stdout)
 	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
 	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
 	fmt.Fprint(stdout, "\x1b[H\x1b[2J")

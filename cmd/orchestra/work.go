@@ -30,24 +30,32 @@ type workQuestion struct {
 	tickets interface { // the run's ready query, for the number of current tickets
 		Ready(ctx context.Context, scope string) ([]dispatch.Ticket, error)
 	}
+	// nothing says, when none is ready, why the run has nothing to run, or nil when it has (see
+	// dispatch.CheckNothingToRun): the current tickets' option says so
+	nothing  func(ctx context.Context) (*dispatch.NothingToRun, error)
 	in       io.Reader
 	out, err io.Writer
 }
 
 // askWork asks what the run c works on (see asksWork), reading the answers from stdin and drawing
 // the form on stdout. It returns the new feature's description, "" for the current tickets, and
-// ExitOK; or "" and the exit code when there is nothing to run, having said why.
+// ExitOK; or "" and the exit code when the run is not to go on, having said why. Whether the
+// current tickets have anything to run is for the run to check once they are picked.
 func askWork(
 	ctx context.Context, stops *stopWatch, c options, stdin io.Reader, stdout, stderr io.Writer,
 ) (string, int) {
 	// A stop signal ends the question as Ctrl+C does; until it is answered, nothing has changed.
 	ctx, stop := stops.context(ctx)
 	defer stop()
+	tracker := beads.Tracker{Repo: c.Repo, ExcludeTypes: c.ExcludeTypes}
 	return workQuestion{
-		tickets: beads.Tracker{Repo: c.Repo, ExcludeTypes: c.ExcludeTypes},
-		in:      stdin,
-		out:     stdout,
-		err:     stderr,
+		tickets: tracker,
+		nothing: func(ctx context.Context) (*dispatch.NothingToRun, error) {
+			return dispatch.CheckNothingToRun(ctx, c.Config, tracker)
+		},
+		in:  stdin,
+		out: stdout,
+		err: stderr,
 	}.ask(ctx)
 }
 
@@ -56,7 +64,14 @@ func (q workQuestion) ask(ctx context.Context) (string, int) {
 	if ts, err := q.tickets.Ready(ctx, ""); err == nil {
 		ready = len(ts)
 	}
-	description, err := tui.AskWork(ctx, q.in, q.out, ready)
+	var nothing *dispatch.NothingToRun // with none ready, the run has something only from the last run's workers
+	if ready == 0 {
+		var err error
+		if nothing, err = q.nothing(ctx); err != nil {
+			ready = -1 // bd can't say why none is
+		}
+	}
+	description, err := tui.AskWork(ctx, q.in, q.out, ready, nothing)
 	switch {
 	case ctx.Err() != nil || errors.Is(err, tui.ErrCancelled):
 		fmt.Fprintln(q.err, "orchestra: stopped before the run started; nothing was changed.")
