@@ -7,17 +7,9 @@ import (
 )
 
 // held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
-// saying why once. Workers close their ticket before it merges, and bd ready counts a closed
-// blocker as done, but until the blocker merges its code is not on Base, which the ticket's
-// worktree is cut from. A parent in parents (see openParents) runs last: its worker couldn't close
-// it while it has open children, and its work builds on theirs.
+// saying why once (see holds).
 func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]bool) bool {
-	why := ""
-	if parents[t.ID] {
-		why = "its subtickets are not all closed and merged"
-	} else if len(running) > 0 || o.anyUnmerged() {
-		why = o.waitsFor(ctx, t, running)
-	}
+	why, _ := o.holds(running, parents).why(ctx, t) // blockersOf has logged bd's error; the ticket waits
 	o.mu.Lock()
 	said := o.holdSaid[t.ID]
 	if o.holdSaid == nil {
@@ -31,21 +23,50 @@ func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]b
 	return why != ""
 }
 
-// waitsFor returns why ready ticket t can't start yet, or "" if nothing blocking it is unmerged.
-func (o *Loop) waitsFor(ctx context.Context, t Ticket, running map[string]bool) string {
-	ids, ok := o.blockersOf(ctx, t)
-	if !ok {
-		return "its dependencies could not be read"
+// holds is what keeps a ready ticket waiting. Workers close their ticket before it merges, and bd
+// ready counts a closed blocker as done, but until the blocker merges its code is not on Base, which
+// the ticket's worktree is cut from. A parent (see openParents) runs last: its worker couldn't close
+// it while it has open children, and its work builds on theirs. The loop knows them from its run
+// (Loop.holds); the nothing-to-run check, before any Loop, from bd and git, with nothing running.
+type holds struct {
+	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
+	running  map[string]bool        // the tickets whose workers are running
+	unmerged func(id string) string // why the ticket is closed but not merged, or ""
+	// pending: a ticket is running or closed but not merged; only then can one blocking a ready
+	// ticket hold it, and its blockers are read
+	pending bool
+	// blockers returns the IDs of the tickets blocking ready ticket t, or why bd can't say
+	blockers func(ctx context.Context, t Ticket) ([]string, error)
+}
+
+// holds is what keeps a ready ticket waiting, as the run knows it.
+func (o *Loop) holds(running, parents map[string]bool) holds {
+	return holds{parents: parents, running: running, unmerged: o.unmergedWhy,
+		pending: len(running) > 0 || o.anyUnmerged(), blockers: o.blockersOf}
+}
+
+// why returns why ready ticket t can't start yet, or "". When bd can't show the tickets blocking
+// it, t waits, and the error is bd's.
+func (h holds) why(ctx context.Context, t Ticket) (string, error) {
+	if h.parents[t.ID] {
+		return "its subtickets are not all closed and merged", nil
+	}
+	if !h.pending {
+		return "", nil
+	}
+	ids, err := h.blockers(ctx, t)
+	if err != nil {
+		return "its dependencies could not be read", err
 	}
 	for _, id := range ids {
-		if running[id] {
-			return fmt.Sprintf("waiting for %s to merge", id)
+		if h.running[id] {
+			return fmt.Sprintf("waiting for %s to merge", id), nil
 		}
-		if why := o.unmergedWhy(id); why != "" {
-			return fmt.Sprintf("%s closed but not merged (%s)", id, why)
+		if why := h.unmerged(id); why != "" {
+			return fmt.Sprintf("%s closed but not merged (%s)", id, why), nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // blockLinks are the tickets blocking a ready ticket, read when bd ready counted count of them.
@@ -54,28 +75,21 @@ type blockLinks struct {
 	ids   []string
 }
 
-// blockersOf returns the IDs of the tickets blocking ready ticket t, or false if bd show can't say.
-// They are read once per run: bd ready's count of t's blockers changes whenever a blocks link is
-// added or removed, and only then are they read again. Without a count they are read every time.
-func (o *Loop) blockersOf(ctx context.Context, t Ticket) ([]string, bool) {
+// blockersOf returns the IDs of the tickets blocking ready ticket t, or why bd show can't say, which
+// it logs. They are read once per run: bd ready's count of t's blockers changes whenever a blocks
+// link is added or removed, and only then are they read again. Without a count they are read every
+// time.
+func (o *Loop) blockersOf(ctx context.Context, t Ticket) ([]string, error) {
 	o.mu.Lock()
 	b, seen := o.blockers[t.ID]
 	o.mu.Unlock()
 	if seen && t.DependencyCount != nil && b.count == *t.DependencyCount {
-		return b.ids, true
+		return b.ids, nil
 	}
-	info, err := o.tickets.Show(ctx, t.ID)
-	if err != nil || info.Status == "unknown" {
-		if err != nil {
-			o.log.Raw("", err)
-		}
-		return nil, false
-	}
-	var ids []string
-	for _, d := range info.Dependencies {
-		if d.DependencyType == "blocks" {
-			ids = append(ids, d.ID)
-		}
+	ids, err := showBlockers(ctx, o.tickets, t.ID)
+	if err != nil {
+		o.log.Raw("", err)
+		return nil, err
 	}
 	if t.DependencyCount != nil {
 		o.mu.Lock()
@@ -85,7 +99,26 @@ func (o *Loop) blockersOf(ctx context.Context, t Ticket) ([]string, bool) {
 		o.blockers[t.ID] = blockLinks{count: *t.DependencyCount, ids: ids}
 		o.mu.Unlock()
 	}
-	return ids, true
+	return ids, nil
+}
+
+// showBlockers returns the IDs of the tickets blocking ticket id, as bd show gives them, or why it
+// can't.
+func showBlockers(ctx context.Context, tickets Tickets, id string) ([]string, error) {
+	info, err := tickets.Show(ctx, id)
+	switch {
+	case err != nil:
+		return nil, err
+	case info.Status == "unknown":
+		return nil, fmt.Errorf("bd show %s: its status is unknown", id)
+	}
+	var ids []string
+	for _, d := range info.Dependencies {
+		if d.DependencyType == "blocks" {
+			ids = append(ids, d.ID)
+		}
+	}
+	return ids, nil
 }
 
 // earlierRun is why a ticket left unmerged by an earlier run is still unmerged.

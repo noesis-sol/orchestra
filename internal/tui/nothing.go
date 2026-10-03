@@ -64,6 +64,14 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 	if n.Waiting > 0 {
 		rest = append(rest, plural(n.Waiting, "ticket waits", "tickets wait")+" on other tickets: "+command("bd blocked"))
 	}
+	if n.HeldParents > 0 {
+		rest = append(rest, plural(n.HeldParents, "ticket waits for its subtickets", "tickets wait for their subtickets")+
+			" to merge")
+	}
+	if n.HeldBlocked > 0 {
+		rest = append(rest, plural(n.HeldBlocked, "ticket waits for its blocker", "tickets wait for their blockers")+
+			" to merge")
+	}
 	var held []string
 	for _, c := range []struct {
 		n    int

@@ -28,8 +28,8 @@ var errNoDescription = errors.New("describe the feature first, or press Esc to c
 
 // AskWork asks what a run should work on, reading the answers from in and drawing the form on out:
 // the current tickets, ready of them ready (-1 when bd can't say), or a new feature, whose
-// description it then asks for. With none ready, nothing is why the run has nothing to run (see
-// dispatch.CheckNothingToRun), or nil when it has, from workers carried over from the last run. It
+// description it then asks for. nothing is why the run has nothing to run, none ready or every ready
+// ticket held back (see dispatch.CheckNothingToRun), or nil when it has something to run. It
 // returns the description, trimmed, or "" for the current tickets. Ctrl+C or Esc cancels it with
 // ErrCancelled; ctx ending stops it with ctx's error.
 func AskWork(

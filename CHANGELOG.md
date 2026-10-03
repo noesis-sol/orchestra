@@ -26,6 +26,12 @@ All notable changes to orchestra are documented here. The format follows
   that asks checks when `Current tickets` is picked, and the option reads
   `Current tickets: none, all done` or `none ready (N open)` when none is
   ready. The orchestra skill's pane wait matches the new wording.
+- A run whose ready tickets are all held back has nothing to run too: a
+  parent whose subtickets aren't all closed and merged, or a ticket blocked
+  by one closed but not merged, which `bd ready` lists but the run wouldn't
+  start. `○ Nothing ready to run` counts them on lines of their own
+  (`N tickets wait for their subtickets to merge`, `N tickets wait for their
+  blockers to merge`), and the question's option reads `none ready (N open)`.
 
 ### Fixed
 

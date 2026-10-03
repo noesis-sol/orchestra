@@ -40,20 +40,32 @@ func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[st
 	if err != nil {
 		return nil, listUnreadableError{err}
 	}
+	pending := map[string]string{}
+	o.mu.Lock()
+	for id, p := range o.parentOf {
+		if running[id] || o.unmerged[id] != "" {
+			pending[id] = p
+		}
+	}
+	o.mu.Unlock()
+	return parentsOf(open, pending), nil
+}
+
+// parentsOf returns the tickets that wait for their subtickets: the parents of open, the tickets bd
+// lists as not closed, and of pending, closed but not yet merged, each given with its parent.
+func parentsOf(open []Ticket, pending map[string]string) map[string]bool {
 	parents := map[string]bool{}
 	for _, t := range open {
 		if t.Parent != "" {
 			parents[t.Parent] = true
 		}
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	for id, p := range o.parentOf {
-		if running[id] || o.unmerged[id] != "" {
+	for _, p := range pending {
+		if p != "" {
 			parents[p] = true
 		}
 	}
-	return parents, nil
+	return parents
 }
 
 // excluded reports whether tickets of the type are never dispatched, as epics aren't.

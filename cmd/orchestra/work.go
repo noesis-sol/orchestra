@@ -31,8 +31,8 @@ type workQuestion struct {
 	tickets interface { // the run's ready query, for the number of current tickets
 		Ready(ctx context.Context, scope string) ([]dispatch.Ticket, error)
 	}
-	// nothing says, when none is ready, why the run has nothing to run, or nil when it has (see
-	// dispatch.CheckNothingToRun): the current tickets' option says so
+	// nothing says why the run has nothing to run, none ready or every ready ticket held back, or nil
+	// when it has (see dispatch.CheckNothingToRun): the current tickets' option says so
 	nothing  func(ctx context.Context) (*dispatch.NothingToRun, error)
 	in       io.Reader
 	out, err io.Writer
@@ -65,10 +65,12 @@ func (q workQuestion) ask(ctx context.Context) (string, int) {
 	if ts, err := q.tickets.Ready(ctx, ""); err == nil {
 		ready = len(ts)
 	}
-	var nothing *dispatch.NothingToRun // with none ready, the run has something only from the last run's workers
-	if ready == 0 {
+	// Ready tickets may all be held back (parents waiting for their subtickets, tickets waiting for a
+	// blocker to merge), and with none, the run has something only from the last run's workers.
+	var nothing *dispatch.NothingToRun
+	if ready >= 0 {
 		var err error
-		if nothing, err = q.nothing(ctx); err != nil {
+		if nothing, err = q.nothing(ctx); err != nil && ready == 0 {
 			ready = -1 // bd can't say why none is
 		}
 	}

@@ -316,8 +316,10 @@ func TestNothingToRunScopeDone(t *testing.T) {
 		t.Errorf("epic: got  %+v\nwant %+v", n, want)
 	}
 
+	b.add("M", "merged elsewhere", 1)
+	b.set("M", "closed")
 	b.set("E.2", "open")
-	b.link("E.2", "U", "blocks") // closed, so bd ready lists E.2: there is something to run
+	b.link("E.2", "M", "blocks") // closed and merged, so bd ready lists E.2 and the run starts it
 	if n := checkNothing(t, c, b); n != nil {
 		t.Errorf("E.2 is ready, yet nothing to run: %+v", n)
 	}

@@ -139,11 +139,11 @@ feature`, which asks the user to describe one and then talks it through with the
 session): the wait above would time out on the question. `--ticket <id>`
 and `--feature "<request>"` don't ask either. Leave the bare command to a user at the keyboard.
 
-A run with nothing to run (nothing ready, and no worker the last run left to carry on with) doesn't
-open the dashboard: it shows a box, `✓ All done` (with `Still open: <ids> (bd close <ids>)` for
-epics left open) or `○ Nothing ready to run` with what holds the tickets left (`○ Nothing under
-<id> is ready to run` and each ticket's reason, with `--ticket`), and exits 0 without a report. Tell
-the user what it says.
+A run with nothing to run (nothing ready, or only tickets it would hold back, and no worker the last
+run left to carry on with) doesn't open the dashboard: it shows a box, `✓ All done` (with `Still
+open: <ids> (bd close <ids>)` for epics left open) or `○ Nothing ready to run` with what holds the
+tickets left (`○ Nothing under <id> is ready to run` and each ticket's reason, with `--ticket`), and
+exits 0 without a report. Tell the user what it says.
 
 Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
 time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
