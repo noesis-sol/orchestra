@@ -35,6 +35,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The cursor of `What should this run work on?` and of init's `Tickets at
+  the same time` stops at the first and last option, as the MCP servers
+  choice's does, instead of wrapping around: with two options, every Up or
+  Down used to move it, so it seemed to bounce between them. `/` no longer
+  filters either choice's few options, and the help line no longer offers it.
 - The dashboard starts again on a clear screen when the terminal resizes.
   A pane that narrowed under it (by a column, as a worker's Herdr tab opened)
   re-wrapped its frame, and the next frame was drawn over the middle of the

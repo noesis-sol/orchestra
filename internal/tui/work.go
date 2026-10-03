@@ -58,14 +58,13 @@ func AskWork(
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
 	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
+		newBoundedSelect(huh.NewSelect[string]().
 			Title("What should this run work on?").
-			Description("orchestra --tickets runs the current tickets without asking.").
-			Options(
-				huh.NewOption(ticketsOption(ready, nothing), workTickets),
-				huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
-			).
-			Value(&choice),
+			Description("orchestra --tickets runs the current tickets without asking."),
+			&choice,
+			huh.NewOption(ticketsOption(ready, nothing), workTickets),
+			huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
+		),
 		describe,
 	)).WithTheme(theme).WithKeyMap(keys).
 		// orchestra watches the stop signals itself and ends ctx on one; Bubble Tea's handler would

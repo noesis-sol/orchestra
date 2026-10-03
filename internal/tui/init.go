@@ -322,11 +322,10 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 	}
 	option, custom := concurrencyStart(c.Concurrent)
 	if askConcurrent {
-		add(huh.NewSelect[int]().
+		add(newBoundedSelect(huh.NewSelect[int]().
 			Title("Tickets at the same time").
-			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent.").
-			Options(concurrencyOptions()...).
-			Value(&option))
+			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent."),
+			&option, concurrencyOptions()...))
 		typed := add(huh.NewInput().
 			Title("Number of tickets at the same time").
 			Description(fmt.Sprintf("From 1 to %d. Above %d: a big machine, and tickets that rarely touch "+
