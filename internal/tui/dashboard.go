@@ -106,7 +106,14 @@ func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// A terminal that resizes re-wraps the frame on it, and Bubble Tea, which redraws in place
+		// by moving up as many lines as it last drew, would draw the next frame over the middle of
+		// the old one. A new size after the first (height 0: none yet) starts again on a clear screen.
+		resized := m.height != 0 && (msg.Width != m.width || msg.Height != m.height)
 		m.width, m.height = msg.Width, msg.Height
+		if resized {
+			return m, tea.ClearScreen
+		}
 	case tea.KeyMsg:
 		switch key := msg.String(); {
 		case key == "ctrl+c": // at any time, the question open or not

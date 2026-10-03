@@ -27,6 +27,13 @@ All notable changes to orchestra are documented here. The format follows
   `Current tickets: none, all done` or `none ready (N open)` when none is
   ready. The orchestra skill's pane wait matches the new wording.
 
+### Fixed
+
+- The dashboard starts again on a clear screen when the terminal resizes.
+  A pane that narrowed under it (by a column, as a worker's Herdr tab opened)
+  re-wrapped its frame, and the next frame was drawn over the middle of the
+  old one, whose top half stayed above the dashboard for the rest of the run.
+
 ## [0.3.0] - 2026-10-03
 
 ### Added
