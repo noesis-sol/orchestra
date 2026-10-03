@@ -135,7 +135,8 @@ herdr pane read "$P" --source visible
 
 Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
 should work on (`Current tickets: N ready`, or `New feature`, which asks the user to describe one
-and plans it as `--feature` does): the wait above would time out on the question. `--ticket <id>`
+and then talks it through with them in a Claude Code session): the wait above would time out on the
+question. `--ticket <id>`
 and `--feature "<request>"` don't ask either. Leave the bare command to a user at the keyboard.
 
 Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
@@ -253,7 +254,7 @@ A run's records go `start` (with `version`, `repo`, `branch`, `scope`, `feature`
 then its events, each with the log line as `text` (`dispatch`, `closed`, `deferred`, `asked`,
 `warn`, `hold`, `triage`, `info`, …), then `stop` or `done`, and last `end`, with `code`, the exit
 code, once orchestra has exited. No `end` yet: the run is still going (`lsof` lists its PID), or was
-killed. A `--feature` run writes its `start` only once the plan is filed (or isn't).
+killed. A feature run writes its `start` only once the feature is filed (or isn't).
 
 ```
 E=.orchestra/run/events.jsonl

@@ -24,8 +24,9 @@ import (
 //	.orchestra/orchestra.log      the event log
 //	.orchestra/reports/           run reports
 //	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt, the worker's hooks);
-//	                              in the main checkout, the run lock, the event stream (events.jsonl) and
-//	                              the workers the last run left behind (state.json)
+//	                              in the main checkout, the run lock, the event stream (events.jsonl),
+//	                              the workers the last run left behind (state.json), and a feature
+//	                              interview's instructions and the epic it filed (feature.json)
 //
 // 'orchestra init' creates it. A project set up before that keeps its files in .claude/
 // (worker-prompt.md, orchestrate.log, orchestrate-reports/) and still works.

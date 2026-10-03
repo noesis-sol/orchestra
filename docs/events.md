@@ -18,7 +18,7 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 
 | `kind` | What happened | Its other fields |
 |---|---|---|
-| `start` | the run's first record, once its startup checks pass (with `--feature`, once the plan is filed, or isn't) | `version`; `repo`, the main checkout; `branch`, where finished tickets land; `scope`, the ticket the run is scoped to (`--ticket`, or the epic a `--feature` request was filed as), absent for all of `bd ready`; `feature`, the `--feature` request; `concurrency` |
+| `start` | the run's first record, once its startup checks pass (for a feature, once it is filed, or isn't) | `version`; `repo`, the main checkout; `branch`, where finished tickets land; `scope`, the ticket the run is scoped to (`--ticket`, or the epic a feature was filed as), absent for all of `bd ready`; `feature`, the feature request (`--feature`, or typed at the start); `concurrency` |
 | `info` | progress: the `START` line, worktrees, how workers settled… | `text`; `ticket` on some |
 | `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`; `queued`, how many ready tickets wait for a slot; `solo` |
 | `queue` | the number of ready tickets waiting for a slot changed: the dashboard's **In queue**, which the log doesn't have | `queued`, `solo` |
@@ -37,7 +37,7 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 
 Every record but `start`, `queue` and `end` also has `text`, its line in the log as it is there, without the time. A `stop` or `done` record's text starts with the word that says how the loop ended (`PAUSED: …`, `READY_EMPTY after 12 tickets`), a `hold` record's with `HOLD: ` and that word. `solo` is there while a ticket labelled `solo` runs (`{"ticket":"<id>"}`) or is next (`{"ticket":"<id>","next":true}`). A field without a value is left out, except `queued` and `code`, which can be 0. Kinds and fields may be added, but those here keep their names: read the ones you know and skip the rest.
 
-Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .orchestra/run/orchestra.lock` says which. A `--feature` run writes nothing there while it screens and plans the request. If the stream can't be written, the log says so once, and the run goes on.
+Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .orchestra/run/orchestra.lock` says which. A feature run writes nothing there while the request is screened and planned, or talked through. If the stream can't be written, the log says so once, and the run goes on.
 
 With `jq`, in the main checkout:
 

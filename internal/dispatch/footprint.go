@@ -32,6 +32,10 @@ const AreaPrefix = "area:"
 // or a string of paths separated by commas or spaces (bd update <id> --set-metadata files=a.go,b.go).
 const FilesKey = "files"
 
+// TicketFiles returns the files the ticket's metadata lists under FilesKey, as written, in any of
+// those forms.
+func TicketFiles(t Ticket) []string { return metadataList(t.Metadata, FilesKey) }
+
 // PredictedKey is the metadata key caching the files the predictor organ expects a ticket naming
 // nothing to change, kept apart from the maintainer's FilesKey.
 const PredictedKey = "predicted_files"

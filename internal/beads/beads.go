@@ -74,9 +74,25 @@ func parseList(raw []byte, status string) ([]dispatch.Ticket, error) {
 
 // parseOpen returns the open tickets from 'bd list --json', leaving out questions for the
 // maintainer and tickets of the excluded issue types, and the blocks links among their
-// dependencies. bd list gives each dependency as a link (issue_id, depends_on_id, type), not as a
-// ticket.
+// dependencies (see parseLinked).
 func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	all, links, err := parseLinked(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	var open []dispatch.Ticket
+	for _, t := range all {
+		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
+			open = append(open, t)
+		}
+	}
+	return open, links, nil
+}
+
+// parseLinked returns the tickets from 'bd list --json' and the blocks links among their
+// dependencies. bd list gives each dependency as a link (issue_id, depends_on_id, type), not as a
+// ticket, so the tickets' Dependencies are left empty.
+func parseLinked(raw []byte) ([]dispatch.Ticket, []dispatch.Link, error) {
 	var all []dispatch.Ticket
 	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
 		return nil, nil, err
@@ -91,20 +107,16 @@ func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch
 	if err := json.Unmarshal(unwrap(raw), &deps); err != nil {
 		return nil, nil, err
 	}
-	var open []dispatch.Ticket
 	var links []dispatch.Link
-	for i, t := range all {
+	for i := range all {
 		for _, d := range deps[i].Dependencies {
 			if d.Type == "blocks" && d.IssueID != "" && d.DependsOnID != "" {
 				links = append(links, dispatch.Link{Blocker: d.DependsOnID, Blocked: d.IssueID})
 			}
 		}
-		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
-			t.Dependencies = nil
-			open = append(open, t)
-		}
+		all[i].Dependencies = nil
 	}
-	return open, links, nil
+	return all, links, nil
 }
 
 // Tracker is Beads for one repository, as the loop uses it.
@@ -185,6 +197,20 @@ func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket,
 		}
 	}
 	return all, nil
+}
+
+// Children returns the ticket's subtickets that aren't closed, with their text and metadata, and
+// the blocks links bd has for them. When bd's output can't be read, the error carries bd's stderr.
+func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "list", "--json", "--limit", "0", "--parent", id)
+	children, links, err := parseLinked([]byte(out))
+	switch {
+	case err != nil && runErr != nil:
+		return nil, nil, runErr
+	case err != nil:
+		return nil, nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	}
+	return children, links, nil
 }
 
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status

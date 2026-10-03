@@ -13,9 +13,9 @@ import (
 )
 
 // A run in a terminal that nothing has told what to work on asks first: the current tickets, as a
-// run always did, or a new feature, which the user describes and orchestra plans into tickets as
-// with --feature. It asks once the startup checks have passed and the run lock is held, so that an
-// answer is never followed by "orchestra cannot start".
+// run always did, or a new feature, which the user describes and then talks through with claude,
+// which files its tickets (interview.go). It asks once the startup checks have passed and the run
+// lock is held, so that an answer is never followed by "orchestra cannot start".
 
 // asksWork reports whether the run c asks what to work on. terminal says whether stdin and stdout
 // are both a terminal, as the form is drawn on stdout. --feature, --ticket (or ORCHESTRA_TICKET),

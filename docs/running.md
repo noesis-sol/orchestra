@@ -18,7 +18,7 @@ One run at a time works on a repository: a second would race the first for the s
 In a terminal (its input and output both), `orchestra` then asks what the run should work on, once the startup checks have passed and it holds the lock, so that an answer is never followed by `orchestra cannot start`:
 
 - **Current tickets: N ready**, selected to start with, runs the backlog as this page describes. N is what the run's own `bd ready` query finds; the option leaves it out when `bd` can't say.
-- **New feature** opens a field for the feature's description. Alt+Enter or Ctrl+J starts a new line, and Enter goes on; an empty description isn't taken. orchestra prints the description, then runs it as [`--feature`](#a-feature-from-one-request) would: screened, planned, shown, and filed once you confirm.
+- **New feature** opens a field for the feature's description. Alt+Enter or Ctrl+J starts a new line, and Enter goes on; an empty description isn't taken. orchestra prints the description, then hands the terminal to Claude Code to [talk it through](#talked-through) with you and file its tickets.
 
 Esc or Ctrl+C at the question exits with code 130, with nothing changed and no run recorded in `.orchestra/run/events.jsonl`. `--tickets` (or `ORCHESTRA_TICKETS=1`) skips the question and runs the current tickets; `--ticket`, `--feature` and `-plain` skip it too, and a run without a terminal, or with `DONE_SO_FAR` at `LIMIT`, never asks. Scripts and agents that start `orchestra` in a terminal, such as a Herdr pane, pass `--tickets`, or `--feature` or `--ticket`: the bare command would wait at the question.
 
@@ -53,11 +53,31 @@ Both exit with 0.
 
 ### A feature from one request
 
+A feature goes from a request to a finished run in one of two ways:
+
+- **Talked through**, typed at the start: run `orchestra` in a terminal and choose **New feature** ([Run](#run)). Claude Code interviews you about the feature and files the tickets you agree on.
+- **Planned by the organs**, for scripts and agents: `orchestra --feature "<request>"`. The screen and plan organs turn the request into tickets, and orchestra asks only whether to file them, which `--yes` answers in advance.
+
+Either way the feature is filed in Beads as an epic and its tickets, and run as `--ticket <epic>` would run it. Both start after the usual startup checks (repository, `bd`, Herdr, settings, MCP servers, and a clean main checkout), so that nothing is filed for a run that couldn't start.
+
+#### Talked through
+
+Once you have described the feature, orchestra hands its terminal to an interactive Claude Code session in the main checkout, and waits for it to end: `claude --append-system-prompt-file .orchestra/run/interview-prompt.md -- "<description>"`. The instructions, appended to Claude Code's own system prompt so that its tools and sub-agents work, adapt Matt Pocock's [grilling skill](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md) (MIT License; see [the notices](../THIRD_PARTY_NOTICES.md)). It is your own session, not a worker or an organ: your Claude Code setup applies, the project's `CLAUDE.md` and your MCP servers included.
+
+1. Claude reads the README and `CLAUDE.md` (or `AGENTS.md`), then interviews you in rounds. A round asks every question that can be asked yet, numbered, each with Claude's recommended answer; a question that depends on an answer still open waits for a later round. Claude looks facts up in the repository itself, with sub-agents, rather than ask you; the decisions are yours. When nothing is left open, it sums up what you agreed and waits for you to confirm it.
+2. It proposes an epic and its child tickets, each one worker's session of work, with a description, acceptance criteria, a type, a priority, the files it changes, the tickets it waits for, and the `solo` label where one restructures code most tickets touch. Titles are at most 60 characters; no ticket duplicates an open one or asks you a question. Nothing is filed until you agree.
+3. It files them with `bd`: the epic, each ticket as its child with its files as `files` metadata (which [footprints](#several-tickets-at-once) read), and `bd dep add` for each link. Then it writes the epic's ID to `.orchestra/run/feature.json` and tells you to type `/exit`.
+4. Back in orchestra, the epic and its tickets are shown as `--feature` shows a plan (type, priority, files, `after:`), followed by `Start the run on <epic> (N tickets)? [y/N]`. On `y` the run is that of `--ticket <epic>`, as in step 5 below, with the description as the request. Otherwise orchestra says `Start it later with: orchestra --ticket <epic>` and exits with 0.
+
+Claude only reads and files tickets: it doesn't edit files, commit or push. While the session runs, Ctrl+C is Claude Code's, which interrupts or clears with it, not orchestra's; SIGTERM and SIGHUP still stop orchestra (exit code 130), the session with it. orchestra removes an earlier `.orchestra/run/feature.json` before the session. When the session leaves none, or it names no epic `bd` knows, orchestra says `No feature was filed; nothing to run.` and exits with 0. Without `claude` on the `PATH`, or with workers of another agent (`--agent`), there is no interview: orchestra says why and plans the feature with the organs, as below.
+
+#### Planned by the organs
+
 ```
 orchestra --feature "Add a --json flag to the list command"
 ```
 
-`--feature "<request>"` takes a request from idea to a finished run. The request can also be typed at the start: run `orchestra` in a terminal and choose **New feature** ([Run](#run)); the steps below are the same. After the usual startup checks (repository, `bd`, Herdr, settings, MCP servers, and a clean main checkout), so that nothing is filed for a run that couldn't start:
+`--feature "<request>"` takes a request from idea to a finished run, asking nothing but whether to file the plan:
 
 1. The [screen organ](organs.md#organs) judges the request. A request it rejects or finds unclear stops with its reason (exit code 2), as does a screen that fails: an unscreened request isn't planned.
 2. The [plan organ](organs.md#organs) plans it as an epic and its tickets. When it needs answers first, orchestra prints its questions and stops (exit code 2); run it again with the answers in the request.
@@ -94,7 +114,7 @@ Start at 1, and raise it once the checks run cleanly side by side.
 
 | Code | Meaning |
 |---|---|
-| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined |
+| 0 | nothing left in `bd ready`, the limit was reached, or it stopped after the running tickets as asked (`DRAINED`); with `--ticket`, the last line says whether the ticket's scope is finished (`SCOPE_DONE` or `SCOPE_OPEN`); with `--feature`, also a plan you declined; with **New feature**, also an epic you didn't start, or an interview that filed none |
 | 2 | setup problem found before starting (all problems are listed), or another run going in the same repository; with `--feature`, also a request the screen turned down or couldn't judge, a plan that failed or has questions, or no terminal to confirm on without `--yes` |
 | 3 | a worker stayed blocked for more than 4 minutes or unknown for more than 5, went idle with its ticket still `in_progress`, or was still going after the ticket limit |
 | 4 | Herdr, Beads or git failure, or orchestra panicked while working on a ticket (`PANIC`) |

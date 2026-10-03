@@ -128,7 +128,7 @@ func TestWorkQuestionRunsTheCurrentTicketsByDefault(t *testing.T) {
 		t.Errorf("got %q, exit %d, stderr %q", a.description, a.code, a.err)
 	}
 	for _, want := range []string{"What should this run work on?", "orchestra --tickets runs the current tickets",
-		"New feature: describe it, and orchestra plans it into tickets"} {
+		"New feature: describe it, talk it through with claude, run its tickets"} {
 		if !strings.Contains(a.out, want) {
 			t.Errorf("the form lacks %q:\n%s", want, a.out)
 		}

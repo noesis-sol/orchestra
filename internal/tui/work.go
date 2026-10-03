@@ -39,8 +39,8 @@ func AskWork(ctx context.Context, in io.Reader, out io.Writer, ready int) (strin
 	describe := &formField{
 		Field: huh.NewText().
 			Title("Describe the feature").
-			Description("What it should do, and why. orchestra screens it, plans it into tickets and shows you " +
-				"the plan before filing anything. Alt+Enter or Ctrl+J starts a new line.").
+			Description("What it should do, and why. claude then interviews you about it and files the tickets " +
+				"you agree on; orchestra runs them once you confirm. Alt+Enter or Ctrl+J starts a new line.").
 			Lines(6).
 			Validate(func(v string) error {
 				if strings.TrimSpace(v) == "" {
@@ -62,7 +62,7 @@ func AskWork(ctx context.Context, in io.Reader, out io.Writer, ready int) (strin
 			Description("orchestra --tickets runs the current tickets without asking.").
 			Options(
 				huh.NewOption(tickets, workTickets),
-				huh.NewOption("New feature: describe it, and orchestra plans it into tickets", workFeature),
+				huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
 			).
 			Value(&choice),
 		describe,

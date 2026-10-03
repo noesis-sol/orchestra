@@ -1,5 +1,6 @@
 // Package command runs the external commands orchestra drives (git, bd, herdr, claude) and
-// reports their failures with stderr and a short form of the arguments.
+// reports their failures with stderr and a short form of the arguments. Interactive runs one on
+// the terminal instead, for the user to work in.
 package command
 
 import (
@@ -148,6 +149,39 @@ func GroupOutput(ctx context.Context, grace time.Duration, dir, name string, arg
 		err = ctx.Err()
 	}
 	return out.Bytes(), err
+}
+
+// interactiveGrace is how long a command on the terminal (Interactive) has between SIGTERM and
+// SIGKILL: time to put the terminal back as it found it, out of raw mode.
+const interactiveGrace = 5 * time.Second
+
+// Interactive runs a command in dir on the terminal and waits, without a time limit, for it to
+// exit: a program the user works in, such as an interactive Claude Code session. It reads stdin and
+// writes stdout and stderr itself, the terminal's own files when given orchestra's. Unlike Output's
+// commands it stays in orchestra's process group: a program in another group can't read the
+// terminal. So Ctrl+C at the terminal reaches it, and orchestra too, which must leave it to the
+// command. When ctx is done the command gets SIGTERM, and SIGKILL if it is still running
+// interactiveGrace later. The error is an *Error, without Stderr: the command wrote that to the
+// terminal.
+func Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string,
+	args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+	cmd.Cancel = func() error { return terminate(cmd.Process) }
+	cmd.WaitDelay = interactiveGrace
+	err := cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
+		err = nil // exited 0, leaving a process behind that holds a stream that isn't a file
+	}
+	if err == nil {
+		return nil
+	}
+	e := &Error{Name: name, Args: args, Err: err}
+	if cause := context.Cause(ctx); cause != nil {
+		e.Err, e.Stopped = cause, true
+	}
+	return e
 }
 
 // shortArgs renders arguments for an error message, cutting long ones (a whole prompt, say).

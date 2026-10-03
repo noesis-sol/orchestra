@@ -528,8 +528,8 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 
 // run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
 // A run's setup, held until it ends (the lock, the stop signals' watch, the log), the question of
-// what it works on and a --feature request are here; runPlain or runDashboard runs the loop and
-// the organ phase after it.
+// what it works on, and a feature typed there or given with --feature are here; runPlain or
+// runDashboard runs the loop and the organ phase after it.
 func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) (err error) {
@@ -619,15 +619,23 @@ func run(
 		fmt.Fprintln(stderr, err)
 		return exitStatus(dispatch.ExitSetup)
 	}
+	typed := false // the feature was typed at the question rather than given with --feature
 	if asksWork(cfg, isTerminal(stdin) && isTerminal(stdout)) {
 		feature, code := askWork(ctx, stops, cfg, stdin, stdout, stderr)
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
 			return exitStatus(code)
 		}
-		cfg.Feature = feature // "" for the current tickets
+		cfg.Feature, typed = feature, feature != "" // "" for the current tickets
 	}
 	featureCode := dispatch.ExitOK
-	if cfg.Feature != "" { // the run is scoped to the epic it files
+	switch off := interviewOff(cfg); { // the run is scoped to the epic filed
+	case cfg.Feature == "":
+	case typed && off == "": // talked through with the user, and filed, in a Claude Code session
+		cfg.Ticket, featureCode = runInterview(ctx, stops, cfg, log, stdin, stdout, stderr)
+	default: // planned by the organs, and filed by orchestra
+		if typed {
+			fmt.Fprintf(stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)
+		}
 		cfg.Ticket, featureCode = runFeature(ctx, stops, cfg, log, stdin, stdout, stderr)
 	}
 	log.Begin(cfg.Repo, dispatch.RunStart{Started: started, Version: buildVersion(), Repo: cfg.Repo, Branch: cfg.Base,

@@ -31,6 +31,7 @@ type stopWatch struct {
 	mu      sync.Mutex
 	onStop  func(os.Signal) // the current phase's, for the next signal; nil while none listens
 	pending os.Signal       // a signal no phase has taken yet
+	dropInt bool            // SIGINT is the terminal program's: see dropInterrupts
 	leave   bool            // SIGTERM or SIGHUP has come: see leaving
 	quit    *quitter        // how a further signal ends orchestra; nil until quitWith
 	winding bool            // the phase listening last has taken its signal and winds down
@@ -70,6 +71,9 @@ func catchStops() *stopWatch {
 func (w *stopWatch) deliver(s os.Signal) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if s == os.Interrupt && w.dropInt {
+		return
+	}
 	w.leave = w.leave || leaves(s)
 	switch {
 	case w.onStop != nil:
@@ -98,6 +102,23 @@ func (w *stopWatch) on(f func(os.Signal)) {
 		return
 	}
 	w.onStop = f
+}
+
+// dropInterrupts drops SIGINT until the function it returns is called: it neither stops the
+// current phase nor waits for the next. It is for a program orchestra runs on the terminal in
+// orchestra's own process group (command.Interactive), which gets Ctrl+C from the terminal too:
+// Claude Code interrupts and clears with it. SIGTERM and SIGHUP still stop the phase. SIGINT stays
+// caught rather than ignored (signal.Ignore), as a program started meanwhile would inherit the
+// ignoring.
+func (w *stopWatch) dropInterrupts() (restore func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.dropInt = true
+	return func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.dropInt = false
+	}
 }
 
 // quitWith has the stop signals that come while a stopped phase winds down end orchestra, as q

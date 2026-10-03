@@ -44,7 +44,7 @@ git switch -c batch/$(date +%F)
 orchestra
 ```
 
-In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default, showing how many are ready) runs the backlog as below. **New feature** asks you to describe a feature in a few lines, then plans it into tickets and runs them, as `--feature` does: you see the plan, and nothing is filed until you confirm. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either.
+In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default, showing how many are ready) runs the backlog as below. **New feature** asks you to describe a feature in a few lines, then hands the terminal to Claude Code, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Type `/exit` to come back: orchestra shows the tickets and runs them once you confirm. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
 
 How a run goes:
 - **Dispatch.** Each ready ticket in `bd ready` goes to its own worker, up to `concurrent` at a time. Tickets that touch the same files or functions don't run side by side, and a ticket labelled `solo` runs alone.
@@ -133,3 +133,4 @@ Each code in full, and what to do after one, is in [docs/running.md](docs/runnin
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
 - [docs/development.md](docs/development.md): the check, the code's layout and tests, differences from `orchestrate.sh`
 - [Changelog](CHANGELOG.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)

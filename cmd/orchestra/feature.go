@@ -77,18 +77,13 @@ func runFeature(
 }
 
 func (f featureRun) run(ctx context.Context) (string, int) {
-	// The loop checks the main checkout before each ticket; a feature run checks it before filing,
-	// so that a run that couldn't start files nothing.
-	if dirty, err := (git.Git{}).DirtyTree(ctx, f.repo); err != nil {
-		if code, stopped := f.interrupted(ctx); stopped {
-			return "", code
-		}
-		fmt.Fprintf(f.err, "orchestra couldn't read the state of %s: %v\n", f.repo, err)
-		return "", dispatch.ExitTool
-	} else if dirty != "" {
-		fmt.Fprintf(f.err, "orchestra cannot start: uncommitted changes in %s. Commit or stash them first; "+
-			"inspect with: git status\n", f.repo)
-		return "", dispatch.ExitDirty
+	switch code := cleanCheckout(ctx, f.repo, f.err); code {
+	case dispatch.ExitOK:
+	case dispatch.ExitInterrupted:
+		code, _ = f.interrupted(ctx)
+		return "", code
+	default:
+		return "", code
 	}
 
 	fmt.Fprintln(f.out, "screening the request with claude…")
@@ -177,6 +172,26 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		}
 	}
 	return f.file(ctx, p)
+}
+
+// cleanCheckout checks that the main checkout repo has no uncommitted changes. The loop checks it
+// before each ticket; a feature is checked before it is filed, so that a run that couldn't start
+// files nothing. It returns ExitOK, or the exit code having said why not; ExitInterrupted, saying
+// nothing, when ctx ended first.
+func cleanCheckout(ctx context.Context, repo string, stderr io.Writer) int {
+	dirty, err := (git.Git{}).DirtyTree(ctx, repo)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return dispatch.ExitInterrupted
+	case err != nil:
+		fmt.Fprintf(stderr, "orchestra couldn't read the state of %s: %v\n", repo, err)
+		return dispatch.ExitTool
+	case dirty != "":
+		fmt.Fprintf(stderr, "orchestra cannot start: uncommitted changes in %s. Commit or stash them first; "+
+			"inspect with: git status\n", repo)
+		return dispatch.ExitDirty
+	}
+	return dispatch.ExitOK
 }
 
 // interrupted reports whether Ctrl+C (or another of stopSignals) stopped the feature run, saying

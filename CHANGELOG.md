@@ -18,6 +18,23 @@ All notable changes to orchestra are documented here. The format follows
   current tickets; `--ticket`, `--feature`, `-plain` and a run without a
   terminal don't ask either. The orchestra skill launches runs with
   `orchestra --tickets`, since a Herdr pane is a terminal.
+- `New feature` talks the feature through instead of planning it with the
+  organs: orchestra hands its terminal to an interactive Claude Code session
+  in the main checkout (`claude --append-system-prompt-file
+  .orchestra/run/interview-prompt.md -- "<description>"`), whose instructions
+  adapt Matt Pocock's grilling skill (MIT; see THIRD_PARTY_NOTICES.md). Claude
+  interviews you in rounds of numbered questions with recommended answers,
+  looking facts up itself, until you confirm a shared understanding; proposes
+  an epic and its tickets (descriptions, acceptance criteria, types,
+  priorities, `files` metadata, blocks links); files them with `bd` once you
+  agree; and names the epic in `.orchestra/run/feature.json`. After `/exit`,
+  orchestra shows the epic's tickets and asks `Start the run on <epic> (N
+  tickets)? [y/N]`; `y` runs it as `--feature` runs its plan. A session that
+  files nothing ends with `No feature was filed; nothing to run.` and exit 0.
+  Ctrl+C during the session is Claude Code's; SIGTERM and SIGHUP still stop
+  orchestra. Without `claude` on the PATH, or with `--agent` other than
+  claude, `New feature` plans with the organs as before and says why.
+  `orchestra --feature "<request>"` is unchanged.
 
 ## [0.2.0] - 2026-10-02
 

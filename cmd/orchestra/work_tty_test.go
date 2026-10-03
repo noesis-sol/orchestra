@@ -59,11 +59,12 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	}
 }
 
-// In a terminal, a run with nothing said asks what to work on; the feature described goes to the
-// --feature flow: screened, planned, shown, and filed if confirmed.
+// In a terminal, a run with nothing said asks what to work on. A run whose workers aren't Claude
+// Code can't talk the feature described through with claude (interview_tty_test.go), so it says
+// so and the feature goes to the --feature flow: screened, planned, shown, and filed if confirmed.
 func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
-	term, _, exit := runOnTerminal(t)
+	term, _, exit := runOnTerminal(t, "--agent", "codex")
 	term.waitFor(t, "> Current tickets: 0 ready")
 	term.typeKeys(t, keyDown+keyEnter, false)
 	term.waitFor(t, describing)
@@ -76,6 +77,7 @@ func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 		t.Errorf("exit %d, stderr:\n%s", code, stderr)
 	}
 	for _, want := range []string{"New feature:\n  Add a --json flag\n  to the list command\n",
+		"orchestra can't talk the feature through with claude (the workers' agent is codex): its organs plan it.\n",
 		"screening the request with claude…", "Epic: JSON output", "Nothing was filed."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the terminal lacks %q:\n%s", want, out)
