@@ -160,7 +160,9 @@ const interactiveGrace = 5 * time.Second
 // writes stdout and stderr itself, the terminal's own files when given orchestra's. Unlike Output's
 // commands it stays in orchestra's process group: a program in another group can't read the
 // terminal. So Ctrl+C at the terminal reaches it, and orchestra too, which must leave it to the
-// command. When ctx is done the command gets SIGTERM, and SIGKILL if it is still running
+// command. Ctrl+Z, which a program in raw mode such as Claude Code takes to stop itself alone,
+// suspends orchestra with it, so that the shell gets the terminal back, and fg brings both back
+// (runOnTerminal). When ctx is done the command gets SIGTERM, and SIGKILL if it is still running
 // interactiveGrace later. The error is an *Error, without Stderr: the command wrote that to the
 // terminal.
 func Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string,
@@ -170,7 +172,7 @@ func Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stder
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.Cancel = func() error { return terminate(cmd.Process) }
 	cmd.WaitDelay = interactiveGrace
-	err := cmd.Run()
+	err := runOnTerminal(cmd)
 	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
 		err = nil // exited 0, leaving a process behind that holds a stream that isn't a file
 	}

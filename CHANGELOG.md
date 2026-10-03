@@ -38,6 +38,11 @@ All notable changes to orchestra are documented here. The format follows
 - A feature described at the question is recorded in the run lock
   (`.orchestra/run/orchestra.lock`) once it is typed, as `--feature` records
   it: a second run refused the lock names it.
+- Ctrl+Z in the feature interview suspends orchestra with the Claude Code
+  session, and `fg` brings both back. Claude Code stops only itself on Ctrl+Z,
+  so orchestra, waiting for it, used to leave the terminal hung; now it stops
+  its process group as the terminal would, and continues the session when it
+  is continued itself (`kill -CONT`).
 
 ## [0.2.0] - 2026-10-02
 
