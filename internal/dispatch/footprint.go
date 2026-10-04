@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
@@ -57,9 +58,13 @@ func (f Footprint) String() string {
 
 var (
 	// pathToken is anything that could be a path: loop.go, internal/dispatch/loop.go:661 (the line
-	// number is left off), Loop.merge (sorted out later).
-	pathToken = regexp.MustCompile(`[\w./-]+`)
-	extension = regexp.MustCompile(`\.[A-Za-z][A-Za-z0-9]*$`)
+	// number is left off), docs/café.md, Loop.merge (sorted out later). Letters and digits of any
+	// script count, and combining marks: macOS often writes é as e and U+0301.
+	pathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+`)
+	// asciiPathToken is a path token's ASCII part, which may be a path run into words of a script
+	// written without spaces: 修改loop.go, loop.goを直す.
+	asciiPathToken = regexp.MustCompile(`[\w./-]+`)
+	extension      = regexp.MustCompile(`\.[A-Za-z][A-Za-z0-9]*$`)
 	// typeMethod is Type.method, which a path token without a known extension may be.
 	typeMethod = regexp.MustCompile(`^[A-Z]\w*\.[A-Za-z_]\w*$`)
 	// called is a function named with its parentheses: refreshBranch(), Loop.merge().
@@ -112,11 +117,13 @@ func newRepoFiles(tracked []string, check string) *repoFiles {
 			r.dirs[d] = true
 		}
 	}
-	for _, tok := range pathTokens(check) {
-		for _, f := range r.resolve(tok, false) {
+	eachPathToken(check, func(tok string) bool {
+		found := r.resolve(tok, false)
+		for _, f := range found {
 			r.check[f] = true
 		}
-	}
+		return len(found) > 0
+	})
 	return r
 }
 
@@ -191,32 +198,47 @@ func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
 	return ticketFootprint(t, newRepoFiles(tracked, check))
 }
 
-// pathTokens are the words of text that may be paths: with an extension, and neither an absolute
-// path nor a URL, which aren't in the repository.
-func pathTokens(text string) []string {
-	var toks []string
-	for _, tok := range pathToken.FindAllString(text, -1) {
-		if tok = strings.TrimRight(tok, "./-"); tok != "" && !strings.HasPrefix(tok, "/") && extension.MatchString(tok) {
-			toks = append(toks, tok)
+// eachPathToken calls take with each word of text that may be a path: with an extension, and
+// neither an absolute path nor a URL, which aren't in the repository. take reports whether the word
+// names something. A word with characters outside ASCII that names nothing is tried in its ASCII
+// parts instead: a path run into words of a script written without spaces (修改loop.go, loop.goを直す)
+// is one of them.
+func eachPathToken(text string, take func(tok string) bool) {
+	nonASCII := func(r rune) bool { return r > unicode.MaxASCII }
+	for _, word := range pathToken.FindAllString(text, -1) {
+		word = strings.TrimRight(word, "./-")
+		if strings.HasPrefix(word, "/") { // an absolute path or a URL, no part of which is in the repository
+			continue
+		}
+		if extension.MatchString(word) && take(word) || !strings.ContainsFunc(word, nonASCII) {
+			continue
+		}
+		for _, part := range asciiPathToken.FindAllString(word, -1) {
+			if part = strings.TrimRight(part, "./-"); !strings.HasPrefix(part, "/") && extension.MatchString(part) {
+				take(part)
+			}
 		}
 	}
-	return toks
 }
 
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	files, funcs := map[string]bool{}, map[string]bool{}
 	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria, t.Notes}, "\n")
-	for _, tok := range pathTokens(text) {
+	eachPathToken(text, func(tok string) bool {
 		if found := repo.resolve(tok, false); len(found) > 0 {
 			for _, f := range found {
 				if !repo.checks(f) { // "scripts/check.sh passes" says nothing about where a ticket works
 					files[f] = true
 				}
 			}
-		} else if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
-			funcs[tok] = true
+			return true
 		}
-	}
+		if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
+			funcs[tok] = true
+			return true
+		}
+		return false
+	})
 	for _, m := range called.FindAllStringSubmatch(text, -1) {
 		if f := funcName(m[1]); f != "" {
 			funcs[f] = true

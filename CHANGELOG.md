@@ -168,6 +168,11 @@ All notable changes to orchestra are documented here. The format follows
   starts or ends with a space, such as `./ NEW.md`, with a note. It kept
   ` NEW.md`, a file the model hardly meant, and the plan read back from its
   own JSON named `NEW.md` instead. A fuzz test found it.
+- A ticket naming a path with letters outside ASCII, such as `docs/café.md`
+  or `docs/日本語.md`, has that file in its footprint, so it no longer starts
+  beside a running ticket that edits it. The path was cut at the first such
+  letter, into `docs/caf` and `.md`, which named no file. A path run into
+  text written without spaces, as in `loop.goを直す`, is still found.
 
 ## [0.4.0] - 2026-10-04
 
