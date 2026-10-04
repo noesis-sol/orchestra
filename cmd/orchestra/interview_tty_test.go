@@ -25,7 +25,8 @@ const interviewChildren = `[` +
 	`"dependencies":[{"issue_id":"f-1.2","depends_on_id":"f-1.1","type":"blocks"}]}]`
 
 // interviewTools puts on PATH a claude that plays the interview and a bd that knows the epic f-1
-// and its children, and a herdr that fails. claude records its arguments (claude-args, one per
+// and its children, and a herdr that fails; no Herdr pane is known (HERDR_PANE_ID), so the session
+// is on the terminal. claude records its arguments (claude-args, one per
 // line in brackets), its folder, process group and instructions (claude-prompt), and whether it
 // had the terminal; sends orchestra SIGINT, as Ctrl+C at the terminal does; and, given an epic,
 // names it in .orchestra/run/feature.json as the instructions say. bd records its calls in
@@ -73,6 +74,7 @@ esac
 `, 0o755)
 	write("herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n", 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("HERDR_PANE_ID", "")
 	return dir
 }
 

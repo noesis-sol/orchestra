@@ -639,7 +639,7 @@ func run(
 	switch off := interviewOff(cfg); { // the run is scoped to the epic filed
 	case cfg.Feature == "":
 	case typed && off == "": // talked through with the user, and filed, in a Claude Code session
-		cfg.Ticket, featureCode = runInterview(ctx, stops, cfg, log, stdin, stdout, stderr)
+		cfg.Ticket, featureCode = runInterview(ctx, stops, cfg, holder.Pane, log, stdin, stdout, stderr)
 	default: // planned by the organs, and filed by orchestra
 		if typed {
 			fmt.Fprintf(stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)

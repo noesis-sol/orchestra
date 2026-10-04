@@ -14,6 +14,17 @@ All notable changes to orchestra are documented here. The format follows
   unchanged. The two boxes in a row are equally tall, and an odd one out
   keeps the left column's width. A narrower pane, such as Herdr's split
   pane, stacks them as before.
+- **New feature** talks the feature through with Claude Code in a Herdr pane
+  split off orchestra's, to its right, rather than on orchestra's own
+  terminal, so orchestra stays in view, saying where the interview is and how
+  it ends. The description, every line of it, goes in
+  `.orchestra/run/feature-request.md`, which Claude's first message attaches.
+  `/exit` in Claude's pane, or closing it, returns to orchestra, which closes
+  the pane and shows the filed tickets and the question in its own pane, with
+  the keyboard focus. Ctrl+C in orchestra's pane, SIGTERM or SIGHUP close the
+  interview's pane and stop orchestra (exit code 130). When Herdr can't split
+  the pane or start Claude Code in it, orchestra says why and hands Claude Code
+  its terminal, as before.
 
 ## [0.4.0] - 2026-10-04
 

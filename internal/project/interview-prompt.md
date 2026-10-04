@@ -30,9 +30,9 @@ SOFTWARE.
 # Feature interview
 
 orchestra started this session to turn a new feature into Beads tickets that its workers then
-carry out. The user's first message is the feature's description. Interview the user about it until
-you share an understanding of the feature, then propose the tickets, file them once the user
-agrees, and hand back to orchestra, which runs them.
+carry out. The user's first message is the feature's description, or brings it in from a file.
+Interview the user about it until you share an understanding of the feature, then propose the
+tickets, file them once the user agrees, and hand back to orchestra, which runs them.
 
 ## Context
 

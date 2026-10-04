@@ -22,7 +22,8 @@ var interviewPrompt string
 // The interview's files in .orchestra/run/ of the main checkout.
 const (
 	interviewPromptName = "interview-prompt.md"
-	FeatureName         = "feature.json" // {"epic":"<id>"}, written by the session once it has filed the feature
+	featureRequestName  = "feature-request.md" // the description, for a session whose first message brings it in
+	FeatureName         = "feature.json"       // {"epic":"<id>"}, written by the session once it has filed the feature
 )
 
 // WriteInterview readies the main checkout repo for a feature interview: it removes the
@@ -42,6 +43,23 @@ func WriteInterview(repo string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(repo, rel), nil
+}
+
+// WriteFeatureRequest writes the feature's description, request, to .orchestra/run/ in the main
+// checkout repo, in place of an earlier interview's, and returns its path relative to repo. It is
+// for a session started by typing its command into a shell (a Herdr pane's), which takes no
+// argument with line breaks: its first message is one line that brings the file in.
+func WriteFeatureRequest(repo, request string) (string, error) {
+	root, err := OpenRun(repo)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := RunPath(featureRequestName)
+	if err := WriteRun(root, repo, rel, []byte(strings.TrimRight(request, "\n")+"\n"), 0o644); err != nil {
+		return "", err
+	}
+	return rel, nil
 }
 
 // ErrNoFeature is FiledFeature's error when the interview filed nothing: it wrote no feature.json.
