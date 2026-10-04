@@ -193,3 +193,79 @@ func TestCurrentLabelIsBoldInTheWorkingColour(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveTitleWrapsToAFewLines(t *testing.T) {
+	title := "Competing timelines on the same view and property fight each other every frame"
+	got := wrapLines(title, 30, titleLines)
+	if len(got) != 3 || strings.Join(got, " ") != title {
+		t.Errorf("wrapped = %q", got)
+	}
+	for _, l := range got {
+		if ansi.StringWidth(l) > 30 {
+			t.Errorf("line too wide: %q", l)
+		}
+	}
+	long := strings.Repeat("word ", 40)
+	cut := wrapLines(long, 30, titleLines)
+	if len(cut) != 3 || !strings.HasSuffix(cut[2], "…") {
+		t.Errorf("a long title should stop at 3 lines ending in …: %q", cut)
+	}
+	if got := wrapLines("Short title", 30, titleLines); len(got) != 1 {
+		t.Errorf("short title = %q", got)
+	}
+
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+	m.width, m.height = 66, 40
+	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
+		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)
+	}
+	for _, l := range strings.Split(m.View(), "\n") {
+		if ansi.StringWidth(l) > m.width {
+			t.Errorf("line %d wide: %q", ansi.StringWidth(l), ansi.Strip(l))
+		}
+	}
+}
+
+func TestWorkerShowsWhatItIsDoing(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	status := dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Activity: "⏺ Running the full local CI · 59s"}
+	m.active = map[string]dispatch.Status{"kinieta-ce1": status}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "▶ testing") || !strings.Contains(view, "kinieta-ce1  testing") || strings.Contains(view, "working") {
+		t.Errorf("a worker running the checks should show testing:\n%s", view)
+	}
+
+	status.Agent = "blocked" // a dialog outranks the last report
+	m.active["kinieta-ce1"] = status
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(view, "▶ working") {
+		t.Errorf("a blocked worker should show blocked:\n%s", view)
+	}
+}
+
+// A status Herdr failed to read shows as unreadable, not as the empty state it comes with.
+func TestWorkerWhoseStatusCannotBeReadShowsUnreadable(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Unreadable: true}}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "kinieta-ce1  unreadable") {
+		t.Errorf("a worker whose status can't be read should show unreadable:\n%s", view)
+	}
+}
+
+func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
+	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
+	m.width, m.height = 70, 40
+	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Resolving: true}}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "⟳ resolving") || !strings.Contains(view, "kinieta-ce1  resolving") {
+		t.Errorf("a worker resolving its rebase should show resolving:\n%s", view)
+	}
+}
