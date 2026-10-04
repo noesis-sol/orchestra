@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // failingBd puts a bd on PATH that fails every command with a lock error on stderr.
@@ -18,9 +19,7 @@ func failingBd(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\necho 'Error: database is locked' >&2\nexit 1\n"
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
@@ -58,9 +57,7 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 // ticket's status is unknown, with the reason, as when bd fails.
 func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte("#!/bin/sh\nsleep 5\necho '[]'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", "#!/bin/sh\nsleep 5\necho '[]'\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.InterruptedError("with Ctrl+C")) })
@@ -76,9 +73,7 @@ func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 
 func TestStatusWithoutOneIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte("#!/bin/sh\necho '[]'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", "#!/bin/sh\necho '[]'\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if st, err := (Tracker{Repo: t.TempDir()}).Status(context.Background(), "k-1"); st != "unknown" || err == nil {
 		t.Errorf("got %q, %v; want unknown and an error", st, err)
@@ -89,9 +84,7 @@ func TestReadyPassesTheExcludedTypesToBd(t *testing.T) {
 	dir := t.TempDir()
 	args := filepath.Join(dir, "args")
 	script := "#!/bin/sh\necho \"$@\" > '" + args + "'\necho '[]'\n"
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, c := range []struct {
 		types []string

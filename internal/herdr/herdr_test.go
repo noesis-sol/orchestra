@@ -11,6 +11,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 func TestReadAgent(t *testing.T) {
@@ -168,9 +169,7 @@ func herdrScript(t *testing.T, script string) {
 		t.Skip("the fake herdr is a shell script")
 	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "herdr", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

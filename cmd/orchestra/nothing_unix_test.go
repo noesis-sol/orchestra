@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -29,27 +30,27 @@ type backlog struct {
 func nothingTools(t *testing.T, b backlog) string {
 	t.Helper()
 	dir := t.TempDir()
-	write := func(name, body string, mode os.FileMode) {
+	write := func(name, body string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), mode); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for name, body := range map[string]string{"ready": b.ready, "unclosed": b.unclosed, "unmerged": b.unmerged} {
 		if body != "" {
-			write(name, body, 0o644)
+			write(name, body)
 		}
 	}
 	for id, body := range b.children {
-		write("children."+id, body, 0o644)
+		write("children."+id, body)
 	}
 	for id, body := range b.show {
-		write("show."+id, body, 0o644)
+		write("show."+id, body)
 	}
 	if b.readyFails {
-		write("ready-fails", "", 0o644)
+		write("ready-fails", "")
 	}
-	write("bd", `#!/bin/sh
+	faketool.Write(t, dir, "bd", `#!/bin/sh
 d='`+dir+`'
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
 answer() { if [ -f "$d/$1" ]; then cat "$d/$1"; else echo "${2:-[]}"; fi; }
@@ -65,12 +66,12 @@ list)
 	*) answer unclosed ;;
 	esac ;;
 esac
-`, 0o755)
+`)
 	for _, name := range []string{"claude", "osascript"} {
-		write(name, "#!/bin/sh\nprintf '[%s]\\n' \"$@\" >> '"+filepath.Join(dir, name+"-calls")+"'\n"+
-			"echo '{\"is_error\":true,\"result\":\"not in this test\"}'\n", 0o755)
+		faketool.Write(t, dir, name, "#!/bin/sh\nprintf '[%s]\\n' \"$@\" >> '"+filepath.Join(dir, name+"-calls")+"'\n"+
+			"echo '{\"is_error\":true,\"result\":\"not in this test\"}'\n")
 	}
-	write("herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n", 0o755)
+	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }

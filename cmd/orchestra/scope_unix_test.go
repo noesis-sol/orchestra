@@ -4,9 +4,10 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // showBd puts a bd on PATH whose 'bd show' knows k-open, k-closed and the question k-q.
@@ -21,9 +22,7 @@ k-q) echo '[{"id":"k-q","status":"open","labels":["human"]}]' ;;
 *) echo "Issue $2 not found" >&2; exit 1 ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

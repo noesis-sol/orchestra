@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -17,11 +18,8 @@ import (
 func fakePredictor(t *testing.T, script string) (bin, record string) {
 	t.Helper()
 	dir := t.TempDir()
-	bin, record = filepath.Join(dir, "claude"), filepath.Join(dir, "asked")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncat >> "+record+"\n"+script+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin, record
+	record = filepath.Join(dir, "asked")
+	return faketool.Write(t, dir, "claude", "#!/bin/sh\ncat >> "+record+"\n"+script+"\n"), record
 }
 
 // A ready ticket naming nothing gets its files predicted in the background and cached on it; a

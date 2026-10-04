@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 const featureScreenOK = `{"type":"result","is_error":false,"structured_output":{"verdict":"ok","reason":"A clear change."}}`
@@ -30,15 +31,15 @@ const featurePlanJSON = `{"epic":{"title":"JSON output","description":"Machine-r
 func featureTools(t *testing.T, screen, plan string, failCreate int) string {
 	t.Helper()
 	dir := t.TempDir()
-	write := func(name, body string, mode os.FileMode) {
+	write := func(name, body string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), mode); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write("screen", screen, 0o644)
-	write("plan", plan, 0o644)
-	write("claude", `#!/bin/sh
+	write("screen", screen)
+	write("plan", plan)
+	faketool.Write(t, dir, "claude", `#!/bin/sh
 d='`+dir+`'
 n=$(cat "$d/claude-n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$d/claude-n"
 printf '[%s]\n' "$@" > "$d/args.$n"
@@ -48,8 +49,8 @@ case "$*" in
 *"You plan feature requests"*) cat "$d/plan" ;;
 *) echo '{"is_error":true,"result":"not this organ"}' ;;
 esac
-`, 0o755)
-	write("bd", `#!/bin/sh
+`)
+	faketool.Write(t, dir, "bd", `#!/bin/sh
 d='`+dir+`'
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
 case "$1" in
@@ -61,8 +62,8 @@ create)
 show) echo "[{\"id\":\"$2\",\"status\":\"open\",\"issue_type\":\"epic\"}]" ;;
 list|ready) echo '[]' ;;
 esac
-`, 0o755)
-	write("herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n", 0o755)
+`)
+	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }

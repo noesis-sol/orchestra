@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // A test that ends before orchestra exits, as one whose wait fails does, stops orchestra and waits
@@ -16,10 +18,11 @@ import (
 func TestTerminalRunStopsAsTheTestEnds(t *testing.T) {
 	t.Run("ends while claude screens the feature", func(t *testing.T) {
 		dir := featureTools(t, featureScreenOK, "", 0)
-		// claude screens the request until it is stopped.
-		if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexec sleep 600\n"), 0o755); err != nil {
+		// claude screens the request until it is stopped, in place of featureTools' claude.
+		if err := os.Remove(filepath.Join(dir, "claude")); err != nil {
 			t.Fatal(err)
 		}
+		faketool.Write(t, dir, "claude", "#!/bin/sh\nexec sleep 600\n")
 		term, _, _ := runOnTerminal(t, "--feature", "Add a --json flag")
 		term.waitFor(t, "screening the request with claude…")
 	})

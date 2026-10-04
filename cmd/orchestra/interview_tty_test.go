@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -34,19 +35,19 @@ const interviewChildren = `[` +
 func interviewTools(t *testing.T, epic string) string {
 	t.Helper()
 	dir := t.TempDir()
-	write := func(name, body string, mode os.FileMode) {
+	write := func(name, body string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), mode); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write("children", interviewChildren, 0o644)
+	write("children", interviewChildren)
 	name := ""
 	if epic != "" {
 		name = `printf '{"epic":"%s"}\n' '` + epic + `' > .orchestra/run/feature.json`
 	}
 	// The pause after SIGINT lets it reach orchestra while the session is still on.
-	write("claude", `#!/bin/sh
+	faketool.Write(t, dir, "claude", `#!/bin/sh
 d='`+dir+`'
 printf '[%s]\n' "$@" > "$d/claude-args"
 pwd -P > "$d/claude-cwd"
@@ -57,8 +58,8 @@ kill -INT $PPID
 sleep 1
 `+name+`
 echo 'fake claude: bye'
-`, 0o755)
-	write("bd", `#!/bin/sh
+`)
+	faketool.Write(t, dir, "bd", `#!/bin/sh
 d='`+dir+`'
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
 case "$1" in
@@ -71,8 +72,8 @@ show)
 list) case "$*" in *"--parent f-1") cat "$d/children" ;; *) echo '[]' ;; esac ;;
 ready) echo '[]' ;;
 esac
-`, 0o755)
-	write("herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n", 0o755)
+`)
+	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("HERDR_PANE_ID", "")
 	return dir

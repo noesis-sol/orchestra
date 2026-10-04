@@ -5,9 +5,10 @@ package main
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // failingRevParse puts a git on PATH that fails 'git rev-parse' given flag and passes everything
@@ -25,9 +26,7 @@ for a in "$@"; do
 done
 exec "` + gitPath + `" "$@"
 `
-	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "git", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

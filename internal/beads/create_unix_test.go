@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // createBd puts a bd on PATH that records its arguments, one per line, and prints out.
@@ -16,9 +18,7 @@ func createBd(t *testing.T, out string) string {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "args")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + record + "'\nprintf '%s' '" + out + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return record
 }

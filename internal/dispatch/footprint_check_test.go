@@ -63,12 +63,13 @@ func TestTicketsNamingTheCheckScriptRunSideBySide(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("exit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "check script")
-	h.cfg.Check = "scripts/check.sh"
+	// Run by sh: an executable script, new in each worktree, would be a new executable to start.
+	h.cfg.Check = "sh scripts/check.sh"
 	h.cfg.Concurrency = 2
 	h.beads.add("A", "say hello", 1)
 	h.beads.describe("A", "Say hello. scripts/check.sh passes.")
@@ -92,7 +93,7 @@ func TestTicketsNamingTheCheckScriptRunSideBySide(t *testing.T) {
 	if strings.Contains(log, "skipping") {
 		t.Errorf("a ticket was skipped:\n%s", log)
 	}
-	for _, want := range []string{"A footprint: nothing named\n", "B footprint: nothing named\n", "'scripts/check.sh' passes"} {
+	for _, want := range []string{"A footprint: nothing named\n", "B footprint: nothing named\n", "'sh scripts/check.sh' passes"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("log lacks %q:\n%s", want, log)
 		}

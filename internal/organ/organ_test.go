@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // fakeClaude writes a stand-in for the claude CLI that records its arguments, working directory
@@ -17,14 +19,10 @@ func fakeClaude(t *testing.T, output string) (bin, record string) {
 	t.Helper()
 	dir := t.TempDir()
 	record = filepath.Join(dir, "record")
-	bin = filepath.Join(dir, "claude")
 	script := "#!/bin/sh\n" +
 		"{ pwd; for a in \"$@\"; do printf '[%s]\\n' \"$a\"; done; echo '--- stdin'; cat; } > " + record + "\n" +
 		"cat <<'JSON'\n" + output + "\nJSON\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin, record
+	return faketool.Write(t, dir, "claude", script), record
 }
 
 func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {

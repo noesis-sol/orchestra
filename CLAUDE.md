@@ -111,5 +111,8 @@ README defines both terms; use them consistently.
   (goleak). A new test that takes over a second skips itself under `testing.Short()`. Put new
   tests in a file named after the feature rather than at the end of a shared test file; add changelog entries as new
   lines (`.gitattributes` has `CHANGELOG.md merge=union`), so parallel tickets don't conflict.
+- A fake bd, herdr, claude or git is a script written with `faketool.Write` (the package's `TestMain` runs its
+  tests through `faketool.Main`), never a new executable: macOS scans each new one on its first run, for 0.2s to
+  several seconds on a loaded machine.
 - Workers never push; orchestra merges. `.orchestra/settings.json` and `.orchestra/worker-prompt.md` are committed;
   `.orchestra/run/` (per-ticket files, including workers' MCP definitions) never is.

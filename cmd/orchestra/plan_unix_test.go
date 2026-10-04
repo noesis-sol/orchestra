@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // fakePlanBd puts a bd on PATH that lists two open tickets naming Loop.merge and records every
@@ -22,9 +24,7 @@ func fakePlanBd(t *testing.T) string {
 		"list) echo '" + list + "' ;;\n" +
 		"dep) echo \"$@\" >> '" + calls + "' ;;\n" +
 		"*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return calls
 }

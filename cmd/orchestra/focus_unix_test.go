@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // The dashboard's focus callback returns while Herdr is still at it, and a failure ends up in the
@@ -21,9 +22,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	release := filepath.Join(dir, "release")
 	script := "#!/bin/sh\nwhile [ ! -e '" + release + "' ]; do sleep 0.05; done\n" +
 		`echo '{"error":{"code":"tab_not_found","message":"tab w1:t9 not found"}}' >&2` + "\nexit 1\n"
-	if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "herdr", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	logPath := filepath.Join(dir, "orchestra.log")
 	log, err := dispatch.OpenLog(logPath, false, "t")

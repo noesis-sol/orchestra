@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // fakeBeadsTools puts a folder first on a PATH without the machine's own bd and brew (git, then
@@ -44,43 +46,43 @@ func fakeBeadsTools(t *testing.T, withBd, withBrew bool) string {
 	if _, err := os.Stat("/usr/local/bin/bd"); err == nil {
 		t.Skip("bd is in /usr/local/bin, where LocateBd looks off the PATH")
 	}
-	write := func(name, body string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("bd.fake", `#!/bin/sh
-d='`+dir+`'
+	bd := `#!/bin/sh
+d='` + dir + `'
 echo "bd $*" >> "$d/calls"
 [ "$1" = init ] || exit 0
 [ -e .orchestra ] && echo "bd init saw .orchestra" >> "$d/calls"
 [ -f "$d/bd-fails" ] && { echo 'Error: failed to open the Dolt database' >&2; exit 1; }
 mkdir -p .beads && echo 'issue-prefix: t' > .beads/config.yaml && echo agents > AGENTS.md
 git add .beads && git -c user.name=t -c user.email=t@t commit -q -m 'bd init: initialize beads issue tracking'
-`)
+`
+	// What brew and the install script install, as a fake tool is: a link to it and a copy of its script.
+	faketool.Write(t, dir, "bd.fake", bd)
 	if withBd {
-		write("bd", read(t, filepath.Join(dir, "bd.fake")))
+		faketool.Write(t, dir, "bd", bd)
 	}
 	if withBrew {
-		write("brew", `#!/bin/sh
+		faketool.Write(t, dir, "brew", `#!/bin/sh
 d='`+dir+`'
 echo "brew $*" >> "$d/calls"
 [ -f "$d/brew-fails" ] && { printf '==> Fetching beads\nError: beads: no bottle available!\n' >&2; exit 1; }
 [ -f "$d/brew-hangs" ] && sleep 60
-cp "$d/bd.fake" "$d/bd" && chmod +x "$d/bd"
+cp "$d/bd.fake.sh" "$d/bd.sh" && ln -f "$d/bd.fake" "$d/bd"
 `)
 	}
-	write("curl", `#!/bin/sh
+	faketool.Write(t, dir, "curl", `#!/bin/sh
 d='`+dir+`'
 echo "curl $*" >> "$d/calls"
 cat "$d/install.sh"
 `)
-	write("install.sh", `echo "==> Installing to $HOME/.local/bin..." >&2
-mkdir -p "$HOME/.local/bin" && cp '`+dir+`/bd.fake' "$HOME/.local/bin/bd" && chmod +x "$HOME/.local/bin/bd"
+	install := `d='` + dir + `'
+echo "==> Installing to $HOME/.local/bin..." >&2
+mkdir -p "$HOME/.local/bin" && cp "$d/bd.fake.sh" "$HOME/.local/bin/bd.sh" && ln -f "$d/bd.fake" "$HOME/.local/bin/bd"
 echo 'Error: bd was installed but is not in PATH' >&2
 exit 1
-`)
+`
+	if err := os.WriteFile(filepath.Join(dir, "install.sh"), []byte(install), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 
@@ -314,9 +316,7 @@ func TestLocateBdLooksWhereGoInstallPutsIt(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "bd"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, bin, "bd", "#!/bin/sh\n")
 	env := map[string]string{"GOPATH": gopath + string(os.PathListSeparator) + t.TempDir()}
 	if path, onPath := LocateBd(func(k string) string { return env[k] }); path != filepath.Join(bin, "bd") || onPath {
 		t.Errorf("LocateBd = %q, %v", path, onPath)

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // scopeBd puts a bd on PATH that answers for ticket k-1 with subtickets k-1.1 (child) and k-1.1.1
@@ -27,9 +29,7 @@ case "$*" in
 *list*) echo '[{"id":"k-1.1","status":"in_progress","parent":"k-1","created_at":"2026-09-30T14:53:21Z"}]' ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	faketool.Write(t, dir, "bd", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return calls
 }

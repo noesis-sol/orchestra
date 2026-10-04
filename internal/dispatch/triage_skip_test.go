@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -124,12 +124,8 @@ func TestTriageOffGathersNoEvidence(t *testing.T) {
 // its input.
 func slowTriage(t *testing.T, started string) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "claude")
 	script := "#!/bin/sh\ncat >/dev/null\ntouch '" + started + "'\nexec sleep 600\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin
+	return faketool.Write(t, t.TempDir(), "claude", script)
 }
 
 // Ctrl+C during "finishing triage…" skips the organs: the triage in progress and the deferrals

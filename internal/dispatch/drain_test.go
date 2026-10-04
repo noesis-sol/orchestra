@@ -1,13 +1,13 @@
 package dispatch
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -16,12 +16,9 @@ import (
 func fakeReviewer(t *testing.T) (bin, evidence string) {
 	t.Helper()
 	dir := t.TempDir()
-	bin, evidence = filepath.Join(dir, "claude"), filepath.Join(dir, "evidence")
+	evidence = filepath.Join(dir, "evidence")
 	script := "#!/bin/sh\ncat > '" + evidence + "'\necho '{\"result\":\"Stopped after the running tickets, as asked.\"}'\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin, evidence
+	return faketool.Write(t, dir, "claude", script), evidence
 }
 
 // Asked to stop after the running tickets, the run starts nothing more, lets both running tickets

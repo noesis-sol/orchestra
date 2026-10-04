@@ -9,16 +9,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // fakeScript writes a stand-in for the claude CLI that runs body, from a folder of its own.
 func fakeScript(t *testing.T, body string) (bin, dir string) {
 	t.Helper()
 	dir = t.TempDir()
-	bin = filepath.Join(dir, "claude")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	bin = faketool.Write(t, dir, "claude", "#!/bin/sh\n"+body)
 	return bin, dir
 }
 

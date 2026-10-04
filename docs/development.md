@@ -49,6 +49,8 @@ The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`,
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
+The fake bd, herdr, claude and git the tests run are shell scripts written with `internal/faketool`, whose `Write` makes each a hard link to one dispatcher per test binary, run once, beside the script it runs. A new executable would cost far more: macOS scans each one the first time it runs, which takes 0.2-0.6 seconds, and several seconds while other workers run their checks. A package whose tests call `Write` runs them through `faketool.Main` from its `TestMain`.
+
 The run loop, `internal/dispatch`, has one file per concern, its tests in the `_test.go` file of the same name:
 
 | File | What's in it |

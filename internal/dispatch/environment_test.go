@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -125,15 +126,11 @@ func TestWorkersFailingLaterDontHoldTheRun(t *testing.T) {
 // fakeTriage is a claude that blames the environment for every deferral, with high confidence.
 func fakeTriage(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "claude")
 	script := `#!/bin/sh
 cat >/dev/null
 echo '{"structured_output":{"cause":"environment","confidence":"high","summary":"Classifier unavailable.","recommendation":"Retry later."}}'
 `
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin
+	return faketool.Write(t, t.TempDir(), "claude", script)
 }
 
 func TestTriageBlamingTheEnvironmentHoldsTheRun(t *testing.T) {

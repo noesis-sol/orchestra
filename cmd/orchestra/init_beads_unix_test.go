@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
 // fakeBeadsTools puts a folder first on a PATH without the machine's own bd and brew (git, then
@@ -33,12 +35,6 @@ func fakeBeadsTools(t *testing.T, withBd bool) string {
 	if _, err := os.Stat("/usr/local/bin/bd"); err == nil {
 		t.Skip("bd is in /usr/local/bin, where init looks off the PATH")
 	}
-	write := func(name, body string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	bd := `#!/bin/sh
 d='` + dir + `'
 echo "bd $*" >> "$d/calls"
@@ -47,14 +43,15 @@ echo "bd $*" >> "$d/calls"
 mkdir -p .beads && echo 'issue-prefix: t' > .beads/config.yaml && echo agents > AGENTS.md
 git add .beads && git -c user.name=t -c user.email=t@t commit -q -m 'bd init: initialize beads issue tracking'
 `
-	write("bd.fake", bd)
+	// What brew installs, as a fake tool is: a link to it and a copy of its script.
+	faketool.Write(t, dir, "bd.fake", bd)
 	if withBd {
-		write("bd", bd)
+		faketool.Write(t, dir, "bd", bd)
 	}
-	write("brew", `#!/bin/sh
+	faketool.Write(t, dir, "brew", `#!/bin/sh
 d='`+dir+`'
 echo "brew $*" >> "$d/calls"
-cp "$d/bd.fake" "$d/bd" && chmod +x "$d/bd"
+cp "$d/bd.fake.sh" "$d/bd.sh" && ln -f "$d/bd.fake" "$d/bd"
 `)
 	return dir
 }
