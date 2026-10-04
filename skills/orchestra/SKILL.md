@@ -30,19 +30,20 @@ git branch --show-current                   # finished tickets land on this bran
 git worktree list                           # per-ticket worktrees still around
 bd ready; bd list --status=in_progress      # what a run would pick up; what is claimed
 bd human list                               # questions waiting for the user
-lsof -t .orchestra/run/orchestra.lock       # is a run active here? its PID; nothing if not
-cat .orchestra/run/orchestra.lock           # which run holds it (or held it last)
+lsof -t .git/orchestra.lock                 # is a run active here? its PID; nothing if not
+cat .git/orchestra.lock                     # which run holds it (or held it last)
 tail -n 1 .orchestra/run/events.jsonl | jq -c .   # the last run's last record: "end" with its exit code once over
 jq . .orchestra/run/state.json              # the workers the last run left behind, for the next to carry on with
 ```
 
-Run the last four in the main checkout. A run holds `.orchestra/run/orchestra.lock` for as long as it
-runs, and the system lets go of it when orchestra exits, even killed, so only a running orchestra
-has it open. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
+Run the last four in the main checkout. A run holds `.git/orchestra.lock`, in the git directory the
+worktrees share (`git rev-parse --git-common-dir` names it from any of them), for as long as it runs,
+and the system lets go of it when orchestra exits, even killed, so only a running orchestra has it
+open. `git clean` never removes it. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
 `feature` (the `--feature` request), and `pane`, the Herdr pane it runs in. It stays after the run;
 whether `lsof` lists a PID is what says a run is going. Runs in other repositories have their own.
 
-`.orchestra/run/events.jsonl`, next to the lock, is the runs' events for you to read: one JSON
+`.orchestra/run/events.jsonl` is the runs' events for you to read: one JSON
 object per line, every run appended (see [Reading a run's events](#reading-a-runs-events)). Read it
 rather than grepping the log, whose wording is for people and may change.
 
@@ -198,7 +199,7 @@ them with `bd dep add`) only when they approve.
 - **To wind the run down**, the user presses s in the dashboard and confirms with y: no new
   tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
   Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>` (the PID from
-  `lsof -t .orchestra/run/orchestra.lock`); don't press keys in its pane. Ctrl+C stops at once instead, leaving the workers running.
+  `lsof -t .git/orchestra.lock`); don't press keys in its pane. Ctrl+C stops at once instead, leaving the workers running.
 - **A stopped run that hangs** while it winds down (`waiting for <id>'s merge to finish…` for minutes)
   quits on a second Ctrl+C, SIGTERM or SIGHUP, without triage or the report: at once when nothing
   is under way that a stop doesn't cut short; otherwise the second says what is
@@ -264,7 +265,7 @@ killed. A feature run writes its `start` only once the feature is filed (or isn'
 
 ```
 E=.orchestra/run/events.jsonl
-run=$(jq -r .started .orchestra/run/orchestra.lock)   # the latest run's start
+run=$(jq -r .started .git/orchestra.lock)   # the latest run's start
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end"))) | {kind, code, text}' $E
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("deferred", "asked", "warn", "triage"))) | {kind, ticket, text}' $E
 jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E

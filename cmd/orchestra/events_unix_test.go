@@ -56,7 +56,7 @@ func TestARunsEventStreamStartsAndEnds(t *testing.T) {
 				t.Fatalf("kinds, info left out: %s, want %s\n%v", got, tc.kinds, recs)
 			}
 			var lock map[string]any
-			if err := json.Unmarshal([]byte(read(t, filepath.Join(repo, project.RunPath(project.LockName)))), &lock); err != nil {
+			if err := json.Unmarshal([]byte(read(t, filepath.Join(repo, ".git", project.LockName))), &lock); err != nil {
 				t.Fatal(err)
 			}
 			for _, r := range recs {

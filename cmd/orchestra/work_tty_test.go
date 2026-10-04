@@ -71,7 +71,7 @@ func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 	term.waitFor(t, describing)
 	term.typeKeys(t, "Add a --json flag"+keyNewLine+"to the list command"+keyEnter, false)
 	term.waitFor(t, "File these 2 tickets and start the run? [y/N]")
-	if h, held, err := project.RunHolder(repo); err != nil || !held || h.PID != os.Getpid() ||
+	if h, held, err := project.RunHolder(t.Context(), repo); err != nil || !held || h.PID != os.Getpid() ||
 		h.Feature != "Add a --json flag\nto the list command" {
 		t.Errorf("the run lock while the plan is shown: %+v, held %v, %v", h, held, err)
 	}

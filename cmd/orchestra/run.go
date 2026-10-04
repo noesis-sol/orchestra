@@ -571,7 +571,7 @@ func run(
 		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
 		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: getenv("HERDR_PANE_ID"),
 	}
-	lock, lockErr := project.LockRun(cfg.Repo, holder)
+	lock, lockErr := project.LockRun(ctx, cfg.Repo, holder)
 	var held *project.HeldError
 	switch {
 	case errors.As(lockErr, &held):

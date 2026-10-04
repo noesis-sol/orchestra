@@ -39,13 +39,13 @@ Every record but `start`, `queue` and `end` also has `text`, its line in the log
 
 A run with [nothing to run](running.md#nothing-to-run) writes three records: `start`, `done` and `end` with code 0. Its done text says why: `READY_EMPTY after 0 tickets: everything is done` when no ticket is left but epics and none is closed but not merged, or `READY_EMPTY after 0 tickets: nothing ready`; a scoped run adds its scope's `; SCOPE_DONE: …` or `; SCOPE_OPEN: …`.
 
-Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .orchestra/run/orchestra.lock` says which. A feature run writes nothing there while the request is screened and planned, or talked through. If the stream can't be written, the log says so once, and the run goes on.
+Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .git/orchestra.lock` in the main checkout says which. A feature run writes nothing there while the request is screened and planned, or talked through. If the stream can't be written, the log says so once, and the run goes on.
 
 With `jq`, in the main checkout:
 
 ```
 E=.orchestra/run/events.jsonl
-run=$(jq -r .started .orchestra/run/orchestra.lock)   # the latest run's start, as its lock gives it
+run=$(jq -r .started .git/orchestra.lock)   # the latest run's start, as its lock gives it
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end")))' $E   # how it ended
 jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it merged
 tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run

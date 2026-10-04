@@ -15,7 +15,7 @@ import (
 // A run that learns its feature once it holds the lock says so from then on: to RunHolder, to a
 // second run refused, and in the file, which holds the new details alone, shorter ones included.
 func TestRunLockRewrite(t *testing.T) {
-	repo := t.TempDir()
+	repo, _ := gitRepo(t)
 	plain := Holder{PID: 44497, Started: time.Now().Truncate(time.Second), Version: "v1.2.3", Branch: "main",
 		Pane: "w2B:p60"}
 	l := lockedBy(t, repo, plain)
@@ -25,10 +25,10 @@ func TestRunLockRewrite(t *testing.T) {
 	if err := l.Rewrite(feature); err != nil {
 		t.Fatalf("Rewrite: %v", err)
 	}
-	if h, ok, err := RunHolder(repo); err != nil || !ok || !sameHolder(h, feature) {
+	if h, ok, err := RunHolder(t.Context(), repo); err != nil || !ok || !sameHolder(h, feature) {
 		t.Errorf("RunHolder after Rewrite: %+v %v %v, want %+v", h, ok, err, feature)
 	}
-	_, err := LockRun(repo, Holder{PID: 2})
+	_, err := LockRun(t.Context(), repo, Holder{PID: 2})
 	var held *HeldError
 	if !errors.As(err, &held) || !sameHolder(held.Holder, feature) {
 		t.Fatalf("second LockRun: %v, want a *HeldError naming %+v", err, feature)
@@ -41,7 +41,7 @@ func TestRunLockRewrite(t *testing.T) {
 	if err := l.Rewrite(plain); err != nil {
 		t.Fatalf("Rewrite: %v", err)
 	}
-	b, err := os.ReadFile(filepath.Join(repo, RunPath(LockName)))
+	b, err := os.ReadFile(filepath.Join(repo, ".git", LockName))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -41,6 +41,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The run lock is `orchestra.lock` in the repository's git directory
+  (`.git/orchestra.lock` in the main checkout), where `git clean` never
+  reaches, rather than `.orchestra/run/orchestra.lock`. `git clean -fdX` or
+  `-fdx`, or `rm -rf .orchestra/run`, removed that file during a run: a second
+  run then made and locked a new one and ran beside the first, on the same
+  tickets, worktrees and branch, and `orchestra plan --apply` said no run was
+  going. Once it holds the lock, a run also checks that the path still names
+  the file it locked, and tries again if not. Scripts that read the lock
+  (`lsof -t`, `jq .started`) need the new path. A run of an earlier version
+  locks the old one: let it end before starting a run of this version.
 - The dashboard draws on the terminal's alternate screen, so resizing its
   pane leaves no earlier frames above it. Narrowing or shortening a Herdr
   pane reflowed the frame and pushed its top rows into the scrollback, which

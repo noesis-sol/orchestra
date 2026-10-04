@@ -79,7 +79,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		verb = "Adding"
 		// A running loop holds back the tickets it hasn't started yet, but one it has started keeps going
 		// whatever it now waits for. A lock that can't be read warns of nothing.
-		if h, held, _ := project.RunHolder(repo); held {
+		if h, held, _ := project.RunHolder(ctx, repo); held {
 			fmt.Fprintf(stderr, "orchestra plan: warning: %v. A ticket it has started keeps going and may merge "+
 				"before a ticket it now waits for.\n", &project.HeldError{Repo: repo, Holder: h})
 		}
