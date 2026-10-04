@@ -3,13 +3,10 @@ package tui
 import (
 	"io"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -79,24 +76,6 @@ func TestBoundedSelectDoesNotFilter(t *testing.T) {
 	}
 }
 
-// syncBuffer is what a form draws, written from Bubble Tea's goroutines.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return ansi.Strip(s.b.String())
-}
-
 // init's choice of tickets at the same time stops at 1 and at Custom…, and doesn't filter: '/'
 // then "busy" would leave only 4.
 func TestInitConcurrencyStopsAtItsEnds(t *testing.T) {
@@ -104,49 +83,33 @@ func TestInitConcurrencyStopsAtItsEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		current int
-		keys    string
+		steps   []keysOn
 		want    int
 	}{
-		{"up on 1", 1, up + enter, 1},
-		{"k on 1", 1, "k" + enter, 1},
-		{"down on a saved 6", 6, down + enter + enter, 6},
-		{"j on a saved 6", 6, "j" + enter + enter, 6},
-		{"down past Custom… and back", 4, down + down + up + up + enter, 3},
-		{"filter for busy", 1, "/" + ctrlA + "busy" + enter, 1},
+		{"up on 1", 1, []keysOn{{onConcurrency, up + enter}}, 1},
+		{"k on 1", 1, []keysOn{{onConcurrency, "k" + enter}}, 1},
+		{"down on a saved 6", 6, []keysOn{{onConcurrency, down + enter}, {onCustom, enter}}, 6},
+		{"j on a saved 6", 6, []keysOn{{onConcurrency, "j" + enter}, {onCustom, enter}}, 6},
+		{"down past Custom… and back", 4, []keysOn{{onConcurrency, down + down + up + up + enter}}, 3},
+		{"filter for busy", 1, []keysOn{{onConcurrency, "/" + ctrlA + "busy" + enter}}, 1},
 	} {
-		if got := askConcurrency(t, tc.current, tc.keys); got != tc.want {
+		if got := askConcurrency(t, tc.current, tc.steps...); got != tc.want {
 			t.Errorf("%s: concurrent = %d, want %d", tc.name, got, tc.want)
 		}
 	}
 }
 
 func TestInitConcurrencyHelpOffersNoFilter(t *testing.T) {
-	in, keys := io.Pipe()
-	t.Cleanup(func() { _ = keys.Close() })
-	var out syncBuffer
 	c := project.Choice{Concurrent: 1}
-	done := make(chan error, 1)
-	go func() {
-		done <- AskInit(in, &out, &c, false, false, true, false, false, false)
-	}()
-	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(out.String(), "↑ up"); {
-		if time.Now().After(deadline) {
-			t.Fatalf("the help line never showed:\n%s", out.String())
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if screen := out.String(); strings.Contains(screen, "filter") {
+	term := askOn(t, func(in io.Reader, out io.Writer) error {
+		return AskInit(in, out, &c, false, false, true, false, false, false)
+	})
+	term.waitFor(t, "↑ up")
+	if screen := term.screen.String(); strings.Contains(screen, "filter") {
 		t.Errorf("the help line offers the filter key:\n%s", screen)
 	}
-	if _, err := keys.Write([]byte("\r")); err != nil {
+	term.typeKeys(t, "\r")
+	if err := term.end(t); err != nil {
 		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("AskInit didn't finish")
 	}
 }

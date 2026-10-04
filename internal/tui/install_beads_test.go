@@ -4,7 +4,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/ansi"
@@ -16,17 +15,13 @@ func TestInitFormAsksToInstallBeadsOfferingYes(t *testing.T) {
 	for keys, want := range map[string]bool{enter: true, "n": false, left + enter: false} {
 		c := project.Choice{InstallBeads: true,
 			Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
-		done := make(chan error, 1)
-		go func() {
-			done <- AskInit(strings.NewReader(keys), io.Discard, &c, false, false, false, false, false, true)
-		}()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("%q: %v", keys, err)
-			}
-		case <-time.After(10 * time.Second):
-			t.Fatalf("%q: AskInit didn't finish", keys)
+		term := askOn(t, func(in io.Reader, out io.Writer) error {
+			return AskInit(in, out, &c, false, false, false, false, false, true)
+		})
+		term.waitFor(t, "┃ Install Beads with Homebrew?")
+		term.typeKeys(t, keys)
+		if err := term.end(t); err != nil {
+			t.Fatalf("%q: %v", keys, err)
 		}
 		if c.InstallBeads != want {
 			t.Errorf("%q: install = %v, want %v", keys, c.InstallBeads, want)

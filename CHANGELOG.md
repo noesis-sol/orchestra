@@ -95,6 +95,11 @@ All notable changes to orchestra are documented here. The format follows
   feature anyway, and wouldn't go on without a description, which was then
   thrown away; `orchestra init` asked for the number of tickets at the same
   time after 1 to 4 was chosen, and wouldn't take an empty answer.
+- The init form's tests no longer fail on a busy machine, as when several
+  workers' checks run at once before a merge: they typed every key at once,
+  and a key typed before huh had moved the focus went to the field just left
+  (`must be a whole number from 1 to 16 (got '')`, or the form never ended).
+  They now type each key once the screen shows the field it is meant for.
 
 ## [0.4.0] - 2026-10-04
 

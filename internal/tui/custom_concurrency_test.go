@@ -4,7 +4,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -56,22 +55,24 @@ func TestHiddenFormFieldIsSkippedAndDrawsNothing(t *testing.T) {
 	}
 }
 
+// What the screen shows once the choice of tickets at the same time, or the number typed for Custom…,
+// has the focus: huh draws the bar on the left of the focused field only.
+const (
+	onConcurrency = "┃ Tickets at the same time"
+	onCustom      = "┃ Number of tickets at the same time"
+)
+
 // askConcurrency runs the init form asking only for tickets at the same time, from current, with
-// the keys typed.
-func askConcurrency(t *testing.T, current int, keys string) int {
+// the steps' keys typed.
+func askConcurrency(t *testing.T, current int, steps ...keysOn) int {
 	t.Helper()
 	c := project.Choice{Concurrent: current}
-	done := make(chan error, 1)
-	go func() {
-		done <- AskInit(strings.NewReader(keys), io.Discard, &c, false, false, true, false, false, false)
-	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("AskInit from %d with %q: %v", current, keys, err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatalf("AskInit from %d with %q didn't finish", current, keys)
+	term := askOn(t, func(in io.Reader, out io.Writer) error {
+		return AskInit(in, out, &c, false, false, true, false, false, false)
+	})
+	term.typeSteps(t, steps)
+	if err := term.end(t); err != nil {
+		t.Fatalf("AskInit from %d with %q: %v", current, steps, err)
 	}
 	return c.Concurrent
 }
@@ -81,15 +82,19 @@ func TestInitFormKeepsOrTypesACustomConcurrency(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		current int
-		keys    string
+		steps   []keysOn
 		want    int
 	}{
-		{"a saved 6, confirmed", 6, enter + enter, 6},
-		{"a saved 3, confirmed", 3, enter, 3},
-		{"a saved 6, changed to 2", 6, strings.Repeat("\x1b[A", 3) + enter, 2},
-		{"custom typed from a saved 2", 2, strings.Repeat(down, 3) + enter + "20" + enter + backspace + backspace + "9" + enter, 9},
+		{"a saved 6, confirmed", 6, []keysOn{{onConcurrency, enter}, {onCustom, enter}}, 6},
+		{"a saved 3, confirmed", 3, []keysOn{{onConcurrency, enter}}, 3},
+		{"a saved 6, changed to 2", 6, []keysOn{{onConcurrency, strings.Repeat("\x1b[A", 3) + enter}}, 2},
+		{"custom typed from a saved 2", 2, []keysOn{
+			{onConcurrency, strings.Repeat(down, 3) + enter},
+			{onCustom, "20" + enter},
+			{"(got '20')", backspace + backspace + "9" + enter},
+		}, 9},
 	} {
-		if got := askConcurrency(t, tc.current, tc.keys); got != tc.want {
+		if got := askConcurrency(t, tc.current, tc.steps...); got != tc.want {
 			t.Errorf("%s: concurrent = %d, want %d", tc.name, got, tc.want)
 		}
 	}
