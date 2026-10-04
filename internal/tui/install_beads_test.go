@@ -16,7 +16,7 @@ func TestInitFormAsksToInstallBeadsOfferingYes(t *testing.T) {
 		c := project.Choice{InstallBeads: true,
 			Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
 		term := askOn(t, func(in io.Reader, out io.Writer) error {
-			return AskInit(in, out, &c, false, false, false, false, false, true)
+			return AskInit(in, out, &c, Ask{Install: true})
 		})
 		term.waitFor(t, "┃ Install Beads with Homebrew?")
 		term.typeKeys(t, keys)

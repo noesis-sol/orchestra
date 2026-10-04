@@ -99,7 +99,7 @@ func TestMCPDescriptionNamesTheConnectors(t *testing.T) {
 
 func TestAskInitWithNoMCPServersToOfferChoosesNone(t *testing.T) {
 	c := project.Choice{Servers: testServers[2:]}
-	if err := AskInit(strings.NewReader(""), io.Discard, &c, false, false, false, false, true, false); err != nil {
+	if err := AskInit(strings.NewReader(""), io.Discard, &c, Ask{MCP: true}); err != nil {
 		t.Fatal(err)
 	}
 	if c.MCP == nil || len(*c.MCP) != 0 {

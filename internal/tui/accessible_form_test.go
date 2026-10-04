@@ -56,7 +56,7 @@ func TestAccessibleInitFormAsksForANumberOnlyForCustom(t *testing.T) {
 	} {
 		c := project.Choice{Concurrent: 1}
 		var out strings.Builder
-		err := AskInit(typed(tc.answers...), &out, &c, false, false, true, true, false, false)
+		err := AskInit(typed(tc.answers...), &out, &c, Ask{Concurrent: true, Union: true})
 		screen := ansi.Strip(out.String())
 		if err != nil || c.Concurrent != tc.want || !c.Union {
 			t.Errorf("%s: AskInit: %v, concurrent %d, union %v; want %d, true\n%s",

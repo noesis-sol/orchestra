@@ -111,10 +111,10 @@ func runInit(
 
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
-	allGiven := checkGiven && timeoutGiven && concurrentGiven && mcpGiven && !askUnion && !askInstall
-	if isTerminal(stdin) && isTerminal(stdout) && !allGiven {
-		if err := tui.AskInit(stdin, stdout, &choice,
-			!checkGiven, !timeoutGiven, !concurrentGiven, askUnion, !mcpGiven, askInstall); err != nil {
+	ask := tui.Ask{Check: !checkGiven, Timeout: !timeoutGiven, Concurrent: !concurrentGiven, Union: askUnion,
+		MCP: !mcpGiven, Install: askInstall}
+	if isTerminal(stdin) && isTerminal(stdout) && ask != (tui.Ask{}) {
+		if err := tui.AskInit(stdin, stdout, &choice, ask); err != nil {
 			ui.Cancelled()
 			return dispatch.ExitSetup
 		}

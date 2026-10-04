@@ -301,21 +301,29 @@ func installField(c *project.Choice) *huh.Confirm {
 		Value(&c.InstallBeads)
 }
 
-// AskInit asks for what the flags didn't give, starting from the current choice, reading the
-// answers from in and drawing the form on out. With no MCP servers to offer, askMCP chooses none.
-// askInstall asks whether to install bd as c.Install says.
-func AskInit(in io.Reader, out io.Writer, c *project.Choice,
-	askCheck, askTimeout, askConcurrent, askUnion, askMCP, askInstall bool) error {
+// Ask names the questions AskInit asks: those the flags didn't answer.
+type Ask struct {
+	Check      bool // the check command
+	Timeout    bool // the check's time limit
+	Concurrent bool // tickets at the same time
+	Union      bool // whether to merge CHANGELOG.md by union
+	MCP        bool // the MCP servers for workers; with none to offer, it chooses none
+	Install    bool // whether to install bd as the choice's Install says
+}
+
+// AskInit asks the questions ask names, starting from the current choice, reading the answers
+// from in and drawing the form on out.
+func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	var fields []*formField
 	add := func(f huh.Field) *formField {
 		ff := &formField{Field: f}
 		fields = append(fields, ff)
 		return ff
 	}
-	if askInstall {
+	if ask.Install {
 		add(installField(c))
 	}
-	if askCheck {
+	if ask.Check {
 		add(huh.NewInput().
 			Title("Check command").
 			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs " +
@@ -323,7 +331,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 			Placeholder("e.g. make check").
 			Value(&c.Check))
 	}
-	if askTimeout {
+	if ask.Timeout {
 		if c.CheckTimeout == "" {
 			c.CheckTimeout = project.DefaultCheckTimeoutText
 		}
@@ -340,7 +348,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 			Value(&c.CheckTimeout))
 	}
 	option, custom := concurrencyStart(c.Concurrent)
-	if askConcurrent {
+	if ask.Concurrent {
 		add(newBoundedSelect(huh.NewSelect[int]().
 			Title("Tickets at the same time").
 			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent."),
@@ -358,7 +366,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 		typed.hidden = func() bool { return option != customConcurrency }
 		typed.wasHidden = typed.isHidden()
 	}
-	if askUnion {
+	if ask.Union {
 		add(huh.NewConfirm().
 			Title("Merge CHANGELOG.md by union").
 			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each " +
@@ -369,14 +377,14 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 			Value(&c.Union))
 	}
 	mcpOpts, servers := mcpOptions(*c)
-	if askMCP && len(mcpOpts) > 0 {
+	if ask.MCP && len(mcpOpts) > 0 {
 		add(huh.NewMultiSelect[string]().
 			Title("MCP servers for workers").
 			Description(mcpDescription(*c)).
 			Options(mcpOpts...).
 			Value(&servers))
 	}
-	if askMCP && len(mcpOpts) == 0 {
+	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
 	if len(fields) == 0 {
@@ -397,10 +405,10 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 		return err
 	}
 	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)
-	if askCheck && c.Check != before {
+	if ask.Check && c.Check != before {
 		c.CheckFrom = "the form"
 	}
-	if askConcurrent {
+	if ask.Concurrent {
 		c.Concurrent, c.Unasked = option, false
 		if option == customConcurrency {
 			n, err := parseConcurrency(custom)
@@ -410,7 +418,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice,
 			c.Concurrent = n
 		}
 	}
-	if askMCP && len(mcpOpts) > 0 {
+	if ask.MCP && len(mcpOpts) > 0 {
 		chosen := append([]string{}, servers...)
 		c.MCP, c.MCPUnasked = &chosen, false
 	}
