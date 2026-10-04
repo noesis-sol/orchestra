@@ -10,6 +10,16 @@ scripts/check.sh
 
 `scripts/check.sh` is the full check: `go vet ./...`, the race tests (`go test -race ./...`, through [gotestsum](https://github.com/gotestyourself/gotestsum)) and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs gotestsum and golangci-lint with `go run` at pinned versions (v1.13.0 and v2.14.0), so a machine needs only Go; the first run downloads them.
 
+While iterating, `go test -short` runs a package without its slow tests, those that take over a second: the scenarios with real git in `internal/dispatch` (`gitRepo` skips them), the runs on a pseudo-terminal in `cmd/orchestra` (`openTerminal`), and the others, each skipped at its start. `go test -short ./internal/dispatch/...` takes a few seconds, against about 25 in full. `scripts/check.sh` never passes `-short`, so every test still runs before a ticket closes and before it merges. A new test that takes over a second starts the same way:
+
+```go
+if testing.Short() {
+	t.Skip("skipped by -short: <why it is slow>")
+}
+```
+
+On macOS, a program a test has just written (a fake `claude`, `bd` or `herdr`) takes about 0.2 seconds to start the first time, against 0.01 seconds after, so a test that writes one for each of its cases is slow.
+
 A test that fails is run once more, on its own, and the check passes if it passes then, printing a line `FLAKY: <package> <test>` for it, such as `FLAKY: ./internal/tui TestInitFormKeepsOrTypesACustomConcurrency`, which orchestra warns of when it merges. A test that fails its rerun fails the check, and so, without a rerun, do more than three failed tests, a data race, a panic and a package that fails outside its tests (goleak's check in `TestMain`). A `FLAKY:` line is a bug to file and fix, not noise: the test passes alone but fails under load, such as several workers' checks at once, and the rerun only kept it from failing a merge. To reproduce one, run many copies of it at once, as orchestra-4wb.26 did with 12 copies of 500 runs each:
 
 ```

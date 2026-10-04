@@ -35,11 +35,11 @@ func (s *screen) cut(text string) {
 // ends is stopped.
 func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo string, exit func() (int, string)) {
 	t.Helper()
+	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	repo = configFixture(t, `{"concurrent": 1}`)
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0", "ORCHESTRA_TICKETS": ""} {
 		t.Setenv(k, v)
 	}
-	tty, master := openTerminal(t)
 	// Sized, as a Herdr pane is: Bubble Tea draws nothing on a terminal 0 wide.
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 40, Col: 100}); err != nil {
 		t.Fatal(err)

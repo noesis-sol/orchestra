@@ -70,6 +70,9 @@ func assertGroupGone(t *testing.T, pgid int) {
 // A command stopped at its time limit takes with it everything it started, even a child that
 // outlives the SIGTERM that ended the command.
 func TestOutputStopsTheCommandsWholeGroupAtItsLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits out a time limit and its grace")
+	}
 	dir := t.TempDir()
 	start := time.Now()
 	_, err := Output(context.Background(), time.Second, dir, "sh", "-c", startsChildren)
@@ -113,6 +116,9 @@ wait`
 // A command that succeeds and leaves a process behind holding its output returns that output, and
 // the process goes on running: bd may start a server on purpose.
 func TestOutputLeavesRunningWhatASucceedingCommandLeft(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits for a child that sleeps a second")
+	}
 	dir := t.TempDir()
 	out, err := Output(context.Background(), ReadLimit, dir, "sh", "-c", `(sleep 1; echo > late) & echo ok`)
 	if err != nil || strings.TrimSpace(out) != "ok" {

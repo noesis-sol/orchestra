@@ -13,9 +13,13 @@ import (
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
-// gitRepo makes a repository with one commit and returns its path and a git runner.
+// gitRepo makes a repository with one commit and returns its path and a git runner. A test that
+// uses real git takes seconds, so go test -short skips it, leaving the scenarios with git in memory.
 func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipped by -short: runs real git")
+	}
 	repo := t.TempDir()
 	git := func(dir string, args ...string) string {
 		t.Helper()

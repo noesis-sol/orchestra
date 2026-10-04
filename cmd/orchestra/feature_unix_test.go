@@ -104,6 +104,9 @@ func runFeatureAfter(
 
 // A request the screen organ turns down, or can't judge, stops the run before anything is filed.
 func TestFeatureScreeningStopsTheRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra on real git with fake tools, per case")
+	}
 	for _, tc := range []struct {
 		name, screen, want string
 	}{
@@ -167,6 +170,9 @@ func TestFeatureWithoutATerminalNeedsYes(t *testing.T) {
 // none of the epic ready, so a worker the last run left on it has the run go to its loop, as the
 // epic's ready tickets would.
 func TestFeatureYesFilesThePlanAndRunsTheEpic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
+	}
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
 	repo, stdout, stderr, code := runFeatureAfter(t, leaveWorker(t, "f-1"), strings.NewReader(""),
 		"--feature", "Add a --json flag, see README.md", "--yes", "--plain", "--organ-model", "opus-x", "--organ-effort", "medium")

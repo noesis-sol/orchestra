@@ -4,7 +4,8 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   stash, merge, or touch any other checkout; the orchestrator merges your branch.
 - Claim it with `bd update TICKET_ID --claim`, then read it with `bd show TICKET_ID`.
 - Check your work with `scripts/check.sh`: go vet, the race tests and golangci-lint.
-  While iterating, run only the checks you need, e.g. `go test ./internal/<package>/...` or `go vet ./...`.
+  While iterating, run only the checks you need, e.g. `go test -short ./internal/<package>/...` (without
+  the tests that take over a second) or `go vet ./...`.
 - Run `scripts/check.sh` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
 - Other workers run the same programs and tests on this machine. Never stop processes by name or

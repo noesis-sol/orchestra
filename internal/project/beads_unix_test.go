@@ -108,6 +108,9 @@ func same(a, b Step) bool { return reflect.DeepEqual(a, b) }
 const bdInitCall = "bd init --non-interactive --role maintainer --init-if-missing\n"
 
 func TestSetUpBeadsInstallsWithHomebrewThenRunsBdInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs real git, a fake brew and a fake bd")
+	}
 	dir := fakeBeadsTools(t, false, true)
 	repo, _ := gitRepo(t)
 	c := Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true}

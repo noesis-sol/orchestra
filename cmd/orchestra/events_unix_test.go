@@ -16,6 +16,9 @@ import (
 // one that files nothing ends there. A run with nothing to run, as the fake bd has none ready, has
 // its done record in between; one that goes to its loop, for a worker the last run left, the loop's.
 func TestARunsEventStreamStartsAndEnds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra on real git with fake tools, per case")
+	}
 	for _, tc := range []struct {
 		name, screen string
 		args         []string

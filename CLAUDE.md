@@ -62,10 +62,13 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ```bash
 scripts/check.sh                       # the full check: go vet, go test -race, golangci-lint (pinned, via go run)
-go test ./internal/dispatch/...        # one package while iterating
+go test -short ./internal/dispatch/... # one package while iterating, without its slow tests
 go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 ```
 
+- `-short` skips the tests that take over a second: real git in `internal/dispatch` (`gitRepo`), runs on a
+  pseudo-terminal (`openTerminal`) and the others, each skipped where it starts. Drop it to run a package in full;
+  `scripts/check.sh` never uses it.
 - `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that
   fails lint is not merged. Run it in full before closing a ticket.
 - The check runs the tests through gotestsum, which reruns a failed test once: one that passes then prints
@@ -104,7 +107,8 @@ README defines both terms; use them consistently.
 - Agent status is the typed `AgentState`, not strings.
 - Tests: whole-run scenarios use the fakes (`fakes_test.go`, `fakeherdr_test.go`, `fakegit_test.go`) and the harness
   in `helpers_test.go`: `newTimedHarness` inside `synctest.Test` when time drives the scenario (real durations,
-  git in memory), `newHarness` when git is its subject; goroutine leaks fail the dispatch tests (goleak). Put new
+  git in memory), `newHarness` when git is its subject (skipped by `-short`); goroutine leaks fail the dispatch tests
+  (goleak). A new test that takes over a second skips itself under `testing.Short()`. Put new
   tests in a file named after the feature rather than at the end of a shared test file; add changelog entries as new
   lines (`.gitattributes` has `CHANGELOG.md merge=union`), so parallel tickets don't conflict.
 - Workers never push; orchestra merges. `.orchestra/settings.json` and `.orchestra/worker-prompt.md` are committed;

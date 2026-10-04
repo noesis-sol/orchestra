@@ -40,6 +40,9 @@ func childPID(t *testing.T, file string) int {
 }
 
 func TestGroupOutputStopsAChildThatHoldsTheOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits out a time limit and its grace")
+	}
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

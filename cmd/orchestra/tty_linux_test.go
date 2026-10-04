@@ -10,9 +10,13 @@ import (
 
 // openTerminal opens a pseudo-terminal and returns its terminal end, which orchestra takes for a
 // terminal, and its master end, which types at it. Both are closed when the test ends; the test is
-// skipped where no pseudo-terminal can be opened.
+// skipped where no pseudo-terminal can be opened, and by go test -short: a run on a terminal takes
+// seconds.
 func openTerminal(t *testing.T) (tty, master *os.File) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipped by -short: runs on a pseudo-terminal")
+	}
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		t.Skip("no pseudo-terminal:", err)

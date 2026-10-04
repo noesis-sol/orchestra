@@ -96,6 +96,11 @@ All notable changes to orchestra are documented here. The format follows
   without a rerun, more than three failed tests, a data race, a panic and a
   package that fails outside its tests (goleak's check in `TestMain`).
   docs/development.md says how to reproduce a flaky test under load.
+- `go test -short` skips orchestra's slow tests, for a quick check while
+  iterating: those that run real git in `internal/dispatch`, those that run
+  orchestra on a pseudo-terminal, and the others that take over a second.
+  `go test -short ./internal/dispatch/...` takes a few seconds instead of
+  about 25. `scripts/check.sh` still runs every test.
 - The dashboard draws on the terminal's alternate screen, so resizing its
   pane leaves no earlier frames above it. Narrowing or shortening a Herdr
   pane reflowed the frame and pushed its top rows into the scrollback, which

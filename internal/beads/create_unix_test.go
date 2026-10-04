@@ -24,6 +24,9 @@ func createBd(t *testing.T, out string) string {
 }
 
 func TestCreateFilesTheTicketWithItsFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: starts a fake bd per case")
+	}
 	for _, out := range []string{`{"id":"k-1.2","title":"x"}`, `{"schema_version":1,"data":{"id":"k-1.2"}}`} {
 		record := createBd(t, out)
 		id, err := Tracker{Repo: t.TempDir()}.Create(context.Background(), NewTicket{Title: "Add -x", Description: "--why",

@@ -33,6 +33,9 @@ func TestOutputWithInputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
 // A command stopped at its time limit fails with an error that names the limit and that errors.Is
 // takes for a deadline, while a cancelled one doesn't.
 func TestATimedOutCommandIsADeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits out two stops and their grace")
+	}
 	_, err := OutputWithInput(context.Background(), 200*time.Millisecond, "", nil, "in", "sh", "-c", "exec sleep 5")
 	if err == nil || err.Error() != "sh -c exec sleep 5: timed out after 200ms" {
 		t.Errorf("error %v, want it to name the limit", err)

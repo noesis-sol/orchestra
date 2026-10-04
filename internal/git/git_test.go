@@ -137,6 +137,9 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 // which a loaded machine can stretch past git's one-second wait: deleting a merged ticket's branch
 // must wait it out rather than fail and leave the ticket's tab open.
 func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits 1.5s for a lock")
+	}
 	t.Parallel()
 	repo := t.TempDir()
 	for _, args := range [][]string{

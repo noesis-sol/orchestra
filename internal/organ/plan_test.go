@@ -84,6 +84,9 @@ func ticketsJSON(tickets ...string) string {
 }
 
 func TestPlanFailsItsChecks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: starts a fake claude per case")
+	}
 	var many []string
 	for range maxPlanned + 1 {
 		many = append(many, `{}`)
