@@ -41,6 +41,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra plan` orders two tickets of the same priority filed in the same
+  second by their subticket numbers as numbers, so `e.2` goes before `e.10`
+  as the older one would; it compared IDs as text and proposed `e.10` blocks
+  `e.2`. bd's `created_at` counts whole seconds, and the tickets of a planned
+  feature are filed together. Hash IDs still compare as text.
 - An agent that `herdr agent get` shows without an `agent_status` no longer
   reads as gone. A Herdr that renamed or dropped that field would have made
   every live worker look gone, and the run would have settled workers still

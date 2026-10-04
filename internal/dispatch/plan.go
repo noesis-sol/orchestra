@@ -3,6 +3,7 @@ package dispatch
 import (
 	"cmp"
 	"slices"
+	"strings"
 )
 
 // Link is a blocks link between two tickets: Blocked waits for Blocker (bd dep add <Blocked>
@@ -17,20 +18,21 @@ type Link struct {
 const SmallFileLines = 200
 
 // PlanLinks proposes blocks links that order the open tickets touching the same code, so they run
-// one after the other instead of side by side: the higher-priority ticket (then the older one)
-// goes first. Two tickets are linked when both name functions and one of them is the same, or,
-// when either names none, they name the same small file (lines gives a repository file's line
-// count, 0 for one that doesn't exist yet). Area labels, predicted files and the files the check
-// command (check) names, unless a ticket's files metadata lists them, don't link tickets, and a pair
-// already ordered by existing links, directly or through other tickets, gets none; each ticket is
-// linked to the nearest one before it first, so tickets touching one function form a chain.
+// one after the other instead of side by side: the higher-priority ticket (then the older one, then
+// the lower ID by compareIDs) goes first. Two tickets are linked when both name functions and one of
+// them is the same, or, when either names none, they name the same small file (lines gives a
+// repository file's line count, 0 for one that doesn't exist yet). Area labels, predicted files and
+// the files the check command (check) names, unless a ticket's files metadata lists them, don't link
+// tickets, and a pair already ordered by existing links, directly or through other tickets, gets
+// none; each ticket is linked to the nearest one before it first, so tickets touching one function
+// form a chain.
 func PlanLinks(open []Ticket, existing []Link, tracked []string, check string, lines func(path string) int) []Link {
 	ts := slices.Clone(open)
 	slices.SortStableFunc(ts, func(a, b Ticket) int {
 		return cmp.Or(
 			cmp.Compare(PriorityOf(a), PriorityOf(b)),
 			cmp.Compare(a.CreatedAt, b.CreatedAt),
-			cmp.Compare(a.ID, b.ID),
+			compareIDs(a.ID, b.ID),
 		)
 	})
 	repo := newRepoFiles(tracked, check)
@@ -76,6 +78,42 @@ func PriorityOf(t Ticket) int {
 		return 9
 	}
 	return *t.Priority
+}
+
+// compareIDs orders ticket IDs as text, except that the numbers between their dots, the subticket
+// numbers bd gives an epic's children, compare as numbers: e.2 before e.10. bd's created_at counts
+// whole seconds, so tickets filed together often tie on it. A number goes before text in the same
+// place, and IDs that differ only in leading zeros fall back to text, so the order is total.
+func compareIDs(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range min(len(as), len(bs)) {
+		x, xNum := idNumber(as[i])
+		y, yNum := idNumber(bs[i])
+		var c int
+		switch {
+		case xNum && yNum:
+			c = cmp.Or(cmp.Compare(len(x), len(y)), strings.Compare(x, y))
+		case xNum:
+			c = -1
+		case yNum:
+			c = 1
+		default:
+			c = strings.Compare(x, y)
+		}
+		if c != 0 {
+			return c
+		}
+	}
+	return cmp.Or(cmp.Compare(len(as), len(bs)), strings.Compare(a, b))
+}
+
+// idNumber returns a part of an ID without its leading zeros and true when it is a number, or the
+// part unchanged and false.
+func idNumber(part string) (string, bool) {
+	if part == "" || strings.Trim(part, "0123456789") != "" {
+		return part, false
+	}
+	return strings.TrimLeft(part, "0"), true
 }
 
 // planShared returns what two tickets' footprints share closely enough to order them, or "": a
