@@ -24,7 +24,9 @@ import (
 // Once no ticket runs, and after Config.EnvProbe, one worker without a ticket is asked to run a
 // command in the main checkout. If it does, the machine works again: the hold ends and the run takes
 // tickets again. If not, the run ends as it would have. The machine is probed once per run, so an
-// environment that keeps failing ends the run the second time it holds.
+// environment that keeps failing ends the run the second time it holds. Triage's verdicts on the
+// tickets deferred before the probe ended the hold count for nothing: triage takes them one at a
+// time, a model call each, so they can come long after the probe has shown that the machine works.
 
 // failedAtOnce reports whether a worker settled as one failed by its environment does: idle for good
 // (from idleAt) soon after started, its ticket still open, its branch still at head and its
@@ -69,9 +71,11 @@ func (o *Loop) settled(ctx context.Context, id string, how settling) {
 	}
 }
 
-// verdict is triage's verdict on a deferred ticket, as the hold counts it.
+// verdict is triage's verdict on a deferred ticket, as the hold counts it, with the hold's
+// generation (Loop.envGen) as the ticket was queued for triage.
 type verdict struct {
 	id, cause, confidence, summary string
+	gen                            uint64
 }
 
 // blamed hands a triage verdict to Run, waiting until Run takes it; once Run has returned, triage
@@ -88,10 +92,11 @@ func (o *Loop) blamed(ctx context.Context, v verdict) {
 }
 
 // triaged counts a triage verdict toward the hold: one blaming the environment with high
-// confidence adds to the row, any other ends it.
+// confidence adds to the row, any other ends it. One on a ticket queued before a probe ended the
+// hold counts for nothing, as that row was forgotten.
 func (o *Loop) triaged(ctx context.Context, v verdict) {
 	n := o.cfg.EnvHoldCount
-	if n == 0 {
+	if n == 0 || v.gen != o.envGen.Load() {
 		return
 	}
 	if v.cause != "environment" || v.confidence != "high" {
@@ -184,10 +189,8 @@ func (o *Loop) probeEnvironment(
 			o.envWhy, command.ShortDuration(after), err).causedBy(err)
 	}
 	o.closeTab(ctx, tab)
-	select {
-	case <-o.verdicts: // given while the probe ran, about a ticket from before the hold: forgotten with the row
-	default:
-	}
+	// Triage's verdicts still to come on the tickets queued so far are forgotten with the row.
+	o.envGen.Add(1)
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
 		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again",

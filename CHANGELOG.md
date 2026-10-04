@@ -196,6 +196,15 @@ All notable changes to orchestra are documented here. The format follows
   beside a running ticket that edits it. The path was cut at the first such
   letter, into `docs/caf` and `.md`, which named no file. A path run into
   text written without spaces, as in `loop.goを直す`, is still found.
+- A run that held for the environment and took tickets again after
+  `PROBE_OK` no longer ends with `ENVIRONMENT` (exit 7) on triage's verdicts
+  about the tickets deferred before the probe. Triage takes deferred tickets
+  one at a time, a model call each, so its verdicts on the tickets that
+  failed at once could come after the probe, and two of them blaming the
+  environment held the run again, now for good, although the probe had just
+  shown the machine works and those tickets may have been running fine
+  again. Those verdicts are still written to the tickets' notes; only the
+  verdicts on tickets deferred after the probe count toward another hold.
 
 ## [0.4.0] - 2026-10-04
 

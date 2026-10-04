@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/mcp"
@@ -114,7 +115,7 @@ type Loop struct {
 	// Triage's queue, set by StartTriage before any worker runs. Workers send to triageQ until
 	// FinishTriage calls triageFinish, cancelling triageStop; triageDone closes when the triage
 	// goroutine returns.
-	triageQ      chan organ.Deferral
+	triageQ      chan queuedDeferral
 	triageStop   context.Context
 	triageFinish context.CancelFunc
 	triageDone   chan struct{}
@@ -123,12 +124,15 @@ type Loop struct {
 	// tickets triage blamed on the environment in a row, the reason once the run holds, with why,
 	// and whether the machine was probed in this run. Workers say how they settled on their result;
 	// triage hands its verdicts over on verdicts until Run has returned (runDone), then counts them
-	// itself, as nothing else does by then.
+	// itself, as nothing else does by then. envGen counts the holds a probe has ended: each deferral
+	// is stamped with it as it is queued for triage, and its verdict counts toward the hold only
+	// while envGen is unchanged. Only Run changes it, but workers read it as they defer: atomic.
 	fastFails   []string
 	envVerdicts []string
 	envStop     *stopReason
 	envWhy      string
 	envProbed   bool
+	envGen      atomic.Uint64
 	verdicts    chan verdict
 	runDone     chan struct{}
 

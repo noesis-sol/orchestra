@@ -46,7 +46,7 @@ func orNone(s string) string {
 func (o *Loop) StartTriage() {
 	// Triaging a ticket takes a model's answer, much longer than a worker takes to defer one, and
 	// a worker sending to a full queue waits: 64 is far more deferrals than are ever waiting at once.
-	o.triageQ = make(chan organ.Deferral, 64)
+	o.triageQ = make(chan queuedDeferral, 64)
 	o.triageStop, o.triageFinish = context.WithCancel(context.Background())
 	o.triageDone = make(chan struct{})
 	go func() {
@@ -84,13 +84,20 @@ func (o *Loop) triageTaking(ctx context.Context) bool {
 	return o.triageQ != nil && ctx.Err() == nil && o.triageStop.Err() == nil && o.organCtx.Err() == nil
 }
 
+// queuedDeferral is a deferral in triage's queue, with the hold's generation (Loop.envGen) as it
+// was queued.
+type queuedDeferral struct {
+	organ.Deferral
+	gen uint64
+}
+
 // queueTriage hands a deferral to triage, unless triage no longer takes one.
 func (o *Loop) queueTriage(ctx context.Context, d organ.Deferral) {
 	if !o.triageTaking(ctx) {
 		return
 	}
 	select {
-	case o.triageQ <- d:
+	case o.triageQ <- queuedDeferral{d, o.envGen.Load()}:
 	case <-o.triageStop.Done():
 	case <-ctx.Done():
 	}
@@ -111,7 +118,7 @@ func (o *Loop) FinishTriage(ctx context.Context) {
 
 // triage has the triage organ judge one deferred ticket and writes its verdict down. A panic loses
 // that verdict, not the run.
-func (o *Loop) triage(d organ.Deferral) {
+func (o *Loop) triage(d queuedDeferral) {
 	defer func() {
 		if p := recover(); p != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf("  TRIAGE_FAILED for %s: panic: %s (the stack is in %s)",
@@ -123,7 +130,7 @@ func (o *Loop) triage(d organ.Deferral) {
 	if o.organCtx.Err() != nil {
 		return
 	}
-	t, err := o.organ.Triage(o.organCtx, d)
+	t, err := o.organ.Triage(o.organCtx, d.Deferral)
 	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
 	// time limit.
 	ctx := context.Background()
@@ -139,7 +146,7 @@ func (o *Loop) triage(d organ.Deferral) {
 		Kind: EvTriage, Ticket: d.ID, Title: t.Summary, Detail: t.Cause + " · " + t.Confidence,
 		Text: fmt.Sprintf("  triage %s: %s (%s confidence) - %s", d.ID, t.Cause, t.Confidence, t.Summary),
 	})
-	o.blamed(ctx, verdict{d.ID, t.Cause, t.Confidence, t.Summary})
+	o.blamed(ctx, verdict{d.ID, t.Cause, t.Confidence, t.Summary, d.gen})
 }
 
 // FirstLine returns the first line of s, trimmed: enough of an error for a one-line message.
