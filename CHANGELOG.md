@@ -73,6 +73,13 @@ All notable changes to orchestra are documented here. The format follows
   hook could go on changing the worktree while orchestra aborted the rebase
   that ran it. A command that exits by itself still leaves running what it
   started on purpose, such as a server bd starts.
+- A project with `mcp_servers` set no longer refuses to start when Claude
+  Code changes the shape of one of the records orchestra reads from
+  `~/.claude.json` to tell which claude.ai connectors and whether Claude in
+  Chrome are set up (`claudeAiMcpEverConnected` becoming a list of objects,
+  say). Such a record is taken as not set, and the file's MCP servers are
+  read as before; a file that isn't JSON, or whose `mcpServers` is malformed,
+  still stops the run with "Cannot read Claude Code's MCP config".
 
 ## [0.4.0] - 2026-10-04
 

@@ -71,18 +71,40 @@ func UserConfig(getenv func(string) string) string {
 	return ""
 }
 
-// userFile is the part of ~/.claude.json that names MCP servers.
+// userFile is the part of ~/.claude.json that names MCP servers. The keys besides the mcpServers
+// maps are Claude Code's own records, undocumented, and may change shape with it: they are read
+// leniently, so one orchestra no longer understands is taken as not set rather than failing the
+// file.
 type userFile struct {
 	MCPServers map[string]json.RawMessage `json:"mcpServers"`
 	Projects   map[string]struct {
 		MCPServers map[string]json.RawMessage `json:"mcpServers"`
 	} `json:"projects"`
 	// ClaudeAIConnectors are the claude.ai connectors this machine's Claude Code has connected to.
-	ClaudeAIConnectors []string `json:"claudeAiMcpEverConnected"`
+	ClaudeAIConnectors lenient[[]string] `json:"claudeAiMcpEverConnected"`
 	// Claude Code records that Claude in Chrome is set up on this machine in any of these.
-	ChromeOn        bool `json:"claudeInChromeDefaultEnabled"`
-	ChromeInstalled bool `json:"cachedChromeExtensionInstalled"`
-	ChromeOnboarded bool `json:"hasCompletedClaudeInChromeOnboarding"`
+	ChromeOn        lenient[bool] `json:"claudeInChromeDefaultEnabled"`
+	ChromeInstalled lenient[bool] `json:"cachedChromeExtensionInstalled"`
+	ChromeOnboarded lenient[bool] `json:"hasCompletedClaudeInChromeOnboarding"`
+}
+
+// lenient is a value of type T read from a file orchestra doesn't own: a value of another shape is
+// taken as not set, T's zero value.
+type lenient[T any] struct{ v T }
+
+// UnmarshalJSON reads b into l, or takes l as not set when b isn't a T. The decoder calling it has
+// already found the whole file to be JSON, so only the shape can be wrong here.
+func (l *lenient[T]) UnmarshalJSON(b []byte) error {
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		if typeErr := (*json.UnmarshalTypeError)(nil); errors.As(err, &typeErr) {
+			*l = lenient[T]{}
+			return nil
+		}
+		return err
+	}
+	l.v = v
+	return nil
 }
 
 // Discover lists the MCP servers Claude Code knows for the repository checked out at roots[0], by
@@ -124,12 +146,12 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 		add(ScopeProject, shared.MCPServers)
 	}
 	add(ScopeUser, user.MCPServers)
-	for _, c := range user.ClaudeAIConnectors {
+	for _, c := range user.ClaudeAIConnectors.v {
 		if _, ok := byName[c]; !ok && strings.HasPrefix(c, connectorPrefix) {
 			byName[c] = Server{Name: c, Scope: ScopeClaudeAI}
 		}
 	}
-	if _, ok := byName[Chrome]; !ok && (user.ChromeOn || user.ChromeInstalled || user.ChromeOnboarded) {
+	if _, ok := byName[Chrome]; !ok && (user.ChromeOn.v || user.ChromeInstalled.v || user.ChromeOnboarded.v) {
 		byName[Chrome] = Server{Name: Chrome, Scope: ScopeBuiltIn}
 	}
 	servers := make([]Server, 0, len(byName))
