@@ -171,144 +171,215 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 			o.status(Status{Ticket: id, Gone: true})
 		}
 	}()
+	s := &workerStart{o: o, id: id, tab: tab, pane: pane, wt: wt, agent: agent,
+		mcpArgs: mcpArgs, fixed: mcpArgs[:len(mcpArgs):len(mcpArgs)], report: report, launch: launch}
+	if c.ClaudeWorkers() {
+		s.fixed = append(s.fixed, c.WorkerArgs...)
+	}
 	// From here on a worker may be running in the tab, at work on its prompt, even if Ctrl+C or a
 	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried).
-	place := func() { o.place(id, askedWorker{tab: tab, pane: pane, wt: wt, hooks: report != nil}) }
-	place()
-	// Cut short once a worker may have been launched, the start names it if Herdr has it in the
-	// pane, so the next run, which looks for it by name, finds it.
-	interrupted := func() (startedWorker, *stopReason) {
-		o.nameLeft(context.WithoutCancel(ctx), id, tab, pane, agent)
-		return startedWorker{}, errInterrupted
+	s.place()
+	launched, stop := s.fromPromptFile(ctx)
+	if !launched && stop == nil {
+		stop = s.throughHerdr(ctx)
 	}
-
-	// startArgs are the worker's arguments: its MCP servers and the run's arguments for every Claude
-	// worker (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
-	// has them.
-	fixed := mcpArgs[:len(mcpArgs):len(mcpArgs)]
-	if c.ClaudeWorkers() {
-		fixed = append(fixed, c.WorkerArgs...)
-	}
-	startArgs := func() []string {
-		args := append(append([]string{}, fixed...), report...)
-		if launch != "" {
-			args = append(args, launch)
-		}
-		return args
-	}
-
-	// With its prompt in a file, the worker is started by typing the command into the tab and
-	// named once Herdr recognises it. Herdr's own start waits for the agent to look ready for
-	// input, which a worker that goes straight to work never does, so it could only time out.
-	// A name Herdr refuses would be refused on every retry, so that ends the attempt at once.
-	nameRefused := func(err error) *stopReason {
-		return halt(ExitTool, stopStartFailed,
-			" for %s in tab %s: Herdr refused the agent name %s (%v)", id, tab, agent, err).causedBy(err)
-	}
-	ok := false
-	if launch != "" {
-		err := o.starter.LaunchInPane(ctx, pane, c.AgentKind, startArgs())
-		typed := err == nil
-		if typed {
-			_, err = o.namer.AdoptAgent(ctx, pane, c.AgentKind, agent)
-		}
-		if ctx.Err() != nil {
-			return interrupted()
-		}
-		if o.starter.IsNameRefused(err) {
-			return startedWorker{}, nameRefused(err)
-		}
-		if ok = err == nil; !ok && typed {
-			// The typed command may still be starting (a slow first start, many MCP servers), and
-			// a second agent started in its pane would take the prompt twice: watch the pane for
-			// longer, and start another only once it is plainly empty.
-			o.log.Raw("", fmt.Errorf(
-				"%s's worker was not named %s after it was launched (%v); watching its tab for longer", id, agent, err))
-			held, adopted, err := o.adoptLate(ctx, pane, agent)
-			if ctx.Err() != nil {
-				return interrupted()
-			}
-			if o.starter.IsNameRefused(err) {
-				return startedWorker{}, nameRefused(err)
-			}
-			if ok = adopted; ok {
-				o.info("  %s's worker was slow to start; named it %s", id, agent)
-			} else if held != "" {
-				return startedWorker{}, halt(ExitTool, stopStartFailed,
-					" for %s in tab %s: the worker launched there could not be named %s (%s); "+
-						"stopping rather than starting a second one in it",
-					id, tab, agent, held)
-			}
-		}
-		if !ok {
-			o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); "+
-				"starting it with herdr agent start and pasting the prompt", id, agent, err))
-			launch = ""
-		}
-	}
-
-	// 'agent start' can report failure while the agent is still coming up (agent_not_ready keeps
-	// the name), and a retry then finds the pane occupied, so after each failure check whether
-	// the agent is there before trying again. The prompt is pasted once it has started.
-	for attempt := 0; attempt < 10 && !ok; attempt++ {
-		args := startArgs()
-		err := o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
-		if ok = err == nil; ok {
-			break
-		}
-		if o.starter.IsNameRefused(err) {
-			return startedWorker{}, nameRefused(err)
-		}
-		o.log.Raw("", err)
-		if o.starter.IsArgumentRefused(err) && len(args) > len(fixed) {
-			report = nil // start it plainly, without reports
-			place()
-			continue
-		}
-		if o.starter.IsArgumentRefused(err) && len(mcpArgs) > 0 {
-			// Without them it would start with every MCP server on the machine.
-			return startedWorker{}, halt(ExitTool, stopStartFailed,
-				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", id, tab, err).causedBy(err)
-		}
-		if !sleep(ctx, startRetry) {
-			return interrupted()
-		}
-		st, err := o.agents.Status(ctx, agent)
-		if err != nil {
-			o.log.Raw("", err)
-		}
-		if err == nil && st == StateGone {
-			// A start that times out leaves the agent running unnamed in its pane, and a retry
-			// would find the pane busy: adopt that agent under the ticket's name instead.
-			name, kind, pst, perr := o.namer.PaneAgent(ctx, pane)
-			if perr != nil {
-				o.log.Raw("", perr)
-			}
-			if perr == nil && pst != StateGone && name == "" && kind == c.AgentKind {
-				if err := o.namer.RenameAgent(ctx, pane, agent); err == nil {
-					o.info("  %s's worker started without its name; named it %s", id, agent)
-					st = pst
-				} else {
-					if o.starter.IsNameRefused(err) {
-						return startedWorker{}, nameRefused(err)
-					}
-					o.log.Raw("", err)
-				}
-			}
-		}
-		switch st {
-		case StateIdle, StateDone:
-			ok = true
-		case StateWorking, StateBlocked, StateUnknown:
-			// Up but busy (a startup dialog, say): give it time rather than starting a second one.
-			ok = o.starter.WaitReady(ctx, agent)
-		}
-	}
-	if !ok {
-		return startedWorker{}, halt(ExitTool, stopStartFailed, " for %s in tab %s", id, tab)
+	if stop != nil {
+		return startedWorker{}, stop
 	}
 	up = true
-	return startedWorker{tab: tab, started: started, atLaunch: launch != "", hooks: report != nil}, nil
+	return startedWorker{tab: tab, started: started, atLaunch: s.launch != "", hooks: s.report != nil}, nil
+}
+
+// workerStart is one start of ticket id's worker, named agent, in pane of tab, which startWorker
+// takes step by step. A step goes on without the worker's hooks once Herdr refuses them, and
+// without its prompt file launch once starting from it fails.
+type workerStart struct {
+	o                        *Loop
+	id, tab, pane, wt, agent string
+	mcpArgs                  []string // the arguments giving it its MCP servers
+	fixed                    []string // the arguments it always gets: mcpArgs, then the run's for every Claude worker
+	report                   []string // the arguments for its hooks; nil once Herdr refused them
+	launch                   string   // its prompt file launch; "" once it is to be started with herdr agent start
+}
+
+// place places the worker where it is being started, with or without its hooks.
+func (s *workerStart) place() {
+	s.o.place(s.id, askedWorker{tab: s.tab, pane: s.pane, wt: s.wt, hooks: s.report != nil})
+}
+
+// args are the worker's arguments: its MCP servers and the run's arguments for every Claude worker
+// (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
+// has them.
+func (s *workerStart) args() []string {
+	args := append(append([]string{}, s.fixed...), s.report...)
+	if s.launch != "" {
+		args = append(args, s.launch)
+	}
+	return args
+}
+
+// interrupted ends a start cut short once a worker may have been launched: it names the worker if
+// Herdr has it in the pane, so the next run, which looks for it by name, finds it.
+func (s *workerStart) interrupted(ctx context.Context) *stopReason {
+	s.o.nameLeft(context.WithoutCancel(ctx), s.id, s.tab, s.pane, s.agent)
+	return errInterrupted
+}
+
+// nameRefused ends the start if err is Herdr refusing the agent name, which it would refuse on
+// every retry; for any other error, or none, it is nil.
+func (s *workerStart) nameRefused(err error) *stopReason {
+	if !s.o.starter.IsNameRefused(err) {
+		return nil
+	}
+	return halt(ExitTool, stopStartFailed,
+		" for %s in tab %s: Herdr refused the agent name %s (%v)", s.id, s.tab, s.agent, err).causedBy(err)
+}
+
+// fromPromptFile starts the worker, if it has a prompt file launch, by typing the command into the
+// tab, and names it once Herdr recognises it. Herdr's own start waits for the agent to look ready
+// for input, which a worker that goes straight to work never does, so it could only time out.
+// launched is false, with no stop, when the worker is to be started with herdr agent start instead.
+func (s *workerStart) fromPromptFile(ctx context.Context) (launched bool, stop *stopReason) {
+	if s.launch == "" {
+		return false, nil
+	}
+	o, c := s.o, s.o.cfg
+	err := o.starter.LaunchInPane(ctx, s.pane, c.AgentKind, s.args())
+	typed := err == nil
+	if typed {
+		_, err = o.namer.AdoptAgent(ctx, s.pane, c.AgentKind, s.agent)
+	}
+	if ctx.Err() != nil {
+		return false, s.interrupted(ctx)
+	}
+	if stop := s.nameRefused(err); stop != nil {
+		return false, stop
+	}
+	if err == nil {
+		return true, nil
+	}
+	if typed {
+		if launched, stop := s.waitLaunched(ctx, err); launched || stop != nil {
+			return launched, stop
+		}
+	}
+	o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); "+
+		"starting it with herdr agent start and pasting the prompt", s.id, s.agent, err))
+	s.launch = ""
+	return false, nil
+}
+
+// waitLaunched watches the pane for longer after the command typed there was not named (why): it
+// may still be starting (a slow first start, many MCP servers), and a second agent started in its
+// pane would take the prompt twice. launched is false, with no stop, only once the pane is plainly
+// empty, for another to be started there.
+func (s *workerStart) waitLaunched(ctx context.Context, why error) (launched bool, stop *stopReason) {
+	o := s.o
+	o.log.Raw("", fmt.Errorf(
+		"%s's worker was not named %s after it was launched (%v); watching its tab for longer", s.id, s.agent, why))
+	held, adopted, err := o.adoptLate(ctx, s.pane, s.agent)
+	if ctx.Err() != nil {
+		return false, s.interrupted(ctx)
+	}
+	if stop := s.nameRefused(err); stop != nil {
+		return false, stop
+	}
+	if adopted {
+		o.info("  %s's worker was slow to start; named it %s", s.id, s.agent)
+		return true, nil
+	}
+	if held != "" {
+		return false, halt(ExitTool, stopStartFailed,
+			" for %s in tab %s: the worker launched there could not be named %s (%s); "+
+				"stopping rather than starting a second one in it",
+			s.id, s.tab, s.agent, held)
+	}
+	return false, nil
+}
+
+// throughHerdr starts the worker with herdr agent start, its prompt then to be pasted, in up to 10
+// attempts. 'agent start' can report failure while the agent is still coming up (agent_not_ready
+// keeps the name), and a retry then finds the pane occupied, so after each failure it checks
+// whether the agent is there before trying again.
+func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
+	o := s.o
+	for attempt := 0; attempt < 10; attempt++ {
+		args := s.args()
+		err := o.starter.StartAgent(ctx, s.agent, o.cfg.AgentKind, s.pane, args)
+		if err == nil {
+			return nil
+		}
+		if stop := s.nameRefused(err); stop != nil {
+			return stop
+		}
+		o.log.Raw("", err)
+		if o.starter.IsArgumentRefused(err) && len(args) > len(s.fixed) {
+			s.report = nil // start it plainly, without reports
+			s.place()
+			continue
+		}
+		if o.starter.IsArgumentRefused(err) && len(s.mcpArgs) > 0 {
+			// Without them it would start with every MCP server on the machine.
+			return halt(ExitTool, stopStartFailed,
+				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", s.id, s.tab, err).causedBy(err)
+		}
+		if !sleep(ctx, startRetry) {
+			return s.interrupted(ctx)
+		}
+		if up, stop := s.cameUp(ctx); up || stop != nil {
+			return stop
+		}
+	}
+	return halt(ExitTool, stopStartFailed, " for %s in tab %s", s.id, s.tab)
+}
+
+// cameUp reports whether the worker is up after a failed 'agent start', adopting it if it runs
+// unnamed in its pane; one up but busy (a startup dialog, say) is given time rather than a second
+// one started.
+func (s *workerStart) cameUp(ctx context.Context) (bool, *stopReason) {
+	o := s.o
+	st, err := o.agents.Status(ctx, s.agent)
+	if err != nil {
+		o.log.Raw("", err)
+	}
+	if err == nil && st == StateGone {
+		var stop *stopReason
+		if st, stop = s.adoptUnnamed(ctx); stop != nil {
+			return false, stop
+		}
+	}
+	switch st {
+	case StateIdle, StateDone:
+		return true, nil
+	case StateWorking, StateBlocked, StateUnknown:
+		return o.starter.WaitReady(ctx, s.agent), nil
+	}
+	return false, nil
+}
+
+// adoptUnnamed names the agent of the configured kind running unnamed in the pane, as a start that
+// times out leaves it (a retry would find the pane busy), and returns its state: StateGone if there
+// is none, or it could not be named.
+func (s *workerStart) adoptUnnamed(ctx context.Context) (AgentState, *stopReason) {
+	o := s.o
+	name, kind, st, err := o.namer.PaneAgent(ctx, s.pane)
+	if err != nil {
+		o.log.Raw("", err)
+		return StateGone, nil
+	}
+	if st == StateGone || name != "" || kind != o.cfg.AgentKind {
+		return StateGone, nil
+	}
+	err = o.namer.RenameAgent(ctx, s.pane, s.agent)
+	if err == nil {
+		o.info("  %s's worker started without its name; named it %s", s.id, s.agent)
+		return st, nil
+	}
+	if stop := s.nameRefused(err); stop != nil {
+		return StateGone, stop
+	}
+	o.log.Raw("", err)
+	return StateGone, nil
 }
 
 // agentName is the Herdr name of ticket id's worker; without a Namer (in tests), the ID itself.
