@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- In a pane 120 columns wide or wider, the dashboard's Current boxes go two
+  to a row instead of each taking the full width: four workers show as a
+  grid of two by two, numbered 1 2 over 3 4, so the number keys are
+  unchanged. The two boxes in a row are equally tall, and an odd one out
+  keeps the left column's width. A narrower pane, such as Herdr's split
+  pane, stacks them as before.
+
 ## [0.4.0] - 2026-10-04
 
 ### Changed

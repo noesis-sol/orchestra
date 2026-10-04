@@ -514,7 +514,7 @@ func (m Dashboard) modal(w int) string {
 	q := m.drainQuestion()
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		deferredStyle.Bold(true).Render(q.ask), "", q.about, "", keyWords(q.keys, true))
-	return box(min(w-4, 64), yellow, body)
+	return box(min(w-4, 64), 0, yellow, body)
 }
 
 // promptLine is the drain question on one line, for a pane too small for the box; the question and
@@ -569,7 +569,7 @@ func (m Dashboard) workerList(w int) string {
 	for i, st := range running {
 		lines = append(lines, ansi.Truncate(m.workerHead(i+1, st)+"  "+oneLine(st.Title), w-4, "…"))
 	}
-	return box(w, workerBorder(running...), strings.Join(lines, "\n"))
+	return box(w, 0, workerBorder(running...), strings.Join(lines, "\n"))
 }
 
 // numbered is how many running workers get a number, the key that goes to their tab.
@@ -621,8 +621,14 @@ func (m Dashboard) Running() []dispatch.Status {
 	return l
 }
 
-// workerPanels stacks a box per running worker, or one box saying what the loop is doing; nothing
-// when the run winds down with nothing running.
+// gridWidth is the narrowest pane whose worker boxes go two to a row: the full Herdr pane (~135
+// columns) gets two boxes of ~67, the width a box has in the split pane, which keeps one column.
+const gridWidth = 120
+
+// workerPanels lays out a box per running worker, or one box saying what the loop is doing; nothing
+// when the run winds down with nothing running. In a pane gridWidth wide or wider the boxes go two to
+// a row, numbered row by row, the two in a row as tall as the taller; an odd one out keeps the left
+// column's width. A narrower pane stacks them.
 func (m Dashboard) workerPanels(w int) string {
 	running := m.Running()
 	if len(running) == 0 {
@@ -633,22 +639,42 @@ func (m Dashboard) workerPanels(w int) string {
 		if m.stopping {
 			msg = "stopping…"
 		}
-		return box(w, grey, m.spin.View()+" "+dimStyle.Render(msg))
+		return box(w, 0, grey, m.spin.View()+" "+dimStyle.Render(msg))
 	}
 	lines := titleLines
 	if len(running) > 1 {
 		lines = 2 // keep several boxes within the pane
 	}
+	panel := func(i, width, h int) string { return m.workerPanel(width, h, i+1, running[i], lines) }
 	var boxes []string
-	for i, st := range running {
-		boxes = append(boxes, m.workerPanel(w, i+1, st, lines))
+	if w < gridWidth {
+		for i := range running {
+			boxes = append(boxes, panel(i, w, 0))
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, boxes...)
+	}
+	left := (w - 1) / 2 // box(w) is w wide: two boxes and a one-column gap make the pane's width
+	right := w - 1 - left
+	for i := 0; i < len(running); i += 2 {
+		if i+1 == len(running) {
+			boxes = append(boxes, panel(i, left, 0))
+			break
+		}
+		a, b := panel(i, left, 0), panel(i+1, right, 0)
+		switch h := max(lipgloss.Height(a), lipgloss.Height(b)); {
+		case lipgloss.Height(a) < h:
+			a = panel(i, left, h)
+		case lipgloss.Height(b) < h:
+			b = panel(i+1, right, h)
+		}
+		boxes = append(boxes, lipgloss.JoinHorizontal(lipgloss.Top, a, " ", b))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, boxes...)
 }
 
-// workerPanel boxes the nth running ticket: its number, ID, worker status and time, title, latest
-// action.
-func (m Dashboard) workerPanel(w, n int, st dispatch.Status, titleMax int) string {
+// workerPanel boxes the nth running ticket, w wide and h tall (0: as tall as it needs): its number,
+// ID, worker status and time, title, latest action.
+func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	lines := []string{fit(m.workerHead(n, st))}
@@ -658,12 +684,18 @@ func (m Dashboard) workerPanel(w, n int, st dispatch.Status, titleMax int) strin
 	if st.Activity != "" {
 		lines = append(lines, fit("  "+dimStyle.Render(oneLine(st.Activity))))
 	}
-	return box(w, workerBorder(st), strings.Join(lines, "\n"))
+	return box(w, h, workerBorder(st), strings.Join(lines, "\n"))
 }
 
-func box(w int, border lipgloss.TerminalColor, content string) string {
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
-		Padding(0, 1).Width(w - 2).Render(content)
+// box frames content in a rounded border, w columns wide and h lines tall, borders included; h 0 is
+// as tall as the content.
+func box(w, h int, border lipgloss.TerminalColor, content string) string {
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
+		Padding(0, 1).Width(w - 2)
+	if h > 0 {
+		style = style.Height(h - 2)
+	}
+	return style.Render(content)
 }
 
 // ---- Tickets table -------------------------------------------------------------------

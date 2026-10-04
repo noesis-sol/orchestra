@@ -68,7 +68,7 @@ func TestStopQuestionKeepsItsWidths(t *testing.T) {
 		m := questionDashboard(s.workers, s.draining)
 		q := m.drainQuestion()
 		for w := 36; w <= 100; w++ { // the box shows from 36 columns
-			plain := box(min(w-4, 64), yellow, lipgloss.JoinVertical(lipgloss.Left, q.ask, "", q.about, "", s.keys))
+			plain := box(min(w-4, 64), 0, yellow, lipgloss.JoinVertical(lipgloss.Left, q.ask, "", q.about, "", s.keys))
 			if got, want := ansi.Strip(m.modal(w)), ansi.Strip(plain); got != want {
 				t.Errorf("%s, %d wide: the box reads\n%s\nwant\n%s", s.name, w, got, want)
 			}
