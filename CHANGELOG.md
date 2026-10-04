@@ -49,6 +49,12 @@ All notable changes to orchestra are documented here. The format follows
   which the dashboard used to clear, is there again after the run, followed
   by the run's summary (the title, the totals and every ticket, no longer cut
   to the pane's height), the closing line and the organ phase.
+- The predictor's guess is cached on the ticket as a JSON list
+  (`predicted_files: ["docs/User Guide.md"]`) rather than joined with
+  commas, so a predicted path holding a space or a comma reads back whole.
+  `docs/User Guide.md` read back as `docs/User`, taken for a new file in
+  `docs/`, and the ticket could start beside one editing the real file.
+  Predictions already cached with commas read as before.
 
 ## [0.4.0] - 2026-10-04
 

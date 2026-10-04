@@ -61,7 +61,7 @@ func TestPredictedFootprintKeepsATicketApart(t *testing.T) {
 		if code := o.Run(t.Context()); code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if got := h.beads.metadata("B", PredictedKey); got != "internal/x.go" {
+		if got := h.beads.metadata("B", PredictedKey); got != `["internal/x.go"]` {
 			t.Errorf("cached %q", got)
 		}
 		if got := v.of("B"); slices.Contains(got, "A") {

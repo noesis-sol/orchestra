@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -10,8 +11,8 @@ import (
 // Predicting footprints. A ready ticket naming nothing (no files, functions, area labels or files
 // metadata) runs beside anything. The predictor organ guesses the files it will change, in the
 // background and one ticket at a time, like triage; the guess is cached on the ticket as
-// PredictedKey metadata, and TicketFootprint reads it back. Picking never waits for it: until a
-// prediction is in, the ticket keeps its empty footprint.
+// PredictedKey metadata, a JSON list, and TicketFootprint reads it back. Picking never waits for
+// it: until a prediction is in, the ticket keeps its empty footprint.
 
 // startPredicting starts the predictor for this run, when the organs and footprints are on, and
 // returns what stops it: that cancels a prediction in progress and waits for it to end.
@@ -134,7 +135,9 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 	}
 	o.predicted[t.ID] = files
 	o.predictMu.Unlock()
-	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, strings.Join(files, ",")); err != nil {
+	// As a JSON list, which metadataList reads back whole: a path may hold a comma or a space.
+	list, _ := json.Marshal(files) // a list of strings always encodes
+	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, string(list)); err != nil {
 		o.log.Raw("", err)
 	}
 	o.givePrediction(t.ID, files, tracked)
