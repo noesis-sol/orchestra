@@ -15,6 +15,10 @@ func inGroup(cmd *exec.Cmd, grace time.Duration) *group { return &group{} }
 
 func (g *group) wait() {}
 
+func (g *group) settle() {}
+
+func (g *group) release() {}
+
 func (g *group) stop() {}
 
 // ownGroup does nothing: there are no process groups to start cmd in.

@@ -65,6 +65,14 @@ All notable changes to orchestra are documented here. The format follows
   ticket is: labelled, carried over and named. Ctrl+C or a stop before the
   worker is told anything leaves the ticket waiting on its question, saved
   with it for the next run, which tells the worker the answer is in.
+- A command orchestra stops, at its time limit or on Ctrl+C, no longer leaves
+  behind what it started: git's hooks, its `git-remote-https` and ssh, a
+  credential helper, whatever bd forks. The whole process group gets SIGTERM,
+  so git still removes its lock files, and SIGKILL half a second later, where
+  only the command itself got them before, and the rest ran on as orphans: a
+  hook could go on changing the worktree while orchestra aborted the rebase
+  that ran it. A command that exits by itself still leaves running what it
+  started on purpose, such as a server bd starts.
 
 ## [0.4.0] - 2026-10-04
 

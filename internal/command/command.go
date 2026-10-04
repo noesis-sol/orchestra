@@ -24,16 +24,19 @@ const (
 	WriteLimit = 2 * time.Minute  // a write: git worktrees, rebases, merges and branches, bd updates
 )
 
-// stopGrace is how long a command that is stopped has between SIGTERM and SIGKILL (git removes its
-// lock files on SIGTERM, not on SIGKILL), and how long Output then waits for output pipes that a
-// process the command started still holds.
+// stopGrace is how long a command that is stopped, and whatever it started, has between SIGTERM and
+// SIGKILL (git removes its lock files on SIGTERM, not on SIGKILL), and how long Output waits for
+// output pipes that a process the command started still holds.
 const stopGrace = 500 * time.Millisecond
 
 // Output runs a command in dir and returns its stdout. The command is stopped when ctx is done or
 // once it has run for limit (0 for no limit). The error is an *Error carrying stderr, and for a
 // command that was stopped why: the limit it ran into, or the cause ctx was cancelled with. The
 // command runs in its own process group, so a Ctrl+C at the terminal, or a SIGHUP from closing it,
-// reaches orchestra alone: a merge it has under way isn't killed halfway.
+// reaches orchestra alone: a merge it has under way isn't killed halfway. Stopping the command stops
+// that whole group, whatever the command started in it (git's hooks, its ssh): SIGTERM, then SIGKILL
+// stopGrace later. A command that exits by itself may leave a process running, such as a server bd
+// starts, and Output leaves it running, without waiting for the output pipes it holds.
 func Output(ctx context.Context, limit time.Duration, dir, name string, args ...string) (string, error) {
 	return run(ctx, limit, dir, nil, nil, name, args)
 }
@@ -58,14 +61,18 @@ func run(ctx context.Context, limit time.Duration, dir string, env []string, std
 	cmd.Dir = dir
 	// BD_JSON_ENVELOPE pins the bd --json shape. Of two entries with one name, the last wins.
 	cmd.Env = append(append(os.Environ(), "BD_JSON_ENVELOPE=0"), env...)
-	ownGroup(cmd)
-	cmd.Cancel = func() error { return terminate(cmd.Process) }
+	g := inGroup(cmd, stopGrace)
 	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer
 	cmd.Stdin = stdin
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := cmd.Start()
+	if err == nil {
+		g.settle()
+		err = cmd.Wait()
+		g.release()
+	}
 	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil {
 		err = nil // exited 0, leaving a process behind that holds the output
 	}

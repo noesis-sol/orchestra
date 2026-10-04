@@ -17,21 +17,25 @@ import (
 type group struct {
 	cmd    *exec.Cmd
 	mu     sync.Mutex
-	exited bool        // the command has exited and is about to be reaped: signal nothing more
-	kill   *time.Timer // the SIGKILL that follows a cancel's SIGTERM
+	exited bool          // the command has exited and is about to be reaped: signal nothing more
+	kill   *time.Timer   // the SIGKILL that follows a cancel's SIGTERM
+	killed chan struct{} // closed once that SIGKILL has been sent
 }
 
 // inGroup starts cmd in its own process group and makes cancelling it stop the whole group:
 // SIGTERM now, SIGKILL after grace.
 func inGroup(cmd *exec.Cmd, grace time.Duration) *group {
-	g := &group{cmd: cmd}
+	g := &group{cmd: cmd, killed: make(chan struct{})}
 	ownGroup(cmd)
 	cmd.Cancel = func() error {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if !g.exited {
-			// Best effort: the group may have exited since, and nothing more can be done if not.
-			g.kill = time.AfterFunc(grace, func() { _ = g.signal(syscall.SIGKILL) })
+			g.kill = time.AfterFunc(grace, func() {
+				// Best effort: the group may have exited since, and nothing more can be done if not.
+				_ = g.signal(syscall.SIGKILL)
+				close(g.killed)
+			})
 		}
 		return g.signalLocked(syscall.SIGTERM)
 	}
@@ -63,6 +67,37 @@ func (g *group) wait() {
 	}
 }
 
+// settle waits for cmd to exit, leaving it unreaped, for the caller to reap with cmd.Wait and then
+// call release. What a command that exits by itself leaves running in its group keeps running: bd
+// may start a server on purpose. What a cancelled one leaves doesn't: settle keeps cmd unreaped
+// until the SIGKILL that follows the cancel's SIGTERM by grace has gone to the group, so whatever
+// cmd started, such as a git hook, has the same grace as cmd and is then killed with it, even when
+// cmd itself ended on the SIGTERM at once.
+func (g *group) settle() {
+	if awaitExit(g.cmd.Process.Pid) != nil {
+		return // release stops the signals once cmd is reaped
+	}
+	g.mu.Lock()
+	cancelled := g.kill != nil
+	g.exited = !cancelled // a cancel from now on signals nothing
+	g.mu.Unlock()
+	if cancelled {
+		<-g.killed
+	}
+}
+
+// release stops signalling the group, once cmd is reaped, without killing anything. Where settle
+// can't wait for cmd's exit, a SIGKILL due between the reaping and release could reach a group that
+// has reused the ID, though only after a full PID wrap, as in stop.
+func (g *group) release() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.exited = true
+	if g.kill != nil {
+		g.kill.Stop()
+	}
+}
+
 // stop kills whatever cmd left running in its group and stops signalling the group. Once cmd is
 // reaped this is safe only if wait already did it: then it does nothing. Where wait can't, the
 // kill here could reach a group that has reused the ID, though only after a full PID wrap.
@@ -80,6 +115,6 @@ func (g *group) stop() {
 // sends to orchestra's.
 func ownGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
-// terminate asks a process to stop, as Ctrl+C or a time limit does: SIGTERM, on which git removes
-// its lock files. Output's WaitDelay kills it if it doesn't.
+// terminate asks a process to stop: SIGTERM, on which a program in raw mode puts the terminal back.
+// Interactive's WaitDelay kills it if it doesn't.
 func terminate(p *os.Process) error { return p.Signal(syscall.SIGTERM) }
