@@ -15,6 +15,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tui"
 
 	"golang.org/x/term"
 )
@@ -47,16 +48,19 @@ func interviewOff(c options) string {
 // featureInterview is a feature typed at the start, talked through and filed in a Claude Code
 // session, on its way to a run.
 type featureInterview struct {
-	request string
-	repo    string
-	session func(ctx context.Context, prompt string) error // the session, its instructions in prompt
-	tracker interface {
-		Show(ctx context.Context, id string) (dispatch.Ticket, error)
-		Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error)
-	}
+	request  string
+	repo     string
+	session  func(ctx context.Context, prompt string) error // the session, its instructions in prompt
+	tracker  epicTracker
 	log      *dispatch.Log // nil in tests
 	in       io.Reader
 	out, err io.Writer
+}
+
+// epicTracker is bd as the interview reads the epic it filed (beads.Tracker).
+type epicTracker interface {
+	Show(ctx context.Context, id string) (dispatch.Ticket, error)
+	Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error)
 }
 
 // runInterview talks the feature in c.Feature through in a Claude Code session, which files it,
@@ -87,16 +91,22 @@ func runInterview(
 		return command.Interactive(ctx, c.Repo, stdin, stdout, stderr,
 			"claude", "--append-system-prompt-file", prompt, "--", c.Feature)
 	}
+	tracker := beads.Tracker{Repo: c.Repo}
 	session := terminal
 	if pane != "" {
-		session = paneSession{herdr: herdr.Terminal{}, pane: pane, repo: c.Repo, request: c.Feature,
-			fallback: terminal, out: stdout, err: stderr}.talk
+		s := paneSession{herdr: herdr.Terminal{}, pane: pane, repo: c.Repo, request: c.Feature, fallback: terminal,
+			out: stdout, err: stderr}
+		if out, ok := stdout.(*os.File); ok && isTerminal(out) {
+			s.progress = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
+			s.tracker = tracker
+		}
+		session = s.talk
 	}
 	return featureInterview{
 		request: c.Feature,
 		repo:    c.Repo,
 		session: session,
-		tracker: beads.Tracker{Repo: c.Repo},
+		tracker: tracker,
 		log:     log,
 		in:      stdin,
 		out:     stdout,
@@ -214,6 +224,10 @@ type paneSession struct {
 	request  string
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
+	// Where the interview stands, on a line under the fixed message, when out is a terminal (nil
+	// otherwise), and bd, which has the title and tickets of the epic it filed.
+	progress *tui.InterviewLine
+	tracker  epicTracker
 }
 
 // How often the interview's pane is looked at, and how long claude may take to appear in it, as
@@ -236,6 +250,7 @@ var errPaneClosed = errors.New("the interview's pane was closed")
 // opened or claude doesn't appear in it, orchestra says why, closes any pane it made, and hands
 // claude its terminal instead (fallback).
 func (p paneSession) talk(ctx context.Context, prompt string) error {
+	began := time.Now()
 	interview, err := p.open(ctx, prompt)
 	switch {
 	case ctx.Err() != nil, errors.Is(err, errPaneClosed): // the interview is over
@@ -247,7 +262,7 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 	default:
 		fmt.Fprintln(p.out, "Talking the feature through with claude in the pane on the right, which closes once "+
 			"the feature is filed. Type /exit there to leave without filing; Ctrl+C here stops.")
-		p.wait(ctx, interview)
+		p.wait(ctx, interview, began)
 	}
 	p.close(ctx, interview)
 	return nil
@@ -311,24 +326,91 @@ func (p paneSession) started(ctx context.Context, pane string) error {
 // is looked at). claude writes the file during its last turn, before it tells the user the feature
 // is filed, so the file is looked at before claude's state is read: a turn's end read after the
 // file was there is the end of that turn or a later one. A read that fails says nothing about
-// claude: Herdr is asked again.
-func (p paneSession) wait(ctx context.Context, pane string) {
+// claude: Herdr is asked again. After each reading, orchestra's pane shows where the interview
+// stands, since began, on a line that is gone once wait returns.
+func (p paneSession) wait(ctx context.Context, pane string, began time.Time) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // ends a read of the filed epic still going
+	shown := &interviewShown{line: p.progress, tracker: p.tracker, began: began}
+	defer shown.clear()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(interviewPoll):
 		}
-		_, err := project.FiledFeature(p.repo)
+		epic, err := project.FiledFeature(p.repo)
 		filed := err == nil // a file that names no epic files nothing: /exit ends that interview
 		_, _, st, err := p.herdr.PaneAgent(ctx, pane)
 		switch {
 		case err != nil:
+			st = "" // the line keeps the state last read
 		case st == dispatch.StateGone:
 			return
 		case filed && (st == dispatch.StateIdle || st == dispatch.StateDone):
 			return
 		}
+		shown.show(ctx, epic, st)
+	}
+}
+
+// interviewShown is what orchestra's pane shows of an interview in a pane, under its fixed message,
+// from paneSession.wait's readings; nothing when line is nil.
+type interviewShown struct {
+	line    *tui.InterviewLine
+	tracker epicTracker
+	began   time.Time
+	now     tui.InterviewProgress
+	epic    <-chan tui.InterviewProgress // the filed epic's title and tickets once bd has given them
+}
+
+// show draws the interview's progress after a reading: epic is the epic feature.json names ("" for
+// none), st claude's state ("" when Herdr couldn't say, which keeps the last one shown). The epic,
+// once named, stays: claude doesn't unfile it. bd is read for its title and tickets meanwhile, which
+// the next reading shows.
+func (s *interviewShown) show(ctx context.Context, epic string, st dispatch.AgentState) {
+	if s.line == nil {
+		return
+	}
+	if st != "" {
+		s.now.Agent = st
+	}
+	s.now.Elapsed = time.Since(s.began)
+	select {
+	case e := <-s.epic:
+		s.now.Title, s.now.Tickets = e.Title, e.Tickets
+	default: // not read yet, or no epic to read
+	}
+	if epic != "" && epic != s.now.Epic {
+		s.now.Epic, s.now.Title, s.now.Tickets = epic, "", 0
+		s.epic = s.readEpic(ctx, epic)
+	}
+	s.line.Show(s.now)
+}
+
+// readEpic reads the epic's title and how many tickets it has from bd, in the background so that
+// the wait goes on reading Herdr meanwhile; the channel gives them once read, or nothing if bd can't
+// say, in which case the line names the epic alone.
+func (s *interviewShown) readEpic(ctx context.Context, epic string) <-chan tui.InterviewProgress {
+	read := make(chan tui.InterviewProgress, 1) // the send doesn't block once the wait is over
+	go func() {
+		t, err := s.tracker.Show(ctx, epic)
+		if err != nil {
+			return
+		}
+		children, _, err := s.tracker.Children(ctx, epic)
+		if err != nil {
+			return
+		}
+		read <- tui.InterviewProgress{Title: t.Title, Tickets: len(children)}
+	}()
+	return read
+}
+
+// clear removes the line, if one is drawn, before the plan and the question are shown.
+func (s *interviewShown) clear() {
+	if s.line != nil {
+		s.line.Clear()
 	}
 }
 

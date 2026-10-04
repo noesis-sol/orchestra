@@ -14,6 +14,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
 // paneRequest is the feature typed at the question: a list, on two lines.
@@ -123,6 +124,15 @@ type paneOutcome struct {
 // session it may fall back to files the feature. ctx is the interview's, which a stop signal ends.
 func interviewInPane(ctx context.Context, t *testing.T, repo string, panes *fakePanes, answer string) paneOutcome {
 	t.Helper()
+	return interviewInPaneOn(ctx, t, repo, panes, answer, 0)
+}
+
+// interviewInPaneOn is interviewInPane with orchestra's output a terminal width columns wide, on
+// which orchestra's pane shows the interview's progress; 0 is output that isn't a terminal.
+func interviewInPaneOn(
+	ctx context.Context, t *testing.T, repo string, panes *fakePanes, answer string, width int,
+) paneOutcome {
+	t.Helper()
 	var o paneOutcome
 	var out, errOut strings.Builder
 	fallback := func(_ context.Context, prompt string) error {
@@ -130,11 +140,16 @@ func interviewInPane(ctx context.Context, t *testing.T, repo string, panes *fake
 		fileFeature(t, repo)
 		return nil
 	}
+	session := paneSession{herdr: panes, pane: "w1:p1", repo: repo, request: paneRequest, fallback: fallback,
+		out: &out, err: &errOut}
+	if width > 0 {
+		session.progress = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
+		session.tracker = filedEpic{}
+	}
 	o.epic, o.code = featureInterview{
 		request: paneRequest,
 		repo:    repo,
-		session: paneSession{herdr: panes, pane: "w1:p1", repo: repo, request: paneRequest, fallback: fallback,
-			out: &out, err: &errOut}.talk,
+		session: session.talk,
 		tracker: filedEpic{},
 		in:      strings.NewReader(answer),
 		out:     &out,

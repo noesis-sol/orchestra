@@ -33,6 +33,11 @@ All notable changes to orchestra are documented here. The format follows
   pane, still ends an interview that files nothing. On orchestra's own
   terminal, where orchestra can't end the session, Claude's instructions add
   that it tells you to type `/exit` once the feature is filed.
+- While the interview runs in its pane, orchestra's pane shows where it
+  stands on a line under its message, updated in place each second: whether
+  Claude is working, waiting for you or waiting for a permission answer, and
+  how long the interview has run; once the feature is filed, `Filed <epic>:
+  <title> (N tickets)`. The line is gone before the tickets and the question.
 
 ### Fixed
 
