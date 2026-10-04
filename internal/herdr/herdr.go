@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,8 +25,11 @@ type Terminal struct{}
 
 // CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
 // returns the tab's ID and its first pane's. When Herdr's answer can't be read or lacks either ID,
-// the tab it may have opened is closed again (see closeUnread), so a retry doesn't leave another
-// behind.
+// or the call fails without Herdr refusing it (stopped at its time limit or by Ctrl+C, say), the
+// tab it may have opened is closed again (see closeUnread), so a retry doesn't leave another
+// behind. Finding that tab asks Herdr for its tabs, with the time limit of any Herdr call, even
+// after the call ran into that limit: a Herdr that didn't answer then may well not answer now, which
+// costs the limit again, while a tab that was opened is closed.
 func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error) {
 	// The tabs labelled label already, such as an earlier worker's left for review, from which a
 	// tab this call opens is told should Herdr's answer not say which it is.
@@ -33,7 +37,10 @@ func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (
 	out, err := run(ctx, command.ReadLimit,
 		"tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
-		return "", "", err
+		if !mayHaveOpened(err) {
+			return "", "", err
+		}
+		return "", "", t.closeUnread(context.WithoutCancel(ctx), err, workspace, label, "", before, berr)
 	}
 	var r struct {
 		Result struct {
@@ -60,9 +67,19 @@ func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (
 	return "", "", t.closeUnread(context.WithoutCancel(ctx), err, workspace, label, tab, before, berr)
 }
 
-// closeUnread closes the tab that 'herdr tab create' may have opened in workspace, though its
-// answer, which err says is unexpected, can't be used, and adds to err what became of the tab. The
-// tab is the one the answer named, if it named one; otherwise the one tab labelled label that isn't
+// mayHaveOpened reports whether a 'herdr tab create' that failed with err may have opened the tab
+// all the same: it was stopped, or it exited without Herdr's own error. Herdr refusing the call
+// opened none, and nor did a herdr that never started.
+func mayHaveOpened(err error) bool {
+	var he *Error
+	var ce *command.Error
+	var ee *exec.ExitError
+	return !errors.As(err, &he) && errors.As(err, &ce) && (ce.Stopped || errors.As(ce.Err, &ee))
+}
+
+// closeUnread closes the tab that 'herdr tab create' may have opened in workspace, though the call
+// failed or its answer can't be used, as err says, and adds to err what became of the tab. The tab
+// is the one the answer named, if it named one; otherwise the one tab labelled label that isn't
 // among before, the tabs so labelled before the call (unknown if berr says Herdr couldn't list
 // them). err stays the error underneath: a failure to find or close the tab is only told.
 func (t Terminal) closeUnread(ctx context.Context, err error, workspace, label, tab string,

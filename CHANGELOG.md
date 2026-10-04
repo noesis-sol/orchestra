@@ -87,6 +87,15 @@ All notable changes to orchestra are documented here. The format follows
   found by the ID in the answer or else by its label among the tabs that
   weren't there before (an earlier tab with the same label, such as one left
   for review, stays open), or left open, naming it and saying why.
+- So is a tab Herdr opened when `herdr tab create` itself fails without
+  Herdr's own error: stopped at its 30-second limit or by Ctrl+C, or exiting
+  without saying why. orchestra finds the tab by its label among the tabs that
+  weren't there before and closes it, and the error says what became of it,
+  as above. On Ctrl+C the error is now logged; it used to be dropped, so a tab
+  left open went unmentioned. Finding the tab takes one more call to Herdr,
+  so a Herdr that stopped answering can hold the run up to 30 seconds more
+  before it stops; a second Ctrl+C quits at once. A call Herdr refuses opens
+  no tab and is reported as before.
 - orchestra's own check, `scripts/check.sh`, runs the race tests through
   gotestsum (v1.13.0, through `go run`) and runs a failed test once more, on
   its own: one that passes then failed only under load, such as several

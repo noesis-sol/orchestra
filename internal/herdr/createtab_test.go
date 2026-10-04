@@ -14,8 +14,9 @@ import (
 // tabs in the directory it returns, starting with those given. 'tab list' lists them, 'tab close'
 // closes one (tab_not_found if it has none by that ID), and 'tab create' opens one, w1:t<n> from
 // w1:t10 on, and answers with the file answer, @ID@ in it replaced by the new tab's ID. With a file
-// nocreate it opens none; a file listfail fails the next 'tab list' and goes, and a file listbroken
-// fails every one. It logs each call's arguments to the file calls.
+// nocreate it opens none; a file after is run as part of 'tab create' once the tab is open, before
+// the answer (to hang, say); a file listfail fails the next 'tab list' and goes, and a file
+// listbroken fails every one. It logs each call's arguments to the file calls.
 func tabsHerdr(t *testing.T, tabs ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -52,6 +53,7 @@ case "$1 $2" in
 	echo $((n + 1)) > "$d/next"
 	id=w1:t$n
 	[ -e "$d/nocreate" ] || echo "$id $label" >> "$d/tabs"
+	[ -e "$d/after" ] && . "$d/after"
 	sed "s/@ID@/$id/g" "$d/answer"
 	;;
 "tab close")

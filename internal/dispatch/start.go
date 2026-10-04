@@ -155,6 +155,8 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 	if ctx.Err() != nil {
 		if err == nil {
 			o.closeTab(context.WithoutCancel(ctx), tab)
+		} else {
+			o.log.Raw("", err) // it says what became of a tab Herdr may have opened
 		}
 		return startedWorker{}, errInterrupted
 	}
