@@ -46,20 +46,18 @@ func (o *Loop) setAsideBadIDs(ctx context.Context, ready []Ticket, skip map[stri
 		}
 		skip[t.ID] = true
 		id := t.ID
-		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s, so no worker was started on %s: "+
-			"a ticket's ID names its worktree folder and its branch wt/<id>. "+
-			"Give it a plain ID (bd rename %s <new-id>), then bring it back with: bd undefer <new-id>",
-			why, id, id))
-		if err := o.deferAside(ctx, id, why); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
-				"  DEFER_FAILED: %s: %s, and bd could not defer it%s; "+
-					"kept out of this run, rename it with: bd rename %s <new-id>",
-				why, id, because(err), id)})
-			continue
-		}
-		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: why, Text: fmt.Sprintf(
-			"  BAD_TICKET_ID: %s: %s -> deferred without starting a worker; "+
+		o.putAside(ctx, t, asideTexts{
+			note: fmt.Sprintf("Orchestra: %s, so no worker was started on %s: "+
+				"a ticket's ID names its worktree folder and its branch wt/<id>. "+
+				"Give it a plain ID (bd rename %s <new-id>), then bring it back with: bd undefer <new-id>",
+				why, id, id),
+			reason: why,
+			detail: why,
+			deferred: fmt.Sprintf("  BAD_TICKET_ID: %s: %s -> deferred without starting a worker; "+
 				"rename it (bd rename %s <new-id>), then bd undefer <new-id>",
-			why, id, id)})
+				why, id, id),
+			failed: fmt.Sprintf("%s: %s, and bd could not defer it", why, id),
+			then:   "rename it with: bd rename " + id + " <new-id>",
+		})
 	}
 }
