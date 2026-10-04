@@ -21,7 +21,6 @@ func TestDashboardDrawsOnTheAlternateScreen(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s\nthe terminal:\n%s", code, stderr, screenOf(term))
 	}
 	const closing = "♪ Reached the ticket limit (3)"
-	term.waitFor(t, closing) // what orchestra wrote has been read off the terminal
 	raw := term.screen.raw()
 	before, rest, opened := strings.Cut(raw, openAltScreen)
 	dashboard, after, closed := strings.Cut(rest, closeAltScreen)

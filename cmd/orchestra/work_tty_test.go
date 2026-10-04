@@ -15,10 +15,23 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// endOfOutput is what the test writes on the terminal once orchestra has exited. The terminal keeps
+// the order of what is written on it, so once the screen shows this, it shows all orchestra wrote.
+const endOfOutput = "[orchestra exited]"
+
+// cut takes text off the screen.
+func (s *screen) cut(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before, after, _ := strings.Cut(s.b.String(), text)
+	s.b.Reset()
+	s.b.WriteString(before + after)
+}
+
 // runOnTerminal starts orchestra with these arguments in a repository set up for it, inside a
 // Herdr pane, without notifications, triage or the run report, on a pseudo-terminal: its input and
-// output. It returns the terminal, the repository, and what waits for orchestra to exit with its
-// exit code and stderr.
+// output. It returns the terminal, the repository, and what waits for orchestra to exit, and for the
+// screen to show all it wrote, with its exit code and stderr.
 func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo string, exit func() (int, string)) {
 	t.Helper()
 	repo = configFixture(t, `{"concurrent": 1}`)
@@ -49,13 +62,19 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	}()
 	return term, repo, func() (int, string) {
 		t.Helper()
+		var code int
 		select {
-		case code := <-done:
-			return code, errOut.String()
-		case <-time.After(20 * time.Second):
+		case code = <-done:
+		case <-time.After(patience):
 			t.Fatalf("orchestra didn't exit; the terminal:\n%s", term.screen.String())
-			return 0, ""
 		}
+		// What orchestra wrote last may not have been read off the terminal yet.
+		if _, err := tty.Write([]byte(endOfOutput)); err != nil {
+			t.Fatal(err)
+		}
+		term.waitFor(t, endOfOutput)
+		term.screen.cut(endOfOutput)
+		return code, errOut.String()
 	}
 }
 

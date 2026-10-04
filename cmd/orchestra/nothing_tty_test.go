@@ -5,7 +5,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -88,9 +87,6 @@ func TestNothingToRunOnATerminalShowsTheBox(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s\nthe terminal:\n%s", code, stderr, screenOf(term))
 	}
 	const want = "╭────────────╮\n│ ✓ All done │\n╰────────────╯\n"
-	for deadline := time.Now().Add(10 * time.Second); screenOf(term) != want && time.Now().Before(deadline); {
-		time.Sleep(5 * time.Millisecond) // until what orchestra wrote has been read off the terminal
-	}
 	if out := screenOf(term); out != want {
 		t.Errorf("the terminal:\n%q\nwant only the box:\n%q", out, want)
 	}

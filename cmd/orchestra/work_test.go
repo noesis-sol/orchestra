@@ -73,10 +73,16 @@ type fakeTerminal struct {
 	end    func() // ends the input; nil to leave it open
 }
 
+// patience is how long a test waits for something that should happen: a passing test never waits
+// it out, and a loaded machine (the race detector, many test binaries at once) can take tens of
+// seconds for what takes a second alone; so can the first run of each fake tool a test writes, which
+// macOS checks before it runs a new program.
+const patience = 2 * time.Minute
+
 // waitFor waits until the screen shows text.
 func (term *fakeTerminal) waitFor(t *testing.T, text string) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(term.screen.String(), text); {
+	for deadline := time.Now().Add(patience); !strings.Contains(term.screen.String(), text); {
 		if time.Now().After(deadline) {
 			t.Fatalf("the screen never showed %q:\n%s", text, term.screen.String())
 		}
@@ -115,7 +121,7 @@ func askWorkOn(ctx context.Context, t *testing.T, ready fakeReady) (*fakeTermina
 		case a := <-done:
 			a.out, a.err = term.screen.String(), errOut.String()
 			return a
-		case <-time.After(10 * time.Second):
+		case <-time.After(patience):
 			t.Fatalf("the question didn't end; the screen:\n%s", term.screen.String())
 			return workAnswer{}
 		}

@@ -36,7 +36,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(10 * time.Second); ; {
+	for deadline := time.Now().Add(patience); ; {
 		got := read(t, logPath)
 		if strings.Contains(got, "cannot switch to tab w1:t9 from the dashboard") {
 			if !strings.Contains(got, "tab w1:t9 not found") {
