@@ -71,9 +71,9 @@ func hookSettings(activity, edits string) map[string]any {
 	event := func(name string) string {
 		return write(`printf '{"hook_event_name":"` + name + `"}'`)
 	}
-	hook := func(command string) []any {
-		command = "{ " + command + "; cat >/dev/null; } 2>/dev/null; exit 0"
-		return []any{map[string]any{"type": "command", "command": command}}
+	hook := func(line string) []any {
+		line = "{ " + line + "; cat >/dev/null; } 2>/dev/null; exit 0"
+		return []any{map[string]any{"type": "command", "command": line}}
 	}
 	// The path is the first file_path (notebook_path for NotebookEdit) in the tool's input; a
 	// quote inside the input's strings is escaped, so one in a Write's content can't match.

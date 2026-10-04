@@ -120,13 +120,13 @@ type Log struct {
 }
 
 // OpenLog opens the log file at path for appending. With notify, Notify shows macOS notifications
-// titled with project.
-func OpenLog(path string, notify bool, project string) (*Log, error) {
+// titled with title.
+func OpenLog(path string, notify bool, title string) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	l := &Log{f: f, project: project}
+	l := &Log{f: f, project: title}
 	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
 		l.alert = l.inBackground(func(args []string) {
 			// Best effort: the line is in the log already, a notification that fails is only not shown.
