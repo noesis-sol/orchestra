@@ -121,7 +121,7 @@ func EnsureRunExcluded(ctx context.Context, repo string) error {
 	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(exclude, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	return writeFile(exclude, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
 // ---- orchestra init ------------------------------------------------------------------

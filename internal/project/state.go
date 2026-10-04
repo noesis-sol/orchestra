@@ -43,10 +43,10 @@ type RunState struct {
 	Workers []LeftWorker `json:"workers"`
 }
 
-// SaveState writes s to StateName in the main checkout repo, reached through OpenRun: to a
-// temporary file first, then renamed over it, so a reader finds the old state or the new one and
-// never half of either. With no workers in s it removes the file, if there is one, and makes no
-// folder.
+// SaveState writes s to StateName in the main checkout repo, reached through OpenRun, with
+// writeRoot: to a temporary file first, then renamed over it, so a reader finds the old state or
+// the new one and never half of either. With no workers in s it removes the file, if there is one,
+// and makes no folder.
 func SaveState(repo string, s RunState) error {
 	rel := RunPath(StateName)
 	if len(s.Workers) == 0 {
@@ -72,26 +72,8 @@ func SaveState(repo string, s RunState) error {
 		return err
 	}
 	defer func() { _ = root.Close() }() // the file is written and renamed, or not, by then
-	tmp := rel + ".tmp"
-	if err := RemoveRun(root, repo, tmp); err != nil { // a run that died writing it left it
-		return err
-	}
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		return RunError(repo, tmp, err)
-	}
-	_, err = f.Write(append(b, '\n'))
-	if err == nil {
-		err = f.Sync() // on disk before the rename makes it the state
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = root.Rename(tmp, rel)
-	}
-	if err != nil {
-		_ = root.Remove(tmp) // the state stays as it was; the error says why
+	if err := writeRoot(root, rel, append(b, '\n'), 0o644); err != nil {
+		// The state stays as it was.
 		return fmt.Errorf("cannot write %s in %s: %w", rel, repo, RunError(repo, rel, err))
 	}
 	return nil

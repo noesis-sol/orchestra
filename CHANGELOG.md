@@ -80,6 +80,15 @@ All notable changes to orchestra are documented here. The format follows
   say). Such a record is taken as not set, and the file's MCP servers are
   read as before; a file that isn't JSON, or whose `mcpServers` is malformed,
   still stops the run with "Cannot read Claude Code's MCP config".
+- `orchestra init` and a run write `.orchestra/settings.json`,
+  `.gitattributes` and git's `info/exclude` to a temporary file beside each,
+  synced to disk, then renamed over it, as the run state already was, rather
+  than rewrite them in place. A full disk, an I/O error or a crash while
+  writing left the file empty or half written: your entries in `info/exclude`,
+  which git doesn't keep, were lost for good, and a broken `settings.json`
+  stopped the next run with `Unreadable settings`. Each file keeps its mode,
+  and one behind a symlink is still written where the link leads. In a
+  read-only folder the write now fails and leaves the file as it was.
 
 ## [0.4.0] - 2026-10-04
 

@@ -55,8 +55,8 @@ func TestSavingNoStateMakesNothing(t *testing.T) {
 	}
 }
 
-// A file left half written by a run that died is replaced; a file that isn't JSON is an error,
-// not an empty state.
+// A temporary file left half written by a run that died doesn't stand in the way; a file that
+// isn't JSON is an error, not an empty state.
 func TestStateFileLeftOrUnreadable(t *testing.T) {
 	repo := t.TempDir()
 	dir := filepath.Join(repo, Dir, RunName)

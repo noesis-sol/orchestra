@@ -134,7 +134,7 @@ func SaveSettings(repo string, s Settings) error {
 	if b, err = json.MarshalIndent(merged, "", "  "); err != nil {
 		return err
 	}
-	return os.WriteFile(SettingsPath(repo), append(b, '\n'), 0o644)
+	return writeFile(SettingsPath(repo), append(b, '\n'), 0o644)
 }
 
 // settingsKeys are the JSON keys of Settings' fields.

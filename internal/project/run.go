@@ -24,8 +24,8 @@ import (
 // removes the link and writes the file in its place.
 //
 // The files in folders the user controls (the settings, the worker prompt, the log, the reports,
-// git's info/exclude) stay on the plain os calls: no worker changes those, and the user may well
-// keep them behind a symlink of their own.
+// git's info/exclude) are reached by their paths, through any symlink (writeFile follows one too):
+// no worker changes those, and the user may well keep them behind a symlink of their own.
 
 // RunPath is the path of the file name in .orchestra/run/, relative to the checkout: the name to
 // give an os.Root opened by OpenRun.

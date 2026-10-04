@@ -60,7 +60,7 @@ func ApplyUnion(ctx context.Context, repo string, c Choice) (s Step, ok bool, er
 	if text != "" && !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
-	if err := os.WriteFile(p, []byte(text+unionLine+"\n"), 0o644); err != nil {
+	if err := writeFile(p, []byte(text+unionLine+"\n"), 0o644); err != nil {
 		return Step{}, true, err
 	}
 	return Step{Kind: StepDone, Label: label, Detail: "added " + unionLine + " to " + attributesName + ": with " + why +
