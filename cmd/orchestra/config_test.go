@@ -308,18 +308,6 @@ func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
 	}
 }
 
-// The exit codes are part of orchestra's interface (scripts and the skill rely on them).
-func TestExitCodes(t *testing.T) {
-	for name, pair := range map[string][2]int{
-		"ok": {dispatch.ExitOK, 0}, "setup": {dispatch.ExitSetup, 2}, "stuck": {dispatch.ExitStuck, 3}, "tool": {dispatch.ExitTool, 4},
-		"dirty": {dispatch.ExitDirty, 5}, "merge": {dispatch.ExitMerge, 6}, "interrupted": {dispatch.ExitInterrupted, 130},
-	} {
-		if pair[0] != pair[1] {
-			t.Errorf("%s = %d, want %d", name, pair[0], pair[1])
-		}
-	}
-}
-
 // A flag replaces its variable, so an invalid variable under a flag is no problem; the flags are
 // held to the variables' rules.
 func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {

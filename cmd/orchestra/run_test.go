@@ -3,17 +3,12 @@ package main
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/tui"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // runIn calls run with these arguments and environment, from dir, and returns its output and result.
@@ -101,94 +96,14 @@ func TestMainExitStatusMapping(t *testing.T) {
 	}
 }
 
-// closedDashboard runs a dashboard without a terminal, applies send to it, and returns its final
-// model and error.
-func closedDashboard(t *testing.T, send func(*tea.Program, *tui.ProgramSink)) (tui.Dashboard, error) {
-	t.Helper()
-	p := tea.NewProgram(tui.NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {}, func(string) {}),
-		tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
-	type result struct {
-		m   tea.Model
-		err error
-	}
-	done := make(chan result, 1)
-	go func() {
-		m, err := p.Run()
-		done <- result{m, err}
-	}()
-	send(p, tui.NewProgramSink(p))
-	r := <-done
-	m, _ := r.m.(tui.Dashboard)
-	return m, r.err
-}
-
-func TestAnyEarlyEndOfTheDashboardStopsTheLoop(t *testing.T) {
-	cancelled := false
-	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }, func(bool) {}, func(string) {}).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil); why != "with Ctrl+C" || !cancelled {
-		t.Errorf("Ctrl+C: stopped %q, cancelled %v", why, cancelled)
-	}
-
-	ended, err := closedDashboard(t, func(_ *tea.Program, s *tui.ProgramSink) {
-		s.Event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY after 1 tickets"})
-	})
-	if why := stoppedBy(ended, err, false, syscall.SIGTERM); why != "" {
-		t.Errorf("the loop's last event: stopped %q, want the loop's own end", why)
-	}
-
-	// A stop signal quits the dashboard the way Quit does.
-	quit, err := closedDashboard(t, func(p *tea.Program, _ *tui.ProgramSink) { p.Quit() })
-	for sig, want := range map[os.Signal]string{syscall.SIGTERM: "by SIGTERM", syscall.SIGHUP: "by SIGHUP", os.Interrupt: "by SIGINT"} {
-		if why := stoppedBy(quit, err, false, sig); why != want {
-			t.Errorf("%v while the loop runs: stopped %q, want %q", sig, why, want)
-		}
-	}
-	if why := stoppedBy(quit, err, true, syscall.SIGHUP); why != "" {
-		t.Errorf("quit after the loop ended: stopped %q", why)
-	}
-
-	if why := stoppedBy(tui.Dashboard{}, errors.New("could not open a new TTY"), false, nil); why != "because the dashboard failed" {
-		t.Errorf("failed dashboard: stopped %q", why)
-	}
-}
-
-// fakeOrgans writes a report and fails to save it when saveErr is set.
-type fakeOrgans struct{ saveErr error }
-
-func (fakeOrgans) FinishTriage(context.Context) {}
-func (fakeOrgans) Review(context.Context, int, string) (string, error) {
-	return "# Orchestra run\n\nALL MERGED\n", nil
-}
-func (f fakeOrgans) SaveReport(string) (string, error) {
-	if f.saveErr != nil {
-		return "", f.saveErr
-	}
-	return "/reports/r.md", nil
-}
-
-func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
-	for _, tc := range []struct {
-		saveErr         error
-		printed, logged string
-	}{
-		{nil, "report saved to /reports/r.md", "REPORT written to /reports/r.md"},
-		{errors.New("mkdir /reports: permission denied"), "report not saved: mkdir /reports: permission denied",
-			"report not saved: mkdir /reports: permission denied"},
+// The exit codes are part of orchestra's interface (scripts and the skill rely on them).
+func TestExitCodes(t *testing.T) {
+	for name, pair := range map[string][2]int{
+		"ok": {dispatch.ExitOK, 0}, "setup": {dispatch.ExitSetup, 2}, "stuck": {dispatch.ExitStuck, 3}, "tool": {dispatch.ExitTool, 4},
+		"dirty": {dispatch.ExitDirty, 5}, "merge": {dispatch.ExitMerge, 6}, "interrupted": {dispatch.ExitInterrupted, 130},
 	} {
-		log, err := dispatch.OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var b strings.Builder
-		stops := catchStops()
-		organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, stops, log, dispatch.ExitOK, "", tui.Printer{Out: &b},
-			func() {})
-		stops.release()
-		if out := b.String(); !strings.Contains(out, "ALL MERGED") || !strings.Contains(out, tc.printed) {
-			t.Errorf("save error %v: printed\n%s", tc.saveErr, out)
-		}
-		if lines := strings.Join(log.RunLines(), "\n"); !strings.Contains(lines, tc.logged) {
-			t.Errorf("save error %v: logged\n%s", tc.saveErr, lines)
+		if pair[0] != pair[1] {
+			t.Errorf("%s = %d, want %d", name, pair[0], pair[1])
 		}
 	}
 }

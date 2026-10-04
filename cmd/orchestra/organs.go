@@ -1,0 +1,64 @@
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tui"
+)
+
+// organs is what organPhase needs from the loop.
+type organs interface {
+	FinishTriage(ctx context.Context)
+	Review(ctx context.Context, code int, final string) (string, error)
+	SaveReport(report string) (string, error)
+}
+
+// organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
+// the run report. Ctrl+C, or another of stopSignals, skips whatever is left, and one that came
+// while the loop wound down skips it all; so does SIGTERM or SIGHUP at any time in the run. The
+// one after the signal that skipped it ends orchestra (see stopWatch.further).
+func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, code int, final string, out tui.Printer,
+	cancelOrgans func(),
+) {
+	if !c.Triage && !c.Review || stops.leaving() {
+		return
+	}
+	ctx, stop := stops.context(context.Background())
+	defer stop()
+	if ctx.Err() != nil {
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		cancelOrgans()
+	}()
+	if c.Triage {
+		out.Say("finishing triage…", "Finishing triage…")
+		orch.FinishTriage(ctx)
+	}
+	if !c.Review || ctx.Err() != nil {
+		return
+	}
+	out.Say("writing the run report with claude… (ctrl+c skips)", "Writing the run report with Claude… (Ctrl+C skips)")
+	report, err := orch.Review(ctx, code, final)
+	if err != nil {
+		if ctx.Err() == nil {
+			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
+			log.Line(time.Now(), msg)
+			out.Warn(msg)
+		}
+		return
+	}
+	out.Report(report)
+	path, err := orch.SaveReport(report)
+	if err != nil {
+		why := dispatch.FirstLine(err.Error())
+		log.Line(time.Now(), "report not saved: "+why)
+		out.Say("report not saved: "+why, "Report not saved: "+why)
+		return
+	}
+	log.Line(time.Now(), "REPORT written to "+path)
+	out.Say("report saved to "+tui.Tildify(path), "Report saved to "+tui.Tildify(path))
+}
