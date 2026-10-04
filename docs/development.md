@@ -8,7 +8,7 @@ Working on orchestra itself. Back to the [README](../README.md).
 scripts/check.sh
 ```
 
-`scripts/check.sh` is the full check: `go vet ./...`, the race tests (`go test -race ./...`, through [gotestsum](https://github.com/gotestyourself/gotestsum)) and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs gotestsum and golangci-lint with `go run` at pinned versions (v1.13.0 and v2.14.0), so a machine needs only Go; the first run downloads them.
+`scripts/check.sh` is the full check: `go vet ./...`, the race tests, shuffled (`go test -race -shuffle=<seed> ./...`, through [gotestsum](https://github.com/gotestyourself/gotestsum)) and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs gotestsum and golangci-lint with `go run` at pinned versions (v1.13.0 and v2.14.0), so a machine needs only Go; the first run downloads them.
 
 While iterating, `go test -short` runs a package without its slow tests, those that take over a second: the scenarios with real git in `internal/dispatch` (`gitRepo` skips them), the runs on a pseudo-terminal in `cmd/orchestra` (`openTerminal`), and the others, each skipped at its start. `go test -short ./internal/dispatch/...` takes a few seconds, against about 25 in full. `scripts/check.sh` never passes `-short`, so every test still runs before a ticket closes and before it merges. A new test that takes over a second starts the same way:
 
@@ -20,7 +20,16 @@ if testing.Short() {
 
 On macOS, a program a test has just written (a fake `claude`, `bd` or `herdr`) takes about 0.2 seconds to start the first time, against 0.01 seconds after, so a test that writes one for each of its cases is slow.
 
-A test that fails is run once more, on its own, and the check passes if it passes then, printing a line `FLAKY: <package> <test>` for it, such as `FLAKY: ./internal/tui TestInitFormKeepsOrTypesACustomConcurrency`, which orchestra warns of when it merges. A test that fails its rerun fails the check, and so, without a rerun, do more than three failed tests, a data race, a panic and a package that fails outside its tests (goleak's check in `TestMain`). A `FLAKY:` line is a bug to file and fix, not noise: the test passes alone but fails under load, such as several workers' checks at once, and the rerun only kept it from failing a merge. To reproduce one, run many copies of it at once, as orchestra-4wb.26 did with 12 copies of 500 runs each:
+The check runs the tests shuffled, to find a test that passes or fails only after another one: go test runs each package's tests in an order drawn from a seed, which the check picks anew each time and uses for every package. Each package's output starts with `-test.shuffle <seed>`, a failed check's output ends with `The tests ran in the order of -shuffle=<seed>`, and each `FLAKY:` line ends with `(-shuffle=<seed>)`. `-shuffle=<seed>` runs a package's tests in that order again, and `-run` keeps the order among the tests it picks, so a failure can be narrowed down to the test that leaves something behind:
+
+```
+go test -race -shuffle=2513478067 ./internal/dispatch
+go test -race -shuffle=2513478067 -run '^(TestA|TestB)$' ./internal/dispatch
+```
+
+The fuzz targets' seeds run after the tests, unshuffled. go test caches no shuffled run, so the check runs every test each time, even in a package that hasn't changed since the last check. While iterating, `go test -shuffle=on` (with `-short` too) runs the tests in a new order, printing each package's seed.
+
+A test that fails is run once more, on its own, and the check passes if it passes then, printing a line `FLAKY: <package> <test> (-shuffle=<seed>)` for it, such as `FLAKY: ./internal/tui TestInitFormKeepsOrTypesACustomConcurrency (-shuffle=2513478067)`, which orchestra warns of when it merges. A test that fails its rerun fails the check, and so, without a rerun, do more than three failed tests, a data race, a panic and a package that fails outside its tests (goleak's check in `TestMain`). A `FLAKY:` line is a bug to file and fix, not noise: the test passes alone but fails after another test or under load, such as several workers' checks at once, and the rerun only kept it from failing a merge. First run its package's tests in the line's order, as above: if the test fails then, the order is the cause. If it passes, reproduce it under load: run many copies of it at once, as orchestra-4wb.26 did with 12 copies of 500 runs each:
 
 ```
 go test -c -race -o /tmp/tui.test ./internal/tui

@@ -46,6 +46,12 @@ All notable changes to orchestra are documented here. The format follows
   ticket IDs can be run, the Herdr agent name made from a ticket's ID,
   `herdr agent get`'s output and `bd list --json`. The check runs their seeds as ordinary tests;
   docs/development.md says how to fuzz them.
+- orchestra's own check, `scripts/check.sh`, runs the tests shuffled
+  (`go test -shuffle`), in a new order each time, to find a test that passes
+  or fails only after another. Its `FLAKY:` lines, and the end of a failed
+  check's output, name the order's seed, and docs/development.md says how to
+  run a package's tests in that order again. go test caches no shuffled run,
+  so the check runs every test each time.
 
 ### Fixed
 
