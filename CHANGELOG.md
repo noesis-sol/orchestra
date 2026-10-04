@@ -55,6 +55,16 @@ All notable changes to orchestra are documented here. The format follows
   `docs/User Guide.md` read back as `docs/User`, taken for a new file in
   `docs/`, and the ticket could start beside one editing the real file.
   Predictions already cached with commas read as before.
+- Ctrl+C while an answered ticket's earlier worker is being told to carry
+  on no longer loses the ticket. The worker has the message by then, and
+  may close the ticket after orchestra has exited, but the ticket was no
+  longer waiting on its question, nor counted as running: it wasn't
+  labelled `unmerged`, saved in `.orchestra/run/state.json` or named on the
+  INTERRUPTED line, so no later run merged it, and the tickets it blocks
+  started without its code. It is now left running, as an adopted worker's
+  ticket is: labelled, carried over and named. Ctrl+C or a stop before the
+  worker is told anything leaves the ticket waiting on its question, saved
+  with it for the next run, which tells the worker the answer is in.
 
 ## [0.4.0] - 2026-10-04
 

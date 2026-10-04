@@ -12,8 +12,9 @@ import (
 )
 
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
-// ticket then stays listed as active (still being worked on). It sets how to how the worker
-// settled, for the hold for the environment. A panic in it is such a reason: PANIC.
+// ticket then stays listed as active (still being worked on), or, back from a question before its
+// earlier worker is told anything, asked. It sets how to how the worker settled, for the hold for
+// the environment. A panic in it is such a reason: PANIC.
 func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopReason) {
 	c := o.cfg
 	id, br := t.ID, "wt/"+t.ID
@@ -24,8 +25,10 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			o.clearActive(id)
 		}
 	}()
+	// Back from a question, the ticket stays asked, for a stop or Ctrl+C to leave it as it was (see
+	// leaveAsked, saveCarried), until its earlier worker is told to carry on or adopted (see takeOn),
+	// or a new worker is to take it.
 	earlier, asked := o.asked(id)
-	o.setAsked(id, nil) // back from a question: set aside again, it stays out
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
@@ -68,10 +71,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
 			id, st, br)
 	default:
-		if asked && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, earlier) {
-			o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
-				id, earlier.tab, earlier.told())
-			return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
+		if asked && (st == StateIdle || st == StateDone) {
+			// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
+			// ticket from now on, as one adopted does.
+			o.takeOn(t, earlier)
+			if o.resume(ctx, id, agent, earlier) {
+				o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
+					id, earlier.tab, earlier.told())
+				return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
+			}
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
@@ -85,6 +93,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		}
 		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
 	}
+	o.setAsked(id, nil) // back from a question: set aside again once this worker settles, it stays out
 
 	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
 	wt, conflicts, s := o.prepareWorktree(keep, id, br)
@@ -197,19 +206,31 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState, adopted time.Time,
 	how *settling) *stopReason {
 	id := t.ID
-	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
+	base := o.takeOn(t, w)
 	o.footprintWorktree(id, w.wt)
 	head := o.checkout.Head(ctx, o.cfg.Repo, "wt/"+id)
-	started := time.Now()
-	base := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: started}
-	o.setActive(base)
 	running := base
 	running.Agent = st
 	o.status(running)
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.
-	return o.conclude(ctx, t, agent, w.tab, w.wt, head, started, w.hooks, adopted, o.newWatcher(w.wt, base).report, how)
+	return o.conclude(ctx, t, agent, w.tab, w.wt, head, base.Started, w.hooks, adopted,
+		o.newWatcher(w.wt, base).report, how)
+}
+
+// takeOn makes the worker an asked ticket t left in its tab, w, the ticket's again, as it is told to
+// carry on or adopted: placed, and active from now on, and no longer asked. A stop or Ctrl+C from
+// then on leaves the ticket running, labelled (see leaveRunning) and carried over to the next run
+// (see saveCarried), as its worker may close it once orchestra has gone. It returns the ticket's
+// Status.
+func (o *Loop) takeOn(t Ticket, w askedWorker) Status {
+	id := t.ID
+	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
+	st := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()}
+	o.setActive(st)
+	o.setAsked(id, nil) // back from a question: set aside again once it settles, it stays out
+	return st
 }
 
 // adoptAsked takes on the worker an asked ticket left in its tab, which claimed the ticket again or
@@ -227,9 +248,9 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 			o.clearActive(id)
 		}
 	}()
-	// Active from now on, so a stop or Ctrl+C before it settles leaves it labelled (see leaveRunning):
-	// it is no longer asked.
-	o.setActive(Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()})
+	// Its worker's from now on, so a stop or Ctrl+C before it settles leaves it labelled and carried
+	// over: it is no longer asked.
+	o.takeOn(t, w)
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
