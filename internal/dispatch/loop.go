@@ -284,7 +284,9 @@ func (o *Loop) markFinishing(id, what string) func() {
 	}
 }
 
-// activeList returns the tickets being worked on, oldest first.
+// activeList returns the tickets being worked on, oldest first; those started at the same time by
+// ticket, so the lines, state.json and the review that list them don't follow map order (inside a
+// synctest bubble the tickets started in one step share their start time).
 func (o *Loop) activeList() []Status {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -292,12 +294,17 @@ func (o *Loop) activeList() []Status {
 	for _, st := range o.active {
 		l = append(l, st)
 	}
-	sort.Slice(l, func(i, j int) bool { return l[i].Started.Before(l[j].Started) })
+	sort.Slice(l, func(i, j int) bool {
+		if !l[i].Started.Equal(l[j].Started) {
+			return l[i].Started.Before(l[j].Started)
+		}
+		return l[i].Ticket < l[j].Ticket
+	})
 	return l
 }
 
-// Running returns the tickets being worked on, oldest first: after an interrupt, those whose
-// workers were left running.
+// Running returns the tickets being worked on, oldest first and those started at the same time by
+// ticket: after an interrupt, those whose workers were left running.
 func (o *Loop) Running() []Status { return o.activeList() }
 
 // Finishing returns what the workers are doing that a stop doesn't cut short, by ticket: after an

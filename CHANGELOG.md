@@ -54,6 +54,11 @@ All notable changes to orchestra are documented here. The format follows
   as the older one would; it compared IDs as text and proposed `e.10` blocks
   `e.2`. bd's `created_at` counts whole seconds, and the tickets of a planned
   feature are filed together. Hash IDs still compare as text.
+- Workers started at the same instant are listed by ticket ID, as the
+  dashboard lists them, in the INTERRUPTED and quit lines, the order tickets
+  left running are labelled in, `.orchestra/run/state.json` and the run
+  review's input. They followed Go's random map order and could change places
+  from one listing to the next.
 - An agent that `herdr agent get` shows without an `agent_status` no longer
   reads as gone. A Herdr that renamed or dropped that field would have made
   every live worker look gone, and the run would have settled workers still
