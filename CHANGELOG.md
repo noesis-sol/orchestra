@@ -150,6 +150,10 @@ All notable changes to orchestra are documented here. The format follows
   and a key typed before huh had moved the focus went to the field just left
   (`must be a whole number from 1 to 16 (got '')`, or the form never ended).
   They now type each key once the screen shows the field it is meant for.
+- A terminal test that fails before orchestra exits no longer leaves it
+  running: the test stops orchestra and waits for it before closing its
+  terminal and removing its repository, so the failure isn't followed by a
+  data race on the closed terminal, blamed on whichever test runs then.
 
 ## [0.4.0] - 2026-10-04
 

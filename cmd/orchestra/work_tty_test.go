@@ -31,7 +31,8 @@ func (s *screen) cut(text string) {
 // runOnTerminal starts orchestra with these arguments in a repository set up for it, inside a
 // Herdr pane, without notifications, triage or the run report, on a pseudo-terminal: its input and
 // output. It returns the terminal, the repository, and what waits for orchestra to exit, and for the
-// screen to show all it wrote, with its exit code and stderr.
+// screen to show all it wrote, with its exit code and stderr. orchestra still running as the test
+// ends is stopped.
 func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo string, exit func() (int, string)) {
 	t.Helper()
 	repo = configFixture(t, `{"concurrent": 1}`)
@@ -55,11 +56,25 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 		}
 	}()
 	var errOut strings.Builder
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
+	ended := make(chan struct{}) // closed once run has returned
 	go func() {
-		err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, tty, tty, &errOut)
+		defer close(ended)
+		err := run(ctx, append([]string{"orchestra"}, args...), os.Getenv, tty, tty, &errOut)
 		done <- exitOf(err)
 	}()
+	// A test that ends before orchestra exits, as one that fails a wait does, stops orchestra and waits
+	// for it before the terminal closes and the environment, the working directory and the repository
+	// go: orchestra still uses them. Registered after them, this cleanup runs first.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-ended:
+		case <-time.After(patience):
+			t.Errorf("orchestra didn't stop as the test ended; the terminal:\n%s", term.screen.String())
+		}
+	})
 	return term, repo, func() (int, string) {
 		t.Helper()
 		var code int
