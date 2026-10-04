@@ -1,5 +1,5 @@
-// Command orchestra works through a Beads backlog one ticket at a time, handing each ticket to a
-// coding agent in its own Herdr tab and git worktree.
+// Command orchestra works through a Beads backlog, as many tickets at once as --concurrent allows,
+// handing each ticket to a coding agent in its own Herdr tab and git worktree.
 //
 // Each ticket gets branch wt/<ticket>, created from the current branch of the main checkout, in
 // $WT_ROOT/<ticket>. Beads resolves to the main checkout's database from inside a worktree, so

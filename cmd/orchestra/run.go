@@ -203,8 +203,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--mcp names] [--force]\n"+
 			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
 			"       orchestra plan [--apply]\n\n"+
-			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets) one ticket at a time, "+
-			"one worker (a coding agent) per Herdr tab and git worktree.\n"+
+			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
+			"as --concurrent allows, one worker (a coding agent) per Herdr tab and git worktree.\n"+
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
 			"In a terminal, without --feature, --ticket, --tickets or -plain, it first asks which: "+
 			"the current tickets, or a new feature you describe.\n\n")
