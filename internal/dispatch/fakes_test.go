@@ -80,7 +80,7 @@ func (b *fakeBeads) link(id, on, typ string) {
 	b.links[id] = append(b.links[id], fakeLink{on, typ})
 }
 
-func (b *fakeBeads) set(id, status string) {
+func (b *fakeBeads) set(id string, status TicketStatus) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.tickets[id].Status = status
@@ -158,7 +158,7 @@ func (b *fakeBeads) Show(ctx context.Context, id string) (Ticket, error) {
 	return show, nil
 }
 
-func (b *fakeBeads) Status(ctx context.Context, id string) (string, error) {
+func (b *fakeBeads) Status(ctx context.Context, id string) (TicketStatus, error) {
 	t, err := b.Show(ctx, id)
 	return t.Status, err
 }

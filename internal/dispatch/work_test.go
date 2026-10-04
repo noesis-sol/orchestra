@@ -10,7 +10,7 @@ import (
 )
 
 func TestOutcomes(t *testing.T) {
-	for status, want := range map[string]outcome{
+	for status, want := range map[TicketStatus]outcome{
 		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,
 		"unknown": outcomeUnreadable, "open": outcomeUnfinished, "blocked": outcomeUnfinished,
 	} {

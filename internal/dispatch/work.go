@@ -17,7 +17,7 @@ import (
 // the environment. A panic in it is such a reason: PANIC.
 func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopReason) {
 	c := o.cfg
-	id, br := t.ID, "wt/"+t.ID
+	id, br := t.ID, branchOf(t.ID)
 	defer func() {
 		if p := recover(); p != nil {
 			stop = o.panicStop(id, p)
@@ -137,7 +137,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.earlierNote(ctx, br, wt) + o.scopeNote(id) +
 		o.budgetNote()
 	launch := ""
-	if c.LaunchPrompt && c.AgentKind == "claude" {
+	if c.LaunchPrompt && c.ClaudeWorkers() {
 		launch, err = project.WriteLaunchPrompt(wt, id, prompt)
 		if e := escapeOf(err); e != nil {
 			return o.setAsideEscaped(keep, t, wt, e)
@@ -150,7 +150,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
 	var report []string
-	if o.reporter != nil && c.AgentKind == "claude" {
+	if o.reporter != nil && c.ClaudeWorkers() {
 		report, err = o.reporter.ReportArgs(wt)
 		if e := escapeOf(err); e != nil {
 			return o.setAsideEscaped(keep, t, wt, e)
@@ -208,7 +208,7 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 	id := t.ID
 	base := o.takeOn(t, w)
 	o.footprintWorktree(id, w.wt)
-	head := o.checkout.Head(ctx, o.cfg.Repo, "wt/"+id)
+	head := o.checkout.Head(ctx, o.cfg.Repo, branchOf(id))
 	running := base
 	running.Agent = st
 	o.status(running)
@@ -265,7 +265,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
 	}
 	switch {
-	case t.Status != "closed" && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, w):
+	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, w):
 		o.info("  %s's worker in tab %s was told %s and carries on; adopting it", id, w.tab, w.told())
 		st = StateWorking
 	case ctx.Err() != nil:
@@ -322,7 +322,7 @@ func (w askedWorker) told() string {
 // settled, as work does.
 func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head string, started time.Time, hooks bool,
 	since time.Time, report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
-	id, br := t.ID, "wt/"+t.ID
+	id, br := t.ID, branchOf(t.ID)
 	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), hooks, since, report)
 	if stop != nil {
 		return stop
@@ -335,10 +335,10 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 	keep := context.WithoutCancel(ctx)
 	info, showErr := o.tickets.Show(keep, id)
 	*how = settledSlow
-	if q := OpenQuestion(info); q != nil && info.Status != "closed" {
+	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
 		o.markAside(id)
 		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: hooks})
-		if info.Status != "open" { // back in the queue once answered
+		if info.Status != StatusOpen { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 					"  REOPEN_FAILED: %s stays %s, so it won't come back once %s is answered%s; "+
@@ -378,7 +378,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; "+
 			"deferred for review (worktree %s).", tab, s, wt))
 		why := fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt)
-		aside := "still " + s + ", noted for review"
+		aside := "still " + string(s) + ", noted for review"
 		if err := o.deferAside(keep, id, why); err != nil {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: aside, Text: fmt.Sprintf(
 				"  DEFER_FAILED: %s still %s, and bd could not defer it%s; "+
@@ -405,15 +405,15 @@ const (
 	outcomeUnfinished // any other status: note it and defer for review
 )
 
-func outcomeOf(status string) outcome {
+func outcomeOf(status TicketStatus) outcome {
 	switch status {
-	case "closed":
+	case StatusClosed:
 		return outcomeClosed
-	case "deferred":
+	case StatusDeferred:
 		return outcomeDeferred
-	case "in_progress":
+	case StatusInProgress:
 		return outcomePaused
-	case "unknown":
+	case StatusUnknown:
 		return outcomeUnreadable
 	}
 	return outcomeUnfinished

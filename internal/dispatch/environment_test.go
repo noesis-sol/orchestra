@@ -29,7 +29,7 @@ func (h *harness) dispatched() []string {
 	return ids
 }
 
-func (h *harness) statusOf(id string) string {
+func (h *harness) statusOf(id string) TicketStatus {
 	st, _ := h.beads.Status(context.Background(), id)
 	return st
 }
@@ -89,7 +89,7 @@ func TestOneWorkerFailingAtOnceChangesNothing(t *testing.T) {
 		if code != ExitOK {
 			t.Errorf("exit code %d, want %d:\n%s", code, ExitOK, h.logged())
 		}
-		for id, want := range map[string]string{"A": "deferred", "B": "closed", "C": "deferred"} {
+		for id, want := range map[string]TicketStatus{"A": "deferred", "B": "closed", "C": "deferred"} {
 			if st := h.statusOf(id); st != want {
 				t.Errorf("%s is %s, want %s", id, st, want)
 			}

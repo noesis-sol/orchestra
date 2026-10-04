@@ -50,9 +50,9 @@ func (readyTickets) Descendants(context.Context, string) ([]Ticket, error) { ret
 func (readyTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "open"}, nil
 }
-func (readyTickets) Status(ctx context.Context, id string) (string, error)      { return "open", nil }
-func (readyTickets) Describe(ctx context.Context, id string) string             { return id }
-func (readyTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }
+func (readyTickets) Status(ctx context.Context, id string) (TicketStatus, error) { return "open", nil }
+func (readyTickets) Describe(ctx context.Context, id string) string              { return id }
+func (readyTickets) Closed(ctx context.Context, label string) ([]Ticket, error)  { return nil, nil }
 
 type cleanCheckout struct{}
 
@@ -122,7 +122,7 @@ func (brokenBd) Descendants(context.Context, string) ([]Ticket, error) { return 
 func (brokenBd) Show(ctx context.Context, id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "unknown"}, errBd
 }
-func (brokenBd) Status(ctx context.Context, id string) (string, error)        { return "unknown", errBd }
+func (brokenBd) Status(ctx context.Context, id string) (TicketStatus, error)  { return "unknown", errBd }
 func (brokenBd) Describe(ctx context.Context, id string) string               { return id }
 func (brokenBd) AppendNotes(ctx context.Context, id, note string) error       { return errBd }
 func (brokenBd) Defer(ctx context.Context, id, reason string) error           { return errBd }

@@ -186,7 +186,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 	// worker (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
 	// has them.
 	fixed := mcpArgs[:len(mcpArgs):len(mcpArgs)]
-	if c.AgentKind == "claude" {
+	if c.ClaudeWorkers() {
 		fixed = append(fixed, c.WorkerArgs...)
 	}
 	startArgs := func() []string {
@@ -343,7 +343,7 @@ func (o *Loop) claimed(ctx context.Context, id string) bool {
 		o.log.Raw("", err)
 		return false
 	}
-	return st != "open"
+	return st != StatusOpen
 }
 
 // deliverPrompt sends the worker its prompt and confirms it started on it, returning as soon as it

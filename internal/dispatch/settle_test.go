@@ -13,7 +13,7 @@ import (
 
 func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 	cases := []struct {
-		status string
+		status TicketStatus
 		idle   time.Duration
 		wait   bool
 	}{

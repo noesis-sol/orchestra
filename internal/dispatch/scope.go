@@ -87,7 +87,7 @@ func (o *Loop) parentDone(ctx context.Context, id string, running map[string]boo
 		return
 	}
 	parent, err := o.tickets.Show(ctx, p)
-	if err != nil || parent.Status == "closed" || !o.excluded(parent) {
+	if err != nil || parent.Status == StatusClosed || !o.excluded(parent) {
 		return
 	}
 	parents, err := o.openParents(ctx, running)
@@ -220,7 +220,7 @@ func (v scopeView) left(ctx context.Context, subs []Ticket) (scopeLeft, error) {
 	}
 	in := scopeIDs(root, subs)
 	// A ticket is done once closed and merged; a parent waits for its children to be.
-	done := func(t Ticket) bool { return t.Status == "closed" && v.unmerged(t.ID) == "" }
+	done := func(t Ticket) bool { return t.Status == StatusClosed && v.unmerged(t.ID) == "" }
 	openKids := map[string]bool{}
 	for _, t := range subs {
 		if !done(t) {
@@ -287,9 +287,9 @@ func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool,
 		return "set aside in this run"
 	}
 	switch t.Status {
-	case "deferred":
+	case StatusDeferred:
 		return "deferred"
-	case "in_progress":
+	case StatusInProgress:
 		return "in progress"
 	}
 	for _, d := range t.Dependencies {
@@ -300,7 +300,7 @@ func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool,
 		if !in[d.ID] {
 			where = " outside the scope"
 		}
-		if d.Status != "closed" {
+		if d.Status != StatusClosed {
 			return "blocked by " + d.ID + where
 		}
 		if why := v.unmerged(d.ID); why != "" {

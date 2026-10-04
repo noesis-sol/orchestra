@@ -155,11 +155,13 @@ func livePlan(t *testing.T) {
 // can't use it).
 type liveTickets struct{ repo string }
 
-func (l liveTickets) Ready(context.Context, string) ([]Ticket, error)            { return nil, nil }
-func (l liveTickets) Unclosed(ctx context.Context) ([]Ticket, error)             { return nil, nil }
-func (l liveTickets) Descendants(context.Context, string) ([]Ticket, error)      { return nil, nil }
-func (l liveTickets) Show(ctx context.Context, id string) (Ticket, error)        { return Ticket{ID: id}, nil }
-func (l liveTickets) Status(ctx context.Context, id string) (string, error)      { return "unknown", nil }
+func (l liveTickets) Ready(context.Context, string) ([]Ticket, error)       { return nil, nil }
+func (l liveTickets) Unclosed(ctx context.Context) ([]Ticket, error)        { return nil, nil }
+func (l liveTickets) Descendants(context.Context, string) ([]Ticket, error) { return nil, nil }
+func (l liveTickets) Show(ctx context.Context, id string) (Ticket, error)   { return Ticket{ID: id}, nil }
+func (l liveTickets) Status(ctx context.Context, id string) (TicketStatus, error) {
+	return "unknown", nil
+}
 func (l liveTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }
 func (l liveTickets) Describe(ctx context.Context, id string) string {
 	out, _ := command.Output(context.Background(), 0, l.repo, "bd", "show", id)

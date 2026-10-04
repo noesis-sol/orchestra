@@ -38,7 +38,8 @@ func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
+		if t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
+			!dispatch.HasLabel(t, dispatch.HumanLabel) {
 			open = append(open, t)
 		}
 	}
@@ -58,7 +59,7 @@ func byPriority(ts []dispatch.Ticket) {
 }
 
 // parseList returns the tickets from 'bd list --json'; with status, only those in it.
-func parseList(raw []byte, status string) ([]dispatch.Ticket, error) {
+func parseList(raw []byte, status dispatch.TicketStatus) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
 	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
 		return nil, err
@@ -82,7 +83,8 @@ func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == "open" && !slices.Contains(excludeTypes, t.IssueType) && !dispatch.HasLabel(t, dispatch.HumanLabel) {
+		if t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
+			!dispatch.HasLabel(t, dispatch.HumanLabel) {
 			open = append(open, t)
 		}
 	}
@@ -169,7 +171,7 @@ func (b Tracker) ready(ctx context.Context, extra ...string) ([]dispatch.Ticket,
 // Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
 // carries bd's stderr.
 func (b Tracker) Closed(ctx context.Context, label string) ([]dispatch.Ticket, error) {
-	return b.list(ctx, "closed", "--status", "closed", "--label", label)
+	return b.list(ctx, dispatch.StatusClosed, "--status", "closed", "--label", label)
 }
 
 // Unclosed returns every ticket that isn't closed, without its text: what the loop needs is each
@@ -215,7 +217,7 @@ func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []
 
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
 // ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
-func (b Tracker) list(ctx context.Context, status string, args ...string) ([]dispatch.Ticket, error) {
+func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ...string) ([]dispatch.Ticket, error) {
 	args = append([]string{"list", "--json", "--limit", "0"}, args...)
 	out, runErr := command.Output(ctx, command.ReadLimit, b.Repo, "bd", args...)
 	tickets, err := parseList([]byte(out), status)
@@ -267,19 +269,19 @@ func parseTicket(raw []byte) (dispatch.Ticket, bool) {
 	return dispatch.Ticket{}, false
 }
 
-// Show returns the ticket with its dependencies. If it cannot be read, Status is "unknown" and the
+// Show returns the ticket with its dependencies. If it cannot be read, Status is StatusUnknown and the
 // error says why.
 func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
 	out, err := command.Output(ctx, command.ReadLimit, b.Repo, "bd", "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	if !ok {
-		return dispatch.Ticket{ID: id, Status: "unknown"}, unreadable(id, out, err)
+		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, unreadable(id, out, err)
 	}
 	return t, nil
 }
 
-// Status returns the ticket's status. If it cannot be read, it is "unknown" and the error says why.
-func (b Tracker) Status(ctx context.Context, id string) (string, error) {
+// Status returns the ticket's status. If it cannot be read, it is StatusUnknown and the error says why.
+func (b Tracker) Status(ctx context.Context, id string) (dispatch.TicketStatus, error) {
 	t, err := b.Show(ctx, id)
 	return t.Status, err
 }

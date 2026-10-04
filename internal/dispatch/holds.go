@@ -109,7 +109,7 @@ func showBlockers(ctx context.Context, tickets Tickets, id string) ([]string, er
 	switch {
 	case err != nil:
 		return nil, err
-	case info.Status == "unknown":
+	case info.Status == StatusUnknown:
 		return nil, fmt.Errorf("bd show %s: its status is unknown", id)
 	}
 	var ids []string
@@ -164,7 +164,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 // merged.
 func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, id string) string {
 	rev := c.Base
-	if br := "wt/" + id; worktrees.HasBranch(ctx, c.Repo, br) {
+	if br := branchOf(id); worktrees.HasBranch(ctx, c.Repo, br) {
 		rev = br
 	}
 	if !merger.IsAncestor(ctx, c.Repo, rev, c.Base) {

@@ -163,11 +163,11 @@ func allNothing(c Config, unclosed []Ticket, unmerged int, ready []Ticket, paren
 			n.HeldBlocked++
 		case HasLabel(t, HumanLabel):
 			n.Questions++
-		case t.Status == "open" || t.Status == "blocked":
+		case t.Status == StatusOpen || t.Status == StatusBlocked:
 			n.Waiting++
-		case t.Status == "in_progress":
+		case t.Status == StatusInProgress:
 			n.InProgress++
-		case t.Status == "deferred":
+		case t.Status == StatusDeferred:
 			n.Deferred++
 		default:
 			n.Other++

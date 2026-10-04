@@ -45,11 +45,11 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 			continue
 		}
 		switch t.Status {
-		case "deferred":
+		case StatusDeferred:
 			o.askedDeferred(ctx, t, w)
-		case "closed":
+		case StatusClosed:
 			adopt = append(adopt, o.answeredInTab(t, w))
-		case "in_progress":
+		case StatusInProgress:
 			st, err := o.earlierState(ctx, id, w, 1)
 			if ctx.Err() != nil {
 				return adopt, nil
@@ -79,7 +79,7 @@ func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
 	o.setParent(id, t.Parent)
 	what := "claimed again"
 	switch {
-	case t.Status == "closed":
+	case t.Status == StatusClosed:
 		what = "closed"
 	case w.question == "":
 		what = "at work again"
@@ -136,9 +136,9 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 			continue
 		}
 		switch t.Status {
-		case "deferred":
+		case StatusDeferred:
 			o.askedDeferred(ctx, t, w)
-		case "closed":
+		case StatusClosed:
 			kind := "ASKED_UNMERGED"
 			if w.question == "" {
 				kind = "LEFT_UNMERGED" // carried over from the last run, which left it running
@@ -151,7 +151,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 			}
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed, but the run ended before merging it",
 				Text: text})
-		case "in_progress":
+		case StatusInProgress:
 			o.mu.Lock()
 			labelled := o.labelled[id]
 			o.mu.Unlock()

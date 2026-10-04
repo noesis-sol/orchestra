@@ -4,14 +4,14 @@ import "encoding/json"
 
 // Ticket is a Beads issue as the loop sees it: status, priority, labels and what it depends on.
 type Ticket struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Status       string   `json:"status"`
-	IssueType    string   `json:"issue_type"` // task, bug, feature, epic, …
-	Priority     *int     `json:"priority"`
-	CreatedAt    string   `json:"created_at"` // RFC 3339, so older sorts first
-	Labels       []string `json:"labels"`
-	Dependencies []Ticket `json:"dependencies"` // from bd show; each carries its status and labels
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Status       TicketStatus `json:"status"`
+	IssueType    string       `json:"issue_type"` // task, bug, feature, epic, …
+	Priority     *int         `json:"priority"`
+	CreatedAt    string       `json:"created_at"` // RFC 3339, so older sorts first
+	Labels       []string     `json:"labels"`
+	Dependencies []Ticket     `json:"dependencies"` // from bd show; each carries its status and labels
 	// DependencyType is how a dependency links to the ticket (blocks, related, parent-child,
 	// discovered-from); set only on the entries of Dependencies.
 	DependencyType string `json:"dependency_type"`
@@ -29,6 +29,19 @@ type Ticket struct {
 	Notes              string          `json:"notes"`
 	Metadata           json.RawMessage `json:"metadata"` // an object, or one encoded as a string
 }
+
+// TicketStatus is a ticket's status as Beads stores it, or StatusUnknown when bd can't say.
+type TicketStatus string
+
+// The statuses a ticket can have.
+const (
+	StatusOpen       TicketStatus = "open"
+	StatusInProgress TicketStatus = "in_progress"
+	StatusBlocked    TicketStatus = "blocked"
+	StatusDeferred   TicketStatus = "deferred"
+	StatusClosed     TicketStatus = "closed"
+	StatusUnknown    TicketStatus = "unknown" // bd could not show the ticket; not a status Beads has
+)
 
 // HumanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as
 // its own ticket that blocks theirs; the orchestrator never dispatches it.
@@ -48,7 +61,7 @@ func HasLabel(t Ticket, label string) bool {
 // counts: a related or parent-child link to a question doesn't hold the ticket out of bd ready.
 func OpenQuestion(t Ticket) *Ticket {
 	for i, d := range t.Dependencies {
-		if d.DependencyType == "blocks" && d.Status != "closed" && HasLabel(d, HumanLabel) {
+		if d.DependencyType == "blocks" && d.Status != StatusClosed && HasLabel(d, HumanLabel) {
 			return &t.Dependencies[i]
 		}
 	}

@@ -96,7 +96,7 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 // UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
 	c := o.cfg
-	br := "wt/" + id
+	br := branchOf(id)
 	t, err := o.showTries(ctx, id)
 	if err != nil {
 		o.info("  %s, carried over from the last run, is dropped: bd can't show it%s", id, because(err))
@@ -106,7 +106,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 		o.info("  %s, carried over from the last run, is dropped: its worktree %s is gone", id, w.wt)
 		return false
 	}
-	if t.Status == "closed" && o.merger.IsAncestor(ctx, c.Repo, br, c.Base) {
+	if t.Status == StatusClosed && o.merger.IsAncestor(ctx, c.Repo, br, c.Base) {
 		if commit := o.merger.CommitNamingOn(ctx, c.Repo, br, id); commit != "" {
 			o.info("  %s, carried over from the last run, is dropped: %s is on %s already (%s)", id, br, c.Base, commit)
 			return false
@@ -121,7 +121,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	if err != nil {
 		o.log.Raw("", err) // read again as the ticket is followed (followAsked) or comes back (work)
 	}
-	if t.Status == "in_progress" && err == nil && st == StateGone {
+	if t.Status == StatusInProgress && err == nil && st == StateGone {
 		o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
 			"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
 			w.tab, w.after(), w.wt))

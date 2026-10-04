@@ -39,7 +39,7 @@ const noFeature = "No feature was filed; nothing to run."
 // is a Claude Code session, so it needs claude, and a run whose workers are another agent may have
 // no Claude Code to talk to.
 func interviewOff(c options) string {
-	if c.AgentKind != "claude" {
+	if !c.ClaudeWorkers() {
 		return "the workers' agent is " + c.AgentKind
 	}
 	return organ.Unavailable("claude")

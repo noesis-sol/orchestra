@@ -343,7 +343,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 	// config; one this machine can't give them is for the maintainer to fix before they start.
 	switch {
 	case settings.MCPServers == nil:
-	case c.AgentKind != "claude": // only named: the loop says they aren't passed to such workers
+	case !c.ClaudeWorkers(): // only named: the loop says they aren't passed to such workers
 		named := []mcp.Server{}
 		for _, name := range *settings.MCPServers {
 			named = append(named, mcp.Server{Name: name})
@@ -460,7 +460,7 @@ func scopeProblem(ctx context.Context, tickets interface {
 	switch {
 	case err != nil:
 		return fmt.Sprintf("Cannot read ticket %s (--ticket): %s", id, strings.Join(strings.Fields(err.Error()), " "))
-	case t.Status == "closed":
+	case t.Status == dispatch.StatusClosed:
 		return fmt.Sprintf(
 			"Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
 	case dispatch.HasLabel(t, dispatch.HumanLabel):

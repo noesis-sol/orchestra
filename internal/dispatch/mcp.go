@@ -13,7 +13,7 @@ const mcpUnchosen = "workers load every MCP server Claude Code finds on this mac
 // MCPWarning is the warning a run gives once about its workers' MCP servers, or "" for none: a
 // project that hasn't chosen them leaves Claude workers every server Claude Code finds.
 func (c Config) MCPWarning() string {
-	if c.MCP == nil && c.AgentKind == "claude" {
+	if c.MCP == nil && c.ClaudeWorkers() {
 		return mcpUnchosen
 	}
 	return ""
@@ -22,7 +22,7 @@ func (c Config) MCPWarning() string {
 // mcpLabel names the MCP servers workers get, for the START line.
 func (c Config) mcpLabel() string {
 	switch {
-	case c.AgentKind != "claude":
+	case !c.ClaudeWorkers():
 		return "not passed to " + c.AgentKind + " workers"
 	case c.MCP == nil:
 		return "all, not configured"
@@ -44,7 +44,7 @@ func (o *Loop) sayMCP() {
 	switch {
 	case c.MCPWarning() != "":
 		o.emit(Event{Kind: EvInfo, Text: "  MCP: " + c.MCPWarning()})
-	case c.MCP != nil && c.AgentKind != "claude":
+	case c.MCP != nil && !c.ClaudeWorkers():
 		o.info("  MCP: the servers in mcp_servers aren't passed to %s workers, only to Claude ones", c.AgentKind)
 	}
 }
@@ -56,7 +56,7 @@ func (o *Loop) sayMCP() {
 func (o *Loop) mcpArgs(wt string) ([]string, error) {
 	c := o.cfg
 	switch {
-	case c.MCP == nil || c.AgentKind != "claude":
+	case c.MCP == nil || !c.ClaudeWorkers():
 		return nil, nil
 	case len(*c.MCP) == 0:
 		return []string{"--strict-mcp-config"}, nil

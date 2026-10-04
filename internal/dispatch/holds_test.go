@@ -25,7 +25,7 @@ func (f fakeTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	}
 	return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: not found", id)
 }
-func (f fakeTickets) Status(ctx context.Context, id string) (string, error) {
+func (f fakeTickets) Status(ctx context.Context, id string) (TicketStatus, error) {
 	t, err := f.Show(ctx, id)
 	return t.Status, err
 }

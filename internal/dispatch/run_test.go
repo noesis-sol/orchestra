@@ -104,7 +104,7 @@ func (deferringTickets) Descendants(context.Context, string) ([]Ticket, error) {
 func (deferringTickets) Show(ctx context.Context, id string) (Ticket, error) {
 	return Ticket{ID: id, Status: "deferred"}, nil
 }
-func (deferringTickets) Status(ctx context.Context, id string) (string, error) {
+func (deferringTickets) Status(ctx context.Context, id string) (TicketStatus, error) {
 	return "deferred", nil
 }
 func (deferringTickets) Closed(ctx context.Context, label string) ([]Ticket, error) { return nil, nil }

@@ -405,3 +405,9 @@ type Config struct {
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.
 	MCP *[]mcp.Server
 }
+
+// ClaudeWorkers reports whether the workers are Claude Code agents (AgentKind claude), which alone
+// take Claude's arguments, hooks and MCP servers.
+func (c Config) ClaudeWorkers() bool {
+	return c.AgentKind == "claude"
+}

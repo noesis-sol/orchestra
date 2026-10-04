@@ -30,9 +30,10 @@ import (
 // (from idleAt) soon after started, its ticket still open, its branch still at head and its
 // worktree clean. Going idle counts, not settling: an idle worker with its ticket open is given
 // startGrace before it settles, which can outlast the window.
-func (o *Loop) failedAtOnce(ctx context.Context, status string, started, idleAt time.Time, br, head, wt string) bool {
+func (o *Loop) failedAtOnce(ctx context.Context, status TicketStatus, started, idleAt time.Time,
+	br, head, wt string) bool {
 	c := o.cfg
-	return c.EnvHoldCount > 0 && status == "open" && idleAt.Sub(started) < c.EnvHoldWindow &&
+	return c.EnvHoldCount > 0 && status == StatusOpen && idleAt.Sub(started) < c.EnvHoldWindow &&
 		o.checkout.Head(ctx, c.Repo, br) == head && o.checkout.DirtyWorktree(ctx, wt) == ""
 }
 
@@ -232,7 +233,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
 	// refuses the argument.
 	var args []string
-	if c.AgentKind == "claude" {
+	if c.ClaudeWorkers() {
 		args = []string{"--strict-mcp-config"}
 	}
 	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)

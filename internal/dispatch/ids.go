@@ -23,6 +23,11 @@ func IDProblem(id string) string {
 	return ""
 }
 
+// branchOf is the branch ticket id's worker commits on, in its own worktree: wt/<id>.
+func branchOf(id string) string {
+	return "wt/" + id
+}
+
 // notInRef reports whether git refuses r anywhere in a ref name.
 func notInRef(r rune) bool {
 	return r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[", r)

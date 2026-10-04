@@ -79,7 +79,7 @@ func (o *Loop) waitSettled(
 			} else {
 				unread = 0
 				var turn turnEnd
-				if ts == "in_progress" {
+				if ts == StatusInProgress {
 					turn = o.endOfTurn(ctx, id, wt, hooks, later(since, readTo))
 				}
 				if turn.asked != nil { // conclude reopens the ticket left in progress
@@ -216,7 +216,7 @@ func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after t
 		return turnEnd{}
 	}
 	q := OpenQuestion(t)
-	return turnEnd{at: u.At, owes: t.Status == "in_progress" && q == nil, asked: q}
+	return turnEnd{at: u.At, owes: t.Status == StatusInProgress && q == nil, asked: q}
 }
 
 // nudge tells ticket id's worker, idle at the end of its turn, that its ticket is still open and
@@ -254,9 +254,9 @@ func later(a, b time.Time) time.Time {
 // whatever Herdr says, for up to idleGrace (a turn that fails ends without a Stop). Before its first
 // report, or without hooks, an open ticket gets startGrace; any other status means the worker is
 // done with it.
-func (o *Loop) idleSettled(ticket, wt string, hooks bool, since time.Time, idleFor, running time.Duration) (
-	settled bool, why string) {
-	if ticket == "in_progress" {
+func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since time.Time,
+	idleFor, running time.Duration) (settled bool, why string) {
+	if ticket == StatusInProgress {
 		return idleFor >= idleGrace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(idleGrace))
 	}
 	if hooks && o.reporter != nil {
@@ -272,11 +272,11 @@ func (o *Loop) idleSettled(ticket, wt string, hooks bool, since time.Time, idleF
 				ShortDuration(idleGrace), u.Event)
 		}
 	}
-	if ticket == "open" {
+	if ticket == StatusOpen {
 		return running >= startGrace, fmt.Sprintf("idle %s after it started, with the ticket still open",
 			ShortDuration(startGrace))
 	}
-	return true, "idle with the ticket " + ticket
+	return true, "idle with the ticket " + string(ticket)
 }
 
 // watcher shows a worker's status and latest action on the dashboard.

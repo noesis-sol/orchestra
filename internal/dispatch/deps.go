@@ -12,11 +12,11 @@ type Tickets interface {
 	Ready(ctx context.Context, scope string) ([]Ticket, error)
 	Unclosed(ctx context.Context) ([]Ticket, error)               // every ticket not closed, with its parent
 	Descendants(ctx context.Context, id string) ([]Ticket, error) // the ticket's subtickets at any depth, closed or not
-	// with dependencies; Status "unknown" and the cause if unreadable
+	// with dependencies; Status StatusUnknown and the cause if unreadable
 	Show(ctx context.Context, id string) (Ticket, error)
-	Status(ctx context.Context, id string) (string, error)      // "unknown" and the cause if unreadable
-	Describe(ctx context.Context, id string) string             // as a person reads it, for the organs' evidence
-	Closed(ctx context.Context, label string) ([]Ticket, error) // closed tickets carrying the label
+	Status(ctx context.Context, id string) (TicketStatus, error) // StatusUnknown and the cause if unreadable
+	Describe(ctx context.Context, id string) string              // as a person reads it, for the organs' evidence
+	Closed(ctx context.Context, label string) ([]Ticket, error)  // closed tickets carrying the label
 }
 
 // Notes is what the loop writes to the tracker.

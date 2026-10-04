@@ -118,7 +118,7 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	}
 	tickets := make([]organ.UnclosedTicket, len(unclosed))
 	for i, t := range unclosed {
-		tickets[i] = organ.UnclosedTicket{ID: t.ID, Status: t.Status, Title: t.Title}
+		tickets[i] = organ.UnclosedTicket{ID: t.ID, Status: string(t.Status), Title: t.Title}
 	}
 	ev, err := organ.GatherFeature(ctx, f.repo, f.request, git.Git{}.TrackedFiles(ctx, f.repo), tickets)
 	if err != nil {

@@ -19,7 +19,7 @@ type flakyStatus struct {
 	reads int
 }
 
-func (b *flakyStatus) Status(ctx context.Context, id string) (string, error) {
+func (b *flakyStatus) Status(ctx context.Context, id string) (TicketStatus, error) {
 	b.mu.Lock()
 	b.reads++
 	fail := b.reads <= b.fails

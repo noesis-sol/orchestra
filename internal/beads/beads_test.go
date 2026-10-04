@@ -85,7 +85,7 @@ func TestExcludedTypesAreNeverDispatched(t *testing.T) {
 }
 
 func TestParseTicketStatus(t *testing.T) {
-	cases := map[string]string{
+	cases := map[string]dispatch.TicketStatus{
 		`[{"id":"x","status":"closed"}]`:               "closed",
 		`{"id":"x","status":"deferred"}`:               "deferred",
 		`{"data":[{"id":"x","status":"in_progress"}]}`: "in_progress",
@@ -95,7 +95,7 @@ func TestParseTicketStatus(t *testing.T) {
 		`error: no issue found`: "unknown",
 	}
 	for raw, want := range cases {
-		got := "unknown"
+		got := dispatch.StatusUnknown
 		if tk, ok := parseTicket([]byte(raw)); ok {
 			got = tk.Status
 		}
