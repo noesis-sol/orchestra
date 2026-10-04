@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,8 +23,13 @@ import (
 type Terminal struct{}
 
 // CreateTab opens a tab labelled label in workspace, starting in cwd, without switching to it, and
-// returns the tab's ID and its first pane's.
+// returns the tab's ID and its first pane's. When Herdr's answer can't be read or lacks either ID,
+// the tab it may have opened is closed again (see closeUnread), so a retry doesn't leave another
+// behind.
 func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error) {
+	// The tabs labelled label already, such as an earlier worker's left for review, from which a
+	// tab this call opens is told should Herdr's answer not say which it is.
+	before, berr := labelledTabs(ctx, workspace, label)
 	out, err := run(ctx, command.ReadLimit,
 		"tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus")
 	if err != nil {
@@ -39,13 +45,85 @@ func (t Terminal) CreateTab(ctx context.Context, workspace, cwd, label string) (
 			} `json:"root_pane"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return "", "", err
+	// Output that is JSON but not of this shape still gives the IDs read before the mismatch.
+	jerr := json.Unmarshal([]byte(out), &r)
+	tab, pane = r.Result.Tab.TabID, r.Result.RootPane.PaneID
+	switch {
+	case jerr != nil:
+		err = fmt.Errorf("unexpected 'herdr tab create' output (%w): %s", jerr, strings.TrimSpace(out))
+	case tab == "" || pane == "":
+		err = fmt.Errorf("unexpected 'herdr tab create' output: %s", strings.TrimSpace(out))
+	default:
+		return tab, pane, nil
 	}
-	if r.Result.Tab.TabID == "" || r.Result.RootPane.PaneID == "" {
-		return "", "", fmt.Errorf("unexpected 'herdr tab create' output: %s", out)
+	// Even once the run is stopped, the tab is closed, as a worker's tab is (each call has its limit).
+	return "", "", t.closeUnread(context.WithoutCancel(ctx), err, workspace, label, tab, before, berr)
+}
+
+// closeUnread closes the tab that 'herdr tab create' may have opened in workspace, though its
+// answer, which err says is unexpected, can't be used, and adds to err what became of the tab. The
+// tab is the one the answer named, if it named one; otherwise the one tab labelled label that isn't
+// among before, the tabs so labelled before the call (unknown if berr says Herdr couldn't list
+// them). err stays the error underneath: a failure to find or close the tab is only told.
+func (t Terminal) closeUnread(ctx context.Context, err error, workspace, label, tab string,
+	before []string, berr error) error {
+	if tab == "" {
+		after, aerr := labelledTabs(ctx, workspace, label)
+		if aerr != nil {
+			return fmt.Errorf("%w; a tab labelled %s may be left open: Herdr couldn't list the tabs (%v)",
+				err, label, aerr)
+		}
+		opened := slices.DeleteFunc(after, func(id string) bool { return slices.Contains(before, id) })
+		switch {
+		case len(opened) == 0:
+			return fmt.Errorf("%w; Herdr has no new tab labelled %s", err, label)
+		case berr != nil:
+			return fmt.Errorf("%w; %s, labelled %s, left open: Herdr couldn't list the tabs before, "+
+				"to tell the one it opened from earlier ones (%v)", err, tabList(opened), label, berr)
+		case len(opened) > 1:
+			return fmt.Errorf("%w; %s, labelled %s, opened meanwhile and left open, as which is the one "+
+				"Herdr opened can't be told", err, tabList(opened), label)
+		}
+		tab = opened[0]
 	}
-	return r.Result.Tab.TabID, r.Result.RootPane.PaneID, nil
+	if cerr := t.CloseTab(ctx, tab); cerr != nil {
+		return fmt.Errorf("%w; tab %s, which Herdr opened, could not be closed (%v)", err, tab, cerr)
+	}
+	return fmt.Errorf("%w; tab %s, which Herdr opened, is closed again", err, tab)
+}
+
+// tabList is "tab <id>" for one tab, and "tabs <id>, <id>, …" for several.
+func tabList(ids []string) string {
+	if len(ids) == 1 {
+		return "tab " + ids[0]
+	}
+	return "tabs " + strings.Join(ids, ", ")
+}
+
+// labelledTabs returns the IDs of the tabs in workspace that are labelled label.
+func labelledTabs(ctx context.Context, workspace, label string) ([]string, error) {
+	out, err := run(ctx, command.ReadLimit, "tab", "list", "--workspace", workspace)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Result struct {
+			Tabs []struct {
+				TabID string `json:"tab_id"`
+				Label string `json:"label"`
+			} `json:"tabs"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Tabs == nil {
+		return nil, fmt.Errorf("unexpected 'herdr tab list' output: %s", out)
+	}
+	var ids []string
+	for _, tb := range r.Result.Tabs {
+		if tb.Label == label {
+			ids = append(ids, tb.TabID)
+		}
+	}
+	return ids, nil
 }
 
 // CloseTab closes a Herdr tab.

@@ -68,6 +68,15 @@ All notable changes to orchestra are documented here. The format follows
   report. A check that reruns a failed test and passes says so this way, as
   the README describes; the ticket merges as before, but the flaky test no
   longer goes unseen.
+- A Herdr tab opened for a worker, or for the startup probe, is closed again
+  when Herdr's answer to `herdr tab create` can't be used: output that isn't
+  JSON, or that lacks the tab's or its pane's ID. Each retry used to leave
+  another empty tab behind, and unreadable output failed with JSON's bare
+  `unexpected end of JSON input`. The error now reads `unexpected 'herdr tab
+  create' output`, with the output, and says what became of the tab: closed,
+  found by the ID in the answer or else by its label among the tabs that
+  weren't there before (an earlier tab with the same label, such as one left
+  for review, stays open), or left open, naming it and saying why.
 - The dashboard draws on the terminal's alternate screen, so resizing its
   pane leaves no earlier frames above it. Narrowing or shortening a Herdr
   pane reflowed the frame and pushed its top rows into the scrollback, which
