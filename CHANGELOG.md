@@ -38,6 +38,11 @@ All notable changes to orchestra are documented here. The format follows
   Claude is working, waiting for you or waiting for a permission answer, and
   how long the interview has run; once the feature is filed, `Filed <epic>:
   <title> (N tickets)`. The line is gone before the tickets and the question.
+- The functions that read text a model, a worker or a ticket's author wrote
+  have Go fuzz tests: the plan organ's answer, a ticket's footprint, which
+  ticket IDs can be run, the Herdr agent name made from a ticket's ID,
+  `herdr agent get`'s output and `bd list --json`. The check runs their seeds as ordinary tests;
+  docs/development.md says how to fuzz them.
 
 ### Fixed
 
@@ -154,6 +159,10 @@ All notable changes to orchestra are documented here. The format follows
   running: the test stops orchestra and waits for it before closing its
   terminal and removing its repository, so the failure isn't followed by a
   data race on the closed terminal, blamed on whichever test runs then.
+- The plan organ's check of a ticket's files drops a path that, cleaned,
+  starts or ends with a space, such as `./ NEW.md`, with a note. It kept
+  ` NEW.md`, a file the model hardly meant, and the plan read back from its
+  own JSON named `NEW.md` instead. A fuzz test found it.
 
 ## [0.4.0] - 2026-10-04
 

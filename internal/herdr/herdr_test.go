@@ -110,18 +110,6 @@ func TestAgentName(t *testing.T) {
 	}
 }
 
-func TestAgentNameIsAlwaysValid(t *testing.T) {
-	for _, id := range []string{"CalendarView-bl0.12.3", "platform-backend-services-a3f.12.3", "Ω", "x y/z:w", strings.Repeat("A", 100)} {
-		name := AgentName(id)
-		if !validName(name) {
-			t.Errorf("AgentName(%q) = %q, which Herdr would refuse", id, name)
-		}
-		if AgentName(name) != name {
-			t.Errorf("AgentName(%q) = %q changes a valid name", name, AgentName(name))
-		}
-	}
-}
-
 func TestLongAgentNamesDoNotCollide(t *testing.T) {
 	a, b := "platform-backend-services-a3f.12.3", "platform-backend-services-a3f.12.4" // 34 characters, alike for 33
 	na, nb := AgentName(a), AgentName(b)

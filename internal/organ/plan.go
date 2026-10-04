@@ -475,6 +475,8 @@ func checkPlanFiles(tickets []PlannedTicket, tracked []string) []string {
 				continue
 			case !filepath.IsLocal(clean) || strings.Contains(clean, `\`):
 				why = "not a path inside the repository"
+			case clean != strings.TrimSpace(clean): // ./ a.go: a space the trimming above didn't reach
+				why = "it starts or ends with a space"
 			case known[clean]:
 			case dirs[clean]:
 				why = "a directory, not a file"

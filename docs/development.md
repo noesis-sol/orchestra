@@ -20,6 +20,14 @@ for i in $(seq 12); do /tmp/tui.test -test.count 500 \
 
 A failure in a few thousand runs is the flake; a fix holds when the same load brings none (`-test.run '^TestParent$/^sub$'` picks a subtest).
 
+The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzParsePlan` (`internal/organ`), `FuzzTicketFootprint` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
+
+```
+go test -run '^$' -fuzz '^FuzzParsePlan$' -fuzztime 60s ./internal/organ
+```
+
+The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`, where `go test` runs it with the seeds from then on: commit it with the fix, or add it to the target's seeds (`f.Add`). The inputs it found new paths with stay in Go's cache, so the next run goes on from them; `go clean -fuzzcache` empties it.
+
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
 The run loop, `internal/dispatch`, has one file per concern, its tests in the `_test.go` file of the same name:
