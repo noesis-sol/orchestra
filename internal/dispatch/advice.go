@@ -45,7 +45,8 @@ func orNone(s string) string {
 // triageStop instead, and the goroutine triages what is already queued, then returns.
 func (o *Loop) StartTriage() {
 	// Triaging a ticket takes a model's answer, much longer than a worker takes to defer one, and
-	// a worker sending to a full queue waits: 64 is far more deferrals than are ever waiting at once.
+	// a worker sending to a full queue waits (Run doesn't: see offerTriage): 64 is far more
+	// deferrals than are ever waiting at once.
 	o.triageQ = make(chan queuedDeferral, 64)
 	o.triageStop, o.triageFinish = context.WithCancel(context.Background())
 	o.triageDone = make(chan struct{})
@@ -100,6 +101,21 @@ func (o *Loop) queueTriage(ctx context.Context, d organ.Deferral) {
 	case o.triageQ <- queuedDeferral{d, o.envGen.Load()}:
 	case <-o.triageStop.Done():
 	case <-ctx.Done():
+	}
+}
+
+// offerTriage is queueTriage for Run's own goroutine, which never waits for room in the queue:
+// triage may be waiting to hand Run a verdict (blamed), and with the queue full neither would go
+// on. A deferral the queue has no room for is dropped, and said.
+func (o *Loop) offerTriage(ctx context.Context, d organ.Deferral) {
+	if !o.triageTaking(ctx) {
+		return
+	}
+	select {
+	case o.triageQ <- queuedDeferral{d, o.envGen.Load()}:
+	default:
+		o.emit(Event{Kind: EvInfo, Ticket: d.ID, Text: fmt.Sprintf(
+			"  %s is not triaged: %d deferrals wait for triage already", d.ID, cap(o.triageQ))})
 	}
 }
 

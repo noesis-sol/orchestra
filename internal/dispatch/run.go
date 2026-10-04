@@ -327,11 +327,11 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 		case <-ctx.Done():
 			o.settle(keep, results, inflight)
-			o.leaveBehind(keep)
+			o.leaveBehind(ctx)
 			return o.interrupted(ctx)
 		}
 	}
-	o.leaveBehind(keep) // the workers that stopped the run, if any, and those waiting on a question
+	o.leaveBehind(ctx) // the workers that stopped the run, if any, and those waiting on a question
 	// How the loop ended by itself, if it did.
 	var end string
 	switch {

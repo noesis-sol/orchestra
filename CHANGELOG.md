@@ -205,6 +205,16 @@ All notable changes to orchestra are documented here. The format follows
   shown the machine works and those tickets may have been running fine
   again. Those verdicts are still written to the tickets' notes; only the
   verdicts on tickets deferred after the probe count toward another hold.
+- After Ctrl+C, a ticket waiting on your answer whose worker deferred it in
+  its tab is set aside as deferred without going to triage, as other
+  deferrals after Ctrl+C are. It went to triage all the same: before the
+  INTERRUPTED line orchestra read the ticket, its worktree and its worker's
+  screen for triage, each read allowed up to its time limit.
+- A run no longer waits for room in triage's queue when it finds such a
+  ticket deferred, which could leave it hanging until a second signal: with
+  the queue full, triage waits for the run to take its last verdict. The
+  ticket is set aside without triage instead, and the run says so
+  (`<id> is not triaged: 64 deferrals wait for triage already`).
 
 ## [0.4.0] - 2026-10-04
 

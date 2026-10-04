@@ -95,14 +95,18 @@ func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
 	return adoption{t: t, w: w}
 }
 
-// askedDeferred sets aside asked ticket t, which its worker deferred in its tab.
+// askedDeferred sets aside asked ticket t, which its worker deferred in its tab, and hands it to
+// triage as triageDeferred does. ctx is the run's, so that after Ctrl+C no evidence is gathered
+// (triageTaking). Run calls it on its own goroutine, so the deferral is offered (offerTriage).
 func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
 	id := t.ID
 	o.setAsked(id, nil)
 	o.markAside(id)
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
-	o.triageDeferred(ctx, id, "the worker deferred it", w.wt)
+	if o.triageTaking(ctx) {
+		o.offerTriage(ctx, o.gatherDeferral(ctx, id, "the worker deferred it", w.wt))
+	}
 }
 
 // askedGone notes an asked ticket left in progress by a worker no longer in its tab, and returns
@@ -125,12 +129,14 @@ func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *
 // leaveAsked reads each asked ticket once more as the run ends. Its worker may have carried on in
 // its tab, and nothing merges the ticket once orchestra has gone: one closed or in progress is
 // labelled UnmergedLabel, as leaveRunning labels a ticket left running, and a closed one is left
-// for review. One its worker deferred is set aside as deferred.
+// for review. One its worker deferred is set aside as deferred. ctx is the run's: the reads and
+// labels go on after Ctrl+C, triage doesn't (see askedDeferred).
 func (o *Loop) leaveAsked(ctx context.Context) {
 	c := o.cfg
+	keep := context.WithoutCancel(ctx)
 	for _, id := range o.askedList() {
 		w, _ := o.asked(id)
-		t, err := o.tickets.Show(ctx, id)
+		t, err := o.tickets.Show(keep, id)
 		if err != nil {
 			o.log.Raw("", err)
 			continue
@@ -145,7 +151,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 			}
 			text := fmt.Sprintf("  %s: %s was closed in tab %s after %s, "+
 				"and the run ends before merging it; worktree %s left for review", kind, id, w.tab, w.after(), w.wt)
-			if o.leaveUnmerged(ctx, id, kind) {
+			if o.leaveUnmerged(keep, id, kind) {
 				text += fmt.Sprintf(", labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
 					"in later runs too", UnmergedLabel, id, c.Base)
 			}
@@ -155,7 +161,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 			o.mu.Lock()
 			labelled := o.labelled[id]
 			o.mu.Unlock()
-			if labelled || !o.label(ctx, id) {
+			if labelled || !o.label(keep, id) {
 				continue
 			}
 			what := "after its question"

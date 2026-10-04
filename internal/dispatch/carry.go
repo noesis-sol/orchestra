@@ -184,9 +184,10 @@ func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 }
 
 // leaveBehind, as the run ends, labels the tickets it leaves running (leaveRunning) and those
-// waiting on a question (leaveAsked), and saves their workers for the next run.
+// waiting on a question (leaveAsked), and saves their workers for the next run. ctx is the run's,
+// which tells leaveAsked whether Ctrl+C came; the labelling goes on regardless.
 func (o *Loop) leaveBehind(ctx context.Context) {
-	o.leaveRunning(ctx)
+	o.leaveRunning(context.WithoutCancel(ctx))
 	o.leaveAsked(ctx)
 	o.saveCarried()
 }
