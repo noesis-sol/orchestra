@@ -24,12 +24,12 @@ func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
 	id, agent, tab, wt := w.id, w.agent, w.tab, w.wt
-	var blockedSince, idleSince, unknownSince time.Time
-	var readTo time.Time // turns that ended before it have been read; the next turn's Stop comes after
-	failed, unread, nudges := 0, 0, 0
+	var idle idleWait
+	var blocked, unknown streak
+	failed := 0
 	warned := false
-	for {
-		if ctx.Err() != nil {
+	for polled := false; ; polled = true {
+		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
 			return time.Time{}, errInterrupted
 		}
 		st, err := o.agents.Status(ctx, agent)
@@ -45,91 +45,33 @@ func (o *Loop) waitSettled(
 					": the status of %s's worker (tab %s) could not be read %d times in a row: %v",
 					id, tab, failed, err).causedBy(err)
 			}
-			if !sleep(ctx, o.pollEvery()) {
-				return time.Time{}, errInterrupted
-			}
 			continue
 		}
 		failed = 0
 		if st == StateGone {
 			o.info("  %s settled: its worker is gone", id)
-			if idleSince.IsZero() {
+			if idle.since.IsZero() {
 				return time.Now(), nil
 			}
-			return idleSince, nil
+			return idle.since, nil
 		}
-		if st == StateIdle || st == StateDone {
-			if idleSince.IsZero() {
-				idleSince = time.Now()
+		isIdle := st == StateIdle || st == StateDone
+		idle.track(isIdle)
+		if isIdle {
+			idleAt, stop, nudged := o.idlePoll(ctx, w, begun, &idle)
+			if stop != nil || !idleAt.IsZero() {
+				return idleAt, stop
 			}
-			ts, err := o.tickets.Status(ctx, id)
-			if ctx.Err() != nil {
-				return time.Time{}, errInterrupted // the status read was cut short, and says nothing
+			if nudged {
+				continue // the checks below wait for its next poll
 			}
-			if err != nil {
-				if unread++; unread == 1 {
-					o.log.Raw("", fmt.Errorf("cannot read the status of %s; still waiting on its worker: %w", id, err))
-				}
-				if unread >= maxFailedReads {
-					return time.Time{}, halt(ExitTool, stopStatusUnreadable,
-						" for %s: its status could not be read %d times in a row while its worker was idle%s; "+
-							"stopping rather than guessing (worktree %s and tab %s left open)",
-						id, unread, because(err), wt, tab).causedBy(err)
-				}
-			} else {
-				unread = 0
-				var turn turnEnd
-				if ts == StatusInProgress {
-					turn = o.endOfTurn(ctx, id, wt, w.hooks, later(w.since, readTo))
-				}
-				if turn.asked != nil { // conclude reopens the ticket left in progress
-					o.info("  %s settled: Stop hook at %s, waiting on %s", id, turn.at.Format("15:04:05"), turn.asked.ID)
-					return idleSince, nil
-				}
-				if turn.owes {
-					readTo = time.Now() // told to continue or not, only its next turn's end counts
-				}
-				if turn.owes && nudges < maxNudges {
-					nudges++
-					if o.nudge(ctx, id, agent, nudges) {
-						idleSince = time.Time{}
-						if !sleep(ctx, o.pollEvery()) {
-							return time.Time{}, errInterrupted
-						}
-						continue
-					}
-					if ctx.Err() != nil {
-						return time.Time{}, errInterrupted
-					}
-				}
-				if done, why := o.idleSettled(ts, wt, w.hooks, w.since, time.Since(idleSince), time.Since(begun)); done {
-					o.info("  %s settled: %s", id, why)
-					return idleSince, nil
-				}
-			}
-		} else {
-			idleSince = time.Time{}
 		}
-		if st == StateBlocked {
-			if blockedSince.IsZero() {
-				blockedSince = time.Now()
-			}
-			if time.Since(blockedSince) > blockedLimit {
-				return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
-			}
-		} else {
-			blockedSince = time.Time{}
+		if blocked.track(st == StateBlocked) > blockedLimit {
+			return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
 		}
-		if st == StateUnknown {
-			if unknownSince.IsZero() {
-				unknownSince = time.Now()
-			}
-			if time.Since(unknownSince) > unknownLimit {
-				return time.Time{}, halt(ExitStuck, stopUnknown,
-					" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
-			}
-		} else {
-			unknownSince = time.Time{}
+		if unknown.track(st == StateUnknown) > unknownLimit {
+			return time.Time{}, halt(ExitStuck, stopUnknown,
+				" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
 			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
@@ -145,10 +87,87 @@ func (o *Loop) waitSettled(
 				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
 				id, st, ShortDuration(longRunning), tab)})
 		}
-		if !sleep(ctx, o.pollEvery()) {
-			return time.Time{}, errInterrupted
+	}
+}
+
+// streak is how long a condition has held without a break, from one poll to the next.
+type streak struct {
+	since time.Time // when it began to hold (zero: it doesn't)
+}
+
+// track notes whether the condition holds at this poll, and returns how long it has held (zero: it
+// doesn't).
+func (s *streak) track(on bool) time.Duration {
+	if !on {
+		s.since = time.Time{}
+		return 0
+	}
+	if s.since.IsZero() {
+		s.since = time.Now()
+	}
+	return time.Since(s.since)
+}
+
+// idleWait is what waitSettled keeps of a worker's idle polls from one to the next.
+type idleWait struct {
+	streak           // how long it has been idle
+	readTo time.Time // turns that ended before it have been read; the next turn's Stop comes after
+	unread int       // failed reads of its ticket's status in a row
+	nudges int       // times it was told to continue
+}
+
+// idlePoll is a poll of waitSettled's that finds the worker w idle, as it has been since idle.since;
+// begun is when it was confirmed started on its prompt. It reads w's ticket and returns when w went
+// idle once it has settled: at a Stop hook with its ticket waiting on a question (endOfTurn), or as
+// idleSettled says. A worker whose turn ended with its ticket still in progress is told to continue
+// first, up to maxNudges times; one that takes the message up (nudged) starts its idle time afresh.
+// stop is why the wait stops on it; a zero idleAt and a nil stop say it goes on.
+func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *idleWait) (
+	idleAt time.Time, stop *stopReason, nudged bool) {
+	ts, err := o.tickets.Status(ctx, w.id)
+	if ctx.Err() != nil {
+		return time.Time{}, errInterrupted, false // the status read was cut short, and says nothing
+	}
+	if err != nil {
+		if idle.unread++; idle.unread == 1 {
+			o.log.Raw("", fmt.Errorf("cannot read the status of %s; still waiting on its worker: %w", w.id, err))
+		}
+		if idle.unread < maxFailedReads {
+			return time.Time{}, nil, false
+		}
+		return time.Time{}, halt(ExitTool, stopStatusUnreadable,
+			" for %s: its status could not be read %d times in a row while its worker was idle%s; "+
+				"stopping rather than guessing (worktree %s and tab %s left open)",
+			w.id, idle.unread, because(err), w.wt, w.tab).causedBy(err), false
+	}
+	idle.unread = 0
+	var turn turnEnd
+	if ts == StatusInProgress {
+		turn = o.endOfTurn(ctx, w.id, w.wt, w.hooks, later(w.since, idle.readTo))
+	}
+	if turn.asked != nil { // conclude reopens the ticket left in progress
+		o.info("  %s settled: Stop hook at %s, waiting on %s", w.id, turn.at.Format("15:04:05"), turn.asked.ID)
+		return idle.since, nil, false
+	}
+	if turn.owes {
+		idle.readTo = time.Now() // told to continue or not, only its next turn's end counts
+	}
+	if turn.owes && idle.nudges < maxNudges {
+		idle.nudges++
+		if o.nudge(ctx, w.id, w.agent, idle.nudges) {
+			idle.streak = streak{}
+			return time.Time{}, nil, true
+		}
+		if ctx.Err() != nil {
+			return time.Time{}, errInterrupted, false
 		}
 	}
+	settled, why := o.idleSettled(ts, w.wt, w.hooks, w.since, time.Since(idle.since), time.Since(begun))
+	if !settled {
+		return time.Time{}, nil, false
+	}
+	o.info("  %s settled: %s", w.id, why)
+	return idle.since, nil, false
 }
 
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
