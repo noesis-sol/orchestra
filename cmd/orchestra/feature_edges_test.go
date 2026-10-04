@@ -45,12 +45,14 @@ func TestFeatureSaysNothingWasFiledOnlyWhenBdRefused(t *testing.T) {
 	}
 }
 
-// A bd killed by a signal, not stopped by orchestra, may have filed the epic before it went.
+// A bd killed by a signal, not stopped by orchestra, may have filed the epic before it went. The
+// shell kills itself with SIGTERM, not SIGINT: a background job (cmd &) starts with SIGINT ignored,
+// and a shell that inherits that survives its own SIGINT.
 func TestFeatureBdKilledMayHaveFiled(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no signals")
 	}
-	_, killed := command.Output(context.Background(), 0, "", "sh", "-c", "kill -INT $$")
+	_, killed := command.Output(context.Background(), 0, "", "sh", "-c", "kill -TERM $$")
 	var cmdErr *command.Error
 	if !errors.As(killed, &cmdErr) || cmdErr.Stopped {
 		t.Fatalf("not a killed command: %#v", killed)
@@ -60,7 +62,7 @@ func TestFeatureBdKilledMayHaveFiled(t *testing.T) {
 	if epic, code := f.run(context.Background()); epic != "" || code != dispatch.ExitTool {
 		t.Errorf("epic %q, exit %d", epic, code)
 	}
-	if s := errOut.String(); !strings.Contains(s, "signal: interrupt") ||
+	if s := errOut.String(); !strings.Contains(s, "signal: terminated") ||
 		!strings.Contains(s, "check with: bd list --type epic") || strings.Contains(s, "Nothing was filed.") {
 		t.Errorf("stderr:\n%s", s)
 	}
