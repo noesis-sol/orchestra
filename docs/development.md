@@ -8,7 +8,17 @@ Working on orchestra itself. Back to the [README](../README.md).
 scripts/check.sh
 ```
 
-`scripts/check.sh` is the full check: `go vet ./...`, `go test -race ./...` and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs it with `go run` at a pinned version (v2.14.0), so a machine needs only Go; the first run downloads it.
+`scripts/check.sh` is the full check: `go vet ./...`, the race tests (`go test -race ./...`, through [gotestsum](https://github.com/gotestyourself/gotestsum)) and golangci-lint. It is also orchestra's own check command for this repository (`.orchestra/settings.json`), so a ticket that fails lint isn't merged, and workers run it before closing a ticket. golangci-lint runs the linters the [Uber Go style guide](https://github.com/uber-go/guide/blob/master/style.md#linting) asks for, configured in `.golangci.yml`: errcheck (terminal writes excepted), goimports, revive, govet and staticcheck, plus predeclared and lll (lines up to 120 columns). The script runs gotestsum and golangci-lint with `go run` at pinned versions (v1.13.0 and v2.14.0), so a machine needs only Go; the first run downloads them.
+
+A test that fails is run once more, on its own, and the check passes if it passes then, printing a line `FLAKY: <package> <test>` for it, such as `FLAKY: ./internal/tui TestInitFormKeepsOrTypesACustomConcurrency`, which orchestra warns of when it merges. A test that fails its rerun fails the check, and so, without a rerun, do more than three failed tests, a data race, a panic and a package that fails outside its tests (goleak's check in `TestMain`). A `FLAKY:` line is a bug to file and fix, not noise: the test passes alone but fails under load, such as several workers' checks at once, and the rerun only kept it from failing a merge. To reproduce one, run many copies of it at once, as orchestra-4wb.26 did with 12 copies of 500 runs each:
+
+```
+go test -c -race -o /tmp/tui.test ./internal/tui
+for i in $(seq 12); do /tmp/tui.test -test.count 500 \
+  -test.run '^TestInitFormKeepsOrTypesACustomConcurrency$' & done; wait
+```
+
+A failure in a few thousand runs is the flake; a fix holds when the same load brings none (`-test.run '^TestParent$/^sub$'` picks a subtest).
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 

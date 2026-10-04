@@ -82,6 +82,15 @@ All notable changes to orchestra are documented here. The format follows
   found by the ID in the answer or else by its label among the tabs that
   weren't there before (an earlier tab with the same label, such as one left
   for review, stays open), or left open, naming it and saying why.
+- orchestra's own check, `scripts/check.sh`, runs the race tests through
+  gotestsum (v1.13.0, through `go run`) and runs a failed test once more, on
+  its own: one that passes then failed only under load, such as several
+  workers' checks at once, so the check passes with a line `FLAKY: <package>
+  <test>` for it. Such a test used to fail the merge, leaving the ticket for a
+  merge by hand. A test that fails its rerun still fails the check, as do,
+  without a rerun, more than three failed tests, a data race, a panic and a
+  package that fails outside its tests (goleak's check in `TestMain`).
+  docs/development.md says how to reproduce a flaky test under load.
 - The dashboard draws on the terminal's alternate screen, so resizing its
   pane leaves no earlier frames above it. Narrowing or shortening a Herdr
   pane reflowed the frame and pushed its top rows into the scrollback, which

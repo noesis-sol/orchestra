@@ -68,6 +68,8 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 
 - `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that
   fails lint is not merged. Run it in full before closing a ticket.
+- The check runs the tests through gotestsum, which reruns a failed test once: one that passes then prints
+  `FLAKY: <package> <test>` and the check passes. A FLAKY line is a bug to file and fix (docs/development.md).
 - go.mod requires Go 1.26 (`go 1.26.0`) and pins `toolchain go1.27.1`, the version the project builds
   and tests with. Keep the toolchain at 1.26.5 or later, which fixes a race-detector hang in fork on
   darwin/arm64 (golang/go#79804).
