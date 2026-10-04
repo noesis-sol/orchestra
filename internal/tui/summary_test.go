@@ -20,57 +20,62 @@ func endedRun(n int) Dashboard {
 	return runEvents(m, dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY"})
 }
 
-// TestSummaryKeepsItsTopInAShortPane: Bubble Tea never writes the top lines of a frame taller than the
-// pane, so the summary must fit, newest tickets and all, below its title and totals.
-func TestSummaryKeepsItsTopInAShortPane(t *testing.T) {
+// printedEnd is what main prints once the dashboard m has closed, on a terminal width columns wide:
+// the run's summary, then the run's last line.
+func printedEnd(m Dashboard, width int) string {
+	var b strings.Builder
+	p := Printer{Out: &b, Styled: true, Width: width}
+	p.Summary(m)
+	p.End(m)
+	return b.String()
+}
+
+// TestSummaryAfterTheDashboardIsWhole: the alternate screen takes the dashboard with it, so main
+// prints the run's summary on the normal screen, where it isn't cut to the pane's height: the title,
+// the totals and every ticket, as wide as the terminal is now, then the run's last line.
+func TestSummaryAfterTheDashboardIsWhole(t *testing.T) {
 	m := endedRun(40)
-	if !m.quitting {
-		t.Fatal("the run's end should quit the dashboard")
+	m.width, m.height = 120, 8 // the pane as the dashboard last saw it: short, and wider than now
+	out := ansi.Strip(printedEnd(m, 80))
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if top := lines[min(1, len(lines)-1)]; !strings.Contains(top, "Orchestra") || // below a margin
+		!strings.Contains(top, "batch/2026-10-02") {
+		t.Errorf("the summary should start with the title:\n%s", out)
 	}
-	for _, size := range [][2]int{{80, 30}, {40, 30}, {120, 12}, {80, 8}, {80, 5}, {30, 4}} {
-		m.width, m.height = size[0], size[1]
-		view := m.View()
-		lines := strings.Split(view, "\n") // as Bubble Tea counts them: the last one is the cursor's
-		if len(lines) > m.height {
-			t.Errorf("%dx%d: the summary is %d lines", size[0], size[1], len(lines))
+	if !strings.Contains(out, "✓ 40") {
+		t.Errorf("the summary lacks the totals:\n%s", out)
+	}
+	for i := range 40 {
+		if id := fmt.Sprintf("kinieta-%03d", i); !strings.Contains(out, id+" ") {
+			t.Errorf("the summary lacks %s:\n%s", id, out)
 		}
-		if !strings.HasSuffix(view, "\n") {
-			t.Errorf("%dx%d: the summary should end with a newline for main's last line", size[0], size[1])
-		}
-		if top := ansi.Strip(strings.Join(lines[:2], "\n")); !strings.Contains(top, "Orchestra") { // below a margin
-			t.Errorf("%dx%d: the summary should start with the title, not %q", size[0], size[1], top)
-		}
-		if !strings.Contains(ansi.Strip(view), "✓ 40") {
-			t.Errorf("%dx%d: the summary lacks the totals:\n%s", size[0], size[1], ansi.Strip(view))
-		}
-		for _, l := range lines {
-			if ansi.StringWidth(l) > m.width {
-				t.Errorf("%dx%d: line %d wide: %q", size[0], size[1], ansi.StringWidth(l), ansi.Strip(l))
-			}
-		}
-		if size == [2]int{80, 30} {
-			v := ansi.Strip(view)
-			if !strings.Contains(v, "earlier tickets, see the log") || !strings.Contains(v, "kinieta-039") {
-				t.Errorf("80x30: the table should end with the newest ticket and count the earlier ones:\n%s", v)
-			}
-			t.Logf("summary at 80x30:\n%s", v)
+	}
+	if strings.Contains(out, "earlier tickets") {
+		t.Errorf("the summary left tickets out:\n%s", out)
+	}
+	if last := lines[len(lines)-1]; !strings.HasPrefix(last, "♪ Completed the Run  no tickets") {
+		t.Errorf("the run's last line should follow the summary, not %q", last)
+	}
+	for _, l := range lines {
+		if ansi.StringWidth(l) > 80 {
+			t.Errorf("line %d wide on a terminal 80 wide: %q", ansi.StringWidth(l), l)
 		}
 	}
 }
 
-// TestSummaryShowsEveryTicketWhereItFits: an unsized dashboard, or a pane tall enough, keeps every row.
-func TestSummaryShowsEveryTicketWhereItFits(t *testing.T) {
-	m := endedRun(40)
-	for _, height := range []int{0, 60} {
-		m.width, m.height = 80, height
-		v := ansi.Strip(m.View())
-		if !strings.Contains(v, "kinieta-000") || strings.Contains(v, "earlier tickets") {
-			t.Errorf("height %d: every ticket should be listed:\n%s", height, v)
-		}
+// A run that picked up no ticket has no tickets table, and no blank line in its place; a dashboard
+// that never started has no summary.
+func TestSummaryWithoutTickets(t *testing.T) {
+	out := ansi.Strip(printedEnd(endedRun(0), 80))
+	if strings.Contains(out, "Tickets") || strings.Contains(out, "\n\n") {
+		t.Errorf("a run without tickets printed:\n%s", out)
 	}
-	m = endedRun(2)
-	m.width, m.height = 80, 13 // the title 2 lines, the totals 4, a table of two rows 6, the cursor 1
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "kinieta-000") || !strings.Contains(v, "kinieta-001") {
-		t.Errorf("a short table that fits should be shown whole:\n%s", v)
+	if !strings.Contains(out, "Orchestra") || !strings.Contains(out, "♪ Completed the Run") {
+		t.Errorf("the summary or the last line is missing:\n%s", out)
+	}
+	var b strings.Builder
+	Printer{Out: &b, Styled: true, Width: 80}.Summary(Dashboard{})
+	if b.Len() != 0 {
+		t.Errorf("a dashboard that never started printed %q", b.String())
 	}
 }

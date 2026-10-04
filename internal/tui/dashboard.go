@@ -79,7 +79,6 @@ type Dashboard struct {
 	width       int
 	height      int
 	rows        []ticketRow // every ticket picked up in this run, oldest first
-	quitting    bool
 	interrupted bool
 	final       *dispatch.Event // the stop or done event, printed by main after exit
 	received    int             // events received, for ProgramSink.Handoff
@@ -106,18 +105,14 @@ func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		// A terminal that resizes re-wraps the frame on it, and Bubble Tea, which redraws in place
-		// by moving up as many lines as it last drew, would draw the next frame over the middle of
-		// the old one. A new size after the first (height 0: none yet) starts again on a clear screen.
-		resized := m.height != 0 && (msg.Width != m.width || msg.Height != m.height)
+		// Nothing to clear: on the alternate screen, which has no scrollback, a terminal that reflows
+		// the frame as it resizes has nowhere to push its rows, and Bubble Tea draws each frame from
+		// the top.
 		m.width, m.height = msg.Width, msg.Height
-		if resized {
-			return m, tea.ClearScreen
-		}
 	case tea.KeyMsg:
 		switch key := msg.String(); {
 		case key == "ctrl+c": // at any time, the question open or not
-			m.interrupted, m.quitting = true, true
+			m.interrupted = true
 			m.cancel()
 			return m, tea.Quit
 		case m.asking && key == "y":
@@ -200,26 +195,22 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			// main prints the last line after the program exits, below the final dashboard.
-			m.final, m.quitting, m.solo = &ev, true, dispatch.SoloState{}
+			// main prints the last line after the program exits, below the run's summary.
+			m.final, m.solo = &ev, dispatch.SoloState{}
 			return m, tea.Quit
 		}
 	case Finished:
-		m.quitting = true
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-// View is the whole display: title, totals, the tickets of this run, and the current tickets. When
-// the program quits it renders once more without the active ticket, which stays on screen as the
-// run's summary.
+// View is the whole display: title, totals, the tickets of this run, and the current tickets. It is
+// drawn on the alternate screen, which closes with the program; main then prints the run's summary
+// on the normal screen (Printer.Summary).
 func (m Dashboard) View() string {
 	w := max(m.width, 30)
 	title := m.titleLine(w)
-	if m.quitting {
-		return m.summary(w, title)
-	}
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
@@ -242,27 +233,11 @@ func (m Dashboard) View() string {
 	return m.layout(w, title, stack(m.promptLine(w), hint))
 }
 
-// summary is the last frame, which stays on screen as the run's summary: the title, the totals and the
-// tickets, ending with a newline for the line main prints below it. Bubble Tea drops the top lines of a
-// frame taller than the pane, never writing them, so in a pane of known height the tickets table shows
-// only its latest rows, or none, the totals take one line where their strip doesn't fit, and anything
-// still too tall is cut at the bottom: the title and the totals are what the summary is read for.
-func (m Dashboard) summary(w int, title string) string {
-	if m.height == 0 { // no pane to fit
-		return lipgloss.JoinVertical(lipgloss.Left, title, m.statsTable(w), m.ticketsTable(w, 1000)) + "\n"
-	}
-	keep := max(m.height-1, 1) // the frame's last line is the cursor's
-	stats := m.statsTable(w)
-	if lipgloss.Height(title)+lipgloss.Height(stats) > keep {
-		stats = m.statsLine(w)
-	}
-	parts := []string{title, stats}
-	room := keep - lipgloss.Height(title) - lipgloss.Height(stats)
-	if tickets := m.ticketsTable(w, room); lipgloss.Height(tickets) <= room {
-		parts = append(parts, tickets)
-	}
-	lines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, parts...), "\n")
-	return strings.Join(lines[:min(len(lines), keep)], "\n") + "\n"
+// summary is the run's summary, printed on the normal screen once the dashboard has closed: the
+// title, the totals and every ticket of the run, at width w and however many lines that takes.
+func (m Dashboard) summary(w int) string {
+	// Every row: the tickets table's header, rule and borders take 4 lines.
+	return stack(m.titleLine(w), m.statsTable(w), m.ticketsTable(w, len(m.rows)+4))
 }
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea

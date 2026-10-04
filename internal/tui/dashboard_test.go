@@ -113,9 +113,10 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 	}
 
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvStop, Text: "PAUSED: kinieta-kco"})
-	final := ansi.Strip(m.View())
-	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "to stop after the current tickets") {
-		t.Errorf("final view should keep the summary and drop the live parts:\n%s", final)
+	final := ansi.Strip(printedEnd(m, 70))
+	if !strings.Contains(final, "■ stopped") || strings.Contains(final, "to stop after the current tickets") ||
+		strings.Contains(final, "Current") {
+		t.Errorf("the summary after the dashboard should mark the stopped ticket, without the live parts:\n%s", final)
 	}
 }
 

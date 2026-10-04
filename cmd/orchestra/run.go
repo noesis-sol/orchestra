@@ -767,15 +767,12 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 }
 
 // runDashboard runs the loop under the interactive dashboard, then, with the terminal restored,
-// prints the loop's events from where the dashboard left off and runs the organ phase. It returns
-// the loop's exit code, or ExitInterrupted when the dashboard closed before the loop ended.
+// prints the run's summary and the loop's events from where the dashboard left off, and runs the
+// organ phase. It returns the loop's exit code, or ExitInterrupted when the dashboard closed before
+// the loop ended.
 func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.File, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	width := termWidth(stdout)
-	// Clear the screen so the dashboard starts at the top; earlier output stays in the scrollback.
-	// Done here rather than as a Bubble Tea command, which a run that ends at once can outpace.
-	fmt.Fprint(stdout, "\x1b[H\x1b[2J")
 	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
 	drain := func(on bool) {
 		if on {
@@ -784,8 +781,11 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 			r.orch.Resume("from the dashboard")
 		}
 	}
+	// The dashboard draws on the alternate screen, which leaves the earlier output as it was and has
+	// no scrollback: a terminal that reflows a frame as the pane resizes can't push its rows out of
+	// Bubble Tea's reach, as it can on the normal screen.
 	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focusTab(ctx, r.log)),
-		tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithoutSignalHandler())
+		tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
 		quitBy <- s // before the quit, so stoppedBy finds it
@@ -826,8 +826,10 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
-	sink := tui.Printer{Out: stdout, Styled: true, Width: width}
+	// As wide as the pane is now: it may have narrowed under the dashboard.
+	sink := tui.Printer{Out: stdout, Styled: true, Width: termWidth(stdout)}
 	m, _ := final.(tui.Dashboard)
+	sink.Summary(m) // the dashboard went with the alternate screen
 	sink.End(m)
 	// From here the loop's events are printed, starting with any the dashboard never received.
 	progSink.Handoff(sink, m.Received())

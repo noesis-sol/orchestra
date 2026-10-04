@@ -17,8 +17,12 @@ func (s *screen) raw() string {
 	return s.b.String()
 }
 
-// clearScreen is what the dashboard clears the screen with before it opens.
-const clearScreen = "\x1b[H\x1b[2J"
+// The dashboard opens on the alternate screen and closes it again; ESC[2J clears a screen.
+const (
+	openAltScreen  = "\x1b[?1049h"
+	closeAltScreen = "\x1b[?1049l"
+	eraseScreen    = "\x1b[2J"
+)
 
 // In a terminal the question says whether anything is ready; picking the current tickets with
 // nothing to run shows why in a box and exits 0, without the dashboard.
@@ -51,7 +55,7 @@ func TestQuestionWithNothingToRunShowsWhy(t *testing.T) {
 					t.Errorf("the terminal lacks %q:\n%s", want, out)
 				}
 			}
-			if strings.Contains(term.screen.raw(), clearScreen) || strings.Contains(out, "START") {
+			if strings.Contains(term.screen.raw(), openAltScreen) || strings.Contains(out, "START") {
 				t.Errorf("the dashboard opened:\n%s", out)
 			}
 			if got := kindsOf(streamRecords(t, repo)); got != "start done end" {
@@ -74,8 +78,8 @@ func TestQuestionCountsTheReadyTickets(t *testing.T) {
 	}
 }
 
-// A run that doesn't ask, on a terminal, shows only the box, in place of the dashboard: the screen
-// isn't cleared.
+// A run that doesn't ask, on a terminal, shows only the box, in place of the dashboard: no alternate
+// screen, and the screen isn't cleared.
 func TestNothingToRunOnATerminalShowsTheBox(t *testing.T) {
 	dir := nothingTools(t, backlog{})
 	term, repo, exit := runOnTerminal(t, "--tickets")
@@ -90,8 +94,8 @@ func TestNothingToRunOnATerminalShowsTheBox(t *testing.T) {
 	if out := screenOf(term); out != want {
 		t.Errorf("the terminal:\n%q\nwant only the box:\n%q", out, want)
 	}
-	if strings.Contains(term.screen.raw(), clearScreen) {
-		t.Errorf("the screen was cleared:\n%q", term.screen.raw())
+	if raw := term.screen.raw(); strings.Contains(raw, openAltScreen) || strings.Contains(raw, eraseScreen) {
+		t.Errorf("the dashboard opened or the screen was cleared:\n%q", raw)
 	}
 	if got := kindsOf(streamRecords(t, repo)); got != "start done end" {
 		t.Errorf("records: %s", got)

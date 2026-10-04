@@ -26,6 +26,17 @@ All notable changes to orchestra are documented here. The format follows
   the pane or start Claude Code in it, orchestra says why and hands Claude Code
   its terminal, as before.
 
+### Fixed
+
+- The dashboard draws on the terminal's alternate screen, so resizing its
+  pane leaves no earlier frames above it. Narrowing or shortening a Herdr
+  pane reflowed the frame and pushed its top rows into the scrollback, which
+  clearing the screen didn't reach, so each resize stacked another slice of
+  the title and totals above the dashboard. The terminal's earlier output,
+  which the dashboard used to clear, is there again after the run, followed
+  by the run's summary (the title, the totals and every ticket, no longer cut
+  to the pane's height), the closing line and the organ phase.
+
 ## [0.4.0] - 2026-10-04
 
 ### Changed

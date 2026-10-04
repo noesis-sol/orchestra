@@ -82,8 +82,18 @@ func (p Printer) Event(ev dispatch.Event) {
 	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
 }
 
-// End prints the event the run ended with, if any, below the final dashboard d: as Event does, but
-// on a terminal a run that ended by itself also says how long it took.
+// Summary prints the run's summary from the final dashboard d, which the alternate screen took with
+// it as the dashboard closed: its title, totals and tickets, as wide as the terminal and as long as
+// they are. A dashboard that never started (the zero Dashboard) has none.
+func (p Printer) Summary(d Dashboard) {
+	if d.began.IsZero() {
+		return
+	}
+	fmt.Fprintln(p.Out, d.summary(max(p.Width, 30)))
+}
+
+// End prints the event the run ended with, if any, below the run's summary from the final dashboard
+// d: as Event does, but on a terminal a run that ended by itself also says how long it took.
 func (p Printer) End(d Dashboard) {
 	switch ev := d.Final(); {
 	case ev == nil:
