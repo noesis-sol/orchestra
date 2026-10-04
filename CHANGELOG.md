@@ -89,6 +89,12 @@ All notable changes to orchestra are documented here. The format follows
   stopped the next run with `Unreadable settings`. Each file keeps its mode,
   and one behind a symlink is still written where the link leads. In a
   read-only folder the write now fails and leaves the file as it was.
+- With `TERM=dumb` (an Emacs shell, some editor and CI terminals), where
+  the forms ask their questions one per line, a question the form hides is
+  no longer asked. Choosing **Current tickets** asked to describe the
+  feature anyway, and wouldn't go on without a description, which was then
+  thrown away; `orchestra init` asked for the number of tickets at the same
+  time after 1 to 4 was chosen, and wouldn't take an empty answer.
 
 ## [0.4.0] - 2026-10-04
 

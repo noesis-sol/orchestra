@@ -186,8 +186,9 @@ func parseConcurrency(v string) (int, error) {
 }
 
 // formField is a field of the init form, which huh v1.0.0 can't hide on its own (it hides whole
-// groups). A hidden field is skipped, has no error and draws nothing. Each field draws the gap
-// above it, the form's theme drawing none, so a hidden one leaves no gap either.
+// groups). A hidden field is skipped, has no error, draws nothing and isn't asked in huh's accessible
+// mode. Each field draws the gap above it, the form's theme drawing none, so a hidden one leaves no
+// gap either.
 type formField struct {
 	huh.Field
 	gap       string      // drawn above the field: the theme's field separator, but not above the first
@@ -226,6 +227,24 @@ func (f *formField) Error() error {
 		return nil
 	}
 	return f.Field.Error()
+}
+
+// WithAccessible sets the field's accessible mode and returns the formField: huh's accessible form
+// (TERM=dumb) runs each field as WithAccessible returns it, and the field's own would bypass the
+// hiding. The field keeps its own value, not what its WithAccessible returns: a wrapper such as
+// boundedSelect returns the huh field inside it.
+func (f *formField) WithAccessible(accessible bool) huh.Field {
+	f.Field.WithAccessible(accessible) //nolint:staticcheck // huh's accessible form still calls it
+	return f
+}
+
+// RunAccessible asks for the field on w, reading the answer from r, or does nothing when hidden.
+// It runs after the fields above it have their answers, so the hiding follows them.
+func (f *formField) RunAccessible(w io.Writer, r io.Reader) error {
+	if f.isHidden() {
+		return nil
+	}
+	return f.Field.RunAccessible(w, r)
 }
 
 // mcpOptions are the MCP servers offered to workers, each with where it is defined, and the names
