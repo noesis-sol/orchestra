@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -138,7 +139,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)
 			continue
 		}
-		if err := o.runCheck(ctx, wt); err != nil {
+		if output, err := o.runCheck(ctx, id, wt); err != nil {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
@@ -150,7 +151,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
 					"worktree %s and tab %s left for review (output is in %s)",
-				id, c.Check, how, br, c.Base, wt, tab, c.LogPath)})
+				id, c.Check, how, br, c.Base, wt, tab, output)})
 			return nil
 		}
 		o.info("  '%s' passes on the rebased %s", c.Check, br)
@@ -215,10 +216,12 @@ func (o *Loop) checkTimeout() time.Duration {
 	return orDefault(o.cfg.CheckTimeout, project.DefaultCheckTimeout)
 }
 
-// runCheck runs the project's check command in the worktree, logging the end of its output if it
-// fails. It gives up after checkTimeout, stopping everything the check started, and returns
-// errCheckTimedOut then.
-func (o *Loop) runCheck(ctx context.Context, wt string) error {
+// runCheck runs the project's check command in ticket id's worktree wt. It gives up after
+// checkTimeout, stopping everything the check started, and returns errCheckTimedOut then. When the
+// check fails, the end of its output goes in the log and the whole of it in wt's checkLogName (see
+// saveCheckOutput); runCheck returns where the output is. When it passes, each FLAKY: line it printed
+// is a warning (see reportFlaky).
+func (o *Loop) runCheck(ctx context.Context, id, wt string) (string, error) {
 	limit := o.checkTimeout()
 	checkCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
@@ -228,8 +231,54 @@ func (o *Loop) runCheck(ctx context.Context, wt string) error {
 	}
 	if err != nil {
 		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
+		return o.saveCheckOutput(wt, out), err
 	}
-	return err
+	o.reportFlaky(id, out)
+	return "", nil
+}
+
+// checkLogName is the file in a worktree's .orchestra/run/ that holds the whole output of the last
+// check that failed there: the log keeps only its end, where a long failure message can push out
+// the name of the test that failed.
+const checkLogName = "check.log"
+
+// saveCheckOutput writes a failed check's whole output to checkLogName in the worktree wt, left for
+// review with it, and returns the file's path. The worker can change .orchestra/run/, so the file
+// is reached through an os.Root, as every run file is (see project.OpenRun). A file that can't be
+// written is logged, and the log's path returned: it has the end of the output.
+func (o *Loop) saveCheckOutput(wt string, out []byte) string {
+	rel := project.RunPath(checkLogName)
+	root, err := project.OpenRun(wt)
+	if err == nil {
+		err = project.WriteRun(root, wt, rel, out, 0o644)
+		_ = root.Close() // nothing written is lost: WriteRun closed its file
+	}
+	if err != nil {
+		o.log.Raw("", fmt.Errorf("cannot keep the check's whole output in %s: %w", wt, err))
+		return o.cfg.LogPath
+	}
+	return filepath.Join(wt, rel)
+}
+
+// flakyPrefix starts a line of a check's output that says a test failed and then passed on a rerun:
+// a convention for any project's check, which the README documents.
+const flakyPrefix = "FLAKY:"
+
+// reportFlaky warns, naming ticket id, of each FLAKY: line in the output of its passing check: the
+// check passed, so the ticket merges, but a test that passes only on a rerun is a bug to fix, and
+// nobody would see it otherwise.
+func (o *Loop) reportFlaky(id string, out []byte) {
+	for line := range strings.Lines(string(out)) {
+		test, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), flakyPrefix)
+		if !ok {
+			continue
+		}
+		if test = strings.TrimSpace(test); test == "" {
+			test = "it doesn't say which"
+		}
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  FLAKY: %s's check '%s' passed, but a test failed and then passed on a rerun: %s", id, o.cfg.Check, test)})
+	}
 }
 
 // refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch

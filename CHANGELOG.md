@@ -57,6 +57,17 @@ All notable changes to orchestra are documented here. The format follows
   the file it locked, and tries again if not. Scripts that read the lock
   (`lsof -t`, `jq .started`) need the new path. A run of an earlier version
   locks the old one: let it end before starting a run of this version.
+- A failed merge check's whole output is kept in the ticket's worktree, in
+  `.orchestra/run/check.log`, which the `CHECKS_FAILED` line names. The log
+  keeps only the last 40 lines, and `go test` prints a failing test's name and
+  error before its output, so a long failure message pushed out which test
+  failed, and why.
+- A passing check's lines starting with `FLAKY:` are warnings naming the
+  ticket (`FLAKY: <id>'s check … passed, but a test failed and then passed on
+  a rerun: …`), in the log, the dashboard, the event stream and the run
+  report. A check that reruns a failed test and passes says so this way, as
+  the README describes; the ticket merges as before, but the flaky test no
+  longer goes unseen.
 - The dashboard draws on the terminal's alternate screen, so resizing its
   pane leaves no earlier frames above it. Narrowing or shortening a Herdr
   pane reflowed the frame and pushed its top rows into the scrollback, which

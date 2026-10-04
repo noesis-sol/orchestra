@@ -35,6 +35,8 @@ orchestra init --check "scripts/ci-local.sh"
 
 Flags answer without asking (`--check`, `--check-timeout`, `-c N`, `--mcp a,b`). Commit `.orchestra/` afterwards. The details are in [docs/setup.md](docs/setup.md).
 
+A check that reruns a failed test, and passes when the rerun does, should say so with a line starting with `FLAKY:` for each such test, such as `FLAKY: ./internal/dispatch TestMerge`. The ticket merges, as the check passed, and orchestra warns of each `FLAKY:` line, naming the ticket, in the log, the dashboard, the event stream and the run report: a test that passes only on a rerun is a bug to fix. When the check fails, its whole output is kept in the ticket's worktree, in `.orchestra/run/check.log`, which the `CHECKS_FAILED` line names; the log has the end of it.
+
 ## Run
 
 From the main checkout, inside a Herdr pane, on the branch finished tickets should land on:

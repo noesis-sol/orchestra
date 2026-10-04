@@ -155,7 +155,7 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 			r.br, n, r.own), nil
 	}
 	o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
-	if err := o.runCheck(ctx, r.wt); err != nil {
+	if output, err := o.runCheck(ctx, r.id, r.wt); err != nil {
 		if ctx.Err() != nil {
 			return "", errInterrupted
 		}
@@ -163,7 +163,7 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 			return fmt.Sprintf("'%s' did not finish within %s on the resolved %s",
 				c.Check, ShortDuration(o.checkTimeout()), r.br), nil
 		}
-		return fmt.Sprintf("'%s' fails on the resolved %s (output is in %s)", c.Check, r.br, c.LogPath), nil
+		return fmt.Sprintf("'%s' fails on the resolved %s (output is in %s)", c.Check, r.br, output), nil
 	}
 	o.info("  '%s' passes on %s as its worker resolved it", c.Check, r.br)
 	return "", nil

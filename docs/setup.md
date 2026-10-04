@@ -18,7 +18,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 .orchestra/.gitignore         committed: ignores the three below
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
-.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's MCP servers, its hooks and what they report); in the main checkout, the event stream, the workers the last run left behind (state.json), and a feature interview's instructions, its description (feature-request.md) and the epic it filed (feature.json)
+.orchestra/run/               per-ticket files in each worktree (the launch prompt, the worker's MCP servers, its hooks and what they report, and the whole output of a merge check that failed there, check.log); in the main checkout, the event stream, the workers the last run left behind (state.json), and a feature interview's instructions, its description (feature-request.md) and the epic it filed (feature.json)
 ```
 
 The run lock is not there but in the git directory, as `.git/orchestra.lock`, where `git clean` doesn't remove it during a run (see [Run](running.md#run)).
