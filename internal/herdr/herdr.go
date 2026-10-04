@@ -85,6 +85,60 @@ func (t Terminal) TabLabel(ctx context.Context, tab string) (label string, open 
 	return r.Result.Tab.Label, true, nil
 }
 
+// SplitPane splits the pane, opening a new one to its right that starts in cwd and has the keyboard
+// focus, and returns the new pane's ID.
+func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, error) {
+	out, err := run(ctx, command.ReadLimit, "pane", "split", pane, "--direction", "right", "--cwd", cwd, "--focus")
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		Result struct {
+			Pane struct {
+				PaneID string `json:"pane_id"`
+			} `json:"pane"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Pane.PaneID == "" {
+		return "", fmt.Errorf("unexpected 'herdr pane split' output: %s", out)
+	}
+	return r.Result.Pane.PaneID, nil
+}
+
+// ClosePane closes a Herdr pane, ending what runs in it. A pane that is already gone
+// (pane_not_found), closed by the user say, is no error.
+func (t Terminal) ClosePane(ctx context.Context, pane string) error {
+	_, err := run(ctx, command.ReadLimit, "pane", "close", pane)
+	if HasCode(err, PaneNotFound) {
+		return nil
+	}
+	return err
+}
+
+// PaneOpen reports whether Herdr still has the pane; false (pane_not_found) is no error. PaneAgent
+// cannot tell: Herdr answers agent_not_found both for a pane whose agent has left and for a pane
+// that is gone.
+func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
+	out, err := run(ctx, command.ReadLimit, "pane", "get", pane)
+	if HasCode(err, PaneNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var r struct {
+		Result struct {
+			Pane struct {
+				PaneID string `json:"pane_id"`
+			} `json:"pane"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Pane.PaneID == "" {
+		return false, fmt.Errorf("unexpected 'herdr pane get' output: %s", out)
+	}
+	return true, nil
+}
+
 // StartAgent starts an agent in the pane, passing it args; a prompt among them starts it with the
 // prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
 // with line breaks, so each must be one line.
@@ -102,6 +156,7 @@ func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args 
 const (
 	AgentNotFound        = "agent_not_found"        // no agent by that name or in that pane
 	TabNotFound          = "tab_not_found"          // no tab by that ID
+	PaneNotFound         = "pane_not_found"         // no pane by that ID
 	InvalidAgentName     = "invalid_agent_name"     // a name outside Herdr's rule for agent names
 	InvalidAgentArgument = "invalid_agent_argument" // an argument Herdr can't type into a shell
 )
