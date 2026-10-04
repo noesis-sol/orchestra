@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -75,7 +76,7 @@ func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason)
 	w := o.newWatcher(r.wt, base)
 	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: fmt.Sprintf(
 		"  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve (up to %s)",
-		r.br, c.Base, strings.Join(r.files, ", "), r.tab, ShortDuration(limit))})
+		r.br, c.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(limit))})
 	if !o.deliverPrompt(ctx, agent, o.resolvePrompt(r)) {
 		if ctx.Err() != nil {
 			return "", errInterrupted
@@ -124,9 +125,9 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, deadline time
 				return "" // what it left is checked next
 			}
 			if err != nil {
-				return fmt.Sprintf("its worker's status could still not be read after %s", ShortDuration(limit))
+				return fmt.Sprintf("its worker's status could still not be read after %s", command.ShortDuration(limit))
 			}
-			return fmt.Sprintf("its worker was still %s after %s", st, ShortDuration(limit))
+			return fmt.Sprintf("its worker was still %s after %s", st, command.ShortDuration(limit))
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return ""
@@ -161,7 +162,7 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 		}
 		if errors.Is(err, errCheckTimedOut) {
 			return fmt.Sprintf("'%s' did not finish within %s on the resolved %s",
-				c.Check, ShortDuration(o.checkTimeout()), r.br), nil
+				c.Check, command.ShortDuration(o.checkTimeout()), r.br), nil
 		}
 		return fmt.Sprintf("'%s' fails on the resolved %s (output is in %s)", c.Check, r.br, output), nil
 	}

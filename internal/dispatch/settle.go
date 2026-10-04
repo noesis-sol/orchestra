@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // waitSettled waits until the worker w settles, and returns when it went idle for good. Never answer
@@ -76,16 +78,16 @@ func (o *Loop) waitSettled(
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
 			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
 				"Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).",
-				tab, st, ShortDuration(limit), wt))
+				tab, st, command.ShortDuration(limit), wt))
 			return time.Time{}, halt(ExitStuck, stopTicketLimit,
 				": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
-				id, st, ShortDuration(limit), tab, wt)
+				id, st, command.ShortDuration(limit), tab, wt)
 		}
 		if o.cfg.TicketLimit == 0 && !warned && time.Since(w.started) > longRunning {
 			warned = true
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
-				id, st, ShortDuration(longRunning), tab)})
+				id, st, command.ShortDuration(longRunning), tab)})
 		}
 	}
 }
@@ -276,7 +278,8 @@ func later(a, b time.Time) time.Time {
 func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since time.Time,
 	idleFor, running time.Duration) (settled bool, why string) {
 	if ticket == StatusInProgress {
-		return idleFor >= idleGrace, fmt.Sprintf("idle for %s with the ticket still in progress", ShortDuration(idleGrace))
+		return idleFor >= idleGrace,
+			fmt.Sprintf("idle for %s with the ticket still in progress", command.ShortDuration(idleGrace))
 	}
 	if hooks && o.reporter != nil {
 		u, ok := o.reporter.LastToolUse(wt)
@@ -288,12 +291,12 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 				return true, "Stop hook at " + u.At.Format("15:04:05")
 			}
 			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook",
-				ShortDuration(idleGrace), u.Event)
+				command.ShortDuration(idleGrace), u.Event)
 		}
 	}
 	if ticket == StatusOpen {
 		return running >= startGrace, fmt.Sprintf("idle %s after it started, with the ticket still open",
-			ShortDuration(startGrace))
+			command.ShortDuration(startGrace))
 	}
 	return true, "idle with the ticket " + string(ticket)
 }

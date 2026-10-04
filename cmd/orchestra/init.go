@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
@@ -94,7 +95,7 @@ func runInit(
 		choice.Concurrent, choice.Unasked = concurrent, false
 	}
 	if timeoutGiven {
-		choice.CheckTimeout, choice.ReplacedTimeout = dispatch.ShortDuration(*checkTimeout), ""
+		choice.CheckTimeout, choice.ReplacedTimeout = command.ShortDuration(*checkTimeout), ""
 	}
 	if mcpGiven {
 		names := mcp.ParseNames(*mcpList)

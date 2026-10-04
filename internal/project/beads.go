@@ -146,6 +146,9 @@ func installBd(
 	return missing(in.Command + " ran, but bd isn't on the PATH; install it by hand: see " + beadsDocs)
 }
 
+// errInstallTimedOut is why an install stopped at InstallLimit: "timed out after 15m".
+var errInstallTimedOut = errors.New("timed out after " + command.ShortDuration(InstallLimit))
+
 // runInstall installs bd with Homebrew, or with the install script as its instructions run it, and
 // returns how it failed, or "". At the time limit, or on Ctrl+C, it stops everything the install
 // started: Homebrew's downloads, the script's go install.
@@ -163,7 +166,7 @@ func runInstall(ctx context.Context, repo string, in BeadsInstall) string {
 	case ctx.Err() != nil:
 		err = errors.New("stopped")
 	case errors.Is(installCtx.Err(), context.DeadlineExceeded):
-		err = errors.New("timed out after " + strings.TrimSuffix(InstallLimit.String(), "0s"))
+		err = errInstallTimedOut
 	}
 	return failure(in.Command, err, string(out))
 }

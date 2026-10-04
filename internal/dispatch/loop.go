@@ -340,18 +340,6 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// ShortDuration is d as a person would write it: 2h, 1h30m, 45m.
-func ShortDuration(d time.Duration) string {
-	s := d.String()
-	if strings.HasSuffix(s, "m0s") {
-		s = s[:len(s)-2]
-	}
-	if strings.HasSuffix(s, "h0m") {
-		s = s[:len(s)-2]
-	}
-	return s
-}
-
 // because renders a tracker error for a log line, with bd's stderr on one line: ": <cause>", or
 // "" without an error.
 func because(err error) string {

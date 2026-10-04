@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -280,7 +281,7 @@ func (o *Loop) budgetNote() string {
 		return ""
 	}
 	return fmt.Sprintf("\n\nYou have about %s for this ticket: a worker still going after that stops the run, "+
-		"so pace yourself to it.\n", ShortDuration(limit))
+		"so pace yourself to it.\n", command.ShortDuration(limit))
 }
 
 // resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and

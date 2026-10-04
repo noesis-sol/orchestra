@@ -65,7 +65,7 @@ func (o *Loop) settled(ctx context.Context, id string, how settling) {
 	case len(o.fastFails) >= n:
 		o.holdForEnvironment(ctx, fmt.Sprintf(
 			"the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
-			len(o.fastFails), strings.Join(o.fastFails, ", "), ShortDuration(o.cfg.EnvHoldWindow)))
+			len(o.fastFails), strings.Join(o.fastFails, ", "), command.ShortDuration(o.cfg.EnvHoldWindow)))
 	}
 }
 
@@ -157,7 +157,7 @@ func (o *Loop) probeEnvironment(
 	o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
 		"PROBE: the run holds for the environment; "+
 			"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
-		ShortDuration(after))})
+		command.ShortDuration(after))})
 	wait := time.NewTimer(after)
 	defer wait.Stop()
 	for waiting := true; waiting; {
@@ -181,7 +181,7 @@ func (o *Loop) probeEnvironment(
 	if err != nil {
 		return halt(ExitEnvironment, stopEnvironment,
 			": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
-			o.envWhy, ShortDuration(after), err).causedBy(err)
+			o.envWhy, command.ShortDuration(after), err).causedBy(err)
 	}
 	o.closeTab(ctx, tab)
 	select {
@@ -190,7 +190,8 @@ func (o *Loop) probeEnvironment(
 	}
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
-		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again", ShortDuration(after))})
+		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again",
+		command.ShortDuration(after))})
 	return nil
 }
 
@@ -267,7 +268,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
 			return tab, fmt.Errorf("it ran no command within %s; see tab %s",
-				ShortDuration(probeLimit), tab)
+				command.ShortDuration(probeLimit), tab)
 		}
 		if !sleep(ctx, o.pollEvery()) {
 			return tab, errors.New("interrupted")

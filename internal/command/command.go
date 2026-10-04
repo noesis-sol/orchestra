@@ -90,7 +90,7 @@ func run(ctx context.Context, limit time.Duration, dir string, env []string, std
 // errors.Is takes it for context.DeadlineExceeded.
 type timedOut time.Duration
 
-func (t timedOut) Error() string { return "timed out after " + shortDuration(time.Duration(t)) }
+func (t timedOut) Error() string { return "timed out after " + ShortDuration(time.Duration(t)) }
 
 func (t timedOut) Unwrap() error { return context.DeadlineExceeded }
 
@@ -122,8 +122,8 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// shortDuration is d as a person would write it: 2m, 30s, 500ms.
-func shortDuration(d time.Duration) string {
+// ShortDuration is d as a person would write it: 2h, 1h30m, 45m, 1m30s, 500ms.
+func ShortDuration(d time.Duration) string {
 	s := d.String()
 	if strings.HasSuffix(s, "m0s") {
 		s = s[:len(s)-2]

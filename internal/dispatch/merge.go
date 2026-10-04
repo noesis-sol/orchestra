@@ -147,7 +147,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
 			how, why := "fails", "checks failed"
 			if errors.Is(err, errCheckTimedOut) {
-				how, why = "did not finish within "+ShortDuration(o.checkTimeout()), "checks timed out"
+				how, why = "did not finish within "+command.ShortDuration(o.checkTimeout()), "checks timed out"
 			}
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
@@ -228,7 +228,7 @@ func (o *Loop) runCheck(ctx context.Context, id, wt string) (string, error) {
 	defer cancel()
 	out, err := command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", o.cfg.Check)
 	if err != nil && ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
-		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, ShortDuration(limit), err)
+		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
 	}
 	if err != nil {
 		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
