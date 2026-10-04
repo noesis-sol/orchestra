@@ -25,10 +25,11 @@ import (
 // prompt and the description as its first message: in a Herdr pane split off orchestra's, to its
 // right (paneSession), or, when that can't be done, on orchestra's own terminal. Claude interviews
 // the user until they share an understanding of the feature, files it in Beads as an epic and its
-// tickets once the user agrees, and names the epic in .orchestra/run/feature.json. When the user
-// exits the session, orchestra shows the epic's tickets and asks whether to run them; on yes the
-// run is the one --feature starts after filing its plan. --feature itself, for scripts and agents,
-// keeps the screen and plan organs (feature.go).
+// tickets once the user agrees, and names the epic in .orchestra/run/feature.json. When the session
+// ends (in a pane, orchestra ends it once claude has filed the feature and finished its turn; on the
+// terminal, the user exits it), orchestra shows the epic's tickets and asks whether to run them; on
+// yes the run is the one --feature starts after filing its plan. --feature itself, for scripts and
+// agents, keeps the screen and plan organs (feature.go).
 
 // noFeature is what orchestra says when the interview filed no feature to run.
 const noFeature = "No feature was filed; nothing to run."
@@ -71,7 +72,13 @@ func runInterview(
 	// while the session has the terminal.
 	ctx, stop := stops.context(ctx)
 	defer stop()
-	terminal := func(ctx context.Context, prompt string) error {
+	terminal := func(ctx context.Context, _ string) error {
+		// The instructions the session was given, rewritten for the terminal: orchestra can't end the
+		// session there once the feature is filed, as it does in a pane, so claude says how to.
+		prompt, err := project.WriteTerminalInterview(c.Repo)
+		if err != nil {
+			return fmt.Errorf("cannot write the interview's instructions: %w", err)
+		}
 		fmt.Fprintln(stdout, "Talking the feature through with claude, which files it as tickets once you agree. "+
 			"Type /exit to come back.")
 		defer stops.dropInterrupts()() // Ctrl+C is Claude Code's, which interrupts and clears with it
@@ -221,9 +228,10 @@ const (
 var errPaneClosed = errors.New("the interview's pane was closed")
 
 // talk opens the interview's pane, starts claude there with the instructions in prompt, and waits
-// until claude has left the pane (/exit) or the pane is gone. It then closes the pane, which gives
-// orchestra's pane the keyboard focus back: Herdr returns it to the pane that had it before the
-// split, orchestra's, where the description was typed. When ctx ends first (Ctrl+C in orchestra's
+// until claude has filed the feature and finished its turn, has left the pane (/exit), or the pane
+// is gone. It then closes the pane, which ends claude if it is still there and gives orchestra's
+// pane the keyboard focus back: Herdr returns it to the pane that had it before the split,
+// orchestra's, where the description was typed. When ctx ends first (Ctrl+C in orchestra's
 // pane, SIGTERM, SIGHUP) the pane is closed all the same, which ends claude. When the pane can't be
 // opened or claude doesn't appear in it, orchestra says why, closes any pane it made, and hands
 // claude its terminal instead (fallback).
@@ -237,8 +245,8 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 			"terminal: "+dispatch.FirstLine(err.Error()))
 		return p.fallback(ctx, prompt)
 	default:
-		fmt.Fprintln(p.out, "Talking the feature through with claude in the pane on the right; "+
-			"type /exit there to come back. Ctrl+C here stops.")
+		fmt.Fprintln(p.out, "Talking the feature through with claude in the pane on the right, which closes once "+
+			"the feature is filed. Type /exit there to leave without filing; Ctrl+C here stops.")
 		p.wait(ctx, interview)
 	}
 	p.close(ctx, interview)
@@ -297,8 +305,13 @@ func (p paneSession) started(ctx context.Context, pane string) error {
 	}
 }
 
-// wait waits until claude has left the pane or the pane is gone, which Herdr answers alike, with no
-// agent in it, or ctx ends. A read that fails says nothing about claude: Herdr is asked again.
+// wait waits until the interview is over, or ctx ends. It is over once claude has left the pane or
+// the pane is gone, which Herdr answers alike, with no agent in it, or once claude has filed the
+// feature, its feature.json naming the epic, and its turn has ended (idle, or done until the pane
+// is looked at). claude writes the file during its last turn, before it tells the user the feature
+// is filed, so the file is looked at before claude's state is read: a turn's end read after the
+// file was there is the end of that turn or a later one. A read that fails says nothing about
+// claude: Herdr is asked again.
 func (p paneSession) wait(ctx context.Context, pane string) {
 	for {
 		select {
@@ -306,7 +319,14 @@ func (p paneSession) wait(ctx context.Context, pane string) {
 			return
 		case <-time.After(interviewPoll):
 		}
-		if _, _, st, err := p.herdr.PaneAgent(ctx, pane); err == nil && st == dispatch.StateGone {
+		_, err := project.FiledFeature(p.repo)
+		filed := err == nil // a file that names no epic files nothing: /exit ends that interview
+		_, _, st, err := p.herdr.PaneAgent(ctx, pane)
+		switch {
+		case err != nil:
+		case st == dispatch.StateGone:
+			return
+		case filed && (st == dispatch.StateIdle || st == dispatch.StateDone):
 			return
 		}
 	}

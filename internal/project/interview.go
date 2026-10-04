@@ -19,6 +19,13 @@ import (
 //go:embed interview-prompt.md
 var interviewPrompt string
 
+// interviewOnTerminal is what the instructions add for a session on orchestra's own terminal (see
+// WriteTerminalInterview).
+const interviewOnTerminal = "\n## On orchestra's terminal\n\n" +
+	"orchestra runs this session on its own terminal, not in a pane beside its own, and can't close it: it\n" +
+	"waits for the session to end. Once the feature is filed, tell the user to type `/exit` to hand back\n" +
+	"to orchestra, which then shows the tickets and asks whether to start the run on them.\n"
+
 // The interview's files in .orchestra/run/ of the main checkout.
 const (
 	interviewPromptName = "interview-prompt.md"
@@ -40,6 +47,23 @@ func WriteInterview(repo string) (string, error) {
 	}
 	rel := RunPath(interviewPromptName)
 	if err := WriteRun(root, repo, rel, []byte(interviewPrompt), 0o644); err != nil {
+		return "", err
+	}
+	return filepath.Join(repo, rel), nil
+}
+
+// WriteTerminalInterview writes the instructions for an interview on orchestra's own terminal over
+// those WriteInterview wrote to the main checkout repo, and returns their path, the same. orchestra
+// closes a session in a pane beside its own once the feature is filed, but can only wait for one on
+// its terminal to end: these instructions add that claude tells the user to type /exit then.
+func WriteTerminalInterview(repo string) (string, error) {
+	root, err := OpenRun(repo)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := RunPath(interviewPromptName)
+	if err := WriteRun(root, repo, rel, []byte(interviewPrompt+interviewOnTerminal), 0o644); err != nil {
 		return "", err
 	}
 	return filepath.Join(repo, rel), nil

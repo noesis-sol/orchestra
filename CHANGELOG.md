@@ -25,6 +25,14 @@ All notable changes to orchestra are documented here. The format follows
   interview's pane and stop orchestra (exit code 130). When Herdr can't split
   the pane or start Claude Code in it, orchestra says why and hands Claude Code
   its terminal, as before.
+- The interview in a pane ends by itself once the feature is filed: when
+  `.orchestra/run/feature.json` names the epic and Claude's turn is over,
+  orchestra closes Claude's pane and shows the tickets and the question, so
+  you no longer type `/exit`. A `feature.json` written while Claude is still
+  working leaves the pane open until that turn ends. `/exit`, or closing the
+  pane, still ends an interview that files nothing. On orchestra's own
+  terminal, where orchestra can't end the session, Claude's instructions add
+  that it tells you to type `/exit` once the feature is filed.
 
 ### Fixed
 

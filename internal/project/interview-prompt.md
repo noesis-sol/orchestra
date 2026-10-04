@@ -138,15 +138,16 @@ filed and what wasn't, and finish filing the rest once the cause is fixed.
 
 ## Handing back
 
-Once everything is filed, write the epic's ID for orchestra with exactly this command, the one file
-you write:
+Once everything is filed and checked, write the epic's ID for orchestra with exactly this command,
+the one file you write:
 
 ```
 printf '{"epic":"%s"}\n' '<epic ID>' > .orchestra/run/feature.json
 ```
 
-Then tell the user that the feature is filed and to type `/exit` to hand back to orchestra, which
-shows the tickets and asks whether to start the run on them.
+orchestra takes the file as the sign that the interview is done: once your turn is over, it closes
+this session by itself. So write it last, then tell the user that the feature is filed and that
+orchestra shows the tickets next and asks whether to start the run on them. Ask nothing more.
 
 If the user decides not to go ahead, file nothing and write no file; tell them that `/exit` hands
 back to orchestra, which then runs nothing.

@@ -136,6 +136,8 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 		"bd create --type epic", "bd create --parent <epic ID>", `--metadata '{"files":["a.go","b.go"]}'`,
 		"bd dep add <the ticket that waits> <the ticket it waits for>",
 		`printf '{"epic":"%s"}\n' '<epic ID>' > .orchestra/run/feature.json`, "`/exit`",
+		// orchestra can't end the session on its terminal: claude says how the user does
+		"## On orchestra's terminal", "tell the user to type `/exit` to hand back",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Errorf("the instructions lack %q", want)

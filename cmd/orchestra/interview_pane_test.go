@@ -145,8 +145,8 @@ func interviewInPane(ctx context.Context, t *testing.T, repo string, panes *fake
 }
 
 // paneLine is what orchestra's pane says while the interview runs in the pane beside it.
-const paneLine = "Talking the feature through with claude in the pane on the right; " +
-	"type /exit there to come back. Ctrl+C here stops.\n"
+const paneLine = "Talking the feature through with claude in the pane on the right, which closes once the " +
+	"feature is filed. Type /exit there to leave without filing; Ctrl+C here stops.\n"
 
 // In a Herdr pane, the interview opens in a pane split off orchestra's, to its right, in the main
 // checkout: claude starts there with the instructions and a first message, one line, that brings in
