@@ -297,15 +297,17 @@ func (t Terminal) PaneAgent(
 }
 
 // readAgent reads the output of 'herdr agent get': the agent's name, kind and state. Herdr answers
-// a missing agent with agent_not_found (and fails), which is StateGone; any other failure (Herdr
-// busy or restarting, say) says nothing about the agent, so it is the error, with no state.
+// a missing agent with agent_not_found (and fails), which is StateGone, as is a result with no
+// agent in it; any other failure (Herdr busy or restarting, say) says nothing about the agent, so
+// it is the error, with no state. So is an agent without a status: a Herdr that renamed or dropped
+// agent_status would otherwise make every live worker look gone.
 func readAgent(out string, err error) (name, kind string, state dispatch.AgentState, _ error) {
 	if HasCode(err, AgentNotFound) {
 		return "", "", dispatch.StateGone, nil
 	}
 	var r struct {
-		Result struct {
-			Agent struct {
+		Result *struct {
+			Agent *struct {
 				Name        *string `json:"name"`
 				Agent       string  `json:"agent"`
 				AgentStatus string  `json:"agent_status"`
@@ -316,10 +318,12 @@ func readAgent(out string, err error) (name, kind string, state dispatch.AgentSt
 	switch {
 	case err != nil:
 		return "", "", "", err
-	case jerr != nil:
+	case jerr != nil || r.Result == nil:
 		return "", "", "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
-	case r.Result.Agent.AgentStatus == "":
+	case r.Result.Agent == nil:
 		return "", "", dispatch.StateGone, nil
+	case r.Result.Agent.AgentStatus == "":
+		return "", "", "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
 	}
 	a := r.Result.Agent
 	if a.Name != nil {

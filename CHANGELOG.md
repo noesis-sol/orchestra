@@ -41,6 +41,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- An agent that `herdr agent get` shows without an `agent_status` no longer
+  reads as gone. A Herdr that renamed or dropped that field would have made
+  every live worker look gone, and the run would have settled workers still
+  at work. Such output is now a failed read, which orchestra logs and tries
+  again, as when Herdr is busy. Only Herdr's `agent_not_found` (its answer
+  for a pane without an agent, too) or a result with no agent reads as gone.
 - The run lock is `orchestra.lock` in the repository's git directory
   (`.git/orchestra.lock` in the main checkout), where `git clean` never
   reaches, rather than `.orchestra/run/orchestra.lock`. `git clean -fdX` or
