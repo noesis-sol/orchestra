@@ -163,18 +163,18 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
 
-	worker, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch)
+	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch)
 	if stop != nil {
 		return stop
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
-	tab, started := worker.tab, worker.started
+	tab, started := launched.tab, launched.started
 
 	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
 	stopWatch := o.watch(ctx, w)
 	defer stopWatch()
 
-	if !o.promptTaken(ctx, id, agent, prompt, worker.atLaunch) {
+	if !o.promptTaken(ctx, id, agent, prompt, launched.atLaunch) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
@@ -196,7 +196,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	stopWatch() // the settle loop reports from here on
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
-	return o.conclude(ctx, t, agent, tab, wt, head, started, worker.hooks, time.Time{}, w.report, how)
+	return o.conclude(ctx, t, worker{id: id, br: br, wt: wt, tab: tab, agent: agent, started: started,
+		hooks: launched.hooks}, head, w.report, how)
 }
 
 // adopt takes on the worker an asked ticket left in its tab, which carries on with the ticket now
@@ -215,8 +216,8 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.
-	return o.conclude(ctx, t, agent, w.tab, w.wt, head, base.Started, w.hooks, adopted,
-		o.newWatcher(w.wt, base).report, how)
+	return o.conclude(ctx, t, worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab, agent: agent,
+		started: base.Started, hooks: w.hooks, since: adopted}, head, o.newWatcher(w.wt, base).report, how)
 }
 
 // takeOn makes the worker an asked ticket t left in its tab, w, the ticket's again, as it is told to
@@ -316,14 +317,22 @@ func (w askedWorker) told() string {
 	return w.question + " is answered"
 }
 
-// conclude waits for ticket t's worker, started (or adopted) at started, to settle, and then does
-// what its ticket's status says: merge it, set it aside, or stop the run. hooks says it reports
-// through them, and since from when (zero: any report counts). It sets how to how the worker
-// settled, as work does.
-func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head string, started time.Time, hooks bool,
-	since time.Time, report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
-	id, br := t.ID, branchOf(t.ID)
-	idleAt, stop := o.waitSettled(ctx, id, agent, tab, wt, started, time.Now(), hooks, since, report)
+// worker is a ticket's worker as the run waits on it and merges its work: the ticket, its branch
+// and worktree, the Herdr tab it runs in and its name there, and how to read its hooks.
+type worker struct {
+	id, br, wt, tab, agent string
+	started                time.Time // when it was started on the ticket, or adopted
+	hooks                  bool      // it reports what it does through hooks
+	since                  time.Time // its hooks' reports count from then on (zero: any report counts)
+}
+
+// conclude waits for ticket t's worker, w, to settle, and then does what its ticket's status says:
+// merge it, set it aside, or stop the run. head is its branch's commit before the worker began. It
+// sets how to how the worker settled, as work does.
+func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
+	report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
+	id, br, wt, tab := w.id, w.br, w.wt, w.tab
+	idleAt, stop := o.waitSettled(ctx, w, time.Now(), report)
 	if stop != nil {
 		return stop
 	}
@@ -337,7 +346,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
 		o.markAside(id)
-		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: hooks})
+		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
 		if info.Status != StatusOpen { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -353,7 +362,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
-		if s := o.finish(ctx, id, br, wt, tab); s != nil {
+		if s := o.finish(ctx, w); s != nil {
 			return s
 		}
 	case outcomeDeferred:
@@ -372,7 +381,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, agent, tab, wt, head stri
 			" for %s%s; stopping rather than guessing (worktree %s and tab %s left open)",
 			id, because(showErr), wt, tab).causedBy(showErr)
 	case outcomeUnfinished:
-		if o.failedAtOnce(keep, s, started, idleAt, br, head, wt) {
+		if o.failedAtOnce(keep, s, w.started, idleAt, br, head, wt) {
 			*how = settledFast
 		}
 		o.appendNotes(keep, id, fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; "+

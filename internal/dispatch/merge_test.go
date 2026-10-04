@@ -66,7 +66,7 @@ func (f *mergeFixture) onMain(t *testing.T, file, content string) {
 func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
 	f := newMergeFixture(t, "exit 1") // must not run: nothing to re-check
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	if !strings.Contains(f.git(f.repo, "log", "--oneline", "-1"), "k-1: change a.txt") {
@@ -84,7 +84,7 @@ func TestMergeRebasesAndRechecksWhenMainMoved(t *testing.T) {
 	f := newMergeFixture(t, "test -f a.txt && test -f b.txt") // passes only on the rebased tree
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	log := f.git(f.repo, "log", "--oneline")
@@ -102,7 +102,7 @@ func TestMergeLeavesAConflictForReview(t *testing.T) {
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
 	f.onMain(t, "shared.txt", "line 1 from main\n")
 	before := f.git(f.repo, "rev-parse", "main")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	if f.git(f.repo, "rev-parse", "main") != before {
@@ -124,7 +124,7 @@ func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
 	before := f.git(f.repo, "rev-parse", "main")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	if f.git(f.repo, "rev-parse", "main") != before {
@@ -144,7 +144,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 	next := f.ticket(t, "k-2", "c.txt", "c\n")
 	f.onMain(t, "b.txt", "b\n")
 	start := time.Now()
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", hung, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: hung, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	// The check's process group gets its grace period (5s) and WaitDelay (10s) at most.
@@ -158,7 +158,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
-	if s := f.orch.merge(context.Background(), "k-2", "wt/k-2", next, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-2", br: "wt/k-2", wt: next, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	if !strings.Contains(f.sink.text(), "k-2 closed") {
@@ -177,7 +177,7 @@ func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
 	f := newMergeFixture(t, "")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab"); s != nil {
+	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
 	if ev := f.sink.text(); !strings.Contains(ev, "without checking the rebased code") || !strings.Contains(ev, "k-1 closed") {
@@ -193,7 +193,7 @@ func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.git(f.repo, "switch", "-q", "other")
 	main, other := f.git(f.repo, "rev-parse", "main"), f.git(f.repo, "rev-parse", "other")
-	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"})
 	if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree {
 		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
 	}
@@ -216,7 +216,7 @@ func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := f.git(f.repo, "rev-parse", "main")
-	s := f.orch.merge(context.Background(), "k-1", "wt/k-1", wt, "tab")
+	s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"})
 	if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree || !strings.Contains(s.Error(), "uncommitted changes") {
 		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
 	}
@@ -243,7 +243,8 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if s := f.orch.merge(context.Background(), fmt.Sprintf("k-%d", i), fmt.Sprintf("wt/k-%d", i), wts[i], "tab"); s != nil {
+			if s := f.orch.merge(context.Background(),
+				worker{id: fmt.Sprintf("k-%d", i), br: fmt.Sprintf("wt/k-%d", i), wt: wts[i], tab: "tab"}); s != nil {
 				t.Errorf("k-%d: %s", i, s)
 			}
 		}(i)

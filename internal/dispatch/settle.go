@@ -7,23 +7,23 @@ import (
 	"time"
 )
 
-// waitSettled waits until the worker settles, and returns when it went idle for good. Never answer
+// waitSettled waits until the worker w settles, and returns when it went idle for good. Never answer
 // its prompts; stop if it stays blocked for 4 minutes, or in a status Herdr can't tell (unknown) for
 // 5. An idle worker has settled only once idleSettled says so: Herdr takes a worker for idle while
-// it starts up, and while it waits on its own background command. hooks says it reports through
-// them, since from when (zero: any report counts); begun is when it was confirmed started on its
-// prompt. A status Herdr fails to read says nothing about the worker, so the wait goes on through
-// maxFailedReads of them in a row before the run stops; so does one of its ticket's that bd fails
-// to read while the worker is idle, which neither settles it nor tells it to continue. A worker
-// still going Config.TicketLimit after started (dispatch) stops the run; without a limit, one still
-// going after longRunning is reported once. Each status read goes to report (nil: none), for the
-// dashboard. A worker whose turn ends with its ticket still in progress is told to continue, up to
-// maxNudges times, before its idle grace runs (see nudge); one whose turn ends with its ticket in
-// progress but waiting on a question it asked has settled at that Stop hook (see endOfTurn).
+// it starts up, and while it waits on its own background command. begun is when it was confirmed
+// started on its prompt. A status Herdr fails to read says nothing about the worker, so the wait
+// goes on through maxFailedReads of them in a row before the run stops; so does one of its ticket's
+// that bd fails to read while the worker is idle, which neither settles it nor tells it to continue.
+// A worker still going Config.TicketLimit after it started (dispatch) stops the run; without a
+// limit, one still going after longRunning is reported once. Each status read goes to report (nil:
+// none), for the dashboard. A worker whose turn ends with its ticket still in progress is told to
+// continue, up to maxNudges times, before its idle grace runs (see nudge); one whose turn ends with
+// its ticket in progress but waiting on a question it asked has settled at that Stop hook (see
+// endOfTurn).
 func (o *Loop) waitSettled(
-	ctx context.Context, id, agent, tab, wt string, started, begun time.Time, hooks bool, since time.Time,
-	report func(ctx context.Context, st AgentState, err error),
+	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
+	id, agent, tab, wt := w.id, w.agent, w.tab, w.wt
 	var blockedSince, idleSince, unknownSince time.Time
 	var readTo time.Time // turns that ended before it have been read; the next turn's Stop comes after
 	failed, unread, nudges := 0, 0, 0
@@ -80,7 +80,7 @@ func (o *Loop) waitSettled(
 				unread = 0
 				var turn turnEnd
 				if ts == StatusInProgress {
-					turn = o.endOfTurn(ctx, id, wt, hooks, later(since, readTo))
+					turn = o.endOfTurn(ctx, id, wt, w.hooks, later(w.since, readTo))
 				}
 				if turn.asked != nil { // conclude reopens the ticket left in progress
 					o.info("  %s settled: Stop hook at %s, waiting on %s", id, turn.at.Format("15:04:05"), turn.asked.ID)
@@ -102,7 +102,7 @@ func (o *Loop) waitSettled(
 						return time.Time{}, errInterrupted
 					}
 				}
-				if done, why := o.idleSettled(ts, wt, hooks, since, time.Since(idleSince), time.Since(begun)); done {
+				if done, why := o.idleSettled(ts, wt, w.hooks, w.since, time.Since(idleSince), time.Since(begun)); done {
 					o.info("  %s settled: %s", id, why)
 					return idleSince, nil
 				}
@@ -131,7 +131,7 @@ func (o *Loop) waitSettled(
 		} else {
 			unknownSince = time.Time{}
 		}
-		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(started) > limit {
+		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
 			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
 				"Orchestra: worker in Herdr tab %s was still %s after the %s ticket limit (worktree %s).",
 				tab, st, ShortDuration(limit), wt))
@@ -139,7 +139,7 @@ func (o *Loop) waitSettled(
 				": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
 				id, st, ShortDuration(limit), tab, wt)
 		}
-		if o.cfg.TicketLimit == 0 && !warned && time.Since(started) > longRunning {
+		if o.cfg.TicketLimit == 0 && !warned && time.Since(w.started) > longRunning {
 			warned = true
 			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",

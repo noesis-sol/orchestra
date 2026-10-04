@@ -15,13 +15,13 @@ import (
 const maxHandBacks = 2
 
 // rebaseStop is a rebase stopped on conflicts in a finished ticket's worktree, as merge found it:
-// the commit it was rebasing onto, the branch's commit before it and how many commits of its own
-// it had then.
+// the ticket's worker, the commit it was rebasing onto, the branch's commit before it and how many
+// commits of its own it had then.
 type rebaseStop struct {
-	id, br, wt, tab string
-	onto, head      string
-	own             int
-	files           []string
+	worker
+	onto, head string
+	own        int
+	files      []string
 }
 
 // whyNotHandBack says why a stopped rebase can't be handed back to the ticket's worker, or "" if

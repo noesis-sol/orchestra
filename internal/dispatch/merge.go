@@ -12,10 +12,11 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// finish merges a closed ticket, or leaves it for review without a commit naming it or with
+// finish merges w's closed ticket, or leaves it for review without a commit naming it or with
 // uncommitted changes.
-func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
+func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
+	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	keep := context.WithoutCancel(ctx) // a read cut short would look like no commit
 	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
 	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(keep, wt) != "") {
@@ -29,19 +30,20 @@ func (o *Loop) finish(ctx context.Context, id, br, wt, tab string) *stopReason {
 			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
 			id, commit, wt, tab)})
 	case closedMerge:
-		return o.merge(ctx, id, br, wt, tab)
+		return o.merge(ctx, w)
 	}
 	return nil
 }
 
-// merge brings a finished ticket's branch onto Base, one ticket at a time. When other tickets
+// merge brings w's finished ticket's branch onto Base, one ticket at a time. When other tickets
 // merged while it ran, the branch is rebased first and, since the rebased code is untested, the
 // project's check command runs again before it merges. A rebase that stops on conflicts is handed
 // back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
 // the merge queue meanwhile. A conflict left unresolved or a failing check leaves the ticket for
 // review and the run goes on.
-func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
+func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
+	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 	keep := context.WithoutCancel(ctx)
@@ -95,8 +97,7 @@ func (o *Loop) merge(ctx context.Context, id, br, wt, tab string) *stopReason {
 		}
 
 		// Base moved on while the ticket ran: rebase it, still under the lock.
-		r := rebaseStop{id: id, br: br, wt: wt, tab: tab,
-			onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, br)}
+		r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, br)}
 		r.own = o.merger.CountCommits(keep, c.Repo, r.onto+".."+br)
 		out, err := o.merger.Rebase(keep, wt, c.Base)
 		o.log.Raw(out, err)

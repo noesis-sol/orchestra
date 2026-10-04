@@ -74,7 +74,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-		if _, stop := o.waitSettled(t.Context(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, time.Time{}, nil); stop != nil {
+		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		if a.reads != 4 {
@@ -93,7 +93,7 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 		o, a, _ := newSettleLoop(t, "working", "blocked", "working")
 		w := o.newWatcher("wt", Status{Ticket: "A"})
 		start := time.Now()
-		if _, stop := o.waitSettled(t.Context(), "A", "A", "tab", "wt", start, start, false, time.Time{}, w.report); stop != nil {
+		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, w.report); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		if a.reads != 4 || time.Since(start) != 3*statusPoll {
@@ -113,7 +113,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		}
 		o, a, _ := newSettleLoop(t, script...)
 		start := time.Now()
-		_, stop := o.waitSettled(t.Context(), "A", "A", "tab", "wt", start, start, false, time.Time{}, nil)
+		_, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, nil)
 		if stop == nil || stop.code != ExitTool || stop.kind != stopHerdrFailed {
 			t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
 		}
@@ -133,7 +133,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 		}
 		o, _, logPath := newSettleLoop(t, script...)
 		shown := recordAlerts(o.log)
-		if _, stop := o.waitSettled(t.Context(), "A", "A", "tab", "wt", time.Now(), time.Now(), false, time.Time{}, nil); stop != nil {
+		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		var warned []string
