@@ -17,6 +17,9 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra -h` and the command's package comment say it works on as many
   tickets at once as `--concurrent` allows, rather than one ticket at a
   time.
+- The orchestra skill's description says orchestra runs several workers side
+  by side, as many tickets at once as the project allows, rather than one
+  ticket at a time.
 - **New feature** talks the feature through with Claude Code in a Herdr pane
   split off orchestra's, to its right, rather than on orchestra's own
   terminal, so orchestra stays in view, saying where the interview is and how

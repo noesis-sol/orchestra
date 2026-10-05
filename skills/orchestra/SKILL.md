@@ -1,6 +1,6 @@
 ---
 name: orchestra
-description: Run and look after orchestra, which works through a Beads backlog one ticket at a time with a worker (a coding agent) per Herdr tab and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
+description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own Herdr tab and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
 ---
 
 # orchestra
