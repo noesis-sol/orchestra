@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The worker prompt `orchestra init` writes names `scripts/check-fast.sh` as
+  the check to pass before closing a ticket, with one of its suites' commands
+  to run while iterating, and `scripts/check-full.sh` for a change that
+  touches what the slower suites cover. It asks a ticket that changes
+  behaviour to add or update tests in the project's suites, never a new test
+  framework.
 - A run that ends by itself (`READY_EMPTY`, `LIMIT_REACHED`, `DRAINED`)
   having merged a ticket runs `check_full` (`scripts/check-full.sh`) once,
   after its last merge and before the run report, on the branch's head in a

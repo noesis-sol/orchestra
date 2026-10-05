@@ -382,10 +382,16 @@ func fillTemplate(t, check string) string {
 	if check == "" {
 		return t
 	}
+	const what = " <What it runs, e.g. lint, build and the fast test suites.>"
+	if isRunner(check, FastRunner) {
+		// The runner lists its suites, a command a line: one of them is the quicker subset.
+		t = strings.Replace(t, what, " It runs the project's fast suites, a command a line.", 1)
+		t = strings.ReplaceAll(t, "`<a quicker subset>`", "a suite's command from `<check command>`")
+	}
 	t = strings.ReplaceAll(t, "<check command>", check)
 	t = strings.ReplaceAll(t, "<a quicker subset>", check)
-	// The sentence describing the checks is the project's to write; drop the placeholder.
-	return strings.Replace(t, " <What it runs, e.g. lint, build and the test suites.>", "", 1)
+	// The sentence describing another check is the project's to write; drop the placeholder.
+	return strings.Replace(t, what, "", 1)
 }
 
 // Prerequisites reports what orchestra needs and whether it is there. getenv gives the environment
