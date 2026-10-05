@@ -188,6 +188,14 @@ All notable changes to orchestra are documented here. The format follows
   `check_full_timeout`. A setup that fails is `FULL_CHECK_FAILED: the setup
   '<setup>', run before '<check>', fails on <base> at <commit>`, its output
   kept in `.orchestra/run/check-full.log`, and files no ticket.
+- A finished ticket whose commits, taken together, change nothing (a commit
+  and its revert, as when its worker found the change on the branch already)
+  closes with no change to merge, before any rebase, as one with no commits
+  does: its worktree, branch and tab are removed and the tickets it blocks run.
+  It was rebased, which replayed the revert onto the branch's own change, and
+  set aside as `MERGE_CONFLICT`, holding its dependents. One whose rebase drops
+  every commit, the branch having its changes already, closes so too, without
+  running the check.
 - A finished ticket rebased over a merged ticket's dependency bump no longer
   fails its check against the dependencies its worker installed before:
   `"setup"` in `.orchestra/settings.json` (such as `"npm ci"`) runs in the

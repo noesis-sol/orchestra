@@ -130,6 +130,8 @@ type Merger interface {
 	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged
 	RebaseInProgress(ctx context.Context, worktree string) bool    // a rebase stopped and neither finished nor aborted
 	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
+	// branch's tree is its merge-base's with base: its commits, taken together, change nothing
+	Unchanged(ctx context.Context, repo, base, branch string) bool
 	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }

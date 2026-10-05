@@ -26,7 +26,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	own := o.merger.CountCommits(keep, c.Repo, c.Base+".."+br)
 	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoChange:
-		o.closedUnchanged(keep, w)
+		o.closedUnchanged(keep, w, fmt.Sprintf("%s has no commits beyond %s and its worktree is clean", br, c.Base))
 	case closedNoCommit:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed without a commit", Text: fmt.Sprintf(
@@ -48,6 +48,8 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
 // the merge queue meanwhile. A conflict left unresolved or a failing check leaves the ticket for
 // review and the run goes on; a failing check is tried once more after Base moves on (see recheck).
+// A branch whose commits, taken together, change nothing, before its rebase or after, has nothing to
+// merge and is cleaned up as such (see closedUnchanged).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
@@ -64,6 +66,14 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
 		repo.lock()
+		// Its commits may undo each other, as when its worker found the change on Base already and
+		// reverted its own: rebasing them would replay the revert onto Base's change.
+		if o.merger.Unchanged(keep, c.Repo, c.Base, br) {
+			o.dropBranch(keep, wt)
+			repo.unlock()
+			o.closedUnchanged(keep, w, fmt.Sprintf("the commits on %s, taken together, change nothing", br))
+			return nil
+		}
 		if o.merger.IsAncestor(keep, c.Repo, c.Base, br) {
 			left := fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)
 			if s := o.checkoutUnready(keep, left); s != nil {
@@ -138,6 +148,13 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			attempt-- // resolved and checked: merge, or rebase again if Base moved meanwhile
 			continue
 		}
+		if o.merger.Unchanged(keep, c.Repo, c.Base, br) { // git dropped its commits: Base has their changes
+			o.dropBranch(keep, wt)
+			repo.unlock()
+			o.closedUnchanged(keep, w, fmt.Sprintf("rebased onto %s, which has its changes already, %s changes nothing",
+				c.Base, br))
+			return nil
+		}
 		repo.unlock()
 		o.info("  rebased %s onto %s, which moved on while it ran", br, c.Base)
 		if c.Check == "" {
@@ -183,11 +200,11 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	return nil
 }
 
-// closedUnchanged cleans up after w's ticket, closed with no change of its own: its branch has no
-// commits beyond Base and its worktree is clean, as when tickets merged before it did what it was
-// about. Nothing is left to merge or to review, so its worktree, branch and tab are removed as after
-// a merge, and the tickets it blocks needn't wait for it.
-func (o *Loop) closedUnchanged(ctx context.Context, w worker) {
+// closedUnchanged cleans up after w's ticket, closed with no change of its own, as when tickets merged
+// before it did what it was about: its branch has no commits beyond Base, or none that change anything,
+// and its worktree is clean; why says which. Nothing is left to merge or to review, so its worktree,
+// branch and tab are removed as after a merge, and the tickets it blocks needn't wait for it.
+func (o *Loop) closedUnchanged(ctx context.Context, w worker, why string) {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	o.merged(ctx, id) // an unmerged label from an earlier run holds nothing now
@@ -202,8 +219,15 @@ func (o *Loop) closedUnchanged(ctx context.Context, w worker) {
 		return
 	}
 	o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: "no change to merge", Text: fmt.Sprintf(
-		"  %s closed with no change: %s has no commits beyond %s and its worktree is clean, so there is nothing to merge; %s",
-		id, br, c.Base, o.closeWorkerTab(ctx, id, tab))})
+		"  %s closed with no change: %s, so there is nothing to merge; %s", id, why, o.closeWorkerTab(ctx, id, tab))})
+}
+
+// dropBranch moves the branch checked out in the clean worktree wt to Base, whose changes it has, so
+// that git deletes it as merged; its commits change nothing, and git's reflog keeps them. A failure
+// is logged: the branch is then left, as CLEANUP_FAILED says. The caller holds repoMu.
+func (o *Loop) dropBranch(ctx context.Context, wt string) {
+	out, err := o.merger.ResetBranch(ctx, wt, o.cfg.Base)
+	o.log.Raw(out, err)
 }
 
 // removeWorktree removes a ticket's worktree wt and then its branch br, whose work is on Base, and

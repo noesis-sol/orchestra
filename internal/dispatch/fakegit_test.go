@@ -317,6 +317,19 @@ func (g *fakeGit) CountCommits(ctx context.Context, repo, revs string) int {
 	return len(g.only(base, rev))
 }
 
+// Unchanged reports whether the commits of branch not in base's history add no files: a commit made
+// with none stands for one that changes nothing, or one its revert undoes.
+func (g *fakeGit) Unchanged(ctx context.Context, repo, base, branch string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, c := range g.only(base, branch) {
+		if len(c.files) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (g *fakeGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

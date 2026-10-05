@@ -362,6 +362,15 @@ func (Git) CountCommits(ctx context.Context, repo, revs string) int {
 	return n
 }
 
+// Unchanged reports whether branch, taken as a whole, changes nothing since it left base: its tree is
+// the tree of their merge-base, as when a commit and its revert are all it has. It reports false
+// when git can't tell.
+func (Git) Unchanged(ctx context.Context, repo, base, branch string) bool {
+	// base...branch: from the merge-base to branch. --quiet exits 1 on a difference, as on a failure.
+	_, err := command.Output(ctx, command.ReadLimit, repo, "git", "diff", "--quiet", base+"..."+branch, "--")
+	return err == nil
+}
+
 // ResetBranch moves the branch checked out in worktree to rev, with its files.
 func (Git) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	return command.Output(ctx, command.WriteLimit, "", "git", "-C", worktree, "reset", "--hard", "--quiet", rev, "--")
