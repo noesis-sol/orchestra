@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker handed a rebase stopped on conflicts is now asked to run the
+  check once the rebase has finished, not before `git rebase --continue`,
+  as the commits that apply cleanly after a resolved one can break it too,
+  and to `git rebase --skip` a commit whose change the base has already.
+  orchestra accepts a resolved branch with fewer commits than the ticket
+  had; one left with no change of its own closes with no change to merge,
+  without running the check.
 - `orchestra init` offers the setup command where the repository has a
   lockfile and `settings.json` has none: its Checks step asks for it,
   pre-filled with `npm ci` for `package-lock.json`, `pnpm install

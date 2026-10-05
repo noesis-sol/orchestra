@@ -59,17 +59,22 @@ func (o *Loop) workerAway(ctx context.Context, id string) string {
 func (o *Loop) resolvePrompt(r rebaseStop) string {
 	c := o.cfg
 	return fmt.Sprintf("%s moved on while you worked; rebasing %s onto it stopped on conflicts in %s. "+
-		"Resolve them keeping the intent of both your change and what landed on %s. "+
-		"Run '%s' in the foreground until it passes, then git add the files and run GIT_EDITOR=true git rebase --continue; "+
+		"Resolve them keeping the intent of both your change and what landed on %s, "+
+		"then git add the files and run GIT_EDITOR=true git rebase --continue; "+
 		"if the rebase stops on another commit, resolve that one the same way. "+
+		"If %s has a commit's change already, wholly or as the part that conflicts, run git rebase --skip "+
+		"for that commit instead of resolving it. "+
+		"Once the rebase has finished, run '%s' in the foreground until it passes, since the commits that "+
+		"applied cleanly may break it too; fold any fix into the branch's last commit with git commit --amend --no-edit. "+
 		"Don't do anything else: no new commits beyond the rebase, no merge, no push, no ticket changes. "+
-		"Say DONE when the rebase is complete.",
-		c.Base, r.br, strings.Join(r.files, ", "), c.Base, c.Check)
+		"Say DONE when the rebase is complete and the check passes.",
+		c.Base, r.br, strings.Join(r.files, ", "), c.Base, c.Base, c.Check)
 }
 
 // handBack gives a stopped rebase to the ticket's worker and waits for it to finish, then looks at
 // the result itself. It returns why the resolution failed, or "" once the branch is on top of onto
-// with the ticket's own commits, to be checked next (see checkRebased), or errInterrupted after
+// with the ticket's own commits, or those of them Base hasn't already, to be checked next (see
+// checkRebased) or closed as unchanged when none are left, or errInterrupted after
 // Ctrl+C (the rebase is left as it is). Neither lock is held: the worker may take minutes. The resolve timeout
 // runs from the hand-back, not from when the worker is seen to take it.
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
@@ -141,8 +146,10 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, deadline time
 }
 
 // verifyResolved checks, without taking the worker's word for it, that the rebase is over, the
-// worktree clean, and the branch on top of onto with the ticket's own commits and nothing more. It
-// returns why not; the check runs next (see checkRebased).
+// worktree clean, and the branch on top of onto with the ticket's own commits and nothing more: as
+// many as it had, or fewer where its worker skipped those whose change Base has already. A branch
+// left with no change of its own, every commit skipped or what is left changing nothing, passes too,
+// to be closed as unchanged (see merge). It returns why not; the check runs next (see checkRebased).
 func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed resolution
@@ -153,10 +160,12 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 		return "its worker left uncommitted changes in " + r.wt
 	case !o.merger.IsAncestor(keep, c.Repo, r.onto, r.br):
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base)
+	case o.merger.Unchanged(keep, c.Repo, r.onto, r.br):
+		return ""
 	case o.merger.CommitNaming(keep, c.Repo, r.onto, r.br, r.id) == "":
 		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id)
 	}
-	if n := o.merger.CountCommits(keep, c.Repo, r.onto+".."+r.br); n != r.own {
+	if n := o.merger.CountCommits(keep, c.Repo, r.onto+".."+r.br); n < 0 || n > r.own {
 		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)",
 			r.br, n, r.own)
 	}

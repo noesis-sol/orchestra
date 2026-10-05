@@ -49,8 +49,9 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // the merge queue meanwhile, and so is a check that fails on the rebased branch, to fix (see
 // checkRebased). A conflict left unresolved or a failing check leaves the ticket for review and the
 // run goes on; a failing check is tried once more after Base moves on (see recheck).
-// A branch whose commits, taken together, change nothing, before its rebase or after, has nothing to
-// merge and is cleaned up as such (see closedUnchanged).
+// A branch whose commits, taken together, change nothing, before its rebase or after (by git, or by
+// its worker skipping those Base has already), has nothing to merge and is cleaned up as such (see
+// closedUnchanged).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
@@ -138,6 +139,15 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 				return stop // Ctrl+C: the rebase is left as it is, as the INTERRUPTED line says
 			}
 			if why == "" {
+				repo.lock()
+				if o.merger.Unchanged(keep, c.Repo, r.onto, br) { // its worker skipped what Base has already
+					o.dropBranch(keep, wt)
+					repo.unlock()
+					o.closedUnchanged(keep, w, fmt.Sprintf("its worker found the changes of %s on %s already "+
+						"and skipped them in the rebase", br, c.Base))
+					return nil
+				}
+				repo.unlock()
 				o.info("  %s's worker finished the rebase; checking it with '%s'", id, c.Check)
 				var res checked
 				if res, stop = o.checkRebased(ctx, repo, queue, r, &fixes, true); stop != nil {
