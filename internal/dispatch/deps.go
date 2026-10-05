@@ -138,6 +138,7 @@ type History interface {
 	OneLineLog(ctx context.Context, dir, revs string) string
 	DiffStat(ctx context.Context, worktree string) string
 	Subjects(ctx context.Context, repo, revs string) string
+	ChangedFiles(ctx context.Context, repo, from, to string) []string // the files that differ; none if git can't say
 }
 
 // Deps are the loop's connections to the tracker, the terminal, git and the organs. A method that

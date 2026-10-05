@@ -80,6 +80,7 @@ type Loop struct {
 	mu        sync.Mutex
 	asideIDs  []string              // tickets deferred or left unmerged in this run
 	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why
+	checkSaid map[string]checkFail  // what each ticket's last check in this run said, if it failed
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string     // why each held ticket waits, as last said
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run

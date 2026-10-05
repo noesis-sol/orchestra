@@ -176,10 +176,18 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	c := o.cfg
 	tag := organ.EvidenceID()
 	commits := o.history.Subjects(ctx, c.Repo, o.startHead+".."+c.Base)
-	var setAside strings.Builder
+	var setAside, checks strings.Builder
 	for _, id := range o.setAside() {
 		show := o.tickets.Describe(ctx, id)
 		setAside.WriteString(show + "\n")
+		if f, ok := o.checkSaidOf(id); ok {
+			checks.WriteString(f.evidence(id, c.Check, c.Base) + "\n")
+		}
+	}
+	failedChecks := ""
+	if checks.Len() > 0 {
+		failedChecks = organ.Section(tag, "What the check said of each ticket set aside after its check failed",
+			checks.String())
 	}
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
@@ -222,8 +230,48 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
+		failedChecks +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
 		organ.Section(tag, "Tickets still ready", stillReady) + outside + feature
+}
+
+// maxDirs is the most directories the reviewer is given of those a ticket's commits change.
+const maxDirs = 20
+
+// evidence is what the reviewer is told of ticket id's failed check, check, which ran on its branch
+// rebased onto base: how it failed, the lines that say what failed and the directories the ticket's
+// own commits change, so the reviewer can tell a failure in its code from one elsewhere.
+func (f checkFail) evidence(id, check, base string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: '%s' %s on %s rebased onto %s at %s; its output is in %s.\n",
+		id, check, f.how, f.br, base, short(f.onto), f.output)
+	switch {
+	case len(f.said) == 0:
+		b.WriteString("It printed nothing.\n")
+	case f.saidEnd:
+		b.WriteString("No line of its output says what failed; its last lines:\n")
+	default:
+		b.WriteString("The lines of its output that say what failed:\n")
+	}
+	for _, l := range f.said {
+		b.WriteString("    " + l + "\n")
+	}
+	dirs := "none that git could list"
+	if len(f.dirs) > 0 {
+		var named []string
+		for _, d := range f.dirs[:min(len(f.dirs), maxDirs)] {
+			if d == "." {
+				d = "the top level (.)"
+			}
+			named = append(named, d)
+		}
+		dirs = strings.Join(named, ", ")
+		if more := len(f.dirs) - len(named); more > 0 {
+			dirs += fmt.Sprintf(" and %d more", more)
+		}
+	}
+	fmt.Fprintf(&b, "Directories that %s's own commits change (%s..%s): %s\n", id, short(f.onto), f.br, dirs)
+	return b.String()
 }
 
 // Review has the reviewer write the run report.

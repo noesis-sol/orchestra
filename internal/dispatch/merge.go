@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -140,14 +143,14 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)
 			continue
 		}
-		if output, err := o.runCheck(ctx, id, wt); err != nil {
+		if output, err := o.runCheck(ctx, w, r.onto); err != nil {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
 			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
-			how, why := "fails", "checks failed"
+			how, why := o.checkHow(err), "checks failed"
 			if errors.Is(err, errCheckTimedOut) {
-				how, why = "did not finish within "+command.ShortDuration(o.checkTimeout()), "checks timed out"
+				why = "checks timed out"
 			}
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
 				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
@@ -217,25 +220,38 @@ func (o *Loop) checkTimeout() time.Duration {
 	return orDefault(o.cfg.CheckTimeout, project.DefaultCheckTimeout)
 }
 
-// runCheck runs the project's check command in ticket id's worktree wt. It gives up after
-// checkTimeout, stopping everything the check started, and returns errCheckTimedOut then. When the
-// check fails, the end of its output goes in the log and the whole of it in wt's checkLogName (see
-// saveCheckOutput); runCheck returns where the output is. When it passes, each FLAKY: line it printed
+// runCheck runs the project's check command in w's worktree, its branch rebased onto the commit
+// onto. It gives up after checkTimeout, stopping everything the check started, and returns
+// errCheckTimedOut then. When the check fails, the end of its output goes in the log and the whole of
+// it in the worktree's checkLogName (see saveCheckOutput), and what it said goes to the reviewer (see
+// noteCheckFailed); runCheck returns where the output is. When it passes, each FLAKY: line it printed
 // is a warning (see reportFlaky).
-func (o *Loop) runCheck(ctx context.Context, id, wt string) (string, error) {
+func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, error) {
 	limit := o.checkTimeout()
 	checkCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	out, err := command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", o.cfg.Check)
+	out, err := command.GroupOutput(checkCtx, 5*time.Second, w.wt, "sh", "-c", o.cfg.Check)
 	if err != nil && ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
 		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
 	}
 	if err != nil {
-		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, wt, err))
-		return o.saveCheckOutput(wt, out), err
+		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, w.wt, err))
+		output := o.saveCheckOutput(w.wt, out)
+		if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
+			o.noteCheckFailed(ctx, w, onto, output, out, err)
+		}
+		return output, err
 	}
-	o.reportFlaky(id, out)
+	o.reportFlaky(w.id, out)
 	return "", nil
+}
+
+// checkHow says how the check failed with err, for a line about it: it fails, or did not finish.
+func (o *Loop) checkHow(err error) string {
+	if errors.Is(err, errCheckTimedOut) {
+		return "did not finish within " + command.ShortDuration(o.checkTimeout())
+	}
+	return "fails"
 }
 
 // checkLogName is the file in a worktree's .orchestra/run/ that holds the whole output of the last
@@ -259,6 +275,123 @@ func (o *Loop) saveCheckOutput(wt string, out []byte) string {
 		return o.cfg.LogPath
 	}
 	return filepath.Join(wt, rel)
+}
+
+// checkFail is what a ticket's failed check said, for the reviewer: the run report says what
+// failed, and whether in code the ticket changed, without sending the maintainer to the log.
+type checkFail struct {
+	br, onto string   // the branch checked, rebased onto Base at onto
+	how      string   // as checkHow says
+	output   string   // where the whole output is, as saveCheckOutput returned it
+	said     []string // the lines of the output that say what failed (see failureLines)
+	saidEnd  bool     // no line said: said is the output's last lines, if it printed any
+	dirs     []string // the directories the ticket's own commits change, sorted (see ownDirs)
+}
+
+// noteCheckFailed keeps for the reviewer what w's check said as it failed with err: the lines of its
+// output, out, that say what failed, where out is kept (output), and the directories that the
+// ticket's commits on top of onto change.
+func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out []byte, err error) {
+	f := checkFail{br: w.br, onto: onto, how: o.checkHow(err), output: output}
+	if f.said = failureLines(string(out)); len(f.said) == 0 {
+		f.saidEnd = true
+		if end := lastLines(string(out), maxSaid); strings.TrimSpace(end) != "" {
+			f.said = boundLines(strings.Split(end, "\n"), maxSaid)
+		}
+	}
+	f.dirs = o.ownDirs(context.WithoutCancel(ctx), w.br, onto) // a read cut short would look like no change
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.checkSaid == nil {
+		o.checkSaid = map[string]checkFail{}
+	}
+	o.checkSaid[w.id] = f
+}
+
+// checkSaidOf is what ticket id's last check in this run said, if it failed.
+func (o *Loop) checkSaidOf(id string) (checkFail, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	f, ok := o.checkSaid[id]
+	return f, ok
+}
+
+// ownDirs lists the directories of the files that the commits on br on top of onto change, sorted,
+// "." for the repository's top level; nil when git can't say.
+func (o *Loop) ownDirs(ctx context.Context, br, onto string) []string {
+	if onto == "" {
+		return nil
+	}
+	var dirs []string
+	for _, f := range o.history.ChangedFiles(ctx, o.cfg.Repo, onto, br) {
+		if d := path.Dir(f); !slices.Contains(dirs, d) {
+			dirs = append(dirs, d)
+		}
+	}
+	slices.Sort(dirs)
+	return dirs
+}
+
+// How much of a failed check's output the reviewer is given: at most maxSaid lines, each cut to
+// saidWidth runes.
+const (
+	maxSaid   = 30
+	saidWidth = 200
+)
+
+var (
+	// failedAnywhere matches a line of a check's output, trimmed, that says a package or a test failed
+	// (go test's FAIL and --- FAIL:, gotestsum's === FAIL:, a bare FAIL saying nothing more aside), or
+	// that the race detector found a data race, in the test --- FAIL: then names.
+	failedAnywhere = regexp.MustCompile(`^(FAIL\W+\S|--- FAIL|=== FAIL)|DATA RACE|race detected`)
+	// failedAtStart matches a line that, unindented, says what failed: a panic (a test that timed out),
+	// a tool's own error, gotestsum's count of failures, golangci-lint's of issues, and a lint, vet or
+	// build error, which starts with its file's position. A failing test's own messages are indented.
+	failedAtStart = regexp.MustCompile(`^(panic:|(?i:error)\b|fatal:|level=error|DONE \d.*fail|\d+ issues?:|` +
+		`[^\s:]+\.\w+:\d+(:\d+)?: )`)
+)
+
+// failureLines picks the lines of a failed check's output that say what failed, as failedAnywhere and
+// failedAtStart match them, with the tests still running when go test timed out, which the lines
+// after its "running tests:" name. Each is kept once, and at most maxSaid of them, the last saying
+// how many more there are.
+func failureLines(out string) []string {
+	var said []string
+	seen := map[string]bool{}
+	running := false // in the tests named after "running tests:", until a blank line
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\r\n")
+		t := strings.TrimSpace(line)
+		switch {
+		case t == "":
+			running = false
+			continue
+		case t == "running tests:":
+			running = true
+		case !running && !failedAnywhere.MatchString(t) && !failedAtStart.MatchString(line):
+			continue
+		}
+		if !seen[t] {
+			seen[t] = true
+			said = append(said, t)
+		}
+	}
+	return boundLines(said, maxSaid)
+}
+
+// boundLines cuts each line to saidWidth runes and keeps at most n of them, the first; the last kept
+// then says how many more there were.
+func boundLines(lines []string, n int) []string {
+	if len(lines) > n {
+		more := len(lines) - n + 1
+		lines = append(lines[:n-1:n-1], fmt.Sprintf("(… and %d more lines like these)", more))
+	}
+	for i, l := range lines {
+		if r := []rune(l); len(r) > saidWidth {
+			lines[i] = string(r[:saidWidth-1]) + "…"
+		}
+	}
+	return lines
 }
 
 // flakyPrefix starts a line of a check's output that says a test failed and then passed on a rerun:

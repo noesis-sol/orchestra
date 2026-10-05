@@ -232,13 +232,19 @@ const reviewSystem = "You write the end-of-run report for an automated coding pi
 	"- ## Finished: one bullet per ticket merged in this run: the ID, what changed in a few " +
 	"words, the commit hash.\n" +
 	"- ## Set aside: one bullet per ticket deferred or left unmerged: the ID, why, and the " +
-	"triage cause when a triage note gives one.\n" +
+	"triage cause when a triage note gives one. For a ticket whose check failed, name what " +
+	"failed (the test, the lint error or the tool's own error) as the check's evidence gives " +
+	"it, and say whether it failed in the ticket's code (in a directory its own commits " +
+	"change) or elsewhere (another package's test, which may be flaky, or a tool's error, " +
+	"such as a lock).\n" +
 	"- ## Needs you: concrete actions for the maintainer, most urgent first: questions to " +
 	"answer (a ticket waiting on a question labelled \"human\" is answered with: bd human " +
 	"respond <question id> --response \"…\"; it then returns to the queue by itself), a " +
 	"worker waiting in a tab (name the tab), an environment fix, whatever stopped the run, " +
-	"and one bullet naming the follow-ups filed outside a one-ticket run, which wait for a " +
-	"later run.\n\n" +
+	"for each failed check what to do (failed elsewhere: rerun the check in the ticket's " +
+	"worktree and merge its branch if it passes; failed in the ticket's code: fix it there " +
+	"first), and one bullet naming the follow-ups filed outside a one-ticket run, which " +
+	"wait for a later run.\n\n" +
 	"Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write " +
 	"\"Nothing.\" under a section with no entries. No preamble and no closing remarks." + evidenceRule
 

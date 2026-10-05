@@ -156,7 +156,7 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 			r.br, n, r.own), nil
 	}
 	o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
-	if output, err := o.runCheck(ctx, r.id, r.wt); err != nil {
+	if output, err := o.runCheck(ctx, r.worker, r.onto); err != nil {
 		if ctx.Err() != nil {
 			return "", errInterrupted
 		}

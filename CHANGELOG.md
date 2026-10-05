@@ -92,6 +92,17 @@ All notable changes to orchestra are documented here. The format follows
   report. A check that reruns a failed test and passes says so this way, as
   the README describes; the ticket merges as before, but the flaky test no
   longer goes unseen.
+- The run report says what failed in a ticket's failed check, and whether in
+  the ticket's code or elsewhere. The reviewer saw only the `CHECKS_FAILED`
+  line, which says the output is elsewhere, and guessed: on 2026-10-04 it put
+  two tickets' failures, flaky tests in a package neither changed, down to
+  needing each other's change, and sent the maintainer to the log for a third,
+  which failed on golangci-lint's lock. Its evidence now has, for each ticket
+  set aside after its check failed, the lines of the output that say what
+  failed (`FAIL` lines, the failing tests, a data race, a lint, vet or build
+  error, a tool's own error), and the directories the ticket's own commits
+  change. Its bullet says which it is, and **Needs you** says to rerun the
+  check for a failure elsewhere, and to fix the ticket's code for one in it.
 - A Herdr tab opened for a worker, or for the startup probe, is closed again
   when Herdr's answer to `herdr tab create` can't be used: output that isn't
   JSON, or that lacks the tab's or its pane's ID. Each retry used to leave
