@@ -16,6 +16,12 @@ All notable changes to orchestra are documented here. The format follows
   written (1m04s)`, `◆ Run report skipped` after Ctrl+C, or the
   `REVIEW_FAILED` warning. Ctrl+C still skips them. Plain output and the log
   are unchanged.
+- `orchestra init` asks in two steps, a screen each under its header:
+  **Step 1 of 2 · Workers** (installing Beads, tickets at the same time, the
+  `CHANGELOG.md` union, MCP servers), then **Step 2 of 2 · Checks** (the check
+  command and its time limit). Shift+Tab goes back a step with its answers
+  kept, Esc now cancels as Ctrl+C does, and nothing is written or installed
+  until the last step is submitted. A step the flags answer whole is skipped.
 - In a pane 120 columns wide or wider, the dashboard's Current boxes go two
   to a row instead of each taking the full width: four workers show as a
   grid of two by two, numbered 1 2 over 3 4, so the number keys are

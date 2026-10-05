@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -192,6 +193,7 @@ func parseConcurrency(v string) (int, error) {
 type formField struct {
 	huh.Field
 	gap       string      // drawn above the field: the theme's field separator, but not above the first
+	header    string      // printed above the field in huh's accessible mode, which drops groups' titles
 	hidden    func() bool // nil: always shown
 	wasHidden bool        // whether it was hidden when last updated
 }
@@ -243,6 +245,11 @@ func (f *formField) WithAccessible(accessible bool) huh.Field {
 func (f *formField) RunAccessible(w io.Writer, r io.Reader) error {
 	if f.isHidden() {
 		return nil
+	}
+	if f.header != "" {
+		if _, err := fmt.Fprintf(w, "%s\n\n", f.header); err != nil {
+			return err
+		}
 	}
 	return f.Field.RunAccessible(w, r)
 }
@@ -311,49 +318,45 @@ type Ask struct {
 	Install    bool // whether to install bd as the choice's Install says
 }
 
+// initStage is a stage of the init form: a header, then its questions. The form shows one stage at
+// a time; Enter on a stage's last question goes on to the next, Shift+Tab on its first goes back.
+type initStage struct {
+	name   string
+	fields []*formField
+}
+
+// add adds f to the stage's questions.
+func (s *initStage) add(f huh.Field) *formField {
+	ff := &formField{Field: f}
+	s.fields = append(s.fields, ff)
+	return ff
+}
+
+// stageHeader is the header of the stage numbered n (from 1) of the total shown: "Step 1 of 2 ·
+// Workers", or its name alone when it is the only one.
+func stageHeader(name string, n, total int) string {
+	if total == 1 {
+		return name
+	}
+	return fmt.Sprintf("Step %d of %d · %s", n, total, name)
+}
+
 // AskInit asks the questions ask names, starting from the current choice, reading the answers
-// from in and drawing the form on out.
+// from in and drawing the form on out. It asks them in stages, each stage under its header; a stage
+// with no question to ask is left out. It changes nothing but c: Esc or Ctrl+C at any stage returns
+// huh.ErrUserAborted, and init then writes and installs nothing.
 func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
-	var fields []*formField
-	add := func(f huh.Field) *formField {
-		ff := &formField{Field: f}
-		fields = append(fields, ff)
-		return ff
-	}
+	workers, checks := &initStage{name: "Workers"}, &initStage{name: "Checks"}
 	if ask.Install {
-		add(installField(c))
-	}
-	if ask.Check {
-		add(huh.NewInput().
-			Title("Check command").
-			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs " +
-				"it again on a ticket rebased onto work merged meanwhile. Empty for none.").
-			Placeholder("e.g. make check").
-			Value(&c.Check))
-	}
-	if ask.Timeout {
-		if c.CheckTimeout == "" {
-			c.CheckTimeout = project.DefaultCheckTimeoutText
-		}
-		add(huh.NewInput().
-			Title("Check time limit").
-			Description("How long orchestra lets the check command run on a rebased ticket before it stops it " +
-				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override " +
-				"it with --check-timeout.").
-			Placeholder("e.g. 5m, 45m").
-			Validate(func(v string) error {
-				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
-				return err
-			}).
-			Value(&c.CheckTimeout))
+		workers.add(installField(c))
 	}
 	option, custom := concurrencyStart(c.Concurrent)
 	if ask.Concurrent {
-		add(newBoundedSelect(huh.NewSelect[int]().
+		workers.add(newBoundedSelect(huh.NewSelect[int]().
 			Title("Tickets at the same time").
 			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent."),
 			&option, concurrencyOptions()...))
-		typed := add(huh.NewInput().
+		typed := workers.add(huh.NewInput().
 			Title("Number of tickets at the same time").
 			Description(fmt.Sprintf("From 1 to %d. Above %d: a big machine, and tickets that rarely touch "+
 				"the same files.", project.MaxConcurrency, len(concurrencyNotes))).
@@ -367,7 +370,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		typed.wasHidden = typed.isHidden()
 	}
 	if ask.Union {
-		add(huh.NewConfirm().
+		workers.add(huh.NewConfirm().
 			Title("Merge CHANGELOG.md by union").
 			Description("Adds 'CHANGELOG.md merge=union' to .gitattributes. Tickets running side by side each " +
 				"add an entry at the same spot, and git stops the second one's rebase on a conflict; with " +
@@ -378,29 +381,72 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	mcpOpts, servers := mcpOptions(*c)
 	if ask.MCP && len(mcpOpts) > 0 {
-		add(huh.NewMultiSelect[string]().
+		// Not filterable: Esc, which ends a filter, cancels the form.
+		workers.add(huh.NewMultiSelect[string]().
 			Title("MCP servers for workers").
 			Description(mcpDescription(*c)).
 			Options(mcpOpts...).
+			Filterable(false).
 			Value(&servers))
 	}
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
-	if len(fields) == 0 {
+	if ask.Check {
+		checks.add(huh.NewInput().
+			Title("Check command").
+			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs " +
+				"it again on a ticket rebased onto work merged meanwhile. Empty for none.").
+			Placeholder("e.g. make check").
+			Value(&c.Check))
+	}
+	if ask.Timeout {
+		if c.CheckTimeout == "" {
+			c.CheckTimeout = project.DefaultCheckTimeoutText
+		}
+		checks.add(huh.NewInput().
+			Title("Check time limit").
+			Description("How long orchestra lets the check command run on a rebased ticket before it stops it " +
+				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override " +
+				"it with --check-timeout.").
+			Placeholder("e.g. 5m, 45m").
+			Validate(func(v string) error {
+				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
+				return err
+			}).
+			Value(&c.CheckTimeout))
+	}
+	var stages []*initStage
+	for _, s := range []*initStage{workers, checks} {
+		if len(s.fields) > 0 {
+			stages = append(stages, s)
+		}
+	}
+	if len(stages) == 0 {
 		return nil
 	}
 	theme := huh.ThemeCharm()
-	group := make([]huh.Field, len(fields))
-	for i, f := range fields {
-		if i > 0 {
-			f.gap = theme.FieldSeparator.Render()
-		}
-		group[i] = f
-	}
+	gap := theme.FieldSeparator.Render()
 	theme.FieldSeparator = lipgloss.NewStyle() // each formField draws its own
+	theme.Group.Title = lipgloss.NewStyle().Bold(true).Foreground(purple).MarginBottom(1)
+	groups := make([]*huh.Group, len(stages))
+	for i, s := range stages {
+		header := stageHeader(s.name, i+1, len(stages))
+		group := make([]huh.Field, len(s.fields))
+		for j, f := range s.fields {
+			if j > 0 {
+				f.gap = gap
+			} else {
+				f.header = header
+			}
+			group[j] = f
+		}
+		groups[i] = huh.NewGroup(group...).Title(header)
+	}
+	keys := huh.NewDefaultKeyMap()
+	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
 	before := c.Check
-	form := huh.NewForm(huh.NewGroup(group...)).WithTheme(theme).WithInput(in).WithOutput(out)
+	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
 	if err := form.Run(); err != nil {
 		return err
 	}
