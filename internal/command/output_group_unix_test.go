@@ -97,11 +97,18 @@ func TestOutputStopsTheCommandsWholeGroupWhenCancelled(t *testing.T) {
 
 // Everything a stopped command started gets SIGTERM first, as git does, and the grace that follows
 // it: a child still cleaning up after the command itself has ended isn't killed halfway.
+//
+// From the moment pgid is written, and the SIGTERM may come, neither shell starts a process until
+// its trap runs: each spins on builtins, between which the shell runs a trap at once. A shell that
+// is about to wait, or has just started a sleep to wait for, isn't: a SIGTERM that arrives before
+// the wait blocks stays pending through it, and one that reaches the sleep before it execs is lost,
+// so neither ends and the shell never runs its trap.
 func TestOutputGivesTheCommandsGroupSIGTERMAndItsGrace(t *testing.T) {
 	dir := t.TempDir()
 	script := `trap "echo > leader; exit 1" TERM
-(trap "sleep 0.1; echo > child; exit 1" TERM; echo $$ > pgid.tmp; mv pgid.tmp pgid; sleep 600 & wait) &
-wait`
+(trap "sleep 0.1; echo > child; exit 1" TERM
+ until [ -e looping ]; do :; done; echo $$ > pgid.tmp; mv pgid.tmp pgid; while :; do :; done) &
+echo > looping; while :; do :; done`
 	pgid, _ := outputCancelled(t, dir, script) // stopped by the cancel; the test is about the signals
 	for _, f := range []string{"leader", "child"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
