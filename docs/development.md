@@ -51,6 +51,8 @@ The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`,
 
 The fake bd, herdr, claude and git the tests run are shell scripts written with `internal/faketool`, whose `Write` makes each a hard link to one dispatcher per test binary, run once, beside the script it runs. A new executable would cost far more: macOS scans each one the first time it runs, which takes 0.2-0.6 seconds, and several seconds while other workers run their checks. A package whose tests call `Write` runs them through `faketool.Main` from its `TestMain`.
 
+A package whose tests run the real git runs them through `gittest.Main` (`internal/gittest`) from its `TestMain`, as `internal/git`, `internal/dispatch`, `internal/project` and `cmd/orchestra` do. It turns off git's automatic maintenance (`maintenance.auto=false`, through `GIT_CONFIG_COUNT`) for every git the tests start, orchestra's included. After a commit, a merge or a rebase, git starts that maintenance detached, and since git 2.54 it repacks a repository with a few loose objects: one still writing in a test's repository as the test ends fails the test with `TempDir RemoveAll cleanup: unlinkat .../.git/objects: directory not empty`.
+
 The run loop, `internal/dispatch`, has one file per concern, its tests in the `_test.go` file of the same name:
 
 | File | What's in it |

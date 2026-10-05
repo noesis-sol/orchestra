@@ -12,6 +12,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/noesis-sol/orchestra/internal/faketool"
+	"github.com/noesis-sol/orchestra/internal/gittest"
 )
 
 // No goroutine the loop starts outlives its run: a worker per ticket, a status watcher per worker,
@@ -19,9 +20,9 @@ import (
 
 // TestMain fails the package's tests if any goroutine one of them started is still running once
 // they have all returned. It covers every test, including those added later. It runs them through
-// faketool, for the fake claudes some of them run.
+// faketool, for the fake claudes some of them run, and gittest, for the real git others run.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(faketool.Main(m))
+	goleak.VerifyTestMain(faketool.Main(gittest.Main(m)))
 }
 
 // testLabel is the profiler label that marks the goroutines a test started, directly or through
