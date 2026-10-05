@@ -85,6 +85,11 @@ All notable changes to orchestra are documented here. The format follows
   left running are labelled in, `.orchestra/run/state.json` and the run
   review's input. They followed Go's random map order and could change places
   from one listing to the next.
+- A worker told to continue after a turn that ended with its ticket in
+  progress gets the full 4 minutes blocked, or 5 in a status Herdr can't tell,
+  counted afresh from then. The poll that told it didn't break the streak, so
+  a worker blocked for 3 minutes before that turn ended and blocked again
+  right after stopped the run a minute later with `BLOCKED >4min`.
 - An agent that `herdr agent get` shows without an `agent_status` no longer
   reads as gone. A Herdr that renamed or dropped that field would have made
   every live worker look gone, and the run would have settled workers still

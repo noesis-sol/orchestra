@@ -57,6 +57,13 @@ func (o *Loop) waitSettled(
 			}
 			return idle.since, nil
 		}
+		if blocked.track(st == StateBlocked) > blockedLimit {
+			return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
+		}
+		if unknown.track(st == StateUnknown) > unknownLimit {
+			return time.Time{}, halt(ExitStuck, stopUnknown,
+				" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+		}
 		isIdle := st == StateIdle || st == StateDone
 		idle.track(isIdle)
 		if isIdle {
@@ -67,13 +74,6 @@ func (o *Loop) waitSettled(
 			if nudged {
 				continue // the checks below wait for its next poll
 			}
-		}
-		if blocked.track(st == StateBlocked) > blockedLimit {
-			return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
-		}
-		if unknown.track(st == StateUnknown) > unknownLimit {
-			return time.Time{}, halt(ExitStuck, stopUnknown,
-				" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 		}
 		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
 			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
