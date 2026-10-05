@@ -20,13 +20,14 @@ func TestOutputWithInputFeedsTheCommand(t *testing.T) {
 // A command run with input that succeeds but leaves a process behind holding its output succeeds, as
 // with Output.
 func TestOutputWithInputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
-	start := time.Now()
-	out, err := OutputWithInput(context.Background(), ReadLimit, "", nil, "in", "sh", "-c", "sleep 30 & cat")
+	dir := t.TempDir()
+	t.Cleanup(func() { killGroup(dir) }) // the leftover would sleep on past the test
+	out, err := unhung(t, dir, "once the command exited, with its leftover still running", func() (string, error) {
+		return OutputWithInput(context.Background(), ReadLimit, dir, nil, "in", "sh", "-c",
+			"echo $$ > pgid; sleep 600 & cat")
+	})
 	if err != nil || out != "in" {
 		t.Errorf("got %q, %v", out, err)
-	}
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s", took)
 	}
 }
 

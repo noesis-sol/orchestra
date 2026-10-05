@@ -17,7 +17,7 @@ import (
 // SIGTERM, as a git hook would, and one that ignores it, so that only a SIGKILL sent after the
 // command itself has ended on the SIGTERM stops it. Once both have started, the second writes the
 // command's PID, its group's ID, to the file pgid.
-const startsChildren = `sleep 30 & (trap "" TERM; echo $$ > pgid.tmp; mv pgid.tmp pgid; exec sleep 30) & wait`
+const startsChildren = `sleep 600 & (trap "" TERM; echo $$ > pgid.tmp; mv pgid.tmp pgid; exec sleep 600) & wait`
 
 // awaitFile waits for a command to write file, once it has started.
 func awaitFile(t *testing.T, file string) {
@@ -28,7 +28,7 @@ func awaitFile(t *testing.T, file string) {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			t.Fatal(err)
 		}
-		if time.Since(start) > soon {
+		if time.Since(start) > hung {
 			t.Fatalf("the command didn't write %s", filepath.Base(file))
 		}
 	}
@@ -51,9 +51,9 @@ func outputCancelled(t *testing.T, dir, script string) (int, error) {
 	select {
 	case err := <-done:
 		return pgid, err
-	case <-time.After(soon):
+	case <-time.After(hung):
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // best effort: the test already fails
-		t.Fatalf("Output still runs %s after the cancel", soon)
+		t.Fatalf("Output still runs %s after the cancel", hung)
 	}
 	return 0, nil
 }
@@ -74,11 +74,9 @@ func TestOutputStopsTheCommandsWholeGroupAtItsLimit(t *testing.T) {
 		t.Skip("skipped by -short: waits out a time limit and its grace")
 	}
 	dir := t.TempDir()
-	start := time.Now()
-	_, err := Output(context.Background(), time.Second, dir, "sh", "-c", startsChildren)
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s", took)
-	}
+	_, err := unhung(t, dir, "at its 1s time limit", func() (string, error) {
+		return Output(context.Background(), time.Second, dir, "sh", "-c", startsChildren)
+	})
 	var e *Error
 	if !errors.As(err, &e) || !e.Stopped || e.Err.Error() != "timed out after 1s" {
 		t.Errorf("error %v, want the command stopped at its limit", err)
@@ -102,7 +100,7 @@ func TestOutputStopsTheCommandsWholeGroupWhenCancelled(t *testing.T) {
 func TestOutputGivesTheCommandsGroupSIGTERMAndItsGrace(t *testing.T) {
 	dir := t.TempDir()
 	script := `trap "echo > leader; exit 1" TERM
-(trap "sleep 0.1; echo > child; exit 1" TERM; echo $$ > pgid.tmp; mv pgid.tmp pgid; sleep 30 & wait) &
+(trap "sleep 0.1; echo > child; exit 1" TERM; echo $$ > pgid.tmp; mv pgid.tmp pgid; sleep 600 & wait) &
 wait`
 	pgid, _ := outputCancelled(t, dir, script) // stopped by the cancel; the test is about the signals
 	for _, f := range []string{"leader", "child"} {

@@ -18,7 +18,7 @@ import (
 // waitForFile waits until the file exists, as a command writes it once it has started.
 func waitForFile(t *testing.T, p string) {
 	t.Helper()
-	for deadline := time.Now().Add(soon); ; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(hung); ; time.Sleep(10 * time.Millisecond) {
 		if _, err := os.Stat(p); err == nil {
 			return
 		}
@@ -78,7 +78,7 @@ func TestInteractiveStopsWithSIGTERM(t *testing.T) {
 		if !errors.As(err, &cmdErr) || !cmdErr.Stopped || !errors.Is(err, context.Canceled) {
 			t.Errorf("error %v, want a stopped *Error", err)
 		}
-	case <-time.After(soon):
+	case <-time.After(hung):
 		t.Fatal("the command wasn't stopped")
 	}
 	if out.String() != "terminal restored\n" {

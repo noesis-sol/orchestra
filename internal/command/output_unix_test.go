@@ -17,35 +17,72 @@ import (
 
 // hang is a command that never finishes by itself. The shell runs sleep as its child rather than
 // in its place, so sleep goes on holding the output after the shell is stopped, as a git hook can.
-var hang = []string{"-c", "sleep 30; echo late"}
+// It first writes its PID, its group's ID, to the file pgid, for unhung.
+var hang = []string{"-c", "echo $$ > pgid; sleep 600; echo late"}
 
-// soon is how long these tests allow for what takes a moment (a command stopped or finished, a killed
-// process gone), under the race detector on a machine loaded by other tests: well short of the 30
-// seconds their commands sleep, so a regression that waits for one still fails.
-const soon = 10 * time.Second
+// hung is how long these tests wait for what takes a moment (a command started, stopped or finished, a
+// killed process gone) before taking it for stuck: far longer than that takes under the race detector on
+// a machine loaded by other workers' tests, and far shorter than the 10 minutes their commands sleep, so
+// a slow run passes and only one that waits for such a command reaches it.
+const hung = time.Minute
+
+// unhung returns what call returns, unless call is still running after hung: then it kills the process
+// group whose ID the command wrote to the file pgid in dir, so that call returns, and fails the test,
+// which wanted call back as want says.
+func unhung[T any](t *testing.T, dir, want string, call func() (T, error)) (T, error) {
+	t.Helper()
+	type result struct {
+		v   T
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		v, err := call()
+		done <- result{v, err}
+	}()
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(hung):
+		killGroup(dir)
+		r = <-done
+		t.Fatalf("still running after %s, want it back %s", hung, want)
+	}
+	return r.v, r.err
+}
+
+// killGroup kills the process group whose ID a command wrote to the file pgid in dir, if it wrote one.
+func killGroup(dir string) {
+	b, err := os.ReadFile(filepath.Join(dir, "pgid"))
+	if err != nil {
+		return // the command never got that far
+	}
+	// Above 1: a group ID of 0 or 1 would have kill reach the test's own group or every process.
+	if pgid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pgid > 1 {
+		_ = syscall.Kill(-pgid, syscall.SIGKILL) // best effort: the group may have gone
+	}
+}
 
 // Ctrl+C stops a hung command at once, and the error says why it stopped.
 func TestOutputStopsAHungCommandWhenCancelled(t *testing.T) {
+	dir := t.TempDir()
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(errors.New("stopped with Ctrl+C")) })
-	start := time.Now()
-	_, err := Output(ctx, ReadLimit, "", "sh", hang...)
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned %s after the cancel", took-100*time.Millisecond)
-	}
-	if err == nil || err.Error() != "sh -c sleep 30; echo late: stopped with Ctrl+C" {
+	_, err := unhung(t, dir, "once cancelled", func() (string, error) {
+		return Output(ctx, ReadLimit, dir, "sh", hang...)
+	})
+	if err == nil || err.Error() != "sh -c echo $$ > pgid; sleep 600; echo late: stopped with Ctrl+C" {
 		t.Errorf("error %v, want it to name the command and why it stopped", err)
 	}
 }
 
 // A hung command is stopped at its time limit, and the error names the limit.
 func TestOutputStopsAHungCommandAtItsLimit(t *testing.T) {
-	start := time.Now()
-	_, err := Output(context.Background(), 200*time.Millisecond, "", "sh", hang...)
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s", took)
-	}
-	if err == nil || err.Error() != "sh -c sleep 30; echo late: timed out after 200ms" {
+	dir := t.TempDir()
+	_, err := unhung(t, dir, "at its 200ms time limit", func() (string, error) {
+		return Output(context.Background(), 200*time.Millisecond, dir, "sh", hang...)
+	})
+	if err == nil || err.Error() != "sh -c echo $$ > pgid; sleep 600; echo late: timed out after 200ms" {
 		t.Errorf("error %v, want it to name the command and the limit", err)
 	}
 }
@@ -61,13 +98,13 @@ func TestOutputStoppedKeepsStderr(t *testing.T) {
 // A command that succeeds but leaves a process behind holding its output succeeds, without waiting
 // for that process.
 func TestOutputDoesNotWaitForALeftoverHoldingTheOutput(t *testing.T) {
-	start := time.Now()
-	out, err := Output(context.Background(), ReadLimit, "", "sh", "-c", "sleep 30 & echo ok")
+	dir := t.TempDir()
+	t.Cleanup(func() { killGroup(dir) }) // the leftover would sleep on past the test
+	out, err := unhung(t, dir, "once the command exited, with its leftover still running", func() (string, error) {
+		return Output(context.Background(), ReadLimit, dir, "sh", "-c", "echo $$ > pgid; sleep 600 & echo ok")
+	})
 	if err != nil || out != "ok\n" {
 		t.Errorf("got %q, %v", out, err)
-	}
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s", took)
 	}
 }
 
@@ -90,7 +127,7 @@ func TestOutputFailureIsTyped(t *testing.T) {
 	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
 		t.Errorf("exec's error should be underneath: %v", err)
 	}
-	_, err = Output(context.Background(), 200*time.Millisecond, "", "sh", hang...)
+	_, err = Output(context.Background(), 200*time.Millisecond, t.TempDir(), "sh", hang...)
 	if !errors.As(err, &e) || !e.Stopped || e.Err.Error() != "timed out after 200ms" {
 		t.Errorf("stopped command: %#v", err)
 	}
@@ -116,7 +153,7 @@ func TestOutputRunsTheCommandInItsOwnProcessGroup(t *testing.T) {
 			if pid, err = strconv.Atoi(strings.TrimSpace(string(b))); err != nil {
 				t.Fatal(err)
 			}
-		} else if time.Since(start) > soon {
+		} else if time.Since(start) > hung {
 			t.Fatal("the command didn't start")
 		}
 	}

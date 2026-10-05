@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-// alive reports whether pid still runs, allowing a killed process until soon to be reaped.
+// alive reports whether pid still runs, allowing a killed process until hung to be reaped.
 func alive(pid int) bool {
-	for start := time.Now(); time.Since(start) < soon; time.Sleep(100 * time.Millisecond) {
+	for start := time.Now(); time.Since(start) < hung; time.Sleep(100 * time.Millisecond) {
 		if errors.Is(syscall.Kill(pid, syscall.Signal(0)), syscall.ESRCH) {
 			return false
 		}
@@ -46,31 +46,24 @@ func TestGroupOutputStopsAChildThatHoldsTheOutput(t *testing.T) {
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	start := time.Now()
 	// The child ignores SIGTERM and keeps the output pipe open, so only the group's SIGKILL ends it.
-	_, err := GroupOutput(ctx, time.Second, dir, "sh", "-c", `trap "" TERM; sleep 30 & echo $! > pid; wait`)
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s, want within the timeout plus grace", took)
-	}
+	_, err := unhung(t, dir, "within the timeout plus grace", func() ([]byte, error) {
+		return GroupOutput(ctx, time.Second, dir, "sh", "-c", `trap "" TERM; echo $$ > pgid; sleep 600 & wait`)
+	})
 	if err == nil {
 		t.Error("a timed-out command should fail")
 	}
-	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
-		t.Errorf("child %d still runs", pid)
-	}
+	assertGroupGone(t, childPID(t, filepath.Join(dir, "pgid")))
 }
 
 func TestGroupOutputPassesAndCleansUpAfterABackgroundChild(t *testing.T) {
 	dir := t.TempDir()
-	out, err := GroupOutput(context.Background(), 200*time.Millisecond, dir, "sh", "-c", `sleep 30 > /dev/null & echo $! > pid; echo ok`)
+	out, err := GroupOutput(context.Background(), 200*time.Millisecond, dir, "sh", "-c",
+		`echo $$ > pgid; sleep 600 > /dev/null & echo ok`)
 	if err != nil || strings.TrimSpace(string(out)) != "ok" {
 		t.Errorf("got %q, %v", out, err)
 	}
-	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
-		t.Errorf("child %d still runs", pid)
-	}
+	assertGroupGone(t, childPID(t, filepath.Join(dir, "pgid")))
 }
 
 func TestGroupOutputReportsFailure(t *testing.T) {
@@ -81,20 +74,15 @@ func TestGroupOutputReportsFailure(t *testing.T) {
 
 func TestGroupOutputKillsALeftoverHoldingTheOutputOnceTheCommandExits(t *testing.T) {
 	dir := t.TempDir()
-	start := time.Now()
-	// With a grace of 15s, Wait gives up on the leftover's output after 30s, when it ends anyway, so a
-	// GroupOutput that leaves the leftover running returns long after soon.
-	out, err := GroupOutput(context.Background(), 15*time.Second, dir, "sh", "-c", `sleep 30 & echo $! > pid; echo ok`)
-	if took := time.Since(start); took > soon {
-		t.Errorf("returned after %s, want soon after the command exits", took)
-	}
+	// With a grace of hung, Wait gives up on the leftover's output only after twice that, so a
+	// GroupOutput that leaves the leftover running until then is still running when unhung gives up.
+	out, err := unhung(t, dir, "once the command exited", func() ([]byte, error) {
+		return GroupOutput(context.Background(), hung, dir, "sh", "-c", `echo $$ > pgid; sleep 600 & echo ok`)
+	})
 	if err != nil || strings.TrimSpace(string(out)) != "ok" {
 		t.Errorf("got %q, %v", out, err)
 	}
-	if pid := childPID(t, filepath.Join(dir, "pid")); alive(pid) {
-		_ = syscall.Kill(pid, syscall.SIGKILL) // best effort: the test already fails
-		t.Errorf("child %d still runs", pid)
-	}
+	assertGroupGone(t, childPID(t, filepath.Join(dir, "pgid")))
 }
 
 // awaitExitWithin runs awaitExit on cmd's process, failing if it takes longer than d.
@@ -118,7 +106,7 @@ func TestAwaitExitLeavesTheCommandUnreaped(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	awaitExitWithin(t, cmd, soon)
+	awaitExitWithin(t, cmd, hung)
 	if err := cmd.Wait(); cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 3 {
 		t.Errorf("Wait after awaitExit: %v, want exit status 3", err)
 	}
@@ -130,7 +118,7 @@ func TestAwaitExitReturnsForACommandThatAlreadyExited(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(300 * time.Millisecond) // a zombie by now
-	awaitExitWithin(t, cmd, soon)
+	awaitExitWithin(t, cmd, hung)
 	if err := cmd.Wait(); err != nil {
 		t.Errorf("Wait after awaitExit: %v", err)
 	}

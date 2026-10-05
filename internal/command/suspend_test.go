@@ -115,7 +115,7 @@ func (r *orchestraRun) next(t *testing.T) syscall.WaitStatus {
 			t.Fatal("orchestra can't be waited for")
 		}
 		return ws
-	case <-time.After(soon):
+	case <-time.After(hung):
 		t.Fatalf("orchestra neither stopped nor exited\n%s", r.output())
 	}
 	return 0
