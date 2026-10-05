@@ -150,6 +150,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Esc or Ctrl+C at "What should this run work on?" no longer closes the
+  terminal's input while Bubble Tea still reads it, a data race the race
+  detector caught about once in 180 runs of the test that cancels it.
 - A ticket closed with no change of its own, its branch with no commits
   beyond the base and its worktree clean, as when tickets merged before it
   did what it was about, has its worktree, branch and tab removed as after a

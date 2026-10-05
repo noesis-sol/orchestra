@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -66,16 +67,25 @@ func AskWork(
 			huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
 		),
 		describe,
-	)).WithTheme(theme).WithKeyMap(keys).
+	)).WithTheme(theme).WithKeyMap(keys)
+	var err error
+	if os.Getenv("TERM") == "dumb" { // huh.NewForm's test for its accessible form, which RunWithContext runs
+		err = form.WithInput(in).WithOutput(out).RunWithContext(ctx)
+	} else {
+		// Run here rather than by huh's RunWithContext, which has Esc and Ctrl+C send tea.Interrupt:
+		// on it Bubble Tea closes the terminal's input without waiting for its goroutine still reading
+		// it, a data race. On tea.Quit it waits; form.State then tells a cancelled form from a
+		// submitted one.
+		form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
 		// orchestra watches the stop signals itself and ends ctx on one; Bubble Tea's handler would
-		// take SIGTERM for a submitted form. Before the input and output: it replaces the options.
-		WithProgramOptions(tea.WithoutSignalHandler()).
-		WithInput(in).WithOutput(out)
-	err := form.RunWithContext(ctx)
+		// take SIGTERM for a submitted form.
+		_, err = tea.NewProgram(form, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out),
+			tea.WithoutSignalHandler()).Run()
+	}
 	switch {
 	case ctx.Err() != nil:
 		return "", ctx.Err()
-	case errors.Is(err, huh.ErrUserAborted):
+	case form.State == huh.StateAborted || errors.Is(err, huh.ErrUserAborted):
 		return "", ErrCancelled
 	case err != nil:
 		return "", err
