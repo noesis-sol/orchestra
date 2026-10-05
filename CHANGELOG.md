@@ -15,6 +15,13 @@ All notable changes to orchestra are documented here. The format follows
   step ends, the line becomes its outcome: `◆ Request screened (8s)`,
   `◆ Feature planned (2m31s)`, or `◆ Planning stopped` after Ctrl+C.
   With `--plain` or without a terminal, the lines are unchanged.
+- A new organ, the scout, finds the test suites, lints, type checks and
+  builds a project already has, for the checks step of `orchestra init` to
+  offer (which uses it in a later change). It is the one organ with tools,
+  only the read-only Read, Glob and Grep, started in the repository's root
+  for at most 5 minutes: each suite comes with its command, the `file:line`
+  that defines it, a fast or full tier, whether two copies can run at once,
+  and what it needs. An existing `scripts/check.sh` comes first.
 - On a terminal, the organ phase's two waits after a run show they are
   under way: a spinner, in the dashboard's style, and the time so far take
   the place of `◆ Finishing triage…` and `◆ Writing the run report with

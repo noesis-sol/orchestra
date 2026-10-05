@@ -10,7 +10,7 @@ Works through a [Beads](https://github.com/gastownhall/beads) backlog with sever
 Two kinds of model calls do orchestra's work, and these docs keep their names apart:
 
 - **Workers** are the coding agents that do the tickets: one per ticket, each in its own Herdr tab and git worktree, a full Claude Code session (by default) with its tools and the [MCP servers the project chose](docs/workers.md#mcp-servers-for-workers). They edit, test, commit and close their ticket.
-- **[Organs](docs/organs.md)** are orchestra's own one-shot advisers: triage of set-aside tickets, the predictor of a ticket's files, the reviewer that writes the run report, and the screen and plan that turn a feature request into tickets. Each is a single `claude -p` call with no tools; they advise and change nothing.
+- **[Organs](docs/organs.md)** are orchestra's own one-shot advisers: triage of set-aside tickets, the predictor of a ticket's files, the reviewer that writes the run report, the screen and plan that turn a feature request into tickets, and the scout that finds a project's test suites for `orchestra init`. Each is a single `claude -p` call with no tools, except the scout, which has read-only ones (Read, Glob and Grep) to read the repository; they advise and change nothing.
 
 ## Install
 
@@ -142,7 +142,7 @@ Each code in full, and what to do after one, is in [docs/running.md](docs/runnin
 - [docs/setup.md](docs/setup.md): everything `orchestra init` does
 - [docs/running.md](docs/running.md): options, scoped and feature runs, several tickets at once, stops and exit codes
 - [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, hooks and run files
-- [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen and the plan
+- [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen, the plan and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
 - [docs/development.md](docs/development.md): the check, the code's layout and tests, differences from `orchestrate.sh`
 - [Changelog](CHANGELOG.md)

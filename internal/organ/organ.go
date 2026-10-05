@@ -1,5 +1,6 @@
 // Package organ holds orchestra's organs: LLM-powered steps that run 'claude -p' with no tools and
-// no MCP servers on evidence orchestra gathers, and only advise.
+// no MCP servers on evidence orchestra gathers, and only advise. The scout alone has tools: the
+// read-only Read, Glob and Grep, to find a project's test suites.
 package organ
 
 import (
@@ -32,12 +33,14 @@ import (
 //   screen    a feature request typed or pasted: ok to plan, reject (malicious or inappropriate) or unclear.
 //   plan      a screened feature request: an epic and its child tickets, or the questions it needs
 //             answered first. Orchestra checks the plan and files it.
+//   scout     a project at init: the test suites, lints, type checks and builds it already has. The
+//             one organ with tools, read-only ones, it reads the repository itself.
 
 // Client runs organs through the claude CLI.
 type Client struct {
 	Bin    string // "claude"; tests substitute a fake
 	Model  string // "" uses the claude CLI's default
-	Effort string // "" gives each organ its own: TriageEffort, PredictEffort, ReviewEffort, ScreenEffort or PlanEffort
+	Effort string // "" gives each organ its own effort, such as TriageEffort or ScoutEffort
 }
 
 // Each organ's effort when Client.Effort sets none: low for the short structured answers of triage
@@ -74,13 +77,14 @@ func (r Result) decode(v any) error {
 	return json.Unmarshal(raw, v)
 }
 
-// args keeps an organ read-only and small: no built-in tools, no MCP servers (their tool lists
-// alone are ~180k tokens), a short system prompt in place of Claude Code's, and no saved session.
-// --strict-mcp-config with no --mcp-config is no MCP servers at all, whatever mcp_servers in
-// .orchestra/settings.json gives the workers: an organ never gets those. The effort is always given:
-// Claude Code's default suits a coding session, not a short answer.
-func (g Client) args(effort, system, schema string) []string {
-	a := []string{"-p", "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+// args keeps an organ read-only and small: no built-in tools but the read-only ones in tools ("" for
+// none, which every organ but the scout has), no MCP servers (their tool lists alone are ~180k tokens),
+// a short system prompt in place of Claude Code's, and no saved session. --strict-mcp-config with no
+// --mcp-config is no MCP servers at all, whatever mcp_servers in .orchestra/settings.json gives the
+// workers: an organ never gets those. The effort is always given: Claude Code's default suits a
+// coding session, not a short answer.
+func (g Client) args(tools, effort, system, schema string) []string {
+	a := []string{"-p", "--tools", tools, "--strict-mcp-config", "--no-session-persistence",
 		"--system-prompt", system, "--output-format", "json", "--effort", effort}
 	if schema != "" {
 		a = append(a, "--json-schema", schema)
@@ -103,8 +107,19 @@ var userSetupOff = []string{"CLAUDE_CODE_SAFE_MODE=1"}
 // its timeout says "timed out after" the timeout.
 func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, input, schema string) (Result, error) {
 	// Outside the project: no project CLAUDE.md, settings or hooks.
-	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), userSetupOff, input, g.Bin,
-		g.args(effort, system, schema)...)
+	return g.ask(ctx, timeout, call{dir: os.TempDir(), effort: effort, system: system, schema: schema}, input)
+}
+
+// call is how one organ call runs: in dir, with the read-only tools in tools ("" for none), at the
+// effort, with the system prompt and the JSON schema ("" for none).
+type call struct {
+	dir, tools, effort, system, schema string
+}
+
+// ask runs claude -p as c says on input, stopping it after timeout, as Ask does.
+func (g Client) ask(ctx context.Context, timeout time.Duration, c call, input string) (Result, error) {
+	out, err := command.OutputWithInput(ctx, timeout, c.dir, userSetupOff, input, g.Bin,
+		g.args(c.tools, c.effort, c.system, c.schema)...)
 	if err != nil {
 		if e, ok := errors.AsType[*command.Error](err); ok {
 			e.Args = nil // the system prompt and the schema would bury why it failed
@@ -113,13 +128,25 @@ func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, 
 	}
 	var r Result
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
-		return r, fmt.Errorf("unreadable %s output: %w", g.Bin, err)
+		return r, unreadableOutput{g.Bin, err}
 	}
 	if r.IsError {
 		return r, fmt.Errorf("%s reported an error: %s", g.Bin, r.Result)
 	}
 	return r, nil
 }
+
+// unreadableOutput is claude's output when it isn't the JSON of --output-format json.
+type unreadableOutput struct {
+	bin string
+	err error
+}
+
+func (u unreadableOutput) Error() string {
+	return fmt.Sprintf("unreadable %s output: %v", u.bin, u.err)
+}
+
+func (u unreadableOutput) Unwrap() error { return u.err }
 
 // EvidenceID is a fresh ID for the evidence tags of one organ input: text gathered from the run
 // can't close a tag whose ID is drawn after it was written.
