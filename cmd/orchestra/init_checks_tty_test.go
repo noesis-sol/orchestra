@@ -84,8 +84,9 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 		t.Fatalf("init didn't exit; the terminal:\n%s", term.screen.String())
 	}
 	for path, want := range map[string]string{
-		"scripts/check-fast.sh": "\n# unit tests, from Makefile:3\nmake test\n",
-		"scripts/check-full.sh": "\nscripts/check-fast.sh\n\n# e2e, from Makefile:7, one worktree at a time\nlock e2e\nmake e2e\nunlock\n",
+		"scripts/check-fast.sh": "\n# unit tests, from Makefile:3\nprintf '%s\\n' 'SUITE: unit tests'\nmake test\n",
+		"scripts/check-full.sh": "\nscripts/check-fast.sh\n\n# e2e, from Makefile:7, one worktree at a time\n" +
+			"printf '%s\\n' 'SUITE: e2e'\nlock e2e\nmake e2e\nunlock\n",
 	} {
 		b, err := os.ReadFile(filepath.Join(repo, path))
 		if err != nil {

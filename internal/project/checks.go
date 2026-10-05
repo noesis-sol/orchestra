@@ -138,7 +138,7 @@ func runnerScript(path, purpose string, suites []Suite) string {
 	}
 	for _, s := range lines {
 		b.WriteString("\n" + suiteComment(s) + "\n")
-		fmt.Fprintf(&b, "printf '%%s\\n' %s\n", shellQuote(SuiteMarker+" "+suiteLabel(s)))
+		b.WriteString(markerPrintf + shellQuote(SuiteMarker+" "+suiteLabel(s)) + "\n")
 		if s.Serial {
 			fmt.Fprintf(&b, "lock %s\n%s\nunlock\n", lockName(s), s.Command)
 		} else {
@@ -164,6 +164,20 @@ func suiteComment(s Suite) string {
 		return "# a suite"
 	}
 	return "# " + strings.Join(parts, ", ")
+}
+
+// markerPrintf starts the line that prints a suite's SuiteMarker, its label shell-quoted after it.
+const markerPrintf = `printf '%s\n' `
+
+// isMarkerLine reports whether line prints a SuiteMarker and does nothing else, as runnerScript
+// writes it: its one argument a single quoted word, which shellQuote gives back unchanged.
+func isMarkerLine(line string) bool {
+	word, ok := strings.CutPrefix(line, markerPrintf)
+	if !ok || len(word) < 2 || word[0] != '\'' || word[len(word)-1] != '\'' {
+		return false
+	}
+	text := strings.ReplaceAll(word[1:len(word)-1], `'\''`, "'")
+	return strings.HasPrefix(text, SuiteMarker+" ") && shellQuote(text) == word
 }
 
 // suiteLabel is what a runner's SuiteMarker line calls a suite: its name, or else its command.
@@ -254,7 +268,8 @@ func PlanRunners(repo string, c Choice) ([]Runner, error) {
 }
 
 // RunnerCommands are the commands a runner's script runs, one per line, for a question to show: its
-// lines without the comments and what init writes around the suites (set -e, the cd, the lock).
+// lines without the comments and what init writes around the suites (set -e, the cd, the lock, the
+// SuiteMarker lines).
 func RunnerCommands(script string) []string {
 	script = strings.Replace(script, lockFunctions, "", 1)
 	var commands []string
@@ -262,7 +277,8 @@ func RunnerCommands(script string) []string {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "", strings.HasPrefix(line, "#"), line == "set -e", line == `cd "$(dirname "$0")/.."`,
-			line == "unlock", strings.HasPrefix(line, "lock ") && !strings.ContainsAny(line, ";&|"):
+			line == "unlock", strings.HasPrefix(line, "lock ") && !strings.ContainsAny(line, ";&|"),
+			isMarkerLine(line):
 			continue
 		}
 		commands = append(commands, line)
