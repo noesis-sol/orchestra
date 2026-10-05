@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"slices"
 )
 
 // held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
@@ -365,10 +366,8 @@ func (o *Loop) setAside() []string {
 func (o *Loop) markAside(id string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	for _, x := range o.asideIDs {
-		if x == id {
-			return
-		}
+	if slices.Contains(o.asideIDs, id) {
+		return
 	}
 	o.asideIDs = append(o.asideIDs, id)
 }

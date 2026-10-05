@@ -25,7 +25,7 @@ func TestDashboardShowsSeveralWorkers(t *testing.T) {
 	if lines := strings.Split(v, "\n"); len(lines) > m.height {
 		t.Errorf("view is %d lines", len(lines))
 	}
-	for _, l := range strings.Split(v, "\n") {
+	for l := range strings.SplitSeq(v, "\n") {
 		if ansi.StringWidth(l) > m.width {
 			t.Errorf("line %d wide", ansi.StringWidth(l))
 		}
@@ -67,13 +67,13 @@ func TestDashboardProbeEndsTheHold(t *testing.T) {
 
 func TestDashboardFitsShortPanes(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},
 			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged"})
 	}
 	m.active = map[string]dispatch.Status{}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
 		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines on the same view and property fight each other every frame",
 			Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
@@ -130,7 +130,7 @@ func TestDashboardShowsTheSoloTicket(t *testing.T) {
 func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
 	m.active = map[string]dispatch.Status{}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
 		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now().Add(-time.Duration(3-i) * time.Minute),
 			Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
@@ -176,7 +176,7 @@ func TestCurrentLabelIsBoldInTheWorkingColour(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
 	m.active = map[string]dispatch.Status{}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
 		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: "working"}
 	}
@@ -221,7 +221,7 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
 		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)
 	}
-	for _, l := range strings.Split(m.View(), "\n") {
+	for l := range strings.SplitSeq(m.View(), "\n") {
 		if ansi.StringWidth(l) > m.width {
 			t.Errorf("line %d wide: %q", ansi.StringWidth(l), ansi.Strip(l))
 		}

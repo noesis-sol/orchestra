@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -32,8 +33,8 @@ type ticketRow struct {
 }
 
 func (m *Dashboard) rowIndex(id string) int {
-	for i := len(m.rows) - 1; i >= 0; i-- {
-		if m.rows[i].id == id {
+	for i, r := range slices.Backward(m.rows) {
+		if r.id == id {
 			return i
 		}
 	}

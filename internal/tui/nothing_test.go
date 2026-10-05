@@ -128,7 +128,7 @@ func TestNothingBoxWrapsToTheTerminal(t *testing.T) {
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	for _, l := range strings.Split(got, "\n") {
+	for l := range strings.SplitSeq(got, "\n") {
 		if w := ansi.StringWidth(l); w > 40 {
 			t.Errorf("%d columns, wider than the terminal: %q", w, l)
 		}

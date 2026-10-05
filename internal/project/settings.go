@@ -141,8 +141,8 @@ func SaveSettings(repo string, s Settings) error {
 func settingsKeys() []string {
 	t := reflect.TypeFor[Settings]()
 	var keys []string
-	for i := range t.NumField() {
-		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+	for field := range t.Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		keys = append(keys, name)
 	}
 	return keys

@@ -52,6 +52,11 @@ All notable changes to orchestra are documented here. The format follows
   check's output, name the order's seed, and docs/development.md says how to
   run a package's tests in that order again. go test caches no shuffled run,
   so the check runs every test each time.
+- orchestra's own check, `scripts/check.sh`, also runs golangci-lint's
+  modernize linter, which asks for the newer standard-library forms:
+  `slices.Contains` for a hand loop, `strings.Cut` for index arithmetic,
+  `WaitGroup.Go` for `Add`, `go` and `Done`, `errors.AsType` and the like. The
+  code uses them throughout, with no change in what orchestra does.
 
 ### Fixed
 

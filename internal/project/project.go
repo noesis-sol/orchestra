@@ -205,16 +205,15 @@ func DefaultChoice(s Settings, prompt string) Choice {
 // DetectCheck finds the check command in a worker prompt ("Check your work with `…`").
 func DetectCheck(prompt string) string {
 	const marker = "Check your work with `"
-	i := strings.Index(prompt, marker)
-	if i < 0 {
+	_, rest, ok := strings.Cut(prompt, marker)
+	if !ok {
 		return ""
 	}
-	rest := prompt[i+len(marker):]
-	j := strings.Index(rest, "`")
-	if j < 0 || strings.ContainsAny(rest[:j], "<>") {
+	check, _, ok := strings.Cut(rest, "`")
+	if !ok || strings.ContainsAny(check, "<>") {
 		return "" // the template's placeholder
 	}
-	return rest[:j]
+	return check
 }
 
 // Init creates .orchestra/ in repo, with the worker prompt and its .gitignore.

@@ -231,11 +231,7 @@ func (l *stops) add(s *stopReason) (first bool) {
 
 // line is the line the run ends with: the first reason, then "; also" and each of the others.
 func (l *stops) line() string {
-	text := l.first.Error()
-	for _, t := range l.others {
-		text += "; also " + t
-	}
-	return text
+	return strings.Join(append([]string{l.first.Error()}, l.others...), "; also ")
 }
 
 // holdLine is the HOLD line for s, saying that no new tickets start while the running ones finish,

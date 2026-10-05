@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -358,12 +359,7 @@ func (a *alerts) list() []string {
 }
 
 func (a *alerts) has(text string) bool {
-	for _, s := range a.list() {
-		if s == text {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a.list(), text)
 }
 
 // ---- Sink ----------------------------------------------------------------------------

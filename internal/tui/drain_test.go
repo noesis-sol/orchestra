@@ -190,7 +190,7 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 		m.cfg.Base = "batch/2026-10-01"
 		m.queued = 4
 		m.width, m.height = size.w, size.h
-		for i := 0; i < 6; i++ {
+		for i := range 6 {
 			m.rows = append(m.rows, ticketRow{id: fmt.Sprintf("orchestra-%03d", i), title: "Done earlier", state: rowDone, note: "abc1234 merged"})
 		}
 		m = press(m, "s", "y")

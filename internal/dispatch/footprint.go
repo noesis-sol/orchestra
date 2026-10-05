@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -87,7 +88,7 @@ var sourceExtensions = setOf(`go md json yaml yml toml swift py js ts tsx jsx mj
 // setOf is the set of the space-separated words in s.
 func setOf(s string) map[string]bool {
 	set := map[string]bool{}
-	for _, w := range strings.Fields(s) {
+	for w := range strings.FieldsSeq(s) {
 		set[w] = true
 	}
 	return set
@@ -266,7 +267,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 			fp.Areas = append(fp.Areas, l)
 		}
 	}
-	fp.Files, fp.Funcs = sortedKeys(files), sortedKeys(funcs)
+	fp.Files, fp.Funcs = slices.Sorted(maps.Keys(files)), slices.Sorted(maps.Keys(funcs))
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
 		return predictedFootprint(metadataList(t.Metadata, PredictedKey), repo)
@@ -285,16 +286,7 @@ func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
 			}
 		}
 	}
-	return Footprint{Files: sortedKeys(files), Predicted: len(files) > 0}
-}
-
-func sortedKeys(m map[string]bool) []string {
-	var l []string
-	for k := range m {
-		l = append(l, k)
-	}
-	sort.Strings(l)
-	return l
+	return Footprint{Files: slices.Sorted(maps.Keys(files)), Predicted: len(files) > 0}
 }
 
 // metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, a
@@ -463,13 +455,7 @@ func (o *Loop) readEdits() {
 	}
 	o.mu.Unlock()
 
-	ids := sortedKeys(func() map[string]bool {
-		m := map[string]bool{}
-		for id := range edited {
-			m[id] = true
-		}
-		return m
-	}())
+	ids := slices.Sorted(maps.Keys(edited))
 	for i, a := range ids {
 		for _, b := range ids[i+1:] {
 			for _, f := range edited[a] {
@@ -498,7 +484,7 @@ func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 	why := ""
 	if !fp.Empty() {
 		o.mu.Lock()
-		for _, id := range sortedKeys(runningIDs) {
+		for _, id := range slices.Sorted(maps.Keys(runningIDs)) {
 			if r := o.footprints[id]; r != nil {
 				if what := shared(fp, r.fp, r.edited); what != "" {
 					why = fmt.Sprintf("touches %s, like running %s", what, id)

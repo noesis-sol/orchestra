@@ -14,7 +14,7 @@ import (
 
 // rowLine is the tickets table's line for ticket id in view, or "".
 func rowLine(view, id string) string {
-	for _, l := range strings.Split(view, "\n") {
+	for l := range strings.SplitSeq(view, "\n") {
 		if strings.Contains(l, " "+id+" ") {
 			return l
 		}

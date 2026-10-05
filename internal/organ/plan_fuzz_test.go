@@ -38,7 +38,7 @@ func FuzzParsePlan(f *testing.F) {
 	f.Fuzz(func(t *testing.T, plan, lines string) {
 		// git ls-files lists clean paths inside the repository.
 		var tracked []string
-		for _, l := range strings.Split(lines, "\n") {
+		for l := range strings.SplitSeq(lines, "\n") {
 			if filepath.IsLocal(l) && path.Clean(l) == l {
 				tracked = append(tracked, l)
 			}

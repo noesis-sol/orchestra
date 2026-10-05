@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -174,7 +175,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 		}
 	}()
 	s := &workerStart{o: o, id: id, tab: tab, pane: pane, wt: wt, agent: agent,
-		mcpArgs: mcpArgs, fixed: mcpArgs[:len(mcpArgs):len(mcpArgs)], report: report, launch: launch}
+		mcpArgs: mcpArgs, fixed: slices.Clip(mcpArgs), report: report, launch: launch}
 	if c.ClaudeWorkers() {
 		s.fixed = append(s.fixed, c.WorkerArgs...)
 	}
@@ -305,7 +306,7 @@ func (s *workerStart) waitLaunched(ctx context.Context, why error) (launched boo
 // whether the agent is there before trying again.
 func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
 	o := s.o
-	for attempt := 0; attempt < 10; attempt++ {
+	for range 10 {
 		args := s.args()
 		err := o.starter.StartAgent(ctx, s.agent, o.cfg.AgentKind, s.pane, args)
 		if err == nil {

@@ -100,9 +100,7 @@ func (h *fakeHerdr) prompt(a *fakeAgent) {
 	}
 	b := queue[0]
 	h.behaviours[p.ticket] = queue[1:]
-	h.running.Add(1)
-	go func() {
-		defer h.running.Done()
+	h.running.Go(func() {
 		shows := func(st AgentState) {
 			h.mu.Lock()
 			a.status = st
@@ -112,7 +110,7 @@ func (h *fakeHerdr) prompt(a *fakeAgent) {
 		h.mu.Lock()
 		a.status = st
 		h.mu.Unlock()
-	}()
+	})
 }
 
 func (h *fakeHerdr) tabsClosed() []string {

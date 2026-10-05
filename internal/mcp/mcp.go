@@ -182,7 +182,7 @@ func Find(servers []Server, name string) (Server, bool) {
 func ParseNames(list string) []string {
 	names := []string{}
 	seen := map[string]bool{}
-	for _, n := range strings.Split(list, ",") {
+	for n := range strings.SplitSeq(list, ",") {
 		if n = strings.TrimSpace(n); n != "" && !seen[n] {
 			names, seen[n] = append(names, n), true
 		}

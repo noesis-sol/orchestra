@@ -176,9 +176,8 @@ func runInstall(ctx context.Context, repo string, in BeadsInstall) string {
 func runBdInit(ctx context.Context, repo string) Step {
 	before := readWorktree(ctx, repo)
 	if _, err := command.Output(ctx, command.WriteLimit, repo, "bd", bdInit...); err != nil {
-		var e *command.Error
 		why, stderr := err, ""
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*command.Error](err); ok {
 			why, stderr = e.Err, e.Stderr
 		}
 		return Step{Kind: StepMissing, Label: "Beads", Detail: failure("bd init", why, stderr)}
@@ -247,7 +246,7 @@ func joinAnd(items []string) string {
 func failure(what string, why error, output string) string {
 	msg := what + " failed (" + why.Error() + ")"
 	var lines []string
-	for _, l := range strings.Split(ansi.Strip(output), "\n") {
+	for l := range strings.SplitSeq(ansi.Strip(output), "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			lines = append(lines, l)
 		}

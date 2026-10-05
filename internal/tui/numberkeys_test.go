@@ -82,7 +82,7 @@ func TestWorkersShowTheirNumbers(t *testing.T) {
 	for name, view := range map[string]string{"boxes": m.workerPanels(80), "list": m.workerList(80)} {
 		var got []string
 		heads := map[int]bool{}
-		for _, l := range strings.Split(ansi.Strip(view), "\n") {
+		for l := range strings.SplitSeq(ansi.Strip(view), "\n") {
 			if s := numbered.FindStringSubmatch(l); s != nil {
 				got = append(got, s[1]+" "+s[2])
 				heads[strings.Index(l, "k-")] = true

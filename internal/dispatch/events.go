@@ -150,11 +150,7 @@ func (l *Log) inBackground(show func(args []string)) func(args []string) {
 		if l.closed {
 			return
 		}
-		l.shown.Add(1)
-		go func() {
-			defer l.shown.Done()
-			show(args)
-		}()
+		l.shown.Go(func() { show(args) })
 	}
 }
 

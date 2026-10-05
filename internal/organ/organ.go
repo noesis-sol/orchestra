@@ -106,8 +106,7 @@ func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, 
 	out, err := command.OutputWithInput(ctx, timeout, os.TempDir(), userSetupOff, input, g.Bin,
 		g.args(effort, system, schema)...)
 	if err != nil {
-		var e *command.Error
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*command.Error](err); ok {
 			e.Args = nil // the system prompt and the schema would bury why it failed
 		}
 		return Result{}, err

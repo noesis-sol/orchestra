@@ -451,8 +451,7 @@ func (o *Loop) closeTab(ctx context.Context, tab string) {
 
 // escapeOf is the *project.EscapeError in err's chain, or nil.
 func escapeOf(err error) *project.EscapeError {
-	var e *project.EscapeError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*project.EscapeError](err); ok {
 		return e
 	}
 	return nil

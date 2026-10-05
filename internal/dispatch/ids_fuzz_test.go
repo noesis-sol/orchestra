@@ -52,7 +52,7 @@ func refFormatOK(ref string) bool {
 			return false
 		}
 	}
-	for _, part := range strings.Split(ref, "/") {
+	for part := range strings.SplitSeq(ref, "/") {
 		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
 			return false
 		}

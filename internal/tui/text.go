@@ -120,7 +120,7 @@ func box(w, h int, border lipgloss.TerminalColor, content string) string {
 func wordWrap(s string, width int) []string {
 	var lines []string
 	line := ""
-	for _, word := range strings.Fields(s) {
+	for word := range strings.FieldsSeq(s) {
 		for ansi.StringWidth(word) > width { // a word too long for any line
 			if line != "" {
 				lines, line = append(lines, line), ""

@@ -1,6 +1,9 @@
 package dispatch
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // inputHolds reports whether the agent's input box still holds the prompt, unsent. The box runs
 // from the last line starting with ❯ to the rule below it; a long paste shows only its last lines
@@ -29,7 +32,7 @@ func inputHolds(screen, prompt string) bool {
 	if strings.Contains(text, "[Pasted text") {
 		return true
 	}
-	for _, l := range strings.Split(prompt, "\n") {
+	for l := range strings.SplitSeq(prompt, "\n") {
 		r := []rune(strings.TrimSpace(l))
 		if len(r) < 20 {
 			continue // too short to tell apart from anything else on screen
@@ -51,8 +54,8 @@ var activityMarks = []string{"⏺", "✻", "✶", "✳", "✢", "✽"}
 // and status bar at the bottom of its screen.
 func lastActivity(screen string) string {
 	lines := strings.Split(screen, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
+	for _, line := range slices.Backward(lines) {
+		l := strings.TrimSpace(line)
 		for _, m := range activityMarks {
 			if strings.HasPrefix(l, m) {
 				return l

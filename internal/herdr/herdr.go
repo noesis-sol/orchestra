@@ -346,11 +346,12 @@ func (t Terminal) AgentName(id string) string { return AgentName(id) }
 // LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
 // returns at once. Each argument must be one line.
 func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
-	line := kind
+	var line strings.Builder
+	line.WriteString(kind)
 	for _, a := range args {
-		line += " " + command.ShellQuote(a)
+		line.WriteString(" " + command.ShellQuote(a))
 	}
-	_, err := run(ctx, command.ReadLimit, "pane", "run", pane, line)
+	_, err := run(ctx, command.ReadLimit, "pane", "run", pane, line.String())
 	return err
 }
 

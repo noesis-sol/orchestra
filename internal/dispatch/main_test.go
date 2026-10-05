@@ -59,8 +59,8 @@ func labelled(test string) []string {
 	_, profile, _ := strings.Cut(b.String(), "\n") // after the "goroutine profile: total N" header
 	label := fmt.Sprintf("%q:%q", testLabel, test)
 	var stacks []string
-	for _, s := range strings.Split(profile, "\n\n") {
-		for _, line := range strings.Split(s, "\n") {
+	for s := range strings.SplitSeq(profile, "\n\n") {
+		for line := range strings.SplitSeq(s, "\n") {
 			if strings.HasPrefix(line, "# labels: ") && strings.Contains(line, label) {
 				stacks = append(stacks, s)
 				break

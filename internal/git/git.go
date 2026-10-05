@@ -120,9 +120,9 @@ func (g Git) LinkedWorktree(ctx context.Context, repo string) (bool, error) {
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from
 // 'git worktree list --porcelain'. A worktree git marks prunable (its folder is gone) doesn't count.
 func parseWorktreeOf(porcelain, branch string) string {
-	for _, entry := range strings.Split(porcelain, "\n\n") {
+	for entry := range strings.SplitSeq(porcelain, "\n\n") {
 		path, found := "", false
-		for _, line := range strings.Split(entry, "\n") {
+		for line := range strings.SplitSeq(entry, "\n") {
 			if p, ok := strings.CutPrefix(line, "worktree "); ok {
 				path = p
 			} else if line == "branch refs/heads/"+branch {
@@ -170,7 +170,7 @@ func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string 
 // latestNaming picks, from 'git log --format=%h %s%x00%B%x1e' newest first, the first commit
 // whose message names ticket as a whole ID, as "<hash> <subject>" cut to 70 characters, or "".
 func latestNaming(log, ticket string) string {
-	for _, record := range strings.Split(log, "\x1e") {
+	for record := range strings.SplitSeq(log, "\x1e") {
 		line, body, _ := strings.Cut(strings.TrimLeft(record, "\n"), "\x00")
 		if !namesID(body, ticket) {
 			continue
@@ -269,7 +269,7 @@ func (Git) Attribute(ctx context.Context, repo, attr, path string) (string, erro
 // unquoted, spaces and all.
 func splitNUL(out string) []string {
 	files := []string{}
-	for _, f := range strings.Split(out, "\x00") {
+	for f := range strings.SplitSeq(out, "\x00") {
 		if f != "" {
 			files = append(files, f)
 		}

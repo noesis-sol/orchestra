@@ -37,7 +37,7 @@ func TestReviewRowCutsALongReason(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Detail: why, Text: "  DEFER_FAILED: …"})
 	v := ansi.Strip(m.View())
 	var row string
-	for _, l := range strings.Split(v, "\n") {
+	for l := range strings.SplitSeq(v, "\n") {
 		if strings.Contains(l, "! review") {
 			row = l
 		}

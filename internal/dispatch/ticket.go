@@ -1,6 +1,9 @@
 package dispatch
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // Ticket is a Beads issue as the loop sees it: status, priority, labels and what it depends on.
 type Ticket struct {
@@ -49,12 +52,7 @@ const HumanLabel = "human"
 
 // HasLabel reports whether the ticket carries the label.
 func HasLabel(t Ticket, label string) bool {
-	for _, l := range t.Labels {
-		if l == label {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.Labels, label)
 }
 
 // OpenQuestion returns the unanswered question the ticket waits on, if any. Only a blocks link

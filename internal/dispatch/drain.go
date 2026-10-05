@@ -2,7 +2,8 @@ package dispatch
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -48,12 +49,7 @@ func drainEvent(on bool, how string, inflight map[string]bool) Event {
 	if !on {
 		return Event{Kind: EvResume, Text: "DRAIN cancelled: taking new tickets again" + asked}
 	}
-	var ids []string
-	for id := range inflight {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	lead, list, tail := DrainWords(ids)
+	lead, list, tail := DrainWords(slices.Sorted(maps.Keys(inflight)))
 	return Event{Kind: EvDrain, Text: "DRAIN: " + lead + list + tail + asked}
 }
 

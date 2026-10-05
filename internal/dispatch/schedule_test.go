@@ -190,7 +190,7 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 		if got := h.sink.queueSizes(); len(got) != 1 || got[0] != 2 {
 			t.Errorf("queue sizes reported: %v, want [2]: dispatches carry the rest", got)
 		}
-		for _, line := range strings.Split(strings.TrimSpace(h.logged()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(h.logged()), "\n") {
 			if strings.Count(strings.TrimSpace(line), " ") < 2 {
 				t.Errorf("log line without text: %q", line)
 			}

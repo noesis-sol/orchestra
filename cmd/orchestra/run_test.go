@@ -22,8 +22,7 @@ func runIn(t *testing.T, dir string, env map[string]string, args ...string) (str
 }
 
 func exitOf(err error) int {
-	var s exitStatus
-	if errors.As(err, &s) {
+	if s, ok := errors.AsType[exitStatus](err); ok {
 		return int(s)
 	}
 	if err != nil {

@@ -1,4 +1,4 @@
-# golangci-lint v2: the linters the Uber Go style guide asks for, plus predeclared.
+# golangci-lint v2: the linters the Uber Go style guide asks for, plus predeclared and modernize.
 version: "2"
 
 linters:
@@ -7,6 +7,7 @@ linters:
     - errcheck
     - govet
     - lll
+    - modernize
     - predeclared
     - revive # its default rules
     - staticcheck

@@ -90,7 +90,7 @@ func TestDrainSignalIsCaught(t *testing.T) {
 	drained := make(chan struct{}, 2)
 	stop := watchDrain(func() { drained <- struct{}{} })
 	defer stop()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		kill(t, syscall.SIGUSR1)
 		select {
 		case <-drained:

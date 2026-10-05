@@ -60,7 +60,7 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 	for _, w := range []int{30, 45, 66, 120} {
 		m.width = w
 		view := m.View()
-		for _, line := range strings.Split(view, "\n") {
+		for line := range strings.SplitSeq(view, "\n") {
 			if ansi.StringWidth(line) > w {
 				t.Errorf("width %d: line is %d wide: %q", w, ansi.StringWidth(line), ansi.Strip(line))
 			}
@@ -86,7 +86,7 @@ func runEvents(m Dashboard, evs ...dispatch.Event) Dashboard {
 
 func TestViewFitsThePaneHeight(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {}, func(string) {})
-	for i := 0; i < 50; i++ { // more than 120x50 shows
+	for i := range 50 { // more than 120x50 shows
 		id := fmt.Sprintf("kinieta-%03d", i)
 		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
 			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})

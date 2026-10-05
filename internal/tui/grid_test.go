@@ -15,7 +15,7 @@ var gridHead = regexp.MustCompile(`(\d) +\S+ +(k-\d+)  working`)
 // boxCorners is where the corners of the boxes are on each line of view: column, corner.
 func boxCorners(view string) []map[int]rune {
 	var lines []map[int]rune
-	for _, l := range strings.Split(ansi.Strip(view), "\n") {
+	for l := range strings.SplitSeq(ansi.Strip(view), "\n") {
 		corners := map[int]rune{}
 		for col, r := range []rune(l) { // the test's text is one column a rune
 			if strings.ContainsRune("╭╮╰╯", r) {
@@ -30,7 +30,7 @@ func boxCorners(view string) []map[int]rune {
 // gridHeads is the workers' numbers and IDs on each line of view that has any.
 func gridHeads(view string) [][]string {
 	var rows [][]string
-	for _, l := range strings.Split(ansi.Strip(view), "\n") {
+	for l := range strings.SplitSeq(ansi.Strip(view), "\n") {
 		var heads []string
 		for _, s := range gridHead.FindAllStringSubmatch(l, -1) {
 			heads = append(heads, s[1]+" "+s[2])

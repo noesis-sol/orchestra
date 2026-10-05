@@ -51,8 +51,8 @@ func TestLiveOrgans(t *testing.T) {
 		startHead: os.Getenv("LIVE_START"), started: time.Now().Add(-time.Hour), log: &Log{}}
 	b, _ := os.ReadFile(filepath.Join(repo, ".claude", "orchestrate.log"))
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.Contains(lines[i], " START orchestra") {
+	for i, line := range slices.Backward(lines) {
+		if strings.Contains(line, " START orchestra") {
 			o.log.lines = lines[i:]
 			break
 		}

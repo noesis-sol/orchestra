@@ -251,7 +251,7 @@ func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
 	}
 	wg.Wait()
 	log := f.git(f.repo, "log", "--oneline")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if !strings.Contains(log, fmt.Sprintf("k-%d: change f%d.txt", i, i)) {
 			t.Errorf("k-%d missing from main:\n%s", i, log)
 		}

@@ -281,16 +281,17 @@ func planInput(ev FeatureEvidence) string {
 		guide = "CLAUDE.md"
 	}
 	id := EvidenceID()
-	in := "Plan this feature request for the repository " + ev.Repo + " as an epic and its tickets.\n\n" +
+	var named strings.Builder
+	for _, f := range ev.Named {
+		named.WriteString(Section(id, "File named in the request: "+f.Path, cut(f.Body, maxNamedBytes)))
+	}
+	return "Plan this feature request for the repository " + ev.Repo + " as an epic and its tickets.\n\n" +
 		Section(id, "Feature request", ev.Request) +
 		Section(id, "README", cut(ev.README, maxPlanDoc)) +
 		Section(id, "Agent instructions ("+guide+")", cut(ev.Guide, maxPlanDoc)) +
 		Section(id, "Repository files (git ls-files), each with its line count", files.String()) +
-		Section(id, "Tickets not closed (ID, status and title)", unclosed.String())
-	for _, f := range ev.Named {
-		in += Section(id, "File named in the request: "+f.Path, cut(f.Body, maxNamedBytes))
-	}
-	return in
+		Section(id, "Tickets not closed (ID, status and title)", unclosed.String()) +
+		named.String()
 }
 
 // FeaturePlan is the plan organ's answer: an epic and its child tickets, or, with no tickets, the

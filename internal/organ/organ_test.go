@@ -114,7 +114,7 @@ func TestParsePredictionKeepsRepositoryFiles(t *testing.T) {
 		t.Error("unreadable output should be an error")
 	}
 	var many []string
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		many = append(many, fmt.Sprintf("f%d.go", i))
 	}
 	all, _ := json.Marshal(map[string][]string{"files": many})
