@@ -438,6 +438,28 @@ merged before the next run. The ticket is closed but nothing merged it; if the r
 A set-aside ticket whose worktree has no commits and no changes can be cleaned up the same way,
 without the merge. A worktree with work in it is the user's call.
 
+## A new build of orchestra
+
+When the user asks for a new build, build orchestra from its own clone (the repository of module
+`github.com/noesis-sol/orchestra`), on the branch runs merge into, with `git status` clean so the
+version names a commit:
+
+```
+go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version   # in the clone, as yourself
+orchestra --version; command -v orchestra    # the installed build, and where it is
+```
+
+A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit
+`d70b642867ad` (`git rev-parse --short=12 HEAD` in the clone), and `+dirty` at the end means the tree
+had uncommitted changes. Installing goes over the path `command -v orchestra` printed, so the old
+build doesn't shadow the new one on `PATH`. Where that folder belongs to root (`/usr/local/bin`
+usually does), the install needs `sudo`, which is the user's (below). Give them the line to run
+between runs, with `!` in front in Claude Code so it runs in the session:
+
+```
+sudo install -m 755 /tmp/orchestra "$(command -v orchestra)" && orchestra --version
+```
+
 ## Leave to the user
 
 - `git push` and anything else that leaves the machine, such as opening or merging pull requests,

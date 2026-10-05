@@ -18,7 +18,16 @@ Two kinds of model calls do orchestra's work, and these docs keep their names ap
 go install github.com/noesis-sol/orchestra/cmd/orchestra@latest
 ```
 
-Or, from a clone, `go build -o /usr/local/bin/orchestra ./cmd/orchestra`. `orchestra --version` (or `-v`) shows which version you have. Needs Go 1.26, plus `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install).
+Or build it from a clone, on the commit you want, and install it over the one on your `PATH`:
+
+```
+go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
+sudo install -m 755 /tmp/orchestra "$(command -v orchestra)"
+```
+
+The build runs as you; only the install needs `sudo`, and only where the folder belongs to root, as `/usr/local/bin` usually does. For a first install, name the folder: `/usr/local/bin/orchestra`. Install between runs.
+
+`orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes. Needs Go 1.26, plus `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install).
 
 ## Set up a project
 

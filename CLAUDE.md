@@ -66,6 +66,10 @@ go test -short ./internal/dispatch/... # one package while iterating, without it
 go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 ```
 
+- A new build, when asked for one, is that `go build` on main with a clean tree; installing it over
+  `/usr/local/bin/orchestra` (root's) is the maintainer's: give them
+  `! sudo install -m 755 /tmp/orchestra /usr/local/bin/orchestra && orchestra --version`. The README's Install and
+  the skill's "A new build of orchestra" say how to read the version.
 - `-short` skips the tests that take over a second: real git in `internal/dispatch` (`gitRepo`), runs on a
   pseudo-terminal (`openTerminal`) and the others, each skipped where it starts. Drop it to run a package in full;
   `scripts/check.sh` never uses it.
