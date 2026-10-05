@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
@@ -97,12 +99,13 @@ func setOf(s string) map[string]bool {
 
 // repoFiles are the repository's files, to tell a path named in a ticket from other words and to
 // find the file a bare name (run.go) or a partial path (dispatch/run.go) means, and the files the
-// project's check command names.
+// project's check command names. Names are compared in one Unicode form, NFC: a name with é written
+// as e and U+0301 (NFD, as Finder gives it) means the file git lists with é, and the reverse.
 type repoFiles struct {
-	set    map[string]bool // nil when git couldn't list the files
-	byBase map[string][]string
-	dirs   map[string]bool
-	check  map[string]bool // the files the check command names (scripts/check.sh)
+	files  map[string][]string // the files as git lists them, by their NFC form; nil when git couldn't list them
+	byBase map[string][]string // the files' NFC forms, by base name
+	dirs   map[string]bool     // the folders' NFC forms
+	check  map[string]bool     // the files the check command names (scripts/check.sh)
 }
 
 // newRepoFiles indexes the files git tracks (nil when git couldn't list them) and finds the files
@@ -110,15 +113,18 @@ type repoFiles struct {
 func newRepoFiles(tracked []string, check string) *repoFiles {
 	r := &repoFiles{check: map[string]bool{}}
 	if tracked != nil {
-		r.set, r.byBase, r.dirs = map[string]bool{}, map[string][]string{}, map[string]bool{".": true}
+		r.files, r.byBase, r.dirs = map[string][]string{}, map[string][]string{}, map[string]bool{".": true}
 	}
 	for _, f := range tracked {
-		if !repoPath(f) { // git lists none of these
+		n := norm.NFC.String(f)
+		if !repoPath(n) { // git lists none of these
 			continue
 		}
-		r.set[f] = true
-		r.byBase[path.Base(f)] = append(r.byBase[path.Base(f)], f)
-		for d := path.Dir(f); d != "." && !r.dirs[d]; d = path.Dir(d) {
+		if r.files[n] == nil {
+			r.byBase[path.Base(n)] = append(r.byBase[path.Base(n)], n)
+		}
+		r.files[n] = append(r.files[n], f) // two files whose names differ only in form are both meant
+		for d := path.Dir(n); d != "." && !r.dirs[d]; d = path.Dir(d) {
 			r.dirs[d] = true
 		}
 	}
@@ -139,29 +145,47 @@ func (r *repoFiles) checks(f string) bool { return r != nil && r.check[f] }
 // not the root itself (., a/..), and neither absolute nor leading out of it (/etc/passwd, ../x.go).
 func repoPath(name string) bool { return filepath.IsLocal(name) && path.Clean(name) != "." }
 
-// resolve returns the repository files name means: itself, the files it ends, or a new file in an
-// existing folder. explicit keeps a name that means none of these (a files metadata entry says it
-// is one), but never one that can't be a path in the repository (repoPath). Without the
-// repository's files, a name with a folder or a known extension is kept.
+// file returns the file name is as git lists it, whichever Unicode form name is in; for a file git
+// doesn't track (a new one, or the files unknown), name in NFC, the form resolve gives one in. So
+// the files a worker edits compare with those tickets name.
+func (r *repoFiles) file(name string) string {
+	n := norm.NFC.String(name)
+	if r == nil {
+		return n
+	}
+	switch fs := r.files[n]; {
+	case slices.Contains(fs, name):
+		return name
+	case len(fs) > 0:
+		return fs[0]
+	}
+	return n
+}
+
+// resolve returns the repository files name means, in whichever Unicode form, as git lists them:
+// itself, the files it ends, or a new file in an existing folder. explicit keeps a name that means
+// none of these (a files metadata entry says it is one), but never one that can't be a path in the
+// repository (repoPath). Without the repository's files, a name with a folder or a known extension
+// is kept. A name kept but not tracked is given in NFC.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
-	name = strings.TrimPrefix(name, "./")
+	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
 	if !repoPath(name) {
 		return nil
 	}
-	if r == nil || r.set == nil {
+	if r == nil || r.files == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 		if explicit || strings.Contains(name, "/") || sourceExtensions[ext] {
 			return []string{name}
 		}
 		return nil
 	}
-	if r.set[name] {
-		return []string{name}
+	if fs := r.files[name]; fs != nil {
+		return fs
 	}
 	var ends []string
-	for _, f := range r.byBase[path.Base(name)] {
-		if f == name || strings.HasSuffix(f, "/"+name) {
-			ends = append(ends, f)
+	for _, n := range r.byBase[path.Base(name)] {
+		if strings.HasSuffix(n, "/"+name) {
+			ends = append(ends, r.files[n]...)
 		}
 	}
 	switch {
@@ -457,7 +481,11 @@ func (o *Loop) readEdits() {
 	o.mu.Unlock()
 	edited := map[string][]string{}
 	for id, wt := range wts {
-		edited[id] = o.reporter.EditedFiles(wt)
+		files := o.reporter.EditedFiles(wt)
+		for i, f := range files {
+			files[i] = o.files.file(f) // in the form the footprints' files are in
+		}
+		edited[id] = files
 	}
 	o.mu.Lock()
 	for id, files := range edited {

@@ -15,6 +15,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
+	golang.org/x/text v0.30.0
 )
 
 require (
@@ -49,5 +50,4 @@ require (
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
 )

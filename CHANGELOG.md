@@ -256,6 +256,12 @@ All notable changes to orchestra are documented here. The format follows
   beside a running ticket that edits it. The path was cut at the first such
   letter, into `docs/caf` and `.md`, which named no file. A path run into
   text written without spaces, as in `loop.goを直す`, is still found.
+- A ticket naming a path with an accent in the other Unicode form than git
+  lists it, such as `résumé.md` with each é written as e and a combining
+  accent (as Finder gives names) for a file git lists with é, has that file
+  in its footprint, as git lists it. So does the check command naming it,
+  and so do the files a worker edits, so a ticket naming one waits for the
+  worker. The names were compared byte for byte, and the file was missed.
 - A run that held for the environment and took tickets again after
   `PROBE_OK` no longer ends with `ENVIRONMENT` (exit 7) on triage's verdicts
   about the tickets deferred before the probe. Triage takes deferred tickets
