@@ -33,6 +33,7 @@ func TestRunLockOutlivesTheRunFolder(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel() // each case runs real git in a repository of its own, a third of a second under -race
 			repo, git := gitRepo(t)
 			first := Holder{PID: 44497, Branch: "main"}
 			l := lockedBy(t, repo, first)

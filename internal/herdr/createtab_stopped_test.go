@@ -51,6 +51,9 @@ func TestCreateTabClosesATabWhenTheCallFails(t *testing.T) {
 			createCall + ": exit status 101: thread 'main' panicked; tab w1:t10, which Herdr opened, is closed again"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			if c.ctrlC && testing.Short() {
+				t.Skip("skipped by -short: waits out the grace of the stopped 'tab create'")
+			}
 			dir := tabsHerdr(t, earlier)
 			writeFile(t, dir, "after", c.after)
 			if c.nocreate {
