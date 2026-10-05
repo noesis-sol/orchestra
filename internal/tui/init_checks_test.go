@@ -24,6 +24,11 @@ const (
 	onUntested = "┃ Also file tickets for untested areas"
 	onFullTime = "┃ check-full time limit"
 	down       = "\x1b[B" // the down arrow: runes typed at once arrive as one key
+	// The choice's options, focused: the stage draws the choice blurred while the scout's field, hidden
+	// once the scout ends, still has the focus, and a key typed then reaches the scout's field.
+	onFound   = "┃ > Use them as they are"
+	onScratch = "┃ > Create from scratch"
+	onManual  = "┃ > Manual"
 )
 
 // fourSuites are what the scout finds in a project with scripts/check.sh: two fast suites, two full
@@ -131,7 +136,7 @@ func TestUseThemAsTheyAreWritesTheSuitesTicked(t *testing.T) {
 	} {
 		c := project.Choice{}
 		term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
-		term.typeSteps(t, []keysOn{{"> Use them as they are", "\r"}, {onFast, tc.fastKeys}, {onFull, "\r"},
+		term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, tc.fastKeys}, {onFull, "\r"},
 			{onUntested, "\r"}})
 		if err := term.end(t); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
@@ -164,7 +169,7 @@ func TestUseThemAsTheyAreWritesTheSuitesTicked(t *testing.T) {
 func TestUseThemAsTheyAreCanFileTicketsForUntestedAreas(t *testing.T) {
 	c := project.Choice{}
 	term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
-	term.typeSteps(t, []keysOn{{"> Use them as they are", "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "y"}})
+	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "y"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +182,7 @@ func TestCreateFromScratchWritesRunnersThatCheckNothing(t *testing.T) {
 	c := project.Choice{}
 	term := askChecks(t, &c, Ask{Check: true, Timeout: true, FullTimeout: true,
 		Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil)})
-	term.typeSteps(t, []keysOn{{"> Create from scratch", "\r"}, {onTimeout, "\r"}, {onFullTime, "\x7f\x7f\x7f90m\r"}})
+	term.typeSteps(t, []keysOn{{onScratch, "\r"}, {onTimeout, "\r"}, {onFullTime, "\x7f\x7f\x7f90m\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +211,7 @@ func TestManualWritesTheCommandTyped(t *testing.T) {
 	} {
 		c := project.Choice{Fast: &[]project.Suite{{Command: "make old"}}}
 		term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
-		term.typeSteps(t, []keysOn{{"> Use them as they are", down + down + "\r"},
+		term.typeSteps(t, []keysOn{{onFound, down + down + "\r"},
 			{onCheck, "\x15" + tc.typed + "\r"}}) // Ctrl+U clears what is there
 		if err := term.end(t); err != nil {
 			t.Fatal(err)
@@ -224,7 +229,7 @@ func TestAScoutThatFailsLandsOnManualWithWhy(t *testing.T) {
 	c := project.Choice{}
 	failed := &organ.ScoutError{Failure: organ.ScoutTimedOut, Err: errors.New("timed out after 5m")}
 	term := askChecks(t, &c, Ask{Check: true, Scout: finds(organ.Scouting{}, failed)})
-	term.typeSteps(t, []keysOn{{"The scout timed out after 5m.", ""}, {"> Manual", "\r"}, {onCheck, "make check\r"}})
+	term.typeSteps(t, []keysOn{{"The scout timed out after 5m.", ""}, {onManual, "\r"}, {onCheck, "make check\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +247,7 @@ func TestEscSkipsTheScoutForManual(t *testing.T) {
 	}
 	c := project.Choice{}
 	term := askChecks(t, &c, Ask{Check: true, Scout: scout})
-	term.typeSteps(t, []keysOn{{onScouting, "\x1b"}, {"The search was skipped with Esc.", ""}, {"> Manual", "\r"},
+	term.typeSteps(t, []keysOn{{onScouting, "\x1b"}, {"The search was skipped with Esc.", ""}, {onManual, "\r"},
 		{onCheck, "make check\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatalf("Esc while the scout looks: %v, want the form to go on", err)
@@ -285,7 +290,7 @@ func TestKeepOrReplaceARunnerThatDiffers(t *testing.T) {
 		ask := Ask{Check: true, Scout: finds(fourSuites, nil),
 			Runners: []project.Runner{{Path: project.FastRunner, Script: old, Exists: true}}}
 		term := askChecks(t, &c, ask)
-		term.typeSteps(t, []keysOn{{"> Use them as they are", "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
+		term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
 			{"┃ scripts/check-fast.sh is there, and differs from the checks chosen", ""}, {"make old", tc.keys}})
 		if err := term.end(t); err != nil {
 			t.Fatal(err)
@@ -304,7 +309,7 @@ func TestARunnerThatIsTheSameIsntAskedAbout(t *testing.T) {
 	ask := Ask{Check: true, Timeout: true, Scout: finds(fourSuites, nil),
 		Runners: []project.Runner{{Path: project.FastRunner, Script: same, Exists: true}}}
 	term := askChecks(t, &c, ask)
-	term.typeSteps(t, []keysOn{{"> Use them as they are", "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
+	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
 		{onTimeout, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
@@ -319,7 +324,7 @@ func TestKeepOrReplaceTheSkillThatDiffers(t *testing.T) {
 	ask := Ask{Check: true, Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil),
 		Skill: project.SkillPlan{Dir: ".claude/skills/create-check-suite", Exists: true, Differs: true}}
 	term := askChecks(t, &c, ask)
-	term.typeSteps(t, []keysOn{{"> Create from scratch", "\r"},
+	term.typeSteps(t, []keysOn{{onScratch, "\r"},
 		{"┃ .claude/skills/create-check-suite/ is there, and differs from orchestra's", down + "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)

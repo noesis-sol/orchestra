@@ -200,6 +200,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra init` with `TERM=dumb` says what the scout found, or why it
+  can't run, when the scout ends at once, as it does without `claude`; the
+  line was left out.
 - The full check no longer fails in an npm or Python project for want of
   dependencies in its new worktree: with `"setup"` in
   `.orchestra/settings.json`, it runs there first, always, within
