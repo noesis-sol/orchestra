@@ -136,6 +136,8 @@ Each code in full, and what to do after one, is in [docs/running.md](docs/runnin
 
 [`skills/orchestra/SKILL.md`](skills/orchestra/SKILL.md) is a skill that lets a coding agent such as Claude Code set a project up, launch a run beside its own pane, and read how it went. Copy the folder to `~/.claude/skills/orchestra/` (or `.claude/skills/orchestra/` in one project), then ask the agent to "run orchestra".
 
+[`skills/create-check-suite/SKILL.md`](skills/create-check-suite/SKILL.md) is a skill for a worker in a project with no tests, or areas without them: it sets up deterministic unit and end-to-end suites in the project's own frameworks (go test, pytest, Mocha, Playwright…), adds them to `scripts/check-fast.sh` and `scripts/check-full.sh`, gets them passing, maps the features in `FEATURES.md` and files a ticket for each untested area. Install it the same way.
+
 ## Documentation
 
 - [docs/dashboard.md](docs/dashboard.md): what you see, the keys, the closing lines, notifications

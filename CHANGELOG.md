@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A new skill, `skills/create-check-suite/`, for a worker in a project with
+  no tests or areas without them: it reads the repository, sets up unit and
+  end-to-end suites in the project's own frameworks, adds them to
+  `scripts/check-fast.sh` or `scripts/check-full.sh`, gets both passing and
+  times them, maps the features in `FEATURES.md`, and files a P3 ticket for
+  each untested area. Its tests are isolated and deterministic, and a test
+  that finds a bug is committed skipped, naming a bug ticket.
 - The scout's reads stay inside the repository. With a `claude` that lists
   them in its `--help` (Claude Code 2.1.289 and later), it runs with
   `--restricted`, which confines its Read, Glob and Grep to the working
