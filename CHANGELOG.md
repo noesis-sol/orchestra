@@ -262,6 +262,12 @@ All notable changes to orchestra are documented here. The format follows
   in its footprint, as git lists it. So does the check command naming it,
   and so do the files a worker edits, so a ticket naming one waits for the
   worker. The names were compared byte for byte, and the file was missed.
+- The files a worker edits count when its worktree's path has an accent,
+  such as a project folder named `projét`, and the worker names it with the
+  accent in the other Unicode form than orchestra does: é written as e and a
+  combining accent, as Finder gives names, or the reverse. They were taken
+  for files outside the worktree and dropped, so a ticket naming one could
+  start beside the worker.
 - A run that held for the environment and took tickets again after
   `PROBE_OK` no longer ends with `ENVIRONMENT` (exit 7) on triage's verdicts
   about the tickets deferred before the probe. Triage takes deferred tickets

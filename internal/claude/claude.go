@@ -15,6 +15,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -155,8 +156,7 @@ func editedFiles(b []byte, worktree string) []string {
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(worktree, path)
 			}
-			r, err := filepath.Rel(root, path)
-			if err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+			if r, ok := relative(root, path); ok {
 				rel = filepath.ToSlash(r)
 				break
 			}
@@ -168,6 +168,24 @@ func editedFiles(b []byte, worktree string) []string {
 		files = append(files, rel)
 	}
 	return files
+}
+
+// relative returns path relative to root, when path is in it. The two are compared in one Unicode
+// form, NFC: a worker may name the worktree in the other form than orchestra does, as with é written
+// as e and U+0301 (NFD, as Finder gives names). The part inside root is kept in the form path gives
+// it; the dispatch maps it to the file as git lists it.
+func relative(root, path string) (string, bool) {
+	r, err := filepath.Rel(norm.NFC.String(root), norm.NFC.String(path))
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	if r == "." {
+		return r, true
+	}
+	// NFC leaves the separators where they are, so r is as many of path's last parts as it has.
+	sep := string(filepath.Separator)
+	parts := strings.Split(filepath.Clean(path), sep)
+	return strings.Join(parts[len(parts)-strings.Count(r, sep)-1:], sep), true
 }
 
 // parseToolUse reads one hook input: the event, and before a tool use the tool and its command.
