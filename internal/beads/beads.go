@@ -351,6 +351,13 @@ type NewTicket struct {
 	Priority                       int    // 0 (critical) to 4 (backlog)
 	Parent                         string // "" for none
 	Files                          []string
+	Labels                         []string
+}
+
+// FileBug files a P2 bug carrying label and returns its ID.
+func (b Tracker) FileBug(ctx context.Context, title, description, label string) (string, error) {
+	return b.Create(ctx, NewTicket{Title: title, Description: description, Type: "bug", Priority: 2,
+		Labels: []string{label}})
 }
 
 // Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
@@ -363,6 +370,9 @@ func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	}
 	if t.Parent != "" {
 		args = append(args, "--parent="+t.Parent)
+	}
+	if len(t.Labels) > 0 {
+		args = append(args, "--labels="+strings.Join(t.Labels, ","))
 	}
 	if len(t.Files) > 0 {
 		meta, err := json.Marshal(map[string][]string{dispatch.FilesKey: t.Files})

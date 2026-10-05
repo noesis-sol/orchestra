@@ -82,6 +82,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 					blocks("does not fast-forward onto " + c.Base)
 			}
 			o.merged(keep, id)
+			o.countMerge()
 			cleaned := o.removeWorktree(keep, wt, br)
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
@@ -294,7 +295,7 @@ func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, err
 		}
 		return output, err
 	}
-	o.reportFlaky(w.id, out)
+	o.reportFlaky(w.id, "", out)
 	return "", nil
 }
 
@@ -450,10 +451,14 @@ func boundLines(lines []string, n int) []string {
 // a convention for any project's check, which the README documents.
 const flakyPrefix = "FLAKY:"
 
-// reportFlaky warns, naming ticket id, of each FLAKY: line in the output of its passing check: the
-// check passed, so the ticket merges, but a test that passes only on a rerun is a bug to fix, and
-// nobody would see it otherwise.
-func (o *Loop) reportFlaky(id string, out []byte) {
+// reportFlaky warns of each FLAKY: line in the output of a passing check, which was ticket id's when
+// id is set, else what what says ("the full check 'scripts/check-full.sh'"): the check passed, so the
+// ticket merges, but a test that passes only on a rerun is a bug to fix, and nobody would see it
+// otherwise.
+func (o *Loop) reportFlaky(id, what string, out []byte) {
+	if id != "" {
+		what = fmt.Sprintf("%s's check '%s'", id, o.cfg.Check)
+	}
 	for line := range strings.Lines(string(out)) {
 		test, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), flakyPrefix)
 		if !ok {
@@ -463,7 +468,7 @@ func (o *Loop) reportFlaky(id string, out []byte) {
 			test = "it doesn't say which"
 		}
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  FLAKY: %s's check '%s' passed, but a test failed and then passed on a rerun: %s", id, o.cfg.Check, test)})
+			"  FLAKY: %s passed, but a test failed and then passed on a rerun: %s", what, test)})
 	}
 }
 

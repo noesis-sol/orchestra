@@ -288,6 +288,8 @@ any `hold` that came first. The second lists what was set aside or needs looking
 was merged. A `warn` record with `"aside": true` left its ticket for review. A `hold`, `stop` or
 `warn` record with `blocked` is a ticket whose work is done but which can't merge until the user
 acts, and says why (`main checkout has uncommitted changes`, `merge conflict in <files>`).
+A `full_check` record, after `done`, says how the full check went (`detail`: `passed`, `failed`,
+`timed out`, `skipped`, `not run`); a failed one has `suite`, `output` and `ticket`.
 
 ## When a ticket is set aside or the run stops
 
@@ -407,6 +409,13 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
   means the check hung or ran past `check_fast_timeout` and was stopped: a hang, or a limit set too low,
   rather than a failing test.
+- `FULL_CHECK_FAILED`: after a run that ended by itself and merged a ticket, `check_full`
+  (`scripts/check-full.sh`) failed on the branch's head, in its own worktree, removed since. The main
+  checkout is untouched. The whole output is in `.orchestra/run/check-full.log`, its end in the run
+  report, and a P2 bug `Full check fails: <suite>` (label `check-full`) is filed for the suite, or
+  noted when one is open already: it goes through the next run like any ticket. The suite is the
+  last `SUITE: <name>` line the runners print; `did not finish within 60m` means it ran past
+  `check_full_timeout`.
 - `REBASE_FAILED`: a returning ticket's branch conflicts with the base branch, so it was deferred
   without starting a worker. Rebase it in its worktree, resolve, then `bd undefer <id>`.
 - `RUN_FILES_OUTSIDE`: the ticket's worktree has `.orchestra` or `.orchestra/run` as a symlink,
@@ -424,6 +433,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | every event, as JSON with its kind and ticket | `.orchestra/run/events.jsonl` in the main checkout |
 | every event, with raw tool errors | the log file (see the layout table) |
 | what finished, what was set aside and why, what needs the user | the latest run report |
+| the whole output of the last full check that failed | `.orchestra/run/check-full.log` in the main checkout |
 | why a ticket was deferred | `bd show <id>`: the worker's notes, orchestra's notes, `Triage (orchestra): cause = …` |
 | a worker's screen and final message | its Herdr tab, labelled with the ticket ID |
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |

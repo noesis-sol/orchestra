@@ -189,6 +189,11 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		failedChecks = organ.Section(tag, "What the check said of each ticket set aside after its check failed",
 			checks.String())
 	}
+	fullChecked := ""
+	if f, ok := o.fullCheckOf(); ok {
+		fullChecked = organ.Section(tag, "The full check, run once on "+c.Base+" after the run's last merge",
+			f.evidence(c.CheckFull, c.Base))
+	}
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
 		show := o.tickets.Describe(ctx, st.Ticket)
@@ -230,7 +235,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
-		failedChecks +
+		failedChecks + fullChecked +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
 		organ.Section(tag, "Tickets still ready", stillReady) + outside + feature
 }
@@ -274,15 +279,20 @@ func (f checkFail) evidence(id, check, base string) string {
 	return b.String()
 }
 
-// Review has the reviewer write the run report.
+// Review has the reviewer write the run report, followed by the end of the full check's output when
+// it failed.
 func (o *Loop) Review(ctx context.Context, code int, final string) (string, error) {
 	result, err := o.organ.Review(ctx, o.reviewInput(ctx, code, final))
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n", o.started.Format("2006-01-02"),
+	full := ""
+	if f, ok := o.fullCheckOf(); ok {
+		full = f.report(o.cfg.CheckFull)
+	}
+	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n%s", o.started.Format("2006-01-02"),
 		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg),
-		strings.TrimSpace(result)), nil
+		strings.TrimSpace(result), full), nil
 }
 
 // SaveReport writes the run report to the reports folder and returns its path.

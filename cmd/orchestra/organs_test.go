@@ -14,6 +14,8 @@ import (
 // fakeOrgans writes a report and fails to save it when saveErr is set.
 type fakeOrgans struct{ saveErr error }
 
+func (fakeOrgans) FullCheckDue(int) bool        { return false }
+func (fakeOrgans) FullCheck(context.Context)    {}
 func (fakeOrgans) FinishTriage(context.Context) {}
 func (fakeOrgans) Review(context.Context, int, string) (string, error) {
 	return "# Orchestra run\n\nALL MERGED\n", nil

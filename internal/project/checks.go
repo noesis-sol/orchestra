@@ -25,6 +25,10 @@ const (
 	FullRunner = "scripts/check-full.sh"
 )
 
+// SuiteMarker starts the line a runner prints as each suite starts, "SUITE: unit tests": when the
+// full check fails, the last one names the suite it failed in. Any project's check can print them.
+const SuiteMarker = "SUITE:"
+
 // Suite is one line of a runner: a command that tests, lints, type-checks or builds the project.
 type Suite struct {
 	Name    string // such as "unit tests"; it names the suite's lock
@@ -134,6 +138,7 @@ func runnerScript(path, purpose string, suites []Suite) string {
 	}
 	for _, s := range lines {
 		b.WriteString("\n" + suiteComment(s) + "\n")
+		fmt.Fprintf(&b, "printf '%%s\\n' %s\n", shellQuote(SuiteMarker+" "+suiteLabel(s)))
 		if s.Serial {
 			fmt.Fprintf(&b, "lock %s\n%s\nunlock\n", lockName(s), s.Command)
 		} else {
@@ -159,6 +164,19 @@ func suiteComment(s Suite) string {
 		return "# a suite"
 	}
 	return "# " + strings.Join(parts, ", ")
+}
+
+// suiteLabel is what a runner's SuiteMarker line calls a suite: its name, or else its command.
+func suiteLabel(s Suite) string {
+	if name := oneLine(s.Name); name != "" {
+		return name
+	}
+	return oneLine(s.Command)
+}
+
+// shellQuote quotes s as one word for sh.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

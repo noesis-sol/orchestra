@@ -27,6 +27,7 @@ type Notes interface {
 	AddLabel(ctx context.Context, id, label string) error
 	RemoveLabel(ctx context.Context, id, label string) error
 	SetMetadata(ctx context.Context, id, key, value string) error
+	FileBug(ctx context.Context, title, description, label string) (string, error) // files a P2 bug; its ID
 }
 
 // Tabs opens and closes the terminal tabs workers run in (Herdr).
@@ -113,6 +114,7 @@ type Worktrees interface {
 	Prune(ctx context.Context, repo string) (string, error)
 	AddWorktree(ctx context.Context, repo, path, branch string) (string, error)
 	NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error)
+	DetachedWorktree(ctx context.Context, repo, path, rev string) (string, error) // rev on no branch
 	RemoveWorktree(ctx context.Context, repo, path string) (string, error)
 	DeleteBranch(ctx context.Context, repo, branch string) (string, error)
 }

@@ -10,19 +10,23 @@ import (
 
 // organs is what organPhase needs from the loop.
 type organs interface {
+	FullCheckDue(code int) bool
+	FullCheck(ctx context.Context)
 	FinishTriage(ctx context.Context)
 	Review(ctx context.Context, code int, final string) (string, error)
 	SaveReport(report string) (string, error)
 }
 
-// organPhase runs after the loop stops: it waits for pending triage, then has the reviewer write
-// the run report. Ctrl+C, or another of stopSignals, skips whatever is left, and one that came
-// while the loop wound down skips it all; so does SIGTERM or SIGHUP at any time in the run. The
-// one after the signal that skipped it ends orchestra (see stopWatch.further).
+// organPhase runs after the loop stops: the full check, when it is due (see dispatch.FullCheckDue),
+// then it waits for pending triage and has the reviewer write the run report. Ctrl+C, or another of
+// stopSignals, skips whatever is left, and one that came while the loop wound down skips it all; so
+// does SIGTERM or SIGHUP at any time in the run. The one after the signal that skipped it ends
+// orchestra (see stopWatch.further).
 func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, code int, final string, out tui.Printer,
 	cancelOrgans func(),
 ) {
-	if !c.Triage && !c.Review || stops.leaving() {
+	full := orch.FullCheckDue(code)
+	if !full && !c.Triage && !c.Review || stops.leaving() {
 		return
 	}
 	ctx, stop := stops.context(context.Background())
@@ -34,6 +38,16 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 		<-ctx.Done()
 		cancelOrgans()
 	}()
+	if full {
+		// The loop's own lines say what it runs and how it went; plain output has only those.
+		busy := out.Busy("", "Running the full check…", "(Ctrl+C skips)")
+		orch.FullCheck(ctx)
+		if ctx.Err() != nil {
+			busy.Done("Full check skipped")
+			return
+		}
+		busy.Done("Full check finished")
+	}
 	if c.Triage {
 		busy := out.Busy("finishing triage…", "Finishing triage…", "")
 		orch.FinishTriage(ctx)

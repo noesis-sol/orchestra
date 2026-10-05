@@ -297,6 +297,11 @@ func (Git) NewWorktree(ctx context.Context, repo, path, branch, base string) (st
 	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "add", "--quiet", "-b", branch, path, base)
 }
 
+// DetachedWorktree checks out rev, on no branch, in a new worktree at path: an empty folder, or none.
+func (Git) DetachedWorktree(ctx context.Context, repo, path, rev string) (string, error) {
+	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "add", "--quiet", "--detach", path, rev)
+}
+
 // RemoveWorktree removes the worktree at path.
 func (Git) RemoveWorktree(ctx context.Context, repo, path string) (string, error) {
 	return command.Output(ctx, command.WriteLimit, repo, "git", "worktree", "remove", path)

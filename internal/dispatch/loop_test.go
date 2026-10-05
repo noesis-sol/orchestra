@@ -75,6 +75,9 @@ func (newWorktrees) AddWorktree(ctx context.Context, repo, path, branch string) 
 func (newWorktrees) NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error) {
 	return "", nil
 }
+func (newWorktrees) DetachedWorktree(ctx context.Context, repo, path, rev string) (string, error) {
+	return "", nil
+}
 func (newWorktrees) RemoveWorktree(ctx context.Context, repo, path string) (string, error) {
 	return "", nil
 }
@@ -130,6 +133,9 @@ func (brokenBd) AddLabel(ctx context.Context, id, label string) error         { 
 func (brokenBd) RemoveLabel(ctx context.Context, id, label string) error      { return errBd }
 func (brokenBd) SetMetadata(ctx context.Context, id, key, value string) error { return errBd }
 func (brokenBd) Closed(ctx context.Context, label string) ([]Ticket, error)   { return nil, nil } // so the run gets as far as the workers
+func (brokenBd) FileBug(ctx context.Context, title, description, label string) (string, error) {
+	return "", errBd
+}
 
 type okTabs struct{}
 

@@ -22,28 +22,29 @@ type Kind int
 
 // The kinds of event. Each has a name in the event stream (kindNames): give a new one its own.
 const (
-	EvInfo     Kind = iota // progress detail (start, worktree)
-	EvDispatch             // a ticket was picked up
-	EvClosed               // a ticket was completed and merged, or closed with no change of its own to merge
-	EvDeferred             // a ticket was set aside
-	EvWarn                 // something needs review, but the loop continues; Aside if a ticket is left for it
-	EvStop                 // the loop stopped and needs attention
-	EvDone                 // the loop finished normally
-	EvTriage               // the triage organ's verdict on a deferred ticket
-	EvAsked                // a ticket waits on the maintainer's answer to a question
-	EvHold                 // something stopped the run; no new tickets while the running ones finish
-	EvDrain                // the maintainer asked to stop after the running tickets
-	EvResume               // the maintainer took that back
-	EvQueue                // the number of ready tickets waiting changed; for the dashboard, not logged
-	EvProbed               // a probe found the machine working after an environment hold: tickets start again
-	EvAnswered             // an asked ticket's question was answered: it comes back, dispatched next
+	EvInfo      Kind = iota // progress detail (start, worktree)
+	EvDispatch              // a ticket was picked up
+	EvClosed                // a ticket was completed and merged, or closed with no change of its own to merge
+	EvDeferred              // a ticket was set aside
+	EvWarn                  // something needs review, but the loop continues; Aside if a ticket is left for it
+	EvStop                  // the loop stopped and needs attention
+	EvDone                  // the loop finished normally
+	EvTriage                // the triage organ's verdict on a deferred ticket
+	EvAsked                 // a ticket waits on the maintainer's answer to a question
+	EvHold                  // something stopped the run; no new tickets while the running ones finish
+	EvDrain                 // the maintainer asked to stop after the running tickets
+	EvResume                // the maintainer took that back
+	EvQueue                 // the number of ready tickets waiting changed; for the dashboard, not logged
+	EvProbed                // a probe found the machine working after an environment hold: tickets start again
+	EvAnswered              // an asked ticket's question was answered: it comes back, dispatched next
+	EvFullCheck             // the full check (check_full) at the end of the run: Detail says how it went
 )
 
 // kindNames are the kinds' names in the event stream, which programs read: keep them as they are.
 var kindNames = [...]string{
 	EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred", EvWarn: "warn",
 	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvHold: "hold", EvDrain: "drain",
-	EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered",
+	EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered", EvFullCheck: "full_check",
 }
 
 // String is k's name in the event stream: info, dispatch, closed and so on.
@@ -82,6 +83,9 @@ type Event struct {
 	// EvStop for a DIRTY_TREE, GIT_FAILED or MERGE_FAILED met as it merged, and on an EvWarn for its
 	// MERGE_CONFLICT; not on CHECKS_FAILED or CLOSED_WITHOUT_COMMIT, where the work itself needs a look.
 	Blocked string
+	// Suite and Output: for an EvFullCheck that failed, the suite it failed in (the last line its
+	// output starts with project.SuiteMarker, or else the check itself) and where its whole output is.
+	Suite, Output string
 }
 
 // Status describes a ticket being worked on. Gone removes it from the display.
@@ -266,6 +270,8 @@ type eventRecord struct {
 	Text    string      `json:"text,omitempty"`
 	Aside   bool        `json:"aside,omitempty"`
 	Blocked string      `json:"blocked,omitempty"`
+	Suite   string      `json:"suite,omitempty"`
+	Output  string      `json:"output,omitempty"`
 	N       *int        `json:"n,omitempty"`
 	Limit   *int        `json:"limit,omitempty"`
 	Queued  *int        `json:"queued,omitempty"`
@@ -326,7 +332,8 @@ func openEvents(repo string) (*os.File, error) {
 // Record appends ev to the event stream, if it is open.
 func (l *Log) Record(ev Event) {
 	r := eventRecord{recordHead: recordHead{Time: ev.Time, Kind: ev.Kind.String()},
-		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside, Blocked: ev.Blocked}
+		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside, Blocked: ev.Blocked,
+		Suite: ev.Suite, Output: ev.Output}
 	if ev.Kind == EvDispatch {
 		r.N, r.Limit = &ev.N, &ev.Limit
 	}
@@ -420,6 +427,10 @@ func Notice(ev Event) string {
 			n += " on " + ev.Ticket
 		}
 		return n
+	case EvFullCheck:
+		if ev.Suite != "" {
+			return about("Full check failed", ev.Suite)
+		}
 	case EvDone:
 		n := "Finished the run · " + closedCount(ev.Closed)
 		if ev.SetAside > 0 {

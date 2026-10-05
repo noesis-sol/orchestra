@@ -75,6 +75,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
 | `advice.go` | triage and the run review |
+| `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, and the ticket filed when it fails |
 | `predict.go` | predicting the files of ready tickets that name none, in the background |
 | `deps.go` | the interfaces to Beads, Herdr, git and workers' reports |
 

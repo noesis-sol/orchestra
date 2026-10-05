@@ -11,6 +11,7 @@ The log is written for people, and its wording changes. For scripts and agents, 
 {"time":"2026-10-02T09:12:06.2+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"dispatch","ticket":"kinieta-kco","title":"Open the property model","text":"[1/40] kinieta-kco dispatching: Open the property model","n":1,"limit":40,"queued":12}
 {"time":"2026-10-02T09:31:40.07+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"closed","ticket":"kinieta-kco","detail":"ffd6ce4 merged into batch/2026-10-02","text":"  kinieta-kco closed (ffd6ce4 kinieta-kco: Open the property model); merged into batch/2026-10-02, worktree, branch and tab removed"}
 {"time":"2026-10-02T11:02:13.6+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"done","text":"READY_EMPTY after 12 tickets"}
+{"time":"2026-10-02T11:14:40.3+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"full_check","ticket":"kinieta-q1z","detail":"failed","text":"  FULL_CHECK_FAILED: 'scripts/check-full.sh' fails on batch/2026-10-02 at 3c4d5e6, in the suite e2e; the whole output is in /Users/me/kinieta/.orchestra/run/check-full.log; filed kinieta-q1z","suite":"e2e","output":"/Users/me/kinieta/.orchestra/run/check-full.log"}
 {"time":"2026-10-02T11:03:55.1+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"end","code":0}
 ```
 
@@ -33,6 +34,7 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `probed` | a probe found the machine working after an environment hold: tickets start again | |
 | `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `INTERRUPTED`, … | `detail`, the word its text starts with; `ticket`, the one it stopped over, if one did; `blocked`, as for `hold` |
 | `done` | the loop finished: `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, with `SCOPE_DONE` or `SCOPE_OPEN` in a scoped run; or the run had nothing to run: `READY_EMPTY after 0 tickets: everything is done`, or `: nothing ready` | |
+| `full_check` | the [full check](running.md#the-full-check) after a run that ended by itself and merged a ticket, before triage finishes and the run report | `detail`, how it went: `passed`, `failed`, `timed out`, `skipped` (stopped with Ctrl+C) or `not run` (no worktree could be made for it); when it failed or timed out, `suite`, the suite it failed in, `output`, where its whole output is, and `ticket`, the ticket filed for that suite or the one open for it already |
 | `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes) |
 
 Every record but `start`, `queue` and `end` also has `text`, its line in the log as it is there, without the time. A `stop` or `done` record's text starts with the word that says how the loop ended (`PAUSED: …`, `READY_EMPTY after 12 tickets`), a `hold` record's with `HOLD: ` and that word. `solo` is there while a ticket labelled `solo` runs (`{"ticket":"<id>"}`) or is next (`{"ticket":"<id>","next":true}`). A field without a value is left out, except `queued` and `code`, which can be 0. Kinds and fields may be added, but those here keep their names: read the ones you know and skip the rest.

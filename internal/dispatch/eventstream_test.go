@@ -149,7 +149,8 @@ func TestARunRecordsItsEvents(t *testing.T) {
 func TestKindNames(t *testing.T) {
 	want := map[Kind]string{EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred",
 		EvWarn: "warn", EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvHold: "hold",
-		EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered"}
+		EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered",
+		EvFullCheck: "full_check"}
 	if len(kindNames) != len(want) {
 		t.Errorf("%d names for %d kinds", len(kindNames), len(want))
 	}

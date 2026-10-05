@@ -54,6 +54,10 @@ type Loop struct {
 	// counted as their events go out, under sinkMu (see tally); counted, the tickets asideN counts.
 	closedN, asideN int
 	counted         map[string]bool
+	// mergedN: the tickets merged into Base in this run, under mu (see countMerge); fullChecked: how
+	// the full check after the run went, once it has run (see FullCheck).
+	mergedN     int
+	fullChecked *fullCheck
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.

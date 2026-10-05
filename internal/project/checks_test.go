@@ -51,9 +51,9 @@ func TestRunnerListsEachSuiteUnderItsComment(t *testing.T) {
 		"#!/bin/sh\n# " + FastRunner + ": orchestra's merge check",
 		"orchestra init wrote it; it is the project's to edit",
 		"\nset -e\ncd \"$(dirname \"$0\")/..\"\n",
-		"\n# unit tests, from package.json:7\nnpm test\n",
-		"\n# e2e, from playwright.config.ts:1, one worktree at a time\nlock e2e\nnpx playwright test\nunlock\n",
-		"\n# from --check-fast\nmake lint\n",
+		"\n# unit tests, from package.json:7\nprintf '%s\\n' 'SUITE: unit tests'\nnpm test\n",
+		"\n# e2e, from playwright.config.ts:1, one worktree at a time\nprintf '%s\\n' 'SUITE: e2e'\nlock e2e\nnpx playwright test\nunlock\n",
+		"\n# from --check-fast\nprintf '%s\\n' 'SUITE: make lint'\nmake lint\n",
 		"\nlock() {", "\ntrap unlock EXIT\n",
 	} {
 		if !strings.Contains(script, want) {
@@ -66,7 +66,8 @@ func TestRunnerListsEachSuiteUnderItsComment(t *testing.T) {
 	}
 	full := FullScript([]Suite{{Name: "integration", Command: "make integration", FoundIn: "Makefile:12"}}, false)
 	if !strings.Contains(full, "# "+FullRunner+": every check") ||
-		!strings.Contains(full, "\n# from the merge check\n"+FastRunner+"\n\n# integration, from Makefile:12\nmake integration\n") {
+		!strings.Contains(full, "\n# from the merge check\nprintf '%s\\n' 'SUITE: "+FastRunner+"'\n"+FastRunner+"\n\n# integration, from Makefile:12\n"+
+			"printf '%s\\n' 'SUITE: integration'\nmake integration\n") {
 		t.Errorf("check-full runs check-fast first, then its own suites:\n%s", full)
 	}
 	if got := lockName(Suite{Command: "docker compose run --rm e2e"}); got != "docker-compose-run-rm-e2e" {

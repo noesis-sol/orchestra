@@ -45,6 +45,8 @@ Shift+Tab goes back a step. Nothing is written or installed until the last step 
 
 A check that reruns a failed test, and passes when the rerun does, should say so with a line starting with `FLAKY:` for each such test, such as `FLAKY: ./internal/dispatch TestMerge`. The ticket merges, as the check passed, and orchestra warns of each `FLAKY:` line, naming the ticket, in the log, the dashboard, the event stream and the run report: a test that passes only on a rerun is a bug to fix. When the check fails, its whole output is kept in the ticket's worktree, in `.orchestra/run/check.log`, which the `CHECKS_FAILED` line names; the log has the end of it. The run report says what failed, from the lines of the output that say so (`FAIL` lines, the failing tests, a data race, a lint error, a tool's own error), and whether in a directory the ticket's own commits change or elsewhere ([Organs](docs/organs.md)). A failure elsewhere may be fixed by another ticket in the run, so once one merges, the ticket is rebased and checked once more, and merges if the check passes then ([Several tickets at once](docs/running.md#several-tickets-at-once)).
 
+Once a run ends by itself having merged a ticket, orchestra runs `scripts/check-full.sh` (`check_full`) once, on the branch's head in a worktree of its own, removed afterwards, before the run report. A failure keeps the whole output in `.orchestra/run/check-full.log`, puts its end in the run report, and files a P2 ticket for the suite it failed in, unless one is open for it already: the runners print `SUITE: <name>` as each suite starts, and the last such line names it ([The full check](docs/running.md#the-full-check)).
+
 ## Run
 
 From the main checkout, inside a Herdr pane, on the branch finished tickets should land on:
@@ -142,7 +144,7 @@ Each code in full, and what to do after one, is in [docs/running.md](docs/runnin
 
 - [docs/dashboard.md](docs/dashboard.md): what you see, the keys, the closing lines, notifications
 - [docs/setup.md](docs/setup.md): everything `orchestra init` does
-- [docs/running.md](docs/running.md): options, scoped and feature runs, several tickets at once, stops and exit codes
+- [docs/running.md](docs/running.md): options, scoped and feature runs, several tickets at once, the full check, stops and exit codes
 - [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, hooks and run files
 - [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen, the plan and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents

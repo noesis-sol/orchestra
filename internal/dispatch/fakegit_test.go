@@ -203,6 +203,15 @@ func (g *fakeGit) NewWorktree(ctx context.Context, repo, path, branch, base stri
 	return "", g.addWorktree(path, branch)
 }
 
+func (g *fakeGit) DetachedWorktree(ctx context.Context, repo, path, rev string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.resolve(rev)) == 0 {
+		return "", fmt.Errorf("fatal: invalid reference: %s", rev)
+	}
+	return "", g.addWorktree(path, "")
+}
+
 // addWorktree makes the worktree's folder. The caller holds mu.
 func (g *fakeGit) addWorktree(path, branch string) error {
 	if err := os.MkdirAll(path, 0o755); err != nil {

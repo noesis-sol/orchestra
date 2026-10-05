@@ -130,6 +130,17 @@ What `orchestra` can't make safe for you:
 
 Start at 1, and raise it once the checks run cleanly side by side.
 
+## The full check
+
+A run that ends by itself (`READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`) having merged at least one ticket runs the project's full check once, after its last merge and before triage finishes and the run report: `check_full` from `settings.json`, normally `scripts/check-full.sh`, which runs `scripts/check-fast.sh` and then the suites too slow or too demanding to run on every merge ([The checks](setup.md#the-checks)). It doesn't run after a stop or a hold, after Ctrl+C, after a run that merged nothing, or without `check_full` (a project set up before it had one: `orchestra init` adds it).
+
+It runs on the head of the branch the run merged into, in a worktree of its own, `<WT_ROOT>/check-full-<random>`, on no branch, which is removed afterwards with whatever the check left in it: the main checkout stays as it is. It may run for 60 minutes, or `check_full_timeout` from `settings.json` (`--check-full-timeout` or `ORCHESTRA_CHECK_FULL_TIMEOUT` for one run), and is then stopped with everything it started. The log says `FULL_CHECK: running '<check>' on <base> at <commit> in <worktree> (time limit 60m)`; on a terminal a line spins meanwhile, `Running the full check… (Ctrl+C skips)`. Ctrl+C stops it (`FULL_CHECK_SKIPPED`) and skips triage and the run report, as it does during them.
+
+- **Passing**: `FULL_CHECK passed: '<check>' on <base> at <commit> (12m3s)`. Each `FLAKY:` line of its output is a warning, as for the merge check.
+- **Failing**: `FULL_CHECK_FAILED: '<check>' fails on <base> at <commit>, in the suite <suite>; the whole output is in <repo>/.orchestra/run/check-full.log; filed <id>`, with a notification, `Full check failed · <suite>`. One that runs out of time says `did not finish within 60m` instead of `fails`. The suite is the one its output names last: the runners print `SUITE: <name>` as each suite starts (its name, or else its command), and a check of your own can print the same; without such a line, the suite is the check itself. The whole output is kept in the main checkout's `.orchestra/run/check-full.log` until the next full check fails; the log has its last 40 lines, and so does the run report, after the reviewer's text (the reviewer is told how the full check went, too). orchestra files a P2 bug titled `Full check fails: <suite>` and labelled `check-full`, with the lines of the output that say what failed, for a worker to fix in a later run. While a ticket with that title and label is open, the next failure in the same suite files no other: it is noted on that ticket, and the line ends `<id> is open for it already`.
+
+The [event stream](events.md) records it as a `full_check` record.
+
 ## Exit codes
 
 | Code | Meaning |

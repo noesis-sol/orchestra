@@ -8,6 +8,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A run that ends by itself (`READY_EMPTY`, `LIMIT_REACHED`, `DRAINED`)
+  having merged a ticket runs `check_full` (`scripts/check-full.sh`) once,
+  after its last merge and before the run report, on the branch's head in a
+  worktree of its own, removed afterwards, for at most `check_full_timeout`.
+  A pass is a `FULL_CHECK passed` line. A failure is a `FULL_CHECK_FAILED`
+  warning and a notification; its whole output is kept in
+  `.orchestra/run/check-full.log`, its end goes to the log, the reviewer and
+  the run report, and a P2 bug `Full check fails: <suite>` (label
+  `check-full`) is filed, unless one is open for that suite. Ctrl+C skips
+  it. The event stream records it as a `full_check` record. The runners
+  print `SUITE: <name>` as each suite starts, which names the suite.
 - `orchestra init` installs the create-check-suite skill, built into the
   binary, where the project's tests are to be created from scratch or its
   untested areas ticketed: in `.claude/skills/create-check-suite/` for Claude

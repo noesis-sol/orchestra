@@ -237,6 +237,16 @@ func (b *fakeBeads) SetMetadata(ctx context.Context, id, key, value string) erro
 	return nil
 }
 
+// FileBug files a P2 bug carrying label, as bd create does, with an ID of its own.
+func (b *fakeBeads) FileBug(ctx context.Context, title, description, label string) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	id := fmt.Sprintf("bug-%d", len(b.order)+1)
+	b.addLocked(id, title, 2, label)
+	b.tickets[id].IssueType, b.tickets[id].Description = "bug", description
+	return id, nil
+}
+
 // metadata returns one key of the ticket's metadata, or "".
 func (b *fakeBeads) metadata(id, key string) string {
 	b.mu.Lock()
