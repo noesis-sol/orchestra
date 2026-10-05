@@ -19,8 +19,9 @@ import (
 // for init to choose from. Unlike the other organs, which read only the evidence orchestra gathers,
 // it reads the repository itself: package scripts, Makefiles, CI workflows, test configs and the
 // project's own scripts are too many and too varied to gather. So it is the one organ with tools,
-// and only read-only ones: Read, Glob and Grep, in the repository's root. It runs nothing and
-// changes nothing; init shows what it found and writes the runners.
+// and only read-only ones: Read, Glob and Grep, in the repository's root, confined to it where claude
+// can (confinement). It runs nothing and changes nothing; init shows what it found and writes the
+// runners.
 
 const scoutSystem = "You find the checks a software project already has, for an orchestrator that " +
 	"runs them before it merges coding agents' work. You are started in the repository's root with " +
@@ -168,7 +169,7 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	// In the repository's root, where Claude Code lets the read-only tools read without asking; safe
 	// mode keeps its CLAUDE.md and hooks out, as they are for the other organs.
 	r, err := g.ask(ctx, limit, call{dir: root, tools: scoutTools, effort: g.effort(ScoutEffort),
-		system: scoutSystem, schema: scoutSchema}, scoutInput)
+		system: scoutSystem, schema: scoutSchema, flags: g.confinement(ctx)}, scoutInput)
 	if err != nil {
 		return Scouting{}, scoutFailure(ctx, err)
 	}
@@ -178,6 +179,41 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	}
 	s.Suites = checkScriptFirst(s.Suites, isFile(filepath.Join(root, checkScript)))
 	return s, nil
+}
+
+// confinement is the flags that keep the scout's reads inside the repository, those of them claude
+// lists in its --help: an older claude rejects a flag it doesn't know. Without them, Claude Code
+// would ask before the tools read outside the working directory, and nobody answers in -p, but a
+// setting could answer for it: an allow rule such as Read(//**), or bypassPermissions as the default
+// mode, would let the scout read anywhere, and a repository file could ask it to. --restricted
+// (Claude Code 2.1.289) confines the file tools to the working directory whatever the settings say,
+// and ignores the user, project and local settings files; --permission-prompts none denies whatever
+// would prompt. When --help fails, the scout runs without them, and its call says what is wrong.
+func (g Client) confinement(ctx context.Context) []string {
+	help, err := command.Output(ctx, command.ReadLimit, os.TempDir(), g.Bin, "--help")
+	if err != nil {
+		return nil
+	}
+	var flags []string
+	if listsFlag(help, "--restricted") {
+		flags = append(flags, "--restricted")
+	}
+	if listsFlag(help, "--permission-prompts") {
+		flags = append(flags, "--permission-prompts", "none")
+	}
+	return flags
+}
+
+// listsFlag tells whether help, a command's --help, lists flag: a line that starts with it, or with
+// its short form and then it ("-p, --print").
+func listsFlag(help, flag string) bool {
+	for line := range strings.Lines(help) {
+		f := strings.Fields(line)
+		if len(f) > 0 && (f[0] == flag || len(f) > 1 && strings.HasSuffix(f[0], ",") && f[1] == flag) {
+			return true
+		}
+	}
+	return false
 }
 
 // scoutFailure says why ask failed: claude stopped at the time limit or by ctx, its output unreadable,

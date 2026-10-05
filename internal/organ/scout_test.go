@@ -151,7 +151,7 @@ func TestRunsCheckScript(t *testing.T) {
 }
 
 func TestScoutStopsAtItsTimeLimit(t *testing.T) {
-	bin, dir := fakeScript(t, "echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600\n")
+	bin, dir := fakeScript(t, "[ \"$1\" = --help ] && exit 0\necho $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600\n")
 	t.Cleanup(func() { killFake(dir) })
 	_, err := Client{Bin: bin}.scout(context.Background(), 200*time.Millisecond, scoutRepo(t, false))
 	if f := scoutFailureOf(t, err); f != ScoutTimedOut {
@@ -169,7 +169,7 @@ func TestScoutStopsAtItsTimeLimit(t *testing.T) {
 }
 
 func TestScoutSaysWhyItWasStopped(t *testing.T) {
-	bin, dir := fakeScript(t, "echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600\n")
+	bin, dir := fakeScript(t, "[ \"$1\" = --help ] && exit 0\necho $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600\n")
 	t.Cleanup(func() { killFake(dir) })
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(errors.New("skipped with Esc")) })

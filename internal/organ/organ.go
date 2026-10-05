@@ -111,15 +111,17 @@ func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, 
 }
 
 // call is how one organ call runs: in dir, with the read-only tools in tools ("" for none), at the
-// effort, with the system prompt and the JSON schema ("" for none).
+// effort, with the system prompt and the JSON schema ("" for none), and with flags added after the
+// others (the scout's confinement).
 type call struct {
 	dir, tools, effort, system, schema string
+	flags                              []string
 }
 
 // ask runs claude -p as c says on input, stopping it after timeout, as Ask does.
 func (g Client) ask(ctx context.Context, timeout time.Duration, c call, input string) (Result, error) {
 	out, err := command.OutputWithInput(ctx, timeout, c.dir, userSetupOff, input, g.Bin,
-		g.args(c.tools, c.effort, c.system, c.schema)...)
+		append(g.args(c.tools, c.effort, c.system, c.schema), c.flags...)...)
 	if err != nil {
 		if e, ok := errors.AsType[*command.Error](err); ok {
 			e.Args = nil // the system prompt and the schema would bury why it failed

@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The scout's reads stay inside the repository. With a `claude` that lists
+  them in its `--help` (Claude Code 2.1.289 and later), it runs with
+  `--restricted`, which confines its Read, Glob and Grep to the working
+  directory whatever an allow rule or `bypassPermissions` in your settings
+  says, and `--permission-prompts none`. Restricted mode ignores the user,
+  project and local settings files, so the scout doesn't use the default
+  model set there. An older `claude` runs the scout as before.
 - On a terminal, `orchestra --feature` (and `New feature` planned by the
   organs) shows its two waits on Claude as busy lines: a spinner and the
   time so far take the place of `screening the request with claude…` and
