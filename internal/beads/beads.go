@@ -347,9 +347,10 @@ func (b Tracker) SetMetadata(ctx context.Context, id, key, value string) error {
 // NewTicket is a ticket to file with Create.
 type NewTicket struct {
 	Title, Description, Acceptance string
-	Type                           string // bd's issue type: epic, feature, task, bug or chore
-	Priority                       int    // 0 (critical) to 4 (backlog)
-	Parent                         string // "" for none
+	Type                           string   // bd's issue type: epic, feature, task, bug or chore
+	Priority                       int      // 0 (critical) to 4 (backlog)
+	Parent                         string   // "" for none
+	BlockedBy                      []string // the tickets it waits for
 	Files                          []string
 	Labels                         []string
 }
@@ -370,6 +371,9 @@ func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	}
 	if t.Parent != "" {
 		args = append(args, "--parent="+t.Parent)
+	}
+	for _, id := range t.BlockedBy {
+		args = append(args, "--deps=blocked-by:"+id)
 	}
 	if len(t.Labels) > 0 {
 		args = append(args, "--labels="+strings.Join(t.Labels, ","))

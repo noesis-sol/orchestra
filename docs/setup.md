@@ -52,10 +52,20 @@ Stage 2 of the form starts with the scout, the one organ that reads the reposito
 Then one of three choices, the one that fits what the scout found selected:
 
 1. **Use them as they are**, selected when the scout found suites. Two checklists follow, each suite with its command, where it was found and what it needs: **On every merge (check-fast)**, every suite, those the scout calls fast ticked; and **At the end of a run (check-full)**, the other suites, all ticked. A suite ticked in both runs in `check-fast.sh` only, since `check-full.sh` runs that first. A suite that can't run in two worktrees at once takes turns (see [The checks](#the-checks)). Last, unticked, **Also file tickets for untested areas**.
-2. **Create from scratch with the create-check-suite skill**, selected when the scout found none. The runners check nothing for now (`exit 0`); the skill sets the tests up in a ticket of their own.
+2. **Create from scratch with the create-check-suite skill**, selected when the scout found none. The runners check nothing for now (`exit 0`); the skill sets the tests up in a ticket of their own (see [The test work init files](#the-test-work-init-files)).
 3. **Manual**, selected when the scout failed (`claude` missing, an error, its time limit) or was skipped, with the reason shown: one line, the command `check-fast.sh` runs, pre-filled from the settings or an existing prompt. Empty writes a runner that checks nothing, or keeps a runner that is there as it is.
 
 Where `init` runs again and a runner there differs from what the choice would write, stage 2 shows the commands that runner runs and asks whether to keep it (the default) or replace it; the same goes for a copy of the create-check-suite skill that differs from orchestra's, where the choice needs the skill. Without a terminal there is no scout and no stage 2: the flags decide.
+
+### The test work init files
+
+After writing its files, `init` files with `bd create` the work the choice calls for, each ticket labelled `orchestra-tests`, and its summary lists each ticket it filed:
+
+- **Create from scratch**: an epic, *The project's tests*, and under it a P1 ticket labelled `solo`, *Set up the test harness and a first suite*, which asks a worker to use the create-check-suite skill for a harness and smoke tests added to the runners, both runners passing on the branch `init` ran on, `FEATURES.md`, and one P3 ticket per untested area under the epic. P1 and solo, it runs first and alone, so nothing merges while the runners still check nothing.
+- **Use them as they are**: a P1 ticket labelled `solo`, *Make scripts/check-fast.sh and scripts/check-full.sh pass on main* (the branch `init` ran on): run them, fix what fails or skip it naming a bug ticket filed for it, and record how long each takes. With **Also file tickets for untested areas**, it goes under the epic, beside *Map the untested areas* (P2), which waits for it: the skill's `FEATURES.md` and one P3 ticket per untested area.
+- **Manual**: nothing.
+
+Run again, `init` files only what isn't open already: a ticket labelled `orchestra-tests` with the same title that isn't closed is kept (the summary says so) and serves as the parent or the ticket waited for. One that is closed is filed again. Where bd fails (Beads isn't set up, bd is missing), the summary says which tickets weren't filed and why; the files `init` wrote stand, and running it again files them.
 
 ## The create-check-suite skill
 

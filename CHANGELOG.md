@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- After stage 2, `orchestra init` files the test work its choice calls for
+  (label `orchestra-tests`), listed in its summary: with "Create from
+  scratch", an epic and a P1 `solo` ticket that sets the tests up with the
+  create-check-suite skill; with the suites as they are, a P1 `solo` ticket
+  that gets both runners passing, under an epic with "Map the untested
+  areas", which waits for it, when the untested areas are to be ticketed.
+  Run again, it files nothing already open.
 - The worker prompt `orchestra init` writes names `scripts/check-fast.sh` as
   the check to pass before closing a ticket, with one of its suites' commands
   to run while iterating, and `scripts/check-full.sh` for a change that

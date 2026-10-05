@@ -229,6 +229,7 @@ func runInit(
 		fmt.Fprintln(stderr, "orchestra init:", err)
 		return dispatch.ExitSetup
 	}
+	steps = append(steps, fileTestWork(ctx, repo, choice)...)
 	pre := project.Prerequisites(repo, getenv)
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
