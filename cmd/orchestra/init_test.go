@@ -28,8 +28,11 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 	if err := json.Unmarshal([]byte(read(t, project.SettingsPath(repo))), &m); err != nil {
 		t.Fatal(err)
 	}
-	if m["concurrent"] != float64(1) || m["check"] != "make check" || m["notes"] != "ours" {
+	if m["concurrent"] != float64(1) || m["check_fast"] != project.FastRunner || m["notes"] != "ours" {
 		t.Errorf("settings.json = %v", m)
+	}
+	if runner := read(t, filepath.Join(repo, project.FastRunner)); !strings.Contains(runner, "\nmake check\n") {
+		t.Errorf("%s:\n%s", project.FastRunner, runner)
 	}
 	s, _, _ := project.LoadSettings(repo)
 	if _, err := project.ResolveConcurrency(0, s); err != nil {
@@ -40,11 +43,11 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 func TestInitSavesTheCheckTimeout(t *testing.T) {
 	repo := initRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "make check", "--check-timeout", "90s", "-c", "1")
-	if err != nil || !strings.Contains(stdout, "check: make check, stopped after 1m30s") {
+	if err != nil || !strings.Contains(strings.Join(strings.Fields(stdout), " "), "check-fast: make check, stopped after 1m30s") {
 		t.Fatalf("init: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
 	s, _, _ := project.LoadSettings(repo)
-	if d, err := project.ResolveCheckTimeout(0, false, s); s.CheckTimeout != "1m30s" || err != nil || d != 90*time.Second {
+	if d, err := project.ResolveCheckTimeout(0, false, s); s.CheckFastTimeout != "1m30s" || err != nil || d != 90*time.Second {
 		t.Errorf("settings = %+v, a run gets %s, %v", s, d, err)
 	}
 	_, stderr, err = runIn(t, repo, nil, "init", "--check-timeout", "0")

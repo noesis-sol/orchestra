@@ -392,17 +392,22 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
+	check, empty := c.FastCommand(), "Empty for a check that passes at once."
+	if c.Fast == nil {
+		empty = "Empty keeps " + project.FastRunner + " as it is."
+	}
 	if ask.Check {
 		checks.add(huh.NewInput().
 			Title("Check command").
-			Description("Lint, build and tests. Workers run it before they close a ticket, and orchestra runs " +
-				"it again on a ticket rebased onto work merged meanwhile. Empty for none.").
+			Description("Lint, build and tests, which " + project.FastRunner + " runs. Workers run it before " +
+				"they close a ticket, and orchestra runs it again on a ticket rebased onto work merged " +
+				"meanwhile. " + empty).
 			Placeholder("e.g. make check").
-			Value(&c.Check))
+			Value(&check))
 	}
 	if ask.Timeout {
-		if c.CheckTimeout == "" {
-			c.CheckTimeout = project.DefaultCheckTimeoutText
+		if c.CheckFastTimeout == "" {
+			c.CheckFastTimeout = project.DefaultCheckTimeoutText
 		}
 		checks.add(huh.NewInput().
 			Title("Check time limit").
@@ -414,7 +419,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
 				return err
 			}).
-			Value(&c.CheckTimeout))
+			Value(&c.CheckFastTimeout))
 	}
 	var stages []*initStage
 	for _, s := range []*initStage{workers, checks} {
@@ -445,14 +450,15 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
-	before := c.Check
+	before := check
 	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
 	if err := form.Run(); err != nil {
 		return err
 	}
-	c.Check, c.CheckTimeout = strings.TrimSpace(c.Check), strings.TrimSpace(c.CheckTimeout)
-	if ask.Check && c.Check != before {
-		c.CheckFrom = "the form"
+	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
+	if check = strings.TrimSpace(check); ask.Check && check != before {
+		c.Fast = project.RunnerSuites(check, "orchestra init's form", project.FastRunner)
+		c.ReplaceFast, c.CheckFrom = true, "the form"
 	}
 	if ask.Concurrent {
 		c.Concurrent, c.Unasked = option, false

@@ -87,7 +87,7 @@ func TestInitInstallsBeadsThenRunsBdInit(t *testing.T) {
 		"✓ Beads ran bd init (maintainer, not contributing to someone else's repo; auto-export off); " +
 			"bd committed .beads/; it added AGENTS.md, to commit with .orchestra/",
 		"✓ bd · ✓ Beads",
-		"Commit .orchestra/ and AGENTS.md.",
+		"Commit .orchestra/, AGENTS.md, scripts/check-fast.sh and",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)

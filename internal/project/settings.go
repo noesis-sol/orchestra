@@ -15,18 +15,28 @@ import (
 // Settings is .orchestra/settings.json: how 'orchestra init' set the project up. It is committed,
 // so everyone running orchestra on the project shares it.
 type Settings struct {
-	// Check is the project's check command (lint, build, tests). orchestra runs it again on a
-	// finished ticket that had to be rebased onto work merged while it ran.
-	Check string `json:"check,omitempty"`
+	// CheckFast is the project's merge check, normally FastRunner (lint, build, the fast suites).
+	// orchestra runs it again on a finished ticket that had to be rebased onto work merged while it ran.
+	CheckFast string `json:"check_fast,omitempty"`
+	// CheckFull is every check, normally FullRunner: CheckFast, then the slower suites. orchestra runs
+	// it once at the end of a run.
+	CheckFull string `json:"check_full,omitempty"`
+	// Check and CheckTimeout are the names of CheckFast and CheckFastTimeout before there were two
+	// checks. LoadSettings reads them as those, and SaveSettings writes them under the new names.
+	Check        string `json:"check,omitempty"`
+	CheckTimeout string `json:"check_timeout,omitempty"`
 	// Concurrency is how many tickets run at the same time unless --concurrent says otherwise.
 	Concurrency int `json:"concurrent"`
 	// TicketLimit is how long a ticket's worker may go on, from dispatch, before the run stops for
 	// it, as a duration such as "2h", unless --ticket-limit says otherwise. Empty or "0": no limit.
 	TicketLimit string `json:"ticket_limit,omitempty"`
-	// CheckTimeout is how long the check command may run on a rebased ticket before orchestra stops
-	// it and sets the ticket aside, as a duration such as "5m", unless --check-timeout says
-	// otherwise. Empty: DefaultCheckTimeout.
-	CheckTimeout string `json:"check_timeout,omitempty"`
+	// CheckFastTimeout is how long CheckFast may run on a rebased ticket before orchestra stops it
+	// and sets the ticket aside, as a duration such as "5m", unless --check-timeout says otherwise.
+	// Empty: DefaultCheckTimeout.
+	CheckFastTimeout string `json:"check_fast_timeout,omitempty"`
+	// CheckFullTimeout is how long CheckFull may run, unless --check-full-timeout says otherwise.
+	// Empty: DefaultCheckFullTimeout.
+	CheckFullTimeout string `json:"check_full_timeout,omitempty"`
 	// ExcludeTypes are the issue types never taken from bd ready, such as epics, whose children
 	// are the work. Absent: DefaultExcludeTypes; [] takes every type.
 	ExcludeTypes *[]string `json:"exclude_types,omitempty"`
@@ -71,10 +81,14 @@ const (
 	SettingsName = "settings.json"
 	// MaxConcurrency is the most workers a run may have at once.
 	MaxConcurrency = 16
-	// DefaultCheckTimeout is how long the check command may run when settings.json sets no limit.
+	// DefaultCheckTimeout is how long the fast check may run when settings.json sets no limit.
 	DefaultCheckTimeout = 30 * time.Minute
 	// DefaultCheckTimeoutText is DefaultCheckTimeout as settings.json writes it.
 	DefaultCheckTimeoutText = "30m"
+	// DefaultCheckFullTimeout is how long the full check may run when settings.json sets no limit.
+	DefaultCheckFullTimeout = 60 * time.Minute
+	// DefaultCheckFullTimeoutText is DefaultCheckFullTimeout as settings.json writes it.
+	DefaultCheckFullTimeoutText = "60m"
 	// DefaultResolveTimeout is how long a worker may take to resolve its rebase's conflicts when
 	// settings.json sets no limit.
 	DefaultResolveTimeout = 20 * time.Minute
@@ -94,7 +108,8 @@ var DefaultExcludeTypes = []string{"epic"}
 // SettingsPath is where the project's settings.json is.
 func SettingsPath(repo string) string { return filepath.Join(repo, Dir, SettingsName) }
 
-// LoadSettings reads the project's settings; ok is false if there are none.
+// LoadSettings reads the project's settings; ok is false if there are none. The old check and
+// check_timeout are read as check_fast and check_fast_timeout, where those aren't set.
 func LoadSettings(repo string) (s Settings, ok bool, err error) {
 	b, err := os.ReadFile(SettingsPath(repo))
 	if errors.Is(err, os.ErrNotExist) {
@@ -106,11 +121,25 @@ func LoadSettings(repo string) (s Settings, ok bool, err error) {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return Settings{}, false, fmt.Errorf("%s: %w", SettingsPath(repo), err)
 	}
+	if s.CheckFast == "" {
+		s.CheckFast = s.Check
+	}
+	if s.CheckFastTimeout == "" {
+		s.CheckFastTimeout = s.CheckTimeout
+	}
 	return s, true, nil
 }
 
-// SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know.
+// SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know, and
+// writing the old check and check_timeout under their new names.
 func SaveSettings(repo string, s Settings) error {
+	if s.CheckFast == "" {
+		s.CheckFast = s.Check
+	}
+	if s.CheckFastTimeout == "" {
+		s.CheckFastTimeout = s.CheckTimeout
+	}
+	s.Check, s.CheckTimeout = "", ""
 	merged := map[string]json.RawMessage{}
 	b, err := os.ReadFile(SettingsPath(repo))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -184,21 +213,39 @@ func ResolveTicketLimit(flagValue time.Duration, given bool, s Settings) (time.D
 	return d, nil
 }
 
-// ResolveCheckTimeout picks how long a run's check command may run: --check-timeout (or
+// ResolveCheckTimeout picks how long a run's fast check may run: --check-timeout (or
 // ORCHESTRA_CHECK_TIMEOUT) when given, else the project's setting, else DefaultCheckTimeout.
 func ResolveCheckTimeout(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
+	key := "check_fast_timeout"
+	if s.CheckTimeout != "" && s.CheckFastTimeout == s.CheckTimeout {
+		key = "check_timeout" // the settings' old name for it
+	}
+	return resolveTimeout(flagValue, given, "check-timeout", key, s.CheckFastTimeout, DefaultCheckTimeout)
+}
+
+// ResolveCheckFullTimeout picks how long a run's full check may run: --check-full-timeout (or
+// ORCHESTRA_CHECK_FULL_TIMEOUT) when given, else the project's setting, else DefaultCheckFullTimeout.
+func ResolveCheckFullTimeout(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
+	return resolveTimeout(flagValue, given, "check-full-timeout", "check_full_timeout", s.CheckFullTimeout,
+		DefaultCheckFullTimeout)
+}
+
+// resolveTimeout picks a check's time limit: the flag's when given, else the setting key's, else def.
+func resolveTimeout(
+	flagValue time.Duration, given bool, flagName, key, setting string, def time.Duration,
+) (time.Duration, error) {
 	if given {
 		if flagValue <= 0 {
-			return 0, fmt.Errorf("--check-timeout must be a positive duration such as 5m (got %s)", flagValue)
+			return 0, fmt.Errorf("--%s must be a positive duration such as 5m (got %s)", flagName, flagValue)
 		}
 		return flagValue, nil
 	}
-	if s.CheckTimeout == "" {
-		return DefaultCheckTimeout, nil
+	if setting == "" {
+		return def, nil
 	}
-	d, err := ParseCheckTimeout(s.CheckTimeout)
+	d, err := ParseCheckTimeout(setting)
 	if err != nil {
-		return 0, fmt.Errorf("%s: check_timeout %w", SettingsPath("."), err)
+		return 0, fmt.Errorf("%s: %s %w", SettingsPath("."), key, err)
 	}
 	return d, nil
 }

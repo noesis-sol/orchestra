@@ -51,8 +51,8 @@ func TestInitFormAsksWorkersThenChecksUnderTheirHeaders(t *testing.T) {
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Union || c.Check != "make check" || c.CheckTimeout != project.DefaultCheckTimeoutText {
-		t.Errorf("union %v, check %q, time limit %q", c.Union, c.Check, c.CheckTimeout)
+	if !c.Union || c.FastCommand() != "make check" || !c.ReplaceFast || c.CheckFastTimeout != project.DefaultCheckTimeoutText {
+		t.Errorf("union %v, check %q, time limit %q", c.Union, c.FastCommand(), c.CheckFastTimeout)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestShiftTabBackToWorkersKeepsTheAnswers(t *testing.T) {
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
-	if c.Union || c.Check != "just verify" {
-		t.Errorf("union %v, check %q; want false, %q", c.Union, c.Check, "just verify")
+	if c.Union || c.FastCommand() != "just verify" {
+		t.Errorf("union %v, check %q; want false, %q", c.Union, c.FastCommand(), "just verify")
 	}
 }
 
@@ -125,7 +125,7 @@ func TestAccessibleInitFormPrintsEachStagesHeader(t *testing.T) {
 		strings.Index(screen, "Check command") < checks {
 		t.Errorf("want each stage's questions under its header:\n%s", screen)
 	}
-	if c.Concurrent != 2 || !c.Union || c.Check != "make check" {
-		t.Errorf("concurrent %d, union %v, check %q", c.Concurrent, c.Union, c.Check)
+	if c.Concurrent != 2 || !c.Union || c.FastCommand() != "make check" {
+		t.Errorf("concurrent %d, union %v, check %q", c.Concurrent, c.Union, c.FastCommand())
 	}
 }

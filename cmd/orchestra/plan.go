@@ -62,7 +62,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.Check, func(p string) int {
+	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.CheckFast, func(p string) int {
 		b, _ := os.ReadFile(filepath.Join(repo, p)) // a file that can't be read counts as one not written yet
 		return bytes.Count(b, []byte("\n"))
 	})

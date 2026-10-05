@@ -147,18 +147,26 @@ type Step struct {
 	Commit        []string // what the step added for the user to commit, as at the repository's top
 }
 
-// Choice is what init sets up: the check command, its time limit, the default number of tickets
+// Choice is what init sets up: the checks and their time limits, the default number of tickets
 // at once, the MCP servers workers get and whether it installs bd.
 type Choice struct {
-	Check        string
-	CheckTimeout string // as in settings.json; "" for DefaultCheckTimeout
-	Concurrent   int
-	CheckFrom    string // where the check command came from, for the summary
-	Unasked      bool   // concurrent fell back to 1 without asking
-	Replaced     int    // the out-of-range concurrency in settings that init replaced, or 0
-	// ReplacedTimeout is the check_timeout in settings that every run would reject, which init
-	// dropped, or "".
-	ReplacedTimeout string
+	// Fast and Full are the suites init writes FastRunner and FullRunner from (Full's run after
+	// FastRunner); an empty list writes a runner that checks nothing, and nil leaves a runner that is
+	// there as it is.
+	Fast, Full *[]Suite
+	// ReplaceFast and ReplaceFull write a runner over one that differs from it; otherwise init keeps
+	// that one and says so.
+	ReplaceFast, ReplaceFull bool
+	CheckFrom                string // where Fast came from, for the summary
+	// CheckFastTimeout and CheckFullTimeout are the checks' time limits as in settings.json; "" for
+	// DefaultCheckTimeout and DefaultCheckFullTimeout.
+	CheckFastTimeout, CheckFullTimeout string
+	Concurrent                         int
+	Unasked                            bool // concurrent fell back to 1 without asking
+	Replaced                           int  // the out-of-range concurrency in settings that init replaced, or 0
+	// ReplacedTimeout and ReplacedFullTimeout are the check_fast_timeout and check_full_timeout in
+	// settings that every run would reject, which init dropped, or "".
+	ReplacedTimeout, ReplacedFullTimeout string
 	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
 	// when init could neither ask nor take --changelog-union.
 	Union, UnionUnasked bool
@@ -184,23 +192,34 @@ type Choice struct {
 	ReplaceSkill bool
 }
 
+// CheckScript is a project's own check, which check-fast.sh calls as a suite and init never edits.
+const CheckScript = "scripts/check.sh"
+
 // DefaultChoice starts from the project's settings, with the check command found in the worker
-// prompt when the settings have none. A concurrency outside 1 to MaxConcurrency, which every run
-// would reject, is replaced by 1; a check_timeout every run would reject is dropped.
+// prompt when the settings have none: a check command that isn't the runner becomes the runner's
+// one suite. A concurrency outside 1 to MaxConcurrency, which every run would reject, is replaced
+// by 1; a time limit every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
-	c := Choice{Check: s.Check, CheckTimeout: s.CheckTimeout, Concurrent: s.Concurrency, CheckFrom: "settings"}
+	c := Choice{CheckFastTimeout: s.CheckFastTimeout, CheckFullTimeout: s.CheckFullTimeout,
+		Concurrent: s.Concurrency, CheckFrom: "settings"}
 	if s.MCPServers != nil {
 		names := append([]string{}, *s.MCPServers...)
 		c.MCP = &names
 	}
-	if _, err := ParseCheckTimeout(c.CheckTimeout); c.CheckTimeout != "" && err != nil {
-		c.ReplacedTimeout, c.CheckTimeout = c.CheckTimeout, ""
+	if _, err := ParseCheckTimeout(c.CheckFastTimeout); c.CheckFastTimeout != "" && err != nil {
+		c.ReplacedTimeout, c.CheckFastTimeout = c.CheckFastTimeout, ""
 	}
-	if c.Check == "" {
-		if c.Check = DetectCheck(prompt); c.Check != "" {
-			c.CheckFrom = "found in the worker prompt"
+	if _, err := ParseCheckTimeout(c.CheckFullTimeout); c.CheckFullTimeout != "" && err != nil {
+		c.ReplacedFullTimeout, c.CheckFullTimeout = c.CheckFullTimeout, ""
+	}
+	check, from := s.CheckFast, SettingsName
+	if check == "" {
+		if check = DetectCheck(prompt); check != "" {
+			c.CheckFrom, from = "found in the worker prompt", "the worker prompt"
 		}
 	}
+	c.Fast = RunnerSuites(check, from, FastRunner)
+	c.Full = RunnerSuites(s.CheckFull, SettingsName, FullRunner)
 	if c.Concurrent < 0 || c.Concurrent > MaxConcurrency {
 		c.Replaced, c.Concurrent = c.Concurrent, 0
 	}
@@ -208,6 +227,18 @@ func DefaultChoice(s Settings, prompt string) Choice {
 		c.Concurrent, c.Unasked = 1, true
 	}
 	return c
+}
+
+// RunnerSuites are the suites of the runner at path for one check command, found in from: nil when
+// the command is that runner (nothing to write it from), none when it is empty, else the command.
+func RunnerSuites(check, from, path string) *[]Suite {
+	switch check = strings.TrimSpace(check); {
+	case isRunner(check, path):
+		return nil
+	case check == "":
+		return &[]Suite{}
+	}
+	return &[]Suite{{Command: check, FoundIn: from}}
 }
 
 // DetectCheck finds the check command in a worker prompt ("Check your work with `…`").
@@ -272,10 +303,12 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 	return done, nil
 }
 
-// ApplySettings saves the choice to .orchestra/settings.json.
+// ApplySettings saves the choice to .orchestra/settings.json: the runners as check_fast and
+// check_full, under their new names whatever the settings called them.
 func ApplySettings(repo string, c Choice) (Step, error) {
 	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
-	s.Check, s.CheckTimeout, s.Concurrency, s.MCPServers = c.Check, c.CheckTimeout, c.Concurrent, c.MCP
+	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
+	s.CheckFastTimeout, s.CheckFullTimeout = c.CheckFastTimeout, c.CheckFullTimeout
 	if c.MCP != nil && *c.MCP == nil {
 		s.MCPServers = &[]string{} // none, not null
 	}
@@ -289,30 +322,48 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 	if c.Unasked {
 		detail += " (not asked: no terminal; --concurrent sets it)"
 	}
-	if c.Check != "" {
-		detail += " · check: " + c.Check
+	unchecked := c.Fast != nil && len(*c.Fast) == 0
+	switch {
+	case unchecked:
+		detail += " · check-fast checks nothing yet: a rebased ticket merges unchecked (--check-fast sets a command)"
+	case c.Fast == nil:
+		detail += " · check-fast: " + FastRunner + " as it is"
+	default:
+		var commands []string
+		for _, suite := range *c.Fast {
+			commands = append(commands, suite.Command)
+		}
+		detail += " · check-fast: " + strings.Join(commands, ", ")
 		if c.CheckFrom == "found in the worker prompt" {
 			detail += " (found in the worker prompt)"
 		}
-		limit := c.CheckTimeout
-		if limit == "" {
-			limit = DefaultCheckTimeoutText
-		}
-		detail += ", stopped after " + limit
-	} else {
-		detail += " · no check command: a rebased ticket merges unchecked (--check sets one)"
 	}
+	if !unchecked {
+		detail += ", stopped after " + orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
+	}
+	detail += " · check-full at the end of a run, stopped after " + orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)
 	if c.ReplacedTimeout != "" {
-		detail += fmt.Sprintf(" (settings had check_timeout '%s', not a positive duration)", c.ReplacedTimeout)
+		detail += fmt.Sprintf(" (settings had check_fast_timeout '%s', not a positive duration)", c.ReplacedTimeout)
+	}
+	if c.ReplacedFullTimeout != "" {
+		detail += fmt.Sprintf(" (settings had check_full_timeout '%s', not a positive duration)", c.ReplacedFullTimeout)
 	}
 	kind := StepDone
-	if c.Concurrent > 1 || c.Check == "" || c.Replaced != 0 || c.ReplacedTimeout != "" {
+	if c.Concurrent > 1 || unchecked || c.Replaced != 0 || c.ReplacedTimeout != "" || c.ReplacedFullTimeout != "" {
 		kind = StepCaution
 	}
 	if c.Concurrent > 1 {
 		detail += fmt.Sprintf(" · with %d at once, the checks must cope with running side by side", c.Concurrent)
 	}
 	return Step{Kind: kind, Label: "settings", Detail: detail}, nil
+}
+
+// orText is v, or def when v is empty.
+func orText(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.

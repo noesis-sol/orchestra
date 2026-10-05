@@ -103,7 +103,7 @@ func loadConfig(
 // overrides says which of the project's settings a flag or variable overrides where its value
 // can't tell: a duration of 0, -resolve-conflicts=true.
 type overrides struct {
-	ticketLimit, checkTimeout, resolveConflicts bool
+	ticketLimit, checkTimeout, checkFullTimeout, resolveConflicts bool
 }
 
 // readFlags parses the flags in args, each defaulting to its environment variable, and reconciles
@@ -154,8 +154,13 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
 	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
 	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout,
-		"stop the check command on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
+		"stop the merge check (check-fast) on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
 			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+	checkFullTimeout, checkFullTimeoutGiven, checkFullTimeoutProblem := envDuration(getenv,
+		"ORCHESTRA_CHECK_FULL_TIMEOUT", true)
+	fs.DurationVar(&c.CheckFullTimeout, "check-full-timeout", checkFullTimeout,
+		"stop the full check (check-full), run once at the end of a run, after this long, e.g. 90m "+
+			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_CHECK_FULL_TIMEOUT]")
 	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"),
 		"work on this ticket and its subtickets only, each parent after its children; "+
 			"nothing else is started [ORCHESTRA_TICKET]")
@@ -178,7 +183,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
-			"       orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--mcp names] [--force]\n"+
+			"       orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] "+
+			"[--mcp names] [--force]\n"+
 			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
 			"       orchestra plan [--apply]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
@@ -198,7 +204,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		switch rest[0] {
 		case "init":
 			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: "+
-				"orchestra init [--check \"<command>\"] [--check-timeout D] [--concurrent N] [--force]")
+				"orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] [--force]")
 		case "plan":
 			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
 		default:
@@ -212,7 +218,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 
 	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule,
 	// its value checked here when nothing else does (0 for the others: ResolveConcurrency checks
-	// -concurrent and -c, ResolveTicketLimit and ResolveCheckTimeout their flags).
+	// -concurrent and -c, ResolveTicketLimit, ResolveCheckTimeout and ResolveCheckFullTimeout their flags).
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	for _, v := range []struct {
@@ -226,6 +232,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		{"concurrent", set["concurrent"] || set["c"], 0, concurrentProblem},
 		{"ticket-limit", set["ticket-limit"], 0, ticketLimitProblem},
 		{"check-timeout", set["check-timeout"], 0, checkTimeoutProblem},
+		{"check-full-timeout", set["check-full-timeout"], 0, checkFullTimeoutProblem},
 	} {
 		if !v.isSet && v.problem != "" {
 			problems = append(problems, v.problem)
@@ -254,6 +261,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	return c, overrides{
 		ticketLimit:      set["ticket-limit"] || ticketLimitGiven,
 		checkTimeout:     set["check-timeout"] || checkTimeoutGiven,
+		checkFullTimeout: set["check-full-timeout"] || checkFullTimeoutGiven,
 		resolveConflicts: set["resolve-conflicts"],
 	}, problems, nil
 }
@@ -301,7 +309,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 	if err != nil {
 		problems = append(problems, "Unreadable settings: "+err.Error())
 	}
-	c.Check = settings.Check
+	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
@@ -312,6 +320,8 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(c.Concurrency, settings))
 	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(c.TicketLimit, given.ticketLimit, settings))
 	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(c.CheckTimeout, given.checkTimeout, settings))
+	keep(&problems, &c.CheckFullTimeout)(
+		project.ResolveCheckFullTimeout(c.CheckFullTimeout, given.checkFullTimeout, settings))
 	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
 		project.ResolveConflictResolution(c.ResolveConflicts, given.resolveConflicts, settings))
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))

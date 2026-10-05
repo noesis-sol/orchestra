@@ -64,22 +64,25 @@ Where the project's orchestra files are:
 | neither | not set up | run `orchestra init` | | |
 
 `-prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
-`.orchestra/settings.json` holds the check command, `mcp_servers` (the MCP servers workers get, by
+`.orchestra/settings.json` holds the checks, `check_fast` (the merge check, `scripts/check-fast.sh`)
+and `check_full` (everything, `scripts/check-full.sh`, run once at the end of a run), `mcp_servers` (the MCP servers workers get, by
 name; see [Workers' MCP servers](#workers-mcp-servers)) and `concurrent`, how many tickets run at the
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
-`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_timeout`, how long the check
-command may run on a rebased ticket before it is stopped and the ticket set aside (`"5m"`, default
-30m; `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it), and `exclude_types`, the issue
+`--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_fast_timeout`, how long the
+merge check may run on a rebased ticket before it is stopped and the ticket set aside (`"5m"`, default
+30m; `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it), `check_full_timeout`, the same for
+check-full (default 60m; `--check-full-timeout` / `ORCHESTRA_CHECK_FULL_TIMEOUT`), and `exclude_types`, the issue
 types never dispatched (default `["epic"]`; `[]` dispatches every type), and `environment_hold`,
 when workers failing the same way hold the run (default `{"count": 2, "window": "2m", "probe": "10m"}`;
 `"count": 0` turns it off), and how long after a hold a worker without a ticket probes the machine
-(`"probe": "0"` for no probe).
+(`"probe": "0"` for no probe). The old `check` and `check_timeout` are read as `check_fast` and
+`check_fast_timeout`.
 
 ## Setting a project up
 
 ```
-orchestra init --check "<the project's check command>" --concurrent 1
+orchestra init --check-fast "<the project's check command>" --concurrent 1
 ```
 
 It sets Beads up first: where `bd` is missing it can install it (Homebrew, otherwise the Beads
@@ -89,19 +92,23 @@ install script), and in a repository without `.beads/` it runs `bd init` with no
 reports `bd` missing. `bd init` commits the files it adds along with anything already staged, so
 check `git status` before `init`. It then writes `.orchestra/worker-prompt.md` from the built-in
 template (or moves an existing `.claude/worker-prompt.md`, staged with `git mv`), adds
-`.orchestra/.gitignore`, reports what is missing (`bd`, Beads, `herdr`, `claude`), and writes
-`.orchestra/settings.json`. Ask the user
+`.orchestra/.gitignore`, reports what is missing (`bd`, Beads, `herdr`, `claude`), writes the
+runners `scripts/check-fast.sh` and `scripts/check-full.sh` (one line per suite; an existing
+`scripts/check.sh` is called as a suite, never edited; a runner already there that differs is kept
+and reported, unless its flag is given) and writes `.orchestra/settings.json`. Ask the user
 for the check command if you don't know it (the command that runs lint, build and tests) and how
 many tickets to run at the same time, then pass both: run by an agent, `init` can't ask
 interactively and would default to 1. Ask which MCP servers workers need for the project's work
 (`claude mcp list` shows what this machine defines) and pass `--mcp a,b`, or `--mcp ""` for none;
-without it, an agent's `init` leaves them unchosen and workers get every server. `--check-timeout 5m` sets the check's time limit (default
-30m): a few times the check's usual running time. More than 1 needs checks that can run side by side; say so.
+without it, an agent's `init` leaves them unchosen and workers get every server. `--check-fast-timeout 5m`
+(or `--check-timeout`) sets the merge check's time limit (default 30m): a few times the check's usual
+running time. `--check-full "<command>"` adds the slower suites to `check-full.sh`, with
+`--check-full-timeout` (default 60m); `--check-fast ""` writes a runner that checks nothing yet. More than 1 needs checks that can run side by side; say so.
 Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge=union` to
 `.gitattributes` (so tickets that each add an entry at the same spot don't conflict) and pass
 `--changelog-union` or `--changelog-union=false`; without either, `init` leaves it alone.
-Without `--check`, fill in the `<…>` placeholders in the prompt. It never replaces an existing prompt
-unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and commit `.orchestra/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
+The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
+unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 
 ## Launching a run
 
@@ -153,7 +160,8 @@ time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
 `ORGAN_MODEL`, `NOTIFY=0` (no macOS notifications), `PROMPT_AT_LAUNCH=0` (paste the prompt instead
 of starting the worker with it), `--ticket-limit 2h` / `TICKET_LIMIT` (stop when a worker is still
 going that long after dispatch; `0` for none, overriding `settings.json`), `--check-timeout 5m` /
-`ORCHESTRA_CHECK_TIMEOUT` (the check's time limit, overriding `settings.json`). `orchestra -h` lists
+`ORCHESTRA_CHECK_TIMEOUT` (the merge check's time limit, overriding `settings.json`),
+`--check-full-timeout 90m` / `ORCHESTRA_CHECK_FULL_TIMEOUT` (check-full's). `orchestra -h` lists
 them all.
 
 When the user wants one piece of work finished (an epic and its children, a ticket broken into
@@ -397,7 +405,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   worktree shows no rebase, run the check there and merge the branch by hand (see below).
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
-  means the check hung or ran past `check_timeout` and was stopped: a hang, or a limit set too low,
+  means the check hung or ran past `check_fast_timeout` and was stopped: a hang, or a limit set too low,
   rather than a failing test.
 - `REBASE_FAILED`: a returning ticket's branch conflicts with the base branch, so it was deferred
   without starting a worker. Rebase it in its worktree, resolve, then `bd undefer <id>`.

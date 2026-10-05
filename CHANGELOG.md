@@ -29,6 +29,23 @@ All notable changes to orchestra are documented here. The format follows
   says, and `--permission-prompts none`. Restricted mode ignores the user,
   project and local settings files, so the scout doesn't use the default
   model set there. An older `claude` runs the scout as before.
+- A project's checks are two runners, shell scripts `orchestra init`
+  writes in `scripts/` and the project then owns: `check-fast.sh`, the
+  merge check run on every rebased ticket, and `check-full.sh`, which runs
+  `check-fast.sh` and then the slower suites, for orchestra to run once at
+  the end of a run (in a later change). Each lists one command per suite,
+  under a comment naming where it was found; a suite that can't run in two
+  worktrees at once takes turns through a lock (a directory in the temp
+  directory, taken over when its holder is gone). An existing
+  `scripts/check.sh` is called as a suite, never edited. Re-run, `init`
+  keeps a runner that differs from what it would write, and says so.
+  `settings.json` names them as `check_fast` and `check_full`, with
+  `check_fast_timeout` (30m) and `check_full_timeout` (60m); the old
+  `check` and `check_timeout` are still read, as the fast ones, and `init`
+  rewrites them under the new names. `init` takes `--check-fast`,
+  `--check-full`, `--check-fast-timeout` and `--check-full-timeout`
+  (`--check` and `--check-timeout` stay, as aliases), and a run takes
+  `--check-full-timeout` (`ORCHESTRA_CHECK_FULL_TIMEOUT`).
 - On a terminal, `orchestra --feature` (and `New feature` planned by the
   organs) shows its two waits on Claude as busy lines: a spinner and the
   time so far take the place of `screening the request with claude…` and

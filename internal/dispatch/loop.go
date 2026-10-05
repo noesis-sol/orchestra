@@ -385,7 +385,7 @@ type Config struct {
 	LaunchPrompt bool          // give Claude workers their prompt at launch instead of pasting it
 	Concurrency  int           // tickets worked on at the same time
 	TicketLimit  time.Duration // a worker still going this long after dispatch stops the run; 0 for none
-	Check        string        // the project's check command, from .orchestra/settings.json
+	Check        string        // the project's merge check (check_fast), from .orchestra/settings.json
 	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
 	Version      string        // orchestra's version, for the log
 	NoFootprint  bool          // start tickets side by side even when their footprints overlap
@@ -393,6 +393,10 @@ type Config struct {
 	Ticket       string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
 	Feature      string        // the feature request (--feature) Ticket, its epic, was planned from; "" for none
 	ExcludeTypes []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
+	// CheckFull is every check (check_full), from .orchestra/settings.json, run once at the end of a
+	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.
+	CheckFull        string
+	CheckFullTimeout time.Duration
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.
 	EnvHoldCount int

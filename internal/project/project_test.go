@@ -209,7 +209,7 @@ func TestCheckTimeoutPrecedence(t *testing.T) {
 		{0, false, "0", 0, true}, {0, false, "-5m", 0, true}, {0, false, "five minutes", 0, true},
 	}
 	for _, c := range cases {
-		got, err := ResolveCheckTimeout(c.flag, c.given, Settings{CheckTimeout: c.setting})
+		got, err := ResolveCheckTimeout(c.flag, c.given, Settings{CheckFastTimeout: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
 			t.Errorf("ResolveCheckTimeout(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
 		}
@@ -252,40 +252,40 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 		t.Errorf("the template's placeholder is not a check command: %q", got)
 	}
 	c := DefaultChoice(Settings{}, kinieta)
-	if c.Check != "scripts/ci-local.sh" || c.CheckFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.Unasked {
+	if c.FastCommand() != "scripts/ci-local.sh" || c.CheckFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.Unasked {
 		t.Errorf("from the prompt: %+v", c)
 	}
-	c = DefaultChoice(Settings{Check: "make check", Concurrency: 3}, kinieta)
-	if c.Check != "make check" || c.Concurrent != 3 || c.Unasked {
+	c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: 3}, kinieta)
+	if c.FastCommand() != "make check" || c.Concurrent != 3 || c.Unasked {
 		t.Errorf("settings win: %+v", c)
 	}
 	// A concurrency every run would reject is replaced, and the summary says so.
 	for _, n := range []int{-1, MaxConcurrency + 4} {
-		c = DefaultChoice(Settings{Check: "make check", Concurrency: n}, "")
+		c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: n}, "")
 		if c.Concurrent != 1 || !c.Unasked || c.Replaced != n {
 			t.Errorf("concurrent %d: %+v", n, c)
 		}
 	}
 	// So is a check time limit every run would reject; a valid one is kept.
-	if c = DefaultChoice(Settings{CheckTimeout: "45m"}, ""); c.CheckTimeout != "45m" || c.ReplacedTimeout != "" {
+	if c = DefaultChoice(Settings{CheckFastTimeout: "45m"}, ""); c.CheckFastTimeout != "45m" || c.ReplacedTimeout != "" {
 		t.Errorf("check timeout 45m: %+v", c)
 	}
-	if c = DefaultChoice(Settings{CheckTimeout: "soon"}, ""); c.CheckTimeout != "" || c.ReplacedTimeout != "soon" {
+	if c = DefaultChoice(Settings{CheckFastTimeout: "soon"}, ""); c.CheckFastTimeout != "" || c.ReplacedTimeout != "soon" {
 		t.Errorf("check timeout soon: %+v", c)
 	}
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, _ := ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 20}, ""))
+	st, _ := ApplySettings(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: 20}, ""))
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
 		t.Errorf("replaced concurrency: %+v", st)
 	}
-	st, _ = ApplySettings(repo, DefaultChoice(Settings{Check: "make check", Concurrency: 1, CheckTimeout: "0"}, ""))
-	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
+	st, _ = ApplySettings(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: 1, CheckFastTimeout: "0"}, ""))
+	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_fast_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
 		t.Errorf("replaced check timeout: %+v", st)
 	}
-	if s, _, _ := LoadSettings(repo); s.CheckTimeout != "" {
+	if s, _, _ := LoadSettings(repo); s.CheckFastTimeout != "" {
 		t.Errorf("the invalid check_timeout was kept: %+v", s)
 	}
 }
@@ -295,7 +295,7 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, err := ApplySettings(repo, Choice{Check: "make check", CheckTimeout: "5m", Concurrent: 3})
+	st, err := ApplySettings(repo, Choice{Fast: RunnerSuites("make check", "", FastRunner), CheckFastTimeout: "5m", Concurrent: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,32 +304,34 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m["concurrent"] != float64(3) || m["check"] != "make check" || m["check_timeout"] != "5m" {
+	if m["concurrent"] != float64(3) || m["check_fast"] != FastRunner || m["check_full"] != FullRunner ||
+		m["check_fast_timeout"] != "5m" {
 		t.Errorf("settings.json = %s", raw)
 	}
-	if !strings.Contains(st.Detail, "check: make check, stopped after 5m") {
+	if !strings.Contains(st.Detail, "check-fast: make check, stopped after 5m") ||
+		!strings.Contains(st.Detail, "check-full at the end of a run, stopped after 60m") {
 		t.Errorf("the time limit should be in the summary: %+v", st)
 	}
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "side by side") {
 		t.Errorf("more than 1 should come with a caution: %+v", st)
 	}
-	st, _ = ApplySettings(repo, Choice{Concurrent: 1, Unasked: true})
+	st, _ = ApplySettings(repo, Choice{Fast: &[]Suite{}, Concurrent: 1, Unasked: true})
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "merges unchecked") || !strings.Contains(st.Detail, "not asked") {
 		t.Errorf("no check, not asked: %+v", st)
 	}
-	st, _ = ApplySettings(repo, Choice{Check: "make check", Concurrent: 1})
+	st, _ = ApplySettings(repo, Choice{Fast: RunnerSuites("make check", "", FastRunner), Concurrent: 1})
 	if st.Kind != StepDone {
 		t.Errorf("one at a time with a check is plain done: %+v", st)
 	}
 	// Settings init doesn't ask about are kept.
 	none := []string{}
-	if err := SaveSettings(repo, Settings{Check: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none}); err != nil {
+	if err := SaveSettings(repo, Settings{CheckFast: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplySettings(repo, Choice{Check: "make test", Concurrent: 2}); err != nil {
+	if _, err := ApplySettings(repo, Choice{Concurrent: 2}); err != nil {
 		t.Fatal(err)
 	}
-	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.Check != "make test" || s.Concurrency != 2 ||
+	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.CheckFast != FastRunner || s.Concurrency != 2 ||
 		s.ExcludeTypes == nil || len(*s.ExcludeTypes) != 0 {
 		t.Errorf("after init: %+v", s)
 	}
