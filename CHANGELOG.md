@@ -55,6 +55,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- orchestra's own check, `scripts/check.sh`, no longer fails when another
+  check is linting at the same time. golangci-lint locks one file for every
+  worktree and gave up with `parallel golangci-lint is running` after 5
+  seconds, so with several workers' checks and merge checks at once, a
+  ticket with nothing wrong was set aside as CHECKS_FAILED. The check now
+  waits for the other lint to finish (`--allow-serial-runners`).
 - `orchestra plan` orders two tickets of the same priority filed in the same
   second by their subticket numbers as numbers, so `e.2` goes before `e.10`
   as the older one would; it compared IDs as text and proposed `e.10` blocks
