@@ -253,6 +253,23 @@ func PlanRunners(repo string, c Choice) ([]Runner, error) {
 	return runners, nil
 }
 
+// RunnerCommands are the commands a runner's script runs, one per line, for a question to show: its
+// lines without the comments and what init writes around the suites (set -e, the cd, the lock).
+func RunnerCommands(script string) []string {
+	script = strings.Replace(script, lockFunctions, "", 1)
+	var commands []string
+	for line := range strings.Lines(script) {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "", strings.HasPrefix(line, "#"), line == "set -e", line == `cd "$(dirname "$0")/.."`,
+			line == "unlock", strings.HasPrefix(line, "lock ") && !strings.ContainsAny(line, ";&|"):
+			continue
+		}
+		commands = append(commands, line)
+	}
+	return commands
+}
+
 // ApplyRunners writes the choice's runners, mode 755, keeping one that differs from what init would
 // write unless the choice replaces it, and says what it did.
 func ApplyRunners(repo string, c Choice) ([]Step, error) {

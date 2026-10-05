@@ -16,6 +16,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
+	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
 	"golang.org/x/term"
@@ -155,9 +156,22 @@ func runInit(
 
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
-	ask := tui.Ask{Check: !fastGiven, Timeout: !timeoutGiven, Concurrent: !concurrentGiven, Union: askUnion,
-		MCP: !mcpGiven, Install: askInstall}
-	if isTerminal(stdin) && isTerminal(stdout) && ask != (tui.Ask{}) {
+	// Stage 2's choice of checks, unless a flag gives one of them.
+	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
+		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall}
+	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
+		if ask.Check {
+			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
+				Effort: envOr(getenv, "ORGAN_EFFORT", existing.OrganEffort)}
+			ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
+			if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err == nil { // as they are
+				ask.Skill, err = project.PlanSkill(repo, choice.Agent)
+			}
+			if err != nil {
+				fmt.Fprintln(stderr, "orchestra init:", err)
+				return dispatch.ExitSetup
+			}
+		}
 		if err := tui.AskInit(stdin, stdout, &choice, ask); err != nil {
 			ui.Cancelled()
 			return dispatch.ExitSetup

@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/mcp"
+	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/term"
 )
@@ -195,6 +198,7 @@ type formField struct {
 	gap       string      // drawn above the field: the theme's field separator, but not above the first
 	header    string      // printed above the field in huh's accessible mode, which drops groups' titles
 	hidden    func() bool // nil: always shown
+	top       bool        // drawn with no gap above: shown only while the fields above it are hidden
 	wasHidden bool        // whether it was hidden when last updated
 }
 
@@ -310,12 +314,24 @@ func installField(c *project.Choice) *huh.Confirm {
 
 // Ask names the questions AskInit asks: those the flags didn't answer.
 type Ask struct {
-	Check      bool // the check command
-	Timeout    bool // the check's time limit
-	Concurrent bool // tickets at the same time
-	Union      bool // whether to merge CHANGELOG.md by union
-	MCP        bool // the MCP servers for workers; with none to offer, it chooses none
-	Install    bool // whether to install bd as the choice's Install says
+	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
+	Timeout     bool // check-fast's time limit
+	FullTimeout bool // check-full's time limit
+	Concurrent  bool // tickets at the same time
+	Union       bool // whether to merge CHANGELOG.md by union
+	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
+	Install     bool // whether to install bd as the choice's Install says
+	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
+	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
+	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
+	Scout   func(context.Context) (organ.Scouting, error)
+	Runners []project.Runner
+	Skill   project.SkillPlan
+}
+
+// Any reports whether a has a question to ask.
+func (a Ask) Any() bool {
+	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install
 }
 
 // initStage is a stage of the init form: a header, then its questions. The form shows one stage at
@@ -339,6 +355,19 @@ func stageHeader(name string, n, total int) string {
 		return name
 	}
 	return fmt.Sprintf("Step %d of %d · %s", n, total, name)
+}
+
+// timeLimit asks for a check's time limit.
+func timeLimit(title, description, placeholder string, value *string) *huh.Input {
+	return huh.NewInput().
+		Title(title).
+		Description(description).
+		Placeholder(placeholder).
+		Validate(func(v string) error {
+			_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
+			return err
+		}).
+		Value(value)
 }
 
 // AskInit asks the questions ask names, starting from the current choice, reading the answers
@@ -392,34 +421,28 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
-	check, empty := c.FastCommand(), "Empty for a check that passes at once."
-	if c.Fast == nil {
-		empty = "Empty keeps " + project.FastRunner + " as it is."
-	}
+	var stage2 *checksStage
 	if ask.Check {
-		checks.add(huh.NewInput().
-			Title("Check command").
-			Description("Lint, build and tests, which " + project.FastRunner + " runs. Workers run it before " +
-				"they close a ticket, and orchestra runs it again on a ticket rebased onto work merged " +
-				"meanwhile. " + empty).
-			Placeholder("e.g. make check").
-			Value(&check))
+		stage2 = addChecks(checks, c, ask)
+		defer stage2.scout.wait()
 	}
+	settled := func() bool { return stage2 == nil || stage2.scout.poll() }
 	if ask.Timeout {
 		if c.CheckFastTimeout == "" {
 			c.CheckFastTimeout = project.DefaultCheckTimeoutText
 		}
-		checks.add(huh.NewInput().
-			Title("Check time limit").
-			Description("How long orchestra lets the check command run on a rebased ticket before it stops it " +
-				"and sets the ticket aside; other finished tickets wait for it meanwhile. A run can override " +
-				"it with --check-timeout.").
-			Placeholder("e.g. 5m, 45m").
-			Validate(func(v string) error {
-				_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
-				return err
-			}).
-			Value(&c.CheckFastTimeout))
+		hide(checks.add(timeLimit("check-fast time limit", "How long orchestra lets "+project.FastRunner+
+			" run on a rebased ticket before it stops it and sets the ticket aside; other finished tickets "+
+			"wait for it meanwhile. A run can override it with --check-timeout.", "e.g. 5m, 45m",
+			&c.CheckFastTimeout)), func() bool { return !settled() })
+	}
+	if ask.FullTimeout {
+		if c.CheckFullTimeout == "" {
+			c.CheckFullTimeout = project.DefaultCheckFullTimeoutText
+		}
+		hide(checks.add(timeLimit("check-full time limit", "How long orchestra lets "+project.FullRunner+
+			" run at the end of a run before it stops it. A run can override it with --check-full-timeout.",
+			"e.g. 60m, 2h", &c.CheckFullTimeout)), func() bool { return !settled() })
 	}
 	var stages []*initStage
 	for _, s := range []*initStage{workers, checks} {
@@ -439,7 +462,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		header := stageHeader(s.name, i+1, len(stages))
 		group := make([]huh.Field, len(s.fields))
 		for j, f := range s.fields {
-			if j > 0 {
+			if j > 0 && !f.top {
 				f.gap = gap
 			} else {
 				f.header = header
@@ -450,15 +473,24 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
-	before := check
 	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
-	if err := form.Run(); err != nil {
+	var err error
+	if os.Getenv("TERM") == "dumb" { // huh's accessible form, which asks with plain lines
+		err = form.Run()
+	} else {
+		var scout *scoutRun
+		if stage2 != nil {
+			scout = stage2.scout
+		}
+		err = runForm(form, scout, in, out)
+	}
+	if err != nil {
 		return err
 	}
 	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
-	if check = strings.TrimSpace(check); ask.Check && check != before {
-		c.Fast = project.RunnerSuites(check, "orchestra init's form", project.FastRunner)
-		c.ReplaceFast, c.CheckFrom = true, "the form"
+	c.CheckFullTimeout = strings.TrimSpace(c.CheckFullTimeout)
+	if stage2 != nil {
+		stage2.apply()
 	}
 	if ask.Concurrent {
 		c.Concurrent, c.Unasked = option, false

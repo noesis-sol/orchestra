@@ -25,6 +25,14 @@ All notable changes to orchestra are documented here. The format follows
   `check-full`) is filed, unless one is open for that suite. Ctrl+C skips
   it. The event stream records it as a `full_check` record. The runners
   print `SUITE: <name>` as each suite starts, which names the suite.
+- Stage 2 of `orchestra init`, Checks, looks for the project's suites with
+  the scout once it is reached, under a spinner (Esc skips it), then offers
+  three choices: use the suites found as they are, ticked in two checklists
+  (on every merge, check-fast; at the end of a run, check-full), with an
+  option to file tickets for untested areas; create the tests from scratch
+  with the create-check-suite skill; or type the check command by hand. A
+  scout that fails lands on the last, saying why. It asks both checks' time
+  limits, and whether to keep or replace a runner or skill copy that differs.
 - `orchestra init` installs the create-check-suite skill, built into the
   binary, where the project's tests are to be created from scratch or its
   untested areas ticketed: in `.claude/skills/create-check-suite/` for Claude

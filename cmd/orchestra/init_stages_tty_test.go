@@ -11,18 +11,21 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"golang.org/x/sys/unix"
 )
 
 // Init asks in stages, and writes and installs nothing until the last one is submitted: Esc in
 // stage 2, with stage 1 answered yes to installing Beads and to the CHANGELOG.md union, leaves the
-// repository as it was.
+// repository as it was. In stage 2, Esc first skips the scout, which a claude that never answers
+// keeps looking, for a check typed by hand.
 func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 40, Col: 100}); err != nil {
 		t.Fatal(err)
 	}
 	dir := fakeBeadsTools(t, false)
+	faketool.Write(t, dir, "claude", "#!/bin/sh\necho \"claude $*\" >> '"+dir+"/scout'\nexec sleep 60\n")
 	repo, _ := gitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -59,10 +62,17 @@ func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
 		{"┃ Install Beads with Homebrew?", keyEnter},
 		{"┃ Tickets at the same time", keyEnter},
 		{"┃ Merge CHANGELOG.md by union", keyEnter},
-		{"Step 2 of 2 · Checks", "just verify"},
+		{"Step 2 of 2 · Checks", ""},
+		{"Looking for the project's suites", ""},
+		{"", keyEsc}, // once claude runs
+		{"The search was skipped with Esc.", keyEnter},
+		{"┃ Check command", "just verify"},
 		{"just verify", keyEsc},
 	} {
 		term.waitFor(t, step.on)
+		if step.on == "" {
+			waitForFile(t, filepath.Join(dir, "scout"))
+		}
 		term.typeKeys(t, step.keys, false)
 	}
 	term.waitFor(t, "Cancelled; nothing was changed.")
@@ -78,9 +88,22 @@ func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
 	if calls := toolCalls(t, dir); calls != "" {
 		t.Errorf("init ran:\n%s", calls)
 	}
-	for _, name := range []string{".orchestra", ".beads", ".gitattributes"} {
+	for _, name := range []string{".orchestra", ".beads", ".gitattributes", "scripts"} {
 		if _, err := os.Stat(filepath.Join(repo, name)); !os.IsNotExist(err) {
 			t.Errorf("init wrote %s: %v", name, err)
+		}
+	}
+}
+
+// waitForFile waits until the file at path exists.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	for deadline := time.Now().Add(patience); ; time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never appeared", path)
 		}
 	}
 }
