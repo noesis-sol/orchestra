@@ -109,9 +109,6 @@ func TestCreateTabOpensATab(t *testing.T) {
 // When Herdr's answer to 'tab create' can't be used, the tab it opened is closed again, found by its
 // ID if the answer gives it and else by its label, while an earlier tab with that label is left be.
 func TestCreateTabClosesATabItCannotUse(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake herdr per case")
-	}
 	const earlier = "w1:t3 t-1"
 	for _, c := range []struct {
 		name, answer string

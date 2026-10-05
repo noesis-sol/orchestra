@@ -174,9 +174,6 @@ func herdrScript(t *testing.T, script string) {
 }
 
 func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake herdr per case")
-	}
 	for status, want := range map[dispatch.AgentState]string{
 		"working": "agent read a --source visible\n",
 		"blocked": "agent read a --source visible\n",

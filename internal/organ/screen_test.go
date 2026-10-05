@@ -9,9 +9,6 @@ import (
 )
 
 func TestScreenParsesEachVerdict(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake claude per case")
-	}
 	for _, v := range []ScreenVerdict{ScreenOK, ScreenReject, ScreenUnclear} {
 		bin, _ := fakeClaude(t, `{"type":"result","is_error":false,"structured_output":{"verdict":"`+string(v)+
 			`","reason":"  Because.  "}}`)
@@ -28,9 +25,6 @@ func TestScreenParsesEachVerdict(t *testing.T) {
 }
 
 func TestScreenRejectsBadAnswers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake claude per case")
-	}
 	for name, output := range map[string]string{
 		"unknown verdict": `{"is_error":false,"structured_output":{"verdict":"maybe","reason":"r"}}`,
 		"no verdict":      `{"is_error":false,"structured_output":{"reason":"r"}}`,

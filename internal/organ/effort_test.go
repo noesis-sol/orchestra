@@ -10,9 +10,6 @@ import (
 // Each organ runs at its own effort, low for triage and the predictor and medium for the report,
 // unless the client sets one for them all.
 func TestOrgansRunAtTheirEffort(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake claude per case")
-	}
 	const output = `{"type":"result","is_error":false,"result":"report",` +
 		`"structured_output":{"cause":"problem","confidence":"low","summary":"s","recommendation":"r","files":[]}}`
 	ctx := context.Background()

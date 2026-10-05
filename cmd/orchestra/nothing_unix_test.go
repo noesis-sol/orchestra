@@ -222,9 +222,6 @@ func TestNothingUnderTheScopeIsReady(t *testing.T) {
 // With nothing ready, a worker the last run left (in the scope) is still something to run: the
 // run goes to its loop as before, which ends READY_EMPTY and notifies.
 func TestNothingReadyButAWorkerLeftRuns(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: runs orchestra on real git with fake tools, per case")
-	}
 	for _, tc := range []struct {
 		name, left string
 		args       []string
@@ -261,9 +258,6 @@ func TestNothingReadyButAWorkerLeftRuns(t *testing.T) {
 // What the check doesn't change: a run whose limit is reached ends LIMIT_REACHED, and one whose
 // bd ready fails goes to its loop, which reports it.
 func TestNothingToRunLeavesTheLoopsEnds(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: runs orchestra on real git with fake tools, per case")
-	}
 	for _, tc := range []struct {
 		name  string
 		b     backlog

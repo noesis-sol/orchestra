@@ -55,9 +55,6 @@ func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 }
 
 func TestOrganErrorsAreReported(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake claude per case")
-	}
 	bin, _ := fakeClaude(t, `{"type":"result","is_error":true,"result":"usage limit reached"}`)
 	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "low", "s", "i", ""); err == nil || !strings.Contains(err.Error(), "usage limit") {
 		t.Errorf("want the CLI's error, got %v", err)

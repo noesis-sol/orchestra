@@ -13,9 +13,6 @@ const paneNotFoundStderr = `{"error":{"code":"pane_not_found","message":"pane w2
 
 // SplitPane opens a pane to the right of the given one, in cwd and focused, and returns its ID.
 func TestSplitPane(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake herdr per case")
-	}
 	args := filepath.Join(t.TempDir(), "args")
 	herdrScript(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+args+"'\n"+
 		`echo '{"id":"cli:pane:split","result":{"pane":{"agent_status":"unknown","focused":true,"pane_id":"w2B:p95",`+
@@ -74,9 +71,6 @@ func TestClosePane(t *testing.T) {
 
 // PaneOpen tells a pane Herdr still has, whatever runs in it, from one that is gone.
 func TestPaneOpen(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipped by -short: starts a fake herdr per case")
-	}
 	args := filepath.Join(t.TempDir(), "args")
 	herdrScript(t, "#!/bin/sh\necho \"$*\" > '"+args+"'\n"+
 		`echo '{"id":"cli:pane:get","result":{"pane":{"agent_status":"unknown","cwd":"/Users/m/app","focused":true,`+
