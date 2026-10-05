@@ -167,6 +167,13 @@ type Choice struct {
 	// ReplacedTimeout and ReplacedFullTimeout are the check_fast_timeout and check_full_timeout in
 	// settings that every run would reject, which init dropped, or "".
 	ReplacedTimeout, ReplacedFullTimeout string
+	// Setup is settings.json's setup command as init writes it ("" removes it), SetupWas the one there,
+	// which init keeps unless --setup or the form changes it. SetupOffer is the command init offers for
+	// the lockfiles SetupFrom (see FindSetup), and SetupUnasked is set when init could neither ask nor
+	// take --setup.
+	Setup, SetupWas, SetupOffer string
+	SetupFrom                   []string
+	SetupUnasked                bool
 	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
 	// when init could neither ask nor take --changelog-union.
 	Union, UnionUnasked bool
@@ -201,7 +208,7 @@ const CheckScript = "scripts/check.sh"
 // by 1; a time limit every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
 	c := Choice{CheckFastTimeout: s.CheckFastTimeout, CheckFullTimeout: s.CheckFullTimeout,
-		Concurrent: s.Concurrency, CheckFrom: "settings"}
+		Concurrent: s.Concurrency, CheckFrom: "settings", Setup: s.Setup, SetupWas: s.Setup}
 	if s.MCPServers != nil {
 		names := append([]string{}, *s.MCPServers...)
 		c.MCP = &names
@@ -304,11 +311,15 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 }
 
 // ApplySettings saves the choice to .orchestra/settings.json: the runners as check_fast and
-// check_full, under their new names whatever the settings called them.
+// check_full, under their new names whatever the settings called them, and the setup command where
+// the choice changes it.
 func ApplySettings(repo string, c Choice) (Step, error) {
 	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
 	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
 	s.CheckFastTimeout, s.CheckFullTimeout = c.CheckFastTimeout, c.CheckFullTimeout
+	if c.Setup != c.SetupWas {
+		s.Setup = c.Setup
+	}
 	if c.MCP != nil && *c.MCP == nil {
 		s.MCPServers = &[]string{} // none, not null
 	}

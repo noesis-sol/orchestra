@@ -107,6 +107,9 @@ running time. `--check-full "<command>"` adds the slower suites to `check-full.s
 Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge=union` to
 `.gitattributes` (so tickets that each add an entry at the same spot don't conflict) and pass
 `--changelog-union` or `--changelog-union=false`; without either, `init` leaves it alone.
+Where the repository has a lockfile, pass `--setup "<command>"`, the command that installs its dependencies
+(`npm ci`, `pnpm install --frozen-lockfile`, `uv sync`, `bundle install`, …; the summary names the one it found),
+which orchestra runs before the merge check when a rebase changes a lockfile; `--setup ""` for none.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 

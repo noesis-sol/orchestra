@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` offers the setup command where the repository has a
+  lockfile and `settings.json` has none: its Checks step asks for it,
+  pre-filled with `npm ci` for `package-lock.json`, `pnpm install
+  --frozen-lockfile`, `yarn install --frozen-lockfile`, `uv sync`, `poetry
+  install` or `bundle install` for the others. `--setup "<command>"` sets it
+  without asking and `--setup ""` removes it; an existing one is kept, and
+  without a terminal the summary names the flag.
 - After stage 2, `orchestra init` files the test work its choice calls for
   (label `orchestra-tests`), listed in its summary: with "Create from
   scratch", an epic and a P1 `solo` ticket that sets the tests up with the

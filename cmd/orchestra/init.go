@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -42,6 +43,9 @@ func runInit(
 	fs.DurationVar(&fastTimeout, "check-timeout", 0, "alias of --check-fast-timeout")
 	fs.DurationVar(&fullTimeout, "check-full-timeout", 0, "how long check-full may run at the end of a run, "+
 		"e.g. 90m (default "+project.DefaultCheckFullTimeoutText+")")
+	setup := fs.String("setup", "", "the command that installs the dependencies in a worktree, run before check-fast "+
+		"when a rebase changes a lockfile, e.g. \"npm ci\"; \"\" for none (offered for a lockfile when omitted; "+
+		"an existing setting is kept)")
 	force := fs.Bool("force", false, "replace an existing .orchestra/worker-prompt.md with the template")
 	union := fs.Bool("changelog-union", false, "add 'CHANGELOG.md merge=union' to .gitattributes, "+
 		"so two tickets' changelog entries don't conflict (asked when omitted; =false declines)")
@@ -58,7 +62,8 @@ func runInit(
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] "+
 			"[--check-fast-timeout D] [--check-full-timeout D]\n"+
-			"                      [--concurrent N] [--mcp names] [--changelog-union] [--install-beads] [--force]\n\n"+
+			"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n"+
+			"                      [--install-beads] [--force]\n\n"+
 			"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n"+
 			"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n"+
 			"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n"+
@@ -67,7 +72,8 @@ func runInit(
 			"settings.json (the checks, their time limits, how many tickets run at the same time and\n"+
 			"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n"+
 			"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n"+
-			"offers to merge it by union in .gitattributes. In a terminal it asks for anything the flags\n"+
+			"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n"+
+			"it offers one (npm ci for package-lock.json, …). In a terminal it asks for anything the flags\n"+
 			"don't give.\n\n")
 		fs.PrintDefaults()
 	}
@@ -85,7 +91,7 @@ func runInit(
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
 	fastGiven, fullGiven := given["check-fast"] || given["check"], given["check-full"]
 	timeoutGiven, fullTimeoutGiven := given["check-fast-timeout"] || given["check-timeout"], given["check-full-timeout"]
-	unionGiven := given["changelog-union"]
+	unionGiven, setupGiven := given["changelog-union"], given["setup"]
 	concurrentGiven, mcpGiven, installGiven := given["concurrent"] || given["c"], given["mcp"], given["install-beads"]
 	for _, t := range []struct {
 		name  string
@@ -146,6 +152,11 @@ func runInit(
 		choice.MCP = &names
 	}
 	choice.Servers, choice.ServersErr = mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, repo)...)
+	choice.SetupOffer, choice.SetupFrom = project.FindSetup(repo)
+	if setupGiven {
+		choice.Setup = strings.TrimSpace(*setup)
+	}
+	askSetup := !setupGiven && choice.Setup == "" && choice.SetupOffer != ""
 	askUnion := !unionGiven && project.OffersUnion(ctx, repo)
 	choice.Union = *union || askUnion // offered as yes
 	choice.Install = project.FindBeadsInstall(runtime.GOOS)
@@ -158,7 +169,7 @@ func runInit(
 	ui.Header(repo)
 	// Stage 2's choice of checks, unless a flag gives one of them.
 	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
-		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall}
+		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup}
 	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
 		if ask.Check {
 			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
@@ -183,6 +194,7 @@ func runInit(
 		if askInstall {
 			choice.InstallBeads, choice.InstallUnasked = false, true
 		}
+		choice.SetupUnasked = askSetup
 		choice.MCPUnasked = !mcpGiven && choice.MCP == nil
 	}
 
@@ -209,6 +221,9 @@ func runInit(
 		var s project.Step
 		s, err = project.ApplySettings(repo, choice)
 		steps = append(steps, s, project.MCPStep(choice))
+		if s, ok := project.SetupStep(choice); ok {
+			steps = append(steps, s)
+		}
 	}
 	if err == nil {
 		var s project.Step

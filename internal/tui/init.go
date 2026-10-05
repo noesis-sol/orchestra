@@ -312,6 +312,17 @@ func installField(c *project.Choice) *huh.Confirm {
 		Value(&c.InstallBeads)
 }
 
+// setupField asks for the setup command, naming the lockfiles it was offered for.
+func setupField(c *project.Choice) *huh.Input {
+	return huh.NewInput().
+		Title("Setup command").
+		Description("Found " + strings.Join(c.SetupFrom, ", ") + ". orchestra runs this in a ticket's worktree " +
+			"before " + project.FastRunner + " whenever its rebase changes a dependency manifest or lockfile, so " +
+			"the check doesn't run against the dependencies installed before it. Empty for none.").
+		Placeholder(c.SetupOffer).
+		Value(&c.Setup)
+}
+
 // Ask names the questions AskInit asks: those the flags didn't answer.
 type Ask struct {
 	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
@@ -321,6 +332,7 @@ type Ask struct {
 	Union       bool // whether to merge CHANGELOG.md by union
 	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
 	Install     bool // whether to install bd as the choice's Install says
+	Setup       bool // the setup command, starting from the one offered for the lockfiles found
 	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
 	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
 	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
@@ -331,7 +343,7 @@ type Ask struct {
 
 // Any reports whether a has a question to ask.
 func (a Ask) Any() bool {
-	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install
+	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install || a.Setup
 }
 
 // initStage is a stage of the init form: a header, then its questions. The form shows one stage at
@@ -444,6 +456,12 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 			" run at the end of a run before it stops it. A run can override it with --check-full-timeout.",
 			"e.g. 60m, 2h", &c.CheckFullTimeout)), func() bool { return !settled() })
 	}
+	if ask.Setup {
+		if c.Setup == "" {
+			c.Setup = c.SetupOffer
+		}
+		hide(checks.add(setupField(c)), func() bool { return !settled() })
+	}
 	var stages []*initStage
 	for _, s := range []*initStage{workers, checks} {
 		if len(s.fields) > 0 {
@@ -489,6 +507,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
 	c.CheckFullTimeout = strings.TrimSpace(c.CheckFullTimeout)
+	c.Setup = strings.TrimSpace(c.Setup)
 	if stage2 != nil {
 		stage2.apply()
 	}
