@@ -79,6 +79,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket closed with no change of its own, its branch with no commits
+  beyond the base and its worktree clean, as when tickets merged before it
+  did what it was about, has its worktree, branch and tab removed as after a
+  merge, with `<id> closed with no change: … nothing to merge` in the log
+  and `no change to merge` on its dashboard row. It was labelled `unmerged`
+  and left for review as `CLOSED_WITHOUT_COMMIT`, holding the tickets it
+  blocks, and the run report asked you to remove it by hand. A branch with
+  commits that don't name the ticket, or a worktree with changes, is still
+  left for review.
 - A ticket's `files` metadata entry that can't be a path in the repository,
   such as `""`, `./`, `.`, `/etc/passwd` or `../x.go`, is left out of its
   footprint, as is such a path in its text. It was kept as written, so two

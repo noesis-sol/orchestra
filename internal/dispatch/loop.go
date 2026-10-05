@@ -50,8 +50,8 @@ type Loop struct {
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
 	final     string // the stop or done line
-	// closedN and asideN: the tickets merged and set aside in the run, counted as their events go
-	// out, under sinkMu (see tally); counted, the tickets asideN counts.
+	// closedN and asideN: the tickets closed (merged, or with nothing to merge) and set aside in the run,
+	// counted as their events go out, under sinkMu (see tally); counted, the tickets asideN counts.
 	closedN, asideN int
 	counted         map[string]bool
 

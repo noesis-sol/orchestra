@@ -18,13 +18,19 @@ func TestOutcomes(t *testing.T) {
 			t.Errorf("outcomeOf(%q) = %v, want %v", status, got, want)
 		}
 	}
-	if closedOutcomeOf("", false) != closedNoCommit || closedOutcomeOf("", true) != closedNoCommit {
+	if closedOutcomeOf("", 1, false) != closedNoCommit || closedOutcomeOf("", 1, true) != closedNoCommit {
 		t.Error("a closed ticket without a commit must not merge")
 	}
-	if closedOutcomeOf("abc123 fix", true) != closedDirty {
+	if closedOutcomeOf("", 0, false) != closedNoChange {
+		t.Error("a closed ticket with no commits and a clean worktree has nothing to merge")
+	}
+	if closedOutcomeOf("", 0, true) != closedNoCommit || closedOutcomeOf("", -1, false) != closedNoCommit {
+		t.Error("uncommitted changes, or commits git can't count, must be left for review")
+	}
+	if closedOutcomeOf("abc123 fix", 1, true) != closedDirty {
 		t.Error("a dirty worktree must not merge")
 	}
-	if closedOutcomeOf("abc123 fix", false) != closedMerge {
+	if closedOutcomeOf("abc123 fix", 1, false) != closedMerge {
 		t.Error("a commit and a clean worktree should merge")
 	}
 }

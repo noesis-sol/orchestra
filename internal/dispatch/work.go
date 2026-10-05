@@ -429,11 +429,16 @@ const (
 	closedMerge closedOutcome = iota + 1
 	closedNoCommit
 	closedDirty
+	closedNoChange // nothing to merge: no commits of its own and a clean worktree
 )
 
-// A closed ticket is merged only with a commit naming it and a clean worktree.
-func closedOutcomeOf(commit string, worktreeDirty bool) closedOutcome {
+// A closed ticket is merged only with a commit naming it and a clean worktree. One with no commit
+// naming it, whose branch has no commits beyond Base (own, -1 when git can't count them) and whose
+// worktree is clean, closed with no change of its own: there is nothing to merge, or to review.
+func closedOutcomeOf(commit string, own int, worktreeDirty bool) closedOutcome {
 	switch {
+	case commit == "" && own == 0 && !worktreeDirty:
+		return closedNoChange
 	case commit == "":
 		return closedNoCommit
 	case worktreeDirty:

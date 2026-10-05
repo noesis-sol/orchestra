@@ -268,6 +268,16 @@ func closesWithoutCommit(w *fakeWorker) AgentState {
 	return "idle"
 }
 
+// closesUnnamed claims the ticket, commits file in a commit that doesn't name it, and closes it.
+func closesUnnamed(file string) behaviour {
+	return func(w *fakeWorker) AgentState {
+		w.claim()
+		w.commitAs(file, "add "+file)
+		w.close()
+		return "idle"
+	}
+}
+
 // leavesUncommitted commits file, changes the tracked file edited without committing it, and
 // closes the ticket.
 func leavesUncommitted(file, edited string) behaviour {

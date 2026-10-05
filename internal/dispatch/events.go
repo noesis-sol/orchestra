@@ -24,7 +24,7 @@ type Kind int
 const (
 	EvInfo     Kind = iota // progress detail (start, worktree)
 	EvDispatch             // a ticket was picked up
-	EvClosed               // a ticket was completed and merged
+	EvClosed               // a ticket was completed and merged, or closed with no change of its own to merge
 	EvDeferred             // a ticket was set aside
 	EvWarn                 // something needs review, but the loop continues; Aside if a ticket is left for it
 	EvStop                 // the loop stopped and needs attention
@@ -71,8 +71,8 @@ type Event struct {
 	// what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
 	Detail string
 	Text   string // the full line written to the log file
-	// Closed and SetAside: for EvDone, the tickets merged in the run, and those set aside (deferred,
-	// or left for review), as their events said.
+	// Closed and SetAside: for EvDone, the tickets closed in the run (merged, or with nothing to
+	// merge), and those set aside (deferred, or left for review), as their events said.
 	Closed, SetAside int
 	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
@@ -480,7 +480,7 @@ func (o *Loop) emit(ev Event) {
 	o.sink.Event(ev)
 }
 
-// tally counts the tickets merged and set aside in the run, as their events say, and gives the
+// tally counts the tickets closed and set aside in the run, as their events say, and gives the
 // counts to the run's EvDone. A ticket set aside counts once, however many times it is (its check
 // failing again, say), and no longer once it merges (see recheck).
 func (o *Loop) tally(ev *Event) {

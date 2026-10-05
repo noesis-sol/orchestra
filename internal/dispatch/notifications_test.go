@@ -145,7 +145,7 @@ func TestRunNotifiesWhatHappenedToEachTicket(t *testing.T) {
 			w.ask("Q", "Which name should the flag have?")
 			return "idle"
 		})
-		h.worker("D", closesWithoutCommit)
+		h.worker("D", closesUnnamed("d.txt"))
 		o, code := h.run()
 		if code != ExitOK {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())

@@ -16,13 +16,17 @@ import (
 )
 
 // finish merges w's closed ticket, or leaves it for review without a commit naming it or with
-// uncommitted changes.
+// uncommitted changes. One with no commits of its own and a clean worktree has nothing to merge, and
+// is cleaned up as after a merge (see closedUnchanged).
 func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	keep := context.WithoutCancel(ctx) // a read cut short would look like no commit
 	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
-	switch closedOutcomeOf(commit, o.checkout.DirtyWorktree(keep, wt) != "") {
+	own := o.merger.CountCommits(keep, c.Repo, c.Base+".."+br)
+	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
+	case closedNoChange:
+		o.closedUnchanged(keep, w)
 	case closedNoCommit:
 		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed without a commit", Text: fmt.Sprintf(
@@ -78,16 +82,11 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 					blocks("does not fast-forward onto " + c.Base)
 			}
 			o.merged(keep, id)
-			out, err = o.worktrees.RemoveWorktree(keep, c.Repo, wt)
-			o.log.Raw(out, err)
-			if err == nil {
-				out, err = o.worktrees.DeleteBranch(keep, c.Repo, br)
-				o.log.Raw(out, err)
-			}
+			cleaned := o.removeWorktree(keep, wt, br)
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			title := o.titleOf(id)
-			if err == nil {
+			if cleaned {
 				removed := o.closeWorkerTab(keep, id, tab)
 				o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: hash + " merged into " + c.Base, Text: fmt.Sprintf(
 					"  %s closed (%s); merged into %s, %s", id, commit, c.Base, removed)})
@@ -175,11 +174,47 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	return nil
 }
 
-// closeWorkerTab closes tab, where ticket id's worker ran, once its work is merged and its worktree
-// and branch are removed, and says what was removed, for the line saying it merged. It closes the
-// tab only while Herdr has it labelled id, as the worker's tab was opened: Herdr numbers tabs afresh
-// when it starts without restoring its last session, so a tab the last run left a worker in, or one
-// recorded before Herdr restarted, may by now be another, the user's own included.
+// closedUnchanged cleans up after w's ticket, closed with no change of its own: its branch has no
+// commits beyond Base and its worktree is clean, as when tickets merged before it did what it was
+// about. Nothing is left to merge or to review, so its worktree, branch and tab are removed as after
+// a merge, and the tickets it blocks needn't wait for it.
+func (o *Loop) closedUnchanged(ctx context.Context, w worker) {
+	c := o.cfg
+	id, br, wt, tab := w.id, w.br, w.wt, w.tab
+	o.merged(ctx, id) // an unmerged label from an earlier run holds nothing now
+	o.repoMu.Lock()
+	cleaned := o.removeWorktree(ctx, wt, br)
+	o.repoMu.Unlock()
+	title := o.titleOf(id)
+	if !cleaned {
+		o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: "no change; cleanup failed, tab " + tab + " left open",
+			Text: fmt.Sprintf("  %s closed with no change to merge, but CLEANUP_FAILED for %s / %s (git output is in %s); "+
+				"tab %s left open", id, wt, br, c.LogPath, tab)})
+		return
+	}
+	o.emit(Event{Kind: EvClosed, Ticket: id, Title: title, Detail: "no change to merge", Text: fmt.Sprintf(
+		"  %s closed with no change: %s has no commits beyond %s and its worktree is clean, so there is nothing to merge; %s",
+		id, br, c.Base, o.closeWorkerTab(ctx, id, tab))})
+}
+
+// removeWorktree removes a ticket's worktree wt and then its branch br, whose work is on Base, and
+// reports whether both went; git's output goes in the log. The caller holds repoMu.
+func (o *Loop) removeWorktree(ctx context.Context, wt, br string) bool {
+	out, err := o.worktrees.RemoveWorktree(ctx, o.cfg.Repo, wt)
+	o.log.Raw(out, err)
+	if err == nil {
+		out, err = o.worktrees.DeleteBranch(ctx, o.cfg.Repo, br)
+		o.log.Raw(out, err)
+	}
+	return err == nil
+}
+
+// closeWorkerTab closes tab, where ticket id's worker ran, once its work is merged (or it closed with
+// nothing to merge) and its worktree and branch are removed, and says what was removed, for the line
+// saying it closed. It closes the tab only while Herdr has it labelled id, as the worker's tab was
+// opened: Herdr numbers tabs afresh when it starts without restoring its last session, so a tab the
+// last run left a worker in, or one recorded before Herdr restarted, may by now be another, the
+// user's own included.
 func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
 	const removed = "worktree and branch removed; "
 	label, open, err := o.tabs.TabLabel(ctx, tab)

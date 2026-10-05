@@ -267,9 +267,12 @@ func (w *fakeWorker) close()   { w.beads.set(w.id, "closed") }
 func (w *fakeWorker) deferIt() { w.beads.set(w.id, "deferred") }
 
 // commit adds file to the ticket's branch in a commit naming the ticket.
-func (w *fakeWorker) commit(file string) {
+func (w *fakeWorker) commit(file string) { w.commitAs(file, w.id+": add "+file) }
+
+// commitAs adds file to the ticket's branch in a commit with subject.
+func (w *fakeWorker) commitAs(file, subject string) {
 	if w.git != nil {
-		if err := w.git.commitIn(w.wt, w.id+": add "+file, file); err != nil {
+		if err := w.git.commitIn(w.wt, subject, file); err != nil {
 			w.t.Error(err)
 		}
 		return
@@ -277,7 +280,7 @@ func (w *fakeWorker) commit(file string) {
 	if err := os.WriteFile(filepath.Join(w.wt, file), []byte(w.id+"\n"), 0o644); err != nil {
 		w.t.Error(err)
 	}
-	for _, args := range [][]string{{"add", file}, {"commit", "-q", "-m", w.id + ": add " + file}} {
+	for _, args := range [][]string{{"add", file}, {"commit", "-q", "-m", subject}} {
 		if out, err := command.Output(context.Background(), 0, w.wt, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...); err != nil {
 			w.t.Errorf("git %v in %s: %v\n%s", args, w.wt, err, out)
 		}

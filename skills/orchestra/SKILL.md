@@ -10,8 +10,9 @@ description: Run and look after orchestra, which works through a Beads backlog w
 starts a worker there (a coding agent: Claude Code by default, with its tools and the project's
 MCP servers) with the project's worker prompt, waits for it to settle, then reads the ticket's
 status in Beads. A closed ticket with a commit naming it is fast-forwarded
-into the branch the main checkout is on, and its worktree, branch and tab are removed. Anything else
-is left for review, and the loop moves on or stops. It never pushes.
+into the branch the main checkout is on, and its worktree, branch and tab are removed; so are those of
+a closed ticket with no commits of its own and a clean worktree, which has nothing to merge. Anything
+else is left for review, and the loop moves on or stops. It never pushes.
 
 Two words, kept apart: **workers** do tickets, one per Herdr tab and worktree; **organs** are
 orchestra's own one-shot advisers (triage, the predictor, the reviewer that writes the run report),
@@ -326,7 +327,9 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   or tells it, idle, that the question is answered, and merges its work as usual. A run that ends
   with the ticket still asked leaves it to the next run, which does the same: the user may answer
   between runs, in the tab or with `bd human respond`.
-- `CLOSED_WITHOUT_COMMIT`: closed, but no commit names it, or its worktree has uncommitted changes.
+- `CLOSED_WITHOUT_COMMIT`: closed, but its branch has commits and none names it, or its worktree has
+  uncommitted changes. A ticket closed with no commits and no changes says `<id> closed with no
+  change` instead, and its worktree, branch and tab are removed.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
   holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or

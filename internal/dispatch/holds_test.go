@@ -102,8 +102,8 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 			return wt
 		}, "CHECKS_FAILED"},
 		{"no commit", "true", func(f *mergeFixture) string {
-			wt := filepath.Join(t.TempDir(), "k-a")
-			f.git(f.repo, "worktree", "add", "-q", "-b", "wt/k-a", wt, "main")
+			wt := f.ticket(t, "k-a", "a.txt", "a\n")
+			f.git(wt, "commit", "-q", "--amend", "-m", "change a.txt") // a commit not naming k-a
 			return wt
 		}, "CLOSED_WITHOUT_COMMIT"},
 		{"dirty", "true", func(f *mergeFixture) string {
@@ -313,8 +313,9 @@ func TestLabelFailureIsWarned(t *testing.T) {
 	f := newMergeFixture(t, "true")
 	f.orch.notes = brokenBd(nil)
 	f.orch.tickets = aBlocksB()
-	wt := filepath.Join(t.TempDir(), "k-a")
-	f.git(f.repo, "worktree", "add", "-q", "-b", "wt/k-a", wt, "main")
+	wt := f.ticket(t, "k-a", "a.txt", "a\n")
+	// A commit not naming k-a.
+	f.git(wt, "commit", "-q", "--amend", "-m", "change a.txt")
 	if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil { // CLOSED_WITHOUT_COMMIT
 		t.Fatal(s)
 	}
@@ -332,7 +333,7 @@ func TestUnmergedTicketHoldsItsDependentsInLaterRuns(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.beads.link("B", "A", "blocks")
-	h.worker("A", closesWithoutCommit)
+	h.worker("A", closesUnnamed("x.txt"))
 	h.worker("B", finishes("b.txt"))
 	if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
@@ -378,7 +379,7 @@ func TestReopenedUnmergedTicketLosesItsLabelWhenItMerges(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.beads.link("B", "A", "blocks")
-	h.worker("A", closesWithoutCommit, finishes("a.txt"))
+	h.worker("A", closesUnnamed("x.txt"), finishes("a.txt"))
 	h.worker("B", finishes("b.txt"))
 	if o, code := h.run(); code != ExitOK {
 		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())

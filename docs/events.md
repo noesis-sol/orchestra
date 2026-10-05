@@ -22,7 +22,7 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `info` | progress: the `START` line, worktrees, how workers settled… | `text`; `ticket` on some |
 | `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`; `queued`, how many ready tickets wait for a slot; `solo` |
 | `queue` | the number of ready tickets waiting for a slot changed: the dashboard's **In queue**, which the log doesn't have | `queued`, `solo` |
-| `closed` | a ticket closed and was merged | `ticket`, `title`; `detail`, as in `ffd6ce4 merged into main` |
+| `closed` | a ticket closed and was merged, or closed with no change of its own to merge | `ticket`, `title`; `detail`, as in `ffd6ce4 merged into main`, or `no change to merge` |
 | `deferred` | a ticket was set aside | `ticket`, `title`; `detail`, why: `by the worker`, `still in_progress, noted for review`, … |
 | `asked` | a ticket waits on a question for you | `ticket`, `title`; `detail`, the question's ID and title |
 | `answered` | its question was answered: it comes back, dispatched next | `ticket`, `title`, `detail` |
@@ -47,6 +47,6 @@ With `jq`, in the main checkout:
 E=.orchestra/run/events.jsonl
 run=$(jq -r .started .git/orchestra.lock)   # the latest run's start, as its lock gives it
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end")))' $E   # how it ended
-jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it merged
+jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it closed
 tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run
 ```
