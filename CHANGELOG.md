@@ -182,6 +182,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A finished ticket rebased over a merged ticket's dependency bump no longer
+  fails its check against the dependencies its worker installed before:
+  `"setup"` in `.orchestra/settings.json` (such as `"npm ci"`) runs in the
+  worktree before the merge check, on a merge, a RECHECK and a hand-back's
+  resolution, whenever the rebase changed a dependency manifest or lockfile
+  (`"setup_files"`, globs, with the usual ones by default). The log says
+  `<id>: package-lock.json changed in the rebase; running 'npm ci' before the
+  check`; a setup that fails is `CHECKS_FAILED`, its output in the worktree's
+  `.orchestra/run/setup.log`.
 - Esc or Ctrl+C at "What should this run work on?" no longer closes the
   terminal's input while Bubble Tea still reads it, a data race the race
   detector caught about once in 180 runs of the test that cancels it.

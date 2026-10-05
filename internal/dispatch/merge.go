@@ -144,14 +144,22 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)
 			continue
 		}
-		if output, err := o.runCheck(ctx, w, r.onto); err != nil {
+		// The rebase may have changed the dependencies: set them up again first (see setUp).
+		output, err := o.setUp(ctx, w, r.head, r.onto)
+		what, failed := "'"+c.Check+"'", "checks"
+		if err != nil {
+			what, failed = "the setup '"+c.Setup+"', run before the check,", "setup"
+		} else {
+			output, err = o.runCheck(ctx, w, r.onto)
+		}
+		if err != nil {
 			if ctx.Err() != nil {
 				return errInterrupted
 			}
 			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
-			how, why := o.checkHow(err), "checks failed"
+			how, why := o.checkHow(err), failed+" failed"
 			if errors.Is(err, errCheckTimedOut) {
-				why = "checks timed out"
+				why = failed + " timed out"
 			}
 			// Checked once more once Base moves on, unless this was that once (see recheck).
 			again, later := " again", ""
@@ -159,9 +167,9 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 				again, later = "", o.awaitRecheck(keep, w, r.onto)
 			}
 			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why + again, Text: fmt.Sprintf(
-				"  CHECKS_FAILED: %s closed, but '%s' %s%s on %s rebased onto %s; "+
+				"  CHECKS_FAILED: %s closed, but %s %s%s on %s rebased onto %s; "+
 					"worktree %s and tab %s left for review (output is in %s)%s",
-				id, c.Check, how, again, br, c.Base, wt, tab, output, later)})
+				id, what, how, again, br, c.Base, wt, tab, output, later)})
 			return nil
 		}
 		o.info("  '%s' passes on the rebased %s", c.Check, br)
@@ -280,23 +288,34 @@ func (o *Loop) checkTimeout() time.Duration {
 // noteCheckFailed); runCheck returns where the output is. When it passes, each FLAKY: line it printed
 // is a warning (see reportFlaky).
 func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, error) {
-	limit := o.checkTimeout()
-	checkCtx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	out, err := command.GroupOutput(checkCtx, 5*time.Second, w.wt, "sh", "-c", o.cfg.Check)
-	if err != nil && ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
-		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
-	}
+	out, output, err := o.runIn(ctx, w, o.cfg.Check, checkLogName)
 	if err != nil {
-		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("check '%s' in %s: %w", o.cfg.Check, w.wt, err))
-		output := o.saveCheckOutput(w.wt, out)
 		if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
-			o.noteCheckFailed(ctx, w, onto, output, out, err)
+			o.noteCheckFailed(ctx, w, onto, output, out, err, "")
 		}
 		return output, err
 	}
 	o.reportFlaky(w.id, "", out)
 	return "", nil
+}
+
+// runIn runs the command line cmd, the check or the setup, in w's worktree and returns its output. It
+// gives up after checkTimeout, stopping everything cmd started, and returns errCheckTimedOut then.
+// When cmd fails, the end of its output goes in the log and the whole of it in the worktree's file
+// logName (see saveCheckOutput), whose path it returns as output.
+func (o *Loop) runIn(ctx context.Context, w worker, cmd, logName string) (out []byte, output string, err error) {
+	limit := o.checkTimeout()
+	runCtx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	out, err = command.GroupOutput(runCtx, 5*time.Second, w.wt, "sh", "-c", cmd)
+	if err != nil && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
+	}
+	if err != nil {
+		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, err))
+		return out, o.saveCheckOutput(w.wt, logName, out), err
+	}
+	return out, "", nil
 }
 
 // checkHow says how the check failed with err, for a line about it: it fails, or did not finish.
@@ -312,12 +331,13 @@ func (o *Loop) checkHow(err error) string {
 // the name of the test that failed.
 const checkLogName = "check.log"
 
-// saveCheckOutput writes a failed check's whole output to checkLogName in the worktree wt, left for
-// review with it, and returns the file's path. The worker can change .orchestra/run/, so the file
+// saveCheckOutput writes a failed check's whole output to logName (checkLogName, or setupLogName for
+// the setup) in the worktree wt's .orchestra/run/, left for review with it, and returns the file's
+// path. The worker can change .orchestra/run/, so the file
 // is reached through an os.Root, as every run file is (see project.OpenRun). A file that can't be
 // written is logged, and the log's path returned: it has the end of the output.
-func (o *Loop) saveCheckOutput(wt string, out []byte) string {
-	rel := project.RunPath(checkLogName)
+func (o *Loop) saveCheckOutput(wt, logName string, out []byte) string {
+	rel := project.RunPath(logName)
 	root, err := project.OpenRun(wt)
 	if err == nil {
 		err = project.WriteRun(root, wt, rel, out, 0o644)
@@ -339,13 +359,15 @@ type checkFail struct {
 	said     []string // the lines of the output that say what failed (see failureLines)
 	saidEnd  bool     // no line said: said is the output's last lines, if it printed any
 	dirs     []string // the directories the ticket's own commits change, sorted (see ownDirs)
+	setup    string   // the setup command, when it failed before the check could run (see setUp)
 }
 
-// noteCheckFailed keeps for the reviewer what w's check said as it failed with err: the lines of its
-// output, out, that say what failed, where out is kept (output), and the directories that the
-// ticket's commits on top of onto change.
-func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out []byte, err error) {
-	f := checkFail{br: w.br, onto: onto, how: o.checkHow(err), output: output}
+// noteCheckFailed keeps for the reviewer what w's check said as it failed with err, or its setup when
+// setup is the setup command: the lines of its output, out, that say what failed, where out is kept
+// (output), and the directories that the ticket's commits on top of onto change.
+func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out []byte, err error,
+	setup string) {
+	f := checkFail{br: w.br, onto: onto, how: o.checkHow(err), output: output, setup: setup}
 	if f.said = failureLines(string(out)); len(f.said) == 0 {
 		f.saidEnd = true
 		if end := lastLines(string(out), maxSaid); strings.TrimSpace(end) != "" {

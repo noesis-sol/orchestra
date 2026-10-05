@@ -86,6 +86,7 @@ type Loop struct {
 	checkSaid map[string]checkFail  // what each ticket's last check in this run said, if it failed
 	rechecks  []recheck             // tickets set aside for a failed check, to check again once Base moves on
 	rechecked map[string]bool       // tickets taken up to be checked again (see dueRecheck)
+	setUpFor  map[string]string     // the commit each finished ticket's dependencies were set up for (see setUp)
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string     // why each held ticket waits, as last said
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
@@ -401,6 +402,10 @@ type Config struct {
 	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.
 	CheckFull        string
 	CheckFullTimeout time.Duration
+	// Setup installs the project's dependencies (setup), run before Check on a rebased branch when the
+	// rebase changed a file SetupFiles matches, for at most CheckTimeout; "" for none (see setUp).
+	Setup      string
+	SetupFiles []string
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.
 	EnvHoldCount int

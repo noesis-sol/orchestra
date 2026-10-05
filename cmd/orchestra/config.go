@@ -310,6 +310,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 		problems = append(problems, "Unreadable settings: "+err.Error())
 	}
 	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
+	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
@@ -327,6 +328,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
 	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
 	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
+	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
 	// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
 	// config; one this machine can't give them is for the maintainer to fix before they start.
 	switch {

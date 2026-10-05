@@ -173,9 +173,10 @@ var (
 
 // ownFailures lists the directories the ticket's own commits change (f.dirs) that the lines of its
 // failed check say it failed in, naming a package there or a file; none when they name none, or say
-// nothing (saidEnd). A package is named by its import path, which ends with its directory.
+// nothing (saidEnd), or when its setup failed: the setup's output names none of the ticket's code. A
+// package is named by its import path, which ends with its directory.
 func (f checkFail) ownFailures() []string {
-	if f.saidEnd {
+	if f.saidEnd || f.setup != "" {
 		return nil
 	}
 	var own []string

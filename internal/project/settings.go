@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -37,6 +38,14 @@ type Settings struct {
 	// CheckFullTimeout is how long CheckFull may run, unless --check-full-timeout says otherwise.
 	// Empty: DefaultCheckFullTimeout.
 	CheckFullTimeout string `json:"check_full_timeout,omitempty"`
+	// Setup installs the project's dependencies in a worktree, such as "npm ci". orchestra runs it before
+	// CheckFast on a finished ticket whose rebase changed one of SetupFiles, so the check doesn't run
+	// against dependencies installed for the code before the rebase. Empty: never run.
+	Setup string `json:"setup,omitempty"`
+	// SetupFiles are the files whose change in a rebase has Setup run: globs matched against a file's
+	// name, or its path from the repository's top when the glob has a slash. Absent:
+	// DefaultSetupFiles.
+	SetupFiles *[]string `json:"setup_files,omitempty"`
 	// ExcludeTypes are the issue types never taken from bd ready, such as epics, whose children
 	// are the work. Absent: DefaultExcludeTypes; [] takes every type.
 	ExcludeTypes *[]string `json:"exclude_types,omitempty"`
@@ -104,6 +113,17 @@ const (
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
 var DefaultExcludeTypes = []string{"epic"}
+
+// DefaultSetupFiles are the dependency manifests and lockfiles whose change in a rebase has the setup
+// command run, when settings.json names none.
+var DefaultSetupFiles = []string{
+	"package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+	"go.mod", "go.sum",
+	"Cargo.toml", "Cargo.lock",
+	"pyproject.toml", "poetry.lock", "uv.lock", "Pipfile", "Pipfile.lock", "requirements*.txt",
+	"Gemfile", "Gemfile.lock", "composer.json", "composer.lock", "mix.exs", "mix.lock",
+	"pubspec.yaml", "pubspec.lock",
+}
 
 // SettingsPath is where the project's settings.json is.
 func SettingsPath(repo string) string { return filepath.Join(repo, Dir, SettingsName) }
@@ -292,6 +312,23 @@ func ResolveExcludeTypes(s Settings) ([]string, error) {
 		types = append(types, t)
 	}
 	return types, nil
+}
+
+// ResolveSetupFiles picks the globs of the files whose change in a rebase has the setup command run:
+// the project's setting, else DefaultSetupFiles. Each must be a glob path.Match takes.
+func ResolveSetupFiles(s Settings) ([]string, error) {
+	if s.SetupFiles == nil {
+		return slices.Clone(DefaultSetupFiles), nil
+	}
+	globs := []string{}
+	for _, g := range *s.SetupFiles {
+		if _, err := path.Match(g, ""); err != nil || strings.TrimSpace(g) == "" {
+			return nil, fmt.Errorf("%s: setup_files must be a list of file names or globs such as [\"package-lock.json\"] "+
+				"(got %q)", SettingsPath("."), g)
+		}
+		globs = append(globs, g)
+	}
+	return globs, nil
 }
 
 // Efforts are the effort levels claude --effort takes.

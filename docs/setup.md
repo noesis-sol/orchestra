@@ -45,6 +45,16 @@ A runner lists the suites' commands, one line each, run from the repository's ro
 
 `--check-fast "<command>"` writes `check-fast.sh` with that command (`""`: the runner that checks nothing), and `--check-full "<command>"` writes `check-full.sh` with it after `check-fast.sh`. Run again, `init` leaves a runner that `settings.json` already names as it is. Where it would write a runner that differs from the one there, it says so and keeps the one there, unless its flag was given or stage 2's question replaces it. A project set up before the runners keeps working: its `check` and `check_timeout` are read as `check_fast` and `check_fast_timeout`, and `init` writes its check command into `check-fast.sh` and the settings under the new names.
 
+A ticket's worktree has the dependencies its worker installed for the code it started from, and a ticket rebased over another that bumped a dependency would be checked against the old ones. `"setup"` in `settings.json` is the command that installs them, such as `"npm ci"`, `"pnpm install --frozen-lockfile"`, `"uv sync"` or `"bundle install"`: orchestra runs it in a rebased ticket's worktree before `check_fast` whenever the rebase changed a dependency manifest or lockfile ([Several tickets at once](running.md#several-tickets-at-once)). `"setup_files"` lists those files, as globs matched against a file's name, or against its path from the repository's top when the glob has a slash (`"web/package-lock.json"`, `"apps/*/yarn.lock"`). Without it, they are the usual manifests and lockfiles: `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `go.mod`, `go.sum`, `Cargo.toml`, `Cargo.lock`, `pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile`, `Pipfile.lock`, `requirements*.txt`, `Gemfile`, `Gemfile.lock`, `composer.json`, `composer.lock`, `mix.exs`, `mix.lock`, `pubspec.yaml` and `pubspec.lock`. `init` doesn't ask for it: add it to `settings.json` by hand, and commit it.
+
+```json
+{
+  "check_fast": "scripts/check-fast.sh",
+  "setup": "npm ci",
+  "setup_files": ["package-lock.json"]
+}
+```
+
 ## Choosing the checks
 
 Stage 2 of the form starts with the scout, the one organ that reads the repository itself (with Read, Glob and Grep only, confined to it): it looks where projects say how they test (package manifests and their scripts, Makefiles and task runners, CI workflows, test configs and the project's own scripts) and lists each suite with its command, where it was found, whether it is fast (unit tests, lint, type checks, a smoke e2e suite) or full, whether it can run in two worktrees at once, and what it needs (a service, a browser, credentials). An existing `scripts/check.sh` comes first, as a fast suite. It starts only when stage 2 is reached, under a spinner with the time it has taken; it may take up to 5 minutes, and Esc skips it. The scout uses `--organ-model`'s and `--organ-effort`'s variables, `ORGAN_MODEL` and `ORGAN_EFFORT` (else the settings' `organ_effort`; medium by default).

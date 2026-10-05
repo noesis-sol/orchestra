@@ -155,6 +155,14 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) (string, *stopR
 		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)",
 			r.br, n, r.own), nil
 	}
+	// The rebase may have changed the dependencies: set them up again first (see setUp).
+	if output, err := o.setUp(ctx, r.worker, r.head, r.onto); err != nil {
+		if ctx.Err() != nil {
+			return "", errInterrupted
+		}
+		return fmt.Sprintf("the setup '%s', run before the check, %s on the resolved %s (output is in %s)",
+			c.Setup, o.checkHow(err), r.br, output), nil
+	}
 	o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
 	if output, err := o.runCheck(ctx, r.worker, r.onto); err != nil {
 		if ctx.Err() != nil {

@@ -248,8 +248,14 @@ const maxDirs = 20
 // own commits change, so the reviewer can tell a failure in its code from one elsewhere.
 func (f checkFail) evidence(id, check, base string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s: '%s' %s on %s rebased onto %s at %s; its output is in %s.\n",
-		id, check, f.how, f.br, base, short(f.onto), f.output)
+	if f.setup != "" {
+		fmt.Fprintf(&b, "%s: the setup '%s', run before the check as the rebase changed the project's dependency "+
+			"files, %s on %s rebased onto %s at %s, so the check did not run; its output is in %s.\n",
+			id, f.setup, f.how, f.br, base, short(f.onto), f.output)
+	} else {
+		fmt.Fprintf(&b, "%s: '%s' %s on %s rebased onto %s at %s; its output is in %s.\n",
+			id, check, f.how, f.br, base, short(f.onto), f.output)
+	}
 	switch {
 	case len(f.said) == 0:
 		b.WriteString("It printed nothing.\n")
