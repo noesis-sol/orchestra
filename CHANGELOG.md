@@ -60,6 +60,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket's `files` metadata entry that can't be a path in the repository,
+  such as `""`, `./`, `.`, `/etc/passwd` or `../x.go`, is left out of its
+  footprint, as is such a path in its text. It was kept as written, so two
+  tickets listing the same one never ran side by side, and a ticket listing
+  only `""` counted as naming something and missed the footprint predictor.
 - The dashboard says `■ blocked` for a ticket whose work is done but which
   can't merge until you act, with why in a few words: `main checkout has
   uncommitted changes`, `merge conflict in <files>`, `git failed`, `does not

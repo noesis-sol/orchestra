@@ -2,6 +2,8 @@ package dispatch
 
 import (
 	"encoding/json"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,9 +12,10 @@ import (
 // FuzzTicketFootprint reads the footprint of a ticket with any text, metadata and labels (separated
 // by commas), against any repository files (one per line, or unknown when known is false) and check
 // command. It doesn't panic: funcName indexes a qualifier's first byte, which only the regular
-// expressions guarantee. Its files and functions come out sorted, without repeats, and its areas
-// sorted, each an area label naming an area. go test runs the seeds; docs/development.md says how
-// to fuzz.
+// expressions guarantee. Its files and functions come out sorted, without repeats, its files each
+// a path in the repository (not empty, not its root, neither absolute nor outside it), and its
+// areas sorted, each an area label naming an area. go test runs the seeds; docs/development.md says
+// how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
@@ -28,6 +31,8 @@ func FuzzTicketFootprint(f *testing.F) {
 		{"Say hello", `{"files": "[\"internal/tui/run.go\", 'docs/new.md'"}`, ""},
 		{"Say hello", `{"predicted_files": "internal/dispatch/run.go,internal/nowhere/z.go", "files": []}`, ""},
 		{"Say hello", `{"files": 3}`, ""},
+		{"Say hello", `{"files": ["", "./", ".", "a/..", "/etc/passwd", "../x.go"]}`, ""},
+		{"Fix ../x.go and .//y.go", "", ""},
 	} {
 		f.Add(c.text, c.meta, c.labels, tracked, true, "scripts/check.sh")
 		f.Add(c.text, c.meta, c.labels, "", false, "")
@@ -43,6 +48,9 @@ func FuzzTicketFootprint(f *testing.F) {
 			if !slices.IsSorted(l) || len(slices.Compact(slices.Clone(l))) != len(l) {
 				t.Errorf("the %s %q are unsorted or repeat", what, l)
 			}
+		}
+		if i := slices.IndexFunc(fp.Files, func(f string) bool { return !filepath.IsLocal(f) || path.Clean(f) == "." }); i >= 0 {
+			t.Errorf("the file %q is no path in the repository", fp.Files[i])
 		}
 		if !slices.IsSorted(fp.Areas) ||
 			slices.ContainsFunc(fp.Areas, func(a string) bool { return !strings.HasPrefix(a, AreaPrefix) || a == AreaPrefix }) {

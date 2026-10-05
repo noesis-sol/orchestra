@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -112,6 +113,9 @@ func newRepoFiles(tracked []string, check string) *repoFiles {
 		r.set, r.byBase, r.dirs = map[string]bool{}, map[string][]string{}, map[string]bool{".": true}
 	}
 	for _, f := range tracked {
+		if !repoPath(f) { // git lists none of these
+			continue
+		}
 		r.set[f] = true
 		r.byBase[path.Base(f)] = append(r.byBase[path.Base(f)], f)
 		for d := path.Dir(f); d != "." && !r.dirs[d]; d = path.Dir(d) {
@@ -131,11 +135,19 @@ func newRepoFiles(tracked []string, check string) *repoFiles {
 // checks reports whether f is a file the check command names.
 func (r *repoFiles) checks(f string) bool { return r != nil && r.check[f] }
 
+// repoPath reports whether name can be a path in the repository, relative to its root: not empty,
+// not the root itself (., a/..), and neither absolute nor leading out of it (/etc/passwd, ../x.go).
+func repoPath(name string) bool { return filepath.IsLocal(name) && path.Clean(name) != "." }
+
 // resolve returns the repository files name means: itself, the files it ends, or a new file in an
 // existing folder. explicit keeps a name that means none of these (a files metadata entry says it
-// is one). Without the repository's files, a name with a folder or a known extension is kept.
+// is one), but never one that can't be a path in the repository (repoPath). Without the
+// repository's files, a name with a folder or a known extension is kept.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = strings.TrimPrefix(name, "./")
+	if !repoPath(name) {
+		return nil
+	}
 	if r == nil || r.set == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 		if explicit || strings.Contains(name, "/") || sourceExtensions[ext] {
