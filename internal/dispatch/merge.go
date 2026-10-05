@@ -43,7 +43,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // project's check command runs again before it merges. A rebase that stops on conflicts is handed
 // back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
 // the merge queue meanwhile. A conflict left unresolved or a failing check leaves the ticket for
-// review and the run goes on.
+// review and the run goes on; a failing check is tried once more after Base moves on (see recheck).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
@@ -153,10 +153,15 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			if errors.Is(err, errCheckTimedOut) {
 				why = "checks timed out"
 			}
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why, Text: fmt.Sprintf(
-				"  CHECKS_FAILED: %s closed, but '%s' %s on %s rebased onto %s; "+
-					"worktree %s and tab %s left for review (output is in %s)",
-				id, c.Check, how, br, c.Base, wt, tab, output)})
+			// Checked once more once Base moves on, unless this was that once (see recheck).
+			again, later := " again", ""
+			if !o.isRechecked(id) {
+				again, later = "", o.awaitRecheck(keep, w, r.onto)
+			}
+			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why + again, Text: fmt.Sprintf(
+				"  CHECKS_FAILED: %s closed, but '%s' %s%s on %s rebased onto %s; "+
+					"worktree %s and tab %s left for review (output is in %s)%s",
+				id, c.Check, how, again, br, c.Base, wt, tab, output, later)})
 			return nil
 		}
 		o.info("  '%s' passes on the rebased %s", c.Check, br)

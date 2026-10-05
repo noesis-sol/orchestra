@@ -51,8 +51,9 @@ type Loop struct {
 	startHead string // Base's commit when the run started; the reviewer reads commits since
 	final     string // the stop or done line
 	// closedN and asideN: the tickets merged and set aside in the run, counted as their events go
-	// out, under sinkMu (see tally).
+	// out, under sinkMu (see tally); counted, the tickets asideN counts.
 	closedN, asideN int
+	counted         map[string]bool
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
@@ -79,6 +80,8 @@ type Loop struct {
 	asideIDs  []string              // tickets deferred or left unmerged in this run
 	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why
 	checkSaid map[string]checkFail  // what each ticket's last check in this run said, if it failed
+	rechecks  []recheck             // tickets set aside for a failed check, to check again once Base moves on
+	rechecked map[string]bool       // tickets taken up to be checked again (see dueRecheck)
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string     // why each held ticket waits, as last said
 	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run

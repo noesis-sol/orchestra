@@ -60,6 +60,22 @@ All notable changes to orchestra are documented here. The format follows
   `slices.Contains` for a hand loop, `strings.Cut` for index arithmetic,
   `WaitGroup.Go` for `Add`, `go` and `Done`, `errors.AsType` and the like. The
   code uses them throughout, with no change in what orchestra does.
+- A ticket set aside because its check failed (`CHECKS_FAILED`) is checked
+  once more after another ticket merges: its branch is rebased onto the base
+  and the check runs again, through the merge queue and in one of the run's
+  slots, before any new ticket starts. If it passes, the ticket merges, its
+  `unmerged` label removed, and the tickets it blocks start; if the rebase
+  stops on conflicts, its worker is asked to resolve them, as for any merge;
+  if the check fails again, the ticket stays set aside (`CHECKS_FAILED: …
+  fails again`). Each ticket is checked again once at most, and none while
+  the run winds down or holds or a `solo` ticket runs, nor one taken up since
+  it was set aside: reopened, its worktree or branch changed, or its worker at
+  work again (`<id> is not checked again: …`). The `CHECKS_FAILED` line says
+  whether it will be: not when the check failed in a package or file the
+  ticket's own commits change, which another ticket won't fix. On 2026-10-04
+  two tickets set aside for flaky tests that later tickets fixed stayed aside
+  for the rest of the run, holding up the tickets they blocked, and by the
+  next day one no longer compiled against main.
 
 ### Fixed
 

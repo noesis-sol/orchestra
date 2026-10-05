@@ -145,6 +145,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	for {
 		r.winding()
 		r.heedEnvironment()
+		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
 		if len(r.inflight) == 0 {
 			if r.idle() {

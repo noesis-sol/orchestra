@@ -481,14 +481,26 @@ func (o *Loop) emit(ev Event) {
 }
 
 // tally counts the tickets merged and set aside in the run, as their events say, and gives the
-// counts to the run's EvDone.
+// counts to the run's EvDone. A ticket set aside counts once, however many times it is (its check
+// failing again, say), and no longer once it merges (see recheck).
 func (o *Loop) tally(ev *Event) {
 	o.sinkMu.Lock()
 	defer o.sinkMu.Unlock()
 	switch {
 	case ev.Kind == EvClosed:
 		o.closedN++
+		if o.counted[ev.Ticket] {
+			o.asideN--
+			delete(o.counted, ev.Ticket)
+		}
 	case ev.Kind == EvDeferred, ev.Kind == EvWarn && ev.Aside && ev.Ticket != "":
+		if o.counted[ev.Ticket] {
+			return
+		}
+		if o.counted == nil {
+			o.counted = map[string]bool{}
+		}
+		o.counted[ev.Ticket] = true
 		o.asideN++
 	case ev.Kind == EvDone:
 		ev.Closed, ev.SetAside = o.closedN, o.asideN
