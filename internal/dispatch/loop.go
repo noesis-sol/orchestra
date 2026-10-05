@@ -403,7 +403,8 @@ type Config struct {
 	CheckFull        string
 	CheckFullTimeout time.Duration
 	// Setup installs the project's dependencies (setup), run before Check on a rebased branch when the
-	// rebase changed a file SetupFiles matches, for at most CheckTimeout; "" for none (see setUp).
+	// rebase changed a file SetupFiles matches, for at most CheckTimeout, and always before CheckFull,
+	// within its time limit; "" for none (see setUp and FullCheck).
 	Setup      string
 	SetupFiles []string
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the

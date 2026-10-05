@@ -84,7 +84,8 @@ type Event struct {
 	// MERGE_CONFLICT; not on CHECKS_FAILED or CLOSED_WITHOUT_COMMIT, where the work itself needs a look.
 	Blocked string
 	// Suite and Output: for an EvFullCheck that failed, the suite it failed in (the last line its
-	// output starts with project.SuiteMarker, or else the check itself) and where its whole output is.
+	// output starts with project.SuiteMarker, or else the check itself; "" when the setup before it
+	// failed) and where its whole output is.
 	Suite, Output string
 }
 
@@ -430,6 +431,9 @@ func Notice(ev Event) string {
 	case EvFullCheck:
 		if ev.Suite != "" {
 			return about("Full check failed", ev.Suite)
+		}
+		if ev.Detail == FullCheckFailed || ev.Detail == FullCheckTimedOut { // in the setup before it
+			return about("Full check failed", "setup")
 		}
 	case EvDone:
 		n := "Finished the run · " + closedCount(ev.Closed)

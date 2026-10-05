@@ -17,7 +17,10 @@ import (
 // too slow or too demanding to run on every merge. It runs once a run has ended by itself
 // (READY_EMPTY, LIMIT_REACHED, DRAINED) having merged a ticket, after its last merge and before
 // the run report, on Base's head in a worktree of its own, so the main checkout stays as it is. A
-// failure files a ticket for the suite it failed in, unless one is open for it already.
+// failure files a ticket for the suite it failed in, unless one is open for it already. Nothing is
+// installed in that new worktree, so the project's setup (setup in .orchestra/settings.json, such as
+// npm ci) runs there first, within the same time limit; a setup that fails is said as such, and
+// files no ticket: it is not a suite's failure.
 
 // FullCheckLabel marks the ticket filed for a suite the full check failed in.
 const FullCheckLabel = "check-full"
@@ -45,6 +48,7 @@ type fullCheck struct {
 	at      string        // Base's commit it ran on
 	took    time.Duration // how long it ran
 	suite   string        // the suite it failed in
+	setup   string        // the setup command, when it failed in the setup before the check
 	output  string        // where its whole output is
 	end     string        // the end of its output
 	ticket  string        // the ticket filed for the suite, or the one open for it already
@@ -73,12 +77,13 @@ func (o *Loop) fullCheckTimeout() time.Duration {
 	return orDefault(o.cfg.CheckFullTimeout, project.DefaultCheckFullTimeout)
 }
 
-// FullCheck runs the full check on Base's head in a worktree of its own, removed afterwards, for at
-// most CheckFullTimeout, stopping everything it started then or when ctx is cancelled (Ctrl+C
-// skips it). It says how it went in an EvFullCheck. A failure keeps the whole output in the main
-// checkout's .orchestra/run/check-full.log, its end in the log, and files a P2 ticket labelled
-// FullCheckLabel for the suite it failed in, unless one for that suite is open already. Call it
-// after Run, when FullCheckDue says so.
+// FullCheck runs the full check on Base's head in a worktree of its own, removed afterwards, the
+// setup first when the project has one, for at most CheckFullTimeout in all, stopping everything
+// it started then or when ctx is cancelled (Ctrl+C skips it). It says how it went in an
+// EvFullCheck. A failure keeps the whole output in the main checkout's .orchestra/run/check-full.log,
+// its end in the log, and files a P2 ticket labelled FullCheckLabel for the suite it failed in,
+// unless one for that suite is open already; a failed setup files none. Call it after Run, when
+// FullCheckDue says so.
 func (o *Loop) FullCheck(ctx context.Context) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // the worktree is made and removed whole
@@ -93,11 +98,23 @@ func (o *Loop) FullCheck(ctx context.Context) {
 	}
 	defer o.removeFullCheckWorktree(keep, wt)
 	limit := o.fullCheckTimeout()
-	o.info("  FULL_CHECK: running '%s' on %s at %s in %s (time limit %s)",
-		c.CheckFull, c.Base, short(f.at), wt, command.ShortDuration(limit))
+	what := "'" + c.CheckFull + "'"
+	if c.Setup != "" {
+		what = fmt.Sprintf("'%s', then %s,", c.Setup, what)
+	}
+	o.info("  FULL_CHECK: running %s on %s at %s in %s (time limit %s)",
+		what, c.Base, short(f.at), wt, command.ShortDuration(limit))
 	began := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, limit)
-	out, err := command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", c.CheckFull)
+	var out []byte
+	if c.Setup != "" { // always: nothing is installed in a new worktree
+		if out, err = command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", c.Setup); err != nil {
+			f.setup = c.Setup
+		}
+	}
+	if err == nil {
+		out, err = command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", c.CheckFull)
+	}
 	timedOut := ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded)
 	cancel()
 	f.took = time.Since(began).Round(time.Second)
@@ -160,7 +177,8 @@ func (o *Loop) removeFullCheckWorktree(ctx context.Context, wt string) {
 }
 
 // fullCheckFailed says that the full check failed with err (timedOut: it ran out of time), printing
-// out: it keeps the output, files a ticket for the suite it failed in, and records it all in f.
+// out: it keeps the output, files a ticket for the suite it failed in, and records it all in f. A
+// setup that failed (f.setup) files no ticket.
 func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, err error, timedOut bool) {
 	c := o.cfg
 	how := "fails"
@@ -170,6 +188,15 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, er
 		f.outcome = FullCheckTimedOut
 	}
 	f.end = lastLines(string(out), fullCheckEnd)
+	if f.setup != "" {
+		o.log.Raw(f.end, fmt.Errorf("the full check's setup '%s': %w", f.setup, err))
+		f.output = o.saveFullCheckOutput(out)
+		f.filed = "no ticket filed: it is not a suite's failure"
+		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Output: f.output, Text: fmt.Sprintf(
+			"  FULL_CHECK_FAILED: the setup '%s', run before '%s', %s on %s at %s; the whole output is in %s; %s",
+			f.setup, c.CheckFull, how, c.Base, short(f.at), f.output, f.filed)})
+		return
+	}
 	o.log.Raw(f.end, fmt.Errorf("full check '%s': %w", c.CheckFull, err))
 	f.suite = failingSuite(out)
 	if f.suite == "" {
@@ -290,6 +317,11 @@ func (f fullCheck) evidence(check, base string) string {
 	case FullCheckNotRun:
 		return fmt.Sprintf("'%s' could not run: git could not make a worktree for it.\n", check)
 	}
+	if f.setup != "" {
+		return fmt.Sprintf("'%s' did not run: the setup '%s', run before it in its new worktree, %s on %s at %s; "+
+			"its whole output is in %s, and %s. The end of its output:\n%s\n",
+			check, f.setup, f.outcome, base, short(f.at), f.output, f.filed, f.end)
+	}
 	return fmt.Sprintf("'%s' %s on %s at %s, in the suite %s; its whole output is in %s, and %s. "+
 		"The end of its output:\n%s\n", check, f.outcome, base, short(f.at), f.suite, f.output, f.filed, f.end)
 }
@@ -299,6 +331,10 @@ func (f fullCheck) evidence(check, base string) string {
 func (f fullCheck) report(check string) string {
 	if f.outcome != FullCheckFailed && f.outcome != FullCheckTimedOut {
 		return ""
+	}
+	if f.setup != "" {
+		return fmt.Sprintf("\n## Full check\n\n`%s` did not run: the setup before it, `%s`, %s; %s. "+
+			"The whole output is in `%s`; its end:\n\n```\n%s\n```\n", check, f.setup, f.outcome, f.filed, f.output, f.end)
 	}
 	return fmt.Sprintf("\n## Full check\n\n`%s` %s in the suite %s; %s. The whole output is in `%s`; its end:\n\n"+
 		"```\n%s\n```\n", check, f.outcome, f.suite, f.filed, f.output, f.end)

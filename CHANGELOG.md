@@ -182,6 +182,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The full check no longer fails in an npm or Python project for want of
+  dependencies in its new worktree: with `"setup"` in
+  `.orchestra/settings.json`, it runs there first, always, within
+  `check_full_timeout`. A setup that fails is `FULL_CHECK_FAILED: the setup
+  '<setup>', run before '<check>', fails on <base> at <commit>`, its output
+  kept in `.orchestra/run/check-full.log`, and files no ticket.
 - A finished ticket rebased over a merged ticket's dependency bump no longer
   fails its check against the dependencies its worker installed before:
   `"setup"` in `.orchestra/settings.json` (such as `"npm ci"`) runs in the
