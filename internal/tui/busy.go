@@ -69,12 +69,14 @@ type Busy struct {
 // Terminal printer it is a spinner, the styled text, the time taken so far and the hint, redrawn
 // from a goroutine; a step that ends within the spinner's first frame shows only its final line.
 // Any other styled printer prints the text and hint once, as Say does, and plain output the plain
-// line, as the log words it.
+// line, as the log words it, unless it is "": a caller with plain lines of its own prints them.
 func (p Printer) Busy(plain, styled, hint string) *Busy {
 	b := &Busy{p: p, began: time.Now(), stop: make(chan struct{})}
 	switch {
 	case !p.Styled:
-		p.sayPlain(plain)
+		if plain != "" {
+			p.sayPlain(plain)
+		}
 	case p.live == nil:
 		if hint != "" {
 			styled += " " + hint

@@ -17,6 +17,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/organ"
+	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
 // A feature run (--feature) takes a request from idea to a scoped run: the screen organ judges the
@@ -49,6 +50,7 @@ type featureRun struct {
 	log      *dispatch.Log // nil in tests
 	in       io.Reader
 	out, err io.Writer
+	say      tui.Printer // the busy lines: a Terminal printer on out, when out is a terminal; else none
 }
 
 // runFeature screens, plans, shows, confirms and files the feature request in c.Feature, and
@@ -60,6 +62,10 @@ func runFeature(
 	// Ctrl+C stops the feature run as it does the loop; until the plan is filed, nothing is left.
 	ctx, stop := stops.context(ctx)
 	defer stop()
+	var say tui.Printer
+	if out, ok := stdout.(*os.File); ok && !c.Plain && isTerminal(out) {
+		say = tui.Terminal(out, termWidth(out))
+	}
 	return featureRun{
 		request: c.Feature,
 		repo:    c.Repo,
@@ -73,6 +79,7 @@ func runFeature(
 		in:       stdin,
 		out:      stdout,
 		err:      stderr,
+		say:      say,
 	}.run(ctx)
 }
 
@@ -86,8 +93,16 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		return "", code
 	}
 
-	fmt.Fprintln(f.out, "screening the request with claude…")
+	busy := f.busy("screening the request with claude…", "Screening the request with Claude…", "")
 	s, err := f.organs.Screen(ctx, organ.Request{Text: f.request, Repo: filepath.Base(f.repo), README: f.readme()})
+	switch {
+	case ctx.Err() != nil:
+		busy.Done("Screening stopped")
+	case err != nil:
+		busy.Done("Request not screened")
+	default:
+		busy.Done("Request screened")
+	}
 	if code, stopped := f.interrupted(ctx); stopped {
 		return "", code
 	}
@@ -128,8 +143,19 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", err)
 		return "", dispatch.ExitSetup
 	}
-	fmt.Fprintln(f.out, "planning the feature with claude… (this can take a few minutes; ctrl+c stops it)")
+	busy = f.busy("planning the feature with claude… (this can take a few minutes; ctrl+c stops it)",
+		"Planning the feature with Claude…", "(this can take a few minutes; Ctrl+C stops it)")
 	p, err := f.organs.PlanFeature(ctx, ev)
+	switch {
+	case ctx.Err() != nil:
+		busy.Done("Planning stopped")
+	case err != nil:
+		busy.Done("Feature not planned")
+	case p.NeedsAnswers():
+		busy.Done("Planning needs answers")
+	default:
+		busy.Done("Feature planned")
+	}
 	if code, stopped := f.interrupted(ctx); stopped {
 		return "", code
 	}
@@ -172,6 +198,16 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		}
 	}
 	return f.file(ctx, p)
+}
+
+// busy shows a step under way, which Done must end: on a terminal a busy line, the styled text with
+// a spinner, the time so far and the hint, until its final line; else the plain line, as the feature
+// run's other lines, without the time.
+func (f featureRun) busy(plain, styled, hint string) *tui.Busy {
+	if !f.say.Styled {
+		fmt.Fprintln(f.out, plain)
+	}
+	return f.say.Busy("", styled, hint)
 }
 
 // cleanCheckout checks that the main checkout repo has no uncommitted changes. The loop checks it

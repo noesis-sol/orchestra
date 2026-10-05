@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- On a terminal, `orchestra --feature` (and `New feature` planned by the
+  organs) shows its two waits on Claude as busy lines: a spinner and the
+  time so far take the place of `screening the request with claude…` and
+  `planning the feature with claude…`, which sat still for minutes. When the
+  step ends, the line becomes its outcome: `◆ Request screened (8s)`,
+  `◆ Feature planned (2m31s)`, or `◆ Planning stopped` after Ctrl+C.
+  With `--plain` or without a terminal, the lines are unchanged.
 - On a terminal, the organ phase's two waits after a run show they are
   under way: a spinner, in the dashboard's style, and the time so far take
   the place of `◆ Finishing triage…` and `◆ Writing the run report with

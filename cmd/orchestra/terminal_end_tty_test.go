@@ -24,7 +24,7 @@ func TestTerminalRunStopsAsTheTestEnds(t *testing.T) {
 		}
 		faketool.Write(t, dir, "claude", "#!/bin/sh\nexec sleep 600\n")
 		term, _, _ := runOnTerminal(t, "--feature", "Add a --json flag")
-		term.waitFor(t, "screening the request with claude…")
+		term.waitFor(t, "Screening the request with Claude…")
 	})
 	if n := runsLeft(); n > 0 {
 		t.Errorf("%d of orchestra's runs on a terminal still running after their test ended", n)

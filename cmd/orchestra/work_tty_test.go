@@ -117,7 +117,7 @@ func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
 	}
 	for _, want := range []string{"New feature:\n  Add a --json flag\n  to the list command\n",
 		"orchestra can't talk the feature through with claude (the workers' agent is codex): its organs plan it.\n",
-		"screening the request with claude…", "Epic: JSON output", "Nothing was filed."} {
+		"◆ Request screened", "Epic: JSON output", "Nothing was filed."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the terminal lacks %q:\n%s", want, out)
 		}

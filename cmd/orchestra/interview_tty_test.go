@@ -266,8 +266,8 @@ func TestInterviewWithoutClaudePlansWithTheOrgans(t *testing.T) {
 		t.Errorf("exit %d, stderr:\n%s", code, stderr)
 	}
 	if out := screenOf(term); !strings.Contains(out,
-		"orchestra can't talk the feature through with claude (claude not found): its organs plan it.\n"+
-			"screening the request with claude…") {
-		t.Errorf("the terminal lacks why there is no interview:\n%s", out)
+		"orchestra can't talk the feature through with claude (claude not found): its organs plan it.\n") ||
+		!strings.Contains(out, "◆ Request not screened\n") {
+		t.Errorf("the terminal lacks why there is no interview, or the screen's outcome:\n%s", out)
 	}
 }
