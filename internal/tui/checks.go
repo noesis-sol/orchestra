@@ -118,24 +118,27 @@ func (s *scoutRun) ended() tea.Cmd {
 }
 
 // scoutField is stage 2's first field: a spinner while the scout looks, the time it has taken and
-// how to skip it. Focused, it starts the scout; once the scout is settled it moves on to the next
-// field, and the stage hides it.
+// how to skip it. Focused, it starts the scout; once the scout is settled the stage hides it, and
+// initModel moves the focus on to the next field.
 type scoutField struct {
 	run     *scoutRun
 	spinner spinner.Model
 	theme   *huh.Theme
 	focused bool
-	leaving bool // it asked to move on, which huh may hand it twice
 	width   int
+	// In huh's accessible form, which focuses each field before it asks for it: the scout starts in
+	// RunAccessible instead, or it could end before then and the field, hidden, would say nothing.
+	accessible bool
 }
 
-func newScoutField(run *scoutRun) *scoutField {
+func newScoutField(run *scoutRun, accessible bool) *scoutField {
 	frames := make([]string, len(busySpinner.Frames))
 	for i, f := range busySpinner.Frames {
 		frames[i] = strings.TrimSpace(f)
 	}
 	sp := spinner.Spinner{Frames: frames, FPS: busySpinner.FPS}
-	return &scoutField{run: run, spinner: spinner.New(spinner.WithSpinner(sp), spinner.WithStyle(pickedStyle))}
+	return &scoutField{run: run, spinner: spinner.New(spinner.WithSpinner(sp), spinner.WithStyle(pickedStyle)),
+		accessible: accessible}
 }
 
 // scoutLimit is how long the scout may look, as its spinner says it.
@@ -146,13 +149,9 @@ var scoutSkipKey = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "skip
 
 func (f *scoutField) Init() tea.Cmd { return nil }
 
-// Update moves on once the scout is settled, and turns the spinner meanwhile.
+// Update turns the spinner while the scout looks.
 func (f *scoutField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if f.run.poll() {
-		if f.focused && !f.leaving {
-			f.leaving = true
-			return f, huh.NextField
-		}
 		return f, nil
 	}
 	switch msg := msg.(type) {
@@ -195,7 +194,10 @@ func (f *scoutField) styles() huh.FieldStyles {
 
 // Focus starts the scout, and the spinner.
 func (f *scoutField) Focus() tea.Cmd {
-	f.focused, f.leaving = true, false
+	f.focused = true
+	if f.accessible {
+		return nil
+	}
 	f.run.start()
 	return tea.Batch(f.spinner.Tick, f.run.ended())
 }
@@ -295,14 +297,15 @@ func (k checksChoice) tests() project.Tests {
 }
 
 // addChecks adds stage 2's questions to the stage: the scout, the choice and what each choice asks,
-// and whether to keep or replace what differs from what init would write.
-func addChecks(stage *initStage, c *project.Choice, ask Ask) *checksStage {
+// and whether to keep or replace what differs from what init would write. accessible is whether
+// huh's accessible form asks them.
+func addChecks(stage *initStage, c *project.Choice, ask Ask, accessible bool) *checksStage {
 	s := &checksStage{c: c, scout: newScoutRun(ask.Scout), runners: ask.Runners, skill: ask.Skill}
 	s.scout.onSettle = s.settle
 	s.check = c.FastCommand()
 	s.checkBefore = s.check
 
-	scout := stage.add(newScoutField(s.scout))
+	scout := stage.add(newScoutField(s.scout, accessible))
 	hide(scout, s.scout.poll)
 	settled := s.scout.poll
 	is := func(k checksChoice) func() bool {
@@ -553,12 +556,27 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok && m.scout != nil && key.Matches(k, scoutSkipKey) && m.scout.running() {
 		if _, onScout := unwrapField(m.form.GetFocusedField()).(*scoutField); onScout {
 			m.scout.skip()
-			return m, func() tea.Msg { return scoutEnded{} }
+			return m, m.leaveScout()
 		}
 	}
+	leave := m.leaveScout()
 	f, cmd := m.form.Update(msg)
 	m.form = f.(*huh.Form)
-	return m, cmd
+	return m, tea.Batch(leave, cmd, m.leaveScout())
+}
+
+// leaveScout moves the focus from the scout's field to the next once the scout is settled, at once
+// rather than by huh's NextField message: the screen shows the stage's choice as soon as the scout
+// is settled, even while drawing, and a key typed before that message would reach the hidden scout's
+// field instead of the choice.
+func (m initModel) leaveScout() tea.Cmd {
+	if m.scout == nil || !m.scout.poll() {
+		return nil
+	}
+	if _, onScout := unwrapField(m.form.GetFocusedField()).(*scoutField); !onScout {
+		return nil
+	}
+	return m.form.NextField()
 }
 
 // unwrapField is the field inside a formField.

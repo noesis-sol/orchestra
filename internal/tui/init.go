@@ -433,9 +433,10 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
+	accessible := os.Getenv("TERM") == "dumb" // huh's accessible form, which asks with plain lines
 	var stage2 *checksStage
 	if ask.Check {
-		stage2 = addChecks(checks, c, ask)
+		stage2 = addChecks(checks, c, ask, accessible)
 		defer stage2.scout.wait()
 	}
 	settled := func() bool { return stage2 == nil || stage2.scout.poll() }
@@ -493,7 +494,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
 	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
 	var err error
-	if os.Getenv("TERM") == "dumb" { // huh's accessible form, which asks with plain lines
+	if accessible {
 		err = form.Run()
 	} else {
 		var scout *scoutRun
