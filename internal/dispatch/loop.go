@@ -39,15 +39,13 @@ type Loop struct {
 	sink   Sink
 	sinkMu sync.Mutex // triage reports from its own goroutine
 	prompt string     // worker prompt with the TICKET_ID placeholder
-	count  int
-	queued int // the queue size last reported, -1 before the first; Run's own
 
 	// Tickets labelled SoloLabel, Run's own: the one running, the one next in line waiting for the
-	// running tickets to finish, the state last reported and the wait last logged.
-	solo      string
-	soloNext  string
-	soloShown SoloState
-	soloSaid  string
+	// running tickets to finish, and the wait last logged. What the dashboard was last told is
+	// runState's.
+	solo     string
+	soloNext string
+	soloSaid string
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -139,7 +137,7 @@ type Loop struct {
 
 	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
 	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
-	// the run winds down is Run's own.
+	// the run winds down is Run's own (runState.drained).
 	drainReqs chan drainRequest
 
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real

@@ -118,11 +118,7 @@ func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *
 		w.tab, w.after(), w.wt))
 	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
 		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
-	hold := "HOLD: " + s.Error()
-	if n > 0 {
-		hold += fmt.Sprintf("; no new tickets while the %d running finish", n)
-	}
-	o.emit(Event{Kind: EvHold, Ticket: id, Text: hold})
+	o.emit(Event{Kind: EvHold, Ticket: id, Text: holdLine(s, n)})
 	return s
 }
 
