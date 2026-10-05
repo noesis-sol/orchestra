@@ -35,22 +35,31 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 		cancelOrgans()
 	}()
 	if c.Triage {
-		out.Say("finishing triage…", "Finishing triage…")
+		busy := out.Busy("finishing triage…", "Finishing triage…", "")
 		orch.FinishTriage(ctx)
+		if ctx.Err() != nil {
+			busy.Done("Triage skipped")
+		} else {
+			busy.Done("Triage finished")
+		}
 	}
 	if !c.Review || ctx.Err() != nil {
 		return
 	}
-	out.Say("writing the run report with claude… (ctrl+c skips)", "Writing the run report with Claude… (Ctrl+C skips)")
+	busy := out.Busy("writing the run report with claude… (ctrl+c skips)", "Writing the run report with Claude…",
+		"(Ctrl+C skips)")
 	report, err := orch.Review(ctx, code, final)
-	if err != nil {
-		if ctx.Err() == nil {
-			msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
-			log.Line(time.Now(), msg)
-			out.Warn(msg)
-		}
+	switch {
+	case err != nil && ctx.Err() != nil:
+		busy.Done("Run report skipped")
+		return
+	case err != nil:
+		msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
+		log.Line(time.Now(), msg)
+		busy.Warn(msg)
 		return
 	}
+	busy.Done("Run report written")
 	out.Report(report)
 	path, err := orch.SaveReport(report)
 	if err != nil {

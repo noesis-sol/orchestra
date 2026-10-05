@@ -110,7 +110,7 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
 	// As wide as the pane is now: it may have narrowed under the dashboard.
-	sink := tui.Printer{Out: stdout, Styled: true, Width: termWidth(stdout)}
+	sink := tui.Terminal(stdout, termWidth(stdout))
 	m, _ := final.(tui.Dashboard)
 	sink.Summary(m) // the dashboard went with the alternate screen
 	sink.End(m)

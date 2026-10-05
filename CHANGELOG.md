@@ -8,6 +8,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- On a terminal, the organ phase's two waits after a run show they are
+  under way: a spinner, in the dashboard's style, and the time so far take
+  the place of `◆ Finishing triage…` and `◆ Writing the run report with
+  Claude…`, which could sit still for a minute or more. When the step ends,
+  the line becomes its outcome: `◆ Triage finished (12s)`, `◆ Run report
+  written (1m04s)`, `◆ Run report skipped` after Ctrl+C, or the
+  `REVIEW_FAILED` warning. Ctrl+C still skips them. Plain output and the log
+  are unchanged.
 - In a pane 120 columns wide or wider, the dashboard's Current boxes go two
   to a row instead of each taking the full width: four workers show as a
   grid of two by two, numbered 1 2 over 3 4, so the number keys are

@@ -68,6 +68,7 @@ type Printer struct {
 	Out    io.Writer
 	Styled bool // colours and the rendered report, for a terminal
 	Width  int
+	live   *liveLine // the busy line, on a Terminal printer
 }
 
 // Event prints ev as a line; the queue count, which only the dashboard shows, is skipped.
@@ -79,7 +80,7 @@ func (p Printer) Event(ev dispatch.Event) {
 		p.wrapped(renderEvent(ev))
 		return
 	}
-	fmt.Fprintf(p.Out, "%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text)
+	p.print(fmt.Sprintf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text))
 }
 
 // Summary prints the run's summary from the final dashboard d, which the alternate screen took with
@@ -89,7 +90,7 @@ func (p Printer) Summary(d Dashboard) {
 	if d.began.IsZero() {
 		return
 	}
-	fmt.Fprintln(p.Out, d.summary(max(p.Width, 30)))
+	p.print(d.summary(max(p.Width, 30)) + "\n")
 }
 
 // End prints the event the run ended with, if any, below the run's summary from the final dashboard
@@ -110,7 +111,7 @@ func (p Printer) End(d Dashboard) {
 
 // wrapped prints styled lines wrapped to the terminal's width.
 func (p Printer) wrapped(lines string) {
-	fmt.Fprintln(p.Out, ansi.Wrap(lines, max(p.Width, 20), ""))
+	p.print(ansi.Wrap(lines, max(p.Width, 20), "") + "\n")
 }
 
 // Status does nothing: a printed run shows no live status.
@@ -121,7 +122,7 @@ func (Printer) Status(dispatch.Status) {}
 // words it.
 func (p Printer) Say(plain, styled string) {
 	if p.Styled {
-		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+sayStyle.Render(styled))
+		p.print(organStyle.Render("◆ ") + sayStyle.Render(styled) + "\n")
 		return
 	}
 	p.sayPlain(plain)
@@ -130,7 +131,7 @@ func (p Printer) Say(plain, styled string) {
 // Warn is Say for a warning, worded the same in both and in the warning colour on a terminal.
 func (p Printer) Warn(text string) {
 	if p.Styled {
-		fmt.Fprintln(p.Out, organStyle.Render("◆ ")+deferredStyle.Render(text))
+		p.print(organStyle.Render("◆ ") + deferredStyle.Render(text) + "\n")
 		return
 	}
 	p.sayPlain(text)
@@ -138,22 +139,21 @@ func (p Printer) Warn(text string) {
 
 // sayPlain prints text as Say and Warn do outside a terminal: after the time, as the log has it.
 func (p Printer) sayPlain(text string) {
-	fmt.Fprintf(p.Out, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
+	p.print(fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text))
 }
 
 // Report prints the reviewer's Markdown after a blank line, rendered with Glamour on a terminal.
 func (p Printer) Report(md string) {
-	fmt.Fprintln(p.Out)
 	if p.Styled {
 		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
 		if err == nil {
 			if out, err := r.Render(md); err == nil {
-				fmt.Fprint(p.Out, out)
+				p.print("\n" + out)
 				return
 			}
 		}
 	}
-	fmt.Fprintln(p.Out, md)
+	p.print("\n" + md + "\n")
 }
 
 // renderEvent formats one event as a permanent line above the live status area.
