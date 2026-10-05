@@ -77,6 +77,11 @@ type Event struct {
 	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
 	Aside bool
+	// Blocked: Ticket's work is done, but it can't merge until the maintainer acts; why, in a few
+	// words ("main checkout has uncommitted changes", "merge conflict in a.go"). Set on the EvHold or
+	// EvStop for a DIRTY_TREE, GIT_FAILED or MERGE_FAILED met as it merged, and on an EvWarn for its
+	// MERGE_CONFLICT; not on CHECKS_FAILED or CLOSED_WITHOUT_COMMIT, where the work itself needs a look.
+	Blocked string
 }
 
 // Status describes a ticket being worked on. Gone removes it from the display.
@@ -259,15 +264,16 @@ type startRecord struct {
 // EvDispatch, as the Event sets them; a queue of 0 is given too.
 type eventRecord struct {
 	recordHead
-	Ticket string      `json:"ticket,omitempty"`
-	Title  string      `json:"title,omitempty"`
-	Detail string      `json:"detail,omitempty"`
-	Text   string      `json:"text,omitempty"`
-	Aside  bool        `json:"aside,omitempty"`
-	N      *int        `json:"n,omitempty"`
-	Limit  *int        `json:"limit,omitempty"`
-	Queued *int        `json:"queued,omitempty"`
-	Solo   *soloRecord `json:"solo,omitempty"`
+	Ticket  string      `json:"ticket,omitempty"`
+	Title   string      `json:"title,omitempty"`
+	Detail  string      `json:"detail,omitempty"`
+	Text    string      `json:"text,omitempty"`
+	Aside   bool        `json:"aside,omitempty"`
+	Blocked string      `json:"blocked,omitempty"`
+	N       *int        `json:"n,omitempty"`
+	Limit   *int        `json:"limit,omitempty"`
+	Queued  *int        `json:"queued,omitempty"`
+	Solo    *soloRecord `json:"solo,omitempty"`
 }
 
 // soloRecord is a SoloState.
@@ -324,7 +330,7 @@ func openEvents(repo string) (*os.File, error) {
 // Record appends ev to the event stream, if it is open.
 func (l *Log) Record(ev Event) {
 	r := eventRecord{recordHead: recordHead{Time: ev.Time, Kind: ev.Kind.String()},
-		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside}
+		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside, Blocked: ev.Blocked}
 	if ev.Kind == EvDispatch {
 		r.N, r.Limit = &ev.N, &ev.Limit
 	}
@@ -512,6 +518,6 @@ func (o *Loop) info(format string, a ...any) {
 
 // stop ends the run for s with text, its line, and returns the code orchestra exits with.
 func (o *Loop) stop(s *stopReason, text string) int {
-	o.emit(Event{Kind: EvStop, Ticket: s.ticket, Detail: string(s.kind), Text: text})
+	o.emit(Event{Kind: EvStop, Ticket: s.ticket, Detail: string(s.kind), Blocked: s.blocked, Text: text})
 	return s.code
 }

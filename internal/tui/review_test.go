@@ -51,7 +51,6 @@ func TestWarningsThatSetATicketAsideShowItForReview(t *testing.T) {
 	for _, text := range []string{
 		"  CLOSED_WITHOUT_COMMIT: no commit on wt/k-1 names k-1; worktree wt and tab t1 left for review",
 		"  CHECKS_FAILED: k-1 closed, but 'scripts/check.sh' fails on wt/k-1 rebased onto batch; …",
-		"  MERGE_CONFLICT: k-1 closed, but wt/k-1 conflicts with batch, which moved on while it ran; …",
 		"  DEFER_FAILED: k-1 still open, and bd could not defer it; kept out of this run, …",
 	} {
 		code, _, _ := strings.Cut(strings.TrimSpace(text), ":")

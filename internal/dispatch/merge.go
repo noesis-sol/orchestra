@@ -74,7 +74,8 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 				repo.unlock()
 				o.leaveUnmerged(keep, id, string(stopMergeFailed))
 				return halt(ExitMerge, stopMergeFailed,
-					": %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab)
+					": %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab).
+					blocks("does not fast-forward onto " + c.Base)
 			}
 			o.merged(keep, id)
 			out, err = o.worktrees.RemoveWorktree(keep, c.Repo, wt)
@@ -162,9 +163,10 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
 	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: c.Base + " kept changing", Text: fmt.Sprintf(
-		"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
-			"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: c.Base + " kept changing",
+		Blocked: c.Base + " kept changing", Text: fmt.Sprintf(
+			"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
+				"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
 }
 
@@ -198,10 +200,20 @@ func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
 func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 	c := o.cfg
 	o.leaveUnmerged(ctx, r.id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Detail: "conflicts with " + c.Base, Text: fmt.Sprintf(
-		"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
-			"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
-		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
+	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Detail: "conflicts with " + c.Base,
+		Blocked: conflictIn(r.files, c.Base), Text: fmt.Sprintf(
+			"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
+				"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
+			r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
+}
+
+// conflictIn says in a few words where a ticket's branch conflicts with base: in files, when git
+// named them.
+func conflictIn(files []string, base string) string {
+	if len(files) == 0 {
+		return "merge conflict with " + base
+	}
+	return "merge conflict in " + strings.Join(files, ", ")
 }
 
 // abortRebase gives up a rebase stopped in wt, logging git's output, and returns git's error: the

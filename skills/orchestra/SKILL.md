@@ -185,6 +185,8 @@ them with `bd dep add`) only when they approve.
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and
   `.orchestra/`, or a branch switch there, stops the run at the next ticket or merge, whichever
   comes first (`DIRTY_TREE`); a finished ticket is then left unmerged in its worktree for review.
+  The dashboard shows such a ticket `■ blocked` with why (`main checkout has uncommitted changes`),
+  as it does one a merge conflict or git keeps from merging, and counts it under Needs you.
   A commit on the base branch is picked up: running tickets are rebased onto it and checked again
   before they merge. Beads changes (`bd update`, `bd create`) are fine.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
@@ -274,7 +276,9 @@ jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E
 The first says how the run ended: the `end` record's `code`, and the `stop` or `done` record's
 `text`, which starts with the word in the table below (`PAUSED: …`, `READY_EMPTY after …`), after
 any `hold` that came first. The second lists what was set aside or needs looking at, the third what
-was merged. A `warn` record with `"aside": true` left its ticket for review.
+was merged. A `warn` record with `"aside": true` left its ticket for review. A `hold`, `stop` or
+`warn` record with `blocked` is a ticket whose work is done but which can't merge until the user
+acts, and says why (`main checkout has uncommitted changes`, `merge conflict in <files>`).
 
 ## When a ticket is set aside or the run stops
 

@@ -406,7 +406,7 @@ func (r *runState) returned(res result) {
 	// Every reason is shown as it arrives. The first decides the exit code; the final line gives it
 	// and then the others.
 	if first := r.stops.add(res.stop.over(res.id)); len(r.inflight) > 0 || !first {
-		o.emit(Event{Kind: EvHold, Ticket: res.id, Text: holdLine(res.stop, len(r.inflight))})
+		o.emit(Event{Kind: EvHold, Ticket: res.id, Blocked: res.stop.blocked, Text: holdLine(res.stop, len(r.inflight))})
 	}
 }
 
@@ -607,21 +607,30 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
 // not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
-// Base. held, when set, says what is left for review. The caller holds repoMu.
+// Base. held, when set, says what is left for review: a finished ticket, which the reason then
+// blocks from merging. The caller holds repoMu.
 func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 	c := o.cfg
+	stop := func(s *stopReason, why string) *stopReason {
+		if held == "" {
+			return s
+		}
+		return s.blocks(why)
+	}
 	dirty, branch, err := o.readCheckout(ctx)
 	if err != nil {
-		return halt(ExitTool, stopGitFailed,
-			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err)
+		return stop(halt(ExitTool, stopGitFailed,
+			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err), "git failed")
 	}
 	if dirty != "" {
-		return halt(ExitDirty, stopDirtyTree,
-			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held)
+		return stop(halt(ExitDirty, stopDirtyTree,
+			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held),
+			"main checkout has uncommitted changes")
 	}
 	if branch != c.Base {
-		return halt(ExitDirty, stopDirtyTree,
-			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held)
+		return stop(halt(ExitDirty, stopDirtyTree,
+			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held),
+			"main checkout is not on "+c.Base)
 	}
 	return nil
 }

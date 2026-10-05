@@ -109,6 +109,8 @@ How a run goes:
   1–2 to go to a worker's tab · s to stop after the current tickets
 ```
 
+A finished ticket that can't merge until you act reads `■ blocked`, with why (`main checkout has uncommitted changes`, `merge conflict in <files>`), and counts under **Needs you** with the questions waiting for your answer; `■ stopped` is a worker still running when the run stopped.
+
 The dashboard's keys:
 - **1**–**9** switch Herdr to that worker's tab.
 - **s** asks whether to stop after the running tickets.

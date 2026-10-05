@@ -177,6 +177,8 @@ type stopReason struct {
 	detail string // what follows the kind on the line
 	cause  error
 	ticket string // the ticket it stopped the run over, if any: its notification names it
+	// blocked: the finished ticket it keeps from merging, if any, says why in a few words (Event.Blocked).
+	blocked string
 }
 
 // stopKind is what stopped the run, as the first word of its line says.
@@ -227,6 +229,13 @@ func (s *stopReason) over(id string) *stopReason {
 	if s.ticket == "" {
 		s.ticket = id
 	}
+	return s
+}
+
+// blocks marks s as keeping the finished ticket it stops the run over from merging, with why in a
+// few words, for the dashboard's row.
+func (s *stopReason) blocks(why string) *stopReason {
+	s.blocked = why
 	return s
 }
 

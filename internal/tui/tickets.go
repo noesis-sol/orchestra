@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // rowState starts at working on purpose: a row is added when its ticket is picked up, so an unset
@@ -19,6 +20,7 @@ const (
 	rowDeferred
 	rowReview
 	rowStopped
+	rowBlocked // its work is done, but it can't merge until the maintainer acts
 	rowAsked
 )
 
@@ -38,31 +40,46 @@ func (m *Dashboard) rowIndex(id string) int {
 	return -1
 }
 
-// setRow sets ticket id's row to state, with note. A row that leaves rowAsked (its worker deferred
-// the ticket in its tab, say) no longer needs the maintainer.
+// setRow sets ticket id's row to state, with note.
 func (m *Dashboard) setRow(id string, state rowState, note string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id})
 		i = len(m.rows) - 1
 	}
-	if m.rows[i].state == rowAsked && state != rowAsked {
-		m.asked--
-	}
 	m.rows[i].state, m.rows[i].note = state, note
 }
 
+// blocked shows ev's ticket as blocked, its work done but its merge waiting on the maintainer, with
+// why, and reports whether ev says so (Event.Blocked).
+func (m *Dashboard) blocked(ev dispatch.Event) bool {
+	if ev.Ticket == "" || ev.Blocked == "" {
+		return false
+	}
+	m.setRow(ev.Ticket, rowBlocked, ev.Blocked)
+	return true
+}
+
+// needsYou is how many tickets wait on the maintainer: a question to answer, or a finished ticket
+// to merge. A row that leaves either state (its worker deferred the ticket in its tab, say) no
+// longer counts.
+func (m Dashboard) needsYou() int {
+	n := 0
+	for _, r := range m.rows {
+		if r.state == rowAsked || r.state == rowBlocked {
+			n++
+		}
+	}
+	return n
+}
+
 // working shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
-// run, keeps its row, which no longer needs the maintainer and drops the old verdict; title ""
-// keeps the row's.
+// run, keeps its row, which drops the old verdict; title "" keeps the row's.
 func (m *Dashboard) working(id, title string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id, title: title, state: rowWorking})
 		return
-	}
-	if m.rows[i].state == rowAsked {
-		m.asked--
 	}
 	m.rows[i].state, m.rows[i].note, m.rows[i].triage = rowWorking, "", ""
 	if title != "" {
@@ -72,7 +89,7 @@ func (m *Dashboard) working(id, title string) {
 
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
 // its title, and in its state what its worker is doing (doingLabel, or ""); a completed one only
-// its merged commit; a set-aside one why, with triage's verdict.
+// its merged commit; a set-aside one why, with triage's verdict; a blocked one why it can't merge.
 func (r ticketRow) cells(width int, doing string) [3]string {
 	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, 8), "…") }
 	switch r.state {
@@ -90,6 +107,8 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 		return [3]string{deferredStyle.Render(label), deferredStyle.Render(r.id), about}
 	case rowStopped:
 		return [3]string{stopStyle.Render("■ stopped"), stopStyle.Render(r.id), fit(r.title)}
+	case rowBlocked: // red and "blocked", as a worker's box says of an agent waiting for the maintainer
+		return [3]string{stopStyle.Render("■ blocked"), stopStyle.Render(r.id), fit(r.note)}
 	case rowAsked:
 		return [3]string{stopStyle.Render("? for you"), stopStyle.Render(r.id), fit(r.note)}
 	}
@@ -179,7 +198,7 @@ func (m Dashboard) statsTable(w int) string {
 	values := []string{
 		count(m.closed, "✓", closedStyle),
 		deferred,
-		count(m.asked, "?", stopStyle),
+		count(m.needsYou(), "?", stopStyle),
 		pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" of %d", max(m.cfg.Concurrency, 1))),
 		queued,
 	}
@@ -220,7 +239,7 @@ func (m Dashboard) statsLine(w int) string {
 	parts := []string{
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
 		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
-		stopStyle.Render(fmt.Sprintf("? %d", m.asked)),
+		stopStyle.Render(fmt.Sprintf("? %d", m.needsYou())),
 		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
 			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
 		dimStyle.Render("queue " + queued),

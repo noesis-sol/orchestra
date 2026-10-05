@@ -31,7 +31,6 @@ type Dashboard struct {
 	closed      int
 	deferred    int
 	triaged     int
-	asked       int
 	width       int
 	height      int
 	rows        []ticketRow // every ticket picked up in this run, oldest first
@@ -114,9 +113,10 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
 		case dispatch.EvWarn:
 			// Only a ticket the warning sets aside is for review, its row saying why as a deferred
-			// one does. The rest are about a ticket still running (LONG_RUNNING) or already deferred
+			// one does, or blocked, when only its merge needs the maintainer (MERGE_CONFLICT). The
+			// rest are about a ticket still running (LONG_RUNNING) or already deferred
 			// (TRIAGE_FAILED), whose row stays as it is.
-			if ev.Ticket != "" && ev.Aside {
+			if ev.Ticket != "" && ev.Aside && !m.blocked(ev) {
 				why := ev.Detail
 				if why == "" {
 					why = "left for review, see the log"
@@ -124,7 +124,6 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setRow(ev.Ticket, rowReview, why)
 			}
 		case dispatch.EvAsked:
-			m.asked++
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
 		case dispatch.EvAnswered: // its title for a ticket carried over from the last run, with no row yet
 			m.working(ev.Ticket, ev.Title)
@@ -140,11 +139,14 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stopping = false
 		case dispatch.EvHold:
 			m.stopping = true
-			if ev.Ticket != "" { // a stop found before dispatching belongs to no ticket
+			// A stop found before dispatching belongs to no ticket; one met as a finished ticket
+			// merged (DIRTY_TREE, say) blocks it.
+			if ev.Ticket != "" && !m.blocked(ev) {
 				m.setRow(ev.Ticket, rowStopped, "")
 			}
 		case dispatch.EvStop, dispatch.EvDone:
 			if ev.Kind == dispatch.EvStop {
+				m.blocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
 				for i := range m.rows {
 					if m.rows[i].state == rowWorking {
 						m.rows[i].state = rowStopped

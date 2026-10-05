@@ -55,6 +55,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard says `■ blocked` for a ticket whose work is done but which
+  can't merge until you act, with why in a few words: `main checkout has
+  uncommitted changes`, `merge conflict in <files>`, `git failed`, `does not
+  fast-forward onto <branch>`. It counts under Needs you, which counted only
+  questions. Such a ticket used to read `■ stopped` with its title, as a
+  worker still running when the run stopped does, or `! review` for a
+  conflict; `CHECKS_FAILED` and closed without a commit still read
+  `! review`. The event stream gives the reason as `blocked` on the `hold`,
+  `stop` or `warn` record.
 - orchestra's own check, `scripts/check.sh`, no longer fails when another
   check is linting at the same time. golangci-lint locks one file for every
   worktree and gave up with `parallel golangci-lint is running` after 5

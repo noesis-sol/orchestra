@@ -170,7 +170,7 @@ func agentStyle(s string) string {
 		return pickedStyle.Render(s)
 	case "testing":
 		return testingStyle.Render(s)
-	case string(dispatch.StateBlocked):
+	case string(dispatch.StateBlocked): // red, as a ticket blocked from merging reads in the tickets table
 		return stopStyle.Render(s + " — waiting for you")
 	case "":
 		return ""

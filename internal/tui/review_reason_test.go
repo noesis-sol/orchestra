@@ -9,13 +9,12 @@ import (
 )
 
 // A warning that sets its ticket aside with a reason shows the reason on the row, as a deferred
-// ticket shows its own, in place of sending the maintainer to the log.
+// ticket shows its own, in place of sending the maintainer to the log. (A MERGE_CONFLICT shows
+// blocked: blocked_test.go.)
 func TestReviewRowShowsWhyTheTicketWasSetAside(t *testing.T) {
 	for _, tc := range []struct{ why, text string }{
 		{"checks failed", "  CHECKS_FAILED: k-1 closed, but 'scripts/check.sh' fails on wt/k-1 rebased onto batch; …"},
-		{"conflicts with batch", "  MERGE_CONFLICT: k-1 closed, but wt/k-1 conflicts with batch, which moved on while it ran; …"},
 		{"closed without a commit", "  CLOSED_WITHOUT_COMMIT: no commit on wt/k-1 names k-1; worktree wt and tab t1 left for review"},
-		{"batch kept changing", "  MERGE_CONFLICT: k-1 closed, but batch kept changing while its checks ran (commits made by hand?); …"},
 	} {
 		t.Run(tc.why, func(t *testing.T) {
 			m := runEvents(reviewDashboard(),

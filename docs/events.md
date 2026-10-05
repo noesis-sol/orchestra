@@ -27,11 +27,11 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `asked` | a ticket waits on a question for you | `ticket`, `title`; `detail`, the question's ID and title |
 | `answered` | its question was answered: it comes back, dispatched next | `ticket`, `title`, `detail` |
 | `triage` | the triage organ's verdict on a deferred ticket | `ticket`; `title`, the verdict's summary; `detail`, as in `environment · high` |
-| `warn` | something to review, while the run goes on: `CHECKS_FAILED`, `MERGE_CONFLICT`, `LIKELY_CONFLICT`, … | `ticket` when it is about one; `aside: true` when that ticket is left for review, out of this run, with `detail`, why: `checks failed`, `closed without a commit`, … |
-| `hold` | something stopped the run: no new tickets while the running ones finish | `ticket` on some |
+| `warn` | something to review, while the run goes on: `CHECKS_FAILED`, `MERGE_CONFLICT`, `LIKELY_CONFLICT`, … | `ticket` when it is about one; `aside: true` when that ticket is left for review, out of this run, with `detail`, why: `checks failed`, `closed without a commit`, …; `blocked` on a `MERGE_CONFLICT`: the ticket's work is done, but it can't merge until you act, as in `merge conflict in a.go, b.go` |
+| `hold` | something stopped the run: no new tickets while the running ones finish | `ticket` on some; `blocked` when that ticket's work is done but it can't merge until you act (`DIRTY_TREE`, `GIT_FAILED`, `MERGE_FAILED`): why, as the dashboard says it, as in `main checkout has uncommitted changes`, `does not fast-forward onto main` |
 | `drain`, `resume` | the run was asked to stop after the running tickets, or that was taken back | |
 | `probed` | a probe found the machine working after an environment hold: tickets start again | |
-| `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `INTERRUPTED`, … | `detail`, the word its text starts with; `ticket`, the one it stopped over, if one did |
+| `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `INTERRUPTED`, … | `detail`, the word its text starts with; `ticket`, the one it stopped over, if one did; `blocked`, as for `hold` |
 | `done` | the loop finished: `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, with `SCOPE_DONE` or `SCOPE_OPEN` in a scoped run; or the run had nothing to run: `READY_EMPTY after 0 tickets: everything is done`, or `: nothing ready` | |
 | `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes) |
 
