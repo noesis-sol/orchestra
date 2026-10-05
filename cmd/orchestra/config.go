@@ -325,6 +325,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 		project.ResolveCheckFullTimeout(c.CheckFullTimeout, given.checkFullTimeout, settings))
 	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
 		project.ResolveConflictResolution(c.ResolveConflicts, given.resolveConflicts, settings))
+	keep(&problems, &c.CheckHandBacks)(project.ResolveCheckHandBacks(settings))
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
 	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
 	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))

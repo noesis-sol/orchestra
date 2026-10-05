@@ -117,6 +117,8 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 	switch doing {
 	case "resolving":
 		state = deferredStyle.Render("⟳ resolving")
+	case "fixing check":
+		state = deferredStyle.Render("⟳ fixing")
 	case "testing":
 		state = testingStyle.Render("▶ testing")
 	case "editing", "reading":

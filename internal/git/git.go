@@ -167,6 +167,24 @@ func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string 
 	return latestNaming(out, ticket)
 }
 
+// CommitNotNaming returns the oldest commit in revs, a range such as a..b, whose message doesn't name
+// the ticket, as "<hash> <subject>" cut to 70 characters, or "" when each one names it; an error when
+// git can't list them.
+func (Git) CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "log", "--no-show-signature", "--reverse",
+		"--format=%h %s%x00%B%x1e", revs, "--")
+	if err != nil {
+		return "", err
+	}
+	for record := range strings.SplitSeq(out, "\x1e") {
+		line, body, ok := strings.Cut(strings.TrimLeft(record, "\n"), "\x00")
+		if ok && !namesID(body, ticket) {
+			return cut70(line), nil
+		}
+	}
+	return "", nil
+}
+
 // latestNaming picks, from 'git log --format=%h %s%x00%B%x1e' newest first, the first commit
 // whose message names ticket as a whole ID, as "<hash> <subject>" cut to 70 characters, or "".
 func latestNaming(log, ticket string) string {
@@ -175,12 +193,17 @@ func latestNaming(log, ticket string) string {
 		if !namesID(body, ticket) {
 			continue
 		}
-		if r := []rune(line); len(r) > 70 {
-			line = string(r[:70])
-		}
-		return line
+		return cut70(line)
 	}
 	return ""
+}
+
+// cut70 cuts a commit's "<hash> <subject>" line to 70 characters.
+func cut70(line string) string {
+	if r := []rune(line); len(r) > 70 {
+		return string(r[:70])
+	}
+	return line
 }
 
 // namesID reports whether msg names id as a whole ID: not inside a longer one such as id3, xid,

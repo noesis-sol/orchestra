@@ -15,6 +15,17 @@ All notable changes to orchestra are documented here. The format follows
   install` or `bundle install` for the others. `--setup "<command>"` sets it
   without asking and `--setup ""` removes it; an existing one is kept, and
   without a terminal the summary names the flag.
+- A check that fails on a finished ticket's rebased branch, after a clean
+  rebase or once its worker has resolved a conflict, is handed back to the
+  worker, idle in its tab, to fix (`FIXING: …`, `⟳ fixing` on the
+  dashboard): it is given where the check's output is and the lines saying
+  what failed, and what landed on the base since its branch was cut, and
+  commits the fix, naming the ticket. orchestra then checks the commits and
+  runs the check again; a fixed branch merges in the same run. Twice at most
+  by default (`"check_hand_backs"` in `settings.json`, `0` for never), not
+  for a check that timed out, and not while the run winds down or holds.
+  When the attempts run out, the ticket is set aside as before, with a note
+  naming each attempt.
 - After stage 2, `orchestra init` files the test work its choice calls for
   (label `orchestra-tests`), listed in its summary: with "Create from
   scratch", an epic and a P1 `solo` ticket that sets the tests up with the

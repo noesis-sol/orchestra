@@ -59,6 +59,10 @@ type Settings struct {
 	// ResolveTimeout is how long the worker may take to resolve it, as a duration such as "20m".
 	// Empty: DefaultResolveTimeout.
 	ResolveTimeout string `json:"resolve_timeout,omitempty"`
+	// CheckHandBacks is how many times a finished ticket whose check fails on its branch rebased onto
+	// work merged while it ran is handed back to its worker to fix, before it is set aside for review.
+	// Absent: DefaultCheckHandBacks; 0 sets it aside at once.
+	CheckHandBacks *int `json:"check_hand_backs,omitempty"`
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
@@ -101,6 +105,9 @@ const (
 	// DefaultResolveTimeout is how long a worker may take to resolve its rebase's conflicts when
 	// settings.json sets no limit.
 	DefaultResolveTimeout = 20 * time.Minute
+	// DefaultCheckHandBacks is how many times a failed check on a rebased ticket is handed back to its
+	// worker when settings.json doesn't say.
+	DefaultCheckHandBacks = 2
 )
 
 // The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
@@ -295,6 +302,18 @@ func ResolveConflictResolution(flagValue, given bool, s Settings) (on bool, limi
 			SettingsPath("."), s.ResolveTimeout)
 	}
 	return on, limit, nil
+}
+
+// ResolveCheckHandBacks picks how many times a run hands a failed check on a finished ticket's
+// rebased branch back to its worker: the project's setting, else DefaultCheckHandBacks; 0 for never.
+func ResolveCheckHandBacks(s Settings) (int, error) {
+	if s.CheckHandBacks == nil {
+		return DefaultCheckHandBacks, nil
+	}
+	if n := *s.CheckHandBacks; n >= 0 {
+		return n, nil
+	}
+	return 0, fmt.Errorf("%s: check_hand_backs must be 0 (never) or more (got %d)", SettingsPath("."), *s.CheckHandBacks)
 }
 
 // ResolveExcludeTypes picks the issue types a run leaves out of bd ready: the project's setting,

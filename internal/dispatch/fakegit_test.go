@@ -262,6 +262,19 @@ func (g *fakeGit) CommitNamingOn(ctx context.Context, repo, rev, ticket string) 
 	return naming(g.resolve(rev), ticket)
 }
 
+// CommitNotNaming is the oldest commit in revs whose subject doesn't begin with the ticket's ID.
+func (g *fakeGit) CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	base, rev, _ := strings.Cut(revs, "..")
+	for _, c := range g.only(base, rev) {
+		if !strings.HasPrefix(c.subject, ticket+":") {
+			return c.hash + " " + c.subject, nil
+		}
+	}
+	return "", nil
+}
+
 // naming is the latest of the commits whose subject begins with the ticket's ID, as "<hash> <subject>".
 func naming(cs []fakeCommit, ticket string) string {
 	for _, c := range slices.Backward(cs) {

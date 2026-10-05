@@ -67,6 +67,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `settle.go` | waiting for a worker to settle (Herdr's status, its Stop hook or the start-up grace), telling one that stopped with its ticket in progress to continue, reading its status, the dashboard watcher |
 | `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup (the worker's tab only while Herdr still has it labelled with the ticket's ID) |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
+| `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
 | `holds.go` | tickets held for an unmerged blocker, the `unmerged` label, tickets set aside, deferred or waiting on a question |
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |

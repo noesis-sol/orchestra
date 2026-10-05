@@ -125,6 +125,8 @@ type Merger interface {
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
 	// the latest commit reachable from rev naming the ticket
 	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string
+	// the oldest commit in revs (a..b) whose message doesn't name the ticket; "" when each one does
+	CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error)
 	Rebase(ctx context.Context, worktree, onto string) (string, error)
 	AbortRebase(ctx context.Context, worktree string) (string, error)
 	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged

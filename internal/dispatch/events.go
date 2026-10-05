@@ -101,6 +101,7 @@ type Status struct {
 	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
 	// worker, and is left in progress until the worker finishes it.
 	Resolving  bool
+	Fixing     bool // its check failed on its rebased branch and was handed back to its worker to fix
 	Unreadable bool // the last read of Agent failed
 	Gone       bool
 }

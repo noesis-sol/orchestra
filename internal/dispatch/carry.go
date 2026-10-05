@@ -215,7 +215,7 @@ func (o *Loop) saveCarried() {
 		w, ok := o.placed[id]
 		why := o.unmerged[id]
 		o.mu.Unlock()
-		if ok && !st.Resolving && (why == "" || why == earlierRun) {
+		if ok && !st.Resolving && !st.Fixing && (why == "" || why == earlierRun) {
 			add(id, w)
 		}
 	}

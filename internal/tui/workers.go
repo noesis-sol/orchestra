@@ -156,6 +156,8 @@ func doingLabel(st dispatch.Status) string {
 	switch {
 	case st.Resolving:
 		return "resolving"
+	case st.Fixing:
+		return "fixing check"
 	case st.Unreadable:
 		return "unreadable"
 	case st.Agent == dispatch.StateWorking && st.Doing != "":

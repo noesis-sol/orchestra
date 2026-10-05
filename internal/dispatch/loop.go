@@ -147,6 +147,10 @@ type Loop struct {
 	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
 	// the run winds down is Run's own (runState.drained).
 	drainReqs chan drainRequest
+	// noMore is why the run takes on no more work, as Run last saw it: it winds down, or holds for a
+	// stop; "" while it takes tickets. Under mu: a merge reads it before handing a failed check back
+	// to its worker (see whyNotFixCheck).
+	noMore string
 
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
 	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
@@ -418,6 +422,9 @@ type Config struct {
 	ResolveConflicts bool
 	// ResolveTimeout is how long the worker may take to resolve it; 0 for DefaultResolveTimeout.
 	ResolveTimeout time.Duration
+	// CheckHandBacks is how many times a finished ticket whose check fails on its rebased branch is
+	// handed back to its worker to fix (see checkRebased), within ResolveTimeout each; 0 for never.
+	CheckHandBacks int
 	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome, and
 	// --effort when the project sets one.
 	WorkerArgs []string

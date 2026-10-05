@@ -46,8 +46,9 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // merged while it ran, the branch is rebased first and, since the rebased code is untested, the
 // project's check command runs again before it merges. A rebase that stops on conflicts is handed
 // back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
-// the merge queue meanwhile. A conflict left unresolved or a failing check leaves the ticket for
-// review and the run goes on; a failing check is tried once more after Base moves on (see recheck).
+// the merge queue meanwhile, and so is a check that fails on the rebased branch, to fix (see
+// checkRebased). A conflict left unresolved or a failing check leaves the ticket for review and the
+// run goes on; a failing check is tried once more after Base moves on (see recheck).
 // A branch whose commits, taken together, change nothing, before its rebase or after, has nothing to
 // merge and is cleaned up as such (see closedUnchanged).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
@@ -61,7 +62,8 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	defer repo.release()
 	queue.lock()
 	defer queue.release() // held on every return; a hand-back lets go of it and takes it again
-	handedBack := 0
+	// The hand-backs to its worker so far: to resolve conflicts, and to fix a failed check.
+	handedBack, fixes := 0, 0
 	// Only merges move Base during a run, and they queue here; a second pass covers a commit made
 	// by hand while the checks ran.
 	for attempt := 0; attempt < 3; attempt++ {
@@ -135,6 +137,14 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			if stop != nil {
 				return stop // Ctrl+C: the rebase is left as it is, as the INTERRUPTED line says
 			}
+			if why == "" {
+				o.info("  %s's worker finished the rebase; checking it with '%s'", id, c.Check)
+				var res checked
+				if res, stop = o.checkRebased(ctx, repo, queue, r, &fixes, true); stop != nil {
+					return stop // Ctrl+C: a fix under way is left as it is
+				}
+				why = o.failedResolved(r, res)
+			}
 			if why != "" {
 				repo.lock()
 				undone := o.undoResolution(keep, r)
@@ -161,35 +171,17 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", br)
 			continue
 		}
-		// The rebase may have changed the dependencies: set them up again first (see setUp).
-		output, err := o.setUp(ctx, w, r.head, r.onto)
-		what, failed := "'"+c.Check+"'", "checks"
-		if err != nil {
-			what, failed = "the setup '"+c.Setup+"', run before the check,", "setup"
-		} else {
-			output, err = o.runCheck(ctx, w, r.onto)
+		res, stop := o.checkRebased(ctx, repo, queue, r, &fixes, false)
+		if stop != nil {
+			return stop
 		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return errInterrupted
-			}
-			o.leaveUnmerged(keep, id, "CHECKS_FAILED")
-			how, why := o.checkHow(err), failed+" failed"
-			if errors.Is(err, errCheckTimedOut) {
-				why = failed + " timed out"
-			}
-			// Checked once more once Base moves on, unless this was that once (see recheck).
-			again, later := " again", ""
-			if !o.isRechecked(id) {
-				again, later = "", o.awaitRecheck(keep, w, r.onto)
-			}
-			o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why + again, Text: fmt.Sprintf(
-				"  CHECKS_FAILED: %s closed, but %s %s%s on %s rebased onto %s; "+
-					"worktree %s and tab %s left for review (output is in %s)%s",
-				id, what, how, again, br, c.Base, wt, tab, output, later)})
+		if res.err != nil {
+			o.checksFailed(keep, r, res)
 			return nil
 		}
-		o.info("  '%s' passes on the rebased %s", c.Check, br)
+		if len(res.tries) > 0 {
+			attempt-- // fixed: the queue was let go of while its worker worked, so Base may have moved
+		}
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
 	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
@@ -198,6 +190,55 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
 				"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
+}
+
+// failedResolved says why the branch of r's ticket, its rebase resolved by its worker, is set aside, as
+// its check came out (res), or "" when the check passes.
+func (o *Loop) failedResolved(r rebaseStop, res checked) string {
+	if res.err == nil {
+		return ""
+	}
+	why := fmt.Sprintf("%s %s on the resolved %s", o.failedWhat(res.setup), o.checkHow(res.err), r.br)
+	if !errors.Is(res.err, errCheckTimedOut) {
+		why += fmt.Sprintf(" (output is in %s)", res.output)
+	}
+	if h := res.handedBack(); h != "" {
+		why += ", and was " + h
+	}
+	return why
+}
+
+// checksFailed sets aside the ticket of r, rebased onto r.onto, as its check failed there (res), and
+// keeps it to be checked once more after Base moves on (see recheck), unless this was that once.
+func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
+	c := o.cfg
+	id := r.id
+	o.leaveUnmerged(ctx, id, "CHECKS_FAILED")
+	why := "checks failed"
+	if res.setup {
+		why = "setup failed"
+	}
+	if errors.Is(res.err, errCheckTimedOut) {
+		why = strings.Replace(why, "failed", "timed out", 1)
+	}
+	tried := ""
+	switch h := res.handedBack(); {
+	case h != "":
+		tried = fmt.Sprintf(", after it was handed back to its worker to fix %s (see its notes)", times(len(res.tries)))
+		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s %s on %s rebased onto %s (output is in %s); it was %s; "+
+			"so %s was set aside for review.", o.failedWhat(res.setup), o.checkHow(res.err), r.br, c.Base, res.output, h, id))
+	case res.not != "":
+		tried = "; not handed back to its worker: " + res.not
+	}
+	// Checked once more once Base moves on, unless this was that once (see recheck).
+	again, later := " again", ""
+	if !o.isRechecked(id) {
+		again, later = "", o.awaitRecheck(ctx, r.worker, r.onto)
+	}
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why + again, Text: fmt.Sprintf(
+		"  CHECKS_FAILED: %s closed, but %s %s%s on %s rebased onto %s%s; "+
+			"worktree %s and tab %s left for review (output is in %s)%s",
+		id, o.failedWhat(res.setup), o.checkHow(res.err), again, r.br, c.Base, tried, r.wt, r.tab, res.output, later)})
 }
 
 // closedUnchanged cleans up after w's ticket, closed with no change of its own, as when tickets merged

@@ -101,6 +101,9 @@ func (upToDate) Unchanged(ctx context.Context, repo, base, branch string) bool  
 func (upToDate) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	return "", nil
 }
+func (upToDate) CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error) {
+	return "", nil
+}
 func (upToDate) FastForward(ctx context.Context, repo, branch string) (string, error) { return "", nil }
 
 type noAgents struct{}

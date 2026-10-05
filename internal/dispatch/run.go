@@ -57,6 +57,11 @@ func workerNames(running []Status) string {
 				"finish it (resolve, git rebase --continue), run the check and merge it)", st.Ticket, st.Tab))
 			continue
 		}
+		if st.Fixing {
+			names = append(names, fmt.Sprintf("%s (tab %s, fixing its check: once its worker has committed the fix, "+
+				"run the check and merge it)", st.Ticket, st.Tab))
+			continue
+		}
 		names = append(names, fmt.Sprintf("%s (tab %s)", st.Ticket, st.Tab))
 	}
 	return strings.Join(names, ", ")
@@ -145,6 +150,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	for {
 		r.winding()
 		r.heedEnvironment()
+		r.sayNoMore()
 		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
 		if len(r.inflight) == 0 {
@@ -276,6 +282,21 @@ func (r *runState) winding() bool {
 	default:
 		return r.drained
 	}
+}
+
+// sayNoMore tells the merges why the run takes on no more work, if it doesn't: it holds for a stop, or
+// the maintainer asked it to wind down (see Loop.noMore).
+func (r *runState) sayNoMore() {
+	why := ""
+	switch {
+	case r.stops.first != nil:
+		why = "the run holds (" + r.stops.first.Error() + ")"
+	case r.drained:
+		why = "the run is winding down"
+	}
+	r.o.mu.Lock()
+	r.o.noMore = why
+	r.o.mu.Unlock()
 }
 
 // heedEnvironment takes up the hold for the environment, once workers fail at once whichever
