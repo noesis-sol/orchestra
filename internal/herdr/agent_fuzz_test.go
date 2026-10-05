@@ -53,7 +53,7 @@ func FuzzReadAgent(f *testing.F) {
 			t.Errorf("readAgent(%q, %v) = state %q, error %v: want one of them", out, callErr, state, err)
 		case err != nil && (name != "" || kind != ""):
 			t.Errorf("readAgent(%q, %v) = %q, %q with the error %v", out, callErr, name, kind, err)
-		case failed && code != AgentNotFound && err != callErr:
+		case failed && code != AgentNotFound && !errors.Is(err, callErr):
 			t.Errorf("readAgent(%q, %v) = error %v, want the call's", out, callErr, err)
 		}
 	})

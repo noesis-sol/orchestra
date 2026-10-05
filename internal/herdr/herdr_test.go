@@ -29,7 +29,7 @@ func TestReadAgent(t *testing.T) {
 	}
 	// A failed call that doesn't say the agent is missing tells nothing about it.
 	for _, failed := range []error{errors.New("exit status 1"), &Error{Code: "server_busy", Err: errors.New("exit status 1")}} {
-		if _, k, s, err := readAgent("", failed); s != "" || k != "" || err != failed {
+		if _, k, s, err := readAgent("", failed); s != "" || k != "" || !errors.Is(err, failed) {
 			t.Errorf("failed call %v: %q %q %v", failed, k, s, err)
 		}
 	}

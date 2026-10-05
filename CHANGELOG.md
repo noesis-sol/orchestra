@@ -60,6 +60,11 @@ All notable changes to orchestra are documented here. The format follows
   `slices.Contains` for a hand loop, `strings.Cut` for index arithmetic,
   `WaitGroup.Go` for `Add`, `go` and `Done`, `errors.AsType` and the like. The
   code uses them throughout, with no change in what orchestra does.
+- `scripts/check.sh` also runs golangci-lint's errorlint, which asks for
+  `errors.Is` and `errors.As` rather than `==` or a type assertion on an
+  error, so a wrapped error still matches. The five places that compared an
+  error with `==` or `!=` use `errors.Is`, with no change in what orchestra
+  does.
 - A ticket set aside because its check failed (`CHECKS_FAILED`) is checked
   once more after another ticket merges: its branch is rebased onto the base
   and the check runs again, through the merge queue and in one of the run's

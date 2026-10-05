@@ -1,10 +1,11 @@
-# golangci-lint v2: the linters the Uber Go style guide asks for, plus predeclared and modernize.
+# golangci-lint v2: the linters the Uber Go style guide asks for, plus predeclared, modernize and errorlint.
 version: "2"
 
 linters:
   default: none
   enable:
     - errcheck
+    - errorlint
     - govet
     - lll
     - modernize
@@ -22,6 +23,10 @@ linters:
         - fmt.Print
         - fmt.Printf
         - fmt.Println
+    errorlint:
+      errorf: false # some fmt.Errorf calls format a second error with %v on purpose: only one is the cause
+      comparison: true # errors.Is, not ==
+      asserts: true # errors.As, not a type assertion or switch
     staticcheck:
       checks: # golangci-lint's defaults, without the De Morgan rewrite: the negated forms read better
         - all

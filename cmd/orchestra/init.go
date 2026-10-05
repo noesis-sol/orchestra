@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -54,7 +55,7 @@ func runInit(
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return dispatch.ExitOK
 		}
 		return dispatch.ExitSetup

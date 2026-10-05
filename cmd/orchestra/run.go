@@ -86,7 +86,7 @@ func run(
 	}
 	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
 	switch {
-	case err == flag.ErrHelp:
+	case errors.Is(err, flag.ErrHelp):
 		return nil
 	case err != nil:
 		return exitStatus(dispatch.ExitSetup)

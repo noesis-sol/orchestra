@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -30,7 +31,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return dispatch.ExitOK
 		}
 		return dispatch.ExitSetup
