@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` installs the create-check-suite skill, built into the
+  binary, where the project's tests are to be created from scratch or its
+  untested areas ticketed: in `.claude/skills/create-check-suite/` for Claude
+  workers and `.agents/skills/create-check-suite/` for Codex ones, to be
+  committed. A copy there that differs is kept unless replacing it is chosen.
+  `init --agent` (default `AGENT_KIND`, else `claude`) names the workers'
+  agent, as for a run.
 - A new skill, `skills/create-check-suite/`, for a worker in a project with
   no tests or areas without them: it reads the repository, sets up unit and
   end-to-end suites in the project's own frameworks, adds them to

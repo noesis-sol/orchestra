@@ -38,6 +38,9 @@ func runInit(
 		"\"\" for none (asked when omitted)")
 	installBeads := fs.Bool("install-beads", false, "install Beads (bd) where it is missing, with Homebrew or "+
 		"the Beads install script (asked when omitted; =false declines)")
+	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' Herdr agent kind, "+
+		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
+		"[AGENT_KIND]")
 	var concurrent int
 	fs.IntVar(&concurrent, "concurrent", 0, "tickets to run at the same time by default (asked when omitted)")
 	fs.IntVar(&concurrent, "c", 0, "shorthand for --concurrent")
@@ -109,6 +112,7 @@ func runInit(
 	bd, _ := project.LocateBd(getenv)
 	askInstall := !installGiven && bd == "" && choice.Install.Command != ""
 	choice.InstallBeads = *installBeads || askInstall // offered as yes
+	choice.Agent = *agent
 
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
@@ -152,6 +156,13 @@ func runInit(
 		var s project.Step
 		var ok bool
 		if s, ok, err = project.ApplyUnion(ctx, repo, choice); ok && err == nil {
+			steps = append(steps, s)
+		}
+	}
+	if err == nil {
+		var s project.Step
+		var ok bool
+		if s, ok, err = project.ApplySkill(repo, choice); ok && err == nil {
 			steps = append(steps, s)
 		}
 	}

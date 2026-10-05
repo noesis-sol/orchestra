@@ -174,6 +174,14 @@ type Choice struct {
 	// bd is missing, and InstallUnasked is set when init could neither ask nor take --install-beads.
 	Install                      BeadsInstall
 	InstallBeads, InstallUnasked bool
+	// Tests is stage 2's choice of how the project's tests are set up, and FileUntested its "Also
+	// file tickets for untested areas" with TestsFound. Where they file test work (FilesTestWork),
+	// init installs the create-check-suite skill for Agent, the workers' agent kind, writing it over
+	// a copy that differs where ReplaceSkill is set (see ApplySkill).
+	Tests        Tests
+	FileUntested bool
+	Agent        string
+	ReplaceSkill bool
 }
 
 // DefaultChoice starts from the project's settings, with the check command found in the worker
