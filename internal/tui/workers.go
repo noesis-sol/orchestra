@@ -184,6 +184,8 @@ func agentStyle(s string) string {
 		return testingStyle.Render(s)
 	case string(dispatch.StateBlocked), permissionLabel: // red, as a ticket blocked from merging reads in the table
 		return stopStyle.Render(s + " — waiting for you")
+	case string(dispatch.StateDone): // finished its turn: green, not bold, as its ticket isn't merged yet
+		return doneStyle.Render(s)
 	case "":
 		return ""
 	}

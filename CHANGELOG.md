@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker that has finished its turn reads `done` in plain green in the
+  dashboard's Current box, rather than the yellow of a ticket set aside.
+  docs/dashboard.md names the colours of a worker's states.
 - The dashboard's tickets table keeps its place and height while workers
   start, report and finish: it takes about a third of the pane, for 3 to 10
   tickets, blank rows filling it until there are as many, and changes only
