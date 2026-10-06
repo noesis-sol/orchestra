@@ -363,9 +363,10 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
 	// question is out of the queue until the maintainer answers; the run goes on without it. The
 	// worker has settled: what follows is bookkeeping, on keep, but for the waits merging has (a
-	// check, a worker resolving conflicts) and evidence for triage, which Ctrl+C skips.
+	// check, a worker resolving conflicts) and evidence for triage, which Ctrl+C skips. bd failing
+	// once, as when another bd holds the database, doesn't stop the run: the ticket is read again.
 	keep := context.WithoutCancel(ctx)
-	info, showErr := o.tickets.Show(keep, id)
+	info, showErr := o.showTries(keep, id)
 	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
 		o.markAside(id)
