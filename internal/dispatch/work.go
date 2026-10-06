@@ -162,7 +162,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
 
-	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch)
+	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch, "")
 	if stop != nil {
 		return stop
 	}
@@ -233,8 +233,8 @@ func (o *Loop) takeOn(t Ticket, w askedWorker) Status {
 // adoptAsked takes on the worker an asked ticket left in its tab, which claimed the ticket again or
 // closed it there without it coming back through bd ready (see followAsked), as work takes on one
 // that is still working when its ticket comes back. One idle with its ticket in progress is told
-// the answer is in; one that closed it settles at once and its work is merged. It returns and sets
-// how as work does.
+// the answer is in; one that closed it settles at once and its work is merged; one gone from its tab
+// has its session resumed. It returns and sets how as work does.
 func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop *stopReason) {
 	t, w := a.t, a.w
 	id := t.ID
@@ -252,6 +252,9 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
 	agent := o.agentName(id)
+	if a.resume != nil {
+		return o.resumeGone(ctx, t, w.wt, w.tab, w.question, *a.resume, how)
+	}
 	st, err := o.readStatus(ctx, agent, 5)
 	adopted := time.Now() // its hooks reported anything older in its earlier turns
 	if ctx.Err() != nil {
@@ -367,6 +370,9 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
 		o.triageDeferred(ctx, id, "the worker deferred it", wt)
 	case outcomePaused:
+		if o.workerGone(keep, w.agent) {
+			return o.pausedGone(ctx, t, w, how)
+		}
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf(
 			"Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))

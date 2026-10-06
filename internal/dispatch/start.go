@@ -137,6 +137,7 @@ const startRetry = 3 * time.Second
 // startedWorker is the worker startWorker started for a ticket.
 type startedWorker struct {
 	tab      string    // the Herdr tab it runs in
+	pane     string    // the pane in it
 	started  time.Time // when its tab was opened
 	atLaunch bool      // its prompt was given at launch, from its prompt file
 	hooks    bool      // it reports what it does through hooks
@@ -145,11 +146,12 @@ type startedWorker struct {
 // startWorker opens a tab in worktree wt for ticket t's worker and starts it there, named agent:
 // from its prompt file launch if it has one and that works, or else with herdr agent start, its
 // prompt then to be pasted. mcpArgs give it its MCP servers and report its hooks; it does without
-// the hooks if Herdr refuses them. It shows the ticket as starting in that tab, and clears that
-// again unless it returns the worker started, which leaves clearing it to the caller. It places the
-// worker as soon as the tab is open, and leaves it placed however the start ends.
+// the hooks if Herdr refuses them. With a session (a Claude Code session ID), it resumes that
+// session rather than starting a new one. It shows the ticket as starting in that tab, and clears
+// that again unless it returns the worker started, which leaves clearing it to the caller. It places
+// the worker as soon as the tab is open, and leaves it placed however the start ends.
 func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpArgs, report []string,
-	launch string) (startedWorker, *stopReason) {
+	launch, session string) (startedWorker, *stopReason) {
 	c := o.cfg
 	id := t.ID
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, wt, id)
@@ -179,6 +181,9 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 	if c.ClaudeWorkers() {
 		s.fixed = append(s.fixed, c.WorkerArgs...)
 	}
+	if session != "" {
+		s.fixed = append(s.fixed, "--resume", session)
+	}
 	// From here on a worker may be running in the tab, at work on its prompt, even if Ctrl+C or a
 	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried).
 	s.place()
@@ -190,7 +195,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 		return startedWorker{}, stop
 	}
 	up = true
-	return startedWorker{tab: tab, started: started, atLaunch: s.launch != "", hooks: s.report != nil}, nil
+	return startedWorker{tab: tab, pane: pane, started: started, atLaunch: s.launch != "", hooks: s.report != nil}, nil
 }
 
 // workerStart is one start of ticket id's worker, named agent, in pane of tab, which startWorker
@@ -200,7 +205,7 @@ type workerStart struct {
 	o                        *Loop
 	id, tab, pane, wt, agent string
 	mcpArgs                  []string // the arguments giving it its MCP servers
-	fixed                    []string // the arguments it always gets: mcpArgs, then the run's for every Claude worker
+	fixed                    []string // the arguments it always gets: mcpArgs, the run's for every Claude worker, --resume
 	report                   []string // the arguments for its hooks; nil once Herdr refused them
 	launch                   string   // its prompt file launch; "" once it is to be started with herdr agent start
 }
@@ -210,9 +215,9 @@ func (s *workerStart) place() {
 	s.o.place(s.id, askedWorker{tab: s.tab, pane: s.pane, wt: s.wt, hooks: s.report != nil})
 }
 
-// args are the worker's arguments: its MCP servers and the run's arguments for every Claude worker
-// (--no-chrome or --chrome, --effort), which it always gets, then its reports and its prompt, if it
-// has them.
+// args are the worker's arguments: its MCP servers, the run's arguments for every Claude worker
+// (--no-chrome or --chrome, --effort) and the session it resumes, which it always gets, then its
+// reports and its prompt, if it has them.
 func (s *workerStart) args() []string {
 	args := append(append([]string{}, s.fixed...), s.report...)
 	if s.launch != "" {

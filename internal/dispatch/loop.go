@@ -97,6 +97,9 @@ type Loop struct {
 	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
 	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
 	placed map[string]askedWorker
+	// resumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
+	// resumeGone), which happens once for each.
+	resumed map[string]bool
 	// keptOut: the workers the last run left behind on tickets outside this run's scope, saved again
 	// for a later run as they were.
 	keptOut   []project.LeftWorker

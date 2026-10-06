@@ -90,8 +90,9 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
 // with its branch already on Base was merged by hand. A worker left unnamed in its pane is named
-// (see earlierState). A ticket in progress whose worker is gone has nothing to carry on with it: it
-// is warned about and noted, once, and the run goes on. Each of those drops the worker. The
+// (see earlierState). A ticket in progress whose worker is gone is carried over if its session can
+// be resumed (see resumeGone); without one, it has nothing to carry on with: it is warned about and
+// noted, once, and the run goes on. Each of those drops the worker. The
 // question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
 // UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
@@ -121,7 +122,8 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	if err != nil {
 		o.log.Raw("", err) // read again as the ticket is followed (followAsked) or comes back (work)
 	}
-	if t.Status == StatusInProgress && err == nil && st == StateGone {
+	_, resumable := o.sessionOf(w.wt, w.hooks)
+	if t.Status == StatusInProgress && err == nil && st == StateGone && !resumable {
 		o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
 			"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
 			w.tab, w.after(), w.wt))

@@ -15,8 +15,9 @@ import (
 // adoption is an asked ticket whose worker carried on in its tab, as bd showed it, with where
 // that worker is.
 type adoption struct {
-	t Ticket
-	w askedWorker
+	t      Ticket
+	w      askedWorker
+	resume *Session // the session to resume, its worker gone from its tab; nil: its worker is there
 }
 
 // followAsked reads each asked ticket that isn't running and acts on what its worker did in its
@@ -26,9 +27,10 @@ type adoption struct {
 // leaveAsked. One still in progress whose worker is idle with the question open waits on, as
 // does one Herdr can't tell about, and one the last run left running whose worker is idle: it
 // waits for the maintainer, as it did when that run stopped. One its worker deferred is set aside
-// as deferred. One in progress whose worker is gone stops the run, as a paused ticket does: the
-// reason is returned with the tickets adopted before it was found, and said at once. running is
-// the tickets running.
+// as deferred. One in progress whose worker is gone is adopted to have its session resumed, once in
+// a run (see resumeGone); without a session to resume, or with taking false, it stops the run, as a
+// paused ticket does: the reason is returned with the tickets adopted before it was found, and said
+// at once. running is the tickets running.
 func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking bool) ([]adoption, *stopReason) {
 	var adopt []adoption
 	for _, id := range o.askedList() {
@@ -58,7 +60,11 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 			case err != nil:
 				o.log.Raw("", err)
 			case st == StateGone:
-				return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
+				s, ok := o.sessionOf(w.wt, w.hooks)
+				if !taking || !ok || !o.firstResume(id) {
+					return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
+				}
+				adopt = append(adopt, o.resumedInTab(t, w, s))
 			case !taking, st == StateUnknown,
 				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || w.question == ""):
 				// left as it is: read again at the next poll, or labelled as the run ends

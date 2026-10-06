@@ -347,20 +347,26 @@ type Verdict struct {
 
 // Deferral is the evidence gathered when a ticket is set aside, while its tab is still open.
 type Deferral struct {
-	ID, How  string // How: who deferred it and why, as logged
-	Ticket   string // bd show
-	Screen   string // the end of the worker's terminal
-	Worktree string // status, commits and diff stat
+	ID, How string // How: who deferred it and why, as logged
+	Ticket  string // bd show
+	Screen  string // the end of the worker's terminal
+	// the end of its session's transcript: its last messages, tool calls and errors; "" if unread
+	Transcript string
+	Worktree   string // status, commits and diff stat
 }
 
 // triageInput names the ticket by ID only: its title is ticket text, as untrusted as the rest, and
-// stays inside the evidence tags with bd show. How is orchestra's own words.
+// stays inside the evidence tags with bd show. How is orchestra's own words. The transcript's
+// section is left out when it couldn't be read.
 func triageInput(d Deferral) string {
 	id := EvidenceID()
-	return "Ticket " + d.ID + " was set aside: " + d.How + "\n\n" +
+	in := "Ticket " + d.ID + " was set aside: " + d.How + "\n\n" +
 		Section(id, "Ticket (bd show)", d.Ticket) +
-		Section(id, "End of the worker's terminal", d.Screen) +
-		Section(id, "Worktree state", d.Worktree)
+		Section(id, "End of the worker's terminal", d.Screen)
+	if d.Transcript != "" {
+		in += Section(id, "End of the worker's session transcript (messages, tool calls, results)", d.Transcript)
+	}
+	return in + Section(id, "Worktree state", d.Worktree)
 }
 
 func parseTriage(r Result) (Verdict, error) {

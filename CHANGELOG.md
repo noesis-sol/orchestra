@@ -18,6 +18,14 @@ All notable changes to orchestra are documented here. The format follows
   its budget limit: …`, `refused to answer`, `gave no answer that matches
   the schema`) instead of `claude reported an error: ` with nothing after
   it, and `organ.CallError` lets callers tell which.
+- A Claude worker's hooks record its session (`.orchestra/run/session.json`,
+  from a `SessionStart` hook). A worker gone from its tab with its ticket in
+  progress no longer stops the run with `PAUSED` when its session can be
+  resumed: orchestra starts `claude --resume <session>` in a new tab in its
+  worktree, told to carry on (`RESUMED: …`), once per ticket in a run; the
+  next run resumes one gone again, or carried over gone. Triage's evidence
+  includes the end of the worker's transcript.
+
 - A worker handed a rebase stopped on conflicts is now asked to run the
   check once the rebase has finished, not before `git rebase --continue`,
   as the commits that apply cleanly after a resolved one can break it too,

@@ -308,7 +308,7 @@ ended with, say why it ended:
 | `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
 | `…; SCOPE_OPEN: …` | 0 | a `--ticket` run with subtickets not done; each is named with why | Handle each reason: answer a question, merge or rebase an unmerged one, unblock or rerun. The report lists follow-ups filed outside the scope. |
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
-| `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress` | Read its tab. Relay any question to the user. If the worker finishes later, the next run merges it. |
+| `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress`, or is gone from its tab with no session to resume, or gone again after its session was resumed (`its worker gone from tab …`) | Read its tab. Relay any question to the user. If the worker finishes later, the next run merges it; one gone after a resume is resumed again by the next run. |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
 | `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, the next run merges it. |
@@ -362,9 +362,12 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 - `<id>, carried over from the last run, is dropped: …`: its worktree is gone, its branch was merged
   by hand, or bd can't show the ticket. Nothing to do unless the line surprises you.
 - `WORKER_GONE: <id> is in progress after …, but its worker is gone from tab <tab>`: a carried-over
-  ticket's worker has gone (its tab closed, Herdr restarted); said once, with a note on the ticket.
-  Look at its worktree with the user: reopen the ticket (`bd update <id> --status open`) to run it
-  again, or finish it by hand (below).
+  ticket's worker has gone (its tab closed, Herdr restarted) with no session to resume; said once,
+  with a note on the ticket. Look at its worktree with the user: reopen the ticket
+  (`bd update <id> --status open`) to run it again, or finish it by hand (below).
+- `RESUMED: <id>'s worker is gone from tab <tab> with the ticket in progress; resuming its session
+  …`: a Claude worker vanished mid-ticket, and orchestra started `claude --resume` in a new tab,
+  once per ticket in a run. Nothing to do; the old tab is left open, and can be closed.
 - `kept for a later run, outside this run's scope: …`: a `--ticket` run leaves the workers on other
   tickets saved for a run that takes them.
 - `ASKED_UNMERGED`, `LEFT_UNMERGED`: a ticket asked (or carried over as left running) was closed in

@@ -22,6 +22,7 @@ const (
 	settingsName = "hooks.json"    // in the worktree's .orchestra/run/
 	activityName = "activity.json" // written by the hooks, read by orchestra
 	editsName    = "edits"         // the paths the worker edits, one per line, appended by the hooks
+	sessionName  = "session.json"  // the worker's Claude Code session, written by its SessionStart hook
 )
 
 // Reporter sets workers up to report what they are doing and reads what they reported.
@@ -35,14 +36,15 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
-	for _, name := range []string{activityName, editsName} {
+	for _, name := range []string{activityName, editsName, sessionName} {
 		if err := project.RemoveRun(root, worktree, project.RunPath(name)); err != nil {
 			return nil, err
 		}
 	}
 	activity := filepath.Join(worktree, project.RunPath(activityName))
 	edits := filepath.Join(worktree, project.RunPath(editsName))
-	b, err := json.MarshalIndent(hookSettings(activity, edits), "", "  ")
+	session := filepath.Join(worktree, project.RunPath(sessionName))
+	b, err := json.MarshalIndent(hookSettings(activity, edits, session), "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,9 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 // only the event after a tool use (failed or not) and at the end of a turn: a finished tool's input
 // carries its whole output. Each write goes through a temporary file, so a reader never sees half
 // of one. Before each edit, the file's path is also appended to edits: the record of the last tool
-// use is replaced by the next one, and the scheduler needs every file the worker touches.
+// use is replaced by the next one, and the scheduler needs every file the worker touches. As the
+// session starts, or is resumed, cleared or compacted, its input (session_id, transcript_path) is
+// written to session, which says what to resume and where the transcript is.
 //
 // A reporting hook must never change what the worker does, and Claude Code takes a hook's exit
 // status 2 as "block": the tool call is refused, or the turn may not end. dash, /bin/sh on Debian
@@ -65,10 +69,11 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 // removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
 // stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
 // folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
-func hookSettings(activity, edits string) map[string]any {
-	write := func(from string) string {
-		return "f=" + command.ShellQuote(activity) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
+func hookSettings(activity, edits, session string) map[string]any {
+	writeTo := func(path, from string) string {
+		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
+	write := func(from string) string { return writeTo(activity, from) }
 	event := func(name string) string {
 		return write(`printf '{"hook_event_name":"` + name + `"}'`)
 	}
@@ -89,6 +94,7 @@ func hookSettings(activity, edits string) map[string]any {
 		// Claude Code runs PostToolUse after a tool that succeeded only; this is the other case.
 		"PostToolUseFailure": []any{map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))}},
 		"Stop":               []any{map[string]any{"hooks": hook(event("Stop"))}},
+		"SessionStart":       []any{map[string]any{"hooks": hook(writeTo(session, "cat"))}},
 	}}
 }
 

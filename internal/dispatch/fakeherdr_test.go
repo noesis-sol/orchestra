@@ -65,10 +65,11 @@ func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
 
-// agent returns the agent named name, or nil. The caller holds mu.
+// agent returns the agent named name, or nil; one whose worker has gone holds no name. The caller
+// holds mu.
 func (h *fakeHerdr) agent(name string) *fakeAgent {
 	for _, a := range h.agents {
-		if a.name != "" && a.name == name {
+		if a.name != "" && a.name == name && a.status != StateGone {
 			return a
 		}
 	}
