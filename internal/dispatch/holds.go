@@ -3,8 +3,10 @@ package dispatch
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
@@ -141,7 +143,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	}
 	for _, t := range closed {
 		id := t.ID
-		if commit := mergedSince(ctx, c, o.worktrees, o.merger, id); commit != "" {
+		if commit := mergedSince(ctx, c, o.worktrees, o.merger, t); commit != "" {
 			o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
 				id, c.Base, commit, UnmergedLabel)
 			o.unlabel(ctx, id)
@@ -162,20 +164,63 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 	return nil
 }
 
-// mergedSince returns the commit on Base naming ticket id, which an earlier run left unmerged, when
-// it has merged since, by hand: its branch (wt/<id>) is on Base with a commit naming it, or its
-// branch is gone and a commit on Base names it. It returns "" when it hasn't, or git can't tell.
-// loadUnmerged and CheckNothingToRun both ask it, so that a run and its check agree on what is
-// merged.
-func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, id string) string {
-	rev := c.Base
-	if br := branchOf(id); worktrees.HasBranch(ctx, c.Repo, br) {
-		rev = br
+// mergedSince returns the commit on Base naming ticket t, which an earlier run left unmerged, when
+// it has merged since, by hand: its branch (wt/<id>) is on Base with a commit of its own naming it,
+// or its branch is gone and a commit on Base since the branch was cut (ForkKey) names it. It
+// returns "" when it hasn't, or git can't tell. loadUnmerged and CheckNothingToRun both ask it, so
+// that a run and its check agree on what is merged.
+func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, t Ticket) string {
+	if worktrees.HasBranch(ctx, c.Repo, branchOf(t.ID)) {
+		return branchMerged(ctx, c, merger, t)
 	}
-	if !merger.IsAncestor(ctx, c.Repo, rev, c.Base) {
+	rev := c.Base // labelled before ForkKey was noted: any commit on Base
+	if fork := forkOf(t); fork != "" {
+		rev = fork + ".." + c.Base
+	}
+	return merger.CommitNamingOn(ctx, c.Repo, rev, t.ID)
+}
+
+// branchMerged returns the commit naming ticket t that its branch added, when the branch is on Base
+// (see ownCommits), or "". A branch with no commits of its own is always on Base: an older commit
+// naming the ticket there, such as another ticket's mentioning it or an earlier attempt at it, is
+// not its merge.
+func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket) string {
+	br := branchOf(t.ID)
+	if !merger.IsAncestor(ctx, c.Repo, br, c.Base) {
 		return ""
 	}
-	return merger.CommitNamingOn(ctx, c.Repo, rev, id)
+	return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, br), t.ID)
+}
+
+// ForkKey is the metadata key holding the commit on Base that a ticket's branch was cut from (their
+// merge-base), as the run that labelled it UnmergedLabel found it: the commits after it are the
+// branch's own.
+const ForkKey = "unmerged_fork"
+
+// ownCommits is the revisions holding ticket t's own commits up to rev: those since its branch was
+// cut, when its ForkKey says where, or else rev alone.
+func ownCommits(t Ticket, rev string) string {
+	if fork := forkOf(t); fork != "" {
+		return fork + ".." + rev
+	}
+	return rev + "^!"
+}
+
+// forkOf returns the commit ticket t's ForkKey holds, or "" when it holds none, or something other
+// than a commit hash: the metadata is anyone's to change, and git takes a revision beginning with a
+// dash for an option.
+func forkOf(t Ticket) string {
+	var s string
+	if json.Unmarshal(t.Metadata, &s) == nil {
+		t.Metadata = json.RawMessage(s) // an object encoded as a string
+	}
+	var meta map[string]json.RawMessage
+	var fork string
+	if json.Unmarshal(t.Metadata, &meta) != nil || json.Unmarshal(meta[ForkKey], &fork) != nil ||
+		len(fork) < 7 || len(fork) > 64 || strings.Trim(fork, "0123456789abcdef") != "" {
+		return ""
+	}
+	return fork
 }
 
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
@@ -212,8 +257,15 @@ func (o *Loop) leaveRunning(ctx context.Context) {
 	}
 }
 
-// label adds UnmergedLabel to the ticket, warning when bd can't, and reports whether it did.
+// label adds UnmergedLabel to the ticket, warning when bd can't, and reports whether it did. It
+// first notes where the ticket's branch left Base (ForkKey), so that a later run takes only the
+// branch's own commits for its merge (see mergedSince).
 func (o *Loop) label(ctx context.Context, id string) bool {
+	if fork := o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id)); fork != "" {
+		if err := o.notes.SetMetadata(ctx, id, ForkKey, fork); err != nil {
+			o.log.Raw("", err) // a later run then takes the branch's tip alone for its own
+		}
+	}
 	if err := o.notes.AddLabel(ctx, id, UnmergedLabel); err != nil {
 		o.log.Raw("", err)
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

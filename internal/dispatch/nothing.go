@@ -89,7 +89,7 @@ func CheckNothingToRun(
 	}
 	var unmerged []Ticket
 	for _, t := range labelled {
-		if mergedSince(ctx, c, worktrees, merger, t.ID) == "" {
+		if mergedSince(ctx, c, worktrees, merger, t) == "" {
 			unmerged = append(unmerged, t)
 		}
 	}

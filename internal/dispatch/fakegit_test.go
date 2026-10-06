@@ -249,6 +249,18 @@ func (g *fakeGit) isAncestor(ancestor, rev string) bool {
 	return len(a) > 0 && len(a) <= len(r) && a[len(a)-1].hash == r[len(a)-1].hash
 }
 
+// MergeBase is the last commit a's and b's histories share.
+func (g *fakeGit) MergeBase(ctx context.Context, repo, a, b string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	ra, rb := g.resolve(a), g.resolve(b)
+	base := ""
+	for i := 0; i < len(ra) && i < len(rb) && ra[i].hash == rb[i].hash; i++ {
+		base = ra[i].hash
+	}
+	return base
+}
+
 // CommitNaming is the latest commit on branch, not on base, whose subject begins with the ticket's ID.
 func (g *fakeGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
 	g.mu.Lock()
@@ -256,9 +268,18 @@ func (g *fakeGit) CommitNaming(ctx context.Context, repo, base, branch, ticket s
 	return naming(g.only(base, branch), ticket)
 }
 
+// CommitNamingOn is the latest commit in rev's history, in a range a..b or in rev^! (rev alone),
+// whose subject begins with the ticket's ID.
 func (g *fakeGit) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if base, tip, ok := strings.Cut(rev, ".."); ok {
+		return naming(g.only(base, tip), ticket)
+	}
+	if tip, ok := strings.CutSuffix(rev, "^!"); ok {
+		cs := g.resolve(tip)
+		return naming(cs[max(len(cs)-1, 0):], ticket)
+	}
 	return naming(g.resolve(rev), ticket)
 }
 

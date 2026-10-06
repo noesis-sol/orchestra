@@ -240,6 +240,13 @@ func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
 	return err == nil
 }
 
+// MergeBase returns the best common ancestor of a and b, as a full hash, or "" when git can't find
+// one.
+func (Git) MergeBase(ctx context.Context, repo, a, b string) string {
+	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "merge-base", a, b) // "" on failure
+	return strings.TrimSpace(out)
+}
+
 // Head returns the commit rev points at, or "" when there is none, such as HEAD before the first
 // commit.
 func (Git) Head(ctx context.Context, repo, rev string) string {

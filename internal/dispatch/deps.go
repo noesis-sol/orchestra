@@ -133,6 +133,7 @@ type Worktrees interface {
 // Merger brings finished branches onto the base branch.
 type Merger interface {
 	IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
+	MergeBase(ctx context.Context, repo, a, b string) string // their best common ancestor; "" if git can't say
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
 	// the latest commit reachable from rev naming the ticket
 	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string

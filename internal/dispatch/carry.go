@@ -92,12 +92,12 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
-// with its branch already on Base was merged by hand. A worker left unnamed in its pane is named
-// (see earlierState). A ticket in progress whose worker is gone is carried over if its session can
-// be resumed (see resumeGone); without one, it has nothing to carry on with: it is warned about and
-// noted, once, and the run goes on. Each of those drops the worker; a check that Ctrl+C cut short
-// returns false without a word, for loadCarried to keep the worker as it was. The
-// question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
+// with its branch's own commits already on Base was merged by hand (see branchMerged). A worker
+// left unnamed in its pane is named (see earlierState). A ticket in progress whose worker is gone is
+// carried over if its session can be resumed (see resumeGone); without one, it has nothing to carry
+// on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker;
+// a check that Ctrl+C cut short returns false without a word, for loadCarried to keep the worker as
+// it was. The question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
 // UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
 	c := o.cfg
@@ -117,8 +117,8 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 		o.info("  %s, carried over from the last run, is dropped: its worktree %s is gone", id, w.wt)
 		return false
 	}
-	if t.Status == StatusClosed && o.merger.IsAncestor(ctx, c.Repo, br, c.Base) {
-		if commit := o.merger.CommitNamingOn(ctx, c.Repo, br, id); commit != "" {
+	if t.Status == StatusClosed {
+		if commit := branchMerged(ctx, c, o.merger, t); commit != "" {
 			o.info("  %s, carried over from the last run, is dropped: %s is on %s already (%s)", id, br, c.Base, commit)
 			return false
 		}

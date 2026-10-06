@@ -146,7 +146,7 @@ func TestTicketLeftRunningLabelFailureIsWarned(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Notes: brokenBd(nil)})
+	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Notes: brokenBd(nil), Merger: upToDate{}})
 	o.SetSink(sink)
 	o.setActive(Status{Ticket: "A", Tab: "tab1"})
 	o.setActive(Status{Ticket: "B", Tab: "tab2"})

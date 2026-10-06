@@ -88,6 +88,7 @@ func (newWorktrees) DeleteBranch(ctx context.Context, repo, branch string) (stri
 type upToDate struct{}
 
 func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool { return true }
+func (upToDate) MergeBase(ctx context.Context, repo, a, b string) string         { return "" }
 func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
 	return ""
 }

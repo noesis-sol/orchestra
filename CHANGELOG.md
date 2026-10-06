@@ -290,6 +290,15 @@ All notable changes to orchestra are documented here. The format follows
   scripts/check-full.sh`) is left out, with a note, where each merge check
   would have recursed until fork failed. The scout is told to leave the
   runners out, and `bash` or an absolute path to the runner keeps it as it is.
+- A ticket labelled `unmerged` whose branch has no commits of its own (closed
+  with its work uncommitted) is no longer taken for merged by hand because an
+  older commit on the base names it, such as another ticket's mentioning it or
+  an earlier attempt at a reopened ticket: the next run removed its label and
+  started the tickets it blocks without its work. Only commits its branch made
+  since it was cut count, from the merge-base orchestra now notes in the
+  ticket's metadata (`unmerged_fork`) as it labels it; for a ticket labelled
+  before, the branch's last commit must name it. The same goes for a
+  carried-over worker's ticket closed meanwhile.
 - A worker resumed with its session keeps the files it edited before in its
   ticket's footprint (`.orchestra/run/edits` is no longer removed), so a
   ticket naming one of them still waits for it, and `LIKELY_CONFLICT` still
