@@ -76,11 +76,20 @@ func (p Printer) Event(ev dispatch.Event) {
 	if ev.Kind == dispatch.EvQueue {
 		return // the dashboard's count, not a line
 	}
+	ev = printableEvent(ev)
 	if p.Styled {
 		p.wrapped(renderEvent(ev))
 		return
 	}
 	p.print(fmt.Sprintf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text))
+}
+
+// printableEvent is ev with its text, which can quote a ticket's title or an organ's words, made
+// printable.
+func printableEvent(ev dispatch.Event) dispatch.Event {
+	ev.Ticket, ev.Title, ev.Detail, ev.Text = Printable(ev.Ticket), Printable(ev.Title), Printable(ev.Detail),
+		Printable(ev.Text)
+	return ev
 }
 
 // Summary prints the run's summary from the final dashboard d, which the alternate screen took with
@@ -103,7 +112,7 @@ func (p Printer) End(d Dashboard) {
 		if !d.began.IsZero() && ev.Time.After(d.began) {
 			took = ev.Time.Sub(d.began)
 		}
-		p.wrapped(closing(*ev, took))
+		p.wrapped(closing(printableEvent(*ev), took))
 	default:
 		p.Event(*ev)
 	}
@@ -121,6 +130,7 @@ func (Printer) Status(dispatch.Status) {}
 // styled sentence, in a light colour after the organs' ◆, else the plain line, worded as the log
 // words it.
 func (p Printer) Say(plain, styled string) {
+	plain, styled = Printable(plain), Printable(styled) // they can quote an error's words
 	if p.Styled {
 		p.print(organStyle.Render("◆ ") + sayStyle.Render(styled) + "\n")
 		return
@@ -130,6 +140,7 @@ func (p Printer) Say(plain, styled string) {
 
 // Warn is Say for a warning, worded the same in both and in the warning colour on a terminal.
 func (p Printer) Warn(text string) {
+	text = Printable(text) // it can quote an organ's error
 	if p.Styled {
 		p.print(organStyle.Render("◆ ") + deferredStyle.Render(text) + "\n")
 		return
@@ -144,6 +155,7 @@ func (p Printer) sayPlain(text string) {
 
 // Report prints the reviewer's Markdown after a blank line, rendered with Glamour on a terminal.
 func (p Printer) Report(md string) {
+	md = Printable(md) // the organ's words
 	if p.Styled {
 		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
 		if err == nil {

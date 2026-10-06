@@ -161,13 +161,13 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	}
 	switch {
 	case err != nil:
-		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", tui.Printable(dispatch.FirstLine(err.Error())))
 		f.logLine("FEATURE not planned: " + dispatch.FirstLine(err.Error()))
 		return "", dispatch.ExitSetup
 	case p.NeedsAnswers():
 		fmt.Fprintln(f.err, "orchestra needs answers before it can plan this request:")
 		for _, q := range p.Questions {
-			fmt.Fprintln(f.err, "  - "+q)
+			fmt.Fprintln(f.err, "  - "+planLine(q))
 		}
 		fmt.Fprintln(f.err, "Nothing was filed. Run it again with the answers in the request: "+
 			"orchestra --feature \"<the request, and the answers>\"")
@@ -262,19 +262,24 @@ func (f featureRun) logLine(text string) {
 }
 
 // showPlan prints the plan for the maintainer to confirm: the epic, then each ticket with its type,
-// priority, files and the tickets it waits for, and what checking the plan changed.
+// priority, files and the tickets it waits for, and what checking the plan changed. The plan is an
+// organ's words, or tickets' from bd, so what a terminal would act on is left out.
 func showPlan(w io.Writer, p organ.FeaturePlan) {
-	fmt.Fprintf(w, "\nEpic: %s\n", p.Epic.Title)
-	for line := range strings.Lines(p.Epic.Description) {
+	fmt.Fprintf(w, "\nEpic: %s\n", planLine(p.Epic.Title))
+	for line := range strings.Lines(tui.Printable(p.Epic.Description)) {
 		fmt.Fprintln(w, "  "+strings.TrimRight(line, "\n"))
 	}
 	width := 0
-	for _, t := range p.Tickets {
+	tickets := make([]organ.PlannedTicket, len(p.Tickets)) // printable copies: p's are filed as they are
+	for i, t := range p.Tickets {
+		t.Key, t.Type, t.Title = planLine(t.Key), planLine(t.Type), planLine(t.Title)
+		t.Files, t.BlockedBy = planLines(t.Files), planLines(t.BlockedBy)
+		tickets[i] = t
 		width = max(width, len(t.Key))
 	}
-	fmt.Fprintf(w, "\n%s:\n", plural(len(p.Tickets), "ticket"))
+	fmt.Fprintf(w, "\n%s:\n", plural(len(tickets), "ticket"))
 	indent := strings.Repeat(" ", width+4)
-	for _, t := range p.Tickets {
+	for _, t := range tickets {
 		fmt.Fprintf(w, "  %-*s  %-7s P%d  %s\n", width, t.Key, t.Type, t.Priority, t.Title)
 		if len(t.Files) > 0 {
 			fmt.Fprintf(w, "%sfiles: %s\n", indent, strings.Join(t.Files, ", "))
@@ -286,10 +291,22 @@ func showPlan(w io.Writer, p organ.FeaturePlan) {
 	if len(p.Notes) > 0 {
 		fmt.Fprintln(w, "\nChecking the plan:")
 		for _, n := range p.Notes {
-			fmt.Fprintln(w, "  - "+n)
+			fmt.Fprintln(w, "  - "+planLine(n))
 		}
 	}
 	fmt.Fprintln(w)
+}
+
+// planLine is s, a plan's text, printable and on one line.
+func planLine(s string) string { return strings.Join(strings.Fields(tui.Printable(s)), " ") }
+
+// planLines is planLine of each of ss, in a new slice.
+func planLines(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = planLine(s)
+	}
+	return out
 }
 
 // confirm asks the question on out and reads the answer from in: yes for y or yes, no for

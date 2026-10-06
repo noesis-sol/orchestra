@@ -3,6 +3,7 @@ package tui
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -144,8 +145,25 @@ func wordWrap(s string, width int) []string {
 }
 
 // oneLine collapses the whitespace in s, line breaks included, to single spaces: text from a
-// ticket, a worker or an organ that the dashboard shows on one line.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+// ticket, a worker or an organ that the dashboard shows on one line, made printable first.
+func oneLine(s string) string { return strings.Join(strings.Fields(Printable(s)), " ") }
+
+// Printable is s, text from a ticket, a worker or an organ, without what a terminal would act on
+// rather than show: escape sequences (one that writes the clipboard, clears the screen or sets the
+// window title), the other control characters but line breaks and tabs, and bytes that aren't UTF-8.
+// A carriage return becomes a line break, so that it can't take a printed line back to its start.
+func Printable(s string) string {
+	s = strings.ReplaceAll(strings.ToValidUTF8(s, ""), "\r\n", "\n")
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r':
+			return '\n'
+		case r == '\n' || r == '\t' || !unicode.IsControl(r):
+			return r
+		}
+		return -1
+	}, ansi.Strip(s))
+}
 
 // wrapLines word-wraps s to width and keeps at most limit lines, ending the last with … if cut.
 func wrapLines(s string, width, limit int) []string {

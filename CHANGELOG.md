@@ -262,6 +262,11 @@ All notable changes to orchestra are documented here. The format follows
   carrying on`, rather than sitting out the 10-minute idle grace and
   stopping with `PAUSED`: its ticket, claimed by the worker before it, and
   that worker's actions on its screen no longer count as its taking it.
+- Ticket titles, worker-filed follow-ups, organ text (triage summaries, the
+  run report, a feature plan) and log lines are shown without escape
+  sequences or other control characters, on the dashboard, in printed and
+  `-plain` lines and in the interview's line: a title can no longer write
+  the clipboard (OSC 52), clear the screen or set the window title.
 - A ticket blocked by one waiting on a question, or carried over from the
   last run, no longer starts before that ticket merges when its worker
   closes it in its tab: until the run adopts and merges it, the tickets it
