@@ -273,6 +273,13 @@ All notable changes to orchestra are documented here. The format follows
   is very long (a screenshot, a large tool result): the transcript is read
   back from its end a line at a time, skipping lines over 256 KB, instead
   of from 512 KB before its end, where such a line left nothing.
+- A worker gone from its tab, carried over from the last run or back at
+  work after its question, is resumed even when the run takes no more
+  tickets (its limit reached, `DONE_SO_FAR`, winding down), rather than
+  stopping the run with `PAUSED` and being saved, with another note on its
+  ticket, for the next run to stop for again. One that can't be resumed
+  then (no session, or resumed once in the run already) is warned about
+  (`WORKER_GONE: … so it is no longer followed`), noted and dropped.
 - A finished ticket whose fast-forward git refuses because the main
   checkout has uncommitted changes to files the ticket changes under
   `.orchestra/`, `.claude/` or `.beads/` (which the check before a merge

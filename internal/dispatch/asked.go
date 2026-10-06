@@ -23,14 +23,16 @@ type adoption struct {
 // followAsked reads each asked ticket that isn't running and acts on what its worker did in its
 // tab. One it claimed again or closed is to be adopted: it comes back, its row leaves "? for you",
 // and the caller counts it running from then on, whatever the free slots. With taking false (the
-// run takes no more tickets) only a closed one is, to be merged; one in progress is left to
-// leaveAsked. One still in progress whose worker is idle with the question open waits on, as
-// does one Herdr can't tell about, and one the last run left running whose worker is idle: it
-// waits for the maintainer, as it did when that run stopped. One its worker deferred is set aside
-// as deferred. One in progress whose worker is gone is adopted to have its session resumed, once in
-// a run (see resumeGone); without a session to resume, or with taking false, it stops the run, as a
-// paused ticket does: the reason is returned with the tickets adopted before it was found, and said
-// at once. running is the tickets running.
+// run takes no more tickets) only a closed one is, to be merged, and one whose worker is gone (see
+// below); one in progress is left to leaveAsked. One still in progress whose worker is idle with
+// the question open waits on, as does one Herdr can't tell about, and one the last run left running
+// whose worker is idle: it waits for the maintainer, as it did when that run stopped. One its
+// worker deferred is set aside as deferred. One in progress whose worker is gone is adopted to have
+// its session resumed, once in a run (see resumeGone), whatever taking: an adoption counts toward
+// no limit. Without a session to resume, it stops the run, as a paused ticket does: the reason is
+// returned with the tickets adopted before it was found, and said at once; with taking false it is
+// dropped instead (askedDropped), as the run would only stop for it again and again. running is the
+// tickets running.
 func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking bool) ([]adoption, *stopReason) {
 	var adopt []adoption
 	for _, id := range o.askedList() {
@@ -60,11 +62,15 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 			case err != nil:
 				o.log.Raw("", err)
 			case st == StateGone:
-				s, ok := o.sessionOf(w.wt, w.hooks)
-				if !taking || !ok || !o.firstResume(id) {
-					return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
+				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.firstResume(id) {
+					adopt = append(adopt, o.resumedInTab(t, w, s))
+					break
 				}
-				adopt = append(adopt, o.resumedInTab(t, w, s))
+				if !taking {
+					o.askedDropped(ctx, id, w)
+					break
+				}
+				return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
 			case !taking, st == StateUnknown,
 				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || w.question == ""):
 				// left as it is: read again at the next poll, or labelled as the run ends
@@ -126,6 +132,27 @@ func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *
 		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
 	o.emit(Event{Kind: EvHold, Ticket: id, Text: holdLine(s, n)})
 	return s
+}
+
+// askedDropped warns about and notes an asked ticket left in progress by a worker no longer in its
+// tab, which can't be resumed while the run takes no more tickets, and stops following it, as
+// carriedStands drops one carried over without a session: stopping the run for it (askedGone) would
+// save it for the next run, which stops for it again if it too takes no more tickets.
+func (o *Loop) askedDropped(ctx context.Context, id string, w askedWorker) {
+	o.setAsked(id, nil)
+	o.warnWorkerGone(ctx, id, w, "so it is no longer followed")
+}
+
+// warnWorkerGone warns about and notes ticket id, in progress with its worker w gone from its tab and
+// dropped, as what says.
+func (o *Loop) warnWorkerGone(ctx context.Context, id string, w askedWorker, what string) {
+	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
+		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
+		w.tab, w.after(), w.wt))
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
+		"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
+			"%s; reopen it to run it again (bd update %s --status open), or finish it by hand",
+		id, w.after(), w.tab, w.wt, what, id)})
 }
 
 // leaveAsked reads each asked ticket once more as the run ends. Its worker may have carried on in

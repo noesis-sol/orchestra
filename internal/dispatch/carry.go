@@ -135,13 +135,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	}
 	_, resumable := o.sessionOf(w.wt, w.hooks)
 	if t.Status == StatusInProgress && err == nil && st == StateGone && !resumable {
-		o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-			"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
-			w.tab, w.after(), w.wt))
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
-			"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
-				"so it isn't carried over; reopen it to run it again (bd update %s --status open), or finish it by hand",
-			id, w.after(), w.tab, w.wt, id)})
+		o.warnWorkerGone(ctx, id, *w, "so it isn't carried over")
 		return false
 	}
 	if HasLabel(t, UnmergedLabel) {
