@@ -253,6 +253,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket that comes back while Herdr shows its earlier worker as
+  `unknown` is read again for 15 seconds before a new worker takes it. One
+  that stays unknown counts as still at work: it is adopted if its ticket
+  waited on a question, and otherwise the run stops with `AGENT_BUSY`,
+  rather than renaming it, rebasing its branch under it and starting a
+  second worker beside it.
 - A ticket bd fails once to show as its worker settles (another bd
   holding the database, say) is read again, up to three times, before the
   run stops with `STATUS_UNREADABLE`: a finished ticket is no longer left

@@ -49,8 +49,9 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// (see earlierState). It is looked at before the worktree is touched: one still at work there
 	// must not have its branch rebased under it. One left by a question asked in this run may have
 	// had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in. Any
-	// other is renamed so the new worker can have the name; its tab stays as it is.
-	st, err := o.earlierState(ctx, id, earlier, 5)
+	// other is renamed so the new worker can have the name; its tab stays as it is. One Herdr can't
+	// tell the state of is read again for a while, and then counts as still at work.
+	st, err := o.earlierKnownState(ctx, id, earlier)
 	adopted := time.Now() // an adopted worker's hooks reported anything older in its earlier turns
 	if ctx.Err() != nil {
 		return errInterrupted
@@ -61,15 +62,19 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	}
 	switch st {
 	case StateGone:
-	case StateWorking, StateBlocked:
+	case StateWorking, StateBlocked, StateUnknown:
+		// One Herdr can't tell the state of may be at work, as settling counts it (see waitSettled).
+		at, in := fmt.Sprintf("%s in tab %s", st, earlier.tab), fmt.Sprintf("%s in its tab", st)
+		if st == StateUnknown {
+			at = fmt.Sprintf("in tab %s, though Herdr can't tell what it is doing", earlier.tab)
+			in = "in its tab, though Herdr can't tell what it is doing"
+		}
 		if asked {
-			o.info("  %s's earlier worker is still %s in tab %s; adopting it rather than starting another",
-				id, st, earlier.tab)
+			o.info("  %s's earlier worker is still %s; adopting it rather than starting another", id, at)
 			return o.adopt(ctx, t, agent, earlier, st, adopted, how)
 		}
 		return halt(ExitTool, stopAgentBusy,
-			": an earlier worker for %s is still %s in its tab; stopping rather than starting a second one on %s",
-			id, st, br)
+			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s", id, in, br)
 	default:
 		if asked && (st == StateIdle || st == StateDone) {
 			// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the

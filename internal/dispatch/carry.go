@@ -184,6 +184,24 @@ func (o *Loop) earlierState(ctx context.Context, id string, w askedWorker, tries
 	return st, nil
 }
 
+// unknownRereads is how many more times earlierKnownState reads an earlier worker Herdr shows as
+// unknown, a poll apart, before taking it as it is.
+const unknownRereads = 5
+
+// earlierKnownState reads the state of ticket id's earlier worker as earlierState does, reading it
+// again while Herdr can't tell what it is doing, as for a moment while it redraws: StateUnknown is
+// one that stays so.
+func (o *Loop) earlierKnownState(ctx context.Context, id string, w askedWorker) (AgentState, error) {
+	st, err := o.earlierState(ctx, id, w, 5)
+	for range unknownRereads {
+		if err != nil || st != StateUnknown || !sleep(ctx, o.pollEvery()) {
+			break
+		}
+		st, err = o.earlierState(ctx, id, w, 5)
+	}
+	return st, err
+}
+
 // showTries reads ticket id, trying up to three times while bd fails, as when another bd holds the
 // database: a ticket bd can't show isn't carried over.
 func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
