@@ -253,6 +253,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Triage gets the end of a worker's transcript when one of its last lines
+  is very long (a screenshot, a large tool result): the transcript is read
+  back from its end a line at a time, skipping lines over 256 KB, instead
+  of from 512 KB before its end, where such a line left nothing.
 - A finished ticket whose fast-forward git refuses because the main
   checkout has uncommitted changes to files the ticket changes under
   `.orchestra/`, `.claude/` or `.beads/` (which the check before a merge

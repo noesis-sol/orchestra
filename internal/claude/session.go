@@ -5,10 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -28,6 +28,9 @@ var sessionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 
 const (
 	tailBytes   = 512 << 10 // how much of the end of a transcript is read: its last lines are what count
+	lineBytes   = 256 << 10 // the longest transcript line read; a longer one (a screenshot, a large result) is skipped
+	scanBytes   = 32 << 20  // the most of a transcript's end gone through for its last tailBytes of lines
+	chunkBytes  = 64 << 10  // how much of a transcript is read at a time, back from its end
 	tailEntries = 40        // the transcript's last entries given as evidence
 	tailChars   = 8000      // the most of them given, from the end
 	textChars   = 400       // the most of one text or tool input
@@ -83,23 +86,58 @@ func (r Reporter) TranscriptTail(worktree string) string {
 	return transcriptTail(b)
 }
 
-// readTail reads the last n bytes of f, from the start of a line.
+// readTail reads f's last whole lines, back from its end, until they come to n bytes. It skips each
+// line over lineBytes rather than read it in part, so that one very long line near the end takes
+// nothing else with it, and goes through no more than the last scanBytes of f.
 func readTail(f *os.File, n int64) ([]byte, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	from := max(fi.Size()-n, 0)
-	b, err := io.ReadAll(io.NewSectionReader(f, from, fi.Size()-from))
-	if err != nil {
-		return nil, err
-	}
-	if from > 0 {
-		if i := bytes.IndexByte(b, '\n'); i >= 0 {
-			b = b[i+1:] // the first line is cut
+	var (
+		lines [][]byte // the lines kept, the last first
+		kept  int64    // their bytes, with their newlines
+		line  []byte   // the end of the line being read, back to where reading has come
+		long  bool     // that line is over lineBytes, so skipped
+	)
+	add := func(part []byte) { // part comes before line
+		if long {
+			return
 		}
+		if len(line)+len(part) > lineBytes {
+			line, long = nil, true
+			return
+		}
+		line = append(append(make([]byte, 0, len(part)+len(line)), part...), line...)
 	}
-	return b, nil
+	done := func() { // line is whole
+		if !long && len(line) > 0 {
+			lines = append(lines, line)
+			kept += int64(len(line)) + 1
+		}
+		line, long = nil, false
+	}
+	buf := make([]byte, chunkBytes)
+	pos, stop := fi.Size(), max(fi.Size()-scanBytes, 0)
+	for pos > stop && kept < n {
+		from := max(pos-chunkBytes, stop)
+		c := buf[:pos-from]
+		if _, err := f.ReadAt(c, from); err != nil {
+			return nil, err
+		}
+		pos = from
+		for i := bytes.LastIndexByte(c, '\n'); i >= 0 && kept < n; i = bytes.LastIndexByte(c, '\n') {
+			add(c[i+1:])
+			done()
+			c = c[:i]
+		}
+		add(c)
+	}
+	if pos == 0 && kept < n {
+		done() // the transcript's first line
+	}
+	slices.Reverse(lines)
+	return bytes.Join(lines, []byte{'\n'}), nil
 }
 
 // entry is one line of a transcript, as far as the evidence needs it.
@@ -127,7 +165,7 @@ type block struct {
 func transcriptTail(b []byte) string {
 	var lines []string
 	sc := bufio.NewScanner(bytes.NewReader(b))
-	sc.Buffer(nil, tailBytes+1) // b is no longer, so no line is
+	sc.Buffer(nil, tailBytes+1) // readTail keeps no longer line
 	for sc.Scan() {
 		var e entry
 		if json.Unmarshal(sc.Bytes(), &e) != nil {
