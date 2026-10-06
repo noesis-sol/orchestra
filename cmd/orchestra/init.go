@@ -170,10 +170,12 @@ func runInit(
 	// Stage 2's choice of checks, unless a flag gives one of them.
 	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
 		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup}
+	var scoutSpent []organ.Spend // by the scout's goroutine, which AskInit waits for before it returns
 	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
 		if ask.Check {
 			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
-				Effort: envOr(getenv, "ORGAN_EFFORT", existing.OrganEffort)}
+				Effort: envOr(getenv, "ORGAN_EFFORT", existing.OrganEffort),
+				Spent:  func(s organ.Spend) { scoutSpent = append(scoutSpent, s) }}
 			ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
 			if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err == nil { // as they are
 				ask.Skill, err = project.PlanSkill(repo, choice.Agent)
@@ -184,6 +186,7 @@ func runInit(
 			}
 		}
 		if err := tui.AskInit(stdin, stdout, &choice, ask); err != nil {
+			ui.Steps(scoutSteps(scoutSpent))
 			ui.Cancelled()
 			return dispatch.ExitSetup
 		}
@@ -201,7 +204,7 @@ func runInit(
 	// Beads first: bd init commits what was staged, and init stages a moved worker prompt. Ctrl+C
 	// stops an install or bd init under way, which run in their own process groups, and init with it.
 	beadsCtx, stopBeads := signal.NotifyContext(ctx, stopSignals...)
-	steps := project.SetUpBeads(beadsCtx, repo, choice, getenv, ui.Working)
+	steps := append(scoutSteps(scoutSpent), project.SetUpBeads(beadsCtx, repo, choice, getenv, ui.Working)...)
 	stopped := beadsCtx.Err() != nil
 	stopBeads()
 	if stopped {
@@ -255,6 +258,20 @@ func runInit(
 	}
 	ui.SignOff(ready)
 	return dispatch.ExitOK
+}
+
+// scoutSteps say what the scout's call cost, as claude answered it: init has no log for an ORGAN
+// line. One that ended in an error is to watch.
+func scoutSteps(spent []organ.Spend) []project.Step {
+	var steps []project.Step
+	for _, s := range spent {
+		kind := project.StepDone
+		if s.Subtype != "" && s.Subtype != organ.SubtypeSuccess {
+			kind = project.StepCaution
+		}
+		steps = append(steps, project.Step{Kind: kind, Label: "scout", Detail: "cost " + s.Cost()})
+	}
+	return steps
 }
 
 // regularFile reports whether p is a file.

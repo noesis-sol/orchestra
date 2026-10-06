@@ -159,14 +159,19 @@ type Spend struct {
 	Took    time.Duration // from start to answer
 }
 
-// String reads "triage: $0.0123 in 1 turn, 4.2s, session 1b2c…", and names an error subtype after the
-// time it took.
+// String reads "triage: $0.0123 in 1 turn, 4.2s, session 1b2c…": the organ, then its Cost.
 func (s Spend) String() string {
+	return s.Organ + ": " + s.Cost()
+}
+
+// Cost reads "$0.0123 in 1 turn, 4.2s, session 1b2c…", and names an error subtype after the time it
+// took.
+func (s Spend) Cost() string {
 	turns := "turns"
 	if s.Turns == 1 {
 		turns = "turn"
 	}
-	out := fmt.Sprintf("%s: $%.4f in %d %s, %s", s.Organ, s.CostUSD, s.Turns, turns,
+	out := fmt.Sprintf("$%.4f in %d %s, %s", s.CostUSD, s.Turns, turns,
 		command.ShortDuration(s.Took.Round(100*time.Millisecond)))
 	if s.Subtype != "" && s.Subtype != SubtypeSuccess {
 		out += ", " + string(s.Subtype)

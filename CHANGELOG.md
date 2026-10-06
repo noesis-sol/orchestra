@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` says what the scout's call cost, on a `scout` line of
+  its summary (even when the form is cancelled), as it has no log for an
+  `ORGAN` line.
 - Organ calls say what they cost: each is logged with its cost and turns
   (`ORGAN triage: $0.0123 in 1 turn, …`), the reviewer is given what the
   run's organs cost, and the run report ends with an `Organs:` line giving
