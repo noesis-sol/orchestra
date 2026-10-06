@@ -257,6 +257,11 @@ All notable changes to orchestra are documented here. The format follows
   holding the database, say) is read again, up to three times, before the
   run stops with `STATUS_UNREADABLE`: a finished ticket is no longer left
   unmerged by one failed read.
+- A worker resumed with its session that doesn't take the message it was
+  launched with now gets it pasted, or the run stops with `never took up
+  carrying on`, rather than sitting out the 10-minute idle grace and
+  stopping with `PAUSED`: its ticket, claimed by the worker before it, and
+  that worker's actions on its screen no longer count as its taking it.
 - A ticket blocked by one waiting on a question, or carried over from the
   last run, no longer starts before that ticket merges when its worker
   closes it in its tab: until the run adopts and merges it, the tickets it

@@ -197,7 +197,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	stopWatch := o.watch(ctx, w)
 	defer stopWatch()
 
-	if !o.promptTaken(ctx, id, agent, prompt, launched.atLaunch) {
+	if !o.promptTaken(ctx, id, agent, prompt, launched.atLaunch, false) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}

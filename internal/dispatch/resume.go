@@ -158,7 +158,7 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 		return stop
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
-	if !o.promptTaken(ctx, id, agent, msg, launched.atLaunch) {
+	if !o.promptTaken(ctx, id, agent, msg, launched.atLaunch, true) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}

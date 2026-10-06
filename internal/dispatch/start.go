@@ -409,10 +409,12 @@ func (o *Loop) agentName(id string) string {
 
 // promptTaken confirms the worker started on its prompt. Given at launch, it counts as taken once
 // the worker works, has claimed the ticket, or shows any action; otherwise (or if it did not take)
-// it is delivered by pasting.
-func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch bool) bool {
+// it is delivered by pasting. A resumed worker's ticket was claimed by the worker before it, and its
+// screen shows that worker's actions, so for it only its starting to work counts.
+func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch, resumed bool) bool {
 	if atLaunch {
-		if o.agents.WaitStarted(ctx, agent) || o.claimed(ctx, id) || lastActivity(o.agents.Screen(ctx, agent, "")) != "" {
+		if o.agents.WaitStarted(ctx, agent) ||
+			!resumed && (o.claimed(ctx, id) || lastActivity(o.agents.Screen(ctx, agent, "")) != "") {
 			return true
 		}
 		if ctx.Err() != nil {

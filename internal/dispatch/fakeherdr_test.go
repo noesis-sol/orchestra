@@ -51,6 +51,7 @@ type fakeHerdr struct {
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
 	onAdopt      func(id string)        // called with the ticket's ID as AdoptAgent begins, where a test presses Ctrl+C; nil: none
 	launchLost   map[string]bool        // LaunchInPane succeeds, but no worker ever appears
+	resumeDrops  map[string]bool        // a worker LaunchInPane starts resuming a session sits idle, its message not taken
 	showsAs      map[string]AgentState  // the status these tickets' workers show from their prompt on, instead of working
 	statusHangs  map[string]bool        // reading these tickets' workers' status, once they have their prompt, hangs until cancelled
 	onPrompt     func(id string)        // told of each prompt pasted, with the ticket's ID; nil: none
@@ -63,7 +64,7 @@ type fakeHerdr struct {
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, labels: map[string]string{}, behaviours: map[string][]behaviour{}, args: map[string][][]string{},
 		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
-		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
+		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, resumeDrops: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
 
 // agent returns the agent named name, or nil; one whose worker has gone holds no name. The caller
@@ -207,6 +208,10 @@ func (h *fakeHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []
 	}
 	a := &fakeAgent{kind: kind, pane: pane, late: h.launchSlow[h.panes[pane].ticket]}
 	h.agents = append(h.agents, a)
+	if h.resumeDrops[h.panes[pane].ticket] && slices.Contains(args, "--resume") {
+		a.status = "idle" // its prompt comes by pasting, if at all
+		return nil
+	}
 	h.prompt(a) // the prompt is its launch argument
 	return nil
 }
