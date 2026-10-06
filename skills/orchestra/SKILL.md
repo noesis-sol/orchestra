@@ -368,6 +368,8 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 - `RESUMED: <id>'s worker is gone from tab <tab> with the ticket in progress; resuming its session
   …`: a Claude worker vanished mid-ticket, and orchestra started `claude --resume` in a new tab,
   once per ticket in a run. Nothing to do; the old tab is left open, and can be closed.
+  `RESUMED: <id> is back, and its worker is gone from tab <tab>; …` is the same for a ticket back from
+  its answered question; one back from a deferral gets a new worker instead.
 - `kept for a later run, outside this run's scope: …`: a `--ticket` run leaves the workers on other
   tickets saved for a run that takes them.
 - `ASKED_UNMERGED`, `LEFT_UNMERGED`: a ticket asked (or carried over as left running) was closed in

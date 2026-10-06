@@ -34,6 +34,11 @@ All notable changes to orchestra are documented here. The format follows
   worktree, told to carry on (`RESUMED: …`), once per ticket in a run; the
   next run resumes one gone again, or carried over gone. Triage's evidence
   includes the end of the worker's transcript.
+- A ticket back through `bd ready` once its question is answered, its
+  worker gone from its tab, has that worker's session resumed in a new tab
+  (`RESUMED: <id> is back, …`), told the answer is in and to claim the
+  ticket again, instead of a new worker starting over; once per ticket in a
+  run. A ticket back from a deferral still gets a new worker.
 
 - A worker handed a rebase stopped on conflicts is now asked to run the
   check once the rebase has finished, not before `git rebase --continue`,

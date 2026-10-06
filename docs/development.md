@@ -65,7 +65,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `asked.go` | tickets waiting on a question that don't come back through `bd ready`: adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |
 | `carry.go` | the workers a run leaves behind (asked, left running), saved to `.orchestra/run/state.json` as it ends and checked and carried over by the next run |
 | `settle.go` | waiting for a worker to settle (Herdr's status, its Stop hook or the start-up grace), telling one that stopped with its ticket in progress to continue, reading its status, the dashboard watcher |
-| `resume.go` | resuming a Claude worker gone from its tab with its ticket in progress: its session, recorded by its hooks, in a new tab, once per ticket in a run |
+| `resume.go` | resuming a Claude worker gone from its tab with its ticket in progress, or back from its answered question: its session, recorded by its hooks, in a new tab, once per ticket in a run |
 | `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup (the worker's tab only while Herdr still has it labelled with the ticket's ID) |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |

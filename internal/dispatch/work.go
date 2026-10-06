@@ -119,6 +119,13 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		})
 		return nil
 	}
+	// Back from a question with its earlier worker gone from its tab, the ticket has that worker's
+	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
+	if asked && st == StateGone {
+		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.firstResume(id) {
+			return o.resumeGone(ctx, t, wt, earlier.tab, earlier.question, true, s, how)
+		}
+	}
 
 	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
 	// every server on the machine, so a file it can't have stops the run rather than the worker.
@@ -269,7 +276,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 	}
 	agent := o.agentName(id)
 	if a.resume != nil {
-		return o.resumeGone(ctx, t, w.wt, w.tab, w.question, *a.resume, how)
+		return o.resumeGone(ctx, t, w.wt, w.tab, w.question, false, *a.resume, how)
 	}
 	st, err := o.readStatus(ctx, agent, 5)
 	adopted := time.Now() // its hooks reported anything older in its earlier turns
