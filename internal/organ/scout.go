@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,6 +63,12 @@ const ScoutEffort = "medium"
 
 // ScoutLimit is how long the scout may run before it is stopped.
 const ScoutLimit = 5 * time.Minute
+
+// ScoutBudget is the most the scout may spend, in US dollars (--max-budget-usd), when claude lists the
+// flag. Measured on 2026-10-06 with Claude Code 2.1.291 (docs/organs.md has the numbers): $0.08–0.16
+// a scout at medium effort, about $1.10 at max effort on Opus. claude stops a call after the turn that
+// reaches it, so a call may spend a turn's cost beyond it.
+const ScoutBudget = 2.0
 
 // scoutTools are the scout's tools: the read-only ones, and no others.
 const scoutTools = "Read,Glob,Grep"
@@ -130,6 +137,7 @@ const (
 	ScoutStopped                            // its context was cancelled
 	ScoutFailed                             // claude failed or reported an error
 	ScoutUnreadable                         // the answer isn't the JSON asked for
+	ScoutOverBudget                         // stopped at ScoutBudget
 )
 
 // ScoutError is the scout's error, whose message is for the user: why there are no suites to choose
@@ -149,6 +157,8 @@ func (e *ScoutError) Error() string {
 		return "the scout was stopped: " + e.Err.Error()
 	case ScoutUnreadable:
 		return "the scout's answer is unreadable: " + e.Err.Error()
+	case ScoutOverBudget:
+		return fmt.Sprintf("the scout was stopped at its budget of $%.2f: %v", ScoutBudget, e.Err)
 	}
 	return "the scout failed: " + e.Err.Error()
 }
@@ -157,7 +167,7 @@ func (e *ScoutError) Unwrap() error { return e.Err }
 
 // Scout finds the checks of the repository at root: its test suites, lints, type checks and builds,
 // an existing scripts/check.sh first. It reads the repository with Read, Glob and Grep, for at most
-// ScoutLimit. Its error is a *ScoutError.
+// ScoutLimit and, where claude can cap it, ScoutBudget. Its error is a *ScoutError.
 func (g Client) Scout(ctx context.Context, root string) (Scouting, error) {
 	return g.scout(ctx, ScoutLimit, root)
 }
@@ -169,7 +179,7 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	// In the repository's root, where Claude Code lets the read-only tools read without asking; safe
 	// mode keeps its CLAUDE.md and hooks out, as they are for the other organs.
 	r, err := g.ask(ctx, limit, call{organ: "scout", dir: root, tools: scoutTools, effort: g.effort(ScoutEffort),
-		system: scoutSystem, schema: scoutSchema, flags: g.confinement(ctx)}, scoutInput)
+		system: scoutSystem, schema: scoutSchema, flags: g.scoutFlags(ctx)}, scoutInput)
 	if err != nil {
 		return Scouting{}, scoutFailure(ctx, err)
 	}
@@ -181,19 +191,25 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	return s, nil
 }
 
-// confinement is the flags that keep the scout's reads inside the repository, those of them claude
-// lists in its --help: an older claude rejects a flag it doesn't know. Without them, Claude Code
-// would ask before the tools read outside the working directory, and nobody answers in -p, but a
-// setting could answer for it: an allow rule such as Read(//**), or bypassPermissions as the default
-// mode, would let the scout read anywhere, and a repository file could ask it to. --restricted
-// (Claude Code 2.1.289) confines the file tools to the working directory whatever the settings say,
-// and ignores the user, project and local settings files; --permission-prompts none denies whatever
-// would prompt. When --help fails, the scout runs without them, and its call says what is wrong.
-func (g Client) confinement(ctx context.Context) []string {
+// scoutFlags is the scout's flags beyond the other organs', those of them claude lists in its --help: an
+// older claude rejects a flag it doesn't know. When --help fails, the scout runs without them, and its
+// call says what is wrong.
+func (g Client) scoutFlags(ctx context.Context) []string {
 	help, err := command.Output(ctx, command.ReadLimit, os.TempDir(), g.Bin, "--help")
 	if err != nil {
 		return nil
 	}
+	return append(confinement(help), budget(help)...)
+}
+
+// confinement is the flags that keep the scout's reads inside the repository, of those help lists.
+// Without them, Claude Code would ask before the tools read outside the working directory, and nobody
+// answers in -p, but a setting could answer for it: an allow rule such as Read(//**), or
+// bypassPermissions as the default mode, would let the scout read anywhere, and a repository file could
+// ask it to. --restricted (Claude Code 2.1.289) confines the file tools to the working directory
+// whatever the settings say, and ignores the user, project and local settings files;
+// --permission-prompts none denies whatever would prompt.
+func confinement(help string) []string {
 	var flags []string
 	if listsFlag(help, "--restricted") {
 		flags = append(flags, "--restricted")
@@ -202,6 +218,15 @@ func (g Client) confinement(ctx context.Context) []string {
 		flags = append(flags, "--permission-prompts", "none")
 	}
 	return flags
+}
+
+// budget caps what the scout spends at ScoutBudget, when help lists --max-budget-usd. The time limit
+// stops a scout that runs long; this stops one that spends fast, at a higher effort or a dearer model.
+func budget(help string) []string {
+	if !listsFlag(help, "--max-budget-usd") {
+		return nil
+	}
+	return []string{"--max-budget-usd", strconv.FormatFloat(ScoutBudget, 'f', 2, 64)}
 }
 
 // listsFlag tells whether help, a command's --help, lists flag: a line that starts with it, or with
@@ -216,11 +241,14 @@ func listsFlag(help, flag string) bool {
 	return false
 }
 
-// scoutFailure says why ask failed: claude stopped at the time limit or by ctx, its output unreadable,
-// or claude failed.
+// scoutFailure says why ask failed: claude stopped at the time limit, by ctx or at the budget, its
+// output unreadable, or claude failed.
 func scoutFailure(ctx context.Context, err error) *ScoutError {
 	if _, ok := errors.AsType[unreadableOutput](err); ok {
 		return &ScoutError{ScoutUnreadable, err}
+	}
+	if c, ok := errors.AsType[*CallError](err); ok && c.Subtype == SubtypeMaxBudget {
+		return &ScoutError{ScoutOverBudget, err}
 	}
 	e, ok := errors.AsType[*command.Error](err)
 	switch {

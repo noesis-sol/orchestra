@@ -231,7 +231,7 @@ func (g Client) Ask(ctx context.Context, name string, timeout time.Duration, eff
 
 // call is how one organ call runs: for the organ named organ, in dir, with the read-only tools in tools
 // ("" for none), at the effort, with the system prompt and the JSON schema ("" for none), and with
-// flags added after the others (the scout's confinement).
+// flags added after the others (the scout's confinement and budget).
 type call struct {
 	organ, dir, tools, effort, system, schema string
 	flags                                     []string

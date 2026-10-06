@@ -160,8 +160,8 @@ func TestTheScoutsErrorKeepsTheCallError(t *testing.T) {
 	bin := answers(t, `{"type":"result","subtype":"error_max_budget_usd","is_error":true,`+
 		`"errors":["Reached maximum budget ($0.5)"]}`, 1)
 	_, err := Client{Bin: bin}.scout(context.Background(), time.Minute, t.TempDir())
-	if failure := scoutFailureOf(t, err); failure != ScoutFailed {
-		t.Errorf("failure %v, want ScoutFailed", failure)
+	if failure := scoutFailureOf(t, err); failure != ScoutOverBudget {
+		t.Errorf("failure %v, want ScoutOverBudget", failure)
 	}
 	if e, ok := errors.AsType[*CallError](err); !ok || e.Subtype != SubtypeMaxBudget {
 		t.Errorf("error %v, want the budget's *CallError inside", err)

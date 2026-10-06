@@ -11,6 +11,10 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra init` says what the scout's call cost, on a `scout` line of
   its summary (even when the form is cancelled), as it has no log for an
   `ORGAN` line.
+- `orchestra init`'s scout is capped at $2.00 (`--max-budget-usd`) when
+  `claude --help` lists the flag, as well as at 5 minutes; a scout stopped
+  there says so (`the scout was stopped at its budget of $2.00: …`).
+  docs/organs.md has the costs measured to pick it.
 - Organ calls say what they cost: each is logged with its cost and turns
   (`ORGAN triage: $0.0123 in 1 turn, …`), the reviewer is given what the
   run's organs cost, and the run report ends with an `Organs:` line giving
