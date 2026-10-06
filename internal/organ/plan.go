@@ -80,8 +80,8 @@ type FeatureEvidence struct {
 	Request   string           // the request as typed or pasted
 	Repo      string           // the repository's name
 	README    string           // README.md; the input keeps its first maxPlanDoc bytes
-	Guide     string           // the agents' instructions, CLAUDE.md or AGENTS.md; capped likewise
-	GuideName string           // the guide's file name; "" is CLAUDE.md
+	Guide     string           // the agents' instructions (readGuide); capped likewise
+	GuideName string           // the guide's file names, comma-separated; "" is CLAUDE.md
 	Files     []TrackedFile    // git ls-files; the input lists the first maxListed
 	Unclosed  []UnclosedTicket // the tickets not closed, so the plan doesn't repeat them
 	Named     []NamedFile      // the tracked files the request names by path
@@ -113,9 +113,9 @@ const (
 )
 
 // GatherFeature reads the plan organ's evidence from the repository at repo, through an os.Root so
-// that no symbolic link leads outside it: README.md, CLAUDE.md (or AGENTS.md), the line counts of
-// the tracked files (git ls-files) and the tracked files the request names by path. A missing
-// README or guide is left empty. Once ctx is done it stops, with ctx's error.
+// that no symbolic link leads outside it: README.md, the agents' instructions (readGuide), the line
+// counts of the tracked files (git ls-files) and the tracked files the request names by path. A
+// missing README or guide is left empty. Once ctx is done it stops, with ctx's error.
 func GatherFeature(
 	ctx context.Context, repo, request string, tracked []string, unclosed []UnclosedTicket,
 ) (FeatureEvidence, error) {
@@ -126,12 +126,7 @@ func GatherFeature(
 	defer func() { _ = root.Close() }() // opened read-only: nothing to flush
 	ev := FeatureEvidence{Request: request, Repo: filepath.Base(repo), Unclosed: unclosed}
 	ev.README, _ = readStart(root, "README.md", maxPlanDoc+1)
-	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
-		if body, ok := readStart(root, name, maxPlanDoc+1); ok {
-			ev.Guide, ev.GuideName = body, name
-			break
-		}
-	}
+	ev.Guide, ev.GuideName = readGuide(root)
 	for i, f := range tracked {
 		if ctx.Err() != nil {
 			break
@@ -156,6 +151,56 @@ func GatherFeature(
 		ev.Named = append(ev.Named, NamedFile{Path: f, Body: body})
 	}
 	return ev, nil
+}
+
+// readGuide reads the agents' instructions under root and names the files they come from: CLAUDE.md,
+// or AGENTS.md. A CLAUDE.md that is blank or holds only Claude Code imports, such as a lone
+// @AGENTS.md, gives the plan nothing to go on, so the files it imports stand in for it, one level
+// deep and only inside root: an import of a home (@~/…) or absolute path, or one leading out
+// through .. or a symbolic link, isn't read, nor is one that is itself blank or only imports. When
+// none of them can be read, AGENTS.md does; without it, CLAUDE.md as it is.
+func readGuide(root *os.Root) (body, name string) {
+	claude, ok := readStart(root, "CLAUDE.md", maxPlanDoc+1)
+	if ok && !onlyImports(claude) {
+		return claude, "CLAUDE.md"
+	}
+	var bodies, names []string
+	size := 0
+	for f := range strings.FieldsSeq(claude) {
+		p := strings.TrimPrefix(f, "@")
+		if strings.HasPrefix(p, "~") || filepath.IsAbs(p) || size > maxPlanDoc {
+			continue
+		}
+		p = path.Clean(p)
+		if slices.Contains(names, p) {
+			continue
+		}
+		if b, ok := readStart(root, p, maxPlanDoc+1); ok && !onlyImports(b) {
+			bodies, names = append(bodies, b), append(names, p)
+			size += len(b)
+		}
+	}
+	if len(names) > 0 {
+		return strings.Join(bodies, "\n\n"), strings.Join(names, ", ")
+	}
+	if agents, ok := readStart(root, "AGENTS.md", maxPlanDoc+1); ok {
+		return agents, "AGENTS.md"
+	}
+	if ok {
+		return claude, "CLAUDE.md"
+	}
+	return "", ""
+}
+
+// onlyImports reports whether the instructions s are blank or hold nothing but Claude Code imports
+// (@path), which say nothing until they are read.
+func onlyImports(s string) bool {
+	for f := range strings.FieldsSeq(s) {
+		if !strings.HasPrefix(f, "@") || f == "@" {
+			return false
+		}
+	}
+	return true
 }
 
 // readStart reads up to n bytes of the file name under root; false when it can't be read.

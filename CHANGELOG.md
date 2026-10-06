@@ -277,6 +277,10 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra feature` accepts the screen organ's ok verdict without a
   reason, rather than stopping a valid request with `orchestra couldn't
   screen the request`. Reject and unclear still need one.
+- The plan organ reads the project's instructions behind a `CLAUDE.md` that
+  is blank or holds only imports, such as a lone `@AGENTS.md`: the files it
+  imports, read inside the repository only, or else `AGENTS.md`. It saw the
+  literal `@AGENTS.md` before.
 - A ticket that comes back while Herdr shows its earlier worker as
   `unknown` is read again for 15 seconds before a new worker takes it. One
   that stays unknown counts as still at work: it is adopted if its ticket
