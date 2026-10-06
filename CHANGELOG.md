@@ -262,6 +262,12 @@ All notable changes to orchestra are documented here. The format follows
   waited on a question, and otherwise the run stops with `AGENT_BUSY`,
   rather than renaming it, rebasing its branch under it and starting a
   second worker beside it.
+- With `TERM=dumb`, the end of input (Ctrl+D) at any of the plain-line
+  questions of `orchestra init` or of what a run should work on cancels it,
+  as Esc does in the terminal's form, rather than taking the default
+  answers: `orchestra` no longer starts a run, and `init` no longer goes on
+  to install Beads and write its files. Ctrl+C at the run's question stops
+  it at once rather than after the next line.
 - A ticket bd fails once to show as its worker settles (another bd
   holding the database, say) is read again, up to three times, before the
   run stops with `STATUS_UNREADABLE`: a finished ticket is no longer left

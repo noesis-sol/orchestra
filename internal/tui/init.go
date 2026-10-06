@@ -385,7 +385,8 @@ func timeLimit(title, description, placeholder string, value *string) *huh.Input
 // AskInit asks the questions ask names, starting from the current choice, reading the answers
 // from in and drawing the form on out. It asks them in stages, each stage under its header; a stage
 // with no question to ask is left out. It changes nothing but c: Esc or Ctrl+C at any stage returns
-// huh.ErrUserAborted, and init then writes and installs nothing.
+// huh.ErrUserAborted, as the end of in does in the accessible form (TERM=dumb), and init then writes
+// and installs nothing.
 func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	workers, checks := &initStage{name: "Workers"}, &initStage{name: "Checks"}
 	if ask.Install {
@@ -495,7 +496,13 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
 	var err error
 	if accessible {
-		err = form.Run()
+		var fields []huh.Field
+		for _, s := range stages {
+			for _, f := range s.fields {
+				fields = append(fields, f)
+			}
+		}
+		err = runAccessible(context.Background(), fields, in, out)
 	} else {
 		var scout *scoutRun
 		if stage2 != nil {

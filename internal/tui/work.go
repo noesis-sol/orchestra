@@ -15,7 +15,8 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// ErrCancelled is AskWork's error when the user cancels the question with Ctrl+C or Esc.
+// ErrCancelled is AskWork's error when the user cancels the question with Ctrl+C or Esc, or ends
+// its input.
 var ErrCancelled = errors.New("cancelled")
 
 // The answers to "What should this run work on?".
@@ -32,7 +33,8 @@ var errNoDescription = errors.New("describe the feature first, or press Esc to c
 // description it then asks for. nothing is why the run has nothing to run, none ready or every ready
 // ticket held back (see dispatch.CheckNothingToRun), or nil when it has something to run. It
 // returns the description, trimmed, or "" for the current tickets. Ctrl+C or Esc cancels it with
-// ErrCancelled; ctx ending stops it with ctx's error.
+// ErrCancelled, as the end of in does in the accessible form (TERM=dumb); ctx ending stops it with
+// ctx's error.
 func AskWork(
 	ctx context.Context, in io.Reader, out io.Writer, ready int, nothing *dispatch.NothingToRun,
 ) (string, error) {
@@ -58,7 +60,7 @@ func AskWork(
 	theme.FieldSeparator = lipgloss.NewStyle() // the description draws its own
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
-	form := huh.NewForm(huh.NewGroup(
+	fields := []huh.Field{
 		newBoundedSelect(huh.NewSelect[string]().
 			Title("What should this run work on?").
 			Description("orchestra --tickets runs the current tickets without asking."),
@@ -67,10 +69,12 @@ func AskWork(
 			huh.NewOption("New feature: describe it, talk it through with claude, run its tickets", workFeature),
 		),
 		describe,
-	)).WithTheme(theme).WithKeyMap(keys)
+	}
+	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme).WithKeyMap(keys)
 	var err error
-	if os.Getenv("TERM") == "dumb" { // huh.NewForm's test for its accessible form, which RunWithContext runs
-		err = form.WithInput(in).WithOutput(out).RunWithContext(ctx)
+	if os.Getenv("TERM") == "dumb" { // huh.NewForm's test for its accessible form
+		// Run here rather than by huh's RunWithContext, which takes the end of input for answers.
+		err = runAccessible(ctx, fields, in, out)
 	} else {
 		// Run here rather than by huh's RunWithContext, which has Esc and Ctrl+C send tea.Interrupt:
 		// on it Bubble Tea closes the terminal's input without waiting for its goroutine still reading
