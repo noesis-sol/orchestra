@@ -94,6 +94,7 @@ type Reporter interface {
 	ReportArgs(worktree string) ([]string, error) // agent arguments that turn reporting on
 	ResumeArgs(worktree string) ([]string, error) // the same for a resumed worker, keeping the files edited before
 	LastToolUse(worktree string) (ToolUse, bool)  // false when the worker reported nothing
+	HookRecord(worktree string) HookRecord        // its permission prompts, compactions and subagents
 	EditedFiles(worktree string) []string         // repository files the worker has edited so far
 	Session(worktree string) (Session, bool)      // the worker's session, false when there is none to resume
 	TranscriptTail(worktree string) string        // the end of its session's transcript, as text; "" if unreadable

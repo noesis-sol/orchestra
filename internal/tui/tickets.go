@@ -121,8 +121,10 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 		state = deferredStyle.Render("⟳ fixing")
 	case "testing":
 		state = testingStyle.Render("▶ testing")
-	case "editing", "reading":
+	case "editing", "reading", dispatch.DoingSubagent:
 		state = pickedStyle.Render("▶ " + doing)
+	case permissionLabel: // red, as a blocked worker's box reads; "permission" is too wide for the column
+		state = stopStyle.Render("■ allow?")
 	}
 	return [3]string{state, pickedStyle.Render(r.id), fit(r.title)}
 }

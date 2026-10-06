@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,14 +58,20 @@ func (o *Loop) waitSettled(
 			}
 			return idle.since, nil
 		}
-		if blocked.track(st == StateBlocked) > blockedLimit {
+		// A permission prompt Herdr shows as idle waits for the maintainer as a blocked worker does.
+		asks := err == nil && o.asksPermission(w, st)
+		if blocked.track(st == StateBlocked || asks) > blockedLimit {
+			if asks {
+				return time.Time{}, halt(ExitStuck, stopBlocked,
+					" >4min: tab %s (%s) needs attention: its worker waits on a permission prompt", tab, id)
+			}
 			return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
 		}
 		if unknown.track(st == StateUnknown) > unknownLimit {
 			return time.Time{}, halt(ExitStuck, stopUnknown,
 				" >5min: Herdr can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
 		}
-		isIdle := st == StateIdle || st == StateDone
+		isIdle := (st == StateIdle || st == StateDone) && !asks
 		idle.track(isIdle)
 		if isIdle {
 			idleAt, stop, nudged := o.idlePoll(ctx, w, begun, &idle)
@@ -90,6 +97,19 @@ func (o *Loop) waitSettled(
 				id, st, command.ShortDuration(longRunning), tab)})
 		}
 	}
+}
+
+// asksPermission says whether the worker w, in state st as Herdr shows it, waits on a permission
+// prompt, as its hooks reported since it was started or adopted.
+func (o *Loop) asksPermission(w worker, st AgentState) bool {
+	if !w.hooks || o.reporter == nil {
+		return false
+	}
+	u, ok := o.reporter.LastToolUse(w.wt)
+	if ok && !w.since.IsZero() && (u.At.IsZero() || u.At.Before(w.since)) {
+		ok = false // of a turn before it was adopted
+	}
+	return waitsOnPermission(st, u, ok)
 }
 
 // streak is how long a condition has held without a break, from one poll to the next.
@@ -301,12 +321,15 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 	return true, "idle with the ticket " + string(ticket)
 }
 
-// watcher shows a worker's status and latest action on the dashboard.
+// watcher shows a worker's status and latest action on the dashboard, and logs what its hooks
+// note: a permission prompt it waits on, a compaction of its context.
 type watcher struct {
 	o        *Loop
 	wt       string
 	base     Status
-	activity string // the latest action read, kept while the screen can't be
+	activity string      // the latest action read, kept while the screen can't be
+	noted    *HookRecord // the hooks' record as last read; nil before the first read, which logs nothing
+	asked    time.Time   // when the permission prompt last logged was reported
 }
 
 func (o *Loop) newWatcher(wt string, base Status) *watcher {
@@ -323,12 +346,53 @@ func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 		w.activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.base.Ticket), st))
 	}
 	s.Activity = w.activity
-	if o.reporter != nil && st == StateWorking {
-		if u, ok := o.reporter.LastToolUse(w.wt); ok {
-			s.Doing = Doing(u, o.cfg.Check)
+	if o.reporter != nil && err == nil && st != StateGone {
+		u, ok := o.reporter.LastToolUse(w.wt)
+		rec := o.reporter.HookRecord(w.wt)
+		switch {
+		case st == StateWorking:
+			if ok {
+				s.Doing = Doing(u, o.cfg.Check)
+			}
+			if s.Doing == "" && rec.Subagents > 0 {
+				s.Doing = DoingSubagent
+			}
+		case waitsOnPermission(st, u, ok):
+			s.Permission = true
+			w.notePermission(u)
 		}
+		w.noteCompactions(rec)
 	}
 	o.status(s)
+}
+
+// notePermission logs the permission prompt the worker reported in u, once.
+func (w *watcher) notePermission(u ToolUse) {
+	if !u.At.IsZero() && u.At.Equal(w.asked) {
+		return
+	}
+	w.asked = u.At
+	what := u.Tool
+	if cmd := strings.Join(strings.Fields(u.Command), " "); cmd != "" {
+		if r := []rune(cmd); len(r) > 80 {
+			cmd = string(r[:80]) + "…"
+		}
+		what += " (" + cmd + ")"
+	}
+	id := w.base.Ticket
+	w.o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		"  PERMISSION_PROMPT: %s's worker waits on a permission prompt for %s in tab %s; allow or deny it there",
+		id, what, w.base.Tab)})
+}
+
+// noteCompactions logs the compactions of the worker's context in rec that the last read hadn't.
+func (w *watcher) noteCompactions(rec HookRecord) {
+	if w.noted != nil {
+		for _, trigger := range rec.Compactions[min(len(w.noted.Compactions), len(rec.Compactions)):] {
+			w.o.info("  %s's worker's context was compacted (%s)", w.base.Ticket, trigger)
+		}
+	}
+	w.noted = &rec
 }
 
 // watch reads the worker's status every poll and reports it until the returned stop function is

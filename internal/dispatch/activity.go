@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -8,10 +9,40 @@ import (
 
 // ToolUse is what a worker last reported through its hooks.
 type ToolUse struct {
-	Event   string    // PreToolUse (using Tool now), PostToolUse (between tools) or Stop (turn over)
+	// PreToolUse (using Tool now), PermissionRequest (asking to use Tool: waiting on the answer
+	// while Herdr shows it at rest, using it once allowed), PostToolUse (between tools) or Stop
+	// (turn over)
+	Event   string
 	Tool    string    // Bash, Edit, Read, …
 	Command string    // Bash's command
 	At      time.Time // when it was reported; zero if not known
+}
+
+// EventPermission is the ToolUse event of a permission prompt.
+const EventPermission = "PermissionRequest"
+
+// HookRecord is what a worker's hooks noted besides its last tool use, since it was started (or
+// resumed): the permission prompts it waited on, its context's compactions and its subagents.
+type HookRecord struct {
+	Permissions []string // the tool each permission prompt asked about, oldest first
+	Compactions []string // what triggered each compaction (auto, or manual: /compact), oldest first
+	Subagents   int      // subagents started and not stopped
+}
+
+// Evidence says what the record shows of a worker's session that its transcript and screen may not:
+// permission prompts and compactions, one line each; "" when there were none.
+func (r HookRecord) Evidence() string {
+	var lines []string
+	if n := len(r.Permissions); n > 0 {
+		lines = append(lines, fmt.Sprintf("It waited on a permission prompt %s, Claude Code asking to allow: %s.",
+			times(n), strings.Join(r.Permissions, ", ")))
+	}
+	if n := len(r.Compactions); n > 0 {
+		lines = append(lines, fmt.Sprintf("Its context was compacted %s (%s): the summary that replaced its "+
+			"earlier messages may have lost some of what it was told or found.",
+			times(n), strings.Join(r.Compactions, ", ")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // testRunner matches commands that run a test suite, for projects whose check command is not
@@ -22,13 +53,16 @@ var testRunner = regexp.MustCompile(`(^|[\s;&|(])(` +
 	`)\b`)
 
 // Doing names what a working worker is doing from what it reported: testing (the project's check
-// command or a test runner), editing or reading. "" means nothing more precise than Herdr's
+// command or a test runner), editing, reading or running a subagent. A tool it asked permission
+// for is running once Herdr shows it working. "" means nothing more precise than Herdr's
 // "working": thinking between tools, another command, or no report.
 func Doing(u ToolUse, check string) string {
-	if u.Event != "PreToolUse" {
+	if u.Event != "PreToolUse" && u.Event != EventPermission {
 		return ""
 	}
 	switch u.Tool {
+	case "Agent", "Task": // the subagent's own tool uses replace this report as they come
+		return DoingSubagent
 	case "Bash":
 		cmd := strings.TrimSpace(u.Command)
 		if check != "" && strings.Contains(cmd, check) || testRunner.MatchString(cmd) {
@@ -40,4 +74,15 @@ func Doing(u ToolUse, check string) string {
 		return "reading"
 	}
 	return ""
+}
+
+// DoingSubagent is Doing for a worker running a subagent: its Agent tool, or the hooks' record of
+// a subagent started and not stopped while it thinks between the subagent's tools.
+const DoingSubagent = "subagent"
+
+// waitsOnPermission says whether a worker Herdr shows in state st, whose hooks last reported u
+// (ok: they did), is waiting on a permission prompt: asked, and Herdr shows it at rest (idle,
+// blocked or done). A worker Herdr shows working was allowed, and is using the tool.
+func waitsOnPermission(st AgentState, u ToolUse, ok bool) bool {
+	return ok && u.Event == EventPermission && (st == StateIdle || st == StateBlocked || st == StateDone)
 }

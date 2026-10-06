@@ -8,6 +8,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Claude workers' hooks also record permission prompts, compactions and
+  subagents (`PermissionRequest`, `PreCompact`, `SubagentStart` and
+  `SubagentStop`). A worker waiting on a permission prompt shows as
+  `permission — waiting for you` (`■ allow?` in the tickets table), even
+  when Herdr shows it idle; the log says `PERMISSION_PROMPT` with the tool,
+  and the run stops for it after 4 minutes with `BLOCKED`, as for a blocked
+  worker, rather than with `PAUSED` after the 10-minute idle grace. A worker
+  running a subagent shows `subagent`; each compaction of a worker's context
+  is logged (`A's worker's context was compacted (auto)`). Triage's evidence
+  names the permission prompts and compactions there were.
 - Claude workers get the worker prompt's standing rules in their system
   prompt (`--append-system-prompt-file .orchestra/run/rules.md`), which
   survives compaction of a long ticket's conversation; their first message

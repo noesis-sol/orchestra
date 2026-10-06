@@ -352,12 +352,13 @@ type Deferral struct {
 	Screen  string // the end of the worker's terminal
 	// the end of its session's transcript: its last messages, tool calls and errors; "" if unread
 	Transcript string
+	Hooks      string // what the worker's hooks noted: permission prompts, compactions; "" if none
 	Worktree   string // status, commits and diff stat
 }
 
 // triageInput names the ticket by ID only: its title is ticket text, as untrusted as the rest, and
 // stays inside the evidence tags with bd show. How is orchestra's own words. The transcript's
-// section is left out when it couldn't be read.
+// section is left out when it couldn't be read, the hooks' when they noted nothing.
 func triageInput(d Deferral) string {
 	id := EvidenceID()
 	in := "Ticket " + d.ID + " was set aside: " + d.How + "\n\n" +
@@ -365,6 +366,9 @@ func triageInput(d Deferral) string {
 		Section(id, "End of the worker's terminal", d.Screen)
 	if d.Transcript != "" {
 		in += Section(id, "End of the worker's session transcript (messages, tool calls, results)", d.Transcript)
+	}
+	if d.Hooks != "" {
+		in += Section(id, "What the worker's hooks noted (permission prompts, compactions)", d.Hooks)
 	}
 	return in + Section(id, "Worktree state", d.Worktree)
 }

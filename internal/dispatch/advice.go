@@ -27,13 +27,15 @@ func (o *Loop) gatherDeferral(ctx context.Context, id, how, wt string) organ.Def
 	status := o.history.ShortStatus(ctx, wt)
 	commits := o.history.OneLineLog(ctx, wt, c.Base+"..HEAD")
 	stat := o.history.DiffStat(ctx, wt)
-	transcript := ""
+	transcript, hooks := "", ""
 	if o.reporter != nil {
 		transcript = o.reporter.TranscriptTail(wt)
+		hooks = o.reporter.HookRecord(wt).Evidence()
 	}
 	return organ.Deferral{ID: id, How: how, Ticket: show,
 		Screen:     lastLines(o.agents.Screen(ctx, o.agentName(id), ""), 80),
 		Transcript: transcript,
+		Hooks:      hooks,
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +
 			orNone(commits) + "\n\nDiff against its last commit:\n" + orNone(stat)}
 }

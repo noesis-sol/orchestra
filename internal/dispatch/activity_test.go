@@ -19,7 +19,8 @@ func TestDoing(t *testing.T) {
 		{bash("cat latest.txt"), "", ""}, // "test" inside a word is not a test run
 		{ToolUse{Event: "PreToolUse", Tool: "Edit"}, "", "editing"},
 		{ToolUse{Event: "PreToolUse", Tool: "Grep"}, "", "reading"},
-		{ToolUse{Event: "PreToolUse", Tool: "Agent"}, "", ""},
+		{ToolUse{Event: "PreToolUse", Tool: "Agent"}, "", DoingSubagent},
+		{ToolUse{Event: EventPermission, Tool: "Bash", Command: "go test ./..."}, "", "testing"}, // allowed, running
 		{ToolUse{Event: "PostToolUse"}, "", ""},
 		{ToolUse{Event: "Stop"}, "", ""},
 	}

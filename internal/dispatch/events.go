@@ -97,7 +97,10 @@ type Status struct {
 	Started  time.Time
 	Agent    AgentState // as Herdr last reported it; "" before the first read or when it failed
 	Activity string     // the worker's latest action line
-	Doing    string     // what a working worker is doing, from its reports: testing, editing, reading or ""
+	Doing    string     // what a working worker is doing, from its reports: testing, editing, reading, subagent or ""
+	// Permission: its hooks say it waits on a permission prompt, whatever Herdr shows (idle, as
+	// often as blocked)
+	Permission bool
 	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
 	// worker, and is left in progress until the worker finishes it.
 	Resolving  bool

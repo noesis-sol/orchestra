@@ -327,6 +327,7 @@ func (r fakeReporter) ResumeArgs(worktree string) ([]string, error) {
 }
 
 func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
+func (fakeReporter) HookRecord(worktree string) HookRecord       { return HookRecord{} }
 func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
 func (fakeReporter) Session(worktree string) (Session, bool)     { return Session{}, false }
 func (fakeReporter) TranscriptTail(worktree string) string       { return "" }

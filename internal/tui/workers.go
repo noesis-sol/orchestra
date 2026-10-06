@@ -59,7 +59,7 @@ func (m Dashboard) goTo(n int) {
 // workerBorder colours a box of running workers red if any waits for the maintainer.
 func workerBorder(running ...dispatch.Status) lipgloss.TerminalColor {
 	for _, st := range running {
-		if st.Agent == dispatch.StateBlocked {
+		if st.Agent == dispatch.StateBlocked || st.Permission {
 			return red
 		}
 	}
@@ -151,7 +151,8 @@ func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) st
 // titleLines is how many lines the active ticket's title may take before it is cut short.
 const titleLines = 3
 
-// doingLabel is the worker's status, made precise by what it reported doing when it is working.
+// doingLabel is the worker's status, made precise by what it reported doing when it is working,
+// or by the permission prompt it reported waiting on, whatever Herdr shows.
 func doingLabel(st dispatch.Status) string {
 	switch {
 	case st.Resolving:
@@ -160,19 +161,24 @@ func doingLabel(st dispatch.Status) string {
 		return "fixing check"
 	case st.Unreadable:
 		return "unreadable"
+	case st.Permission:
+		return permissionLabel
 	case st.Agent == dispatch.StateWorking && st.Doing != "":
 		return st.Doing
 	}
 	return string(st.Agent)
 }
 
+// permissionLabel is the status of a worker waiting on a permission prompt.
+const permissionLabel = "permission"
+
 func agentStyle(s string) string {
 	switch s {
-	case string(dispatch.StateWorking), "editing", "reading":
+	case string(dispatch.StateWorking), "editing", "reading", dispatch.DoingSubagent:
 		return pickedStyle.Render(s)
 	case "testing":
 		return testingStyle.Render(s)
-	case string(dispatch.StateBlocked): // red, as a ticket blocked from merging reads in the tickets table
+	case string(dispatch.StateBlocked), permissionLabel: // red, as a ticket blocked from merging reads in the table
 		return stopStyle.Render(s + " — waiting for you")
 	case "":
 		return ""
