@@ -97,7 +97,8 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 	if err != nil {
 		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
 	}
-	report, err := o.reporter.ReportArgs(wt) // sessionOf found a reporter
+	// The files the worker before it edited stay in the footprint (sessionOf found a reporter).
+	report, err := o.reporter.ResumeArgs(wt)
 	if e := escapeOf(err); e != nil {
 		return o.setAsideEscaped(keep, t, wt, e)
 	}
@@ -116,7 +117,7 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 		launch = msg // one line: Herdr passes it as it is
 	}
 	agent := o.agentName(id)
-	begun := time.Now() // its hooks report from its start: the earlier worker's records are removed
+	begun := time.Now() // its hooks report from its start: the earlier worker's last tool use is removed
 	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch, s.ID)
 	if stop != nil {
 		return stop

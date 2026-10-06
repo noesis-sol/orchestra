@@ -321,6 +321,11 @@ type fakeReporter struct{}
 func (fakeReporter) ReportArgs(worktree string) ([]string, error) {
 	return []string{"--settings", filepath.Join(worktree, "hooks.json")}, nil
 }
+
+func (r fakeReporter) ResumeArgs(worktree string) ([]string, error) {
+	return r.ReportArgs(worktree)
+}
+
 func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
 func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
 func (fakeReporter) Session(worktree string) (Session, bool)     { return Session{}, false }

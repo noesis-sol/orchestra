@@ -225,6 +225,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker resumed with its session keeps the files it edited before in its
+  ticket's footprint (`.orchestra/run/edits` is no longer removed), so a
+  ticket naming one of them still waits for it, and `LIKELY_CONFLICT` still
+  warns about them.
 - `orchestra init` with `TERM=dumb` says what the scout found, or why it
   can't run, when the scout ends at once, as it does without `claude`; the
   line was left out.

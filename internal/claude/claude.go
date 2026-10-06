@@ -31,12 +31,24 @@ type Reporter struct{}
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
 func (Reporter) ReportArgs(worktree string) ([]string, error) {
+	return reportArgs(worktree, activityName, editsName, sessionName)
+}
+
+// ResumeArgs is ReportArgs for a worker resuming the session of the one before it in worktree: the
+// files that one edited are kept, as the resumed worker carries on its work, and its other records
+// are removed.
+func (Reporter) ResumeArgs(worktree string) ([]string, error) {
+	return reportArgs(worktree, activityName, sessionName)
+}
+
+// reportArgs is ReportArgs, removing the earlier worker's records named stale.
+func reportArgs(worktree string, stale ...string) ([]string, error) {
 	root, err := project.OpenRun(worktree)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
-	for _, name := range []string{activityName, editsName, sessionName} {
+	for _, name := range stale {
 		if err := project.RemoveRun(root, worktree, project.RunPath(name)); err != nil {
 			return nil, err
 		}
