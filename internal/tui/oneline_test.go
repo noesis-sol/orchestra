@@ -39,7 +39,7 @@ func TestTextWithLineBreaksTakesOneLine(t *testing.T) {
 	m = next.(Dashboard)
 	m.height = 22
 
-	if table := m.ticketsTable(m.width, 100); lipgloss.Height(table) != len(m.rows)+4 {
+	if table := m.ticketsTable(m.width, len(m.rows)+4); lipgloss.Height(table) != len(m.rows)+4 {
 		t.Errorf("the tickets table should take a line per row:\n%s", ansi.Strip(table))
 	}
 	if list := m.workerList(m.width); lipgloss.Height(list) != 3 || !strings.Contains(ansi.Strip(list), "Fix the thing") {

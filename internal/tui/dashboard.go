@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -167,11 +168,24 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // drawn on the alternate screen, which closes with the program; main then prints the run's summary
 // on the normal screen (Printer.Summary).
 func (m Dashboard) View() string {
-	w := max(m.width, 30)
-	title := m.titleLine(w)
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
+	v := m.frame(max(m.width, 30))
+	if m.width >= 30 {
+		return v
+	}
+	// A pane narrower than the frame can be drawn in shows its left edge.
+	lines := strings.Split(v, "\n")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, m.width, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// frame is the view at width w.
+func (m Dashboard) frame(w int) string {
+	title := m.titleLine(w)
 	hint := m.hintLine(w) // none with no key to name
 	if m.draining {
 		hint = stack(m.windDownLine(w), hint)
@@ -194,51 +208,85 @@ func (m Dashboard) View() string {
 // summary is the run's summary, printed on the normal screen once the dashboard has closed: the
 // title, the totals and every ticket of the run, at width w and however many lines that takes.
 func (m Dashboard) summary(w int) string {
+	if len(m.rows) == 0 {
+		return stack(m.titleLine(w), m.statsTable(w))
+	}
 	// Every row: the tickets table's header, rule and borders take 4 lines.
 	return stack(m.titleLine(w), m.statsTable(w), m.ticketsTable(w, len(m.rows)+4))
 }
 
+// tableLines is how many lines the tickets table takes in a pane h lines tall: about a third of
+// it, for 3 to 10 tickets besides its header, rule and borders. It changes only on a resize.
+func tableLines(h int) int { return min(max(h/3-4, 3), 10) + 4 }
+
+// lineCount is how many lines s takes on screen: none when it is empty.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	return lipgloss.Height(s)
+}
+
+// footLines is how many lines the foot takes below the workers with a winding-down line drain lines
+// tall, there or not: the MCP warning, if any, that line and the hint.
+func (m Dashboard) footLines(drain int) int {
+	n := drain + 1
+	if m.cfg.MCPWarning() != "" {
+		n++
+	}
+	return n
+}
+
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
-// can't redraw a view taller than the terminal. It gives way step by step: one line per worker
-// instead of a box each, then no tickets table, then the totals on one line, then the Current
-// label, then cut, keeping footer. An empty footer takes no line.
+// can't redraw a view taller than the terminal. The tickets table's height comes from the pane's
+// alone (tableLines), and blank rows fill it, so it stays put while workers come, report and go; it
+// is left out of a pane too short for it and one line per worker the run may have. The workers get
+// what is left: a box each, or one line each, chosen with room for the winding-down line so that
+// line doesn't change it. Below that the layout gives way step by step: the totals on one line, then
+// the Current label, then cut, keeping footer. An empty footer takes no line.
 func (m Dashboard) layout(w int, title, footer string) string {
 	var foot []string
 	if footer != "" {
 		foot = strings.Split(footer, "\n")
 	}
+	// The room the workers' form is chosen for, the winding-down line there or not; its height changes
+	// only as workers start and finish.
+	steady := m.height - max(len(foot), m.footLines(lineCount(m.windDownLine(w))))
+	fits := func(room int, parts ...string) bool { return lineCount(stack(parts...)) <= room }
+	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
 	stats := m.statsTable(w)
-	fits := func(v string) bool { return lipgloss.Height(v) <= m.height }
-	compose := func(stats, panels string) string {
-		// Show as many recent tickets as fit around the rest; none if that's fewer than three.
-		room := m.height - lipgloss.Height(title) - 1 - lipgloss.Height(stats) - lipgloss.Height(panels) - len(foot)
-		parts := []string{title, stats}
-		if room >= 7 {
-			parts = append(parts, m.ticketsTable(w, room))
+	panels, list := current(m.workerPanels(w)), current(m.workerList(w))
+	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
+	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines(1)
+	if lines := tableLines(m.height); need+lines <= m.height {
+		top := stack(title, stats, m.ticketsTable(w, lines))
+		for _, workers := range []string{panels, list} {
+			if fits(steady, top, workers) {
+				return with(top, workers)
+			}
 		}
-		if panels != "" {
-			parts = append(parts, panels)
+		// More workers than the run may have, or a winding-down line that wraps: the workers give way.
+		return m.cut(stack(top, m.workerList(w)), foot)
+	}
+	for _, workers := range []string{panels, list} {
+		if fits(steady, title, stats, workers) {
+			return with(title, stats, workers)
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, append(parts, foot...)...)
 	}
-	if v := compose(stats, current(m.workerPanels(w))); fits(v) {
-		return v
+	top := stack(title, m.statsLine(w))
+	if fits(m.height-len(foot), top, list) {
+		return with(top, list)
 	}
-	if v := compose(stats, current(m.workerList(w))); fits(v) {
-		return v
+	return m.cut(stack(top, m.workerList(w)), foot)
+}
+
+// cut keeps as much of body from the top as fits above foot, and of foot what fits in the pane.
+func (m Dashboard) cut(body string, foot []string) string {
+	lines := strings.Split(body, "\n")
+	if keep := max(m.height-len(foot), 0); len(lines) > keep {
+		lines = lines[:keep]
 	}
-	top := []string{title, m.statsLine(w)}
-	if list := m.workerList(w); list != "" {
-		if v := lipgloss.JoinVertical(lipgloss.Left, append(append(top, current(list)), foot...)...); fits(v) {
-			return v
-		}
-		top = append(top, list)
-	}
-	body := strings.Split(lipgloss.JoinVertical(lipgloss.Left, top...), "\n")
-	if keep := max(m.height-len(foot), 0); len(body) > keep {
-		body = body[:keep]
-	}
-	lines := append(body, foot...)
+	lines = append(lines, foot...)
 	if len(lines) > m.height {
 		lines = lines[len(lines)-m.height:]
 	}

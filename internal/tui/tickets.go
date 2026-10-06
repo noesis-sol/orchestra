@@ -129,11 +129,9 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 	return [3]string{state, pickedStyle.Render(r.id), fit(r.title)}
 }
 
-// ticketsTable lists this run's tickets, newest last, in at most maxLines lines of screen.
-func (m Dashboard) ticketsTable(w, maxLines int) string {
-	if len(m.rows) == 0 {
-		return ""
-	}
+// ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
+// the tickets leave, and when there are more the oldest give way to a count of them.
+func (m Dashboard) ticketsTable(w, lines int) string {
 	idWidth := 7
 	for _, r := range m.rows {
 		idWidth = max(idWidth, len(r.id))
@@ -141,7 +139,8 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 	aboutWidth := w - 2 - 13 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
 	rows := m.rows
 	hidden := 0
-	if limit := max(maxLines-4, 3); len(rows) > limit { // header, rule and borders take 4 lines
+	limit := max(lines-4, 1) // header, rule and borders take 4 lines
+	if len(rows) > limit {
 		hidden = len(rows) - (limit - 1)
 		rows = rows[hidden:]
 	}
@@ -157,6 +156,9 @@ func (m Dashboard) ticketsTable(w, maxLines int) string {
 		}
 		c := r.cells(aboutWidth, doing)
 		data = append(data, c[:])
+	}
+	for len(data) < limit {
+		data = append(data, []string{"", "", ""})
 	}
 	return table.New().
 		Border(lipgloss.RoundedBorder()).

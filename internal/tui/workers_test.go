@@ -185,8 +185,8 @@ func TestCurrentLabelIsBoldInTheWorkingColour(t *testing.T) {
 	for _, c := range []struct {
 		layout string
 		height int
-		boxes  int // the totals' and the workers'
-	}{{"a box per worker", 40, 4}, {"one line per worker", 16, 2}} {
+		boxes  int // the totals', the tickets table's and the workers'
+	}{{"a box per worker", 40, 5}, {"one line per worker", 16, 2}} {
 		m.width, m.height = 70, c.height
 		if v := m.View(); !strings.Contains(v, label) || strings.Count(ansi.Strip(v), "╭") != c.boxes {
 			t.Errorf("with %s the Current label should be bold cyan %q:\n%q", c.layout, label, v)

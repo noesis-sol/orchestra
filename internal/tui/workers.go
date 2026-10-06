@@ -87,9 +87,10 @@ func (m Dashboard) Running() []dispatch.Status {
 const gridWidth = 120
 
 // workerPanels lays out a box per running worker, or one box saying what the loop is doing; nothing
-// when the run winds down with nothing running. In a pane gridWidth wide or wider the boxes go two to
-// a row, numbered row by row, the two in a row as tall as the taller; an odd one out keeps the left
-// column's width. A narrower pane stacks them.
+// when the run winds down with nothing running. The boxes are all as tall as the tallest, which
+// changes only as workers start and finish: each keeps a line for its latest action. In a pane
+// gridWidth wide or wider the boxes go two to a row, numbered row by row; an odd one out keeps the
+// left column's width. A narrower pane stacks them.
 func (m Dashboard) workerPanels(w int) string {
 	running := m.Running()
 	if len(running) == 0 {
@@ -106,35 +107,40 @@ func (m Dashboard) workerPanels(w int) string {
 	if len(running) > 1 {
 		lines = 2 // keep several boxes within the pane
 	}
-	panel := func(i, width, h int) string { return m.workerPanel(width, h, i+1, running[i], lines) }
-	var boxes []string
-	if w < gridWidth {
-		for i := range running {
-			boxes = append(boxes, panel(i, w, 0))
+	left := (w - 1) / 2 // box(w) is w wide: two boxes and a one-column gap make the pane's width
+	width := func(i int) int {
+		switch {
+		case w < gridWidth:
+			return w
+		case i%2 == 0:
+			return left
 		}
+		return w - 1 - left
+	}
+	h := 0
+	for i, st := range running {
+		h = max(h, lipgloss.Height(m.workerPanel(width(i), 0, i+1, st, lines)))
+	}
+	var boxes []string
+	for i, st := range running {
+		boxes = append(boxes, m.workerPanel(width(i), h, i+1, st, lines))
+	}
+	if w < gridWidth {
 		return lipgloss.JoinVertical(lipgloss.Left, boxes...)
 	}
-	left := (w - 1) / 2 // box(w) is w wide: two boxes and a one-column gap make the pane's width
-	right := w - 1 - left
-	for i := 0; i < len(running); i += 2 {
-		if i+1 == len(running) {
-			boxes = append(boxes, panel(i, left, 0))
+	var rows []string
+	for i := 0; i < len(boxes); i += 2 {
+		if i+1 == len(boxes) {
+			rows = append(rows, boxes[i])
 			break
 		}
-		a, b := panel(i, left, 0), panel(i+1, right, 0)
-		switch h := max(lipgloss.Height(a), lipgloss.Height(b)); {
-		case lipgloss.Height(a) < h:
-			a = panel(i, left, h)
-		case lipgloss.Height(b) < h:
-			b = panel(i+1, right, h)
-		}
-		boxes = append(boxes, lipgloss.JoinHorizontal(lipgloss.Top, a, " ", b))
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, boxes[i], " ", boxes[i+1]))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, boxes...)
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 // workerPanel boxes the nth running ticket, w wide and h tall (0: as tall as it needs): its number,
-// ID, worker status and time, title, latest action.
+// ID, worker status and time, title, latest action, its line blank until the worker first reports.
 func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) string {
 	inner := w - 4 // rounded border and one space of padding on each side
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
@@ -142,9 +148,7 @@ func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) st
 	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
 		lines = append(lines, "  "+l)
 	}
-	if st.Activity != "" {
-		lines = append(lines, fit("  "+dimStyle.Render(oneLine(st.Activity))))
-	}
+	lines = append(lines, fit("  "+dimStyle.Render(oneLine(st.Activity))))
 	return box(w, h, workerBorder(st), strings.Join(lines, "\n"))
 }
 

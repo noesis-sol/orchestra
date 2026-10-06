@@ -102,7 +102,8 @@ func sameCorners(a, b map[int]rune) bool {
 }
 
 // The two boxes in a row are equally tall, their borders on the same lines, whichever of them has
-// the more lines: an activity line, or a title that wraps to a second line.
+// the more lines: a title that wraps to a second line. An activity line adds none: each box keeps a
+// line for it.
 func TestWideGridRowsAreEquallyTall(t *testing.T) {
 	long := "Lay the Current boxes out two to a row in a wide pane, so four workers show as a grid of two by two"
 	cases := []struct {
@@ -129,8 +130,12 @@ func TestWideGridRowsAreEquallyTall(t *testing.T) {
 			m.active[c.tall] = st
 			view := m.workerPanels(w)
 			lines := strings.Split(ansi.Strip(view), "\n")
-			if len(lines) != 5 { // the borders, the head, two lines of title or one and the activity
-				t.Errorf("%d wide, %s: %d lines, want 5:\n%s", w, c.name, len(lines), ansi.Strip(view))
+			want := 5 // the borders, the head, a line of title and the activity's
+			if !c.activity {
+				want = 6 // two lines of title
+			}
+			if len(lines) != want {
+				t.Errorf("%d wide, %s: %d lines, want %d:\n%s", w, c.name, len(lines), want, ansi.Strip(view))
 			}
 			for i, l := range lines {
 				r := []rune(l)

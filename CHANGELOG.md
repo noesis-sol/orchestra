@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard's tickets table keeps its place and height while workers
+  start, report and finish: it takes about a third of the pane, for 3 to 10
+  tickets, blank rows filling it until there are as many, and changes only
+  on a resize. A pane too short for it and a line per worker the run may
+  have leaves it out. Each worker's box keeps a line for its latest action
+  and the boxes are equally tall, so they switch to a line per worker only
+  as workers start and finish, or on a resize.
 - Claude workers' hooks also record permission prompts, compactions and
   subagents (`PermissionRequest`, `PreCompact`, `SubagentStart` and
   `SubagentStop`). A worker waiting on a permission prompt shows as
