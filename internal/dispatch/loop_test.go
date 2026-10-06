@@ -57,6 +57,9 @@ type cleanCheckout struct{}
 
 func (cleanCheckout) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
 func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) string      { return "" }
+func (cleanCheckout) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
+	return nil
+}
 func (cleanCheckout) CurrentBranch(ctx context.Context, repo string) (string, error) {
 	return "main", nil
 }

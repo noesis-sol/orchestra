@@ -88,11 +88,10 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			out, err := o.merger.FastForward(keep, c.Repo, br)
 			o.log.Raw(out, err)
 			if err != nil {
+				s := o.notFastForwarded(keep, w, err)
 				repo.unlock()
-				o.leaveUnmerged(keep, id, string(stopMergeFailed))
-				return halt(ExitMerge, stopMergeFailed,
-					": %s does not fast-forward onto %s; worktree %s and tab %s left for review", br, c.Base, wt, tab).
-					blocks("does not fast-forward onto " + c.Base)
+				o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or MERGE_FAILED
+				return s
 			}
 			o.merged(keep, id)
 			o.countMerge()
@@ -200,6 +199,42 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
 				"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
 	return nil
+}
+
+// notFastForwarded is the reason to stop when w's branch, on top of Base, did not fast-forward onto
+// it, git saying why in err. Most often uncommitted changes in the main checkout to files the branch
+// changes are in the way: under .claude/, .beads/ or .orchestra/, which checkoutUnready leaves out
+// (see Checkout.DirtyTree), and tracked files there change in tickets too. Those stop the run with
+// DIRTY_TREE, naming the files. The caller holds repoMu.
+func (o *Loop) notFastForwarded(ctx context.Context, w worker, err error) *stopReason {
+	c := o.cfg
+	if files := o.inTheWay(ctx, w.br); len(files) > 0 {
+		return halt(ExitDirty, stopDirtyTree, ": uncommitted changes in %s to %s, which %s changes; stopping "+
+			"before merging %s; worktree %s and tab %s left for review. Commit or undo them, then run again",
+			c.Repo, strings.Join(files, ", "), w.br, w.br, w.wt, w.tab).
+			causedBy(err).blocks("main checkout has uncommitted changes")
+	}
+	return halt(ExitMerge, stopMergeFailed, ": %s does not fast-forward onto %s%s; worktree %s and tab %s left for review",
+		w.br, c.Base, because(err), w.wt, w.tab).causedBy(err).blocks("does not fast-forward onto " + c.Base)
+}
+
+// inTheWay lists, sorted, the files that br changes on top of Base and that the main checkout has
+// uncommitted changes to, untracked files included: a fast-forward would overwrite them, so git
+// refuses it. It lists none when git can't say.
+func (o *Loop) inTheWay(ctx context.Context, br string) []string {
+	c := o.cfg
+	local := o.checkout.Changes(ctx, c.Repo)
+	if len(local) == 0 {
+		return nil
+	}
+	var files []string
+	for _, f := range o.history.ChangedFiles(ctx, c.Repo, c.Base, br) {
+		if _, ok := local[f]; ok {
+			files = append(files, f)
+		}
+	}
+	slices.Sort(files)
+	return files
 }
 
 // failedResolved says why the branch of r's ticket, its rebase resolved by its worker, is set aside, as

@@ -113,6 +113,8 @@ type Checkout interface {
 	DirtyTree(ctx context.Context, dir string) (string, error)
 	// uncommitted work in a ticket's worktree outside .orchestra/run/
 	DirtyWorktree(ctx context.Context, dir string) string
+	// each changed or untracked file in repo (under paths, if any) to its code in git status --porcelain
+	Changes(ctx context.Context, repo string, paths ...string) map[string]string
 	CurrentBranch(ctx context.Context, repo string) (string, error) // "" on a detached HEAD
 	Head(ctx context.Context, repo, rev string) string
 	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them

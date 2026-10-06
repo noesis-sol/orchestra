@@ -129,6 +129,9 @@ func (g *fakeGit) only(base, rev string) []fakeCommit {
 
 func (g *fakeGit) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
 func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) string      { return "" }
+func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
+	return nil
+}
 
 func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error) { return g.base, nil }
 
