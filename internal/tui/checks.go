@@ -514,7 +514,8 @@ func (s *checksStage) differs(path string) bool {
 	}
 	want := project.FastScript(fast)
 	if path == project.FullRunner {
-		want = project.FullScript(full, len(fast) == 0)
+		kept, _ := project.WithoutRunners(fast)
+		want = project.FullScript(full, len(kept) == 0)
 	}
 	return r.Script != want
 }

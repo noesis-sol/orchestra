@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 // A project's checks are two runners, shell scripts init writes in the project from its suites and
@@ -102,19 +104,63 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 `
 
-// FastScript is the scripts/check-fast.sh init writes for suites: just 'exit 0' for none.
+// FastScript is the scripts/check-fast.sh init writes for suites: just 'exit 0' for none. A suite
+// that runs a runner is left out (RunsRunner).
 func FastScript(suites []Suite) string {
+	suites, _ = WithoutRunners(suites)
 	return runnerScript(FastRunner, fastPurpose, suites)
 }
 
 // FullScript is the scripts/check-full.sh init writes for its own suites, the slower ones: FastRunner
 // first, then those. With none, and fastEmpty set (check-fast.sh checks nothing either), it is just
-// 'exit 0'.
+// 'exit 0'. A suite that runs a runner is left out (RunsRunner).
 func FullScript(suites []Suite, fastEmpty bool) string {
+	suites, _ = WithoutRunners(suites)
 	if len(suites) > 0 || !fastEmpty {
 		suites = append([]Suite{{Command: FastRunner, FoundIn: "the merge check"}}, suites...)
 	}
 	return runnerScript(FullRunner, fullPurpose, suites)
+}
+
+// RunsRunner reports whether a suite's command runs FastRunner or FullRunner anywhere in it: as a
+// word ("bash scripts/check-fast.sh", "make lint && ./scripts/check-full.sh") or at the end of a path
+// ("$PWD/scripts/check-fast.sh", "/home/me/repo/scripts/check-fast.sh"). A runner with such a suite
+// would run itself, check-fast.sh by way of check-full.sh, until fork fails; check-full.sh runs
+// check-fast.sh first already.
+func RunsRunner(command string) bool {
+	return namesPathIn(command, FastRunner) || namesPathIn(command, FullRunner)
+}
+
+// commandWords are a command's words, split at spaces, quotes and the shell's operators, so that
+// "sh -c 'scripts/check-fast.sh'" and "$(pwd)/scripts/check-fast.sh" show the runner's path.
+func commandWords(command string) []string {
+	return strings.FieldsFunc(command, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune(";&|()<>'\"`", r)
+	})
+}
+
+// namesPath reports whether word is path, from the repository's root: path itself, or path at the
+// end of a longer one ("./scripts/check-fast.sh", "$PWD/scripts/check-fast.sh").
+func namesPath(word, path string) bool {
+	return word == path || strings.HasSuffix(word, "/"+path)
+}
+
+// namesPathIn reports whether a word of command is path (namesPath).
+func namesPathIn(command, path string) bool {
+	return slices.ContainsFunc(commandWords(command), func(w string) bool { return namesPath(w, path) })
+}
+
+// WithoutRunners splits suites into those a runner may list and those it may not, which run a runner
+// (RunsRunner).
+func WithoutRunners(suites []Suite) (kept, left []Suite) {
+	for _, s := range suites {
+		if RunsRunner(s.Command) {
+			left = append(left, s)
+		} else {
+			kept = append(kept, s)
+		}
+	}
+	return kept, left
 }
 
 func runnerScript(path, purpose string, suites []Suite) string {
@@ -229,13 +275,18 @@ func lockName(s Suite) string {
 type Runner struct {
 	Path, Script    string
 	Exists, Differs bool
-	Replace         bool // write it over a file that differs
+	Replace         bool    // write it over a file that differs
+	Left            []Suite // the suites left out of Script: they run a runner (RunsRunner)
 }
 
 // PlanRunners says what init would write for the choice's runners: for Fast or Full nil, a runner
 // that checks nothing where there is none, and nothing where there is one.
 func PlanRunners(repo string, c Choice) ([]Runner, error) {
-	fastEmpty := c.Fast != nil && len(*c.Fast) == 0
+	fastEmpty := false
+	if c.Fast != nil {
+		kept, _ := WithoutRunners(*c.Fast)
+		fastEmpty = len(kept) == 0
+	}
 	plans := []struct {
 		path    string
 		suites  *[]Suite
@@ -260,6 +311,7 @@ func PlanRunners(repo string, c Choice) ([]Runner, error) {
 				suites = *p.suites
 			}
 			r.Script = p.script(suites)
+			_, r.Left = WithoutRunners(suites)
 		}
 		r.Differs = r.Exists && !bytes.Equal(old, []byte(r.Script))
 		runners = append(runners, r)
@@ -326,15 +378,35 @@ func ApplyRunners(repo string, c Choice) ([]Step, error) {
 			detail += ": it checks nothing yet (" + flag + " \"<command>\" gives it one)"
 		}
 		steps = append(steps, Step{Kind: StepDone, Label: label, Detail: detail, Commit: []string{r.Path}})
+		for _, s := range r.Left {
+			steps = append(steps, leftOutStep(label, r.Path, s))
+		}
 	}
 	return steps, nil
 }
 
-// isRunner reports whether a check command is just the runner at path, which init has no suites for.
+// leftOutStep says that a runner was written without suite s, which runs a runner.
+func leftOutStep(label, path string, s Suite) Step {
+	why := "it runs a runner, and " + path + " would run itself until fork fails"
+	if path == FullRunner && !namesPathIn(s.Command, FullRunner) {
+		why = "it runs " + FastRunner + ", which " + path + " runs first already"
+	}
+	from := ""
+	if f := oneLine(s.FoundIn); f != "" {
+		from = " (from " + f + ")"
+	}
+	return Step{Kind: StepCaution, Label: label, Detail: "left out '" + oneLine(s.Command) + "'" + from + ": " + why}
+}
+
+// isRunner reports whether a check command is just the runner at path, which init has no suites for:
+// the path, run by a shell ("sh", "bash") or not, from the root or at the end of a longer path
+// ("./scripts/check-fast.sh", "$PWD/scripts/check-fast.sh").
 func isRunner(check, path string) bool {
-	check = strings.TrimSpace(check)
-	check = strings.TrimPrefix(strings.TrimPrefix(check, "sh "), "./")
-	return check == path
+	words := strings.Fields(check)
+	if len(words) == 2 && slices.Contains([]string{"sh", "bash", "exec"}, words[0]) {
+		words = words[1:]
+	}
+	return len(words) == 1 && namesPath(words[0], path)
 }
 
 // FastCommand is the fast check as one command line, for a form to show and edit: Fast's commands

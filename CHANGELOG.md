@@ -263,6 +263,13 @@ All notable changes to orchestra are documented here. The format follows
   `.orchestra/run/state.json` as it was, and the next run carries them over,
   rather than dropping each as one `bd` couldn't show. Ctrl+C while it lists
   the tickets left `unmerged` exits as interrupted, not `READY_UNREADABLE`.
+- `orchestra init` never writes a runner that runs itself: a suite whose
+  command runs `scripts/check-fast.sh` or `scripts/check-full.sh` (the
+  scout listing them on a project set up before, `bash
+  scripts/check-fast.sh`, an absolute path, `--check-fast
+  scripts/check-full.sh`) is left out, with a note, where each merge check
+  would have recursed until fork failed. The scout is told to leave the
+  runners out, and `bash` or an absolute path to the runner keeps it as it is.
 - A worker resumed with its session keeps the files it edited before in its
   ticket's footprint (`.orchestra/run/edits` is no longer removed), so a
   ticket naming one of them still waits for it, and `LIKELY_CONFLICT` still

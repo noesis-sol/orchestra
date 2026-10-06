@@ -333,7 +333,11 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 	if c.Unasked {
 		detail += " (not asked: no terminal; --concurrent sets it)"
 	}
-	unchecked := c.Fast != nil && len(*c.Fast) == 0
+	var fast []Suite // those check-fast.sh runs
+	if c.Fast != nil {
+		fast, _ = WithoutRunners(*c.Fast)
+	}
+	unchecked := c.Fast != nil && len(fast) == 0
 	switch {
 	case unchecked:
 		detail += " · check-fast checks nothing yet: a rebased ticket merges unchecked (--check-fast sets a command)"
@@ -341,7 +345,7 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 		detail += " · check-fast: " + FastRunner + " as it is"
 	default:
 		var commands []string
-		for _, suite := range *c.Fast {
+		for _, suite := range fast {
 			commands = append(commands, suite.Command)
 		}
 		detail += " · check-fast: " + strings.Join(commands, ", ")

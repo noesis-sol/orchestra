@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -34,6 +35,9 @@ const scoutSystem = "You find the checks a software project already has, for an 
 	"configs (jest, vitest, playwright, cypress, pytest, phpunit, golangci-lint and the like), and " +
 	"the project's own scripts (scripts/, bin/, such as scripts/ci-local.sh). Read only what you " +
 	"need.\n\n" +
+	"Never list scripts/check-fast.sh or scripts/check-full.sh, nor a command that runs them: the " +
+	"orchestrator writes them from the suites you list, so a suite that runs them would run itself. " +
+	"When they exist, list the suites they run instead.\n\n" +
 	"List each suite: a command that tests, lints, type-checks or builds the project.\n" +
 	"- name: short, such as \"unit tests\" or \"eslint\".\n" +
 	"- kind: unit, integration, e2e, lint, typecheck, build or other.\n" +
@@ -127,6 +131,10 @@ type Scouting struct {
 // checkScript is the project's own check, which comes first when it exists.
 const checkScript = "scripts/check.sh"
 
+// runnerScripts are the runners init writes from the scout's suites (project.FastRunner and
+// project.FullRunner): a suite that runs one is dropped, as the runner would run itself.
+var runnerScripts = []string{"scripts/check-fast.sh", "scripts/check-full.sh"}
+
 // ScoutFailure is why the scout gave no answer.
 type ScoutFailure int
 
@@ -187,7 +195,7 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	if err != nil {
 		return Scouting{}, &ScoutError{ScoutUnreadable, err}
 	}
-	s.Suites = checkScriptFirst(s.Suites, isFile(filepath.Join(root, checkScript)))
+	s.Suites = checkScriptFirst(withoutRunners(s.Suites), isFile(filepath.Join(root, checkScript)))
 	return s, nil
 }
 
@@ -314,6 +322,25 @@ func checkScriptFirst(suites []Suite, exists bool) []Suite {
 func runsCheckScript(command string) bool {
 	return slices.ContainsFunc(strings.Fields(command), func(w string) bool {
 		return strings.TrimPrefix(w, "./") == checkScript
+	})
+}
+
+// withoutRunners are suites without those that run a runner (runsRunner).
+func withoutRunners(suites []Suite) []Suite {
+	return slices.DeleteFunc(slices.Clone(suites), func(s Suite) bool { return runsRunner(s.Command) })
+}
+
+// runsRunner tells whether command runs one of runnerScripts: a word of it, split at spaces, quotes
+// and the shell's operators, is the runner's path or ends in it ("bash scripts/check-fast.sh",
+// "$PWD/scripts/check-full.sh"), as project.RunsRunner has it.
+func runsRunner(command string) bool {
+	words := strings.FieldsFunc(command, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune(";&|()<>'\"`", r)
+	})
+	return slices.ContainsFunc(words, func(w string) bool {
+		return slices.ContainsFunc(runnerScripts, func(path string) bool {
+			return w == path || strings.HasSuffix(w, "/"+path)
+		})
 	})
 }
 
