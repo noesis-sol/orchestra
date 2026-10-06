@@ -260,6 +260,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker left waiting on a question, whose ticket is closed before the
+  next run with nothing committed, is taken up by that run rather than
+  dropped as merged by hand when its branch was cut just after a commit
+  naming the ticket (an earlier attempt at it, say): `.orchestra/run/state.json`
+  notes where each worker's branch was cut (`fork`), and only the branch's
+  own commits since then count as its merge.
 - Triage gets the end of a worker's transcript when one of its last lines
   is very long (a screenshot, a large tool result): the transcript is read
   back from its end a line at a time, skipping lines over 256 KB, instead

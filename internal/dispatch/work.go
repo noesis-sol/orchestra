@@ -252,7 +252,7 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 // Status.
 func (o *Loop) takeOn(t Ticket, w askedWorker) Status {
 	id := t.ID
-	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
+	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, fork: w.fork, hooks: w.hooks})
 	st := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()}
 	o.setActive(st)
 	o.setAsked(id, nil) // back from a question: set aside again once it settles, it stays out

@@ -16,12 +16,16 @@ import (
 // Whole runs, two or more in a row on the same fakes, as a maintainer runs orchestra again: the
 // workers one run leaves behind, on tickets asked or left running, are carried over to the next.
 
-// saved is the workers the last run left behind, as its state file has them.
+// saved is the workers the last run left behind, as its state file has them, but for where their
+// branches were cut (Fork), which fork_point_test.go checks.
 func saved(t *testing.T, h *harness) []project.LeftWorker {
 	t.Helper()
 	s, err := project.LoadState(h.repo)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for i := range s.Workers {
+		s.Workers[i].Fork = ""
 	}
 	return s.Workers
 }

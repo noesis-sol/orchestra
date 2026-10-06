@@ -171,7 +171,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 // that a run and its check agree on what is merged.
 func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, t Ticket) string {
 	if worktrees.HasBranch(ctx, c.Repo, branchOf(t.ID)) {
-		return branchMerged(ctx, c, merger, t)
+		return branchMerged(ctx, c, merger, t, "")
 	}
 	rev := c.Base // labelled before ForkKey was noted: any commit on Base
 	if fork := forkOf(t); fork != "" {
@@ -183,13 +183,14 @@ func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merg
 // branchMerged returns the commit naming ticket t that its branch added, when the branch is on Base
 // (see ownCommits), or "". A branch with no commits of its own is always on Base: an older commit
 // naming the ticket there, such as another ticket's mentioning it or an earlier attempt at it, is
-// not its merge.
-func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket) string {
+// not its merge. fork is where the branch was cut, as the run that left its worker behind found it
+// (see saveCarried), for a ticket with no ForkKey; "" if not known.
+func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket, fork string) string {
 	br := branchOf(t.ID)
 	if !merger.IsAncestor(ctx, c.Repo, br, c.Base) {
 		return ""
 	}
-	return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, br), t.ID)
+	return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
 }
 
 // ForkKey is the metadata key holding the commit on Base that a ticket's branch was cut from (their
@@ -198,9 +199,12 @@ func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket) string
 const ForkKey = "unmerged_fork"
 
 // ownCommits is the revisions holding ticket t's own commits up to rev: those since its branch was
-// cut, when its ForkKey says where, or else rev alone.
-func ownCommits(t Ticket, rev string) string {
-	if fork := forkOf(t); fork != "" {
+// cut, when its ForkKey says where, or else fork (a commit hash, or ""), or else rev alone.
+func ownCommits(t Ticket, fork, rev string) string {
+	if f := forkOf(t); f != "" {
+		fork = f
+	}
+	if isHash(fork) {
 		return fork + ".." + rev
 	}
 	return rev + "^!"
@@ -216,11 +220,16 @@ func forkOf(t Ticket) string {
 	}
 	var meta map[string]json.RawMessage
 	var fork string
-	if json.Unmarshal(t.Metadata, &meta) != nil || json.Unmarshal(meta[ForkKey], &fork) != nil ||
-		len(fork) < 7 || len(fork) > 64 || strings.Trim(fork, "0123456789abcdef") != "" {
+	if json.Unmarshal(t.Metadata, &meta) != nil || json.Unmarshal(meta[ForkKey], &fork) != nil || !isHash(fork) {
 		return ""
 	}
 	return fork
+}
+
+// isHash reports whether s is a commit hash, abbreviated or whole, and so a revision git can't take
+// for an option or a range.
+func isHash(s string) bool {
+	return len(s) >= 7 && len(s) <= 64 && strings.Trim(s, "0123456789abcdef") == ""
 }
 
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
@@ -323,6 +332,7 @@ func (o *Loop) unmergedWhy(id string) string {
 type askedWorker struct {
 	tab, wt  string
 	pane     string // the pane it was started in, where it is looked for unnamed (see earlierState); "" if not known
+	fork     string // the commit on Base its branch was cut from, as a run that left it behind found it; "" if not known
 	question string // its ID
 	title    string
 	hooks    bool     // it reports through hooks

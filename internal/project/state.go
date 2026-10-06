@@ -28,7 +28,10 @@ type LeftWorker struct {
 	// name: one whose start the run cut short came up unnamed. Empty when not known.
 	Pane     string `json:"pane,omitempty"`
 	Worktree string `json:"worktree"`
-	Hooks    bool   `json:"hooks,omitempty"` // it reports through hooks
+	// The commit on Base its branch was cut from (their merge-base), as the run that left it found
+	// it: the commits after it are the branch's own. Empty when not known.
+	Fork  string `json:"fork,omitempty"`
+	Hooks bool   `json:"hooks,omitempty"` // it reports through hooks
 	// For a ticket waiting on a question: the question's ID and title.
 	Question      string `json:"question,omitempty"`
 	QuestionTitle string `json:"question_title,omitempty"`

@@ -164,7 +164,7 @@ func TestCarriedCheckCutShortKeepsTheWorker(t *testing.T) {
 		o.tickets = interruptingTickets{Tickets: o.tickets, show: true,
 			interrupt: func() { cancel(InterruptedError("with Ctrl+C")) }}
 		o.loadCarried(ctx)
-		o.saveCarried()
+		o.saveCarried(t.Context())
 		if got := saved(t, h); !reflect.DeepEqual(got, first) {
 			t.Errorf("saved %+v\nwant it as run 1 left it: %+v", got, first)
 		}

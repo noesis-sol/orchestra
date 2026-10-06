@@ -39,8 +39,8 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			o.log.Raw("", fmt.Errorf("not carrying over %q from the last run: %s", e.Ticket, why))
 			continue
 		}
-		w := askedWorker{tab: e.Tab, wt: e.Worktree, pane: e.Pane, question: e.Question, title: e.QuestionTitle,
-			hooks: e.Hooks, left: stopKind(e.Left)}
+		w := askedWorker{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
+			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left)}
 		if !inScope(e.Ticket) {
 			o.keptOut = append(o.keptOut, e)
 			kept = append(kept, e.Ticket+" ("+w.state()+")")
@@ -92,7 +92,8 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
-// with its branch's own commits already on Base was merged by hand (see branchMerged). A worker
+// with its branch's own commits already on Base, since its ForkKey or else w's fork, was merged by
+// hand (see branchMerged). A worker
 // left unnamed in its pane is named (see earlierState). A ticket in progress whose worker is gone is
 // carried over if its session can be resumed (see resumeGone); without one, it has nothing to carry
 // on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker;
@@ -118,7 +119,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 		return false
 	}
 	if t.Status == StatusClosed {
-		if commit := branchMerged(ctx, c, o.merger, t); commit != "" {
+		if commit := branchMerged(ctx, c, o.merger, t, w.fork); commit != "" {
 			o.info("  %s, carried over from the last run, is dropped: %s is on %s already (%s)", id, br, c.Base, commit)
 			return false
 		}
@@ -220,20 +221,26 @@ func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 func (o *Loop) leaveBehind(ctx context.Context) {
 	o.leaveRunning(context.WithoutCancel(ctx))
 	o.leaveAsked(ctx)
-	o.saveCarried()
+	o.saveCarried(context.WithoutCancel(ctx))
 }
 
 // saveCarried writes the workers this run leaves behind for the next one, as it ends: those on
 // tickets still waiting on a question, those it leaves running, and those it kept for a later run.
 // A ticket it left for review (unmerged) isn't among them, nor one whose rebase it left in progress
-// for the maintainer to finish (see workerNames). It says which, and warns when they can't be
-// saved: the next run then carries none of them over.
-func (o *Loop) saveCarried() {
+// for the maintainer to finish (see workerNames). It notes where each one's branch was cut from Base,
+// unless that is known already, so that the next run takes only the branch's own commits for its
+// merge: a worker waiting on a question has no ForkKey (see carriedStands). It says which, and warns
+// when they can't be saved: the next run then carries none of them over.
+func (o *Loop) saveCarried(ctx context.Context) {
 	var left []project.LeftWorker
 	var said []string
 	add := func(id string, w askedWorker) {
+		if w.fork == "" {
+			w.fork = o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
+		}
 		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Tab: w.tab, Pane: w.pane,
-			Worktree: w.wt, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title, Left: string(w.left)})
+			Worktree: w.wt, Fork: w.fork, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title,
+			Left: string(w.left)})
 		said = append(said, id+" ("+w.state()+")")
 	}
 	for _, id := range o.askedList() {
