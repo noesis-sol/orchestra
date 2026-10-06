@@ -170,6 +170,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
 	var report []string
 	if o.reporter != nil && c.ClaudeWorkers() {
+		o.newWorkerHooks(id, wt)
 		report, err = o.reporter.ReportArgs(wt)
 		if e := escapeOf(err); e != nil {
 			return o.setAsideEscaped(keep, t, wt, e)

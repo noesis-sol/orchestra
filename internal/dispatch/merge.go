@@ -96,7 +96,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			}
 			o.merged(keep, id)
 			o.countMerge()
-			cleaned := o.removeWorktree(keep, wt, br)
+			cleaned := o.removeWorktree(keep, id, wt, br)
 			repo.unlock()
 			hash, _, _ := strings.Cut(commit, " ")
 			title := o.titleOf(id)
@@ -260,7 +260,7 @@ func (o *Loop) closedUnchanged(ctx context.Context, w worker, why string) {
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	o.merged(ctx, id) // an unmerged label from an earlier run holds nothing now
 	o.repoMu.Lock()
-	cleaned := o.removeWorktree(ctx, wt, br)
+	cleaned := o.removeWorktree(ctx, id, wt, br)
 	o.repoMu.Unlock()
 	title := o.titleOf(id)
 	if !cleaned {
@@ -281,9 +281,11 @@ func (o *Loop) dropBranch(ctx context.Context, wt string) {
 	o.log.Raw(out, err)
 }
 
-// removeWorktree removes a ticket's worktree wt and then its branch br, whose work is on Base, and
-// reports whether both went; git's output goes in the log. The caller holds repoMu.
-func (o *Loop) removeWorktree(ctx context.Context, wt, br string) bool {
+// removeWorktree removes ticket id's worktree wt and then its branch br, whose work is on Base, and
+// reports whether both went; git's output goes in the log. What its worker's hooks noted is read
+// first, for the run report. The caller holds repoMu.
+func (o *Loop) removeWorktree(ctx context.Context, id, wt, br string) bool {
+	o.readHooks(id, wt, true) // its worker is done: its notes are final
 	out, err := o.worktrees.RemoveWorktree(ctx, o.cfg.Repo, wt)
 	o.log.Raw(out, err)
 	if err == nil {

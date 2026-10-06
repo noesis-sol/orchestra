@@ -245,6 +245,8 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		failedChecks + fullChecked +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
 		organ.Section(tag, "Tickets still ready", stillReady) +
+		organ.Section(tag, "Permission prompts and compactions of this run's workers, as their hooks noted them",
+			o.hookEvidence()) +
 		organ.Section(tag, "What the run's organs (triage, the predictor and the like) cost", o.organCostEvidence()) +
 		outside + feature
 }

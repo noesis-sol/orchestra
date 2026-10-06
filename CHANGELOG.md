@@ -18,6 +18,10 @@ All notable changes to orchestra are documented here. The format follows
   running a subagent shows `subagent`; each compaction of a worker's context
   is logged (`A's worker's context was compacted (auto)`). Triage's evidence
   names the permission prompts and compactions there were.
+- The run report's reviewer is given, for each ticket, the permission
+  prompts its Claude workers waited on and the compactions of their
+  context in the run (read before each worktree is removed), and adds the
+  counts to the ticket's bullet.
 - Claude workers get the worker prompt's standing rules in their system
   prompt (`--append-system-prompt-file .orchestra/run/rules.md`), which
   survives compaction of a long ticket's conversation; their first message

@@ -413,11 +413,16 @@ const reviewSystem = "You write the end-of-run report for an automated coding pi
 	"it, and say whether it failed in the ticket's code (in a directory its own commits " +
 	"change) or elsewhere (another package's test, which may be flaky, or a tool's error, " +
 	"such as a lock).\n" +
+	"- In those bullets, when the hooks' notes say the ticket's workers waited on permission " +
+	"prompts or had their context compacted, end the bullet with the counts, as in \"(2 " +
+	"permission prompts, compacted once)\".\n" +
 	"- ## Needs you: concrete actions for the maintainer, most urgent first: questions to " +
 	"answer (a ticket waiting on a question labelled \"human\" is answered with: bd human " +
 	"respond <question id> --response \"…\"; it then returns to the queue by itself), a " +
-	"worker waiting in a tab (name the tab), an environment fix, whatever stopped the run, " +
-	"for each failed check what to do (failed elsewhere: rerun the check in the ticket's " +
+	"worker waiting in a tab (name the tab), a tool the workers kept asking permission for " +
+	"(allowing it in the project's Claude Code settings spares the wait), an environment " +
+	"fix, whatever stopped the run, for each failed check what to do (failed elsewhere: " +
+	"rerun the check in the ticket's " +
 	"worktree and merge its branch if it passes; failed in the ticket's code: fix it there " +
 	"first), and one bullet naming the follow-ups filed outside a one-ticket run, which " +
 	"wait for a later run.\n\n" +

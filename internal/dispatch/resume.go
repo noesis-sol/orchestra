@@ -112,6 +112,7 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
 	}
 	// The files the worker before it edited stay in the footprint (sessionOf found a reporter).
+	o.newWorkerHooks(id, wt)
 	report, err := o.reporter.ResumeArgs(wt)
 	if e := escapeOf(err); e != nil {
 		return o.setAsideEscaped(keep, t, wt, e)
