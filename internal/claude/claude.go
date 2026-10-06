@@ -36,10 +36,12 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 }
 
 // ResumeArgs is ReportArgs for a worker resuming the session of the one before it in worktree: the
-// files that one edited are kept, as the resumed worker carries on its work, and its other records
-// are removed: the subagents its process ran ended with it.
+// files that one edited are kept, as the resumed worker carries on its work, and so is its session,
+// which the resumed worker's SessionStart hook writes again (claude --resume keeps the session ID):
+// were the start to fail, as when Herdr is down, the next run still finds the session to resume.
+// Its other records are removed: the subagents its process ran ended with it.
 func (Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, activityName, sessionName, eventsName)
+	return reportArgs(worktree, activityName, eventsName)
 }
 
 // reportArgs is ReportArgs, removing the earlier worker's records named stale.

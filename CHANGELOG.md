@@ -259,6 +259,10 @@ All notable changes to orchestra are documented here. The format follows
   leaves out) stops the run with `DIRTY_TREE` naming those files, rather
   than with `MERGE_FAILED` saying the branch does not fast-forward. A
   `MERGE_FAILED` line now says what git said.
+- A resumed worker whose start fails (Herdr refusing the tab, Ctrl+C) no
+  longer loses the session it was to resume: its `.orchestra/run/session.json`
+  is kept until the resumed worker's hook writes it again, so the next run
+  resumes the session rather than dropping the ticket with `WORKER_GONE`.
 - `orchestra feature` accepts the screen organ's ok verdict without a
   reason, rather than stopping a valid request with `orchestra couldn't
   screen the request`. Reject and unclear still need one.

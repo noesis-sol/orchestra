@@ -10,7 +10,7 @@ import (
 )
 
 // A worker resuming the session of the one before it carries on its work, so the files that one
-// edited are kept; what it last did and its session are removed, as for a new worker.
+// edited are kept, and so is its session; what it last did is removed, as for a new worker.
 func TestResumedWorkerKeepsTheEditsBeforeIt(t *testing.T) {
 	wt := t.TempDir()
 	var r Reporter
@@ -37,9 +37,10 @@ func TestResumedWorkerKeepsTheEditsBeforeIt(t *testing.T) {
 	if got := r.EditedFiles(wt); !slices.Equal(got, []string{"internal/x.go"}) {
 		t.Errorf("edited %q; want the earlier worker's internal/x.go kept", got)
 	}
-	for _, name := range []string{activityName, sessionName} {
-		if _, err := os.Stat(filepath.Join(wt, project.RunPath(name))); !os.IsNotExist(err) {
-			t.Errorf("the earlier worker's %s should be removed: %v", name, err)
-		}
+	if _, err := os.Stat(filepath.Join(wt, project.RunPath(activityName))); !os.IsNotExist(err) {
+		t.Errorf("the earlier worker's %s should be removed: %v", activityName, err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, project.RunPath(sessionName))); err != nil {
+		t.Errorf("the earlier worker's %s should be kept: %v", sessionName, err)
 	}
 }
