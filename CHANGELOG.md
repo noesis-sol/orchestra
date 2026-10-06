@@ -253,6 +253,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket blocked by one waiting on a question, or carried over from the
+  last run, no longer starts before that ticket merges when its worker
+  closes it in its tab: until the run adopts and merges it, the tickets it
+  blocks wait for it (`waiting for <id> to merge`), and so does its parent,
+  whichever event starts tickets next.
 - A worker resumed with its session keeps the files it edited before in its
   ticket's footprint (`.orchestra/run/edits` is no longer removed), so a
   ticket naming one of them still waits for it, and `LIKELY_CONFLICT` still

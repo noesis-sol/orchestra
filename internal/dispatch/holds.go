@@ -26,15 +26,18 @@ func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]b
 
 // holds is what keeps a ready ticket waiting. Workers close their ticket before it merges, and bd
 // ready counts a closed blocker as done, but until the blocker merges its code is not on Base, which
-// the ticket's worktree is cut from. A parent (see openParents) runs last: its worker couldn't close
-// it while it has open children, and its work builds on theirs. The loop knows them from its run
-// (Loop.holds); the nothing-to-run check, before any Loop, from bd and git, with nothing running.
+// the ticket's worktree is cut from. An asked ticket counts as running: its worker, answered in its
+// tab, may close it there, and it merges only once the run adopts it (see followAsked). A parent (see
+// openParents) runs last: its worker couldn't close it while it has open children, and its work
+// builds on theirs. The loop knows them from its run (Loop.holds); the nothing-to-run check, before
+// any Loop, from bd and git, with nothing running.
 type holds struct {
 	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
 	running  map[string]bool        // the tickets whose workers are running
+	asked    map[string]bool        // the tickets waiting on a question, or carried over (askedIDs)
 	unmerged func(id string) string // why the ticket is closed but not merged, or ""
-	// pending: a ticket is running or closed but not merged; only then can one blocking a ready
-	// ticket hold it, and its blockers are read
+	// pending: a ticket is running, asked, or closed but not merged; only then can one blocking a
+	// ready ticket hold it, and its blockers are read
 	pending bool
 	// blockers returns the IDs of the tickets blocking ready ticket t, or why bd can't say
 	blockers func(ctx context.Context, t Ticket) ([]string, error)
@@ -42,8 +45,9 @@ type holds struct {
 
 // holds is what keeps a ready ticket waiting, as the run knows it.
 func (o *Loop) holds(running, parents map[string]bool) holds {
-	return holds{parents: parents, running: running, unmerged: o.unmergedWhy,
-		pending: len(running) > 0 || o.anyUnmerged(), blockers: o.blockersOf}
+	asked := o.askedSet()
+	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy,
+		pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged(), blockers: o.blockersOf}
 }
 
 // why returns why ready ticket t can't start yet, or "". When bd can't show the tickets blocking
@@ -60,7 +64,7 @@ func (h holds) why(ctx context.Context, t Ticket) (string, error) {
 		return "its dependencies could not be read", err
 	}
 	for _, id := range ids {
-		if h.running[id] {
+		if h.running[id] || h.asked[id] {
 			return fmt.Sprintf("waiting for %s to merge", id), nil
 		}
 		if why := h.unmerged(id); why != "" {
@@ -313,6 +317,17 @@ func (o *Loop) asked(id string) (askedWorker, bool) {
 func (o *Loop) isAsked(id string) bool {
 	_, ok := o.asked(id)
 	return ok
+}
+
+// askedSet is the tickets waiting on a question, or carried over from the last run.
+func (o *Loop) askedSet() map[string]bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	set := make(map[string]bool, len(o.askedIDs))
+	for id := range o.askedIDs {
+		set[id] = true
+	}
+	return set
 }
 
 func (o *Loop) anyUnmerged() bool {

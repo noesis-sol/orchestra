@@ -136,6 +136,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true)
 	}
+	o.setParent(id, t.Parent) // its parent waits for it, should it close in its tab (see openParents)
 	return true
 }
 

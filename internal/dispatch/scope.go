@@ -34,7 +34,7 @@ func (e listUnreadableError) Error() string { return e.err.Error() }
 func (e listUnreadableError) Unwrap() error { return e.err }
 
 // openParents returns the tickets with a subticket not yet closed and merged: one bd lists as not
-// closed, one running (its worker closes it before it merges) or one left unmerged.
+// closed, one running or asked (its worker closes it before it merges) or one left unmerged.
 func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[string]bool, error) {
 	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
@@ -43,7 +43,8 @@ func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[st
 	pending := map[string]string{}
 	o.mu.Lock()
 	for id, p := range o.parentOf {
-		if running[id] || o.unmerged[id] != "" {
+		_, asked := o.askedIDs[id]
+		if running[id] || asked || o.unmerged[id] != "" {
 			pending[id] = p
 		}
 	}
