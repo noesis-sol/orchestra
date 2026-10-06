@@ -137,10 +137,19 @@ type result struct {
 func (o *Loop) Run(ctx context.Context) int {
 	defer close(o.runDone) // triage counts its verdicts itself from here
 	o.begin(ctx)
-	if s := o.loadUnmerged(ctx); s != nil {
+	// Ctrl+C as the last run's state loads ends the run at once: what Run read since may be cut short,
+	// and leaving behind what it carried would save .orchestra/run/state.json without the workers it
+	// could not check. Left as it was, the file carries them all over to the next run.
+	s := o.loadUnmerged(ctx)
+	if ctx.Err() != nil {
+		return o.interrupted(ctx)
+	}
+	if s != nil {
 		return o.stop(s, s.Error())
 	}
-	o.loadCarried(ctx)
+	if o.loadCarried(ctx); ctx.Err() != nil {
+		return o.interrupted(ctx)
+	}
 	defer o.startPredicting()()
 
 	r := newRunState(ctx, o)

@@ -47,6 +47,9 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			continue
 		}
 		if !o.carriedStands(ctx, e.Ticket, &w) {
+			if ctx.Err() != nil { // Ctrl+C: a check cut short drops nothing; it is kept as it was
+				o.keptOut = append(o.keptOut, e)
+			}
 			continue
 		}
 		o.setAsked(e.Ticket, &w)
@@ -92,7 +95,8 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 // with its branch already on Base was merged by hand. A worker left unnamed in its pane is named
 // (see earlierState). A ticket in progress whose worker is gone is carried over if its session can
 // be resumed (see resumeGone); without one, it has nothing to carry on with: it is warned about and
-// noted, once, and the run goes on. Each of those drops the worker. The
+// noted, once, and the run goes on. Each of those drops the worker; a check that Ctrl+C cut short
+// returns false without a word, for loadCarried to keep the worker as it was. The
 // question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
 // UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
@@ -100,10 +104,16 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	br := branchOf(id)
 	t, err := o.showTries(ctx, id)
 	if err != nil {
+		if ctx.Err() != nil {
+			return false // cut short by Ctrl+C, not gone (see loadCarried)
+		}
 		o.info("  %s, carried over from the last run, is dropped: bd can't show it%s", id, because(err))
 		return false
 	}
 	if wt := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt == "" || !mcp.SamePath(wt, w.wt) {
+		if ctx.Err() != nil {
+			return false
+		}
 		o.info("  %s, carried over from the last run, is dropped: its worktree %s is gone", id, w.wt)
 		return false
 	}

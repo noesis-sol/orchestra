@@ -258,6 +258,11 @@ All notable changes to orchestra are documented here. The format follows
   closes it in its tab: until the run adopts and merges it, the tickets it
   blocks wait for it (`waiting for <id> to merge`), and so does its parent,
   whichever event starts tickets next.
+- Ctrl+C or SIGTERM while a run reads the last run's state no longer
+  forgets the workers it left behind: the run ends `INTERRUPTED` with
+  `.orchestra/run/state.json` as it was, and the next run carries them over,
+  rather than dropping each as one `bd` couldn't show. Ctrl+C while it lists
+  the tickets left `unmerged` exits as interrupted, not `READY_UNREADABLE`.
 - A worker resumed with its session keeps the files it edited before in its
   ticket's footprint (`.orchestra/run/edits` is no longer removed), so a
   ticket naming one of them still waits for it, and `LIKELY_CONFLICT` still
