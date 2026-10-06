@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Claude workers get the worker prompt's standing rules in their system
+  prompt (`--append-system-prompt-file .orchestra/run/rules.md`), which
+  survives compaction of a long ticket's conversation; their first message
+  carries only the ticket and what an earlier attempt left. Workers of
+  other kinds still get the whole prompt as their first message.
 - `orchestra init` says what the scout's call cost, on a `scout` line of
   its summary (even when the form is cancelled), as it has no log for an
   `ORGAN` line.

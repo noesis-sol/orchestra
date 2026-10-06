@@ -27,17 +27,21 @@ func (b *fakeBeads) filed(id, title string, prio int) {
 	b.tickets[id].CreatedAt = time.Now().UTC().Format(time.RFC3339)
 }
 
-// prompted records the prompt each worker was launched with.
+// prompted records what each worker was launched with: its standing rules, then its first message.
 type prompted struct{ got map[string]string }
 
-// then reads the worker's launch prompt, then does b.
+// then reads the worker's standing rules and launch prompt, then does b.
 func (p *prompted) then(b behaviour) behaviour {
 	return func(w *fakeWorker) AgentState {
-		raw, err := os.ReadFile(filepath.Join(w.wt, ".orchestra", "run", "prompt.md"))
-		if err != nil {
-			w.t.Error(err)
+		var got string
+		for _, name := range []string{"rules.md", "prompt.md"} {
+			raw, err := os.ReadFile(filepath.Join(w.wt, ".orchestra", "run", name))
+			if err != nil {
+				w.t.Error(err)
+			}
+			got += string(raw)
 		}
-		p.got[w.id] = string(raw)
+		p.got[w.id] = got
 		return b(w)
 	}
 }

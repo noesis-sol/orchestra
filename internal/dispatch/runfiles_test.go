@@ -21,6 +21,7 @@ func TestRunFilesOutsideTheWorktreeSetTheTicketAside(t *testing.T) {
 		{"run folder, no MCP servers", ".orchestra/run", false},
 		{"mcp.json", ".orchestra/run/mcp.json", true},
 		{"prompt.md", ".orchestra/run/prompt.md", false},
+		{"rules.md", ".orchestra/run/rules.md", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

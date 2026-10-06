@@ -38,6 +38,7 @@ type fakeHerdr struct {
 	closed     []string              // tabs closed
 	labels     map[string]string     // the open tabs' labels, by tab
 	pasted     []string              // tickets whose prompt was pasted
+	texts      map[string][]string   // the prompts pasted, by ticket
 	starts     []string              // tickets StartAgent was asked to start a worker for
 	args       map[string][][]string // the arguments of each LaunchInPane and StartAgent, by ticket
 	behaviours map[string][]behaviour
@@ -138,6 +139,13 @@ func (h *fakeHerdr) pastedTo() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.pasted...)
+}
+
+// pastedText returns the prompts pasted to ticket id's workers, in order.
+func (h *fakeHerdr) pastedText(id string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.texts[id]...)
 }
 
 // Tabs
@@ -341,7 +349,7 @@ func (h *fakeHerdr) Screen(ctx context.Context, name string, state AgentState) s
 // Prompt starts the worker on its prompt and returns, as Herdr's does once it sees the worker
 // working, after promptTakes.
 func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
-	if err := h.submit(name); err != nil {
+	if err := h.submit(name, prompt); err != nil {
 		return err
 	}
 	if h.promptTakes > 0 && !sleep(ctx, h.promptTakes) {
@@ -350,8 +358,8 @@ func (h *fakeHerdr) Prompt(ctx context.Context, name, prompt string) error {
 	return nil
 }
 
-// submit pastes the prompt to the agent named name, and starts it on it unless the paste fails.
-func (h *fakeHerdr) submit(name string) error {
+// submit pastes prompt to the agent named name, and starts it on it unless the paste fails.
+func (h *fakeHerdr) submit(name, prompt string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	a := h.agent(name)
@@ -359,6 +367,10 @@ func (h *fakeHerdr) submit(name string) error {
 		return fmt.Errorf("herdr agent prompt: no agent %s", name)
 	}
 	h.pasted = append(h.pasted, h.panes[a.pane].ticket)
+	if h.texts == nil {
+		h.texts = map[string][]string{}
+	}
+	h.texts[h.panes[a.pane].ticket] = append(h.texts[h.panes[a.pane].ticket], prompt)
 	if h.onPrompt != nil {
 		h.onPrompt(h.panes[a.pane].ticket)
 	}

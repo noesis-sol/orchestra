@@ -107,6 +107,16 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 		report = nil
 	}
 
+	// Claude Code keeps no system prompt with the session: the standing rules are given again.
+	rules, err := o.rulesArgs(wt, id)
+	if e := escapeOf(err); e != nil {
+		return o.setAsideEscaped(keep, t, wt, e)
+	}
+	if err != nil {
+		o.log.Raw("", fmt.Errorf("%s's resumed worker goes without its standing rules in its system prompt: %w", id, err))
+		rules = nil
+	}
+
 	msg := fmt.Sprintf("Orchestra: your worker stopped, its tab gone, with %s still in progress, "+
 		"and this is your session resumed. Carry on with %s where you left off, as your instructions say.", id, id)
 	if question != "" {
@@ -118,7 +128,8 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 	}
 	agent := o.agentName(id)
 	begun := time.Now() // its hooks report from its start: the earlier worker's last tool use is removed
-	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch, s.ID)
+	args := workerArgs{mcp: mcpArgs, rules: rules, report: report}
+	launched, stop := o.startWorker(ctx, t, agent, wt, args, launch, s.ID)
 	if stop != nil {
 		return stop
 	}

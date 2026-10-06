@@ -343,9 +343,9 @@ func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 	}
 }
 
-// Every Claude worker starts with the run's worker arguments first, ahead of its reporting hooks
-// and its prompt file, and keeps them when Herdr refuses the others: --no-chrome must not be lost
-// on the way to a plain start.
+// Every Claude worker starts with the run's worker arguments first, ahead of its standing rules,
+// its reporting hooks and its prompt file, and keeps them when Herdr refuses the others:
+// --no-chrome must not be lost on the way to a plain start.
 func TestStartGivesEveryWorkerTheRunsArguments(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -361,8 +361,8 @@ func TestStartGivesEveryWorkerTheRunsArguments(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if a := h.herdr.argsFor("A"); len(a) != 1 || len(a[0]) != 5 || a[0][0] != "launch" || a[0][1] != "--no-chrome" ||
-		a[0][2] != "--settings" || !strings.Contains(a[0][4], "prompt.md") {
+	if a := h.herdr.argsFor("A"); len(a) != 1 || len(a[0]) != 7 || a[0][0] != "launch" || a[0][1] != "--no-chrome" ||
+		a[0][2] != "--append-system-prompt-file" || a[0][4] != "--settings" || !strings.Contains(a[0][6], "prompt.md") {
 		t.Errorf("A's launch: %q", a)
 	}
 	b := h.herdr.argsFor("B") // the launch, the refused starts, then a plain one

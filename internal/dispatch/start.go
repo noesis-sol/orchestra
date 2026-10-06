@@ -141,16 +141,23 @@ type startedWorker struct {
 	started  time.Time // when its tab was opened
 	atLaunch bool      // its prompt was given at launch, from its prompt file
 	hooks    bool      // it reports what it does through hooks
+	rules    bool      // its standing rules are in its system prompt
+}
+
+// workerArgs are the arguments a worker is started with besides the run's: they give it its MCP
+// servers, its standing rules in its system prompt (see rulesArgs) and its reporting hooks.
+type workerArgs struct {
+	mcp, rules, report []string
 }
 
 // startWorker opens a tab in worktree wt for ticket t's worker and starts it there, named agent:
 // from its prompt file launch if it has one and that works, or else with herdr agent start, its
-// prompt then to be pasted. mcpArgs give it its MCP servers and report its hooks; it does without
-// the hooks if Herdr refuses them. With a session (a Claude Code session ID), it resumes that
-// session rather than starting a new one. It shows the ticket as starting in that tab, and clears
-// that again unless it returns the worker started, which leaves clearing it to the caller. It places
-// the worker as soon as the tab is open, and leaves it placed however the start ends.
-func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpArgs, report []string,
+// prompt then to be pasted. It does without its rules and hooks if Herdr refuses them. With a
+// session (a Claude Code session ID), it resumes that session rather than starting a new one. It
+// shows the ticket as starting in that tab, and clears that again unless it returns the worker
+// started, which leaves clearing it to the caller. It places the worker as soon as the tab is open,
+// and leaves it placed however the start ends.
+func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a workerArgs,
 	launch, session string) (startedWorker, *stopReason) {
 	c := o.cfg
 	id := t.ID
@@ -177,7 +184,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 		}
 	}()
 	s := &workerStart{o: o, id: id, tab: tab, pane: pane, wt: wt, agent: agent,
-		mcpArgs: mcpArgs, fixed: slices.Clip(mcpArgs), report: report, launch: launch}
+		mcpArgs: a.mcp, fixed: slices.Clip(a.mcp), rules: a.rules, report: a.report, launch: launch}
 	if c.ClaudeWorkers() {
 		s.fixed = append(s.fixed, c.WorkerArgs...)
 	}
@@ -195,17 +202,19 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, mcpA
 		return startedWorker{}, stop
 	}
 	up = true
-	return startedWorker{tab: tab, pane: pane, started: started, atLaunch: s.launch != "", hooks: s.report != nil}, nil
+	return startedWorker{tab: tab, pane: pane, started: started, atLaunch: s.launch != "", hooks: s.report != nil,
+		rules: s.rules != nil}, nil
 }
 
 // workerStart is one start of ticket id's worker, named agent, in pane of tab, which startWorker
-// takes step by step. A step goes on without the worker's hooks once Herdr refuses them, and
-// without its prompt file launch once starting from it fails.
+// takes step by step. A step goes on without the worker's rules and hooks once Herdr refuses them,
+// and without its prompt file launch once starting from it fails.
 type workerStart struct {
 	o                        *Loop
 	id, tab, pane, wt, agent string
 	mcpArgs                  []string // the arguments giving it its MCP servers
 	fixed                    []string // the arguments it always gets: mcpArgs, the run's for every Claude worker, --resume
+	rules                    []string // the arguments giving it its standing rules; nil once Herdr refused them
 	report                   []string // the arguments for its hooks; nil once Herdr refused them
 	launch                   string   // its prompt file launch; "" once it is to be started with herdr agent start
 }
@@ -217,9 +226,9 @@ func (s *workerStart) place() {
 
 // args are the worker's arguments: its MCP servers, the run's arguments for every Claude worker
 // (--no-chrome or --chrome, --effort) and the session it resumes, which it always gets, then its
-// reports and its prompt, if it has them.
+// standing rules, its reports and its prompt, if it has them.
 func (s *workerStart) args() []string {
-	args := append(append([]string{}, s.fixed...), s.report...)
+	args := append(append(append([]string{}, s.fixed...), s.rules...), s.report...)
 	if s.launch != "" {
 		args = append(args, s.launch)
 	}
@@ -322,7 +331,7 @@ func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
 		}
 		o.log.Raw("", err)
 		if o.starter.IsArgumentRefused(err) && len(args) > len(s.fixed) {
-			s.report = nil // start it plainly, without reports
+			s.rules, s.report = nil, nil // start it plainly: its rules are pasted with its prompt
 			s.place()
 			continue
 		}

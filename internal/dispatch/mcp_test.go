@@ -142,7 +142,8 @@ func TestUnchosenMCPServersKeepTheArgumentsAndWarnOnce(t *testing.T) {
 	}
 	for _, id := range []string{"A", "B"} {
 		for _, args := range h.herdr.argsFor(id) {
-			want := []string{"launch", "--settings", filepath.Join(h.worktree(id), "hooks.json"),
+			want := []string{"launch", "--append-system-prompt-file", filepath.Join(h.worktree(id), ".orchestra", "run", "rules.md"),
+				"--settings", filepath.Join(h.worktree(id), "hooks.json"),
 				"Your instructions for ticket " + id + " are in .orchestra/run/prompt.md in this directory. " +
 					"Read that file and follow it exactly."}
 			if !equal(args, want) {

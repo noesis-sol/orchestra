@@ -23,7 +23,7 @@ import (
 //	.orchestra/.gitignore         committed: ignores the rest
 //	.orchestra/orchestra.log      the event log
 //	.orchestra/reports/           run reports
-//	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt, the worker's hooks);
+//	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt, the rules, the hooks);
 //	                              in the main checkout, the event stream (events.jsonl), the workers
 //	                              the last run left behind (state.json), and a feature interview's
 //	                              instructions and the epic it filed (feature.json)
@@ -485,8 +485,27 @@ func wroteTemplate(steps []Step) bool {
 	return false
 }
 
-// WriteLaunchPrompt puts the worker prompt in the worktree at .orchestra/run/prompt.md, which
-// EnsureRunExcluded keeps out of git, and returns the one-line instruction to start the worker with.
+// RulesName is the file in .orchestra/run/ that holds a Claude worker's standing rules.
+const RulesName = "rules.md"
+
+// WriteRules puts a Claude worker's standing rules in the worktree at .orchestra/run/rules.md,
+// which EnsureRunExcluded keeps out of git, and returns its path, for --append-system-prompt-file.
+func WriteRules(wt, rules string) (string, error) {
+	root, err := OpenRun(wt)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := RunPath(RulesName)
+	if err := WriteRun(root, wt, rel, []byte(rules), 0o644); err != nil {
+		return "", err
+	}
+	return filepath.Join(wt, rel), nil
+}
+
+// WriteLaunchPrompt puts a worker's first message, prompt, in the worktree at
+// .orchestra/run/prompt.md, which EnsureRunExcluded keeps out of git, and returns the one-line
+// instruction to start the worker with.
 func WriteLaunchPrompt(wt, ticket, prompt string) (string, error) {
 	root, err := OpenRun(wt)
 	if err != nil {

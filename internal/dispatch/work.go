@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -131,10 +130,24 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
 	}
 
+	// A Claude worker's standing rules go in its system prompt, which survives compaction (see rules.go).
+	rules, err := o.rulesArgs(wt, id)
+	if e := escapeOf(err); e != nil {
+		return o.setAsideEscaped(keep, t, wt, e)
+	}
+	if err != nil {
+		o.log.Raw("", fmt.Errorf("%s's worker gets its whole prompt as its first message: %w", id, err))
+		rules = nil
+	}
+	left := o.earlierNote(ctx, br, wt)
+	full := o.fullPrompt(id, left)
+	prompt := full
+	if rules != nil {
+		prompt = ticketPrompt(id, left)
+	}
+
 	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-	prompt := strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.earlierNote(ctx, br, wt) + o.scopeNote(id) +
-		o.budgetNote()
 	launch := ""
 	if c.LaunchPrompt && c.ClaudeWorkers() {
 		launch, err = project.WriteLaunchPrompt(wt, id, prompt)
@@ -162,9 +175,12 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
 
-	launched, stop := o.startWorker(ctx, t, agent, wt, mcpArgs, report, launch, "")
+	launched, stop := o.startWorker(ctx, t, agent, wt, workerArgs{mcp: mcpArgs, rules: rules, report: report}, launch, "")
 	if stop != nil {
 		return stop
+	}
+	if !launched.rules {
+		prompt = full // started without its rules, as Herdr refused them: they are pasted with the rest
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
 	tab, started := launched.tab, launched.started
