@@ -96,7 +96,7 @@ func parseScreening(r Result) (Screening, error) {
 // Screen judges whether a feature request is fit to plan: ok, reject (malicious or inappropriate)
 // or unclear (too vague). The caller must treat an error as "not screened" and stop.
 func (g Client) Screen(ctx context.Context, r Request) (Screening, error) {
-	res, err := g.Ask(ctx, 2*time.Minute, g.effort(ScreenEffort), screenSystem, screenInput(r), screenSchema)
+	res, err := g.Ask(ctx, "screen", 2*time.Minute, g.effort(ScreenEffort), screenSystem, screenInput(r), screenSchema)
 	if err != nil {
 		return Screening{}, err
 	}

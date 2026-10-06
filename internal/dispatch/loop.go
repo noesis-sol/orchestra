@@ -80,6 +80,7 @@ type Loop struct {
 	history   History
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
+	organCost organCost       // what the run's organ calls cost
 	mu        sync.Mutex
 	asideIDs  []string              // tickets deferred or left unmerged in this run
 	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why

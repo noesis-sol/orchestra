@@ -168,7 +168,7 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 	}
 	// In the repository's root, where Claude Code lets the read-only tools read without asking; safe
 	// mode keeps its CLAUDE.md and hooks out, as they are for the other organs.
-	r, err := g.ask(ctx, limit, call{dir: root, tools: scoutTools, effort: g.effort(ScoutEffort),
+	r, err := g.ask(ctx, limit, call{organ: "scout", dir: root, tools: scoutTools, effort: g.effort(ScoutEffort),
 		system: scoutSystem, schema: scoutSchema, flags: g.confinement(ctx)}, scoutInput)
 	if err != nil {
 		return Scouting{}, scoutFailure(ctx, err)

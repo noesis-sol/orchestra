@@ -146,7 +146,7 @@ func (o *Loop) triage(d queuedDeferral) {
 	if o.organCtx.Err() != nil {
 		return
 	}
-	t, err := o.organ.Triage(o.organCtx, d.Deferral)
+	t, err := o.organs().Triage(o.organCtx, d.Deferral)
 	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
 	// time limit.
 	ctx := context.Background()
@@ -237,7 +237,9 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		failedChecks + fullChecked +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
-		organ.Section(tag, "Tickets still ready", stillReady) + outside + feature
+		organ.Section(tag, "Tickets still ready", stillReady) +
+		organ.Section(tag, "What the run's organs (triage, the predictor and the like) cost", o.organCostEvidence()) +
+		outside + feature
 }
 
 // maxDirs is the most directories the reviewer is given of those a ticket's commits change.
@@ -286,9 +288,9 @@ func (f checkFail) evidence(id, check, base string) string {
 }
 
 // Review has the reviewer write the run report, followed by the end of the full check's output when
-// it failed.
+// it failed and by what the run's organs cost, the report included.
 func (o *Loop) Review(ctx context.Context, code int, final string) (string, error) {
-	result, err := o.organ.Review(ctx, o.reviewInput(ctx, code, final))
+	result, err := o.organs().Review(ctx, o.reviewInput(ctx, code, final))
 	if err != nil {
 		return "", err
 	}
@@ -296,9 +298,9 @@ func (o *Loop) Review(ctx context.Context, code int, final string) (string, erro
 	if f, ok := o.fullCheckOf(); ok {
 		full = f.report(o.cfg.CheckFull)
 	}
-	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n%s", o.started.Format("2006-01-02"),
+	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n%s%s", o.started.Format("2006-01-02"),
 		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg),
-		strings.TrimSpace(result), full), nil
+		strings.TrimSpace(result), full, o.organCostLine()), nil
 }
 
 // SaveReport writes the run report to the reports folder and returns its path.

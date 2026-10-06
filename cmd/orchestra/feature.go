@@ -73,7 +73,7 @@ func runFeature(
 		// The plan and the question go to stdout: asked with stdout sent to a file, the question
 		// would wait for an answer to something nobody sees.
 		terminal: isTerminal(stdin) && isTerminal(stdout),
-		organs:   organ.Client{Bin: "claude", Model: c.OrganModel, Effort: c.OrganEffort},
+		organs:   organ.Client{Bin: "claude", Model: c.OrganModel, Effort: c.OrganEffort, Spent: log.OrganSpent},
 		tracker:  beads.Tracker{Repo: c.Repo},
 		log:      log,
 		in:       stdin,

@@ -41,6 +41,9 @@ type Client struct {
 	Bin    string // "claude"; tests substitute a fake
 	Model  string // "" uses the claude CLI's default
 	Effort string // "" gives each organ its own effort, such as TriageEffort or ScoutEffort
+	// Spent is told what each call claude answered cost, failed calls too, on the goroutine that made
+	// it; nil tells nobody.
+	Spent func(Spend)
 }
 
 // Each organ's effort when Client.Effort sets none: low for the short structured answers of triage
@@ -59,11 +62,119 @@ func (g Client) effort(def string) string {
 	return def
 }
 
-// Result is the claude CLI's JSON output.
+// Result is the claude CLI's JSON output: the result message of the call. An older CLI may leave out
+// any field but is_error and result, which then read as zero.
 type Result struct {
+	Type       string          `json:"type"` // "result"
+	Subtype    Subtype         `json:"subtype"`
 	IsError    bool            `json:"is_error"`
-	Result     string          `json:"result"`
+	Result     string          `json:"result"` // absent with an error subtype
 	Structured json.RawMessage `json:"structured_output"`
+	Errors     []string        `json:"errors"`      // with an error subtype, what ended the call
+	StopReason StopReason      `json:"stop_reason"` // "" when null, after a crash
+	CostUSD    float64         `json:"total_cost_usd"`
+	Turns      int             `json:"num_turns"`
+	SessionID  string          `json:"session_id"`
+}
+
+// Subtype is how a call ended, as its result message says.
+type Subtype string
+
+// The subtypes of a result message.
+const (
+	SubtypeSuccess         Subtype = "success"
+	SubtypeMaxTurns        Subtype = "error_max_turns"        // at its --max-turns
+	SubtypeMaxBudget       Subtype = "error_max_budget_usd"   // at its --max-budget-usd
+	SubtypeDuringExecution Subtype = "error_during_execution" // an error interrupted it, a crash among them
+	// SubtypeSchemaRetries: no answer matched --json-schema within claude's retries.
+	SubtypeSchemaRetries Subtype = "error_max_structured_output_retries"
+)
+
+// StopReason is why the model stopped writing on the call's last turn.
+type StopReason string
+
+// The stop reasons orchestra tells apart.
+const (
+	StopEndTurn   StopReason = "end_turn"
+	StopMaxTokens StopReason = "max_tokens"
+	StopRefusal   StopReason = "refusal" // the model declined
+)
+
+// failure is the *CallError r reports, or nil: an error result, or a refusal, which claude may report
+// as a success.
+func (r Result) failure(bin string) error {
+	if !r.IsError && !strings.HasPrefix(string(r.Subtype), "error") && r.StopReason != StopRefusal {
+		return nil
+	}
+	detail := strings.Join(r.Errors, "; ")
+	if detail == "" {
+		detail = r.Result
+	}
+	return &CallError{Bin: bin, Subtype: r.Subtype, StopReason: r.StopReason, Detail: strings.TrimSpace(detail)}
+}
+
+// CallError is an organ call that claude answered with an error result or a refusal, so the caller can
+// tell what happened: errors.As finds it, and its fields say which.
+type CallError struct {
+	Bin        string
+	Subtype    Subtype    // an error subtype; success, or none from an older CLI, for a refusal or another error
+	StopReason StopReason // StopRefusal when the model declined
+	Detail     string     // what claude said of it: its errors, or its result text; may be ""
+}
+
+// Refused tells whether the model declined to answer.
+func (e *CallError) Refused() bool { return e.StopReason == StopRefusal }
+
+func (e *CallError) Error() string {
+	var what string
+	switch {
+	case e.Refused():
+		what = "refused to answer"
+	case e.Subtype == SubtypeMaxTurns:
+		what = "reached its turn limit"
+	case e.Subtype == SubtypeMaxBudget:
+		what = "reached its budget limit"
+	case e.Subtype == SubtypeSchemaRetries:
+		what = "gave no answer that matches the schema"
+	case e.Subtype == SubtypeDuringExecution:
+		what = "failed during the call"
+	case e.Subtype == "" || e.Subtype == SubtypeSuccess:
+		what = "reported an error"
+	default:
+		what = "reported an error (" + string(e.Subtype) + ")"
+	}
+	if e.Detail == "" {
+		return e.Bin + " " + what
+	}
+	return e.Bin + " " + what + ": " + e.Detail
+}
+
+// Spend is what one organ call cost, as claude's result says.
+type Spend struct {
+	Organ   string        // triage, review, predict, screen, plan or scout
+	CostUSD float64       // total_cost_usd: the whole call, subagents too; 0 from an older CLI
+	Turns   int           // num_turns
+	Session string        // session_id
+	Subtype Subtype       // how it ended
+	Took    time.Duration // from start to answer
+}
+
+// String reads "triage: $0.0123 in 1 turn, 4.2s, session 1b2c…", and names an error subtype after the
+// time it took.
+func (s Spend) String() string {
+	turns := "turns"
+	if s.Turns == 1 {
+		turns = "turn"
+	}
+	out := fmt.Sprintf("%s: $%.4f in %d %s, %s", s.Organ, s.CostUSD, s.Turns, turns,
+		command.ShortDuration(s.Took.Round(100*time.Millisecond)))
+	if s.Subtype != "" && s.Subtype != SubtypeSuccess {
+		out += ", " + string(s.Subtype)
+	}
+	if s.Session != "" {
+		out += ", session " + s.Session
+	}
+	return out
 }
 
 // decode reads an organ's structured answer into v: structured_output, or, when that is absent or
@@ -102,29 +213,42 @@ func (g Client) args(tools, effort, system, schema string) []string {
 // rather than --safe-mode, which an older claude would reject: it ignores a variable it doesn't know.
 var userSetupOff = []string{"CLAUDE_CODE_SAFE_MODE=1"}
 
-// Ask runs claude -p at the effort with the system prompt and the JSON schema (none when empty) on
-// input, stopping it after timeout. A run that fails or reports an error is an error; one stopped at
-// its timeout says "timed out after" the timeout.
-func (g Client) Ask(ctx context.Context, timeout time.Duration, effort, system, input, schema string) (Result, error) {
+// Ask runs claude -p for the organ name at the effort with the system prompt and the JSON schema
+// (none when empty) on input, stopping it after timeout. A run that fails or reports an error is an
+// error: a *CallError when claude answered with an error result or a refusal; one stopped at its
+// timeout says "timed out after" the timeout. Spent hears of each call claude answered.
+func (g Client) Ask(ctx context.Context, name string, timeout time.Duration, effort, system, input, schema string,
+) (Result, error) {
 	// Outside the project: no project CLAUDE.md, settings or hooks.
-	return g.ask(ctx, timeout, call{dir: os.TempDir(), effort: effort, system: system, schema: schema}, input)
+	return g.ask(ctx, timeout, call{organ: name, dir: os.TempDir(), effort: effort, system: system, schema: schema},
+		input)
 }
 
-// call is how one organ call runs: in dir, with the read-only tools in tools ("" for none), at the
-// effort, with the system prompt and the JSON schema ("" for none), and with flags added after the
-// others (the scout's confinement).
+// call is how one organ call runs: for the organ named organ, in dir, with the read-only tools in tools
+// ("" for none), at the effort, with the system prompt and the JSON schema ("" for none), and with
+// flags added after the others (the scout's confinement).
 type call struct {
-	dir, tools, effort, system, schema string
-	flags                              []string
+	organ, dir, tools, effort, system, schema string
+	flags                                     []string
 }
 
 // ask runs claude -p as c says on input, stopping it after timeout, as Ask does.
 func (g Client) ask(ctx context.Context, timeout time.Duration, c call, input string) (Result, error) {
+	start := time.Now()
 	out, err := command.OutputWithInput(ctx, timeout, c.dir, userSetupOff, input, g.Bin,
 		append(g.args(c.tools, c.effort, c.system, c.schema), c.flags...)...)
 	if err != nil {
-		if e, ok := errors.AsType[*command.Error](err); ok {
+		e, ok := errors.AsType[*command.Error](err)
+		if ok {
 			e.Args = nil // the system prompt and the schema would bury why it failed
+		}
+		// claude exits 1 after an error result, which it prints all the same: that says why.
+		var r Result
+		if ok && !e.Stopped && json.Unmarshal([]byte(out), &r) == nil && r.Type == "result" {
+			g.spent(c.organ, r, time.Since(start))
+			if failed := r.failure(g.Bin); failed != nil {
+				return r, failed
+			}
 		}
 		return Result{}, err
 	}
@@ -132,10 +256,19 @@ func (g Client) ask(ctx context.Context, timeout time.Duration, c call, input st
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return r, unreadableOutput{g.Bin, err}
 	}
-	if r.IsError {
-		return r, fmt.Errorf("%s reported an error: %s", g.Bin, r.Result)
+	g.spent(c.organ, r, time.Since(start))
+	if failed := r.failure(g.Bin); failed != nil {
+		return r, failed
 	}
 	return r, nil
+}
+
+// spent tells Spent what the organ's call cost, when anyone listens.
+func (g Client) spent(organ string, r Result, took time.Duration) {
+	if g.Spent != nil {
+		g.Spent(Spend{Organ: organ, CostUSD: r.CostUSD, Turns: r.Turns, Session: r.SessionID, Subtype: r.Subtype,
+			Took: took})
+	}
 }
 
 // unreadableOutput is claude's output when it isn't the JSON of --output-format json.
@@ -286,7 +419,7 @@ func Unavailable(bin string) string {
 
 // Triage asks where the cause of a deferral lies: the environment, the instructions or the problem.
 func (g Client) Triage(ctx context.Context, d Deferral) (Verdict, error) {
-	r, err := g.Ask(ctx, 3*time.Minute, g.effort(TriageEffort), triageSystem, triageInput(d), triageSchema)
+	r, err := g.Ask(ctx, "triage", 3*time.Minute, g.effort(TriageEffort), triageSystem, triageInput(d), triageSchema)
 	if err != nil {
 		return Verdict{}, err
 	}
@@ -295,7 +428,7 @@ func (g Client) Triage(ctx context.Context, d Deferral) (Verdict, error) {
 
 // Review writes the end-of-run report from the evidence, whose sections Section makes.
 func (g Client) Review(ctx context.Context, evidence string) (string, error) {
-	r, err := g.Ask(ctx, 5*time.Minute, g.effort(ReviewEffort), reviewSystem, evidence, "")
+	r, err := g.Ask(ctx, "review", 5*time.Minute, g.effort(ReviewEffort), reviewSystem, evidence, "")
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +502,7 @@ func parsePrediction(r Result, tracked []string) ([]string, error) {
 // PredictFiles predicts the repository files a ticket naming none will change; empty when the
 // ticket gives no clue.
 func (g Client) PredictFiles(ctx context.Context, f Footprint) ([]string, error) {
-	r, err := g.Ask(ctx, 2*time.Minute, g.effort(PredictEffort), predictSystem, predictInput(f), predictSchema)
+	r, err := g.Ask(ctx, "predict", 2*time.Minute, g.effort(PredictEffort), predictSystem, predictInput(f), predictSchema)
 	if err != nil {
 		return nil, err
 	}

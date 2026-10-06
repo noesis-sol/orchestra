@@ -92,7 +92,7 @@ func TestScoutPassesOnlyTheFlagsClaudeKnows(t *testing.T) {
 // The other organs have no tools to confine and don't ask claude for its --help.
 func TestOtherOrgansAreNotGivenTheScoutsFlags(t *testing.T) {
 	bin, record := fakeHelpClaude(t, newerHelp, 0)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), hung, "low", "S", "E", ""); err != nil {
+	if _, err := (Client{Bin: bin}).Ask(context.Background(), "test", hung, "low", "S", "E", ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(record)

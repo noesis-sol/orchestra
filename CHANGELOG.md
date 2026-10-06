@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Organ calls say what they cost: each is logged with its cost and turns
+  (`ORGAN triage: $0.0123 in 1 turn, …`), the reviewer is given what the
+  run's organs cost, and the run report ends with an `Organs:` line giving
+  the total. A call that ends on an error result names it (`claude reached
+  its budget limit: …`, `refused to answer`, `gave no answer that matches
+  the schema`) instead of `claude reported an error: ` with nothing after
+  it, and `organ.CallError` lets callers tell which.
 - A worker handed a rebase stopped on conflicts is now asked to run the
   check once the rebase has finished, not before `git rebase --continue`,
   as the commits that apply cleanly after a resolved one can break it too,

@@ -500,7 +500,7 @@ func checkPlanFiles(tickets []PlannedTicket, tracked []string) []string {
 // first. A plan that fails its checks is an error; files it names that can't be right are dropped
 // with a note in Notes.
 func (g Client) PlanFeature(ctx context.Context, ev FeatureEvidence) (FeaturePlan, error) {
-	res, err := g.Ask(ctx, 10*time.Minute, g.effort(PlanEffort), planSystem, planInput(ev), planSchema)
+	res, err := g.Ask(ctx, "plan", 10*time.Minute, g.effort(PlanEffort), planSystem, planInput(ev), planSchema)
 	if err != nil {
 		return FeaturePlan{}, err
 	}

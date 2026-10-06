@@ -27,7 +27,7 @@ func fakeClaude(t *testing.T, output string) (bin, record string) {
 
 func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 	bin, record := fakeClaude(t, `{"type":"result","is_error":false,"result":"ok"}`)
-	r, err := Client{Bin: bin, Model: "opus"}.Ask(context.Background(), time.Minute, "low", "SYSTEM", "EVIDENCE", `{"type":"object"}`)
+	r, err := Client{Bin: bin, Model: "opus"}.Ask(context.Background(), "test", time.Minute, "low", "SYSTEM", "EVIDENCE", `{"type":"object"}`)
 	if err != nil || r.Result != "ok" {
 		t.Fatalf("ask: %v %+v", err, r)
 	}
@@ -56,11 +56,11 @@ func TestOrganCallsAreReadOnlyAndSmall(t *testing.T) {
 
 func TestOrganErrorsAreReported(t *testing.T) {
 	bin, _ := fakeClaude(t, `{"type":"result","is_error":true,"result":"usage limit reached"}`)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "low", "s", "i", ""); err == nil || !strings.Contains(err.Error(), "usage limit") {
+	if _, err := (Client{Bin: bin}).Ask(context.Background(), "test", time.Minute, "low", "s", "i", ""); err == nil || !strings.Contains(err.Error(), "usage limit") {
 		t.Errorf("want the CLI's error, got %v", err)
 	}
 	bin, _ = fakeClaude(t, `not json`)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), time.Minute, "low", "s", "i", ""); err == nil {
+	if _, err := (Client{Bin: bin}).Ask(context.Background(), "test", time.Minute, "low", "s", "i", ""); err == nil {
 		t.Error("garbage output should be an error")
 	}
 }

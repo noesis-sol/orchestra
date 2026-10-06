@@ -13,7 +13,7 @@ func TestAskRunsClaudeInSafeMode(t *testing.T) {
 	bin, _ := fakeScript(t, `cat > /dev/null
 echo "{\"type\":\"result\",\"is_error\":false,\"result\":\"$CLAUDE_CODE_SAFE_MODE\"}"
 `)
-	r, err := Client{Bin: bin}.Ask(context.Background(), time.Minute, "low", "s", "i", "")
+	r, err := Client{Bin: bin}.Ask(context.Background(), "test", time.Minute, "low", "s", "i", "")
 	if err != nil || r.Result != "1" {
 		t.Errorf("got %+v, %v; want CLAUDE_CODE_SAFE_MODE=1", r, err)
 	}
