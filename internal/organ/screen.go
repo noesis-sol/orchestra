@@ -86,8 +86,9 @@ func parseScreening(r Result) (Screening, error) {
 	default:
 		return s, fmt.Errorf("unknown screening verdict %q", s.Verdict)
 	}
+	// The reason is what the user is told when the request stops; an ok verdict needs none.
 	s.Reason = strings.TrimSpace(s.Reason)
-	if s.Reason == "" {
+	if s.Reason == "" && s.Verdict != ScreenOK {
 		return s, fmt.Errorf("screening verdict %s gives no reason", s.Verdict)
 	}
 	return s, nil

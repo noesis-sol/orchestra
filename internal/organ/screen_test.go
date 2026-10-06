@@ -28,7 +28,7 @@ func TestScreenRejectsBadAnswers(t *testing.T) {
 	for name, output := range map[string]string{
 		"unknown verdict": `{"is_error":false,"structured_output":{"verdict":"maybe","reason":"r"}}`,
 		"no verdict":      `{"is_error":false,"structured_output":{"reason":"r"}}`,
-		"no reason":       `{"is_error":false,"structured_output":{"verdict":"ok"}}`,
+		"no reason":       `{"is_error":false,"structured_output":{"verdict":"unclear"}}`,
 		"blank reason":    `{"is_error":false,"structured_output":{"verdict":"reject","reason":" "}}`,
 		"unreadable":      `{"is_error":false,"result":"ok"}`,
 		"is_error":        `{"is_error":true,"result":"usage limit reached","structured_output":{"verdict":"ok","reason":"r"}}`,

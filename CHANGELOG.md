@@ -253,6 +253,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra feature` accepts the screen organ's ok verdict without a
+  reason, rather than stopping a valid request with `orchestra couldn't
+  screen the request`. Reject and unclear still need one.
 - A ticket that comes back while Herdr shows its earlier worker as
   `unknown` is read again for 15 seconds before a new worker takes it. One
   that stays unknown counts as still at work: it is adopted if its ticket
