@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,19 +13,6 @@ import (
 	"testing"
 	"time"
 )
-
-// waitForFile waits until the file exists, as a command writes it once it has started.
-func waitForFile(t *testing.T, p string) {
-	t.Helper()
-	for deadline := time.Now().Add(hung); ; time.Sleep(10 * time.Millisecond) {
-		if _, err := os.Stat(p); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s never appeared", p)
-		}
-	}
-}
 
 // An interactive command runs in dir, reads stdin and writes stdout and stderr as it goes, and
 // stays in orchestra's process group, where the terminal lets it read.
@@ -37,9 +23,9 @@ func TestInteractiveRunsInOrchestrasGroup(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Interactive(context.Background(), dir, in, &out, &errOut, "sh", "-c",
-			`echo $$ > pid; read line; echo "got $line"; echo "in $(pwd)" >&2`)
+			`echo $$ > pid.tmp; mv pid.tmp pid; read line; echo "got $line"; echo "in $(pwd)" >&2`)
 	}()
-	waitForFile(t, filepath.Join(dir, "pid"))
+	awaitFile(t, filepath.Join(dir, "pid"))
 	pgid, err := syscall.Getpgid(childPID(t, filepath.Join(dir, "pid")))
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +54,9 @@ func TestInteractiveStopsWithSIGTERM(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Interactive(ctx, dir, nil, &out, io.Discard, "sh", "-c",
-			`trap 'echo terminal restored; exit 3' TERM; echo $$ > pid; while :; do sleep 0.05; done`)
+			`trap 'echo terminal restored; exit 3' TERM; echo $$ > pid.tmp; mv pid.tmp pid; while :; do sleep 0.05; done`)
 	}()
-	waitForFile(t, filepath.Join(dir, "pid"))
+	awaitFile(t, filepath.Join(dir, "pid"))
 	cancel()
 	var cmdErr *Error
 	select {
