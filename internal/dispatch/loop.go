@@ -51,9 +51,11 @@ type Loop struct {
 	startHead string // Base's commit when the run started; the reviewer reads commits since
 	final     string // the stop or done line
 	// closedN and asideN: the tickets closed (merged, or with nothing to merge) and set aside in the run,
-	// counted as their events go out, under sinkMu (see tally); counted, the tickets asideN counts.
+	// counted as their events go out, under sinkMu (see tally); counted, the tickets asideN counts;
+	// closedIDs, the tickets closedN counts, in the order they closed.
 	closedN, asideN int
 	counted         map[string]bool
+	closedIDs       []string
 	// mergedN: the tickets merged into Base in this run, under mu (see countMerge); fullChecked: how
 	// the full check after the run went, once it has run (see FullCheck).
 	mergedN     int

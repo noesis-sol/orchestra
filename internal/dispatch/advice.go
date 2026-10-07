@@ -191,6 +191,10 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 			checks.WriteString(f.evidence(id, c.Check, c.Base) + "\n")
 		}
 	}
+	var closed strings.Builder
+	for _, id := range o.closedInRun() {
+		closed.WriteString(o.closedEvidence(ctx, id) + "\n")
+	}
 	failedChecks := ""
 	if checks.Len() > 0 {
 		failedChecks = organ.Section(tag, "What the check said of each ticket set aside after its check failed",
@@ -240,6 +244,8 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	return organ.Section(tag, "The run's final line", final) +
 		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
+		organ.Section(tag, "Tickets closed in this run, merged or with no change to merge (ID, title, close reason)",
+			closed.String()) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		failedChecks + fullChecked +
 		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
@@ -250,6 +256,28 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		outside + feature +
 		fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Write its report.\n",
 			scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning)
+}
+
+// closeReasonWidth is how many characters of a closed ticket's close reason the reviewer is given:
+// enough to say why it closed as it did, short enough for a run of many tickets.
+const closeReasonWidth = 400
+
+// closedEvidence is what the reviewer is told of ticket id, closed in this run: its ID, title and
+// close reason, cut short, from which the reviewer tells a ticket that closed as it meant to from one
+// that needs the maintainer.
+func (o *Loop) closedEvidence(ctx context.Context, id string) string {
+	t, err := o.tickets.Show(ctx, id)
+	if err != nil {
+		return fmt.Sprintf("%s: (bd show failed: %s)", id, FirstLine(err.Error()))
+	}
+	reason := strings.Join(strings.Fields(t.CloseReason), " ")
+	if r := []rune(reason); len(r) > closeReasonWidth {
+		reason = string(r[:closeReasonWidth-1]) + "…"
+	}
+	if reason == "" {
+		reason = "(none given)"
+	}
+	return fmt.Sprintf("%s: %s\nClose reason: %s", id, t.Title, reason)
 }
 
 // maxDirs is the most directories the reviewer is given of those a ticket's commits change.

@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The run report's evidence lists each ticket merged or closed with no
+  change in the run, with its title and close reason, cut to 400
+  characters; the reviewer puts such a ticket, or a commit whose subject
+  differs from its ticket's title, under Needs you only when the close
+  reason doesn't explain it.
 - The plan organ's answer gives the epic as two fields, `epic_title` and
   `epic_description`, rather than an `epic` object, which often made
   Claude's first answer malformed and cost it a retry of one or two turns.

@@ -426,7 +426,10 @@ const reviewSystem = "You write the end-of-run report for an automated coding pi
 	"rerun the check in the ticket's " +
 	"worktree and merge its branch if it passes; failed in the ticket's code: fix it there " +
 	"first), and one bullet naming the follow-ups filed outside a one-ticket run, which " +
-	"wait for a later run.\n\n" +
+	"wait for a later run.\n" +
+	"- A ticket closed with no change to merge, or merged in a commit whose subject differs " +
+	"from the ticket's title, needs the maintainer only when its close reason, among the " +
+	"tickets closed in this run, doesn't explain it.\n\n" +
 	"Each bullet is one line: no nested bullets, no sub-lists, no bold labels. Write " +
 	"\"Nothing.\" under a section with no entries. No preamble and no closing remarks." + evidenceRule
 

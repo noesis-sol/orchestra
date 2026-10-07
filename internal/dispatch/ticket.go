@@ -30,7 +30,8 @@ type Ticket struct {
 	Design             string          `json:"design"`
 	AcceptanceCriteria string          `json:"acceptance_criteria"`
 	Notes              string          `json:"notes"`
-	Metadata           json.RawMessage `json:"metadata"` // an object, or one encoded as a string
+	CloseReason        string          `json:"close_reason"` // what the worker said as it closed the ticket
+	Metadata           json.RawMessage `json:"metadata"`     // an object, or one encoded as a string
 }
 
 // TicketStatus is a ticket's status as Beads stores it, or StatusUnknown when bd can't say.

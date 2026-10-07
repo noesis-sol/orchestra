@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -508,6 +509,9 @@ func (o *Loop) tally(ev *Event) {
 	switch {
 	case ev.Kind == EvClosed:
 		o.closedN++
+		if !slices.Contains(o.closedIDs, ev.Ticket) {
+			o.closedIDs = append(o.closedIDs, ev.Ticket)
+		}
 		if o.counted[ev.Ticket] {
 			o.asideN--
 			delete(o.counted, ev.Ticket)
@@ -524,6 +528,14 @@ func (o *Loop) tally(ev *Event) {
 	case ev.Kind == EvDone:
 		ev.Closed, ev.SetAside = o.closedN, o.asideN
 	}
+}
+
+// closedInRun returns the tickets closed in the run, merged or with nothing to merge, in the order
+// they closed.
+func (o *Loop) closedInRun() []string {
+	o.sinkMu.Lock()
+	defer o.sinkMu.Unlock()
+	return slices.Clone(o.closedIDs)
 }
 
 func (o *Loop) status(st Status) {
