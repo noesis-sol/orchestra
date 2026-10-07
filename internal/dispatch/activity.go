@@ -17,6 +17,10 @@ type ToolUse struct {
 	Command string    // Bash's command
 	At      time.Time // when it was reported; zero if not known
 
+	// When the worker's last turn ended, at its Stop hook, if no prompt has started another since;
+	// zero otherwise. A record of a tool use written after it comes from no turn of the worker's.
+	Stopped time.Time
+
 	// Who reported it, as the hook's input says (set for a tool use or a permission prompt):
 	// the Claude Code session, its transcript, and the subagent (ID and type) whose tool it is,
 	// empty for the session's main agent.

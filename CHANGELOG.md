@@ -13,6 +13,11 @@ All notable changes to orchestra are documented here. The format follows
   characters; the reviewer puts such a ticket, or a commit whose subject
   differs from its ticket's title, under Needs you only when the close
   reason doesn't explain it.
+- A worker whose Stop hook a `PreToolUse` record with no turn of its own
+  replaced (an agent Claude Code forks at the end of a turn, refused the
+  tool) settles at that Stop, or is told to continue, rather than after the
+  10-minute idle grace. The Stop and `UserPromptSubmit` hooks write
+  `.orchestra/run/turn.json`, which tool uses don't replace.
 - A worker that settles by the 10-minute idle grace after a tool-use hook,
   with no Stop hook after it, has the log say who wrote that record: when,
   the tool, the Claude Code session, the subagent (if any) and the

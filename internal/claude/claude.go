@@ -21,6 +21,7 @@ import (
 const (
 	settingsName = "hooks.json"    // in the worktree's .orchestra/run/
 	activityName = "activity.json" // written by the hooks, read by orchestra
+	turnName     = "turn.json"     // the last turn's end (Stop) or start (UserPromptSubmit), written by the hooks
 	editsName    = "edits"         // the paths the worker edits, one per line, appended by the hooks
 	sessionName  = "session.json"  // the worker's Claude Code session, written by its SessionStart hook
 	eventsName   = "events"        // permission prompts, compactions and subagents, one per line, appended by the hooks
@@ -32,7 +33,7 @@ type Reporter struct{}
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
 func (Reporter) ReportArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, activityName, editsName, sessionName, eventsName)
+	return reportArgs(worktree, activityName, turnName, editsName, sessionName, eventsName)
 }
 
 // ResumeArgs is ReportArgs for a worker resuming the session of the one before it in worktree: the
@@ -41,7 +42,7 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 // were the start to fail, as when Herdr is down, the next run still finds the session to resume.
 // Its other records are removed: the subagents its process ran ended with it.
 func (Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, activityName, eventsName)
+	return reportArgs(worktree, activityName, turnName, eventsName)
 }
 
 // reportArgs is ReportArgs, removing the earlier worker's records named stale.
@@ -57,10 +58,11 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 		}
 	}
 	activity := filepath.Join(worktree, project.RunPath(activityName))
+	turn := filepath.Join(worktree, project.RunPath(turnName))
 	edits := filepath.Join(worktree, project.RunPath(editsName))
 	session := filepath.Join(worktree, project.RunPath(sessionName))
 	events := filepath.Join(worktree, project.RunPath(eventsName))
-	b, err := json.MarshalIndent(hookSettings(activity, edits, session, events), "", "  ")
+	b, err := json.MarshalIndent(hookSettings(activity, turn, edits, session, events), "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +81,11 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 // session starts, or is resumed, cleared or compacted, its input (session_id, transcript_path) is
 // written to session, which says what to resume and where the transcript is.
 //
+// The end of each turn (Stop) and the start of each prompt's (UserPromptSubmit) also replace turn,
+// which no tool use does: a record of a tool use that comes after a Stop, from no turn of the
+// worker's, can't hide that the turn ended. Claude Code forks agents at the end of a turn (a
+// prompt suggestion, say) that run the worker's PreToolUse hook and are then refused the tool.
+//
 // A permission prompt's input (the tool and its arguments) is recorded like a tool use's: the
 // worker waits on it until it is answered, and the tool runs once it is allowed. It is also noted in
 // events, with each compaction (its trigger) and each subagent's start and stop (its ID and type),
@@ -92,13 +99,16 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 // removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
 // stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
 // folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
-func hookSettings(activity, edits, session, events string) map[string]any {
+func hookSettings(activity, turn, edits, session, events string) map[string]any {
 	writeTo := func(path, from string) string {
 		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
 	write := func(from string) string { return writeTo(activity, from) }
 	event := func(name string) string {
 		return write(`printf '{"hook_event_name":"` + name + `"}'`)
+	}
+	turnAt := func(name string) string {
+		return writeTo(turn, `printf '{"hook_event_name":"`+name+`"}'`)
 	}
 	hook := func(line string) []any {
 		line = "{ " + line + "; cat >/dev/null; } 2>/dev/null; exit 0"
@@ -135,23 +145,33 @@ func hookSettings(activity, edits, session, events string) map[string]any {
 		"PreCompact":    []any{map[string]any{"hooks": hook(note("PreCompact", "trigger"))}},
 		"SubagentStart": []any{map[string]any{"hooks": hook(note("SubagentStart", "agent_id", "agent_type"))}},
 		"SubagentStop":  []any{map[string]any{"hooks": hook(note("SubagentStop", "agent_id", "agent_type"))}},
-		"Stop":          []any{map[string]any{"hooks": hook(event("Stop"))}},
-		"SessionStart":  []any{map[string]any{"hooks": hook(writeTo(session, "cat"))}},
+		"Stop": []any{
+			map[string]any{"hooks": hook(event("Stop"))},
+			map[string]any{"hooks": hook(turnAt("Stop"))},
+		},
+		"UserPromptSubmit": []any{map[string]any{"hooks": hook(turnAt("UserPromptSubmit"))}},
+		"SessionStart":     []any{map[string]any{"hooks": hook(writeTo(session, "cat"))}},
 	}}
 }
 
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
-// reported nothing readable.
+// reported nothing readable; with it, when its last turn ended, if no prompt has started another.
 func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
 	u, ok := parseToolUse(b)
-	if ok {
-		u.At = fi.ModTime() // each report replaces the file, so it was written then
+	if !ok {
+		return u, false
 	}
-	return u, ok
+	u.At = fi.ModTime() // each report replaces the file, so it was written then
+	if b, fi, err := readRun(worktree, turnName); err == nil {
+		if t, ok := parseToolUse(b); ok && t.Event == "Stop" {
+			u.Stopped = fi.ModTime()
+		}
+	}
+	return u, true
 }
 
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the

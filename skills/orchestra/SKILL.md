@@ -446,7 +446,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | a worker's screen and final message | its Herdr tab, labelled with the ticket ID |
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
-| the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json` |
+| the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json`; the end of its last turn, `.orchestra/run/turn.json` |
 | the workers the last run left, for the next to carry on with | `.orchestra/run/state.json` in the main checkout |
 | questions for the user | `bd human list` |
 
