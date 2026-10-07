@@ -4,6 +4,16 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A Claude worker waiting on a subagent (the verifier, say) is no longer
+  told to continue or settled at its Stop hook while the subagent runs, and
+  the subagent's tool uses keep it from the 10-minute idle grace. Workers
+  start with fork mode off (`CLAUDE_CODE_FORK_SUBAGENT=0` in their
+  settings), so they can run a subagent they wait on in the foreground.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

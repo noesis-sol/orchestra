@@ -99,6 +99,7 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 // removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
 // stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
 // folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
+// The settings also carry workerEnv.
 func hookSettings(activity, turn, edits, session, events string) map[string]any {
 	writeTo := func(path, from string) string {
 		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
@@ -151,8 +152,14 @@ func hookSettings(activity, turn, edits, session, events string) map[string]any 
 		},
 		"UserPromptSubmit": []any{map[string]any{"hooks": hook(turnAt("UserPromptSubmit"))}},
 		"SessionStart":     []any{map[string]any{"hooks": hook(writeTo(session, "cat"))}},
-	}}
+	}, "env": workerEnv}
 }
+
+// workerEnv is the environment the worker's settings give it. Fork mode, on by default in an
+// interactive session, runs every subagent in the background, so a worker told to wait for one
+// (the verifier) can't: its turn ends while the subagent works. With fork mode off, Claude runs a
+// subagent in the foreground when it needs the answer before going on.
+var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
 // reported nothing readable; with it, when its last turn ended, if no prompt has started another.

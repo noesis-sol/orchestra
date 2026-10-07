@@ -184,12 +184,24 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 			return time.Time{}, errInterrupted, false
 		}
 	}
-	settled, why := o.idleSettled(ts, w.wt, w.hooks, w.since, time.Since(idle.since), time.Since(begun))
+	settled, why := o.idleSettled(ts, w.wt, w.hooks, w.since, o.quietFor(w, idle.since), time.Since(begun))
 	if !settled {
 		return time.Time{}, nil, false
 	}
 	o.info("  %s settled: %s", w.id, why)
 	return idle.since, nil, false
+}
+
+// quietFor is how long the worker w, which Herdr has shown idle since since, has done nothing. A
+// subagent in the background works on after its worker's turn has ended, and its tool uses are
+// reported as the worker's: while one runs, the last of them ends the quiet.
+func (o *Loop) quietFor(w worker, since time.Time) time.Duration {
+	if w.hooks && o.reporter != nil && o.reporter.HookRecord(w.wt).Subagents > 0 {
+		if u, ok := o.reporter.LastToolUse(w.wt); ok && u.At.After(since) {
+			return time.Since(u.At)
+		}
+	}
+	return time.Since(since)
 }
 
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
@@ -268,17 +280,20 @@ func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after t
 // when: at its Stop hook, which u is or which a PreToolUse record written after it replaced
 // (replaced). Claude Code forks agents at the end of a turn (a prompt suggestion, say) that run the
 // worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt that
-// starts a turn (a nudge, an answer) clears the Stop. A subagent still running after the Stop may
-// be the one using the tool, so the turn goes on while one is.
+// starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on, Stop
+// or not: one in the background (as every subagent is in fork mode) outlives the turn that started
+// it, and its answer starts the next, and one still running after the Stop may be the one using
+// the tool.
 func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bool) {
-	if u.Event == "Stop" {
-		return u.At, true, false
-	}
-	if u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() || u.At.Before(u.Stopped) {
+	if u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
+		u.At.Before(u.Stopped)) {
 		return time.Time{}, false, false
 	}
 	if o.reporter.HookRecord(wt).Subagents > 0 {
 		return time.Time{}, false, false
+	}
+	if u.Event == "Stop" {
+		return u.At, true, false
 	}
 	return u.Stopped, true, true
 }
@@ -313,7 +328,7 @@ func later(a, b time.Time) time.Time {
 // what decided it. A ticket in progress gets idleGrace, as its worker may be waiting on its own
 // background command. Otherwise a worker that reports through hooks has settled at its Stop hook,
 // the end of its turn, even where a PreToolUse record of no turn replaced it (see turnEnded): the
-// record is removed before it starts, so any Stop came after its prompt.
+// record is removed before it starts, so any Stop came after its prompt. While a subagent runs, the turn goes on.
 // An adopted worker's record is not, so a report before since (or of unknown time, with since set)
 // is of an earlier turn, and doesn't count. While its last report is a tool use it is mid-turn,
 // whatever Herdr says, for up to idleGrace (a turn that fails ends without a Stop). Before its first
@@ -337,6 +352,10 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 					why += "; then a PreToolUse record with no turn of its own, " + u.Reporter()
 				}
 				return true, why
+			}
+			if o.reporter.HookRecord(wt).Subagents > 0 {
+				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
+					command.ShortDuration(idleGrace), u.Event)
 			}
 			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
 				command.ShortDuration(idleGrace), u.Event, u.Reporter())
