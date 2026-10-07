@@ -357,12 +357,12 @@ type Deferral struct {
 }
 
 // triageInput names the ticket by ID only: its title is ticket text, as untrusted as the rest, and
-// stays inside the evidence tags with bd show. How is orchestra's own words. The transcript's
-// section is left out when it couldn't be read, the hooks' when they noted nothing.
+// stays inside the evidence tags with bd show. How is orchestra's own words, and they come last,
+// after the evidence, as Claude reads long inputs best with the request at the end. The
+// transcript's section is left out when it couldn't be read, the hooks' when they noted nothing.
 func triageInput(d Deferral) string {
 	id := EvidenceID()
-	in := "Ticket " + d.ID + " was set aside: " + d.How + "\n\n" +
-		Section(id, "Ticket (bd show)", d.Ticket) +
+	in := Section(id, "Ticket (bd show)", d.Ticket) +
 		Section(id, "End of the worker's terminal", d.Screen)
 	if d.Transcript != "" {
 		in += Section(id, "End of the worker's session transcript (messages, tool calls, results)", d.Transcript)
@@ -370,7 +370,8 @@ func triageInput(d Deferral) string {
 	if d.Hooks != "" {
 		in += Section(id, "What the worker's hooks noted (permission prompts, compactions)", d.Hooks)
 	}
-	return in + Section(id, "Worktree state", d.Worktree)
+	return in + Section(id, "Worktree state", d.Worktree) +
+		"Ticket " + d.ID + " was set aside: " + d.How + "\n"
 }
 
 func parseTriage(r Result) (Verdict, error) {
@@ -483,7 +484,8 @@ type Footprint struct {
 	Files  []string // git ls-files
 }
 
-// predictInput names the ticket by ID only, like triageInput: its title stays inside the tags.
+// predictInput names the ticket by ID only, like triageInput: its title stays inside the tags, and
+// the request comes last, after them.
 func predictInput(f Footprint) string {
 	listed := f.Files
 	more := ""
@@ -491,9 +493,9 @@ func predictInput(f Footprint) string {
 		listed, more = listed[:maxListed], fmt.Sprintf("\n(… and %d more)", len(f.Files)-maxListed)
 	}
 	id := EvidenceID()
-	return "Predict the files ticket " + f.ID + " will change.\n\n" +
-		Section(id, "Ticket (bd show)", f.Ticket) +
-		Section(id, "Repository files (git ls-files)", strings.Join(listed, "\n")+more)
+	return Section(id, "Ticket (bd show)", f.Ticket) +
+		Section(id, "Repository files (git ls-files)", strings.Join(listed, "\n")+more) +
+		"Predict the files ticket " + f.ID + " will change.\n"
 }
 
 // parsePrediction keeps the predicted files that are repository files, without repeats, up to

@@ -300,6 +300,8 @@ func cut(s string, n int) string {
 	return s[:n] + "\n(… cut)"
 }
 
+// planInput gives the evidence first and the request last, after it: the files, documents and
+// tickets run well past 20k tokens, and Claude reads long inputs best with the request at the end.
 func planInput(ev FeatureEvidence) string {
 	var files strings.Builder
 	for i, f := range ev.Files {
@@ -330,13 +332,13 @@ func planInput(ev FeatureEvidence) string {
 	for _, f := range ev.Named {
 		named.WriteString(Section(id, "File named in the request: "+f.Path, cut(f.Body, maxNamedBytes)))
 	}
-	return "Plan this feature request for the repository " + ev.Repo + " as an epic and its tickets.\n\n" +
-		Section(id, "Feature request", ev.Request) +
+	return Section(id, "Feature request", ev.Request) +
 		Section(id, "README", cut(ev.README, maxPlanDoc)) +
 		Section(id, "Agent instructions ("+guide+")", cut(ev.Guide, maxPlanDoc)) +
 		Section(id, "Repository files (git ls-files), each with its line count", files.String()) +
 		Section(id, "Tickets not closed (ID, status and title)", unclosed.String()) +
-		named.String()
+		named.String() +
+		"Plan the feature request above for the repository " + ev.Repo + " as an epic and its tickets.\n"
 }
 
 // FeaturePlan is the plan organ's answer: an epic and its child tickets, or, with no tickets, the

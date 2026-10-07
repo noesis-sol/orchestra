@@ -235,10 +235,9 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		}
 	}
 	// The final line goes inside the tags: it can quote what the run gathered, such as a triage
-	// summary written from a ticket.
-	return fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s).\n\n",
-		scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning) +
-		organ.Section(tag, "The run's final line", final) +
+	// summary written from a ticket. orchestra's own line on the run comes last, after the evidence,
+	// as Claude reads long inputs best with the request at the end.
+	return organ.Section(tag, "The run's final line", final) +
 		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
@@ -248,7 +247,9 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "Permission prompts and compactions of this run's workers, as their hooks noted them",
 			o.hookEvidence()) +
 		organ.Section(tag, "What the run's organs (triage, the predictor and the like) cost", o.organCostEvidence()) +
-		outside + feature
+		outside + feature +
+		fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Write its report.\n",
+			scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning)
 }
 
 // maxDirs is the most directories the reviewer is given of those a ticket's commits change.

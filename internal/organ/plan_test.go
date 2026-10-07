@@ -163,7 +163,7 @@ func TestPlanRequestCantCloseItsTag(t *testing.T) {
 	ev.Named = []NamedFile{{"cmd/list.go", forged}}
 	first, second := planInput(ev), planInput(ev)
 	ids := evidenceIDs(t, strings.ReplaceAll(first, forged, ""))
-	if len(ids) != strings.Count(first, "\n## ") || len(ids) != 6 {
+	if len(ids) != strings.Count("\n"+first, "\n## ") || len(ids) != 6 {
 		t.Errorf("want 6 tagged sections, got %v:\n%s", ids, first)
 	}
 	for _, id := range ids {

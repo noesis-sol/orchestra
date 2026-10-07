@@ -42,7 +42,7 @@ func TestOrganEvidenceIsTagged(t *testing.T) {
 	for name, input := range inputs {
 		first, second := input(), input()
 		ids := evidenceIDs(t, strings.ReplaceAll(first, forged, ""))
-		sections := strings.Count(first, "\n## ")
+		sections := strings.Count("\n"+first, "\n## ")
 		if len(ids) != sections {
 			t.Errorf("%s: %d tagged sections, %d sections:\n%s", name, len(ids), sections, first)
 		}
@@ -91,10 +91,14 @@ func TestTicketTitlesStayInsideTheTags(t *testing.T) {
 			t.Errorf("%s: the title is outside the evidence tags:\n%s", name, out)
 		}
 	}
+	// The request comes last, after the evidence.
 	for name, want := range map[string]string{"triage": "Ticket k-1 was set aside: the worker deferred it",
-		"predictor": "Predict the files ticket k-1 will change."} {
-		if header, _, _ := strings.Cut(inputs[name], "\n"); header != want {
-			t.Errorf("%s: header %q, want %q", name, header, want)
+		"predictor": "Predict the files ticket k-1 will change.",
+		"plan":      "Plan the feature request above for the repository r as an epic and its tickets."} {
+		in := strings.TrimSuffix(inputs[name], "\n")
+		if last := in[strings.LastIndex(in, "\n")+1:]; last != want ||
+			!strings.HasSuffix(in, "</evidence id=\""+evidenceIDs(t, in)[0]+"\">\n\n"+want) {
+			t.Errorf("%s: last line %q, want %q after the evidence:\n%s", name, last, want, in)
 		}
 	}
 }

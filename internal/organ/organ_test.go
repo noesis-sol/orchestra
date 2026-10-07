@@ -86,12 +86,15 @@ func TestParseTriage(t *testing.T) {
 func TestTriageInputCarriesTheEvidence(t *testing.T) {
 	in := triageInput(Deferral{ID: "k-1", How: "the worker deferred it",
 		Ticket: "k-1 · Support visionOS", Screen: "⏺ The visionOS runtime is not installed.", Worktree: ""})
-	for _, want := range []string{"Ticket k-1 was set aside: the worker deferred it\n\n## Ticket (bd show)",
+	for _, want := range []string{"## Ticket (bd show)",
 		"\">\nk-1 · Support visionOS\n</evidence id=\"", "## End of the worker's terminal", "visionOS runtime is not installed", "## Worktree state\n\n<evidence id=\"",
 		"\n(none)\n</evidence id=\""} {
 		if !strings.Contains(in, want) {
 			t.Errorf("triage input lacks %q:\n%s", want, in)
 		}
+	}
+	if !strings.HasPrefix(in, "## Ticket (bd show)\n") || !strings.HasSuffix(in, "\">\n\nTicket k-1 was set aside: the worker deferred it\n") {
+		t.Errorf("triage input should start with the evidence and end with what orchestra says:\n%s", in)
 	}
 }
 
@@ -128,11 +131,15 @@ func TestPredictFilesAsksWithTheTicketAndTheFiles(t *testing.T) {
 		t.Fatalf("got %v, %v", got, err)
 	}
 	b, _ := os.ReadFile(record)
-	for _, want := range []string{"Predict the files ticket k-2 will change.\n\n## Ticket (bd show)\n\n<evidence id=\"",
+	for _, want := range []string{"## Ticket (bd show)\n\n<evidence id=\"",
 		"\nk-2 · Faster picks\n</evidence id=\"", "## Repository files (git ls-files)\n\n<evidence id=\"",
 		"\na.go\ninternal/b.go\n</evidence id=\"", "[--json-schema]"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("claude was not given %q:\n%s", want, b)
 		}
+	}
+	if _, after, _ := strings.Cut(string(b), "a.go\ninternal/b.go\n</evidence id=\""); !strings.Contains(after,
+		"\">\n\nPredict the files ticket k-2 will change.\n") {
+		t.Errorf("the request should come after the evidence:\n%s", b)
 	}
 }

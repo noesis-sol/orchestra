@@ -71,9 +71,9 @@ const maxReadme = 4000
 
 func screenInput(r Request) string {
 	id := EvidenceID()
-	return "Screen this feature request for the repository " + r.Repo + ".\n\n" +
-		Section(id, "Feature request", r.Text) +
-		Section(id, "README (first part)", cut(r.README, maxReadme))
+	return Section(id, "Feature request", r.Text) +
+		Section(id, "README (first part)", cut(r.README, maxReadme)) +
+		"Screen the feature request above for the repository " + r.Repo + ".\n"
 }
 
 func parseScreening(r Result) (Screening, error) {

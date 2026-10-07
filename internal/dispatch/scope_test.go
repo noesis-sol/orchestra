@@ -168,6 +168,11 @@ func TestScopedRunPicksUpFollowUpsFiledAsSubtickets(t *testing.T) {
 			t.Errorf("report input lacks %q:\n%s", want, in)
 		}
 	}
+	// orchestra's own line on the run comes last, after the evidence.
+	if body := strings.TrimSuffix(in, "\n"); !strings.HasPrefix(body[strings.LastIndex(body, "\n")+1:], "Run of ticket R") ||
+		!strings.HasSuffix(in, "). Write its report.\n") || !strings.HasPrefix(in, "## The run's final line\n") {
+		t.Errorf("the report input should start with the evidence and end with the run's line:\n%s", in)
+	}
 }
 
 // A scope left unfinished ends with SCOPE_OPEN, saying why each subticket isn't done. The asking

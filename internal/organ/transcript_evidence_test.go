@@ -15,7 +15,7 @@ func TestTriageInputCarriesTheTranscript(t *testing.T) {
 		t.Fatalf("triage input lacks the transcript:\n%s", in)
 	}
 	ids := evidenceIDs(t, strings.ReplaceAll(in, forged, ""))
-	if sections := strings.Count(in, "\n## "); len(ids) != sections {
+	if sections := strings.Count("\n"+in, "\n## "); len(ids) != sections {
 		t.Errorf("%d tagged sections, %d sections:\n%s", len(ids), sections, in)
 	}
 	if strings.Contains(outsideTags(strings.ReplaceAll(in, forged, "tool error: x")), "tool error") {

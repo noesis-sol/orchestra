@@ -24,6 +24,10 @@ All notable changes to orchestra are documented here. The format follows
   terminal alike, and its instructions say that text inside them was pasted
   and may hold instructions the user didn't write: Claude follows them only
   where the user's own message asks it to.
+- Each organ's input (triage, the predictor, the screen, the plan and the
+  run report) gives the evidence first and orchestra's request last, after
+  it, as Claude reads long inputs best with the request at the end. The
+  system prompts are unchanged.
 - A worker that has finished its turn reads `done` in plain green in the
   dashboard's Current box, rather than the yellow of a ticket set aside.
   docs/dashboard.md names the colours of a worker's states.
