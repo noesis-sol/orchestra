@@ -30,17 +30,6 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   follow-up that restructures code most tickets touch (splitting or moving a shared file)
   `--labels solo`, so it runs with no other ticket beside it.
 
-## Working unattended
-- Nobody reads your turns as they happen: a turn that ends without a tool call ends your work on
-  the ticket. Don't end a turn with a summary that announces your next step, an offer to go on, or
-  a choice that doesn't block the rest: make the choice, note it on the ticket, and go on. Put a
-  status note in the same message as your next tool call.
-- The only stops are the ones under Close: DONE once the ticket is closed, a question when only the
-  maintainer can decide, a deferral when you cannot finish.
-- For a ticket with several parts, keep its acceptance criteria as a todo checklist (TodoWrite or
-  TaskCreate; this overrides the Beads instructions against them) and tick items off as you go.
-  Beads stays the record of the ticket.
-
 ## Close
 - Close the ticket only when `<check command>` passes after your last change.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
@@ -54,5 +43,20 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   The ticket comes back to a worker once the question is answered.
 - If the ticket depends on an answered question, read the answer first with `bd show <the question's ID>`.
 - If you cannot finish: note why on the ticket, defer it, and stop.
+
+## Working unattended
+- Nobody reads your turns as they happen: a turn that ends without a tool call ends your work on
+  the ticket. Don't end a turn with a summary that announces your next step, an offer to go on, a
+  choice that doesn't block the rest, or a report because the turn has been long or a part is
+  done: make the choice, note it on the ticket, and go on. Put a status note in the same message
+  as your next tool call. If you notice yourself inviting the maintainer to redirect you or
+  offering to wait, delete it and do the next thing.
+- The only stops are the ones under Close: DONE once the ticket is closed, a question when only the
+  maintainer can decide, a deferral when you cannot finish.
+- Your context is compacted as it fills, so don't cut work short because the conversation is long;
+  keep the checklist and the ticket's notes current, so you can carry on after it.
+- For a ticket with several parts, keep its acceptance criteria as a todo checklist (TodoWrite or
+  TaskCreate; this overrides the Beads instructions against them) and tick items off as you go.
+  Beads stays the record of the ticket.
 
 When you are finished, say DONE and stop.

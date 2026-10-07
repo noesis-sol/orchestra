@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The worker prompt ends with Working unattended, moved after Close. It
+  names a fourth way a worker stops too early, a report because the turn has
+  been long or a part is done; tells it to delete an invitation to redirect
+  it or an offer to wait; and says that its context is compacted as it
+  fills, so a long conversation is no reason to cut work short. `orchestra
+  init` writes the new template; a project's own prompt changes only with
+  `--force` or by copying the section.
 - A worker that has finished its turn reads `done` in plain green in the
   dashboard's Current box, rather than the yellow of a ticket set aside.
   docs/dashboard.md names the colours of a worker's states.
