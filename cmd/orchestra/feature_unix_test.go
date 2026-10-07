@@ -17,7 +17,7 @@ import (
 
 const featureScreenOK = `{"type":"result","is_error":false,"structured_output":{"verdict":"ok","reason":"A clear change."}}`
 
-const featurePlanJSON = `{"epic":{"title":"JSON output","description":"Machine-readable output."},"tickets":[` +
+const featurePlanJSON = `{"epic_title":"JSON output","epic_description":"Machine-readable output.","tickets":[` +
 	`{"key":"t1","title":"Add the JSON encoder","type":"feature","priority":1,"description":"d1","acceptance":"a1",` +
 	`"files":["enc.go"],"blocked_by":[]},` +
 	`{"key":"t2","title":"Add the --json flag","type":"task","priority":2,"description":"d2","acceptance":"a2",` +
@@ -136,7 +136,7 @@ func TestFeatureScreeningStopsTheRun(t *testing.T) {
 
 func TestFeatureQuestionsStopTheRun(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+
-		`{"epic":{"title":"","description":""},"tickets":[],"questions":["Which commands?","Pretty-printed?"]}}`, 0)
+		`{"epic_title":"","epic_description":"","tickets":[],"questions":["Which commands?","Pretty-printed?"]}}`, 0)
 	_, _, stderr, code := runFeatureIn(t, "--feature", "Add JSON output", "--yes")
 	for _, want := range []string{"needs answers before it can plan this request:\n  - Which commands?\n  - Pretty-printed?\n",
 		"Nothing was filed. Run it again with the answers in the request"} {

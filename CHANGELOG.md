@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The plan organ's answer gives the epic as two fields, `epic_title` and
+  `epic_description`, rather than an `epic` object, which often made
+  Claude's first answer malformed and cost it a retry of one or two turns.
 - The feature interview asks Claude to look a fact up in the repository
   itself and to dispatch a sub-agent only for a wide search, which runs
   without holding up the rest of the round, rather than send a sub-agent

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const goodPlan = `{"epic":{"title":" JSON output ","description":"Add --json to list."},` +
+const goodPlan = `{"epic_title":" JSON output ","epic_description":"Add --json to list.",` +
 	`"tickets":[{"key":"t1","title":"Add a JSON encoder","type":"task","priority":2,"description":"d1",` +
 	`"acceptance":"a1","files":["internal/out/json.go","./internal/out/out.go"],"blocked_by":[]},` +
 	`{"key":"t2","title":"Add --json to list","type":"feature","priority":1,"description":"d2",` +
@@ -80,7 +80,7 @@ func ticketsJSON(tickets ...string) string {
 		b, _ := json.Marshal(m)
 		tickets[i] = string(b)
 	}
-	return `{"epic":{"title":"E","description":"d"},"tickets":[` + strings.Join(tickets, ",") + `],"questions":[]}`
+	return `{"epic_title":"E","epic_description":"d","tickets":[` + strings.Join(tickets, ",") + `],"questions":[]}`
 }
 
 func TestPlanFailsItsChecks(t *testing.T) {
@@ -98,8 +98,8 @@ func TestPlanFailsItsChecks(t *testing.T) {
 		"bad priority":        {ticketsJSON(`{"priority":5}`), "priority 5, not 0 to 4"},
 		"no key":              {ticketsJSON(`{"key":" "}`), "ticket 1 of the plan has no key"},
 		"no title":            {ticketsJSON(`{"title":""}`), "t1 of the plan has no title"},
-		"no epic title":       {strings.Replace(ticketsJSON(`{}`), `"title":"E"`, `"title":" "`, 1), "epic has no title"},
-		"nothing at all":      {`{"epic":{"title":"","description":""},"tickets":[],"questions":[" "]}`, "no tickets and no questions"},
+		"no epic title":       {strings.Replace(ticketsJSON(`{}`), `"epic_title":"E"`, `"epic_title":" "`, 1), "epic has no title"},
+		"nothing at all":      {`{"epic_title":"","epic_description":"","tickets":[],"questions":[" "]}`, "no tickets and no questions"},
 		"unreadable":          {`"a plan"`, "unreadable plan"},
 		"priority not an int": {ticketsJSON(`{"priority":"high"}`), "unreadable plan"},
 	} {
@@ -146,7 +146,7 @@ func TestPlanDropsFilesThatCantBeRight(t *testing.T) {
 }
 
 func TestPlanWithOnlyQuestionsNeedsAnswers(t *testing.T) {
-	bin, _ := fakeClaude(t, planOutput(`{"epic":{"title":"","description":""},"tickets":[],`+
+	bin, _ := fakeClaude(t, planOutput(`{"epic_title":"","epic_description":"","tickets":[],`+
 		`"questions":[" Which commands get --json? ",""]}`))
 	p, err := Client{Bin: bin}.PlanFeature(context.Background(), planEvidence())
 	if err != nil || !p.NeedsAnswers() || !slices.Equal(p.Questions, []string{"Which commands get --json?"}) {

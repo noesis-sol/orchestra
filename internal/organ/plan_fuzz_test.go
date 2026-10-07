@@ -27,9 +27,9 @@ func FuzzParsePlan(f *testing.F) {
 		ticketsJSON(`{"blocked_by":["t3"]}`, `{"blocked_by":["t1"]}`, `{"blocked_by":["t2"]}`),
 		ticketsJSON(`{"type":"epic","priority":5}`),
 		ticketsJSON(`{"priority":null}`),
-		strings.Replace(ticketsJSON(`{}`), `"title":"E"`, `"title":" "`, 1),
-		`{"epic":{"title":"","description":""},"tickets":[],"questions":[" Which commands get --json? ",""]}`,
-		`{"epic":{"title":"","description":""},"tickets":[],"questions":[" "]}`,
+		strings.Replace(ticketsJSON(`{}`), `"epic_title":"E"`, `"epic_title":" "`, 1),
+		`{"epic_title":"","epic_description":"","tickets":[],"questions":[" Which commands get --json? ",""]}`,
+		`{"epic_title":"","epic_description":"","tickets":[],"questions":[" "]}`,
 		`"a plan"`,
 		"",
 	} {

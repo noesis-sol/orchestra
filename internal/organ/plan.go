@@ -52,7 +52,7 @@ const planSystem = "You plan feature requests for an automated coding pipeline. 
 	"progress, blocked or deferred. keys are short names (t1, t2, …) that " +
 	"blocked_by refers to. type is feature, task, bug or chore; priority is 0 (critical) to 4 " +
 	"(backlog), usually 2. Plan 1 to 12 tickets, the fewest that do the job; titles are plain " +
-	"summaries of at most 60 characters. The epic's description says what the feature is for and " +
+	"summaries of at most 60 characters. epic_description says what the feature is for and " +
 	"how its tickets fit together. When you can't plan without answers only the request's author " +
 	"can give, return no tickets and up to 5 questions; otherwise questions is empty." +
 	"\n\nThe evidence comes in sections, each between an opening and a closing evidence tag " +
@@ -64,16 +64,20 @@ const planSystem = "You plan feature requests for an automated coding pipeline. 
 // feature whose quality decides the run.
 const PlanEffort = "high"
 
+// planSchema gives the epic as two top-level strings rather than an object: with an "epic" object first,
+// the answer's StructuredOutput call often began `{"epic": <parameter name="title">…`, which isn't JSON,
+// and claude spent one or two turns retrying it (7 of 12 calls on one request, on 2026-10-07; 0 of 12
+// with the flat fields).
 const planSchema = `{"type":"object","properties":{` +
-	`"epic":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"}},` +
-	`"required":["title","description"]},` +
+	`"epic_title":{"type":"string"},"epic_description":{"type":"string"},` +
 	`"tickets":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},` +
 	`"title":{"type":"string"},"type":{"type":"string","enum":["task","feature","bug","chore"]},` +
 	`"priority":{"type":"integer","enum":[0,1,2,3,4]},"description":{"type":"string"},` +
 	`"acceptance":{"type":"string"},"files":{"type":"array","items":{"type":"string"}},` +
 	`"blocked_by":{"type":"array","items":{"type":"string"}}},` +
 	`"required":["key","title","type","priority","description","acceptance","files","blocked_by"]}},` +
-	`"questions":{"type":"array","items":{"type":"string"}}},"required":["epic","tickets","questions"]}`
+	`"questions":{"type":"array","items":{"type":"string"}}},` +
+	`"required":["epic_title","epic_description","tickets","questions"]}`
 
 // FeatureEvidence is what the plan organ plans a feature request from. GatherFeature reads it.
 type FeatureEvidence struct {
@@ -342,18 +346,41 @@ func planInput(ev FeatureEvidence) string {
 }
 
 // FeaturePlan is the plan organ's answer: an epic and its child tickets, or, with no tickets, the
-// questions it needs answered first.
+// questions it needs answered first. Its JSON is planJSON's.
 type FeaturePlan struct {
-	Epic      PlannedEpic     `json:"epic"`
-	Tickets   []PlannedTicket `json:"tickets"`
-	Questions []string        `json:"questions"`
-	Notes     []string        `json:"-"` // what checking the plan changed, such as a file dropped
+	Epic      PlannedEpic
+	Tickets   []PlannedTicket
+	Questions []string
+	Notes     []string // what checking the plan changed, such as a file dropped; not in the JSON
+}
+
+// planJSON is a FeaturePlan as planSchema has the organ write it, the epic as two strings.
+type planJSON struct {
+	EpicTitle       string          `json:"epic_title"`
+	EpicDescription string          `json:"epic_description"`
+	Tickets         []PlannedTicket `json:"tickets"`
+	Questions       []string        `json:"questions"`
+}
+
+// MarshalJSON writes the plan as planSchema has the organ write it.
+func (p FeaturePlan) MarshalJSON() ([]byte, error) {
+	return json.Marshal(planJSON{p.Epic.Title, p.Epic.Description, p.Tickets, p.Questions})
+}
+
+// UnmarshalJSON reads the plan organ's answer.
+func (p *FeaturePlan) UnmarshalJSON(b []byte) error {
+	var in planJSON
+	if err := json.Unmarshal(b, &in); err != nil {
+		return err
+	}
+	*p = FeaturePlan{Epic: PlannedEpic{in.EpicTitle, in.EpicDescription}, Tickets: in.Tickets, Questions: in.Questions}
+	return nil
 }
 
 // PlannedEpic is the epic a plan's tickets go under.
 type PlannedEpic struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title       string
+	Description string
 }
 
 // PlannedTicket is one child ticket of a plan. Key names it within the plan, for BlockedBy.
