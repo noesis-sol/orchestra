@@ -323,6 +323,27 @@ func setupField(c *project.Choice) *huh.Input {
 		Value(&c.Setup)
 }
 
+// verifierDescription explains the verifier question, naming the stack the scout found, if any.
+func verifierDescription(stack []string) string {
+	d := "Writes " + project.VerifierPath + ", a subagent that checks each ticket's change against the ticket " +
+		"in a fresh context, seeing the diff but not the reasoning behind it, and has the worker prompt run it " +
+		"before a worker closes its ticket. It costs a subagent's run per ticket."
+	if len(stack) > 0 {
+		d += "\nIt is told the stack: " + strings.Join(stack, ", ") + "."
+	}
+	return d
+}
+
+// verifierField asks whether to add the verifier.
+func verifierField(c *project.Choice) *huh.Confirm {
+	return huh.NewConfirm().
+		Title("Add a verification step for workers").
+		Description(verifierDescription(c.Stack)).
+		Affirmative("Add it").
+		Negative("No").
+		Value(&c.Verifier)
+}
+
 // Ask names the questions AskInit asks: those the flags didn't answer.
 type Ask struct {
 	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
@@ -333,6 +354,7 @@ type Ask struct {
 	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
 	Install     bool // whether to install bd as the choice's Install says
 	Setup       bool // the setup command, starting from the one offered for the lockfiles found
+	Verifier    bool // whether to add the verifier subagent and have the worker prompt run it
 	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
 	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
 	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
@@ -343,7 +365,8 @@ type Ask struct {
 
 // Any reports whether a has a question to ask.
 func (a Ask) Any() bool {
-	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install || a.Setup
+	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install || a.Setup ||
+		a.Verifier
 }
 
 // initStage is a stage of the init form: a header, then its questions. The form shows one stage at
@@ -463,6 +486,14 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 			c.Setup = c.SetupOffer
 		}
 		hide(checks.add(setupField(c)), func() bool { return !settled() })
+	}
+	if ask.Verifier {
+		// Last: asked once the scout has said what the project is built with.
+		field := verifierField(c)
+		if stage2 != nil {
+			stage2.verifier = field
+		}
+		hide(checks.add(field), func() bool { return !settled() })
 	}
 	var stages []*initStage
 	for _, s := range []*initStage{workers, checks} {

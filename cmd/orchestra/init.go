@@ -53,6 +53,9 @@ func runInit(
 		"\"\" for none (asked when omitted)")
 	installBeads := fs.Bool("install-beads", false, "install Beads (bd) where it is missing, with Homebrew or "+
 		"the Beads install script (asked when omitted; =false declines)")
+	verifier := fs.Bool("verifier", false, "write "+project.VerifierPath+", a subagent that checks each ticket's "+
+		"change against the ticket in a fresh context, and have the worker prompt run it before a worker closes "+
+		"its ticket (asked when omitted; =false declines)")
 	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' Herdr agent kind, "+
 		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
 		"[AGENT_KIND]")
@@ -63,7 +66,7 @@ func runInit(
 		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] "+
 			"[--check-fast-timeout D] [--check-full-timeout D]\n"+
 			"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n"+
-			"                      [--install-beads] [--force]\n\n"+
+			"                      [--install-beads] [--verifier] [--force]\n\n"+
 			"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n"+
 			"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n"+
 			"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n"+
@@ -73,8 +76,9 @@ func runInit(
 			"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n"+
 			"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n"+
 			"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n"+
-			"it offers one (npm ci for package-lock.json, …). In a terminal it asks for anything the flags\n"+
-			"don't give.\n\n")
+			"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n"+
+			"each ticket's change in a fresh context, which the worker prompt then has workers run. In a\n"+
+			"terminal it asks for anything the flags don't give.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -93,6 +97,7 @@ func runInit(
 	timeoutGiven, fullTimeoutGiven := given["check-fast-timeout"] || given["check-timeout"], given["check-full-timeout"]
 	unionGiven, setupGiven := given["changelog-union"], given["setup"]
 	concurrentGiven, mcpGiven, installGiven := given["concurrent"] || given["c"], given["mcp"], given["install-beads"]
+	verifierGiven := given["verifier"]
 	for _, t := range []struct {
 		name  string
 		given bool
@@ -164,12 +169,15 @@ func runInit(
 	askInstall := !installGiven && bd == "" && choice.Install.Command != ""
 	choice.InstallBeads = *installBeads || askInstall // offered as yes
 	choice.Agent = *agent
+	askVerifier := !verifierGiven && project.OffersVerifier(repo, choice.Agent)
+	choice.Verifier = *verifier || askVerifier // offered as yes
 
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
 	// Stage 2's choice of checks, unless a flag gives one of them.
 	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
-		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup}
+		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup,
+		Verifier: askVerifier}
 	var scoutSpent []organ.Spend // by the scout's goroutine, which AskInit waits for before it returns
 	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
 		if ask.Check {
@@ -196,6 +204,9 @@ func runInit(
 		}
 		if askInstall {
 			choice.InstallBeads, choice.InstallUnasked = false, true
+		}
+		if askVerifier {
+			choice.Verifier, choice.VerifierUnasked = false, true
 		}
 		choice.SetupUnasked = askSetup
 		choice.MCPUnasked = !mcpGiven && choice.MCP == nil
@@ -239,6 +250,13 @@ func runInit(
 		var s project.Step
 		var ok bool
 		if s, ok, err = project.ApplySkill(repo, choice); ok && err == nil {
+			steps = append(steps, s)
+		}
+	}
+	if err == nil {
+		var s project.Step
+		var ok bool
+		if s, ok, err = project.ApplyVerifier(repo, choice); ok && err == nil {
 			steps = append(steps, s)
 		}
 	}

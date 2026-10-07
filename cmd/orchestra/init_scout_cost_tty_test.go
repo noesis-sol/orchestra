@@ -47,7 +47,7 @@ func initOnTerminal(t *testing.T, answer string) (*fakeTerminal, func() int) {
 	done := make(chan int, 1)
 	var errOut strings.Builder
 	go func() {
-		done <- runInit(ctx, repo, []string{"--mcp", ""}, func(k string) string { return env[k] }, tty, tty, &errOut)
+		done <- runInit(ctx, repo, []string{"--mcp", "", "--verifier=false"}, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()
 	t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 		cancel()

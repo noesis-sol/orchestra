@@ -197,6 +197,11 @@ type Choice struct {
 	FileUntested bool
 	Agent        string
 	ReplaceSkill bool
+	// Verifier writes the verifier subagent and has the worker prompt run it (see ApplyVerifier), with
+	// Stack, what the scout found the project built with; VerifierUnasked is set when init could
+	// neither ask nor take --verifier.
+	Verifier, VerifierUnasked bool
+	Stack                     []string
 }
 
 // CheckScript is a project's own check, which check-fast.sh calls as a suite and init never edits.

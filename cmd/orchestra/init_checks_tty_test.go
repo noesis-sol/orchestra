@@ -20,10 +20,10 @@ const scoutFoundTwo = `{"type":"result","is_error":false,"structured_output":{"s
 	`{"name":"unit tests","kind":"unit","command":"make test","found_in":"Makefile:3","tier":"fast",` +
 	`"parallel_safe":true,"needs":[]},` +
 	`{"name":"e2e","kind":"e2e","command":"make e2e","found_in":"Makefile:7","tier":"full",` +
-	`"parallel_safe":false,"needs":["postgres"]}],"note":""}}`
+	`"parallel_safe":false,"needs":["postgres"]}],"stack":["Go 1.26","Postgres 16"],"note":""}}`
 
 // In a terminal, init's stage 2 looks for the project's suites and writes the runners from those
-// chosen: here, the suites found, used as they are.
+// chosen: here, the suites found, used as they are, with the verifier told the stack the scout found.
 func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 50, Col: 120}); err != nil {
@@ -70,6 +70,8 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 		{"┃ Also file tickets for untested areas", keyEnter},
 		{"┃ check-fast time limit", keyEnter},
 		{"┃ check-full time limit", keyEnter},
+		{"It is told the stack: Go 1.26, Postgres 16.", ""},
+		{"┃ Add a verification step for workers", keyEnter}, // offered as yes
 	} {
 		term.waitFor(t, step.on)
 		term.typeKeys(t, step.keys, false)
@@ -103,6 +105,18 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 	for _, want := range []string{`"check_fast_timeout": "30m"`, `"check_full_timeout": "60m"`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("settings.json lacks %s:\n%s", want, b)
+		}
+	}
+	for path, want := range map[string]string{
+		".claude/agents/verifier.md":  "- Go 1.26\n- Postgres 16\n",
+		".orchestra/worker-prompt.md": "verifier subagent (.claude/agents/verifier.md)",
+	} {
+		b, err := os.ReadFile(filepath.Join(repo, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s lacks %q:\n%s", path, want, b)
 		}
 	}
 }

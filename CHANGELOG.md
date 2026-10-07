@@ -6,6 +6,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `orchestra init`'s Checks step ends by asking whether to add a verification
+  step for workers (`--verifier`, or `--verifier=false`). Yes writes
+  `.claude/agents/verifier.md`, a subagent told the project's stack and its
+  checks, which checks a ticket's change against the ticket in a fresh
+  context and answers PASS or FAIL; and it appends a Verify section to the
+  worker prompt, so a worker runs it before closing its ticket. The scout's
+  answer gives the stack it is built with.
+
 ### Changed
 
 - The run report's evidence lists each ticket merged or closed with no

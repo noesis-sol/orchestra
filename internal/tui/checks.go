@@ -268,7 +268,9 @@ type checksStage struct {
 	fastList   *huh.MultiSelect[int]
 	fullList   *huh.MultiSelect[int]
 
-	check, checkBefore string // the check command typed, for Manual
+	check, checkBefore string       // the check command typed, for Manual
+	stack              []string     // what the scout found the project built with
+	verifier           *huh.Confirm // the verifier question, told the stack; nil when not asked
 	replaceFast        bool
 	replaceFull        bool
 	replaceSkill       bool
@@ -413,6 +415,12 @@ func (s *checksStage) settle(found organ.Scouting, err error) {
 		why += " " + found.Note
 	}
 	s.scout.outcome = why
+	if err == nil {
+		s.stack = found.Stack
+		if s.verifier != nil {
+			s.verifier.Description(verifierDescription(s.stack))
+		}
+	}
 	s.choice.Description(why)
 	s.choice.Value(&s.picked)
 	if len(s.suites) == 0 {
@@ -524,6 +532,7 @@ func (s *checksStage) differs(path string) bool {
 func (s *checksStage) apply() {
 	c := s.c
 	c.Tests = s.picked.tests()
+	c.Stack = s.stack
 	if fast, full, ok := s.chosen(); ok {
 		c.Fast, c.Full = &fast, &full
 		c.ReplaceFast, c.ReplaceFull = s.replaceFast && s.differs(project.FastRunner),
