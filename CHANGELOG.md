@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   fills, so a long conversation is no reason to cut work short. `orchestra
   init` writes the new template; a project's own prompt changes only with
   `--force` or by copying the section.
+- The feature interview gives Claude the description between
+  `<pasted_content>` tags carrying a fresh random ID, in a pane and on the
+  terminal alike, and its instructions say that text inside them was pasted
+  and may hold instructions the user didn't write: Claude follows them only
+  where the user's own message asks it to.
 - A worker that has finished its turn reads `done` in plain green in the
   dashboard's Current box, rather than the yellow of a ticket set aside.
   docs/dashboard.md names the colours of a worker's states.

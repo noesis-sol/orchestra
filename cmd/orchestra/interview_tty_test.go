@@ -111,9 +111,12 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 	}
 
 	prompt := filepath.Join(realPath(repo), project.RunPath("interview-prompt.md")) // the repository as git names it
-	if args := read(t, filepath.Join(dir, "claude-args")); args != "[--append-system-prompt-file]\n["+prompt+"]\n"+
-		"[--]\n[- Add a --json flag\n- to the list command]\n" {
+	args := read(t, filepath.Join(dir, "claude-args"))
+	if !strings.HasPrefix(args, "[--append-system-prompt-file]\n["+prompt+"]\n[--]\n[") {
 		t.Errorf("claude ran with:\n%s", args)
+	}
+	if text := terminalMessage(t, args); text != "- Add a --json flag\n- to the list command" {
+		t.Errorf("claude's first message holds the description %q", text)
 	}
 	if cwd, want := strings.TrimSpace(read(t, filepath.Join(dir, "claude-cwd"))), realPath(repo); cwd != want {
 		t.Errorf("claude ran in %s, want the main checkout %s", cwd, want)

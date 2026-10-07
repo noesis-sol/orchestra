@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -31,6 +32,23 @@ import (
 // terminal, the user exits it), orchestra shows the epic's tickets and asks whether to run them; on
 // yes the run is the one --feature starts after filing its plan. --feature itself, for scripts and
 // agents, keeps the screen and plan organs (feature.go).
+
+// featureLead opens the interview's first message, before the description or the file that holds it.
+const featureLead = "Here is the feature I'd like to talk through:"
+
+// pastedFeature is the feature's description as the interview's first message gives it: between an
+// opening and a closing pasted_content tag carrying the same random ID, each tag on its own line.
+// The description is often pasted from an issue or a web page, and Claude Code tags only what is
+// pasted into its own input box; the interview's instructions say the text in the tags may carry
+// instructions the user didn't write. The ID is drawn once the description is known, and drawn
+// again while the description holds it, so no text in it can close the block early.
+func pastedFeature(request string) string {
+	id := organ.EvidenceID()
+	for strings.Contains(request, id) {
+		id = organ.EvidenceID()
+	}
+	return "<pasted_content id=\"" + id + "\">\n" + strings.Trim(request, "\n") + "\n</pasted_content id=\"" + id + "\">"
+}
 
 // noFeature is what orchestra says when the interview filed no feature to run.
 const noFeature = "No feature was filed; nothing to run."
@@ -87,9 +105,9 @@ func runInterview(
 			"Type /exit to come back.")
 		defer stops.dropInterrupts()() // Ctrl+C is Claude Code's, which interrupts and clears with it
 		defer keepTerminal(stdin)()
-		// -- ends claude's options: a description that starts with "- ", a list, is none of them.
+		// -- ends claude's options: the message after it is none of them.
 		return command.Interactive(ctx, c.Repo, stdin, stdout, stderr,
-			"claude", "--append-system-prompt-file", prompt, "--", c.Feature)
+			"claude", "--append-system-prompt-file", prompt, "--", featureLead+"\n\n"+pastedFeature(c.Feature))
 	}
 	tracker := beads.Tracker{Repo: c.Repo}
 	session := terminal
@@ -273,8 +291,9 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	// Herdr types claude's command into the pane's shell, which takes no argument with line breaks;
 	// the description can have several. Its first message names the file instead: Claude Code
-	// attaches a file named after @ to the message, as the user's own message would.
-	request, err := project.WriteFeatureRequest(p.repo, p.request)
+	// attaches a file named after @ to the message, as the user's own message would. The file holds
+	// the description in its pasted_content tags.
+	request, err := project.WriteFeatureRequest(p.repo, pastedFeature(p.request))
 	if err != nil {
 		return "", fmt.Errorf("cannot write the description for it: %w", err)
 	}
@@ -283,7 +302,7 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 		return "", err
 	}
 	if err := p.herdr.LaunchInPane(ctx, pane, "claude", []string{"--append-system-prompt-file", prompt, "--",
-		"Here is the feature I'd like to talk through: @" + request}); err != nil {
+		featureLead + " @" + request}); err != nil {
 		return pane, err
 	}
 	return pane, p.started(ctx, pane)

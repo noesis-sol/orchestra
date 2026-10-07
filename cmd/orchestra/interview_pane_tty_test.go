@@ -26,9 +26,8 @@ func TestInterviewFallsBackToTheTerminalWhenHerdrCantSplit(t *testing.T) {
 		!strings.HasSuffix(stderr, ": exit status 1: herdr: not in this test\n") || strings.Count(stderr, "\n") != 1 {
 		t.Errorf("exit %d, stderr:\n%s", code, stderr)
 	}
-	if args := read(t, filepath.Join(dir, "claude-args")); !strings.HasSuffix(args,
-		"[--]\n[- Add a --json flag\n- to the list command]\n") {
-		t.Errorf("claude ran with:\n%s", args)
+	if text := terminalMessage(t, read(t, filepath.Join(dir, "claude-args"))); text != "- Add a --json flag\n- to the list command" {
+		t.Errorf("claude's first message holds the description %q", text)
 	}
 	if out := screenOf(term); !strings.Contains(out, "Type /exit to come back.") || !strings.Contains(out, "fake claude: bye") {
 		t.Errorf("claude didn't have the terminal:\n%s", out)

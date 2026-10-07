@@ -193,8 +193,10 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 			"Here is the feature I'd like to talk through: @" + request}; !slices.Equal(panes.launched, want) {
 			t.Errorf("claude started with %q, want %q", panes.launched, want)
 		}
-		if b, err := os.ReadFile(filepath.Join(repo, request)); err != nil || string(b) != paneRequest+"\n" {
-			t.Errorf("%s holds %q, %v", request, b, err)
+		if b, err := os.ReadFile(filepath.Join(repo, request)); err != nil {
+			t.Error(err)
+		} else if text, _ := unpasted(t, strings.TrimSuffix(string(b), "\n")); text != paneRequest {
+			t.Errorf("%s holds %q", request, b)
 		}
 		if b, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(b), "# Feature interview") {
 			t.Errorf("the instructions at %s: %v", prompt, err)
