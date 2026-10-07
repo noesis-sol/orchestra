@@ -284,17 +284,22 @@ func relative(root, path string) (string, bool) {
 }
 
 // parseToolUse reads one hook input: the event, and before a tool use (or at a permission prompt)
-// the tool and its command.
+// the tool and its command, and the session and the subagent (if any) using it.
 func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 	var in struct {
-		Event string `json:"hook_event_name"`
-		Tool  string `json:"tool_name"`
-		Input struct {
+		Event      string `json:"hook_event_name"`
+		Tool       string `json:"tool_name"`
+		Session    string `json:"session_id"`
+		Transcript string `json:"transcript_path"`
+		Agent      string `json:"agent_id"`
+		AgentType  string `json:"agent_type"`
+		Input      struct {
 			Command string `json:"command"`
 		} `json:"tool_input"`
 	}
 	if json.Unmarshal(b, &in) != nil || in.Event == "" {
 		return dispatch.ToolUse{}, false
 	}
-	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command}, true
+	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Session: in.Session,
+		Transcript: in.Transcript, Agent: in.Agent, AgentType: in.AgentType}, true
 }

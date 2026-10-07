@@ -13,6 +13,10 @@ All notable changes to orchestra are documented here. The format follows
   characters; the reviewer puts such a ticket, or a commit whose subject
   differs from its ticket's title, under Needs you only when the close
   reason doesn't explain it.
+- A worker that settles by the 10-minute idle grace after a tool-use hook,
+  with no Stop hook after it, has the log say who wrote that record: when,
+  the tool, the Claude Code session, the subagent (if any) and the
+  transcript. It traces the record that replaces a worker's Stop.
 - The plan organ's answer gives the epic as two fields, `epic_title` and
   `epic_description`, rather than an `epic` object, which often made
   Claude's first answer malformed and cost it a retry of one or two turns.

@@ -16,6 +16,32 @@ type ToolUse struct {
 	Tool    string    // Bash, Edit, Read, …
 	Command string    // Bash's command
 	At      time.Time // when it was reported; zero if not known
+
+	// Who reported it, as the hook's input says (set for a tool use or a permission prompt):
+	// the Claude Code session, its transcript, and the subagent (ID and type) whose tool it is,
+	// empty for the session's main agent.
+	Session, Transcript, Agent, AgentType string
+}
+
+// Reporter says who reported u: the tool, the session and the agent, for the log. A record that
+// replaces a worker's Stop without a turn of its own comes from somewhere it should be traced to.
+func (u ToolUse) Reporter() string {
+	or := func(s, none string) string {
+		if s == "" {
+			return none
+		}
+		return s
+	}
+	agent := "main agent"
+	if u.Agent != "" || u.AgentType != "" {
+		agent = "agent " + or(u.Agent, "with no ID") + " (" + or(u.AgentType, "no type") + ")"
+	}
+	at := "at an unknown time"
+	if !u.At.IsZero() {
+		at = "at " + u.At.Format("15:04:05")
+	}
+	return fmt.Sprintf("written %s by tool %s, session %s, %s, transcript %s",
+		at, or(u.Tool, "unnamed"), or(u.Session, "unnamed"), agent, or(u.Transcript, "unnamed"))
 }
 
 // EventPermission is the ToolUse event of a permission prompt.

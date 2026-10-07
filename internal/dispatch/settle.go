@@ -310,8 +310,8 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 			if u.Event == "Stop" {
 				return true, "Stop hook at " + u.At.Format("15:04:05")
 			}
-			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook",
-				command.ShortDuration(idleGrace), u.Event)
+			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
+				command.ShortDuration(idleGrace), u.Event, u.Reporter())
 		}
 	}
 	if ticket == StatusOpen {
