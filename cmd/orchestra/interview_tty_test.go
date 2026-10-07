@@ -132,7 +132,7 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 		// the grilling method, and its notice
 		"Copyright (c) 2026 Matt Pocock", "Permission is hereby granted, free of charge",
 		"**design\ntree**", "**frontier**", "❓ **Q1** - **<question title>**", "➡️ <your recommended answer>",
-		"dispatch a sub-agent to explore", "Do not act on it until the user confirms",
+		"Dispatch a sub-agent only for a wide search", "Do not act on it until the user confirms",
 		// what orchestra adds: context, proposal, filing and handing back
 		"The user's first message is the feature's description", "CLAUDE.md or AGENTS.md", "Only read.",
 		"File nothing until the user agrees", "at most 60 characters", "acceptance criteria", "task, feature, bug or chore",

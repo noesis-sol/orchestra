@@ -8,6 +8,9 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   the tests that take over a second) or `go vet ./...`.
 - Run `scripts/check.sh` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
+- Where the project has test suites, a ticket that changes behaviour adds or updates tests for it,
+  in those suites and their frameworks. Never add a new test framework: setting one up is a ticket
+  of its own.
 - Other workers run the same programs and tests on this machine. Never stop processes by name or
   pattern (`pkill`, `killall`, `pkill -f`); stop only those you started, by their PID.
 - Other tickets run beside yours and merge first, so don't add where they all add:

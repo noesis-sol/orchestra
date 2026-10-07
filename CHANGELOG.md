@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The feature interview asks Claude to look a fact up in the repository
+  itself and to dispatch a sub-agent only for a wide search, which runs
+  without holding up the rest of the round, rather than send a sub-agent
+  for every fact.
 - The worker prompt ends with Working unattended, moved after Close. It
   names a fourth way a worker stops too early, a report because the turn has
   been long or a part is done; tells it to delete an invitation to redirect
