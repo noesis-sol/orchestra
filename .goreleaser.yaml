@@ -1,0 +1,61 @@
+# GoReleaser builds a release's binaries and attaches them to its GitHub Release; the release
+# workflow (.github/workflows/release.yml) runs it for a v* tag, after scripts/check.sh.
+# docs/development.md (Releasing) has the whole process. The archive and checksum names are the
+# contract with orchestra update (internal/update): change them together.
+version: 2
+
+project_name: orchestra
+
+builds:
+  - id: orchestra
+    main: ./cmd/orchestra
+    binary: orchestra
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # The leading v matches what go install reports for a tagged version (buildVersion in
+    # cmd/orchestra/run.go reads main.version).
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+    # The commit's time, not the build's, so building a tag again gives the same binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: orchestra
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - CHANGELOG.md
+      - THIRD_PARTY_NOTICES.md
+      # None yet; included once the repository has one.
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# The release notes are the version's section of CHANGELOG.md (scripts/release-notes.sh), passed
+# with --release-notes.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: noesis-sol
+    name: orchestra
+  # A tag with a pre-release suffix (v1.2.0-rc.1) makes a pre-release.
+  prerelease: auto
+  # Releasing a tag again (the workflow's workflow_dispatch) replaces its notes and assets, also
+  # on a Release made by hand with notes only.
+  mode: replace
+  replace_existing_artifacts: true
+  # The workflow says whether the tag is the newest release, so releasing an older tag again
+  # leaves the latest Release, which orchestra update downloads, where it is.
+  make_latest: '{{ envOrDefault "MAKE_LATEST" "false" }}'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"

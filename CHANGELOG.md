@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Releases carry binaries: pushing a `v*` tag runs the release workflow
+  (`.github/workflows/release.yml`), which runs `scripts/check.sh` and
+  attaches `orchestra_<version>_<os>_<arch>.tar.gz` for darwin and linux,
+  amd64 and arm64, with `checksums.txt` and build provenance, to the
+  tag's GitHub Release, its notes the version's section of this changelog.
+  docs/development.md (Releasing) describes the release process.
+
 ## [0.5.1] - 2026-10-08
 
 ### Fixed

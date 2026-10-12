@@ -84,6 +84,35 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.
 
+## Releasing
+
+A release is a commit on main and a tag; the release workflow does the rest. Nothing in the code carries the version: a release's binaries get it from the tag (`-X main.version=vX.Y.Z`, which `buildVersion` in `cmd/orchestra/run.go` reads), and `go install …@vX.Y.Z` from the module's version.
+
+1. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, and add its compare link above the others at the end: `[X.Y.Z]: https://github.com/noesis-sol/orchestra/compare/vP.Q.R...vX.Y.Z`, from the previous release. `scripts/release-notes.sh vX.Y.Z` prints the section, which becomes the Release's notes.
+2. On main, with a clean tree and `scripts/check.sh` passing, commit it as `Release X.Y.Z`.
+3. Tag the commit, annotated: `git tag -a vX.Y.Z -m "orchestra X.Y.Z"`.
+4. Push both: `git push origin main vX.Y.Z`.
+
+The tag starts `.github/workflows/release.yml` (Actions, Release), which on macOS:
+
+- checks out the tag with every tag, and beside it the workflow's own commit, whose `.goreleaser.yaml` and `scripts/release-notes.sh` it uses (a tag released again may predate them);
+- sets up the Go of the tag's `go.mod` (its `toolchain` line) and runs the tag's `scripts/check.sh`: a failing check fails the release, before anything is built;
+- takes the notes from the tag's `CHANGELOG.md` (`scripts/release-notes.sh`), and fails when the version has no section;
+- runs GoReleaser (`.goreleaser.yaml`): `orchestra` for darwin and linux, amd64 and arm64, with `CGO_ENABLED=0` and `-trimpath`, in `orchestra_X.Y.Z_<os>_<arch>.tar.gz` with `README.md`, `CHANGELOG.md` and `THIRD_PARTY_NOTICES.md` (and a `LICENSE` once there is one), and their SHA-256 sums in `checksums.txt`. It creates the GitHub Release with the notes and attaches them; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` downloads: change them together;
+- marks the Release as GitHub's latest only when its tag is the newest release tag, so releasing an older tag again leaves the latest where it is;
+- attests the archives' build provenance (`actions/attest`), which `gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra` checks.
+
+To release an existing tag again (a failed run, a tag from before the workflow, notes fixed on main), run the workflow by hand with the tag: Actions, Release, Run workflow, or `gh workflow run release.yml -f tag=vX.Y.Z`. It builds the tag as it is, with the configuration of the branch it runs from (main), and replaces the Release's notes and assets, including those of a Release made by hand with notes only. Changing what the tag points at needs a new version instead.
+
+To try the build without publishing anything, run [GoReleaser](https://goreleaser.com/install/) (v2.18.2, as the workflow does) in the repository:
+
+```
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints).
+
 [Changelog](../CHANGELOG.md)
 
 ## Differences from orchestrate.sh

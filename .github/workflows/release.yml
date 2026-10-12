@@ -1,0 +1,96 @@
+# Builds a release's binaries with GoReleaser (.goreleaser.yaml) and attaches them to its GitHub
+# Release, with checksums.txt and build provenance, for each v* tag pushed. Run it from the Actions
+# tab (workflow_dispatch) with a tag to release an existing tag again. docs/development.md
+# (Releasing) has the whole process.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to release, such as v0.5.1
+        required: true
+        type: string
+
+permissions:
+  contents: write # the Release and its assets
+  id-token: write # the attestations' signing certificate
+  attestations: write
+  artifact-metadata: write
+
+# One run at a time for a tag; a second waits rather than racing it over the same assets.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The check runs where the project is developed and checked (macOS); GoReleaser builds the Linux
+    # binaries there too.
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check the tag's name
+        run: |
+          case "$TAG" in
+          v[0-9]*.[0-9]*.[0-9]*) ;;
+          *) echo "::error::$TAG is not a version tag (vX.Y.Z)"; exit 1 ;;
+          esac
+
+      # The workflow's own commit, for the release configuration and scripts: a tag released again
+      # may predate them.
+      - name: Check out the release configuration
+        uses: actions/checkout@v7
+        with:
+          path: release
+
+      # The tag, which is built and checked, with every tag for picking the latest release.
+      - name: Check out the tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: src
+          fetch-depth: 0
+
+      # The Go of the tag's go.mod: its toolchain line.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Check
+        working-directory: src
+        run: scripts/check.sh
+
+      - name: Release notes
+        run: release/scripts/release-notes.sh "$TAG" src/CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+
+      # Only the newest release is GitHub's latest, which orchestra update downloads: releasing an
+      # older tag again leaves it where it is. A pre-release (v1.2.0-rc.1) never is.
+      - name: Latest or not
+        working-directory: src
+        run: |
+          newest="$(git tag -l 'v*' --sort=-v:refname | grep -v -e - | head -n 1)"
+          if [ "$TAG" = "$newest" ]; then latest=true; else latest=false; fi
+          echo "MAKE_LATEST=$latest" >> "$GITHUB_ENV"
+          echo "$TAG is the newest release tag: $latest (newest: $newest)"
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          workdir: src
+          args: release --clean --config ../release/.goreleaser.yaml --release-notes ${{ runner.temp }}/notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.TAG }}
+
+      - name: Build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: src/dist/*.tar.gz
