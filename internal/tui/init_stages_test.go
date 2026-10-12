@@ -11,9 +11,12 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// The init form asks in stages, one at a time, each under its header: Workers, then Checks.
+// The init form asks in stages, one at a time, each under its header: Workers, then Checks. On a
+// terminal the header is a stepper; the accessible form prints it as plain text.
 
 const (
+	workersStep   = "● Workers ──── ○ Checks"
+	checksStep    = "✓ Workers ──── ● Checks"
 	workersHeader = "Step 1 of 2 · Workers"
 	checksHeader  = "Step 2 of 2 · Checks"
 	onUnion       = "┃ Merge CHANGELOG.md by union"
@@ -42,13 +45,13 @@ func askStages(t *testing.T, c *project.Choice) *formTerminal {
 func TestInitFormAsksWorkersThenChecksUnderTheirHeaders(t *testing.T) {
 	c := project.Choice{Union: true}
 	term := askStages(t, &c)
-	term.waitFor(t, workersHeader)
+	term.waitFor(t, workersStep)
 	term.waitFor(t, onUnion)
 	if screen := term.screen.String(); strings.Contains(screen, "Check command") {
 		t.Errorf("stage 1 shows stage 2's question:\n%s", screen)
 	}
 	term.typeKeys(t, "\r")
-	term.waitFor(t, checksHeader)
+	term.waitFor(t, checksStep)
 	term.typeSteps(t, []keysOn{{onChoice, "\r"}, {onCheck, "make check\r"}, {onTimeout, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
@@ -69,8 +72,8 @@ func TestShiftTabBackToWorkersKeepsTheAnswers(t *testing.T) {
 	term.typeKeys(t, shiftTab)
 	// Back on stage 1, the union still declined; on to stage 2, Manual still chosen and the check
 	// still typed.
-	term.waitFor(t, workersHeader)
-	term.typeSteps(t, []keysOn{{onUnion, "\r"}, {checksHeader, ""}, {onChoice, "\r"}, {"just verify", ""}})
+	term.waitFor(t, workersStep)
+	term.typeSteps(t, []keysOn{{onUnion, "\r"}, {checksStep, ""}, {onChoice, "\r"}, {"just verify", ""}})
 	term.typeSteps(t, []keysOn{{onCheck, "\r"}, {onTimeout, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
@@ -110,7 +113,7 @@ func TestAStageTheFlagsAnsweredIsSkipped(t *testing.T) {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		screen := term.screen.String()
-		if !strings.Contains(screen, tc.header) || strings.Contains(screen, "Step ") ||
+		if !strings.Contains(screen, tc.header) || strings.Contains(screen, "Step ") || strings.Contains(screen, "────") ||
 			strings.Contains(screen, tc.notOnTheForm) {
 			t.Errorf("%s: want the header %q alone:\n%s", tc.name, tc.header, screen)
 		}

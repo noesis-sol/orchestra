@@ -62,7 +62,7 @@ func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
 		{"┃ Install Beads with Homebrew?", keyEnter},
 		{"┃ Tickets at the same time", keyEnter},
 		{"┃ Merge CHANGELOG.md by union", keyEnter},
-		{"Step 2 of 2 · Checks", ""},
+		{"✓ Workers ──── ● Checks", ""},
 		{"Looking for the project's suites", ""},
 		{"", keyEsc}, // once claude runs
 		{"The search was skipped with Esc.", keyEnter},

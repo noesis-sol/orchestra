@@ -197,6 +197,7 @@ type formField struct {
 	huh.Field
 	gap       string      // drawn above the field: the theme's field separator, but not above the first
 	header    string      // printed above the field in huh's accessible mode, which drops groups' titles
+	own       *huh.Theme  // the field's own copy of the form's theme, in which Blur ticks a select's answer
 	hidden    func() bool // nil: always shown
 	top       bool        // drawn with no gap above: shown only while the fields above it are hidden
 	wasHidden bool        // whether it was hidden when last updated
@@ -222,6 +223,20 @@ func (f *formField) View() string {
 		return ""
 	}
 	return f.gap + f.Field.View()
+}
+
+// answeredSelector marks the answer of a select that was left, in place of huh's cursor.
+var answeredSelector = closedStyle.SetString("✓ ")
+
+// Blur leaves the field. A select left shows its answer ticked and green from then on; one not
+// reached yet shows no cursor, the form's theme drawing none on a field that isn't focused. huh draws
+// every field that isn't focused with the theme's Blurred styles, hence each field's own theme.
+func (f *formField) Blur() tea.Cmd {
+	if f.own != nil {
+		f.own.Blurred.SelectSelector = answeredSelector
+		f.own.Blurred.SelectedOption = f.own.Focused.SelectedOption
+	}
+	return f.Field.Blur()
 }
 
 // Skip skips a hidden field.
@@ -383,13 +398,41 @@ func (s *initStage) add(f huh.Field) *formField {
 	return ff
 }
 
-// stageHeader is the header of the stage numbered n (from 1) of the total shown: "Step 1 of 2 ·
-// Workers", or its name alone when it is the only one.
+// stageHeader is the header of the stage numbered n (from 1) of the total shown in the accessible
+// form: "Step 1 of 2 · Workers", or its name alone when it is the only one.
 func stageHeader(name string, n, total int) string {
 	if total == 1 {
 		return name
 	}
 	return fmt.Sprintf("Step %d of %d · %s", n, total, name)
+}
+
+// stepper is the header of the stage numbered n (from 1) of those named on a terminal: each stage,
+// ✓ done, ● current or ○ to come, joined by lines that turn green once reached ("✓ Workers ──── ●
+// Checks"); or its name alone when it is the only one.
+func stepper(names []string, n int) string {
+	if len(names) == 1 {
+		return organStyle.Render(names[0])
+	}
+	var b strings.Builder
+	for i, name := range names {
+		if i > 0 {
+			line := dimStyle
+			if i < n {
+				line = doneStyle
+			}
+			b.WriteString(line.Render(" ──── "))
+		}
+		switch {
+		case i+1 < n:
+			b.WriteString(closedStyle.Render("✓ " + name))
+		case i+1 == n:
+			b.WriteString(organStyle.Render("● " + name))
+		default:
+			b.WriteString(dimStyle.Render("○ " + name))
+		}
+	}
+	return b.String()
 }
 
 // timeLimit asks for a check's time limit.
@@ -505,8 +548,17 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	theme := huh.ThemeCharm()
 	gap := theme.FieldSeparator.Render()
-	theme.FieldSeparator = lipgloss.NewStyle() // each formField draws its own
-	theme.Group.Title = lipgloss.NewStyle().Bold(true).Foreground(purple).MarginBottom(1)
+	theme.FieldSeparator = lipgloss.NewStyle()              // each formField draws its own
+	theme.Group.Title = lipgloss.NewStyle().MarginBottom(1) // the stepper styles itself
+	// No cursor on a field that isn't focused: huh's Charm theme keeps it there. formField.Blur ticks a
+	// select's answer once it is left.
+	theme.Blurred.SelectSelector = lipgloss.NewStyle().SetString("  ")
+	theme.Blurred.MultiSelectSelector = theme.Blurred.SelectSelector
+	theme.Blurred.SelectedOption = theme.Blurred.UnselectedOption
+	names := make([]string, len(stages))
+	for i, s := range stages {
+		names[i] = s.name
+	}
 	groups := make([]*huh.Group, len(stages))
 	for i, s := range stages {
 		header := stageHeader(s.name, i+1, len(stages))
@@ -517,9 +569,13 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 			} else {
 				f.header = header
 			}
+			// Its own copy, before the form's: a huh field keeps the first theme it is given.
+			own := *theme
+			f.own = &own
+			f.WithTheme(f.own)
 			group[j] = f
 		}
-		groups[i] = huh.NewGroup(group...).Title(header)
+		groups[i] = huh.NewGroup(group...).Title(stepper(names, i+1))
 	}
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))

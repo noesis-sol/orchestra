@@ -92,7 +92,7 @@ func TestTheScoutStartsWhenStage2IsReached(t *testing.T) {
 		t.Fatal("the scout started in stage 1")
 	}
 	term.typeKeys(t, "\r")
-	term.typeSteps(t, []keysOn{{checksHeader, ""}, {onScouting, ""}, {"Esc: skip and type a check yourself", ""}})
+	term.typeSteps(t, []keysOn{{checksStep, ""}, {onScouting, ""}, {"Esc: skip and type a check yourself", ""}})
 	if !started.Load() {
 		t.Error("the scout hadn't started in stage 2")
 	}

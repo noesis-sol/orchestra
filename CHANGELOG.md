@@ -27,6 +27,13 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra init`'s MCP server options wrap between words at the
   terminal's width, the rest of a long one under its label, instead of
   running past the edge and wrapping back to the margin.
+### Changed
+
+- `orchestra init`'s form ticks a question's answer once it is left: a select
+  shows ✓ on its chosen option instead of keeping its `>` cursor, and a field
+  not reached yet shows no cursor. Its stage header is a stepper showing the
+  stages done, current and to come (`✓ Workers ──── ● Checks`); with
+  `TERM=dumb` it stays the plain `Step 1 of 2 · Workers`.
 
 ## [0.5.1] - 2026-10-08
 
