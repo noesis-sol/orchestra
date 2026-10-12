@@ -96,6 +96,7 @@ README defines both terms; use them consistently.
 - Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/git` (git), `internal/command` (every
   external command: context, time limit, process group), `internal/claude` (workers' hooks), `internal/mcp`
   (discovering MCP servers for workers).
+- `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
   `internal/tui`: the Bubble Tea dashboard and init's screen.
 

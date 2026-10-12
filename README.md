@@ -27,6 +27,8 @@ sudo install -m 755 /tmp/orchestra "$(command -v orchestra)"
 
 The build runs as you; only the install needs `sudo`, and only where the folder belongs to root, as `/usr/local/bin` usually does. For a first install, name the folder: `/usr/local/bin/orchestra`. Install between runs.
 
+Once installed, `orchestra update` replaces it with the latest [GitHub Release](https://github.com/noesis-sol/orchestra/releases)'s binary for your platform (darwin or linux, amd64 or arm64): it checks the archive's SHA-256 against the release's `checksums.txt` and that the new binary's `--version` names the release before putting it in place, and prints the old and new versions and the release's page. `orchestra update --check` only says whether a newer release is out, and changes nothing: it exits 1 when there is one, 0 when not. A build from a clone (`dev`, or a version naming a commit, below) is replaced only with `--force`. Where the binary's folder belongs to root, run `sudo orchestra update`; orchestra never calls `sudo` itself. It refuses while a run holds the repository's lock, as workers' hooks call the binary mid-run; runs in other repositories aren't checked, so update between runs.
+
 `orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes. Needs Go 1.26, plus `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install).
 
 ## Set up a project

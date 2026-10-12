@@ -20,6 +20,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
+	"github.com/noesis-sol/orchestra/internal/update"
 
 	"golang.org/x/term"
 )
@@ -71,7 +72,8 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 	"  orchestra init\n" +
 	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
 
-// run is orchestra: 'orchestra init …', 'orchestra plan …' or a run. It returns nil or an exitStatus.
+// run is orchestra: 'orchestra init …', 'orchestra plan …', 'orchestra update …' or a run. It returns nil or
+// an exitStatus.
 // A run's setup, held until it ends (the lock, the stop signals' watch, the log), the question of
 // what it works on, and a feature typed there or given with --feature are here; runPlain or
 // runDashboard runs the loop and the organ phase after it.
@@ -83,6 +85,14 @@ func run(
 	}
 	if len(args) > 1 && args[1] == "plan" {
 		return status(runPlan(ctx, ".", args[2:], stdout, stderr))
+	}
+	if len(args) > 1 && args[1] == "update" {
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(stderr, "orchestra update: cannot find this binary:", err)
+			return exitStatus(dispatch.ExitSetup)
+		}
+		return status(runUpdate(ctx, ".", args[2:], buildVersion(), exe, update.Updater{}, stdout, stderr))
 	}
 	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
 	switch {

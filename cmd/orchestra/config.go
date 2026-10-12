@@ -186,7 +186,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"       orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] "+
 			"[--mcp names] [--force]\n"+
 			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
-			"       orchestra plan [--apply]\n\n"+
+			"       orchestra plan [--apply]\n"+
+			"       orchestra update [--check] [--force]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
 			"as --concurrent allows, one worker (a coding agent) per Herdr tab and git worktree.\n"+
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
@@ -207,6 +208,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 				"orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] [--force]")
 		case "plan":
 			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
+		case "update":
+			fmt.Fprintln(fs.Output(), "orchestra: update comes before its flags: orchestra update [--check] [--force]")
 		default:
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}

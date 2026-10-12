@@ -14,6 +14,13 @@ All notable changes to orchestra are documented here. The format follows
   amd64 and arm64, with `checksums.txt` and build provenance, to the
   tag's GitHub Release, its notes the version's section of this changelog.
   docs/development.md (Releasing) describes the release process.
+- `orchestra update` replaces the binary with the latest GitHub Release's
+  for its platform, the archive's SHA-256 checked against the release's
+  `checksums.txt` and the new binary's `--version` before it is renamed into
+  place. `--check` only reports (exit 1 when a newer release is out), and a
+  build from a clone is replaced only with `--force`. It refuses while a run
+  holds the repository's lock, and where the folder isn't writable names
+  `sudo orchestra update` rather than calling it.
 
 ## [0.5.1] - 2026-10-08
 
