@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -22,8 +23,8 @@ import (
 )
 
 // releaseServer is a GitHub whose latest release is tag, its archive for the running platform holding a
-// fake orchestra (text naming tag, which the Updater's Version reads) and its checksums.txt; corrupt
-// makes the archive's sum wrong. It returns the Updater that reads it and the paths it was asked for.
+// fake orchestra (text naming tag, which the Updater's Version reads), its checksums.txt and
+// checksums.txt.sig, signed with a key the Updater trusts; corrupt makes the archive's sum wrong. It returns the Updater that reads it and the paths it was asked for.
 func releaseServer(t *testing.T, tag string, corrupt bool) (update.Updater, func() []string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -47,7 +48,12 @@ func releaseServer(t *testing.T, tag string, corrupt bool) (update.Updater, func
 	if corrupt {
 		sum[0]++
 	}
-	files := map[string][]byte{name: buf.Bytes(), update.Checksums: fmt.Appendf(nil, "%x  %s\n", sum, name)}
+	sums := fmt.Appendf(nil, "%x  %s\n", sum, name)
+	public, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{name: buf.Bytes(), update.Checksums: sums, update.Signature: ed25519.Sign(key, sums)}
 
 	var mu sync.Mutex
 	var got []string
@@ -71,7 +77,7 @@ func releaseServer(t *testing.T, tag string, corrupt bool) (update.Updater, func
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	u := update.Updater{API: srv.URL, Version: func(_ context.Context, bin string) (string, error) {
+	u := update.Updater{API: srv.URL, Keys: []ed25519.PublicKey{public}, Version: func(_ context.Context, bin string) (string, error) {
 		b, err := os.ReadFile(bin)
 		return string(b), err
 	}}

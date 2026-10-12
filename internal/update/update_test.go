@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,7 +26,8 @@ import (
 // /download/.
 type fakeRelease struct {
 	tag   string
-	files map[string][]byte // by name
+	files map[string][]byte  // by name
+	key   ed25519.PrivateKey // its release key, which signed checksums.txt
 	mu    sync.Mutex
 	got   []string // the paths requested
 }
@@ -53,21 +55,34 @@ func archive(t *testing.T, binary string) []byte {
 	return buf.Bytes()
 }
 
-// newRelease is release tag with an archive for the running platform holding binary, and its
-// checksums.txt.
+// newRelease is release tag with an archive for the running platform holding binary, its
+// checksums.txt, and checksums.txt.sig signed with a release key of its own.
 func newRelease(t *testing.T, tag, binary string) *fakeRelease {
 	t.Helper()
 	name := ArchiveName(tag, runtime.GOOS, runtime.GOARCH)
 	a := archive(t, binary)
 	sum := sha256.Sum256(a)
-	return &fakeRelease{tag: tag, files: map[string][]byte{
+	sums := fmt.Appendf(nil, "%s  %s\n%s  orchestra_x_plan9_386.tar.gz\n", hex.EncodeToString(sum[:]), name, strings.Repeat("0", 64))
+	key := newKey(t)
+	return &fakeRelease{tag: tag, key: key, files: map[string][]byte{
 		name:      a,
-		Checksums: fmt.Appendf(nil, "%s  %s\n%s  orchestra_x_plan9_386.tar.gz\n", hex.EncodeToString(sum[:]), name, strings.Repeat("0", 64)),
+		Checksums: sums,
+		Signature: ed25519.Sign(key, sums),
 	}}
 }
 
-// serve serves r and returns the Updater that reads it, its --version reading the new binary's file:
-// the fake binaries are text, not programs.
+// newKey is a new ed25519 key pair.
+func newKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+// serve serves r and returns the Updater that reads it, trusting r's release key, its --version
+// reading the new binary's file: the fake binaries are text, not programs.
 func (r *fakeRelease) serve(t *testing.T) Updater {
 	t.Helper()
 	var srv *httptest.Server
@@ -90,7 +105,7 @@ func (r *fakeRelease) serve(t *testing.T) Updater {
 		http.NotFound(w, req)
 	}))
 	t.Cleanup(srv.Close)
-	return Updater{API: srv.URL, Version: readVersion}
+	return Updater{API: srv.URL, Version: readVersion, Keys: []ed25519.PublicKey{r.key.Public().(ed25519.PublicKey)}}
 }
 
 // requested is the paths r was asked for.

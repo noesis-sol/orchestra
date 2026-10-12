@@ -97,11 +97,12 @@ A release is a commit on main and a tag; the release workflow does the rest. Not
 
 The tag starts `.github/workflows/release.yml` (Actions, Release), which on macOS:
 
-- checks out the tag with every tag, and beside it the workflow's own commit, whose `.goreleaser.yaml` and `scripts/release-notes.sh` it uses (a tag released again may predate them);
+- checks out the tag with every tag, and beside it the workflow's own commit, whose `.goreleaser.yaml`, `scripts/release-notes.sh` and `scripts/sign-checksums` it uses (a tag released again may predate them);
 - sets up the Go of the tag's `go.mod` (its `toolchain` line) and runs the tag's `scripts/check.sh`: a failing check fails the release, before anything is built;
 - takes the notes from the tag's `CHANGELOG.md` (`scripts/release-notes.sh`), and fails when the version has no section;
 - runs GoReleaser (`.goreleaser.yaml`): `orchestra` for darwin and linux, amd64 and arm64, with `CGO_ENABLED=0` and `-trimpath`, in `orchestra_X.Y.Z_<os>_<arch>.tar.gz` with `README.md`, `CHANGELOG.md` and `THIRD_PARTY_NOTICES.md` (and a `LICENSE` once there is one), and their SHA-256 sums in `checksums.txt`. It creates the GitHub Release with the notes and attaches them; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` downloads: change them together;
 - marks the Release as GitHub's latest only when its tag is the newest release tag, so releasing an older tag again leaves the latest where it is;
+- signs `checksums.txt` with the release key (below) and attaches the signature, `checksums.txt.sig`, to the Release. `orchestra update` verifies it before trusting a sum in `checksums.txt` and installs nothing from a release without a valid one, so a Release is installable only once this step has run: if it fails, run the workflow again for the tag;
 - attests the archives' build provenance (`actions/attest`), which `gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra` checks.
 
 To release an existing tag again (a failed run, a tag from before the workflow, notes fixed on main), run the workflow by hand with the tag: Actions, Release, Run workflow, or `gh workflow run release.yml -f tag=vX.Y.Z`. It builds the tag as it is, with the configuration of the branch it runs from (main), and replaces the Release's notes and assets, including those of a Release made by hand with notes only. Changing what the tag points at needs a new version instead.
@@ -114,6 +115,27 @@ goreleaser release --snapshot --clean
 ```
 
 The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints).
+
+### The release key
+
+A release's `checksums.txt` is signed with an ed25519 key, so that `orchestra update` installs only what the release workflow built: the SHA-256 sums alone come from the same Release as the archives, and catch a corrupt download, not a changed Release. The private key, PKCS#8 PEM, is the repository secret `ORCHESTRA_RELEASE_KEY`, which only the release workflow reads. Its public half, PKIX PEM, is committed in `internal/update/release-keys/` (one `.pem` a key, named after the month it was made) and built into orchestra; `orchestra update` takes a signature by any of them. The signature is the raw 64 bytes, and `scripts/sign-checksums` makes it: the workflow runs it, and so does a release signed by hand, with the key in the variable:
+
+```
+ORCHESTRA_RELEASE_KEY="$(cat release-key.pem)" go run ./scripts/sign-checksums dist/checksums.txt
+gh release upload vX.Y.Z dist/checksums.txt.sig --clobber
+```
+
+It refuses a key whose public half isn't in `internal/update/release-keys/`, as `orchestra update` would refuse the release. To check a release's signature by hand: `openssl pkeyutl -verify -pubin -inkey internal/update/release-keys/<key>.pem -rawin -in checksums.txt -sigfile checksums.txt.sig`.
+
+To replace the key (it leaked, or is old), add the new one a release before retiring the old, so that the binaries of both releases verify the next:
+
+1. Make the new pair: `openssl genpkey -algorithm ed25519 -out release-key.pem` and `openssl pkey -in release-key.pem -pubout -out internal/update/release-keys/YYYY-MM.pem`. Commit the public key and release, still signed with the old key: this release trusts both.
+2. Set the secret `ORCHESTRA_RELEASE_KEY` to the new private key (`gh secret set ORCHESTRA_RELEASE_KEY < release-key.pem`), and keep the file out of the repository.
+3. Once a release signed with the new key is out, delete the old `.pem`.
+
+A binary from before step 1's release trusts only the old key: once the latest release is signed with the new one, `orchestra update` refuses it, and that binary needs a new install (`go install`, or a release's archive). Releasing step 1 well before step 2 keeps that to binaries that missed it. If the old key leaked, set the new secret and delete the old `.pem` in one go instead: a leaked key's signatures mustn't verify for a release longer than needed.
+
+The build provenance (`gh attestation verify`, above) is a second check, by hand: it doesn't need the release key, and `orchestra update` doesn't read it.
 
 [Changelog](../CHANGELOG.md)
 

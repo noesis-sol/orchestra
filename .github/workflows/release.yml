@@ -1,7 +1,7 @@
 # Builds a release's binaries with GoReleaser (.goreleaser.yaml) and attaches them to its GitHub
-# Release, with checksums.txt and build provenance, for each v* tag pushed. Run it from the Actions
-# tab (workflow_dispatch) with a tag to release an existing tag again. docs/development.md
-# (Releasing) has the whole process.
+# Release, with checksums.txt, its signature and build provenance, for each v* tag pushed. Run it
+# from the Actions tab (workflow_dispatch) with a tag to release an existing tag again.
+# docs/development.md (Releasing) has the whole process.
 name: Release
 
 on:
@@ -89,6 +89,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.TAG }}
+
+      # orchestra update verifies checksums.txt with checksums.txt.sig before trusting a sum in it, and
+      # refuses a release without it: until this step uploads it, the Release can't be installed. The
+      # signing tool is the workflow's commit's, and fails unless the key's public half is among the
+      # release keys its internal/update embeds.
+      - name: Sign the checksums
+        working-directory: release
+        env:
+          ORCHESTRA_RELEASE_KEY: ${{ secrets.ORCHESTRA_RELEASE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go run ./scripts/sign-checksums ../src/dist/checksums.txt
+          gh release upload "$TAG" ../src/dist/checksums.txt.sig --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Build provenance
         uses: actions/attest@v4

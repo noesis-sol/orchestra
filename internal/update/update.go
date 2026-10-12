@@ -1,6 +1,7 @@
 // Package update replaces the orchestra binary with the latest GitHub Release's (orchestra update): it
-// reads the latest release, downloads its archive for this platform and checksums.txt, checks the
-// archive's SHA-256, and puts the binary in it in place of the old one once it runs and names the
+// reads the latest release, downloads its archive for this platform, checksums.txt and its signature,
+// verifies the signature with the release keys embedded in the binary, checks the archive's SHA-256
+// against checksums.txt, and puts the binary in it in place of the old one once it runs and names the
 // release's version. The archive and checksum names are those .goreleaser.yaml publishes.
 package update
 
@@ -10,6 +11,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -35,13 +37,13 @@ const DefaultAPI = "https://api.github.com/repos/noesis-sol/orchestra"
 // Time limits on the requests, as internal/command has for commands: a request still going at its
 // limit is stopped and fails.
 const (
-	RequestLimit  = 30 * time.Second // the latest release's details, checksums.txt
+	RequestLimit  = 30 * time.Second // the latest release's details, checksums.txt and its signature
 	DownloadLimit = 5 * time.Minute  // the archive
 )
 
 // Size limits on what the requests read: far above what a release has, below what would fill memory.
 const (
-	maxDetails = 4 << 20   // the release's JSON, checksums.txt
+	maxDetails = 4 << 20   // the release's JSON, checksums.txt and its signature
 	maxArchive = 256 << 20 // the archive, and the binary in it
 )
 
@@ -62,6 +64,8 @@ type Updater struct {
 	Client *http.Client // nil for http.DefaultClient
 	GOOS   string       // "" for the running one
 	GOARCH string       // "" for the running one
+	// Keys are the public keys checksums.txt.sig may verify with; nil for ReleaseKeys.
+	Keys []ed25519.PublicKey
 	// Version runs the binary at bin with --version and returns what it prints; nil runs it.
 	Version func(ctx context.Context, bin string) (string, error)
 }
@@ -82,7 +86,7 @@ func (e *HTTPError) Error() string {
 }
 
 // MissingAssetError is a release without a file orchestra update needs: the archive for the
-// platform (Platform set), or checksums.txt.
+// platform (Platform set), checksums.txt or its signature.
 type MissingAssetError struct {
 	Release  string // its tag
 	Name     string // the file's name
@@ -174,7 +178,8 @@ func (u Updater) Latest(ctx context.Context) (Release, error) {
 }
 
 // Install replaces the binary at exe, through any symbolic links, with the release's for u's
-// platform: it downloads the archive and checksums.txt, checks the archive's SHA-256, writes the
+// platform: it downloads checksums.txt and its signature, verifies the signature with u's keys, downloads
+// the archive and checks its SHA-256 against checksums.txt, writes the
 // binary in it to a temporary file beside exe, checks that it runs and prints the release's version,
 // and renames it over exe. On every failure the old binary is left as it was and the temporary file
 // removed. It returns the path it replaced.
@@ -191,6 +196,16 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 	sumsURL, ok := rel.Assets[Checksums]
 	if !ok {
 		return exe, &MissingAssetError{Release: rel.Tag, Name: Checksums}
+	}
+	sigURL, ok := rel.Assets[Signature]
+	if !ok {
+		return exe, &MissingAssetError{Release: rel.Tag, Name: Signature}
+	}
+	keys := u.Keys
+	if keys == nil {
+		if keys, err = ReleaseKeys(); err != nil {
+			return exe, err
+		}
 	}
 
 	// Made first, so that a folder it can't write in fails before the download.
@@ -212,6 +227,14 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 	sums, err := u.get(ctx, RequestLimit, sumsURL, "application/octet-stream", maxDetails)
 	if err != nil {
 		return exe, fmt.Errorf("cannot download %s: %w", Checksums, err)
+	}
+	// Verified before any checksum in it is trusted, or the archive downloaded.
+	sig, err := u.get(ctx, RequestLimit, sigURL, "application/octet-stream", maxDetails)
+	if err != nil {
+		return exe, fmt.Errorf("cannot download %s: %w", Signature, err)
+	}
+	if err := Verify(sums, sig, keys); err != nil {
+		return exe, err
 	}
 	want, err := checksumOf(sums, name)
 	if err != nil {

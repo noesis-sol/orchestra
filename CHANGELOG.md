@@ -21,6 +21,12 @@ All notable changes to orchestra are documented here. The format follows
   build from a clone is replaced only with `--force`. It refuses while a run
   holds the repository's lock, and where the folder isn't writable names
   `sudo orchestra update` rather than calling it.
+- Releases are signed: the release workflow signs `checksums.txt` with the
+  release key (`scripts/sign-checksums`) and attaches `checksums.txt.sig`,
+  and `orchestra update` verifies it with the public keys built into
+  orchestra (`internal/update/release-keys/`) before trusting a checksum,
+  refusing a release whose signature is missing or doesn't verify.
+  docs/development.md (Releasing) describes replacing the key.
 
 ### Fixed
 
