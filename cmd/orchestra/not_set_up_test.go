@@ -11,6 +11,7 @@ import (
 // in place of the missing worker prompt and Beads database it would fix, and exit 2.
 func TestRunSaysToRunInitFirst(t *testing.T) {
 	repo, git := gitRepo(t)
+	hostTools(t)
 	env := map[string]string{"HERDR_ENV": "1", "HERDR_WORKSPACE_ID": "w7Q"}
 	for _, args := range [][]string{nil, {"--feature", "add a widget"}} {
 		_, stderr, err := runIn(t, repo, env, args...)

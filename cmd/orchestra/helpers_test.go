@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
-// gitRepo makes a repository with one commit and returns its path and a git runner.
+// gitRepo makes a repository with one commit on main, whatever git's default branch on the machine,
+// and returns its path and a git runner.
 func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	t.Helper()
 	repo := t.TempDir()
@@ -21,10 +23,23 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 		}
 		return out
 	}
-	git(repo, "init", "-q")
+	git(repo, "init", "-q", "-b", "main")
 	git(repo, "commit", "-q", "--allow-empty", "-m", "init")
 	return repo, git
 }
+
+// hostTools puts a bd and a herdr at the end of PATH, for a run's check that they're installed
+// (checkHost) on a machine without them, such as CI's. They fail if run: a test that runs one puts
+// its own first on PATH.
+func hostTools(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"bd", "herdr"} {
+		faketool.Write(t, dir, name, "#!/bin/sh\necho '"+name+": not in this test' >&2\nexit 1\n")
+	}
+	t.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+dir)
+}
+
 func read(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)

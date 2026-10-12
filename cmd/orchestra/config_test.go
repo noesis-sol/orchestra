@@ -19,6 +19,7 @@ import (
 func configFixture(t *testing.T, settings string) string {
 	t.Helper()
 	repo, _ := gitRepo(t)
+	hostTools(t)
 	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -198,6 +199,9 @@ func TestConfigExcludeTypes(t *testing.T) {
 // chose its MCP servers without it, and --chrome when it chose it.
 func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
 	configFixture(t, `{"concurrent": 1}`)
+	if err := os.WriteFile(".mcp.json", []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct{ settings, want string }{
 		{`{}`, ""}, // not chosen: whatever Claude Code finds
 		{`{"mcp_servers": []}`, "--no-chrome"},

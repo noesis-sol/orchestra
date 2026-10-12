@@ -6,6 +6,10 @@
 // objects, which a test's few commits now and then put there, and a repack still writing in a test's
 // repository as the test ends breaks TempDir's removal: "unlinkat .../.git/objects: directory not
 // empty".
+//
+// Main also gives that git an identity, for the commits orchestra's rebases and merges make: a
+// machine without one of its own, such as CI's, would otherwise stop them at "Committer identity
+// unknown".
 package gittest
 
 import (
@@ -18,7 +22,7 @@ import (
 // TestingM is a package's tests, as its TestMain gets them: a *testing.M.
 type TestingM interface{ Run() int }
 
-// Main returns m set to run with git's automatic maintenance off. A package whose tests run the real
+// Main returns m set to run with git's automatic maintenance off and an identity. A package whose tests run the real
 // git runs them through it, from its TestMain:
 //
 //	func TestMain(m *testing.M) { os.Exit(gittest.Main(m).Run()) }
@@ -27,9 +31,11 @@ func Main(m TestingM) TestingM { return tests{m} }
 type tests struct{ m TestingM }
 
 func (ts tests) Run() int {
-	if err := setConfig("maintenance.auto", "false"); err != nil {
-		fmt.Fprintln(os.Stderr, "gittest:", err)
-		return 1
+	for _, kv := range [][2]string{{"maintenance.auto", "false"}, {"user.name", "t"}, {"user.email", "t@t"}} {
+		if err := setConfig(kv[0], kv[1]); err != nil {
+			fmt.Fprintln(os.Stderr, "gittest:", err)
+			return 1
+		}
 	}
 	return ts.m.Run()
 }

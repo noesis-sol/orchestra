@@ -1,0 +1,37 @@
+# Runs scripts/check.sh, the project's full check (go vet, the race tests, golangci-lint), on Linux
+# and macOS for each push to main and each pull request: orchestra runs the check on the machine it
+# runs on, macOS so far, and ships Linux binaries too. docs/development.md (Continuous integration).
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A pull request's newer push replaces its running check; main's pushes are each checked.
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false # a failure on one system says nothing about the other
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # The Go of go.mod: its toolchain line.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Check
+        run: scripts/check.sh
