@@ -447,12 +447,11 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	mcpOpts, servers := mcpOptions(*c)
 	if ask.MCP && len(mcpOpts) > 0 {
 		// Not filterable: Esc, which ends a filter, cancels the form.
-		workers.add(huh.NewMultiSelect[string]().
+		workers.add(newWrappingMultiSelect(huh.NewMultiSelect[string]().
 			Title("MCP servers for workers").
 			Description(mcpDescription(*c)).
-			Options(mcpOpts...).
-			Filterable(false).
-			Value(&servers))
+			Filterable(false),
+			&servers, mcpOpts...))
 	}
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}

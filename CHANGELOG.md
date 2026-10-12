@@ -22,6 +22,12 @@ All notable changes to orchestra are documented here. The format follows
   holds the repository's lock, and where the folder isn't writable names
   `sudo orchestra update` rather than calling it.
 
+### Fixed
+
+- `orchestra init`'s MCP server options wrap between words at the
+  terminal's width, the rest of a long one under its label, instead of
+  running past the edge and wrapping back to the margin.
+
 ## [0.5.1] - 2026-10-08
 
 ### Fixed
