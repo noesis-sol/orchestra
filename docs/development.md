@@ -95,7 +95,7 @@ A release is a commit on main and a tag; the release workflow does the rest. Not
 3. Tag the commit, annotated: `git tag -a vX.Y.Z -m "orchestra X.Y.Z"`.
 4. Push both: `git push origin main vX.Y.Z`.
 
-The tag starts `.github/workflows/release.yml` (Actions, Release), which on macOS:
+The tag starts `.github/workflows/release.yml` (Actions, Release), which on Linux (`ubuntu-latest`; GoReleaser cross-compiles the darwin binaries, and the Check workflow runs the check on macOS too):
 
 - checks out the tag with every tag, and beside it the workflow's own commit, whose `.goreleaser.yaml`, `scripts/release-notes.sh` and `scripts/sign-checksums` it uses (a tag released again may predate them);
 - sets up the Go of the tag's `go.mod` (its `toolchain` line) and runs the tag's `scripts/check.sh`: a failing check fails the release, before anything is built;
