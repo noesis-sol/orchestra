@@ -34,10 +34,28 @@ archives:
       # None yet; included once the repository has one.
       - LICENSE*
 
-# The release workflow signs it afterwards (scripts/sign-checksums), as checksums.txt.sig.
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+
+# checksums.txt.sig, which orchestra update verifies checksums.txt with: scripts/sign-checksums signs it
+# with the key in $ORCHESTRA_RELEASE_KEY, which reaches it with the rest of GoReleaser's environment.
+# Signing comes before the Release is published, so a missing or unknown key fails the release
+# before anything is. The tool is the one beside this configuration: the release workflow sets
+# $ORCHESTRA_RELEASE_DIR to the checkout of its own commit (a tag released again may predate the
+# tool); in the repository itself it is "." The checksums' path is absolute, since go -C runs the
+# tool there.
+signs:
+  - id: checksums
+    artifacts: checksum
+    cmd: go
+    args:
+      - -C
+      - '{{ envOrDefault "ORCHESTRA_RELEASE_DIR" "." }}'
+      - run
+      - ./scripts/sign-checksums
+      - '{{ abs "${artifact}" }}'
+    signature: "${artifact}.sig"
 
 # The release notes are the version's section of CHANGELOG.md (scripts/release-notes.sh), passed
 # with --release-notes.

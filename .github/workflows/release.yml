@@ -79,6 +79,10 @@ jobs:
           echo "MAKE_LATEST=$latest" >> "$GITHUB_ENV"
           echo "$TAG is the newest release tag: $latest (newest: $newest)"
 
+      # GoReleaser also signs checksums.txt (its signs:) as checksums.txt.sig, which orchestra update
+      # verifies checksums.txt with and refuses a release without, before it publishes the Release: a
+      # missing key, or one whose public half isn't among the release keys, fails the run with
+      # nothing published. The signing tool is the workflow's commit's (ORCHESTRA_RELEASE_DIR).
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -89,19 +93,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.TAG }}
-
-      # orchestra update verifies checksums.txt with checksums.txt.sig before trusting a sum in it, and
-      # refuses a release without it: until this step uploads it, the Release can't be installed. The
-      # signing tool is the workflow's commit's, and fails unless the key's public half is among the
-      # release keys its internal/update embeds.
-      - name: Sign the checksums
-        working-directory: release
-        env:
           ORCHESTRA_RELEASE_KEY: ${{ secrets.ORCHESTRA_RELEASE_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          go run ./scripts/sign-checksums ../src/dist/checksums.txt
-          gh release upload "$TAG" ../src/dist/checksums.txt.sig --clobber --repo "$GITHUB_REPOSITORY"
+          ORCHESTRA_RELEASE_DIR: ${{ github.workspace }}/release
 
       - name: Build provenance
         uses: actions/attest@v4

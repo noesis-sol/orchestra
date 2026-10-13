@@ -100,9 +100,10 @@ The tag starts `.github/workflows/release.yml` (Actions, Release), which on macO
 - checks out the tag with every tag, and beside it the workflow's own commit, whose `.goreleaser.yaml`, `scripts/release-notes.sh` and `scripts/sign-checksums` it uses (a tag released again may predate them);
 - sets up the Go of the tag's `go.mod` (its `toolchain` line) and runs the tag's `scripts/check.sh`: a failing check fails the release, before anything is built;
 - takes the notes from the tag's `CHANGELOG.md` (`scripts/release-notes.sh`), and fails when the version has no section;
-- runs GoReleaser (`.goreleaser.yaml`): `orchestra` for darwin and linux, amd64 and arm64, with `CGO_ENABLED=0` and `-trimpath`, in `orchestra_X.Y.Z_<os>_<arch>.tar.gz` with `README.md`, `CHANGELOG.md` and `THIRD_PARTY_NOTICES.md` (and a `LICENSE` once there is one), and their SHA-256 sums in `checksums.txt`. It creates the GitHub Release with the notes and attaches them; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` downloads: change them together;
+- runs GoReleaser (`.goreleaser.yaml`): `orchestra` for darwin and linux, amd64 and arm64, with `CGO_ENABLED=0` and `-trimpath`, in `orchestra_X.Y.Z_<os>_<arch>.tar.gz` with `README.md`, `CHANGELOG.md` and `THIRD_PARTY_NOTICES.md` (and a `LICENSE` once there is one), and their SHA-256 sums in `checksums.txt`;
+- signs `checksums.txt` with the release key (below), within GoReleaser (its `signs:`), as `checksums.txt.sig`. `orchestra update` verifies it before trusting a sum in `checksums.txt` and installs nothing from a release without a valid one. Signing comes before anything is published: without the key, or with one whose public half isn't among the release keys, the release fails and the Release is left as it was;
+- creates the GitHub Release with the notes and attaches the archives, `checksums.txt` and `checksums.txt.sig`; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` downloads: change them together;
 - marks the Release as GitHub's latest only when its tag is the newest release tag, so releasing an older tag again leaves the latest where it is;
-- signs `checksums.txt` with the release key (below) and attaches the signature, `checksums.txt.sig`, to the Release. `orchestra update` verifies it before trusting a sum in `checksums.txt` and installs nothing from a release without a valid one, so a Release is installable only once this step has run: if it fails, run the workflow again for the tag;
 - attests the archives' build provenance (`actions/attest`), which `gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra` checks.
 
 To release an existing tag again (a failed run, a tag from before the workflow, notes fixed on main), run the workflow by hand with the tag: Actions, Release, Run workflow, or `gh workflow run release.yml -f tag=vX.Y.Z`. It builds the tag as it is, with the configuration of the branch it runs from (main), and replaces the Release's notes and assets, including those of a Release made by hand with notes only. Changing what the tag points at needs a new version instead.
@@ -111,14 +112,14 @@ To try the build without publishing anything, run [GoReleaser](https://gorelease
 
 ```
 goreleaser check
-goreleaser release --snapshot --clean
+goreleaser release --snapshot --clean --skip=sign
 ```
 
-The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints).
+The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints). Without `--skip=sign` it signs `checksums.txt` too, and fails without the release key in `ORCHESTRA_RELEASE_KEY` (below), as the release would.
 
 ### The release key
 
-A release's `checksums.txt` is signed with an ed25519 key, so that `orchestra update` installs only what the release workflow built: the SHA-256 sums alone come from the same Release as the archives, and catch a corrupt download, not a changed Release. The private key, PKCS#8 PEM, is the repository secret `ORCHESTRA_RELEASE_KEY`, which only the release workflow reads. Its public half, PKIX PEM, is committed in `internal/update/release-keys/` (one `.pem` a key, named after the month it was made) and built into orchestra; `orchestra update` takes a signature by any of them. The signature is the raw 64 bytes, and `scripts/sign-checksums` makes it: the workflow runs it, and so does a release signed by hand, with the key in the variable:
+A release's `checksums.txt` is signed with an ed25519 key, so that `orchestra update` installs only what the release workflow built: the SHA-256 sums alone come from the same Release as the archives, and catch a corrupt download, not a changed Release. The private key, PKCS#8 PEM, is the repository secret `ORCHESTRA_RELEASE_KEY`, which only the release workflow reads. Its public half, PKIX PEM, is committed in `internal/update/release-keys/` (one `.pem` a key, named after the month it was made) and built into orchestra; `orchestra update` takes a signature by any of them. The signature is the raw 64 bytes, and `scripts/sign-checksums` makes it. GoReleaser runs it (`signs:` in `.goreleaser.yaml`) from `$ORCHESTRA_RELEASE_DIR`, which the workflow sets to the checkout of its own commit, or else from the repository it runs in; the key reaches it with the rest of GoReleaser's environment. A release signed by hand runs it with the key in the variable:
 
 ```
 ORCHESTRA_RELEASE_KEY="$(cat release-key.pem)" go run ./scripts/sign-checksums dist/checksums.txt
