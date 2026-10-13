@@ -15,6 +15,14 @@ All notable changes to orchestra are documented here. The format follows
   worktrees, and checks it against pinned SHA-256 sums; offline with nothing
   cached, the check says it skipped ShellCheck, but fails under `CI=true`.
 
+### Changed
+
+- The README's **Set up a project** is a short section on what `orchestra
+  init` does, what can change later and the Checks step; the flags, `FLAKY:`
+  lines, `check.log`, the recheck and the full check are in `docs/setup.md`
+  and `docs/running.md`; `docs/setup.md` now says a check should print
+  `FLAKY:` lines and what orchestra does with them.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added

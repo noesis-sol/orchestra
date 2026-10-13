@@ -582,7 +582,7 @@ func boundLines(lines []string, n int) []string {
 }
 
 // flakyPrefix starts a line of a check's output that says a test failed and then passed on a rerun:
-// a convention for any project's check, which the README documents.
+// a convention for any project's check, which docs/setup.md's The checks documents.
 const flakyPrefix = "FLAKY:"
 
 // reportFlaky warns of each FLAKY: line in the output of a passing check, which was ticket id's when
