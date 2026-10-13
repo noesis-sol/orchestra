@@ -25,11 +25,11 @@ func (t Terminal) PaneSession(ctx context.Context, pane string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	// tmux prints nothing, and succeeds, for a pane it doesn't have.
+	// tmux prints an empty line, and succeeds, for a pane it doesn't have.
 	if name := strings.TrimSuffix(out, "\n"); name != "" && !strings.Contains(name, "\n") {
 		return name, nil
 	}
-	if out == "" {
+	if out == "" || out == "\n" {
 		return "", missing("display-message", pane, "pane")
 	}
 	return "", odd("display-message", pane, out)
