@@ -150,6 +150,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	if o.loadCarried(ctx); ctx.Err() != nil {
 		return o.interrupted(ctx)
 	}
+	o.sayDeferredFree(ctx) // knowing what is carried over and unmerged
 	defer o.startPredicting()()
 
 	r := newRunState(ctx, o)

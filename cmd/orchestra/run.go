@@ -245,6 +245,9 @@ func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.W
 	ev := dispatch.Event{Kind: dispatch.EvDone, N: c.DoneSoFar, Limit: c.Limit, Text: n.Done, Time: time.Now()}
 	log.Line(ev.Time, ev.Text)
 	log.Record(ev)
+	if n.FreeErr != nil {
+		log.Raw("", n.FreeErr) // the box goes without its deferred tickets free to run
+	}
 	sink := tui.Printer{Out: stdout}
 	if out, ok := stdout.(*os.File); ok && !plain {
 		sink.Styled, sink.Width = true, termWidth(out)

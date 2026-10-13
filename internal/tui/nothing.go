@@ -55,7 +55,7 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 		for _, d := range n.NotDone {
 			rest = append(rest, style(pickedStyle, d.ID)+" ("+d.Why+")")
 		}
-		return head, rest
+		return head, append(rest, freeLines(n, style, command)...)
 	}
 	if n.Questions > 0 {
 		rest = append(rest, plural(n.Questions, "question waits", "questions wait")+" for your answer: "+
@@ -91,7 +91,22 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 	if n.Unmerged > 0 {
 		rest = append(rest, fmt.Sprintf("%d closed but not merged: %s", n.Unmerged, command("bd list --label unmerged")))
 	}
-	return head, rest
+	return head, append(rest, freeLines(n, style, command)...)
+}
+
+// freeLines are the message's lines for the deferred tickets whose blockers have merged: each with
+// the command that reopens it, and the one that removes the empty worktree it was left.
+func freeLines(
+	n dispatch.NothingToRun, style func(lipgloss.Style, string) string, command func(string) string,
+) []string {
+	var lines []string
+	for _, d := range n.DeferredFree {
+		lines = append(lines, "Deferred: "+style(pickedStyle, d.ID)+": "+d.Why()+"; to run it: "+command(d.Reopen()))
+		if c := d.Cleanup(); c != "" {
+			lines = append(lines, "  its worktree has no commits of its own, safe to remove: "+command(c))
+		}
+	}
+	return lines
 }
 
 // plural is "1 <one>" or "n <many>".

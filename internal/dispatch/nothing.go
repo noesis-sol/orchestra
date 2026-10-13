@@ -45,6 +45,12 @@ type NothingToRun struct {
 	// names it.
 	NotDone []NotDone
 
+	// DeferredFree is each deferred ticket of the run's scope whose blockers have all merged, for the
+	// maintainer to reopen. FreeErr is why bd couldn't say which they are, for the log: it only drops
+	// the list.
+	DeferredFree []DeferredFree
+	FreeErr      error
+
 	// Done is the run's done line for this early exit, as the log and events.jsonl record it.
 	Done string
 }
@@ -62,7 +68,8 @@ func (n NothingToRun) Open() int {
 // ready ticket the loop would hold back at its start (see holds) is not one it would start: a parent
 // whose subtickets are not all closed and merged, or a ticket a closed but unmerged ticket blocks or
 // was discovered from. A ticket labelled UnmergedLabel that git finds merged since (see mergedSince)
-// counts as merged, as the loop would find it, though only the loop removes the label. It only reads, so it can run
+// counts as merged, as the loop would find it, though only the loop removes the label. With nothing to
+// run, it lists the deferred tickets whose blockers have merged (DeferredFree). It only reads, so it can run
 // before any Loop exists. Its error is bd's, or the state file's, when it can't tell: the run then
 // goes ahead, and the loop reports it.
 func CheckNothingToRun(
@@ -113,10 +120,31 @@ func CheckNothingToRun(
 		}
 		held[t.ID] = hd.kind
 	}
+	var n *NothingToRun
 	if c.Ticket != "" {
-		return scopeNothing(ctx, c, tickets, subs, h.unmerged)
+		if n, err = scopeNothing(ctx, c, tickets, subs, h.unmerged); err != nil {
+			return nil, err
+		}
+	} else {
+		n = allNothing(c, unclosed, len(unmerged), held)
 	}
-	return allNothing(c, unclosed, len(unmerged), held), nil
+	if len(ready) == 0 && c.Ticket != "" { // not read above
+		unclosed, n.FreeErr = tickets.Unclosed(ctx)
+	}
+	if n.FreeErr == nil {
+		carried := map[string]bool{}
+		for _, w := range s.Workers {
+			carried[w.Ticket] = true
+		}
+		f := freeing{cfg: c, tickets: tickets, worktrees: worktrees, merger: merger,
+			inScope: func(id string) bool { return c.Ticket == "" || in[id] },
+			busy:    func(id string) bool { return carried[id] }, unmerged: h.unmerged}
+		n.DeferredFree, n.FreeErr = f.list(ctx, unclosed)
+	}
+	if n.FreeErr != nil {
+		n.DeferredFree, n.FreeErr = nil, freeUnreadable(n.FreeErr)
+	}
+	return n, nil
 }
 
 // startHolds is what keeps a ready ticket waiting as a run starts, before any Loop (see holds):

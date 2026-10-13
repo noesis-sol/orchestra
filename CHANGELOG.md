@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A run's `START` block, and the box of a run with nothing to run, list each
+  deferred ticket in the run's scope whose blockers have all closed and
+  merged, with the command that reopens it: `DEFERRED_FREE: <id>: its
+  blockers have merged (<blockers>); to run it: bd update <id> --status
+  open`, and the commands that remove its worktree when it has no commits
+  beyond the base. A ticket deferred because it started before its blocker
+  merged otherwise stayed deferred with nothing pointing it out. orchestra
+  only lists them; a bd failure drops the list, with a line in the log.
+
 - Claude workers' hooks also note each session's start and end
   (`SessionStart` with its source, `SessionEnd` with its reason) in
   `.orchestra/run/events`, and write the last notification to
