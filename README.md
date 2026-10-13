@@ -1,4 +1,4 @@
-# Agent Orchestra
+# Claude Agent Orchestra
 
 <img width="943" height="346" alt="Conductor" src="https://github.com/user-attachments/assets/20aa6734-ce32-4807-95b3-8d11aeff6da1" />
 
