@@ -22,6 +22,11 @@ All notable changes to orchestra are documented here. The format follows
   lines, `check.log`, the recheck and the full check are in `docs/setup.md`
   and `docs/running.md`; `docs/setup.md` now says a check should print
   `FLAKY:` lines and what orchestra does with them.
+- The README's **Install** is the one-line install, `go install`,
+  `orchestra update` and what orchestra needs; the install script's checks
+  and variables, building from a clone, how `orchestra update` verifies a
+  release, build provenance, the newer-release notice and reading a clone's
+  version are in the new `docs/install.md`.
 
 ## [0.6.0] - 2026-10-13
 
