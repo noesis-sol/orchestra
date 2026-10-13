@@ -76,6 +76,9 @@ type Settings struct {
 	// OrganEffort is the effort of every organ, unless --organ-effort says otherwise. Empty: each
 	// organ's own, low for triage and the predictor and medium for the run report.
 	OrganEffort string `json:"organ_effort,omitempty"`
+	// Terminal is where workers run, TerminalHerdr or TerminalTmux, unless --terminal or
+	// ORCHESTRA_TERMINAL says otherwise. Empty or TerminalAuto: Herdr in a Herdr pane, else tmux.
+	Terminal string `json:"terminal,omitempty"`
 }
 
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
@@ -368,6 +371,48 @@ func ResolveEffort(flagValue, key, setting string) (string, error) {
 			SettingsPath("."), key, strings.Join(Efforts, ", "), setting)
 	}
 	return setting, nil
+}
+
+// The terminals workers run in, as settings.json's "terminal", --terminal and the run's state file
+// name them, and auto, which picks one where orchestra runs.
+const (
+	TerminalHerdr = "herdr"
+	TerminalTmux  = "tmux"
+	TerminalAuto  = "auto"
+)
+
+// Terminals are the choices of terminal, as a problem lists them.
+var Terminals = []string{TerminalHerdr, TerminalTmux, TerminalAuto}
+
+// ResolveTerminal picks a run's terminal: flagValue (from --terminal or ORCHESTRA_TERMINAL) unless
+// it is empty, else the project's setting, else TerminalAuto, for the run to choose where it runs.
+func ResolveTerminal(flagValue string, s Settings) (string, error) {
+	switch {
+	case flagValue != "":
+		if !slices.Contains(Terminals, flagValue) {
+			return "", fmt.Errorf("--terminal (or ORCHESTRA_TERMINAL) must be one of %s (got '%s')",
+				strings.Join(Terminals, ", "), flagValue)
+		}
+		return flagValue, nil
+	case s.Terminal == "":
+		return TerminalAuto, nil
+	case !slices.Contains(Terminals, s.Terminal):
+		return "", fmt.Errorf("%s: terminal must be one of %s (got '%s')",
+			SettingsPath("."), strings.Join(Terminals, ", "), s.Terminal)
+	}
+	return s.Terminal, nil
+}
+
+// SameTerminal reports whether a and b name the same terminal; "" is Herdr, where every worker ran
+// before workers could run in tmux.
+func SameTerminal(a, b string) bool {
+	norm := func(t string) string {
+		if t == "" {
+			return TerminalHerdr
+		}
+		return t
+	}
+	return norm(a) == norm(b)
 }
 
 // ResolveEnvironmentHold picks a run's environment hold from the project's settings: how many

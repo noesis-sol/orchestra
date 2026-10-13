@@ -44,11 +44,12 @@ type Dashboard struct {
 	began       time.Time
 	cancel      func()
 	drain       func(on bool)    // asks the loop to stop after the running tickets, or with false to go on
-	focus       func(tab string) // switches Herdr to a worker's tab; it must not block
+	focus       func(tab string) // switches the terminal to a worker's tab; it must not block; nil for none
 }
 
 // NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain;
-// a worker's number calls focus with its tab.
+// a worker's number calls focus with its tab, unless focus is nil, as when the workers' tabs are out
+// of orchestra's sight.
 func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus func(tab string)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
 	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, unclosed: -1, began: time.Now(), cancel: cancel,
@@ -196,6 +197,9 @@ func (m Dashboard) frame(w int) string {
 	if warn := m.cfg.MCPWarning(); warn != "" { // in the log once; here for the whole run
 		hint = stack(deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
 	}
+	if m.cfg.Watch != "" { // the workers' tabs are out of sight: the number keys can't go to them
+		hint = stack(dimStyle.Render(ansi.Truncate(" to see the workers' tabs: "+m.cfg.Watch, w, "…")), hint)
+	}
 	if !m.asking {
 		return m.layout(w, title, hint)
 	}
@@ -231,10 +235,14 @@ func lineCount(s string) int {
 }
 
 // footLines is how many lines the foot takes below the workers with a winding-down line drain lines
-// tall, there or not: the MCP warning, if any, that line and the hint.
+// tall, there or not: the MCP warning and the way to see the workers' tabs, if any, that line and
+// the hint.
 func (m Dashboard) footLines(drain int) int {
 	n := drain + 1
 	if m.cfg.MCPWarning() != "" {
+		n++
+	}
+	if m.cfg.Watch != "" {
 		n++
 	}
 	return n

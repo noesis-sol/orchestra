@@ -52,10 +52,11 @@ func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()))
 }
 
-// goTo switches Herdr to the tab of the worker numbered n in Current, as the list stands now:
-// nothing if there is none or it has no tab yet. The callback runs Herdr in the background.
+// goTo switches the terminal to the tab of the worker numbered n in Current, as the list stands now:
+// nothing if there is none, it has no tab yet, or the tabs are out of sight (no focus callback). The
+// callback runs the terminal in the background.
 func (m Dashboard) goTo(n int) {
-	if running := m.Running(); n <= min(len(running), numbered) && running[n-1].Tab != "" {
+	if running := m.Running(); m.focus != nil && n <= min(len(running), numbered) && running[n-1].Tab != "" {
 		m.focus(running[n-1].Tab)
 	}
 }

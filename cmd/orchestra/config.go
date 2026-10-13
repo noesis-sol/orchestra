@@ -17,7 +17,6 @@ import (
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
-	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -76,6 +75,9 @@ type options struct {
 	Yes          bool   // file a --feature plan without asking
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
+	terminal     string // the terminal asked for (--terminal, ORCHESTRA_TERMINAL); "" leaves it to the project
+	pane         string // orchestra's own Herdr or tmux pane; "" when it runs in neither
+	inSight      bool   // the workers' tabs are where orchestra runs, for the dashboard's number keys to go to
 }
 
 // errUnexpectedArgs is loadConfig's error for positional arguments: a run takes none.
@@ -115,15 +117,18 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	fs.SetOutput(output)
 
 	fs.StringVar(&c.Workspace, "workspace", "",
-		"Herdr workspace for the worker tabs (default: the one orchestra runs in; "+
-			"list IDs with: herdr workspace list)")
+		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
+			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list)")
+	fs.StringVar(&c.terminal, "terminal", getenv("ORCHESTRA_TERMINAL"),
+		"what workers run in: herdr, tmux, or auto for Herdr in a Herdr pane, else tmux "+
+			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
 	limit, limitProblem := envInt(getenv, "LIMIT", 40)
 	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")
 	doneSoFar, doneSoFarProblem := envInt(getenv, "DONE_SO_FAR", 0)
 	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar,
 		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"),
-		"Herdr agent kind for the workers [AGENT_KIND]")
+		"agent kind for the workers: claude, or another Herdr agent kind (Herdr only) [AGENT_KIND]")
 	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"),
 		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
 			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
@@ -269,8 +274,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	}, problems, nil
 }
 
-// checkHost finds what a run needs around the project: its repository (c.Repo), the Herdr pane it
-// runs in and the workspace for the workers' tabs (c.Workspace), and the commands it calls.
+// checkHost finds what a run needs around the project: its repository (c.Repo), the terminal the
+// workers run in and the workspace or session for their tabs (see checkTerminal), and the commands
+// it calls.
 func checkHost(ctx context.Context, c *options, getenv func(string) string) []string {
 	var problems []string
 	if repo, err := (git.Git{}).TopLevel(ctx, ""); err == nil {
@@ -278,19 +284,9 @@ func checkHost(ctx context.Context, c *options, getenv func(string) string) []st
 	} else {
 		problems = append(problems, "Not inside a git repository: cd into the project first.")
 	}
-	if c.Workspace == "" {
-		c.Workspace = herdr.CurrentWorkspace(ctx, getenv)
-	}
-	if c.Workspace == "" && getenv("HERDR_ENV") == "1" {
-		problems = append(problems, "Could not tell which Herdr workspace this pane is in. "+
-			"Find the ID with 'herdr workspace list', then run: orchestra --workspace <id>")
-	}
-	if getenv("HERDR_ENV") != "1" {
-		problems = append(problems,
-			"Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane.")
-	}
-	for _, cmd := range []string{"bd", "herdr", "git"} {
-		if _, err := exec.LookPath(cmd); err != nil {
+	problems = append(problems, checkTerminal(ctx, c, getenv)...)
+	for _, cmd := range []string{"bd", "git"} {
+		if !installed(cmd) {
 			problems = append(problems, "Required command not found: "+cmd)
 		}
 	}

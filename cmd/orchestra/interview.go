@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -24,8 +24,8 @@ import (
 // A feature typed at the start of a run ("New feature", see work.go) is talked through rather than
 // planned by the organs. orchestra starts an interactive Claude Code session in the main checkout,
 // the interview's instructions (internal/project's interview-prompt.md) appended to its system
-// prompt and the description as its first message: in a Herdr pane split off orchestra's, to its
-// right (paneSession), or, when that can't be done, on orchestra's own terminal. Claude interviews
+// prompt and the description as its first message: in a Herdr or tmux pane split off orchestra's, to
+// its right (paneSession), or, when that can't be done, on orchestra's own terminal. Claude interviews
 // the user until they share an understanding of the feature, files it in Beads as an epic and its
 // tickets once the user agrees, and names the epic in .orchestra/run/feature.json. When the session
 // ends (in a pane, orchestra ends it once claude has filed the feature and finished its turn; on the
@@ -83,7 +83,7 @@ type epicTracker interface {
 
 // runInterview talks the feature in c.Feature through in a Claude Code session, which files it,
 // then shows what was filed and asks whether to run it. The session is in a pane split off pane,
-// orchestra's own Herdr pane, or on the terminal when pane is "" or the split fails. It returns the
+// orchestra's own Herdr or tmux pane, or on the terminal when pane is "" or the split fails. It returns the
 // epic's ID, which the run is then scoped to. When there is nothing to run it returns "" and the
 // exit code; what happened has been reported.
 func runInterview(
@@ -112,8 +112,8 @@ func runInterview(
 	tracker := beads.Tracker{Repo: c.Repo}
 	session := terminal
 	if pane != "" {
-		s := paneSession{herdr: herdr.Terminal{}, pane: pane, repo: c.Repo, request: c.Feature, fallback: terminal,
-			out: stdout, err: stderr}
+		s := paneSession{panes: terminalOf(c), pane: pane, repo: c.Repo, request: c.Feature, fallback: terminal,
+			hooks: c.Terminal == project.TerminalTmux, out: stdout, err: stderr}
 		if out, ok := stdout.(*os.File); ok && isTerminal(out) {
 			s.progress = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 			s.tracker = tracker
@@ -223,7 +223,7 @@ func (f featureInterview) logLine(text string) {
 	}
 }
 
-// interviewPanes is Herdr as the interview in a pane uses it (herdr.Terminal).
+// interviewPanes is the terminal as the interview in a pane uses it (herdr.Terminal, tmux.Terminal).
 type interviewPanes interface {
 	SplitPane(ctx context.Context, pane, cwd string) (string, error)
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error
@@ -232,12 +232,15 @@ type interviewPanes interface {
 	ClosePane(ctx context.Context, pane string) error
 }
 
-// paneSession is a featureInterview's session in a Herdr pane split off orchestra's, to its right:
+// paneSession is a featureInterview's session in a pane split off orchestra's, to its right:
 // claude talks the feature through there, with its own screen and keys, while orchestra's pane stays
 // in view and says how the interview ends.
 type paneSession struct {
-	herdr    interviewPanes
-	pane     string // orchestra's own (HERDR_PANE_ID)
+	panes interviewPanes
+	pane  string // orchestra's own (HERDR_PANE_ID, TMUX_PANE)
+	// hooks has claude report through hooks, to project.InterviewRun: a terminal that reads its
+	// state from them (tmux) needs them.
+	hooks    bool
 	repo     string // the main checkout, where claude runs
 	request  string
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
@@ -297,12 +300,19 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot write the description for it: %w", err)
 	}
-	pane, err := p.herdr.SplitPane(ctx, p.pane, p.repo)
+	args := []string{"--append-system-prompt-file", prompt}
+	if p.hooks {
+		report, err := claude.Reporter{}.ReportArgsIn(p.repo, project.InterviewRun)
+		if err != nil {
+			return "", fmt.Errorf("cannot set up its hooks: %w", err)
+		}
+		args = append(args, report...)
+	}
+	pane, err := p.panes.SplitPane(ctx, p.pane, p.repo)
 	if err != nil {
 		return "", err
 	}
-	if err := p.herdr.LaunchInPane(ctx, pane, "claude", []string{"--append-system-prompt-file", prompt, "--",
-		featureLead + " @" + request}); err != nil {
+	if err := p.panes.LaunchInPane(ctx, pane, "claude", append(args, "--", featureLead+" @"+request)); err != nil {
 		return pane, err
 	}
 	return pane, p.started(ctx, pane)
@@ -314,19 +324,19 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 func (p paneSession) started(ctx context.Context, pane string) error {
 	deadline := time.Now().Add(interviewStart)
 	for {
-		_, kind, st, err := p.herdr.PaneAgent(ctx, pane)
+		_, kind, st, err := p.panes.PaneAgent(ctx, pane)
 		switch {
 		case err == nil && st != dispatch.StateGone && kind == "claude":
 			return nil
 		case err == nil && st == dispatch.StateGone:
 			// No agent in a pane that is gone, too: Herdr can't tell them apart.
-			if open, err := p.herdr.PaneOpen(ctx, pane); err == nil && !open {
+			if open, err := p.panes.PaneOpen(ctx, pane); err == nil && !open {
 				return errPaneClosed
 			}
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
-				return fmt.Errorf("claude didn't appear in pane %s within %v; Herdr could not say what it holds: %w",
+				return fmt.Errorf("claude didn't appear in pane %s within %v; the terminal could not say what it holds: %w",
 					pane, interviewStart, err)
 			}
 			return fmt.Errorf("claude didn't appear in pane %s within %v", pane, interviewStart)
@@ -360,7 +370,7 @@ func (p paneSession) wait(ctx context.Context, pane string, began time.Time) {
 		}
 		epic, err := project.FiledFeature(p.repo)
 		filed := err == nil // a file that names no epic files nothing: /exit ends that interview
-		_, _, st, err := p.herdr.PaneAgent(ctx, pane)
+		_, _, st, err := p.panes.PaneAgent(ctx, pane)
 		switch {
 		case err != nil:
 			st = "" // the line keeps the state last read
@@ -439,7 +449,7 @@ func (p paneSession) close(ctx context.Context, pane string) {
 	if pane == "" {
 		return
 	}
-	if err := p.herdr.ClosePane(context.WithoutCancel(ctx), pane); err != nil {
+	if err := p.panes.ClosePane(context.WithoutCancel(ctx), pane); err != nil {
 		fmt.Fprintf(p.err, "orchestra couldn't close the interview's pane %s: %s\n", pane,
 			dispatch.FirstLine(err.Error()))
 	}

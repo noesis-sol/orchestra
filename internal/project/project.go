@@ -432,7 +432,8 @@ func Prerequisites(repo string, getenv func(string) string) []Step {
 		mark(onPath, "bd", "install Beads")
 	}
 	mark(fileExists(filepath.Join(repo, ".beads")), "Beads", "set it up here: bd init")
-	mark(has("herdr"), "herdr", "install Herdr; workers run in its tabs")
+	mark(has("herdr") || has("tmux"), "herdr or tmux",
+		"install Herdr, or tmux (brew install tmux, apt install tmux); workers run in their tabs")
 	mark(has("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
 	return steps
 }
@@ -481,8 +482,21 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 	if len(commit) > 0 {
 		next = append(next, "Commit "+joinAnd(commit)+".")
 	}
-	next = append(next, "From a Herdr pane, on the branch finished tickets should land on:\norchestra")
+	next = append(next, startRun(func(cmd string) bool { _, err := exec.LookPath(cmd); return err == nil }))
 	return next
+}
+
+// startRun says where to start a run from, on the branch finished tickets should land on, as has
+// finds herdr and tmux: from a Herdr pane, or, with tmux, from any terminal.
+func startRun(has func(cmd string) bool) string {
+	const branch = ", on the branch finished tickets should land on:\norchestra"
+	switch herdr, tmux := has("herdr"), has("tmux"); {
+	case herdr && !tmux:
+		return "From a Herdr pane" + branch
+	case tmux && !herdr:
+		return "From any terminal (workers run in tmux)" + branch
+	}
+	return "From a Herdr pane, or any terminal with tmux" + branch
 }
 
 func wroteTemplate(steps []Step) bool {

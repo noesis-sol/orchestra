@@ -249,6 +249,7 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 	}
 
 	t.Setenv("HERDR_ENV", "")
+	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
 	errOut.Reset()
 	err = run(context.Background(), []string{"orchestra", "--feature", "Add a flag", "--yes"}, os.Getenv,
 		strings.NewReader(""), &out, &errOut)

@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Workers run in Herdr or in tmux. The project's `"terminal"` setting,
+  `--terminal` or `ORCHESTRA_TERMINAL` chooses `herdr`, `tmux` or `auto`
+  (the default): Herdr in a Herdr pane, else tmux when it is installed,
+  else a setup problem saying to run from a Herdr pane or install tmux.
+  Under tmux the workers' windows open in orchestra's own session, or,
+  outside tmux, in a detached session `orchestra-<repository folder>`
+  (`--workspace` names another), which the `START` block, the dashboard
+  and the end of the run say how to attach to; workers must be Claude Code,
+  whose hooks give their state. `.orchestra/run/state.json` records each
+  carried-over worker's terminal: a run in the other terminal keeps it for
+  a run in its own and says so. `orchestra init` checks for herdr or tmux.
+
 - A run's `START` block, and the box of a run with nothing to run, list each
   deferred ticket in the run's scope whose blockers have all closed and
   merged, with the command that reopens it: `DEFERRED_FREE: <id>: its

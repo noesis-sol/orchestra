@@ -140,7 +140,7 @@ func interviewInPaneOn(
 		fileFeature(t, repo)
 		return nil
 	}
-	session := paneSession{herdr: panes, pane: "w1:p1", repo: repo, request: paneRequest, fallback: fallback,
+	session := paneSession{panes: panes, pane: "w1:p1", repo: repo, request: paneRequest, fallback: fallback,
 		out: &out, err: &errOut}
 	if width > 0 {
 		session.progress = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
@@ -340,7 +340,7 @@ func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 		{"claude never appears", fakePanes{agent: []dispatch.AgentState{dispatch.StateGone}},
 			"claude didn't appear in pane w1:p2 within 1m0s", true, interviewStart},
 		{"Herdr can't say", fakePanes{agent: []dispatch.AgentState{""}},
-			"claude didn't appear in pane w1:p2 within 1m0s; Herdr could not say what it holds: herdr: server busy",
+			"claude didn't appear in pane w1:p2 within 1m0s; the terminal could not say what it holds: herdr: server busy",
 			true, interviewStart},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

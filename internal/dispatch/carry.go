@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -22,7 +23,8 @@ import (
 
 // loadCarried reads the workers the last run left behind and puts each where this run's asked
 // workers go, once carriedStands has checked it. One on a ticket outside this run's scope is kept
-// for a later run. It says, in the START block, what it carried over.
+// for a later run, as is one in the other terminal, which this run can't reach. It says, in the START
+// block, what it carried over and what it kept.
 func (o *Loop) loadCarried(ctx context.Context) {
 	s, err := project.LoadState(o.cfg.Repo)
 	if err != nil {
@@ -34,6 +36,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 	}
 	inScope := o.scoped(ctx)
 	var carried, kept []string
+	elsewhere := map[string][]string{} // by terminal
 	for _, e := range s.Workers {
 		if why := IDProblem(e.Ticket); why != "" {
 			o.log.Raw("", fmt.Errorf("not carrying over %q from the last run: %s", e.Ticket, why))
@@ -41,6 +44,11 @@ func (o *Loop) loadCarried(ctx context.Context) {
 		}
 		w := askedWorker{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
 			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left)}
+		if !project.SameTerminal(e.Terminal, o.cfg.Terminal) {
+			o.keptOut = append(o.keptOut, e)
+			elsewhere[e.Terminal] = append(elsewhere[e.Terminal], e.Ticket+" ("+w.state()+")")
+			continue
+		}
 		if !inScope(e.Ticket) {
 			o.keptOut = append(o.keptOut, e)
 			kept = append(kept, e.Ticket+" ("+w.state()+")")
@@ -61,6 +69,19 @@ func (o *Loop) loadCarried(ctx context.Context) {
 	if len(kept) > 0 {
 		o.info("  kept for a later run, outside this run's scope: %s", strings.Join(kept, ", "))
 	}
+	for _, t := range slices.Sorted(maps.Keys(elsewhere)) {
+		o.info("  kept for a run in %s, as this run in %s can't reach their workers: %s",
+			TerminalName(t), TerminalName(o.cfg.Terminal), strings.Join(elsewhere[t], ", "))
+	}
+}
+
+// TerminalName is the name of the terminal t (project.TerminalHerdr, project.TerminalTmux) as
+// orchestra says it: Herdr for "".
+func TerminalName(t string) string {
+	if project.SameTerminal(t, project.TerminalHerdr) {
+		return "Herdr"
+	}
+	return t
 }
 
 // state is what the worker was left waiting on, for a list of them: "asked Q", or "left running:
@@ -211,11 +232,18 @@ func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 
 // leaveBehind, as the run ends, labels the tickets it leaves running (leaveRunning) and those
 // waiting on a question (leaveAsked), and saves their workers for the next run. ctx is the run's,
-// which tells leaveAsked whether Ctrl+C came; the labelling goes on regardless.
+// which tells leaveAsked whether Ctrl+C came; the labelling goes on regardless. When workers run
+// out of the maintainer's sight (Config.Watch) and some are left in their tabs, it says how to see them.
 func (o *Loop) leaveBehind(ctx context.Context) {
 	o.leaveRunning(context.WithoutCancel(ctx))
 	o.leaveAsked(ctx)
-	o.saveCarried(context.WithoutCancel(ctx))
+	left := o.saveCarried(context.WithoutCancel(ctx))
+	o.mu.Lock()
+	left = left || len(o.unmerged) > 0
+	o.mu.Unlock()
+	if left && o.cfg.Watch != "" {
+		o.info("  to see their tabs: %s", o.cfg.Watch)
+	}
 }
 
 // saveCarried writes the workers this run leaves behind for the next one, as it ends: those on
@@ -224,16 +252,17 @@ func (o *Loop) leaveBehind(ctx context.Context) {
 // for the maintainer to finish (see workerNames). It notes where each one's branch was cut from Base,
 // unless that is known already, so that the next run takes only the branch's own commits for its
 // merge: a worker waiting on a question has no ForkKey (see carriedStands). It says which, and warns
-// when they can't be saved: the next run then carries none of them over.
-func (o *Loop) saveCarried(ctx context.Context) {
+// when they can't be saved: the next run then carries none of them over. It reports whether it left
+// any of this run's workers in their tabs.
+func (o *Loop) saveCarried(ctx context.Context) bool {
 	var left []project.LeftWorker
 	var said []string
 	add := func(id string, w askedWorker) {
 		if w.fork == "" {
 			w.fork = o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
 		}
-		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Tab: w.tab, Pane: w.pane,
-			Worktree: w.wt, Fork: w.fork, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title,
+		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Terminal: o.cfg.Terminal,
+			Tab: w.tab, Pane: w.pane, Worktree: w.wt, Fork: w.fork, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title,
 			Left: string(w.left)})
 		said = append(said, id+" ("+w.state()+")")
 	}
@@ -260,12 +289,13 @@ func (o *Loop) saveCarried(ctx context.Context) {
 				"  STATE_UNSAVED: could not write %s%s; the next run won't carry over %s",
 				project.RunPath(project.StateName), because(err), strings.Join(ticketsOf(left), ", "))})
 		}
-		return
+		return len(said) > 0
 	}
 	if len(said) > 0 {
 		slices.Sort(said)
 		o.info("  left for the next run: %s", strings.Join(said, ", "))
 	}
+	return len(said) > 0
 }
 
 // ticketsOf is the tickets of the workers left.

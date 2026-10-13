@@ -8,13 +8,13 @@ import (
 )
 
 // hintLine says which keys do what, each key brighter than what it does: the workers' numbers go to
-// their tabs (not while the stop question is open), and s stops after the running tickets, or once
-// asked goes on taking them; a run stopping for another reason has no s to offer. Ctrl+C needs no
-// hint. A narrow pane gets a shorter form, and then one without the numbers; with no key to name,
-// the line is empty.
+// their tabs (not while the stop question is open, nor when the tabs are out of sight), and s stops
+// after the running tickets, or once asked goes on taking them; a run stopping for another reason
+// has no s to offer. Ctrl+C needs no hint. A narrow pane gets a shorter form, and then one without
+// the numbers; with no key to name, the line is empty.
 func (m Dashboard) hintLine(w int) string {
 	var keys []keyHint
-	if n := min(len(m.active), numbered); n > 0 && !m.asking {
+	if n := min(len(m.active), numbered); n > 0 && !m.asking && m.focus != nil {
 		k := keyHint{key: "1", does: "go to the worker's tab", short: "worker tab"}
 		if n > 1 {
 			k.key, k.does = fmt.Sprintf("1–%d", n), "go to a worker's tab"

@@ -56,7 +56,7 @@ func runInit(
 	verifier := fs.Bool("verifier", false, "write "+project.VerifierPath+", a subagent that checks each ticket's "+
 		"change against the ticket in a fresh context, and have the worker prompt run it before a worker closes "+
 		"its ticket (asked when omitted; =false declines)")
-	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' Herdr agent kind, "+
+	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' agent kind, "+
 		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
 		"[AGENT_KIND]")
 	var concurrent int

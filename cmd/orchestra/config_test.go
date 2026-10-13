@@ -36,7 +36,7 @@ func configFixture(t *testing.T, settings string) string {
 	}
 	t.Chdir(repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL", "ORGAN_EFFORT", "WORKER_EFFORT",
-		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE", "ORCHESTRA_TICKET"} {
+		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE", "ORCHESTRA_TICKET", "ORCHESTRA_TERMINAL", "TMUX", "TMUX_PANE"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("HERDR_ENV", "1")
@@ -282,6 +282,7 @@ func TestConfigSetupProblems(t *testing.T) {
 	}
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("HERDR_WORKSPACE_ID", "")
+	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
 	t.Setenv("LIMIT", "many")
 	_, p := loadWith(t)
 	joined := strings.Join(p, "\n")

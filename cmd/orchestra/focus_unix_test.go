@@ -12,6 +12,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
+	"github.com/noesis-sol/orchestra/internal/herdr"
 )
 
 // The dashboard's focus callback returns while Herdr is still at it, and a failure ends up in the
@@ -31,7 +32,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	}
 	defer func() { _ = log.Close() }() // the test reads the file itself
 
-	focusTab(context.Background(), log)("w1:t9")
+	focusTab(context.Background(), log, herdr.Terminal{})("w1:t9")
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

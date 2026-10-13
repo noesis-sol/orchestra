@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -67,7 +66,11 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	// The dashboard draws on the alternate screen, which leaves the earlier output as it was and has
 	// no scrollback: a terminal that reflows a frame as the pane resizes can't push its rows out of
 	// Bubble Tea's reach, as it can on the normal screen.
-	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focusTab(ctx, r.log)),
+	var focus func(tab string) // none when the workers' tabs are out of orchestra's sight
+	if r.cfg.inSight {
+		focus = focusTab(ctx, r.log, terminalOf(r.cfg))
+	}
+	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focus),
 		tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
@@ -140,13 +143,15 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	return code
 }
 
-// focusTab is the dashboard's callback for a worker's number: it switches Herdr to the worker's tab
-// in the background, as the dashboard mustn't wait on Herdr. A failure goes to the log and changes
-// nothing on screen.
-func focusTab(ctx context.Context, log *dispatch.Log) func(tab string) {
+// focusTab is the dashboard's callback for a worker's number: it switches the terminal to the
+// worker's tab in the background, as the dashboard mustn't wait on it. A failure goes to the log and
+// changes nothing on screen.
+func focusTab(ctx context.Context, log *dispatch.Log, terminal interface {
+	FocusTab(ctx context.Context, tab string) error
+}) func(tab string) {
 	return func(tab string) {
 		go func() {
-			if err := (herdr.Terminal{}).FocusTab(ctx, tab); err != nil {
+			if err := terminal.FocusTab(ctx, tab); err != nil {
 				log.Raw("", fmt.Errorf("cannot switch to tab %s from the dashboard: %w", tab, err))
 			}
 		}()

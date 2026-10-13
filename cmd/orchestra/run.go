@@ -16,7 +16,6 @@ import (
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
-	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -124,7 +123,7 @@ func run(
 	started := time.Now() // the run's start, as its lock and each record of its event stream give it
 	holder := project.Holder{
 		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
-		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: getenv("HERDR_PANE_ID"),
+		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: cfg.pane,
 	}
 	lock, lockErr := project.LockRun(ctx, cfg.Repo, holder)
 	var held *project.HeldError
@@ -264,13 +263,13 @@ func termWidth(out *os.File) int {
 	return 80
 }
 
-// newLoop makes the run's loop on Beads, Herdr, git and the workers' reports, its organs advising
-// under organCtx. Organs that can't run are turned off in cfg, and the log says so.
+// newLoop makes the run's loop on Beads, the terminal (Herdr or tmux), git and the workers' reports,
+// its organs advising under organCtx. Organs that can't run are turned off in cfg, and the log says so.
 func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt string) *dispatch.Loop {
 	cfg.Version = buildVersion()
 	organsOff := organ.Unavailable("claude")
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
-	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, herdr.Terminal{}, git.Git{}
+	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, terminalOf(*cfg), git.Git{}
 	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,

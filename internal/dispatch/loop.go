@@ -402,7 +402,9 @@ func because(err error) string {
 type Config struct {
 	Repo         string
 	Base         string // branch finished tickets are merged into
-	Workspace    string // Herdr workspace for the worker tabs
+	Workspace    string // Herdr workspace or tmux session for the worker tabs
+	Terminal     string // what workers run in, project.TerminalHerdr or TerminalTmux; "" is Herdr
+	Watch        string // how to see the workers' tabs from elsewhere (tmux attach -t …); "" if in sight
 	Limit        int
 	DoneSoFar    int
 	AgentKind    string

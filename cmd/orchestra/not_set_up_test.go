@@ -22,7 +22,7 @@ func TestRunSaysToRunInitFirst(t *testing.T) {
 
 	// What init doesn't fix is still listed, after it.
 	git(repo, "checkout", "-q", "--detach")
-	_, stderr, err := runIn(t, repo, nil)
+	_, stderr, err := runIn(t, repo, map[string]string{"ORCHESTRA_TERMINAL": "herdr"})
 	if exitOf(err) != 2 || !strings.HasPrefix(stderr, notSetUpMessage+"\n\nAlso fix before a run:\n  - ") {
 		t.Errorf("exit %d, stderr:\n%s", exitOf(err), stderr)
 	}

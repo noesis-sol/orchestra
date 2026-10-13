@@ -22,10 +22,13 @@ const StateName = "state.json"
 // LeftWorker is a worker a run left behind in its tab, as the next run reads it.
 type LeftWorker struct {
 	Ticket string `json:"ticket"`
-	Agent  string `json:"agent"` // its Herdr name
-	Tab    string `json:"tab"`
-	// The pane it was started in, where the next run looks for it when Herdr has no agent under its
-	// name: one whose start the run cut short came up unnamed. Empty when not known.
+	Agent  string `json:"agent"` // its agent name in the terminal
+	// The terminal it runs in, TerminalHerdr or TerminalTmux: a run in the other can't reach it, and
+	// keeps it for a run in its own. Empty for Herdr.
+	Terminal string `json:"terminal,omitempty"`
+	Tab      string `json:"tab"`
+	// The pane it was started in, where the next run looks for it when the terminal has no agent
+	// under its name: one whose start the run cut short came up unnamed. Empty when not known.
 	Pane     string `json:"pane,omitempty"`
 	Worktree string `json:"worktree"`
 	// The commit on Base its branch was cut from (their merge-base), as the run that left it found

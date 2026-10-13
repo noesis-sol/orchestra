@@ -32,7 +32,7 @@ func exitOf(err error) int {
 }
 
 func TestRunReportsSetupProblemsAndExits2(t *testing.T) {
-	_, stderr, err := runIn(t, t.TempDir(), nil)
+	_, stderr, err := runIn(t, t.TempDir(), map[string]string{"ORCHESTRA_TERMINAL": "herdr"})
 	if exitOf(err) != 2 {
 		t.Errorf("exit = %d (%v)", exitOf(err), err)
 	}

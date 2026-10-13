@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // SoloState is the ticket labelled SoloLabel that runs alone, or, with Next, the one next in line
@@ -193,10 +194,18 @@ func (o *Loop) begin(ctx context.Context) {
 	if c.TicketLimit > 0 {
 		ticketLimit = command.ShortDuration(c.TicketLimit)
 	}
+	workspace := "workspace"
+	if project.SameTerminal(c.Terminal, project.TerminalTmux) {
+		workspace = "session"
+	}
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
-		"check timeout: %s, workspace: %s, agent: %s, worktrees: %s, MCP servers: %s)",
+		"check timeout: %s, terminal: %s, %s: %s, agent: %s, worktrees: %s, MCP servers: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, c.Limit, c.Concurrency, ticketLimit,
-		command.ShortDuration(o.checkTimeout()), c.Workspace, c.AgentKind, c.WTRoot, c.mcpLabel())
+		command.ShortDuration(o.checkTimeout()), TerminalName(c.Terminal), workspace, c.Workspace, c.AgentKind,
+		c.WTRoot, c.mcpLabel())
+	if c.Watch != "" {
+		o.info("  to see the workers' tabs: %s", c.Watch)
+	}
 	if c.Feature != "" {
 		o.info("  feature: epic %s, planned from: %s", c.Ticket, FeatureLine(c.Feature))
 	}
