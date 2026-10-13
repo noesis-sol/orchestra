@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/noesis-sol/orchestra/internal/cmux"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/herdr"
@@ -13,17 +14,21 @@ import (
 	"github.com/noesis-sol/orchestra/internal/tmux"
 )
 
-// Workers run in Herdr or in tmux: the project's "terminal" setting, --terminal or ORCHESTRA_TERMINAL
-// chooses, or, left to auto, orchestra picks Herdr when it runs in a Herdr pane, else tmux when tmux
-// is installed. Under tmux the workers' windows open in orchestra's own session when it runs in
-// tmux, else in a detached session of their own that the maintainer attaches to.
+// Workers run in Herdr, tmux or cmux: the project's "terminal" setting, --terminal or
+// ORCHESTRA_TERMINAL chooses, or, left to auto, orchestra picks the one it runs in (Herdr in a Herdr
+// pane, tmux in tmux, cmux in a cmux terminal), else tmux when tmux is installed. Under tmux the
+// workers' windows open in orchestra's own session when it runs in tmux, else in a detached session
+// of their own that the maintainer attaches to. Under cmux each worker has a workspace of its own,
+// in orchestra's window.
 
-// noTerminal is the problem of a run left to choose its terminal that finds neither.
-const noTerminal = "No terminal for the workers: run orchestra from a Herdr pane, or install tmux " +
-	"(brew install tmux, apt install tmux) to run it anywhere."
+// noTerminal is the problem of a run left to choose its terminal that finds none.
+const noTerminal = "No terminal for the workers: run orchestra from a Herdr pane or a cmux terminal, or install " +
+	"tmux (brew install tmux, apt install tmux) to run it anywhere."
 
-// pickTerminal chooses the terminal for choice (project.TerminalHerdr, TerminalTmux or TerminalAuto):
-// auto is Herdr in a Herdr pane, else tmux when has finds it, else none, and the problem says so.
+// pickTerminal chooses the terminal for choice (project.TerminalHerdr, TerminalTmux, TerminalCmux or
+// TerminalAuto): auto is the terminal orchestra runs in, the innermost first (Herdr in a Herdr pane,
+// tmux in tmux, cmux in a cmux terminal), else tmux when has finds it, else none, and the problem
+// says so.
 func pickTerminal(choice string, getenv func(string) string, has func(cmd string) bool) (string, string) {
 	if choice != project.TerminalAuto {
 		return choice, ""
@@ -31,6 +36,10 @@ func pickTerminal(choice string, getenv func(string) string, has func(cmd string
 	switch {
 	case getenv("HERDR_ENV") == "1":
 		return project.TerminalHerdr, ""
+	case getenv("TMUX") != "" && has("tmux"):
+		return project.TerminalTmux, ""
+	case getenv("CMUX_WORKSPACE_ID") != "":
+		return project.TerminalCmux, ""
 	case has("tmux"):
 		return project.TerminalTmux, ""
 	}
@@ -61,8 +70,11 @@ func checkTerminal(ctx context.Context, c *options, getenv func(string) string) 
 		return []string{problem}
 	}
 	c.Terminal = t
-	if t == project.TerminalTmux {
+	switch t {
+	case project.TerminalTmux:
 		return checkTmux(ctx, c, getenv)
+	case project.TerminalCmux:
+		return checkCmux(ctx, c, getenv)
 	}
 	return checkHerdr(ctx, c, getenv)
 }
@@ -135,6 +147,40 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 	return problems
 }
 
+// checkCmux finds the cmux terminal orchestra runs in: each worker's workspace opens in its window,
+// and the interview splits its surface. cmux answers only processes started in its terminals, so
+// outside one it can't be used. As under tmux, workers must be Claude Code, whose hooks say what
+// they are doing, and the probe's worker reports through hooks too.
+func checkCmux(ctx context.Context, c *options, getenv func(string) string) []string {
+	var problems []string
+	if !c.ClaudeWorkers() {
+		problems = append(problems, "Workers in cmux must be Claude Code (got -agent "+c.AgentKind+", or AGENT_KIND): "+
+			"only Claude workers report through hooks, which tell orchestra what they are doing. "+
+			"Run from a Herdr pane for other agents.")
+	}
+	if c.Workspace != "" {
+		problems = append(problems, "--workspace has no use under cmux, where each worker has a workspace of its own: "+
+			"leave it out.")
+	}
+	c.ProbeHooks = true
+	c.pane, c.cmuxWorkspace, c.inSight = getenv("CMUX_SURFACE_ID"), getenv("CMUX_WORKSPACE_ID"), true
+	switch {
+	case cmux.Bin() == "":
+		problems = append(problems, "Required command not found: cmux (the workers' terminal). Install cmux "+
+			"(https://cmux.com), or choose another: orchestra --terminal tmux")
+	case c.cmuxWorkspace == "":
+		problems = append(problems, "Not running inside a cmux terminal (CMUX_WORKSPACE_ID is not set), and cmux "+
+			"answers only programs started in its terminals. Run orchestra from a cmux terminal, "+
+			"or choose another: orchestra --terminal tmux")
+	default:
+		if err := (cmux.Terminal{}).Ping(ctx); err != nil {
+			problems = append(problems, "cmux doesn't answer ("+dispatch.FirstLine(err.Error())+"). "+
+				"Run orchestra from a cmux terminal, or choose another: orchestra --terminal tmux")
+		}
+	}
+	return problems
+}
+
 // plainWord is a word a shell takes as it is.
 var plainWord = regexp.MustCompile(`^[A-Za-z0-9_.,:/@%+=-]+$`)
 
@@ -159,8 +205,11 @@ type workerTerminal interface {
 
 // terminalOf is c's terminal.
 func terminalOf(c options) workerTerminal {
-	if c.Terminal == project.TerminalTmux {
+	switch c.Terminal {
+	case project.TerminalTmux:
 		return tmuxSession{repo: c.Repo}
+	case project.TerminalCmux:
+		return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.cmuxWorkspace}
 	}
 	return herdr.Terminal{}
 }

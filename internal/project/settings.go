@@ -76,8 +76,9 @@ type Settings struct {
 	// OrganEffort is the effort of every organ, unless --organ-effort says otherwise. Empty: each
 	// organ's own, low for triage and the predictor and medium for the run report.
 	OrganEffort string `json:"organ_effort,omitempty"`
-	// Terminal is where workers run, TerminalHerdr or TerminalTmux, unless --terminal or
-	// ORCHESTRA_TERMINAL says otherwise. Empty or TerminalAuto: Herdr in a Herdr pane, else tmux.
+	// Terminal is where workers run, TerminalHerdr, TerminalTmux or TerminalCmux, unless --terminal
+	// or ORCHESTRA_TERMINAL says otherwise. Empty or TerminalAuto: Herdr in a Herdr pane, cmux in a
+	// cmux terminal, else tmux.
 	Terminal string `json:"terminal,omitempty"`
 }
 
@@ -378,11 +379,12 @@ func ResolveEffort(flagValue, key, setting string) (string, error) {
 const (
 	TerminalHerdr = "herdr"
 	TerminalTmux  = "tmux"
+	TerminalCmux  = "cmux"
 	TerminalAuto  = "auto"
 )
 
 // Terminals are the choices of terminal, as a problem lists them.
-var Terminals = []string{TerminalHerdr, TerminalTmux, TerminalAuto}
+var Terminals = []string{TerminalHerdr, TerminalTmux, TerminalCmux, TerminalAuto}
 
 // ResolveTerminal picks a run's terminal: flagValue (from --terminal or ORCHESTRA_TERMINAL) unless
 // it is empty, else the project's setting, else TerminalAuto, for the run to choose where it runs.

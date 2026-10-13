@@ -139,7 +139,7 @@ func TestConfigTerminalPrecedence(t *testing.T) {
 		t.Errorf("--terminal auto in a Herdr pane: terminal %q, problems %v", c.Terminal, p)
 	}
 	_, p := loadWith(t, "--terminal", "screen")
-	if len(p) != 1 || !strings.Contains(p[0], "--terminal") || !strings.Contains(p[0], "herdr, tmux, auto") {
+	if len(p) != 1 || !strings.Contains(p[0], "--terminal") || !strings.Contains(p[0], "herdr, tmux, cmux, auto") {
 		t.Errorf("--terminal screen: problems %v", p)
 	}
 }
@@ -147,7 +147,7 @@ func TestConfigTerminalPrecedence(t *testing.T) {
 func TestConfigRefusesAnUnknownTerminalSetting(t *testing.T) {
 	configFixture(t, `{"terminal": "screen"}`)
 	_, p := loadWith(t)
-	if len(p) != 1 || !strings.Contains(p[0], "terminal must be one of herdr, tmux, auto (got 'screen')") {
+	if len(p) != 1 || !strings.Contains(p[0], "terminal must be one of herdr, tmux, cmux, auto (got 'screen')") {
 		t.Errorf("problems %v", p)
 	}
 }

@@ -113,7 +113,7 @@ func runInterview(
 	session := terminal
 	if pane != "" {
 		s := paneSession{panes: terminalOf(c), pane: pane, repo: c.Repo, request: c.Feature, fallback: terminal,
-			hooks: c.Terminal == project.TerminalTmux, out: stdout, err: stderr}
+			hooks: !project.SameTerminal(c.Terminal, project.TerminalHerdr), out: stdout, err: stderr}
 		if out, ok := stdout.(*os.File); ok && isTerminal(out) {
 			s.progress = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 			s.tracker = tracker
@@ -223,7 +223,8 @@ func (f featureInterview) logLine(text string) {
 	}
 }
 
-// interviewPanes is the terminal as the interview in a pane uses it (herdr.Terminal, tmux.Terminal).
+// interviewPanes is the terminal as the interview in a pane uses it (herdr.Terminal, tmux.Terminal,
+// cmux.Terminal).
 type interviewPanes interface {
 	SplitPane(ctx context.Context, pane, cwd string) (string, error)
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error
@@ -237,9 +238,9 @@ type interviewPanes interface {
 // in view and says how the interview ends.
 type paneSession struct {
 	panes interviewPanes
-	pane  string // orchestra's own (HERDR_PANE_ID, TMUX_PANE)
+	pane  string // orchestra's own (HERDR_PANE_ID, TMUX_PANE, CMUX_SURFACE_ID)
 	// hooks has claude report through hooks, to project.InterviewRun: a terminal that reads its
-	// state from them (tmux) needs them.
+	// state from them (tmux, cmux) needs them.
 	hooks    bool
 	repo     string // the main checkout, where claude runs
 	request  string

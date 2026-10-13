@@ -8,6 +8,19 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Workers can run in [cmux](https://cmux.com), each in a workspace of its
+  own in orchestra's window, named with its ticket's ID: `"terminal":
+  "cmux"`, `--terminal cmux`, or auto from a cmux terminal (Herdr in a
+  Herdr pane and tmux in tmux come first). orchestra addresses cmux's
+  workspaces and terminals by UUID, never by short refs, keeps those it
+  opened in `.orchestra/run/cmux.json`, and closes only a workspace it
+  opened that still has its ticket's name, checking afterwards that the
+  right one went. As under tmux, workers must be Claude Code, whose hooks
+  give their state; the feature interview splits orchestra's terminal. cmux
+  answers only programs started in its terminals, so a run choosing cmux
+  must start in one. `docs/development.md` has the checks to run by hand
+  before a release that changes the adapter.
+
 - Workers run in Herdr or in tmux. The project's `"terminal"` setting,
   `--terminal` or `ORCHESTRA_TERMINAL` chooses `herdr`, `tmux` or `auto`
   (the default): Herdr in a Herdr pane, else tmux when it is installed,

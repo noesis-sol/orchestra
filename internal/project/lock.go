@@ -40,7 +40,7 @@ type Holder struct {
 	Branch  string    `json:"branch,omitempty"`  // the main checkout's, where finished tickets land
 	Ticket  string    `json:"ticket,omitempty"`  // --ticket: the run is scoped to it
 	Feature string    `json:"feature,omitempty"` // --feature: the request
-	Pane    string    `json:"pane,omitempty"`    // the Herdr or tmux pane it runs in (HERDR_PANE_ID, TMUX_PANE)
+	Pane    string    `json:"pane,omitempty"`    // its Herdr or tmux pane, or cmux surface
 }
 
 // RunLock is a run's hold on the lock of its repository (see LockRun).

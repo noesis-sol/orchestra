@@ -105,6 +105,16 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.
 
+## Checking the cmux adapter by hand
+
+cmux is a macOS app whose socket only answers processes started in its own terminals, so neither CI nor the check can run it: `internal/cmux`'s tests run a fake cmux. Before a release that changes the adapter, run these by hand in cmux, from a cmux terminal in a scratch repository with a few small tickets (`--terminal cmux`, or auto), and note the result on the ticket:
+
+1. **One ticket end to end.** A worker's workspace opens in the sidebar, named with the ticket's ID, without taking the focus; the worker gets its prompt, works, closes the ticket, and orchestra merges it and closes that workspace, and only it: orchestra's own and the user's other workspaces stay.
+2. **A permission prompt.** A worker that asks for a permission shows as blocked on the dashboard; allowed in its workspace, it goes on working.
+3. **Ctrl+C and carry-over.** Ctrl+C in orchestra's terminal while a worker works leaves its workspace running; the next run carries it over by its workspace's UUID and merges its ticket. Quit cmux with a worker running, start it again and run orchestra: cmux restores the workspace but not claude, and the worker is resumed from its session in a new workspace.
+4. **The interview.** A new feature typed at the first question opens claude in a split to the right of orchestra's terminal; once the feature is filed the split closes, and orchestra's terminal has the focus back.
+5. **The 1–9 keys.** A worker's number on the dashboard selects its workspace.
+
 ## Releasing
 
 A release is a commit on main and a tag; the release workflow does the rest. Nothing in the code carries the version: a release's binaries get it from the tag (`-X main.version=vX.Y.Z`, which `buildVersion` in `cmd/orchestra/run.go` reads), and `go install …@vX.Y.Z` from the module's version.

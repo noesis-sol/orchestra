@@ -75,7 +75,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 	}
 }
 
-// TerminalName is the name of the terminal t (project.TerminalHerdr, project.TerminalTmux) as
+// TerminalName is the name of the terminal t (project.TerminalHerdr, TerminalTmux, TerminalCmux) as
 // orchestra says it: Herdr for "".
 func TerminalName(t string) string {
 	if project.SameTerminal(t, project.TerminalHerdr) {

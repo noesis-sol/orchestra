@@ -76,8 +76,10 @@ type options struct {
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 	terminal     string // the terminal asked for (--terminal, ORCHESTRA_TERMINAL); "" leaves it to the project
-	pane         string // orchestra's own Herdr or tmux pane; "" when it runs in neither
-	inSight      bool   // the workers' tabs are where orchestra runs, for the dashboard's number keys to go to
+	pane         string // orchestra's own Herdr or tmux pane, or cmux surface; "" when it runs in none
+	// orchestra's own cmux workspace (CMUX_WORKSPACE_ID), which the run never closes; "" outside cmux
+	cmuxWorkspace string
+	inSight       bool // the workers' tabs are where orchestra runs, for the dashboard's number keys to go to
 }
 
 // errUnexpectedArgs is loadConfig's error for positional arguments: a run takes none.
@@ -118,9 +120,10 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 
 	fs.StringVar(&c.Workspace, "workspace", "",
 		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
-			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list)")
+			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list); "+
+			"none under cmux, where each worker has a workspace of its own")
 	fs.StringVar(&c.terminal, "terminal", getenv("ORCHESTRA_TERMINAL"),
-		"what workers run in: herdr, tmux, or auto for Herdr in a Herdr pane, else tmux "+
+		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
 	limit, limitProblem := envInt(getenv, "LIMIT", 40)
 	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")

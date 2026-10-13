@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/noesis-sol/orchestra/main/scripts/i
 
 [The script](scripts/install.sh) installs the latest signed release for darwin or linux, amd64 or arm64, in `/usr/local/bin` or `~/.local/bin`. Or with Go: `go install github.com/noesis-sol/orchestra/cmd/orchestra@latest`.
 
-`orchestra update` updates it (`sudo orchestra update` where its folder is root's), and `orchestra --version` says which you have. orchestra needs `herdr` or `tmux` (`brew install tmux`, `apt install tmux`), `git`, `claude` and `bd` (which `orchestra init` can install).
+`orchestra update` updates it (`sudo orchestra update` where its folder is root's), and `orchestra --version` says which you have. orchestra needs `herdr`, `tmux` (`brew install tmux`, `apt install tmux`) or [cmux](https://cmux.com) ([docs/running.md](docs/running.md#workers-in-cmux)) for the workers, `git`, `claude` and `bd` (which `orchestra init` can install).
 
 [docs/install.md](docs/install.md) has the rest: what the script checks and its variables, building from a clone, how `update` verifies a release, build provenance, the newer-release notice and reading a clone's version.
 

@@ -23,8 +23,8 @@ const StateName = "state.json"
 type LeftWorker struct {
 	Ticket string `json:"ticket"`
 	Agent  string `json:"agent"` // its agent name in the terminal
-	// The terminal it runs in, TerminalHerdr or TerminalTmux: a run in the other can't reach it, and
-	// keeps it for a run in its own. Empty for Herdr.
+	// The terminal it runs in, TerminalHerdr, TerminalTmux or TerminalCmux: a run in another can't
+	// reach it, and keeps it for a run in its own. Empty for Herdr.
 	Terminal string `json:"terminal,omitempty"`
 	Tab      string `json:"tab"`
 	// The pane it was started in, where the next run looks for it when the terminal has no agent
