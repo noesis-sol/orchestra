@@ -35,6 +35,8 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- On init's "Tickets at the same time", options 2 and 3 no longer share one
+  note: 3 adds a machine with room for three workers and their checks.
 - `orchestra init`'s MCP server options wrap between words at the
   terminal's width, the rest of a long one under its label, instead of
   running past the edge and wrapping back to the margin.

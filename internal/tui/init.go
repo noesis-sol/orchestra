@@ -151,8 +151,8 @@ func (u InitScreen) SignOff(ready bool) {
 var concurrencyNotes = []string{
 	"one at a time (safest)",
 	"checks must cope with running side by side",
-	"checks must cope with running side by side",
-	"a busy machine",
+	"that, and room for three workers and their checks",
+	"that, for four: a busy machine",
 }
 
 // customConcurrency is the value of the "Custom…" option, whose number is typed in an input. It
