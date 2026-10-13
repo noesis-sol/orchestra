@@ -441,6 +441,10 @@ type Config struct {
 	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
 	// worker without a ticket is started to see whether commands run again; 0 for none.
 	EnvProbe time.Duration
+	// ProbeHooks has the probe's Claude worker report through hooks, as a ticket's does, to
+	// project.ProbeRun in Repo's .orchestra/run/: a terminal that reads its workers' state from their
+	// hooks (tmux), not their screens (Herdr), needs them to tell what it is doing.
+	ProbeHooks bool
 	// MCP is the MCP servers Claude workers get and no others: those mcp_servers in
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.

@@ -98,6 +98,9 @@ type Reporter interface {
 	EditedFiles(worktree string) []string         // repository files the worker has edited so far
 	Session(worktree string) (Session, bool)      // the worker's session, false when there is none to resume
 	TranscriptTail(worktree string) string        // the end of its session's transcript, as text; "" if unreadable
+	// ReportArgs for a worker with no worktree of its own, its records in the folder of that name in
+	// dir's .orchestra/run/ (project.ProbeRun, project.InterviewRun)
+	ReportArgsIn(dir, folder string) ([]string, error)
 }
 
 // Session is a Claude Code worker's session, as its hooks recorded it: resumed (claude --resume),

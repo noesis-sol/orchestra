@@ -229,17 +229,24 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
 	}
-	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, c.Repo, probeID)
-	if err != nil {
-		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
-	}
-	deadline := time.Now().Add(probeLimit)
 	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
 	// refuses the argument.
 	var args []string
 	if c.ClaudeWorkers() {
 		args = []string{"--strict-mcp-config"}
+		if c.ProbeHooks && o.reporter != nil {
+			report, err := o.reporter.ReportArgsIn(c.Repo, project.ProbeRun)
+			if err != nil {
+				return "", fmt.Errorf("cannot set it up to report what it does: %w", err)
+			}
+			args = append(args, report...)
+		}
 	}
+	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, c.Repo, probeID)
+	if err != nil {
+		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
+	}
+	deadline := time.Now().Add(probeLimit)
 	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
 	if err != nil && len(args) > 0 && o.starter.IsArgumentRefused(err) {
 		o.log.Raw("", err)

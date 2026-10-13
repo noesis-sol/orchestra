@@ -33,6 +33,13 @@ func RunPath(name string) string {
 	return filepath.Join(Dir, RunName, name)
 }
 
+// The folders in the main checkout's .orchestra/run/ where a Claude session with no ticket, and so no
+// worktree of its own, has its hooks write their records, apart from a ticket's and each other's.
+const (
+	ProbeRun     = "probe-session"     // the environment probe's worker
+	InterviewRun = "interview-session" // the feature interview's claude
+)
+
 // OpenRun opens an os.Root at the checkout dir and makes .orchestra/run/ in it, for the caller to
 // reach the files there by their RunPath, and to close. A .orchestra or .orchestra/run that is a
 // symlink, wherever it points, is an *EscapeError whose Err is ErrRunLink. Orchestra writes there

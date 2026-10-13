@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,8 @@ const (
 	turnName     = "turn.json"     // the last turn's end (Stop) or start (UserPromptSubmit), written by the hooks
 	editsName    = "edits"         // the paths the worker edits, one per line, appended by the hooks
 	sessionName  = "session.json"  // the worker's Claude Code session, written by its SessionStart hook
-	eventsName   = "events"        // permission prompts, compactions and subagents, one per line, appended by the hooks
+	eventsName   = "events"        // permission prompts, compactions, subagents and sessions, one per line, appended
+	noticeName   = "notice.json"   // the last notification (a dialog shown, waiting on input), written by the hooks
 )
 
 // Reporter sets workers up to report what they are doing and reads what they reported.
@@ -33,8 +33,18 @@ type Reporter struct{}
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
 func (Reporter) ReportArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, activityName, turnName, editsName, sessionName, eventsName)
+	return reportArgs(worktree, "", allRecords...)
 }
+
+// ReportArgsIn is ReportArgs for a Claude session with no worktree of its own, such as the
+// environment probe's worker (project.ProbeRun) or the feature interview (project.InterviewRun): its
+// hooks write to the folder of that name in dir's .orchestra/run/, apart from a ticket's records.
+func (Reporter) ReportArgsIn(dir, folder string) ([]string, error) {
+	return reportArgs(dir, folder, allRecords...)
+}
+
+// allRecords are the files the hooks write, all of them an earlier session's for a new one.
+var allRecords = []string{activityName, turnName, editsName, sessionName, eventsName, noticeName}
 
 // ResumeArgs is ReportArgs for a worker resuming the session of the one before it in worktree: the
 // files that one edited are kept, as the resumed worker carries on its work, and so is its session,
@@ -42,36 +52,50 @@ func (Reporter) ReportArgs(worktree string) ([]string, error) {
 // were the start to fail, as when Herdr is down, the next run still finds the session to resume.
 // Its other records are removed: the subagents its process ran ended with it.
 func (Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, activityName, turnName, eventsName)
+	return reportArgs(worktree, "", activityName, turnName, eventsName, noticeName)
 }
 
-// reportArgs is ReportArgs, removing the earlier worker's records named stale.
-func reportArgs(worktree string, stale ...string) ([]string, error) {
-	root, err := project.OpenRun(worktree)
+// reportArgs is ReportArgsIn, removing the earlier session's records named stale; folder "" is
+// dir's .orchestra/run/ itself. A file or a symlink in place of the folder, wherever it points, is
+// replaced by it, as WriteRun replaces a symlink in place of a file: the records are written through
+// no link.
+func reportArgs(dir, folder string, stale ...string) ([]string, error) {
+	root, err := project.OpenRun(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := func(name string) string { return project.RunPath(filepath.Join(folder, name)) }
+	if folder != "" {
+		if fi, err := root.Lstat(rel("")); err == nil && !fi.IsDir() {
+			if err := root.Remove(rel("")); err != nil { // a link itself, not what it points to
+				return nil, project.RunError(dir, rel(""), err)
+			}
+		}
+		if err := root.MkdirAll(rel(""), 0o755); err != nil {
+			return nil, project.RunError(dir, rel(""), err)
+		}
+	}
 	for _, name := range stale {
-		if err := project.RemoveRun(root, worktree, project.RunPath(name)); err != nil {
+		if err := project.RemoveRun(root, dir, rel(name)); err != nil {
 			return nil, err
 		}
 	}
-	activity := filepath.Join(worktree, project.RunPath(activityName))
-	turn := filepath.Join(worktree, project.RunPath(turnName))
-	edits := filepath.Join(worktree, project.RunPath(editsName))
-	session := filepath.Join(worktree, project.RunPath(sessionName))
-	events := filepath.Join(worktree, project.RunPath(eventsName))
-	b, err := json.MarshalIndent(hookSettings(activity, turn, edits, session, events), "", "  ")
+	at := func(name string) string { return filepath.Join(dir, rel(name)) }
+	settings := hookSettings(records{activity: at(activityName), turn: at(turnName), edits: at(editsName),
+		session: at(sessionName), events: at(eventsName), notice: at(noticeName)})
+	b, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	if err := project.WriteRun(root, worktree, project.RunPath(settingsName), b, 0o644); err != nil {
+	if err := project.WriteRun(root, dir, rel(settingsName), b, 0o644); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(worktree, project.RunPath(settingsName))
-	return []string{"--settings", path}, nil
+	return []string{"--settings", at(settingsName)}, nil
 }
+
+// records are the paths of the files the hooks write.
+type records struct{ activity, turn, edits, session, events, notice string }
 
 // hookSettings records the hook's input before each tool use (the tool and its arguments), and
 // only the event after a tool use (failed or not) and at the end of a turn: a finished tool's input
@@ -88,9 +112,10 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 //
 // A permission prompt's input (the tool and its arguments) is recorded like a tool use's: the
 // worker waits on it until it is answered, and the tool runs once it is allowed. It is also noted in
-// events, with each compaction (its trigger) and each subagent's start and stop (its ID and type),
-// one JSON line each: those don't replace the record of the last tool use, which a subagent's own
-// tool uses keep replacing. A line is short and appended in one write, so lines of hooks that run
+// events, with each compaction (its trigger), each subagent's start and stop (its ID and type) and
+// each session's start (its source: startup, resume, clear, compact) and end (its reason: exit,
+// clear, logout, …), one JSON line each: those don't replace the record of the last tool use, which
+// a subagent's own tool uses keep replacing. A line is short and appended in one write, so lines of hooks that run
 // at once (subagents side by side) don't mix. A value with a quote or a backslash is noted empty.
 //
 // A reporting hook must never change what the worker does, and Claude Code takes a hook's exit
@@ -99,8 +124,13 @@ func reportArgs(worktree string, stale ...string) ([]string, error) {
 // removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
 // stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
 // folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
+// Each notification Claude Code shows (a permission prompt, a dialog asking for input, the session
+// idle at its prompt for a while) replaces notice, which says what the session waits on where no
+// other hook does: an interrupted turn has no Stop.
+//
 // The settings also carry workerEnv.
-func hookSettings(activity, turn, edits, session, events string) map[string]any {
+func hookSettings(r records) map[string]any {
+	activity, turn, edits, session, events := r.activity, r.turn, r.edits, r.session, r.events
 	writeTo := func(path, from string) string {
 		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
@@ -151,7 +181,12 @@ func hookSettings(activity, turn, edits, session, events string) map[string]any 
 			map[string]any{"hooks": hook(turnAt("Stop"))},
 		},
 		"UserPromptSubmit": []any{map[string]any{"hooks": hook(turnAt("UserPromptSubmit"))}},
-		"SessionStart":     []any{map[string]any{"hooks": hook(writeTo(session, "cat"))}},
+		"SessionStart": []any{
+			map[string]any{"hooks": hook(writeTo(session, "cat"))},
+			map[string]any{"hooks": hook(note("SessionStart", "source"))},
+		},
+		"SessionEnd":   []any{map[string]any{"hooks": hook(note("SessionEnd", "reason"))}},
+		"Notification": []any{map[string]any{"hooks": hook(writeTo(r.notice, "cat"))}},
 	}, "env": workerEnv}
 }
 
@@ -246,17 +281,7 @@ func readRun(worktree, name string) ([]byte, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	defer func() { _ = root.Close() }() // read-only: nothing to lose
-	f, err := root.Open(project.RunPath(name))
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = f.Close() }() // read-only: nothing to lose
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, nil, err
-	}
-	b, err := io.ReadAll(f)
-	return b, fi, err
+	return readIn(root, project.RunPath(name))
 }
 
 func editedFiles(b []byte, worktree string) []string {

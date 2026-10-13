@@ -8,6 +8,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- Claude workers' hooks also note each session's start and end
+  (`SessionStart` with its source, `SessionEnd` with its reason) in
+  `.orchestra/run/events`, and write the last notification to
+  `.orchestra/run/notice.json`, from which orchestra can read
+  whether a Claude session is idle, working, blocked on a prompt or dialog,
+  gone or not yet known, for a terminal that can't read its screen as Herdr
+  does. The environment probe's worker and the feature interview can report
+  the same way, to `.orchestra/run/probe-session/` and
+  `.orchestra/run/interview-session/` in the main checkout.
+
 - orchestra's own check, `scripts/check.sh`, runs ShellCheck v0.11.0 on
   every shell script the repository tracks, `scripts/install.sh` among them,
   as `sh` where the shebang is `/bin/sh`. `scripts/shellcheck.sh` downloads

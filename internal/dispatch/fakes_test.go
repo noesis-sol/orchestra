@@ -326,6 +326,10 @@ func (r fakeReporter) ResumeArgs(worktree string) ([]string, error) {
 	return r.ReportArgs(worktree)
 }
 
+func (fakeReporter) ReportArgsIn(dir, folder string) ([]string, error) {
+	return []string{"--settings", filepath.Join(dir, folder, "hooks.json")}, nil
+}
+
 func (fakeReporter) LastToolUse(worktree string) (ToolUse, bool) { return ToolUse{}, false }
 func (fakeReporter) HookRecord(worktree string) HookRecord       { return HookRecord{} }
 func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
