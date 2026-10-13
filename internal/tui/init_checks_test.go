@@ -6,8 +6,8 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -78,22 +78,28 @@ func runners(t *testing.T, c project.Choice) (fast, full string) {
 }
 
 func TestTheScoutStartsWhenStage2IsReached(t *testing.T) {
-	var started atomic.Bool
+	// The scout runs in its own goroutine, which may not have started yet when the screen shows it scouting:
+	// stage 2 waits for it rather than looking once.
+	started := make(chan struct{})
 	release := make(chan struct{})
 	scout := func(context.Context) (organ.Scouting, error) {
-		started.Store(true)
+		close(started)
 		<-release
 		return fourSuites, nil
 	}
 	c := project.Choice{Union: true}
 	term := askChecks(t, &c, Ask{Union: true, Check: true, Scout: scout})
 	term.waitFor(t, onUnion)
-	if started.Load() {
+	select {
+	case <-started:
 		t.Fatal("the scout started in stage 1")
+	default:
 	}
 	term.typeKeys(t, "\r")
 	term.typeSteps(t, []keysOn{{checksStep, ""}, {onScouting, ""}, {"Esc: skip and type a check yourself", ""}})
-	if !started.Load() {
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
 		t.Error("the scout hadn't started in stage 2")
 	}
 	if screen := term.screen.String(); !strings.Contains(screen, "0:0") {
