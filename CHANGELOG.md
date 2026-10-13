@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- orchestra's own check, `scripts/check.sh`, runs ShellCheck v0.11.0 on
+  every shell script the repository tracks, `scripts/install.sh` among them,
+  as `sh` where the shebang is `/bin/sh`. `scripts/shellcheck.sh` downloads
+  the release's binary once into `~/.cache/orchestra-dev/`, shared by all
+  worktrees, and checks it against pinned SHA-256 sums; offline with nothing
+  cached, the check says it skipped ShellCheck, but fails under `CI=true`.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
