@@ -1,12 +1,13 @@
 ---
 name: orchestra
-description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own Herdr tab and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
+description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own tab (in Herdr or tmux) and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
 ---
 
 # orchestra
 
 `orchestra` picks the highest-priority ticket from `bd ready`, gives it a git worktree
-(`<repo>-worktrees/<ticket>` on branch `wt/<ticket>`) and a Herdr tab labelled with the ticket ID,
+(`<repo>-worktrees/<ticket>` on branch `wt/<ticket>`) and a tab labelled with the ticket ID (a Herdr
+tab, or a tmux window named with it),
 starts a worker there (a coding agent: Claude Code by default, with its tools and the project's
 MCP servers) with the project's worker prompt, waits for it to settle, then reads the ticket's
 status in Beads. A closed ticket with a commit naming it is fast-forwarded
@@ -14,7 +15,7 @@ into the branch the main checkout is on, and its worktree, branch and tab are re
 a closed ticket with no commits of its own and a clean worktree, which has nothing to merge. Anything
 else is left for review, and the loop moves on or stops. It never pushes.
 
-Two words, kept apart: **workers** do tickets, one per Herdr tab and worktree; **organs** are
+Two words, kept apart: **workers** do tickets, one per tab and worktree; **organs** are
 orchestra's own one-shot advisers (triage, the predictor, the reviewer that writes the run report),
 each a `claude -p` call with no tools and no MCP servers that only reads what it is given and
 answers. Organs never change a ticket or the code.
@@ -41,7 +42,7 @@ Run the last four in the main checkout. A run holds `.git/orchestra.lock`, in th
 worktrees share (`git rev-parse --git-common-dir` names it from any of them), for as long as it runs,
 and the system lets go of it when orchestra exits, even killed, so only a running orchestra has it
 open. `git clean` never removes it. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
-`feature` (the `--feature` request), and `pane`, the Herdr pane it runs in. It stays after the run;
+`feature` (the `--feature` request), and `pane`, the Herdr or tmux pane it runs in. It stays after the run;
 whether `lsof` lists a PID is what says a run is going. Runs in other repositories have their own.
 
 `.orchestra/run/events.jsonl` is the runs' events for you to read: one JSON
@@ -92,7 +93,7 @@ install script), and in a repository without `.beads/` it runs `bd init` with no
 reports `bd` missing. `bd init` commits the files it adds along with anything already staged, so
 check `git status` before `init`. It then writes `.orchestra/worker-prompt.md` from the built-in
 template (or moves an existing `.claude/worker-prompt.md`, staged with `git mv`), adds
-`.orchestra/.gitignore`, reports what is missing (`bd`, Beads, `herdr`, `claude`), writes the
+`.orchestra/.gitignore`, reports what is missing (`bd`, Beads, one of `herdr`, `tmux` and `cmux`, `claude`), writes the
 runners `scripts/check-fast.sh` and `scripts/check-full.sh` (one line per suite; an existing
 `scripts/check.sh` is called as a suite, never edited; a runner already there that differs is kept
 and reported, unless its flag is given) and writes `.orchestra/settings.json`. Ask the user
@@ -122,8 +123,13 @@ Requirements, checked by `orchestra` at startup (it lists every problem, exit co
   `orchestra --feature` say first `orchestra isn't set up in this repository yet. Run this first:
   orchestra init`, then any other problem under `Also fix before a run:`. Set the project up as
   above, with the user's answers, rather than run `bd init` yourself;
-- inside a Herdr pane (`HERDR_ENV=1`). Worker tabs open in that pane's workspace, unless
-  `--workspace ID` names another;
+- a terminal for the workers: Herdr when `orchestra` runs inside a Herdr pane (`HERDR_ENV=1`),
+  its tabs in that pane's workspace unless `--workspace ID` names another; otherwise tmux, which must
+  be installed (`brew install tmux`, `apt install tmux`: the user's call), its windows in orchestra's
+  own session when it runs in tmux, else in a detached session `orchestra-<repository folder>`
+  (`--workspace <session>` names another), which the user watches with `tmux attach -t <session>`, as
+  the `START` block says. `--terminal herdr|tmux` (or `"terminal"` in `.orchestra/settings.json`)
+  chooses instead. In tmux, workers must be Claude Code (no `--agent` other than `claude`);
 - in the main checkout, on a branch, not a detached HEAD;
 - no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`;
 - no other run in the same repository. A second one stops before changing anything (a `--feature`
@@ -135,7 +141,7 @@ batch branch from the main branch (`git switch -c batch/$(date +%F)`), so the wo
 through one pull request.
 
 `orchestra` is a long-running terminal UI: never run it in your own shell tool. Start it in a pane
-beside yours and keep your own pane free (the pane ID is read from Herdr's JSON with `jq`):
+beside yours and keep your own pane free. In Herdr (the pane ID is read from Herdr's JSON with `jq`):
 
 ```
 P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
@@ -143,6 +149,21 @@ P=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus \
 herdr pane run "$P" "orchestra --tickets"
 herdr pane wait-output "$P" --regex "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run|All done|Nothing ready|Nothing under" --timeout 60000
 herdr pane read "$P" --source visible
+```
+
+In tmux, split your own pane when you run in tmux (`$TMUX` is set), so orchestra's workers open in
+your session; otherwise start a detached session for it, and tell the user to watch with
+`tmux attach -t orchestra`:
+
+```
+P=$(tmux split-window -h -d -c "$PWD" -P -F '#{pane_id}')    # in tmux
+P=$(tmux new-session -d -s orchestra -c "$PWD" -P -F '#{pane_id}')    # or outside it
+tmux send-keys -t "$P" "orchestra --tickets" Enter
+for _ in $(seq 60); do
+  tmux capture-pane -p -t "$P" | grep -qE "dispatching|cannot start|isn't set up|READY_EMPTY|Completed the Run|All done|Nothing ready|Nothing under" && break
+  sleep 1
+done
+tmux capture-pane -p -t "$P"
 ```
 
 Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
@@ -204,12 +225,15 @@ them with `bd dep add`) only when they approve.
 - **The prompt is read once, at startup.** Changes to it apply to the next run.
 - **Follow it** in its pane, or with `tail -f .orchestra/run/events.jsonl | jq -c 'select(.kind != "info"
   and .kind != "queue") | {kind, ticket, text}'`. With several at once, the dashboard shows
-  a box per worker (one line each in a short pane). Each worker is an agent named after its
-  ticket, in a tab labelled with the ticket: `herdr agent get <name>`,
+  a box per worker (one line each in a short pane). In Herdr, each worker is an agent named after
+  its ticket, in a tab labelled with the ticket: `herdr agent get <name>`,
   `herdr agent read <name> --source visible` (its scrollback can only be read while it is idle).
   The name is the ticket ID lowercased, with anything other than letters, digits, `-` and `_`
   turned into `_` (`CalendarView-bl0.1` → `calendarview-bl0_1`); an ID over 32 characters is cut
-  and ends in a short hash.
+  and ends in a short hash. In tmux, each worker is in a window named with its ticket ID as it is:
+  `tmux list-windows -a -F '#{window_name} #{pane_id}'` finds its pane, and
+  `tmux capture-pane -p -t <pane>` reads its screen. Its state comes from its hooks' records in
+  `.orchestra/run/` in its worktree.
 - **To wind the run down**, the user presses s in the dashboard and confirms with y: no new
   tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
   Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>` (the PID from
@@ -310,12 +334,12 @@ ended with, say why it ended:
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress`, or is gone from its tab with no session to resume, or gone again after its session was resumed (`its worker gone from tab …`) | Read its tab. Relay any question to the user. If the worker finishes later, the next run merges it; one gone after a resume is resumed again by the next run. |
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
-| `UNKNOWN >5min` | 3 | Herdr couldn't tell what a worker was doing for 5 minutes | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
+| `UNKNOWN >5min` | 3 | the terminal couldn't tell what a worker was doing for 5 minutes (Herdr from its screen, or in tmux its hooks) | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, the next run merges it. |
 | `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
-| `START_FAILED`, `TAB_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | Herdr, Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
+| `START_FAILED`, `TAB_FAILED`, `TERMINAL_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | the terminal (Herdr or tmux), Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, the next run merges it. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled or left for the next run: label each ticket the line leaves running (`bd label add <id> unmerged`), and merge one its worker closes by hand (below). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
@@ -323,11 +347,12 @@ ended with, say why it ended:
 Lines about single tickets, which don't stop the run (in the events, `closed`, `deferred`, `asked`,
 `answered`, `triage`, `warn` and `info` records with the line as `text`):
 
-- `closed (…); merged into …`: done. The worker's tab is closed only while Herdr still has it labelled
-  with the ticket's ID: Herdr numbers tabs afresh when it starts without restoring its last
-  session, so the tab ID a run recorded may by then be another tab, the user's own included. The
-  line then ends `worktree and branch removed; tab <tab> left open: Herdr has it labelled '<label>'
-  now, …` (or `its tab <tab> was closed already`, or `… as Herdr can't say whose it is`): leave
+- `closed (…); merged into …`: done. The worker's tab is closed only while the terminal still has it
+  labelled with the ticket's ID: Herdr numbers tabs afresh when it starts without restoring its last
+  session, and tmux its windows when its server starts again, so the tab ID a run recorded may by
+  then be another tab, the user's own included. The line then ends `worktree and branch removed; tab
+  <tab> left open: the terminal has it labelled '<label>' now, …` (or `its tab <tab> was closed
+  already`, or `… as the terminal can't say whose it is`): leave
   that tab alone, and close the worker's own tab by hand if it is still open.
 - `deferred by worker`, `still <status> -> noted and deferred`: set aside. A `triage` line follows
   with the triage organ's verdict (cause: environment, instructions or problem), also appended to
@@ -362,7 +387,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 - `<id>, carried over from the last run, is dropped: …`: its worktree is gone, its branch was merged
   by hand, or bd can't show the ticket. Nothing to do unless the line surprises you.
 - `WORKER_GONE: <id> is in progress after …, but its worker is gone from tab <tab>`: a carried-over
-  ticket's worker has gone (its tab closed, Herdr restarted) with no session to resume; said once,
+  ticket's worker has gone (its tab closed, Herdr or tmux restarted) with no session to resume; said once,
   with a note on the ticket. Look at its worktree with the user: reopen the ticket
   (`bd update <id> --status open`) to run it again, or finish it by hand (below).
 - `RESUMED: <id>'s worker is gone from tab <tab> with the ticket in progress; resuming its session
@@ -443,7 +468,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | what finished, what was set aside and why, what needs the user | the latest run report |
 | the whole output of the last full check that failed | `.orchestra/run/check-full.log` in the main checkout |
 | why a ticket was deferred | `bd show <id>`: the worker's notes, orchestra's notes, `Triage (orchestra): cause = …` |
-| a worker's screen and final message | its Herdr tab, labelled with the ticket ID |
+| a worker's screen and final message | its tab, labelled with the ticket ID (a tmux window named with it) |
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
 | the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json`; the end of its last turn, `.orchestra/run/turn.json` |
@@ -466,7 +491,7 @@ merged before the next run. The ticket is closed but nothing merged it; if the r
 4. From the main checkout, on the base branch:
    `git merge --ff-only wt/<id>`, `git worktree remove <worktree>`, `git branch -d wt/<id>`,
    `bd label remove <id> unmerged` (if it has the label), and close its tab
-   (`herdr tab close <tab>`).
+   (`herdr tab close <tab>`, or `tmux kill-window -t <tab>`).
 
 A set-aside ticket whose worktree has no commits and no changes can be cleaned up the same way,
 without the merge. A worktree with work in it is the user's call.

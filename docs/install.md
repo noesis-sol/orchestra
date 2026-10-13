@@ -62,4 +62,6 @@ A run on a release build ends, on a terminal, with `orchestra vX.Y.Z is availabl
 
 ## What orchestra needs
 
-`herdr`, `git`, `claude` and `bd`; `orchestra init` can install `bd` ([docs/setup.md](setup.md)).
+`herdr` or `tmux`, `git`, `claude` and `bd`; `orchestra init` can install `bd` ([docs/setup.md](setup.md)).
+
+Workers run in [Herdr](https://herdr.dev) tabs when `orchestra` runs in a Herdr pane, and otherwise in tmux windows ([Herdr or tmux](running.md#herdr-or-tmux)). Without Herdr, install tmux: `brew install tmux` on macOS, `sudo apt install tmux` on Debian and Ubuntu, or your system's package manager.

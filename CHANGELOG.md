@@ -57,6 +57,12 @@ All notable changes to orchestra are documented here. The format follows
   also run in tmux. The stop word `HERDR_FAILED` is now `TERMINAL_FAILED` in
   the log and `.orchestra/run/events.jsonl` (docs/events.md); exit code 4
   reads "a terminal (Herdr or tmux), Beads or git failure".
+- The README, the docs, the orchestra skill and `CLAUDE.md` describe running
+  workers in Herdr or tmux: what a run needs (`herdr` or `tmux`), where to
+  start one, choosing the terminal and the tmux session
+  (`docs/running.md`, Herdr or tmux), the dashboard's number keys under
+  tmux, and how a worker's state comes from its hooks there
+  (`docs/workers.md`, Workers in tmux).
 
 - The dashboard's tickets table has no header row or rule under it: a bold
   `Tickets` label heads it, indented like `Current` over the workers but in

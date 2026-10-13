@@ -85,17 +85,18 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 ## Architecture Overview
 
 orchestra is a Go CLI that works through a Beads backlog: it hands each ready ticket to a **worker** (a Claude Code
-agent) in its own Herdr tab and git worktree, and fast-forwards finished tickets into the branch it runs on.
-**Organs** are its one-shot advisers (triage, the run report): `claude -p` with no tools and no MCP servers. The
-README defines both terms; use them consistently.
+agent) in its own tab (Herdr's, or a tmux window) and git worktree, and fast-forwards finished tickets into the branch
+it runs on. **Organs** are its one-shot advisers (triage, the run report): `claude -p` with no tools and no MCP
+servers. The README defines both terms; use them consistently.
 
-- `cmd/orchestra`: flags and settings, `orchestra init`, `orchestra plan`, the dashboard or plain output, signals,
-  the organ phase after a run.
+- `cmd/orchestra`: flags and settings, choosing the terminal (`terminal.go`: Herdr in a Herdr pane, else tmux),
+  `orchestra init`, `orchestra plan`, the dashboard or plain output, signals, the organ phase after a run.
 - `internal/dispatch`: the run loop, one file per concern (docs/development.md lists them). It
-  reaches Beads, Herdr, git and workers' reports only through the interfaces in `deps.go`.
-- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux, not yet wired in), `internal/git`
-  (git), `internal/command` (every external command: context, time limit, process group), `internal/claude` (workers'
-  hooks), `internal/mcp` (discovering MCP servers for workers).
+  reaches Beads, the terminal (Herdr or tmux), git and workers' reports only through the interfaces in `deps.go`.
+- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state
+  from their hooks), `internal/git` (git), `internal/command` (every external command: context, time limit, process
+  group), `internal/claude` (workers' hooks, and the state they give), `internal/mcp` (discovering MCP servers for
+  workers).
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
   `internal/tui`: the Bubble Tea dashboard and init's screen.
