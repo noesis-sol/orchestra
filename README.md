@@ -1,8 +1,11 @@
 # Claude Agent Orchestra
 
 <p align="center">
-  <img width="518" height="190" alt="AI Conductor and Orbital Network" src="https://github.com/user-attachments/assets/773df42d-e562-4603-9eba-8838e7f01bbf" />
+<img width="1036" height="380" alt="AI Conductor and Orbital Network (web)" src="https://github.com/user-attachments/assets/3dae50d5-103b-468e-b0c2-44e2b214a5b9" />
 </p>
+
+
+
 
 
 Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
