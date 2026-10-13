@@ -48,6 +48,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` counts cmux, on the `PATH` or in
+  `/Applications/cmux.app`, as a terminal for the workers beside Herdr and
+  tmux, and its last step says to start a run from a cmux terminal where
+  cmux is there.
 - Notes, log lines, stop reasons and the run report say `tab <id>` and "the
   terminal" where they said `Herdr tab <id>` and "Herdr", as workers will
   also run in tmux. The stop word `HERDR_FAILED` is now `TERMINAL_FAILED` in

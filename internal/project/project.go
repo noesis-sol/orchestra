@@ -425,16 +425,15 @@ func Prerequisites(repo string, getenv func(string) string) []Step {
 			steps = append(steps, Step{Kind: StepMissing, Label: what, Detail: fix})
 		}
 	}
-	has := func(cmd string) bool { _, err := exec.LookPath(cmd); return err == nil }
 	if bd, onPath := LocateBd(getenv); bd != "" && !onPath {
 		mark(false, "bd", offPath(bd))
 	} else {
 		mark(onPath, "bd", "install Beads")
 	}
 	mark(fileExists(filepath.Join(repo, ".beads")), "Beads", "set it up here: bd init")
-	mark(has("herdr") || has("tmux"), "herdr or tmux",
-		"install Herdr, or tmux (brew install tmux, apt install tmux); workers run in their tabs")
-	mark(has("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
+	mark(onHost("herdr") || onHost("tmux") || onHost("cmux"), "herdr, tmux or cmux",
+		"install Herdr, tmux (brew install tmux, apt install tmux) or cmux; workers run in their tabs")
+	mark(onHost("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
 	return steps
 }
 
@@ -482,21 +481,48 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 	if len(commit) > 0 {
 		next = append(next, "Commit "+joinAnd(commit)+".")
 	}
-	next = append(next, startRun(func(cmd string) bool { _, err := exec.LookPath(cmd); return err == nil }))
+	next = append(next, startRun(onHost))
 	return next
 }
 
+// cmuxApp is where the cmux app keeps its CLI, which is on the PATH only in a cmux terminal. A
+// variable for the tests.
+var cmuxApp = "/Applications/cmux.app/Contents/Resources/bin/cmux"
+
+// onHost reports whether this machine has cmd: on the PATH or, for cmux, in its app.
+func onHost(cmd string) bool {
+	if _, err := exec.LookPath(cmd); err == nil {
+		return true
+	}
+	return cmd == "cmux" && fileExists(cmuxApp)
+}
+
 // startRun says where to start a run from, on the branch finished tickets should land on, as has
-// finds herdr and tmux: from a Herdr pane, or, with tmux, from any terminal.
+// finds herdr, cmux and tmux: from a Herdr pane, a cmux terminal or, with tmux, any terminal; with
+// none of them, from any of those.
 func startRun(has func(cmd string) bool) string {
 	const branch = ", on the branch finished tickets should land on:\norchestra"
-	switch herdr, tmux := has("herdr"), has("tmux"); {
-	case herdr && !tmux:
-		return "From a Herdr pane" + branch
-	case tmux && !herdr:
-		return "From any terminal (workers run in tmux)" + branch
+	herdr, cmux, tmux := has("herdr"), has("cmux"), has("tmux")
+	if !herdr && !cmux && !tmux {
+		herdr, cmux, tmux = true, true, true
 	}
-	return "From a Herdr pane, or any terminal with tmux" + branch
+	var from []string
+	if herdr {
+		from = append(from, "a Herdr pane")
+	}
+	if cmux {
+		from = append(from, "a cmux terminal")
+	}
+	switch {
+	case tmux && len(from) == 0:
+		from = append(from, "any terminal (workers run in tmux)")
+	case tmux:
+		from = append(from, "any terminal with tmux")
+	}
+	if n := len(from); n > 1 {
+		from[n-1] = "or " + from[n-1]
+	}
+	return "From " + strings.Join(from, ", ") + branch
 }
 
 func wroteTemplate(steps []Step) bool {

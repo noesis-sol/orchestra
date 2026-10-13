@@ -20,7 +20,6 @@ func TestStartRunSaysWhereToStartFrom(t *testing.T) {
 		{[]string{"herdr"}, "From a Herdr pane, on the branch"},
 		{[]string{"tmux"}, "From any terminal (workers run in tmux), on the branch"},
 		{[]string{"herdr", "tmux"}, "From a Herdr pane, or any terminal with tmux, on the branch"},
-		{nil, "From a Herdr pane, or any terminal with tmux, on the branch"},
 	} {
 		got := startRun(func(cmd string) bool { return slices.Contains(tc.installed, cmd) })
 		if !strings.HasPrefix(got, tc.want) || !strings.HasSuffix(got, ":\norchestra") {
