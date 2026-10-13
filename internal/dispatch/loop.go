@@ -46,6 +46,9 @@ type Loop struct {
 	solo     string
 	soloNext string
 	soloSaid string
+	// unclosed: the tickets not closed that the run draws from, as pick last read them (see
+	// countUnclosed); -1 before the first read. Run's own, like the solo tickets.
+	unclosed int
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -171,7 +174,7 @@ type Loop struct {
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 	return &Loop{
-		cfg: cfg, log: log, prompt: prompt,
+		cfg: cfg, log: log, prompt: prompt, unclosed: -1,
 		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
 		reporter: d.Reporter, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History,
 		organ: d.Advisor, organCtx: d.AdviceCtx,

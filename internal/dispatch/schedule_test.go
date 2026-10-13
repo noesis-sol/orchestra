@@ -187,8 +187,9 @@ func TestQueueCountFollowsWhileSlotsAreFull(t *testing.T) {
 		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if got := h.sink.queueSizes(); len(got) != 1 || got[0] != 2 {
-			t.Errorf("queue sizes reported: %v, want [2]: dispatches carry the rest", got)
+		// Dispatches carry the rest, but for the last: none wait, and none are left not closed.
+		if got := h.sink.queueSizes(); !slices.Equal(got, []int{2, 0}) {
+			t.Errorf("queue sizes reported: %v, want [2 0]: dispatches carry the rest", got)
 		}
 		for line := range strings.SplitSeq(strings.TrimSpace(h.logged()), "\n") {
 			if strings.Count(strings.TrimSpace(line), " ") < 2 {

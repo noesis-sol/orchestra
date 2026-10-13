@@ -121,10 +121,10 @@ func TestARunRecordsItsEvents(t *testing.T) {
 		has(t, recs[0], map[string]any{"kind": "start", "version": "v1.2.3", "repo": h.repo, "branch": "main",
 			"concurrency": 1.0}, "scope", "feature", "text", "code")
 		has(t, byKind["dispatch"][0], map[string]any{"ticket": "A", "title": "first <of three>", "n": 1.0,
-			"limit": 10.0, "queued": 0.0, "text": "[1/10] A dispatching: first <of three>"}, "solo", "detail")
-		has(t, byKind["dispatch"][1], map[string]any{"ticket": "B", "n": 2.0, "queued": 1.0})
-		has(t, byKind["queue"][0], map[string]any{"queued": 2.0}, "text", "ticket", "n", "limit", "solo")
-		has(t, byKind["closed"][0], map[string]any{"ticket": "A"}, "queued", "n")
+			"limit": 10.0, "queued": 0.0, "unclosed": 1.0, "text": "[1/10] A dispatching: first <of three>"}, "solo", "detail")
+		has(t, byKind["dispatch"][1], map[string]any{"ticket": "B", "n": 2.0, "queued": 1.0, "unclosed": 2.0})
+		has(t, byKind["queue"][0], map[string]any{"queued": 2.0, "unclosed": 3.0}, "text", "ticket", "n", "limit", "solo")
+		has(t, byKind["closed"][0], map[string]any{"ticket": "A"}, "queued", "unclosed", "n")
 		if d, _ := byKind["closed"][0]["detail"].(string); !strings.HasSuffix(d, " merged into main") {
 			t.Errorf("closed record's detail: %q", d)
 		}

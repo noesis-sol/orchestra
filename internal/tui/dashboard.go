@@ -39,6 +39,7 @@ type Dashboard struct {
 	final       *dispatch.Event // the stop or done event, printed by main after exit
 	received    int             // events received, for ProgramSink.Handoff
 	queued      int             // ready tickets waiting for a slot; -1 until the loop first says
+	unclosed    int             // the tickets not closed the run draws from; -1 until the loop says
 	solo        dispatch.SoloState
 	began       time.Time
 	cancel      func()
@@ -50,8 +51,8 @@ type Dashboard struct {
 // a worker's number calls focus with its tab.
 func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus func(tab string)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, began: time.Now(), cancel: cancel, drain: drain,
-		focus: focus}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, unclosed: -1, began: time.Now(), cancel: cancel,
+		drain: drain, focus: focus}
 }
 
 // Init starts the spinner.
@@ -102,10 +103,10 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.received++
 		switch ev.Kind {
 		case dispatch.EvDispatch:
-			m.queued, m.solo = ev.Queued, ev.Solo
+			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
 			m.working(ev.Ticket, ev.Title)
 		case dispatch.EvQueue:
-			m.queued, m.solo = ev.Queued, ev.Solo
+			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
 		case dispatch.EvClosed:
 			m.closed++
 			m.setRow(ev.Ticket, rowDone, ev.Detail)

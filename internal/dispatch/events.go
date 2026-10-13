@@ -68,6 +68,9 @@ type Event struct {
 	Title  string
 	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
 	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
+	// Unclosed: for EvDispatch and EvQueue, the tickets not closed that the run draws from (in a
+	// scoped run, the scope's); -1 before the run could read them.
+	Unclosed int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
 	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvStop,
 	// what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
@@ -266,22 +269,24 @@ type startRecord struct {
 	Concurrency int    `json:"concurrency"`
 }
 
-// eventRecord is an Event. Queued and Solo are given for EvDispatch and EvQueue, N and Limit for
-// EvDispatch, as the Event sets them; a queue of 0 is given too.
+// eventRecord is an Event. Queued, Unclosed and Solo are given for EvDispatch and EvQueue, N and
+// Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
+// once read.
 type eventRecord struct {
 	recordHead
-	Ticket  string      `json:"ticket,omitempty"`
-	Title   string      `json:"title,omitempty"`
-	Detail  string      `json:"detail,omitempty"`
-	Text    string      `json:"text,omitempty"`
-	Aside   bool        `json:"aside,omitempty"`
-	Blocked string      `json:"blocked,omitempty"`
-	Suite   string      `json:"suite,omitempty"`
-	Output  string      `json:"output,omitempty"`
-	N       *int        `json:"n,omitempty"`
-	Limit   *int        `json:"limit,omitempty"`
-	Queued  *int        `json:"queued,omitempty"`
-	Solo    *soloRecord `json:"solo,omitempty"`
+	Ticket   string      `json:"ticket,omitempty"`
+	Title    string      `json:"title,omitempty"`
+	Detail   string      `json:"detail,omitempty"`
+	Text     string      `json:"text,omitempty"`
+	Aside    bool        `json:"aside,omitempty"`
+	Blocked  string      `json:"blocked,omitempty"`
+	Suite    string      `json:"suite,omitempty"`
+	Output   string      `json:"output,omitempty"`
+	N        *int        `json:"n,omitempty"`
+	Limit    *int        `json:"limit,omitempty"`
+	Queued   *int        `json:"queued,omitempty"`
+	Unclosed *int        `json:"unclosed,omitempty"`
+	Solo     *soloRecord `json:"solo,omitempty"`
 }
 
 // soloRecord is a SoloState.
@@ -345,6 +350,9 @@ func (l *Log) Record(ev Event) {
 	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
+		if ev.Unclosed >= 0 {
+			r.Unclosed = &ev.Unclosed
+		}
 		if ev.Solo != (SoloState{}) {
 			r.Solo = &soloRecord{Ticket: ev.Solo.Ticket, Next: ev.Solo.Next}
 		}

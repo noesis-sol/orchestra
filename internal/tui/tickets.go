@@ -196,7 +196,7 @@ func (m Dashboard) statsTable(w int) string {
 	}
 	queued := dimStyle.Render("—")
 	if m.queued >= 0 {
-		queued = fmt.Sprint(m.queued)
+		queued = fmt.Sprint(m.queued) + dimStyle.Render(m.ofUnclosed())
 	}
 	if m.draining {
 		queued += deferredStyle.Render(" · held") // not taken while the run winds down
@@ -233,12 +233,21 @@ func (m Dashboard) statsTable(w int) string {
 		Render()
 }
 
+// ofUnclosed is what follows the queue count: " of " the tickets not closed, once the loop has
+// said how many.
+func (m Dashboard) ofUnclosed() string {
+	if m.unclosed < 0 {
+		return ""
+	}
+	return fmt.Sprintf(" of %d", m.unclosed)
+}
+
 // statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
 // branch, running time and stopping state are on the title line, the winding down above the hint.
 func (m Dashboard) statsLine(w int) string {
 	queued := "—"
 	if m.queued >= 0 {
-		queued = fmt.Sprint(m.queued)
+		queued = fmt.Sprint(m.queued) + m.ofUnclosed()
 	}
 	if m.draining {
 		queued += " held" // not taken while the run winds down

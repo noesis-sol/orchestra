@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   signature of `checksums.txt`; in `/usr/local/bin` where it can write,
   else `~/.local/bin`, never calling `sudo`. `ORCHESTRA_VERSION` and
   `ORCHESTRA_INSTALL_DIR` choose the release and the folder.
+- The dashboard's **In queue** box gives the ready tickets waiting out of
+  the tickets not closed, `1 of 5` as the Workers box does (in a run scoped
+  to a ticket, the scope's), and the one-line totals `queue 1 of 5`. The
+  event stream's `dispatch` and `queue` records carry the count as
+  `unclosed`.
 - Releases carry binaries: pushing a `v*` tag runs the release workflow
   (`.github/workflows/release.yml`), which runs `scripts/check.sh` and
   attaches `orchestra_<version>_<os>_<arch>.tar.gz` for darwin and linux,

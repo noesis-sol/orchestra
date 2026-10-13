@@ -215,16 +215,18 @@ type runState struct {
 	envSaid  bool            // the hold for the environment is taken up
 	drained  bool            // the maintainer asked to stop after the running tickets, as last said
 
-	// The queue size last reported, -1 before the first, and the solo ticket with it (see reportQueue).
-	queued    int
-	soloShown SoloState
+	// The queue size last reported, -1 before the first, and the solo ticket and the tickets not
+	// closed with it (see reportQueue).
+	queued       int
+	soloShown    SoloState
+	unclosedSaid int
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
 	return &runState{
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
-		count: o.cfg.DoneSoFar, queued: -1,
+		count: o.cfg.DoneSoFar, queued: -1, unclosedSaid: -1,
 	}
 }
 
@@ -354,9 +356,10 @@ func (r *runState) start(t Ticket, queued int) {
 		o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 			"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 	}
-	r.queued, r.soloShown = queued, o.soloState()
+	r.queued, r.soloShown, r.unclosedSaid = queued, o.soloState(), o.unclosed
 	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
-		Queued: queued, Solo: r.soloShown, Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
+		Queued: queued, Solo: r.soloShown, Unclosed: r.unclosedSaid,
+		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
 	o.startFootprint(t)
 	r.launch(t.ID, func(ctx context.Context, how *settling) *stopReason { return o.work(ctx, t, how) })
 }
@@ -457,15 +460,15 @@ func (r *runState) polled() {
 	}
 }
 
-// reportQueue tells the dashboard how many ready tickets wait for a slot, and which solo ticket
-// runs or is next, when that has changed.
+// reportQueue tells the dashboard how many ready tickets wait for a slot, which solo ticket runs or
+// is next, and how many tickets aren't closed, when any of that has changed.
 func (r *runState) reportQueue(n int) {
-	solo := r.o.soloState()
-	if n == r.queued && solo == r.soloShown {
+	solo, unclosed := r.o.soloState(), r.o.unclosed
+	if n == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid {
 		return
 	}
-	r.queued, r.soloShown = n, solo
-	r.o.emit(Event{Kind: EvQueue, Queued: n, Solo: solo})
+	r.queued, r.soloShown, r.unclosedSaid = n, solo, unclosed
+	r.o.emit(Event{Kind: EvQueue, Queued: n, Solo: solo, Unclosed: unclosed})
 }
 
 // end ends the run, once nothing runs or Ctrl+C came, and returns its exit code. It leaves behind
@@ -578,10 +581,12 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	if err != nil {
 		return nil, 0, err
 	}
-	parents, err := o.openParents(ctx, running)
+	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, listUnreadableError{err}
 	}
+	o.countUnclosed(ctx, open)
+	parents := o.parentsOpen(open, running)
 	// A ticket set aside in this run stays out of it, even if bd still lists it as ready (a defer
 	// that failed, say); otherwise it would be dispatched again at once, in a new tab each time. A
 	// ticket waiting on a question is the exception: bd keeps it out of ready until the question is
