@@ -27,6 +27,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The worker prompt tells a worker to file a follow-up that changes or
+  builds on what its ticket adds `--deps blocked-by:<ticket>`, not
+  `discovered-from`, so it doesn't start before that ticket merges; and,
+  under Close, when its ticket needs another ticket's work not on its base
+  yet, not to build on that ticket's branch or copy its code, but to leave
+  nothing committed, link it (`bd dep add`), reopen its ticket with a
+  `Waiting on <other> to merge` note and stop, for orchestra to start it
+  again once the other merges. `orchestra init` writes the new template; a
+  project set up earlier keeps its prompt (init replaces it only with
+  `--force`), so add the lines by hand, as docs/workers.md says.
 - The README's **Set up a project** is a short section on what `orchestra
   init` does, what can change later and the Checks step; the flags, `FLAKY:`
   lines, `check.log`, the recheck and the full check are in `docs/setup.md`

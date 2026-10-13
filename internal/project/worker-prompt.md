@@ -24,6 +24,9 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - Commit only the files you changed for this ticket, with the ticket ID in the message. Never push.
 - File anything new you discover with `bd create`, linked to TICKET_ID. Keep every ticket title
   short, at most 60 characters: a plain summary of the change. Details go in the description.
+  A follow-up that changes or builds on what this ticket adds gets `--deps blocked-by:TICKET_ID`,
+  so it doesn't start before this ticket merges (bd keeps one link per pair of tickets, so not
+  `discovered-from` as well); one independent of this ticket's changes may stay `discovered-from`.
   When a follow-up touches the same files or functions as another open ticket (see
   `bd list --status open`), link the two so they don't run side by side: `--deps blocked-by:<id>`
   makes the follow-up wait for that ticket, `--deps related:<id>` only notes the overlap. Give a
@@ -42,6 +45,11 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   and `bd update TICKET_ID --status open --append-notes "Waiting on <the question's ID>: <the question>"`.
   The ticket comes back to a worker once the question is answered.
 - If the ticket depends on an answered question, read the answer first with `bd show <the question's ID>`.
+- If the ticket needs work from another ticket that isn't on your base yet, don't build on that
+  ticket's branch or copy its code, and leave nothing committed or changed. Add the link
+  (`bd dep add TICKET_ID <other>`), run
+  `bd update TICKET_ID --status open --append-notes "Waiting on <other> to merge: <what you need from it>"`
+  and stop. orchestra puts the ticket back in the queue until <other> merges.
 - If you cannot finish: note why on the ticket, defer it, and stop.
 
 ## Working unattended
@@ -52,7 +60,7 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   as your next tool call. If you notice yourself inviting the maintainer to redirect you or
   offering to wait, delete it and do the next thing.
 - The only stops are the ones under Close: DONE once the ticket is closed, a question when only the
-  maintainer can decide, a deferral when you cannot finish.
+  maintainer can decide, a wait for another ticket to merge, a deferral when you cannot finish.
 - Your context is compacted as it fills, so don't cut work short because the conversation is long;
   keep the checklist and the ticket's notes current, so you can carry on after it.
 - For a ticket with several parts, keep its acceptance criteria as a todo checklist (TodoWrite or
