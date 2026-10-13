@@ -28,6 +28,16 @@ All notable changes to orchestra are documented here. The format follows
   release, build provenance, the newer-release notice and reading a clone's
   version are in the new `docs/install.md`.
 
+### Fixed
+
+- A follow-up a worker files linked `discovered-from` its ticket, which `bd`
+  doesn't count as blocking, no longer starts from a base without that
+  ticket's code: it waits while its source runs, waits on a question or is
+  closed but not merged (`<id> waits: filed by <source>'s worker; waiting
+  for it to merge`), and starts once the source merges. Nothing to run says
+  `N follow-ups wait for the tickets they were filed from to merge`, and
+  `SCOPE_OPEN` names such a follow-up.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added

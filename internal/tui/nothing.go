@@ -72,6 +72,10 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 		rest = append(rest, plural(n.HeldBlocked, "ticket waits for its blocker", "tickets wait for their blockers")+
 			" to merge")
 	}
+	if n.HeldFollowUps > 0 {
+		rest = append(rest, plural(n.HeldFollowUps, "follow-up waits for the ticket it was filed from",
+			"follow-ups wait for the tickets they were filed from")+" to merge")
+	}
 	var held []string
 	for _, c := range []struct {
 		n    int

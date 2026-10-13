@@ -335,6 +335,11 @@ func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool,
 			return fmt.Sprintf("blocked by %s%s, closed but not merged", d.ID, where)
 		}
 	}
+	for _, d := range t.Dependencies {
+		if d.DependencyType == "discovered-from" && d.Status == StatusClosed && v.unmerged(d.ID) != "" {
+			return fmt.Sprintf("filed by %s's worker; %s is closed but not merged", d.ID, d.ID)
+		}
+	}
 	switch {
 	case openKids:
 		return "waiting for its subtickets"

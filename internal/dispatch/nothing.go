@@ -37,6 +37,10 @@ type NothingToRun struct {
 	Other       int // in any other status
 	Unmerged    int // closed but not merged (UnmergedLabel)
 
+	// HeldFollowUps is the ready follow-ups the run holds back, nothing ready in a run of all of bd
+	// ready: they wait for the closed ticket they were discovered from to merge.
+	HeldFollowUps int
+
 	// NotDone, nothing ready in a scoped run, is each ticket of the scope not done, as SCOPE_OPEN
 	// names it.
 	NotDone []NotDone
@@ -48,16 +52,17 @@ type NothingToRun struct {
 // Open is how many tickets not closed are left, in a run of all of bd ready: those Nothing ready
 // counts, not those closed but not merged.
 func (n NothingToRun) Open() int {
-	return n.Questions + n.Waiting + n.HeldParents + n.HeldBlocked + n.InProgress + n.Deferred + n.Other
+	return n.Questions + n.Waiting + n.HeldParents + n.HeldBlocked + n.HeldFollowUps + n.InProgress + n.Deferred +
+		n.Other
 }
 
 // CheckNothingToRun returns why a run as c sets it has nothing to run, or nil when it has
 // something: bd ready, in the run's scope and as the loop reads it, lists a ticket the loop would
 // start, or the last run left a worker (on a ticket in the scope) for this one to carry on with. A
 // ready ticket the loop would hold back at its start (see holds) is not one it would start: a parent
-// whose subtickets are not all closed and merged, or a ticket a closed but unmerged ticket blocks. A
-// ticket labelled UnmergedLabel that git finds merged since (see mergedSince) counts as merged, as
-// the loop would find it, though only the loop removes the label. It only reads, so it can run
+// whose subtickets are not all closed and merged, or a ticket a closed but unmerged ticket blocks or
+// was discovered from. A ticket labelled UnmergedLabel that git finds merged since (see mergedSince)
+// counts as merged, as the loop would find it, though only the loop removes the label. It only reads, so it can run
 // before any Loop exists. Its error is bd's, or the state file's, when it can't tell: the run then
 // goes ahead, and the loop reports it.
 func CheckNothingToRun(
@@ -100,15 +105,18 @@ func CheckNothingToRun(
 		}
 	}
 	h := startHolds(tickets, unclosed, unmerged)
+	held := map[string]holdKind{}
 	for _, t := range ready {
-		if why, err := h.why(ctx, t); why == "" || err != nil {
+		hd, err := h.why(ctx, t)
+		if hd.why == "" || err != nil {
 			return nil, err // one the loop would start, or bd can't say whether it would
 		}
+		held[t.ID] = hd.kind
 	}
 	if c.Ticket != "" {
 		return scopeNothing(ctx, c, tickets, subs, h.unmerged)
 	}
-	return allNothing(c, unclosed, len(unmerged), ready, h.parents), nil
+	return allNothing(c, unclosed, len(unmerged), held), nil
 }
 
 // startHolds is what keeps a ready ticket waiting as a run starts, before any Loop (see holds):
@@ -128,8 +136,8 @@ func startHolds(tickets Tickets, unclosed, unmerged []Ticket) holds {
 			return ""
 		},
 		pending: len(unmerged) > 0,
-		blockers: func(ctx context.Context, t Ticket) ([]string, error) {
-			return showBlockers(ctx, tickets, t.ID)
+		links: func(ctx context.Context, t Ticket) (links, error) {
+			return showLinks(ctx, tickets, t.ID)
 		},
 	}
 }
@@ -144,22 +152,20 @@ func readyEmpty(c Config, allDone bool) string {
 }
 
 // allNothing says why a run of all of bd ready has nothing to run, given the tickets not closed
-// (unclosed), how many are closed but not merged, and the ready tickets, all held back, among which
-// parents wait for their subtickets.
-func allNothing(c Config, unclosed []Ticket, unmerged int, ready []Ticket, parents map[string]bool) *NothingToRun {
-	held := map[string]bool{}
-	for _, t := range ready {
-		held[t.ID] = true
-	}
+// (unclosed), how many are closed but not merged, and the ready tickets, all held back, with what
+// holds each.
+func allNothing(c Config, unclosed []Ticket, unmerged int, held map[string]holdKind) *NothingToRun {
 	n := &NothingToRun{Unmerged: unmerged}
 	var excluded []string
 	for _, t := range unclosed {
 		switch {
 		case c.excludes(t):
 			excluded = append(excluded, t.ID)
-		case held[t.ID] && parents[t.ID]:
+		case held[t.ID] == heldParent:
 			n.HeldParents++
-		case held[t.ID]:
+		case held[t.ID] == heldFollowUp:
+			n.HeldFollowUps++
+		case held[t.ID] != notHeld:
 			n.HeldBlocked++
 		case HasLabel(t, HumanLabel):
 			n.Questions++

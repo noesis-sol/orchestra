@@ -96,7 +96,7 @@ type Loop struct {
 	setUpFor  map[string]string     // the commit each finished ticket's dependencies were set up for (see setUp)
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
 	holdSaid  map[string]string     // why each held ticket waits, as last said
-	blockers  map[string]blockLinks // each ready ticket's blockers, read once per run
+	blockers  map[string]blockLinks // each ready ticket's blockers and sources, read once per run
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
 	askedIDs map[string]askedWorker
