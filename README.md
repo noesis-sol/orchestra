@@ -1,7 +1,6 @@
 # Agent Orchestra
 
-<img width="2172" height="724" alt="661180647-c6cb72f8-21a8-4805-8bff-76a43d4db1e6" src="https://github.com/user-attachments/assets/f2e76a42-7112-4909-87df-6dc154679b2f" />
-
+<img width="943" height="346" alt="Conductor" src="https://github.com/user-attachments/assets/20aa6734-ce32-4807-95b3-8d11aeff6da1" />
 
 Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own [Herdr](https://herdr.dev) tab and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
 
