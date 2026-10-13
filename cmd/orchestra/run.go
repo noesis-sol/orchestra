@@ -168,6 +168,9 @@ func run(
 	if errors.Is(lockErr, errors.ErrUnsupported) {
 		log.Line(time.Now(), "no run lock on "+runtime.GOOS+": nothing stops a second run in this repository")
 	}
+	// A newer release is looked for while the run goes, and mentioned as it ends (newer.go).
+	check := startUpdateCheck(ctx, getenv)
+	defer func() { showNewer(check, !cfg.Plain && isTerminal(stdout), stdout, stderr) }()
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}

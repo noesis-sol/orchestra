@@ -31,6 +31,8 @@ Once installed, `orchestra update` replaces it with the latest [GitHub Release](
 
 The signature shows a release was made by orchestra's release workflow, which alone holds the signing key. As a second check, by hand, each archive carries the workflow's build provenance, which the [GitHub CLI](https://cli.github.com/) verifies for an archive you downloaded: `gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra`.
 
+A run on a release build ends, on a terminal, with `orchestra vX.Y.Z is available (you have vA.B.C): orchestra update` when a newer release is out: it asks GitHub in the background as it starts, at most once a day, keeping the answer in `orchestra/latest-release.json` in your user cache folder (`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), and a slow or failed check is dropped without delaying or failing the run. The log and the event stream don't have the line, and builds from a clone never check. `ORCHESTRA_NO_UPDATE_CHECK=1` turns the check off: no request, no cache.
+
 `orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes. Needs Go 1.26, plus `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install).
 
 ## Set up a project

@@ -27,6 +27,11 @@ All notable changes to orchestra are documented here. The format follows
   orchestra (`internal/update/release-keys/`) before trusting a checksum,
   refusing a release whose signature is missing or doesn't verify.
   docs/development.md (Releasing) describes replacing the key.
+- A run on a release build ends, on a terminal, with a line naming a newer
+  release when one is out (`orchestra update` installs it). The check runs in
+  the background, asks GitHub at most once a day (the answer is cached in the
+  user cache folder), and never delays or fails the run;
+  `ORCHESTRA_NO_UPDATE_CHECK=1` turns it off.
 
 ### Fixed
 
