@@ -32,6 +32,7 @@ const (
 	EvDone                  // the loop finished normally
 	EvTriage                // the triage organ's verdict on a deferred ticket
 	EvAsked                 // a ticket waits on the maintainer's answer to a question
+	EvWaits                 // a ticket started before a ticket blocking it merged: back in the queue until it does
 	EvHold                  // something stopped the run; no new tickets while the running ones finish
 	EvDrain                 // the maintainer asked to stop after the running tickets
 	EvResume                // the maintainer took that back
@@ -44,8 +45,9 @@ const (
 // kindNames are the kinds' names in the event stream, which programs read: keep them as they are.
 var kindNames = [...]string{
 	EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred", EvWarn: "warn",
-	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvHold: "hold", EvDrain: "drain",
-	EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered", EvFullCheck: "full_check",
+	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits", EvHold: "hold",
+	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered",
+	EvFullCheck: "full_check",
 }
 
 // String is k's name in the event stream: info, dispatch, closed and so on.
@@ -63,8 +65,8 @@ type Event struct {
 	N      int // EvDispatch: the ticket's number in the run; EvDone: the tickets in all, as Text counts them
 	Limit  int // EvDispatch and EvDone: the ticket limit
 	Ticket string
-	// Title: the ticket's title, for EvDispatch, EvClosed, EvDeferred, EvAsked and EvAnswered; the
-	// verdict's summary for EvTriage.
+	// Title: the ticket's title, for EvDispatch, EvClosed, EvDeferred, EvAsked, EvWaits and
+	// EvAnswered; the verdict's summary for EvTriage.
 	Title  string
 	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
 	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
@@ -72,8 +74,9 @@ type Event struct {
 	// scoped run, the scope's); -1 before the run could read them.
 	Unclosed int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
-	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvStop,
-	// what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
+	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
+	// the tickets it waits for, as in "A, B"; for EvStop, what stopped the run, the word its line
+	// starts with (PAUSED, INTERRUPTED, …).
 	Detail string
 	Text   string // the full line written to the log file
 	// Closed and SetAside: for EvDone, the tickets closed in the run (merged, or with nothing to

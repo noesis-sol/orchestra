@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -389,6 +390,17 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 			id, q.ID, q.Title, q.ID, wt, tab)})
 		return nil
 	}
+	// A worker that found its ticket needs the code of a ticket not merged yet links that ticket as
+	// a blocker and stops, with nothing done: its ticket started too early, and goes back in the
+	// queue rather than be set aside. With work of its own, or a blocker merged already, it is set
+	// aside for review as below.
+	if s := info.Status; s == StatusOpen || s == StatusInProgress {
+		if on := o.unmergedBlockers(info); len(on) > 0 && o.nothingDone(keep, w) {
+			*how = unsettled // neither failed at once nor done: the hold for the environment counts it for nothing
+			o.waitForMerge(keep, t, w, s, on)
+			return nil
+		}
+	}
 	switch s := info.Status; outcomeOf(s) {
 	case outcomeClosed:
 		if s := o.finish(ctx, w); s != nil {
@@ -431,6 +443,45 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 		o.triageDeferred(ctx, id, settled, wt)
 	}
 	return nil
+}
+
+// nothingDone reports whether w's worker left nothing of its own: its branch has no commits beyond
+// Base and its worktree is clean.
+func (o *Loop) nothingDone(ctx context.Context, w worker) bool {
+	c := o.cfg
+	return o.merger.CountCommits(ctx, c.Repo, c.Base+".."+w.br) == 0 && o.checkout.DirtyWorktree(ctx, w.wt) == ""
+}
+
+// waitForMerge puts ticket t back in the queue, open, once its worker, w, has stopped with it still
+// status (open or in progress) and nothing done, having found it blocked by tickets not merged yet,
+// on. Its worktree, branch and tab hold nothing, so they are removed. It is neither set aside nor
+// triaged: the holds start it again once they merge, from a Base with their code (see holds.why).
+func (o *Loop) waitForMerge(ctx context.Context, t Ticket, w worker, status TicketStatus, on []string) {
+	c := o.cfg
+	id, br, wt, tab := w.id, w.br, w.wt, w.tab
+	blockers, does := strings.Join(on, ", "), "it does"
+	if len(on) > 1 {
+		does = "they do"
+	}
+	if status != StatusOpen {
+		if err := o.notes.Reopen(ctx, id); err != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  REOPEN_FAILED: %s stays %s, so it won't be back in the queue as it waits for %s%s; "+
+					"reopen it with: bd update %s --status open",
+				id, status, blockers, because(err), id)})
+		}
+	}
+	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: started before %s merged; back in the queue until %s.", blockers, does))
+	o.repoMu.Lock()
+	cleaned := o.removeWorktree(ctx, id, wt, br)
+	o.repoMu.Unlock()
+	left := fmt.Sprintf("CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open", wt, br, c.LogPath, tab)
+	if cleaned {
+		left = o.closeWorkerTab(ctx, id, tab)
+	}
+	o.emit(Event{Kind: EvWaits, Ticket: id, Title: t.Title, Detail: blockers, Text: fmt.Sprintf(
+		"  WAITS_FOR_MERGE: %s waits for %s to merge; its worker stopped with nothing done, "+
+			"so it is back in the queue until %s; %s", id, blockers, does, left)})
 }
 
 // outcome starts at one so an unset outcome is no outcome, never "closed".

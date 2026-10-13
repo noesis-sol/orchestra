@@ -23,6 +23,7 @@ const (
 	rowStopped
 	rowBlocked // its work is done, but it can't merge until the maintainer acts
 	rowAsked
+	rowWaiting // started before a ticket blocking it merged: back in the queue until it does
 )
 
 type ticketRow struct {
@@ -112,6 +113,8 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 		return [3]string{stopStyle.Render("■ blocked"), stopStyle.Render(r.id), fit(r.note)}
 	case rowAsked:
 		return [3]string{stopStyle.Render("? for you"), stopStyle.Render(r.id), fit(r.note)}
+	case rowWaiting:
+		return [3]string{dimStyle.Render("◷ waiting"), dimStyle.Render(r.id), dimStyle.Render(fit(r.note))}
 	}
 	state := pickedStyle.Render("▶ working")
 	switch doing {

@@ -47,6 +47,15 @@ All notable changes to orchestra are documented here. The format follows
   for it to merge`), and starts once the source merges. Nothing to run says
   `N follow-ups wait for the tickets they were filed from to merge`, and
   `SCOPE_OPEN` names such a follow-up.
+- A ticket whose worker stops it, with nothing done, on finding it needs a
+  ticket not merged yet (a new `blocks` link to one running, asked, open or
+  closed but not merged) is no longer deferred for good: orchestra reopens
+  it, notes why, removes its worktree, branch and tab, says
+  `WAITS_FOR_MERGE: <id> waits for <blocker> to merge` (event kind `waits`,
+  `◷ waiting` on the dashboard), and starts it again once the blocker
+  merges. It isn't triaged or counted toward the hold for the environment.
+  With commits of its own, or a blocker merged already, it is deferred as
+  before.
 
 ## [0.6.0] - 2026-10-13
 

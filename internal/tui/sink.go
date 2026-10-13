@@ -188,6 +188,9 @@ func renderEvent(ev dispatch.Event) string {
 			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
 	case dispatch.EvAsked:
 		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
+	case dispatch.EvWaits:
+		return fmt.Sprintf("%s %s  %s", ts, dimStyle.Render("◷ "+ev.Ticket+" waits"),
+			dimStyle.Render("for "+ev.Detail+" to merge"))
 	case dispatch.EvAnswered:
 		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:

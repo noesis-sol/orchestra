@@ -104,6 +104,24 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 	return hold{}, nil
 }
 
+// unmergedBlockers returns the tickets blocking ticket info, as bd show gives it, that have not
+// merged: those not closed (running, asked, open or deferred), and those closed but not merged yet,
+// as one merging, waiting on a question or left unmerged is. A closed blocker none of those is on
+// Base.
+func (o *Loop) unmergedBlockers(info Ticket) []string {
+	var ids []string
+	for _, d := range info.Dependencies {
+		if d.DependencyType != "blocks" {
+			continue
+		}
+		if d.Status != StatusClosed || o.isActive(d.ID) || o.isAsked(d.ID) || o.unmergedWhy(d.ID) != "" ||
+			HasLabel(d, UnmergedLabel) {
+			ids = append(ids, d.ID)
+		}
+	}
+	return ids
+}
+
 // links are the tickets a ready ticket waits on, as bd show gives them: those blocking it, and the
 // tickets it was discovered from (sources), a follow-up filed with --deps discovered-from:<id>,
 // which bd doesn't count as blocking.

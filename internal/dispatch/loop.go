@@ -289,6 +289,14 @@ func (o *Loop) titleOf(id string) string {
 	return o.active[id].Title
 }
 
+// isActive reports whether ticket id is being worked on: its worker runs, or its work merges.
+func (o *Loop) isActive(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	_, ok := o.active[id]
+	return ok
+}
+
 // What a worker does that Ctrl+C doesn't stop, once begun.
 const (
 	finishMerge    = "merge"          // rebasing, merging and the notes on it
