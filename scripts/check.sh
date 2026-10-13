@@ -2,7 +2,8 @@
 # The project's full check: vet, ShellCheck, the race tests and the linters in .golangci.yml. Orchestra
 # runs it before merging a rebased ticket (.orchestra/settings.json), and workers run it before closing one.
 # gotestsum and golangci-lint run through go run at pinned versions, so a machine needs only Go; ShellCheck
-# is downloaded once at a pinned version (scripts/shellcheck.sh).
+# is downloaded once at a pinned version (scripts/shellcheck.sh). The tests that run the real tmux skip
+# where it isn't installed, unless ORCHESTRA_REQUIRE_TMUX=1 (CI sets it), when they fail instead.
 set -e
 go vet ./...
 # Every tracked shell script, through ShellCheck: offline with nothing cached, it says it skipped, and

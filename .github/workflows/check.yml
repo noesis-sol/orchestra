@@ -1,6 +1,7 @@
 # Runs scripts/check.sh, the project's full check (go vet, the race tests, golangci-lint), on Linux
 # and macOS for each push to main and each pull request: orchestra runs the check on the machine it
-# runs on, macOS so far, and ships Linux binaries too. docs/development.md (Continuous integration).
+# runs on, macOS so far, and ships Linux binaries too. Both install tmux and require the tests that run
+# it. docs/development.md (Continuous integration).
 name: Check
 
 on:
@@ -33,5 +34,21 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The real-tmux tests (internal/tmux's TestLive…, internal/dispatch's TestTmuxRun…) skip without
+      # tmux, so the runner gets it, and ORCHESTRA_REQUIRE_TMUX=1 fails them rather than skip. Their
+      # servers are detached, so the runner's lack of a terminal (and of TERM) is no matter.
+      - name: Install tmux
+        run: |
+          if ! command -v tmux >/dev/null; then
+            if [ "$RUNNER_OS" = macOS ]; then
+              HOMEBREW_NO_AUTO_UPDATE=1 brew install tmux # the runner's formulae are recent enough
+            else
+              sudo apt-get update && sudo apt-get install -y tmux
+            fi
+          fi
+          tmux -V
+
       - name: Check
         run: scripts/check.sh
+        env:
+          ORCHESTRA_REQUIRE_TMUX: "1"
