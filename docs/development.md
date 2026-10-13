@@ -101,7 +101,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `advice.go` | triage and the run review |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
 | `predict.go` | predicting the files of ready tickets that name none, in the background |
-| `deps.go` | the interfaces to Beads, the terminal (Herdr or tmux), git and workers' reports |
+| `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports |
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.
 

@@ -8,13 +8,13 @@
 
 
 
-Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own tab, in [Herdr](https://herdr.dev) or [tmux](https://github.com/tmux/tmux), and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
+Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own tab, in [Herdr](https://herdr.dev), [tmux](https://github.com/tmux/tmux) or [cmux](https://cmux.com), and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
 
 ## Workers and organs
 
 Two kinds of model calls do orchestra's work, and these docs keep their names apart:
 
-- **Workers** are the coding agents that do the tickets: one per ticket, each in its own tab (Herdr's or tmux's) and git worktree, a full Claude Code session (by default) with its tools and the [MCP servers the project chose](docs/workers.md#mcp-servers-for-workers). They edit, test, commit and close their ticket.
+- **Workers** are the coding agents that do the tickets: one per ticket, each in its own tab (Herdr's, tmux's or cmux's) and git worktree, a full Claude Code session (by default) with its tools and the [MCP servers the project chose](docs/workers.md#mcp-servers-for-workers). They edit, test, commit and close their ticket.
 - **[Organs](docs/organs.md)** are orchestra's own one-shot advisers: triage of set-aside tickets, the predictor of a ticket's files, the reviewer that writes the run report, the screen and plan that turn a feature request into tickets, and the scout that finds a project's test suites for `orchestra init`. Each is a single `claude -p` call with no tools, except the scout, which has read-only ones (Read, Glob and Grep) to read the repository; they advise and change nothing.
 
 ## Install
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/noesis-sol/orchestra/main/scripts/i
 
 [The script](scripts/install.sh) installs the latest signed release for darwin or linux, amd64 or arm64, in `/usr/local/bin` or `~/.local/bin`. Or with Go: `go install github.com/noesis-sol/orchestra/cmd/orchestra@latest`.
 
-`orchestra update` updates it (`sudo orchestra update` where its folder is root's), and `orchestra --version` says which you have. orchestra needs `herdr`, `tmux` (`brew install tmux`, `apt install tmux`) or [cmux](https://cmux.com) ([docs/running.md](docs/running.md#workers-in-cmux)) for the workers, `git`, `claude` and `bd` (which `orchestra init` can install).
+`orchestra update` updates it (`sudo orchestra update` where its folder is root's), and `orchestra --version` says which you have. orchestra needs `herdr`, `tmux` (`brew install tmux`, `apt install tmux`) or [cmux](https://cmux.com) (macOS) for the workers, `git`, `claude` and `bd` (which `orchestra init` can install).
 
 [docs/install.md](docs/install.md) has the rest: what the script checks and its variables, building from a clone, how `update` verifies a release, build provenance, the newer-release notice and reading a clone's version.
 
@@ -47,14 +47,22 @@ Most of it can change later: `settings.json` is plain JSON you can edit, `init` 
 
 ## Run
 
-From the main checkout, on the branch finished tickets should land on, in a Herdr pane or, with tmux, any terminal:
+From the main checkout, on the branch finished tickets should land on, in a Herdr pane, a cmux terminal or, with tmux, any terminal:
 
 ```
 git switch -c batch/$(date +%F)
 orchestra
 ```
 
-In a Herdr pane, workers get tabs in its workspace. Elsewhere they get tmux windows: in orchestra's own session when it runs in tmux, otherwise in a detached session that orchestra names when it starts, to watch them with `tmux attach -t orchestra-<repository folder>`. Under tmux, workers are Claude Code. `--terminal herdr|tmux` (or `"terminal"` in `.orchestra/settings.json`) chooses; see [Herdr or tmux](docs/running.md#herdr-or-tmux).
+Workers run in the terminal orchestra runs in, or in tmux when it runs in none of them:
+
+| Terminal | Chosen by default | Each worker gets | To watch the workers |
+|---|---|---|---|
+| [Herdr](https://herdr.dev) | in a Herdr pane | a tab in orchestra's workspace | Herdr's tabs |
+| [tmux](https://github.com/tmux/tmux) | in tmux, or in any other terminal when tmux is installed | a window: in orchestra's session when it runs in tmux, otherwise in a detached session named when the run starts | `tmux attach -t orchestra-<repository folder>`, as the run says |
+| [cmux](https://cmux.com) (macOS) | in a cmux terminal | a workspace in orchestra's window, listed in the sidebar | cmux's sidebar |
+
+Under tmux and cmux, workers are Claude Code: its hooks say what each one is doing. `--terminal herdr|tmux|cmux` (or `"terminal"` in `.orchestra/settings.json`) chooses instead; see [Herdr, tmux or cmux](docs/running.md#herdr-tmux-or-cmux).
 
 In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default) runs the backlog as below; it reads `Current tickets: N ready`, or with none ready `Current tickets: none, all done` or `Current tickets: none ready (N open)`. **New feature** asks you to describe a feature in a few lines, then opens Claude Code in a pane beside orchestra's, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Once the tickets are filed and Claude has said so, orchestra closes that pane by itself, shows the tickets and runs them once you confirm; `/exit` there, or closing the pane, ends an interview that files nothing. Ctrl+C in orchestra's pane stops the interview. When orchestra has no pane to split (tmux run from outside tmux), or can't open one, Claude Code gets orchestra's terminal instead. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
 
@@ -112,7 +120,7 @@ How a run goes:
 A finished ticket that can't merge until you act reads `■ blocked`, with why (`main checkout has uncommitted changes`, `merge conflict in <files>`), and counts under **Needs you** with the questions waiting for your answer; `■ stopped` is a worker still running when the run stopped.
 
 The dashboard's keys:
-- **1**–**9** switch to that worker's tab (in tmux, while its windows are in orchestra's session).
+- **1**–**9** switch to that worker's tab (its workspace in cmux; in tmux, while its windows are in orchestra's session).
 - **s** asks whether to stop after the running tickets.
 - **Ctrl+C** stops at once and leaves the workers running; press it again to quit without waiting.
 
@@ -125,7 +133,7 @@ Everything is also logged to `.orchestra/orchestra.log`. Scripts and agents shou
 | 0 | done: nothing left to start, nothing to run from the start (`✓ All done` or `Nothing ready to run`), the limit reached, or stopped after the running tickets as asked |
 | 2 | a setup problem (all are listed), or another run going in the repository |
 | 3 | a worker needs you: blocked, idle with its ticket in progress, or past the ticket limit |
-| 4 | a terminal (Herdr or tmux), Beads or git failure |
+| 4 | a terminal (Herdr, tmux or cmux), Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left its branch |
 | 6 | a finished branch didn't fast-forward |
 | 7 | workers kept failing at once: the machine, not the tickets |
@@ -144,8 +152,8 @@ Each code in full, and what to do after one, is in [docs/running.md](docs/runnin
 - [docs/install.md](docs/install.md): the install script, building from a clone, `orchestra update`, build provenance, versions
 - [docs/dashboard.md](docs/dashboard.md): what you see, the keys, the closing lines, notifications
 - [docs/setup.md](docs/setup.md): everything `orchestra init` does
-- [docs/running.md](docs/running.md): Herdr or tmux, options, scoped and feature runs, several tickets at once, the full check, stops and exit codes
-- [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, hooks and run files, workers in tmux
+- [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, several tickets at once, the full check, stops and exit codes
+- [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, hooks and run files, workers in tmux and cmux
 - [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen, the plan and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
 - [docs/development.md](docs/development.md): the check, the code's layout and tests, differences from `orchestrate.sh`
