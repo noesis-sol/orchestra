@@ -214,13 +214,13 @@ func (m Dashboard) summary(w int) string {
 	if len(m.rows) == 0 {
 		return stack(m.titleLine(w), m.statsTable(w))
 	}
-	// Every row: the tickets table's header, rule and borders take 4 lines.
-	return stack(m.titleLine(w), m.statsTable(w), m.ticketsTable(w, len(m.rows)+4))
+	// Every row: the Tickets label and the table's borders take 3 lines.
+	return stack(m.titleLine(w), m.statsTable(w), m.tickets(w, len(m.rows)+3))
 }
 
 // tableLines is how many lines the tickets table takes in a pane h lines tall: about a third of
-// it, for 3 to 10 tickets besides its header, rule and borders. It changes only on a resize.
-func tableLines(h int) int { return min(max(h/3-4, 3), 10) + 4 }
+// it, for 3 to 10 tickets besides its Tickets label and borders. It changes only on a resize.
+func tableLines(h int) int { return min(max(h/3-4, 3), 10) + 3 }
 
 // lineCount is how many lines s takes on screen: none when it is empty.
 func lineCount(s string) int {
@@ -241,12 +241,13 @@ func (m Dashboard) footLines(drain int) int {
 }
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
-// can't redraw a view taller than the terminal. The tickets table's height comes from the pane's
-// alone (tableLines), and blank rows fill it, so it stays put while workers come, report and go; it
-// is left out of a pane too short for it and one line per worker the run may have. The workers get
-// what is left: a box each, or one line each, chosen with room for the winding-down line so that
-// line doesn't change it. Below that the layout gives way step by step: the totals on one line, then
-// the Current label, then cut, keeping footer. An empty footer takes no line.
+// can't redraw a view taller than the terminal. The tickets table's height, its Tickets label
+// included, comes from the pane's alone (tableLines), and blank rows fill it, so it stays put while
+// workers come, report and go; it is left out of a pane too short for it and one line per worker the
+// run may have. The workers get what is left: a box each, or one line each, chosen with room for the
+// winding-down line so that line doesn't change it. Below that the layout gives way step by step: the
+// totals on one line, then the Current label and the Tickets label with it, then cut, keeping footer.
+// An empty footer takes no line.
 func (m Dashboard) layout(w int, title, footer string) string {
 	var foot []string
 	if footer != "" {
@@ -262,14 +263,15 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
 	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines(1)
 	if lines := tableLines(m.height); need+lines <= m.height {
-		top := stack(title, stats, m.ticketsTable(w, lines))
+		top := stack(title, stats, m.tickets(w, lines))
 		for _, workers := range []string{panels, list} {
 			if fits(steady, top, workers) {
 				return with(top, workers)
 			}
 		}
-		// More workers than the run may have, or a winding-down line that wraps: the workers give way.
-		return m.cut(stack(top, m.workerList(w)), foot)
+		// More workers than the run may have, or a winding-down line that wraps: the labels go, then
+		// the workers give way.
+		return m.cut(stack(title, stats, m.ticketsTable(w, lines-1), m.workerList(w)), foot)
 	}
 	for _, workers := range []string{panels, list} {
 		if fits(steady, title, stats, workers) {

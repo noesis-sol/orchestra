@@ -12,17 +12,23 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// tableSpan is the first line of the tickets table in view and how many lines it takes; -1 and 0
-// when the view has none.
+// tableSpan is the first line of the tickets table in view, its Tickets label when it has one, and
+// how many lines it takes down to its bottom border; -1 and 0 when the view has none. The table is
+// the box with columns that isn't the totals'.
 func tableSpan(view string) (top, height int) {
 	lines := strings.Split(ansi.Strip(view), "\n")
 	for i, l := range lines {
-		if !strings.HasPrefix(l, "│ Tickets") {
+		if !strings.HasPrefix(l, "╭") || !strings.Contains(l, "┬") ||
+			i+1 < len(lines) && strings.Contains(lines[i+1], "Completed") {
 			continue
+		}
+		top = i
+		if i > 0 && strings.TrimRight(lines[i-1], " ") == "  Tickets" {
+			top = i - 1
 		}
 		for j := i + 1; j < len(lines); j++ {
 			if strings.HasPrefix(lines[j], "╰") {
-				return i - 1, j - i + 2
+				return top, j - top + 1
 			}
 		}
 	}
@@ -95,20 +101,20 @@ func steadyRun(w, h int, look func(step string, m Dashboard)) {
 // The tickets table's height comes from the pane's: about a third of it, for 3 to 10 tickets, and
 // blank rows fill it while there are fewer.
 func TestTicketsTableHeightComesFromThePane(t *testing.T) {
-	for h, want := range map[int]int{1: 7, 12: 7, 21: 7, 24: 8, 30: 10, 40: 13, 42: 14, 45: 14, 100: 14} {
+	for h, want := range map[int]int{1: 6, 12: 6, 21: 6, 24: 7, 30: 9, 40: 12, 42: 13, 45: 13, 100: 13} {
 		if got := tableLines(h); got != want {
 			t.Errorf("a pane %d tall: the table takes %d lines, want %d", h, got, want)
 		}
 	}
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
 	for n := range 16 {
-		for _, lines := range []int{7, 10, 14} {
-			table := m.ticketsTable(80, lines)
+		for _, lines := range []int{6, 9, 13} {
+			table := m.tickets(80, lines)
 			if got := lipgloss.Height(table); got != lines {
 				t.Errorf("%d tickets in %d lines: the table takes %d:\n%s", n, lines, got, ansi.Strip(table))
 			}
 			plain := ansi.Strip(table)
-			if more := n > lines-4; more != strings.Contains(plain, "earlier tickets") {
+			if more := n > lines-3; more != strings.Contains(plain, "earlier tickets") {
 				t.Errorf("%d tickets in %d lines: the earlier ones are counted: %v, want %v:\n%s", n, lines,
 					!more, more, plain)
 			}
@@ -147,7 +153,7 @@ func TestTicketsTableStaysPut(t *testing.T) {
 // A pane too short for the table and a line per worker the run may have has no table, whatever the
 // workers do, and the totals, the workers and the hint still show.
 func TestShortPaneDropsTheTableForGood(t *testing.T) {
-	for _, size := range [][2]int{{80, 20}, {135, 15}, {66, 12}, {40, 9}} {
+	for _, size := range [][2]int{{80, 19}, {135, 14}, {66, 11}, {40, 8}} {
 		w, h := size[0], size[1]
 		steadyRun(w, h, func(step string, m Dashboard) {
 			view := m.View()

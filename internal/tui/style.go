@@ -23,6 +23,7 @@ var (
 var (
 	dimStyle      = lipgloss.NewStyle().Faint(true)
 	keyStyle      = lipgloss.NewStyle().Foreground(chalk).Bold(true) // a key to press
+	ticketsStyle  = lipgloss.NewStyle().Foreground(chalk).Bold(true) // the Tickets label, apart from Current's cyan
 	pickedStyle   = lipgloss.NewStyle().Foreground(cyan).Bold(true)  // picked up
 	closedStyle   = lipgloss.NewStyle().Foreground(green).Bold(true) // completed
 	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside

@@ -11,14 +11,18 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// current heads the worker boxes with a Current label, indented like the tickets table's Tickets
-// header but bold in the working colour, where the eye should land; nothing when there are no boxes.
+// current heads the worker boxes with a Current label in the working colour, where the eye should
+// land; nothing when there are no boxes.
 func current(panels string) string {
 	if panels == "" {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, "  "+pickedStyle.Render("Current"), panels)
+	return lipgloss.JoinVertical(lipgloss.Left, sectionLabel("Current", pickedStyle), panels)
 }
+
+// sectionLabel is the line that heads a section of the dashboard, Tickets or Current: its name,
+// indented and in style, which is bold.
+func sectionLabel(name string, style lipgloss.Style) string { return "  " + style.Render(name) }
 
 // workerList is the compact form of the worker boxes: one box, one line per running worker.
 func (m Dashboard) workerList(w int) string {

@@ -132,6 +132,11 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 	return [3]string{state, pickedStyle.Render(r.id), fit(r.title)}
 }
 
+// tickets is the tickets table headed by its Tickets label, lines lines in all.
+func (m Dashboard) tickets(w, lines int) string {
+	return stack(sectionLabel("Tickets", ticketsStyle), m.ticketsTable(w, lines-1))
+}
+
 // ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
 // the tickets leave, and when there are more the oldest give way to a count of them.
 func (m Dashboard) ticketsTable(w, lines int) string {
@@ -142,7 +147,7 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 	aboutWidth := w - 2 - 13 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
 	rows := m.rows
 	hidden := 0
-	limit := max(lines-4, 1) // header, rule and borders take 4 lines
+	limit := max(lines-2, 1) // the borders take 2 lines
 	if len(rows) > limit {
 		hidden = len(rows) - (limit - 1)
 		rows = rows[hidden:]
@@ -166,15 +171,12 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 	return table.New().
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(grey)).
-		Headers("Tickets", "", "").
-		StyleFunc(func(row, col int) lipgloss.Style {
+		StyleFunc(func(_, col int) lipgloss.Style {
 			s := lipgloss.NewStyle().Padding(0, 1)
-			switch {
-			case row == table.HeaderRow:
-				return s.Faint(true)
-			case col == 0:
+			switch col {
+			case 0:
 				return s.Width(13)
-			case col == 1:
+			case 1:
 				return s.Width(idWidth + 2)
 			}
 			return s

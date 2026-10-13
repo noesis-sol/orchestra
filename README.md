@@ -85,9 +85,8 @@ How a run goes:
 │ Completed    │ Deferred     │ Needs you    │ Workers     │ In queue    │
 │ ✓ 2          │ ↷ 1 ◆ 1      │ 0            │ 2 of 3      │ 11 of 16    │
 ╰──────────────┴──────────────┴──────────────┴─────────────┴─────────────╯
+  Tickets
 ╭────────────┬─────────────┬─────────────────────────────────────────────╮
-│ Tickets    │             │                                             │
-├────────────┼─────────────┼─────────────────────────────────────────────┤
 │ ✓ done     │ kinieta-dwv │ ffd6ce4 merged into batch/2026-09-28        │
 │ ↷ deferred │ kinieta-vzg │ ◆ environment · high · prompt never submit… │
 │ ▶ working  │ kinieta-kco │ Open the property model: Interpolatable p…  │

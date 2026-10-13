@@ -42,6 +42,11 @@ All notable changes to orchestra are documented here. The format follows
   the log and `.orchestra/run/events.jsonl` (docs/events.md); exit code 4
   reads "a terminal (Herdr or tmux), Beads or git failure".
 
+- The dashboard's tickets table has no header row or rule under it: a bold
+  `Tickets` label heads it, indented like `Current` over the workers but in
+  a neutral colour of its own. A pane as tall shows as many tickets, and the
+  line saved goes to the workers, whose boxes fit in a pane a line shorter;
+  where the `Current` label is left out, the `Tickets` label goes with it.
 - The worker prompt tells a worker to file a follow-up that changes or
   builds on what its ticket adds `--deps blocked-by:<ticket>`, not
   `discovered-from`, so it doesn't start before that ticket merges; and,
