@@ -93,9 +93,9 @@ README defines both terms; use them consistently.
   the organ phase after a run.
 - `internal/dispatch`: the run loop, one file per concern (docs/development.md lists them). It
   reaches Beads, Herdr, git and workers' reports only through the interfaces in `deps.go`.
-- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/git` (git), `internal/command` (every
-  external command: context, time limit, process group), `internal/claude` (workers' hooks), `internal/mcp`
-  (discovering MCP servers for workers).
+- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux, not yet wired in), `internal/git`
+  (git), `internal/command` (every external command: context, time limit, process group), `internal/claude` (workers'
+  hooks), `internal/mcp` (discovering MCP servers for workers).
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
   `internal/tui`: the Bubble Tea dashboard and init's screen.
