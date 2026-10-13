@@ -15,6 +15,14 @@ Two kinds of model calls do orchestra's work, and these docs keep their names ap
 ## Install
 
 ```
+curl -fsSL https://raw.githubusercontent.com/noesis-sol/orchestra/main/scripts/install.sh | sh
+```
+
+[The script](scripts/install.sh) (read it first if you like) installs the latest [GitHub Release](https://github.com/noesis-sol/orchestra/releases)'s binary for your platform, darwin or linux, amd64 or arm64. It checks the archive's SHA-256 against the release's `checksums.txt` and, where an OpenSSL 3 is installed (`openssl` on the `PATH`, or Homebrew's), the signature of `checksums.txt` with the release keys, as `orchestra update` does; macOS's own `openssl` is LibreSSL, which can't verify it, so there it says the signature wasn't checked and goes on. A sum or signature that doesn't match installs nothing. It installs in `/usr/local/bin` where it can write there, and otherwise in `~/.local/bin`, saying how to add that to your `PATH`; it never calls `sudo`. `ORCHESTRA_VERSION=v0.6.0` installs that release instead, and `ORCHESTRA_INSTALL_DIR=<folder>` installs there: for root's `/usr/local/bin`, `curl -fsSL … | sudo ORCHESTRA_INSTALL_DIR=/usr/local/bin sh`.
+
+Or with Go:
+
+```
 go install github.com/noesis-sol/orchestra/cmd/orchestra@latest
 ```
 
@@ -33,7 +41,7 @@ The signature shows a release was made by orchestra's release workflow, which al
 
 A run on a release build ends, on a terminal, with `orchestra vX.Y.Z is available (you have vA.B.C): orchestra update` when a newer release is out: it asks GitHub in the background as it starts, at most once a day, keeping the answer in `orchestra/latest-release.json` in your user cache folder (`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), and a slow or failed check is dropped without delaying or failing the run. The log and the event stream don't have the line, and builds from a clone never check. `ORCHESTRA_NO_UPDATE_CHECK=1` turns the check off: no request, no cache.
 
-`orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes. Needs Go 1.26, plus `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install).
+`orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes. orchestra needs `herdr`, `git`, `claude` and `bd` (which `orchestra init` can install); `go install` and a build from a clone also need Go 1.26.
 
 ## Set up a project
 

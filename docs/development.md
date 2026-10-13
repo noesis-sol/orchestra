@@ -102,7 +102,7 @@ The tag starts `.github/workflows/release.yml` (Actions, Release), which on Linu
 - takes the notes from the tag's `CHANGELOG.md` (`scripts/release-notes.sh`), and fails when the version has no section;
 - runs GoReleaser (`.goreleaser.yaml`): `orchestra` for darwin and linux, amd64 and arm64, with `CGO_ENABLED=0` and `-trimpath`, in `orchestra_X.Y.Z_<os>_<arch>.tar.gz` with `README.md`, `CHANGELOG.md` and `THIRD_PARTY_NOTICES.md` (and a `LICENSE` once there is one), and their SHA-256 sums in `checksums.txt`;
 - signs `checksums.txt` with the release key (below), within GoReleaser (its `signs:`), as `checksums.txt.sig`. `orchestra update` verifies it before trusting a sum in `checksums.txt` and installs nothing from a release without a valid one. Signing comes before anything is published: without the key, or with one whose public half isn't among the release keys, the release fails and the Release is left as it was;
-- creates the GitHub Release with the notes and attaches the archives, `checksums.txt` and `checksums.txt.sig`; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` downloads: change them together;
+- creates the GitHub Release with the notes and attaches the archives, `checksums.txt` and `checksums.txt.sig`; a tag with a suffix (`v1.2.0-rc.1`) makes a pre-release. These names are what `orchestra update` and `scripts/install.sh` download: change them together;
 - marks the Release as GitHub's latest only when its tag is the newest release tag, so releasing an older tag again leaves the latest where it is;
 - attests the archives' build provenance (`actions/attest`), which `gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra` checks.
 
@@ -130,9 +130,9 @@ It refuses a key whose public half isn't in `internal/update/release-keys/`, as 
 
 To replace the key (it leaked, or is old), add the new one a release before retiring the old, so that the binaries of both releases verify the next:
 
-1. Make the new pair: `openssl genpkey -algorithm ed25519 -out release-key.pem` and `openssl pkey -in release-key.pem -pubout -out internal/update/release-keys/YYYY-MM.pem`. Commit the public key and release, still signed with the old key: this release trusts both.
+1. Make the new pair: `openssl genpkey -algorithm ed25519 -out release-key.pem` and `openssl pkey -in release-key.pem -pubout -out internal/update/release-keys/YYYY-MM.pem`. Add the public key to `release_keys` in `scripts/install.sh` too (a test checks the two match). Commit the public key and release, still signed with the old key: this release trusts both.
 2. Set the secret `ORCHESTRA_RELEASE_KEY` to the new private key (`gh secret set ORCHESTRA_RELEASE_KEY < release-key.pem`), and keep the file out of the repository.
-3. Once a release signed with the new key is out, delete the old `.pem`.
+3. Once a release signed with the new key is out, delete the old `.pem`, and the old key from `scripts/install.sh`.
 
 A binary from before step 1's release trusts only the old key: once the latest release is signed with the new one, `orchestra update` refuses it, and that binary needs a new install (`go install`, or a release's archive). Releasing step 1 well before step 2 keeps that to binaries that missed it. If the old key leaked, set the new secret and delete the old `.pem` in one go instead: a leaked key's signatures mustn't verify for a release longer than needed.
 

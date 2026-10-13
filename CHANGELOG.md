@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- One line installs orchestra without Go:
+  `curl -fsSL https://raw.githubusercontent.com/noesis-sol/orchestra/main/scripts/install.sh | sh`
+  installs the latest release's binary for darwin or linux, amd64 or
+  arm64, after checking its SHA-256 and, where OpenSSL 3 is installed, the
+  signature of `checksums.txt`; in `/usr/local/bin` where it can write,
+  else `~/.local/bin`, never calling `sudo`. `ORCHESTRA_VERSION` and
+  `ORCHESTRA_INSTALL_DIR` choose the release and the folder.
 - Releases carry binaries: pushing a `v*` tag runs the release workflow
   (`.github/workflows/release.yml`), which runs `scripts/check.sh` and
   attaches `orchestra_<version>_<os>_<arch>.tar.gz` for darwin and linux,
