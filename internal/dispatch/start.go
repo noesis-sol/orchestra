@@ -22,7 +22,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 		name, kind, st, readErr := o.namer.PaneAgent(ctx, pane)
 		switch {
 		case readErr != nil:
-			const why = "Herdr could not say what the pane holds"
+			const why = "the terminal could not say what the pane holds"
 			if why != held {
 				o.log.Raw("", readErr)
 			}
@@ -66,7 +66,7 @@ func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 	case err != nil:
 		o.log.Raw("", err)
 	case st == StateGone:
-		o.log.Raw("", fmt.Errorf("%s's start was cut short before Herdr saw a worker in tab %s to name %s: "+
+		o.log.Raw("", fmt.Errorf("%s's start was cut short before the terminal saw a worker in tab %s to name %s: "+
 			"one still coming up there is left unnamed, for the next run to look for in its pane", id, tab, agent))
 	case kind != o.cfg.AgentKind || name == agent:
 	default:
@@ -249,7 +249,7 @@ func (s *workerStart) nameRefused(err error) *stopReason {
 		return nil
 	}
 	return halt(ExitTool, stopStartFailed,
-		" for %s in tab %s: Herdr refused the agent name %s (%v)", s.id, s.tab, s.agent, err).causedBy(err)
+		" for %s in tab %s: the terminal refused the agent name %s (%v)", s.id, s.tab, s.agent, err).causedBy(err)
 }
 
 // fromPromptFile starts the worker, if it has a prompt file launch, by typing the command into the
@@ -281,7 +281,7 @@ func (s *workerStart) fromPromptFile(ctx context.Context) (launched bool, stop *
 		}
 	}
 	o.log.Raw("", fmt.Errorf("%s's worker could not be started from its prompt file and named %s (%v); "+
-		"starting it with herdr agent start and pasting the prompt", s.id, s.agent, err))
+		"starting it plainly and pasting the prompt", s.id, s.agent, err))
 	s.launch = ""
 	return false, nil
 }
@@ -338,7 +338,8 @@ func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
 		if o.starter.IsArgumentRefused(err) && len(s.mcpArgs) > 0 {
 			// Without them it would start with every MCP server on the machine.
 			return halt(ExitTool, stopStartFailed,
-				" for %s in tab %s: Herdr refused the arguments giving it its MCP servers (%v)", s.id, s.tab, err).causedBy(err)
+				" for %s in tab %s: the terminal refused the arguments giving it its MCP servers (%v)",
+				s.id, s.tab, err).causedBy(err)
 		}
 		if !sleep(ctx, startRetry) {
 			return s.interrupted(ctx)

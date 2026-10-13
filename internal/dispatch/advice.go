@@ -208,7 +208,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	var stopped strings.Builder
 	for _, st := range o.activeList() {
 		show := o.tickets.Describe(ctx, st.Ticket)
-		fmt.Fprintf(&stopped, "%s was in progress in Herdr tab %s when the run stopped.\n\n"+
+		fmt.Fprintf(&stopped, "%s was in progress in tab %s when the run stopped.\n\n"+
 			"%s\n\nEnd of its worker's terminal:\n%s\n\n",
 			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(ctx, o.agentName(st.Ticket), ""), 60))
 	}
@@ -362,7 +362,7 @@ func exitMeaning(code int) string {
 	case ExitStuck:
 		return "a worker was blocked, paused or ran past its time limit and needs attention"
 	case ExitTool:
-		return "a Herdr, Beads or git command failed"
+		return "a terminal (Herdr or tmux), Beads or git command failed"
 	case ExitDirty:
 		return "the main checkout had uncommitted changes or left its branch"
 	case ExitMerge:

@@ -36,6 +36,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Notes, log lines, stop reasons and the run report say `tab <id>` and "the
+  terminal" where they said `Herdr tab <id>` and "Herdr", as workers will
+  also run in tmux. The stop word `HERDR_FAILED` is now `TERMINAL_FAILED` in
+  the log and `.orchestra/run/events.jsonl` (docs/events.md); exit code 4
+  reads "a terminal (Herdr or tmux), Beads or git failure".
+
 - The worker prompt tells a worker to file a follow-up that changes or
   builds on what its ticket adds `--deps blocked-by:<ticket>`, not
   `discovered-from`, so it doesn't start before that ticket merges; and,

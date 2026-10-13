@@ -292,7 +292,7 @@ func TestAskedTicketWhoseWorkerIsGoneStopsTheRun(t *testing.T) {
 		if got := closedIDs(h); !equal(got, []string{"B"}) {
 			t.Errorf("merged %v; want B, running, merged", got)
 		}
-		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in Herdr tab tab1 is gone, with the ticket still in_progress") {
+		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in tab tab1 is gone, with the ticket still in_progress") {
 			t.Errorf("notes on A: %q", notes)
 		}
 		if a, _ := h.beads.Show(t.Context(), "A"); !HasLabel(a, UnmergedLabel) {

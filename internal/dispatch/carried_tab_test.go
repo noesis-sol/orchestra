@@ -26,11 +26,11 @@ func TestCarriedOverWorkersTabIsClosedOnlyWhileItIsTheWorkers(t *testing.T) {
 				t.Fatalf("the user's tab is %q (%v); want tab1, the ID A's worker had", tab, err)
 			}
 		}, false, "worktree and branch removed; " +
-			"tab tab1 left open: Herdr has it labelled 'notes' now, not A, so it may not be its worker's"},
+			"tab tab1 left open: the terminal has it labelled 'notes' now, not A, so it may not be its worker's"},
 		{"no tab under its ID", func(_ *testing.T, h *fakeHerdr) { h.restart() }, false,
 			"worktree and branch removed; its tab tab1 was closed already"},
 		{"Herdr can't say", func(_ *testing.T, h *fakeHerdr) { h.labelFails = true }, false,
-			"worktree and branch removed; tab tab1 left open, as Herdr can't say whose it is"},
+			"worktree and branch removed; tab tab1 left open, as the terminal can't say whose it is"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

@@ -61,7 +61,7 @@ func (o *Loop) pausedGone(ctx context.Context, t Ticket, w worker, how *settling
 		return o.resumeGone(ctx, t, w.wt, w.tab, "", false, s, how)
 	}
 	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress (worktree %s).", w.tab, w.wt))
+		"Orchestra: the worker in tab %s is gone, with the ticket still in_progress (worktree %s).", w.tab, w.wt))
 	again := ""
 	if ok {
 		again = fmt.Sprintf("; its session %s was resumed once in this run already, and the next run resumes it again",
@@ -91,12 +91,12 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 	c := o.cfg
 	id := t.ID
 	keep := context.WithoutCancel(ctx)
-	note := fmt.Sprintf("Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress (worktree %s); "+
+	note := fmt.Sprintf("Orchestra: the worker in tab %s is gone, with the ticket still in_progress (worktree %s); "+
 		"its session %s is resumed in a new tab.", tab, wt, s.ID)
 	text := fmt.Sprintf("  RESUMED: %s's worker is gone from tab %s with the ticket in progress; "+
 		"resuming its session %s in a new tab (worktree %s)", id, tab, s.ID, wt)
 	if back {
-		note = fmt.Sprintf("Orchestra: the ticket is back, and its worker in Herdr tab %s is gone (worktree %s); "+
+		note = fmt.Sprintf("Orchestra: the ticket is back, and its worker in tab %s is gone (worktree %s); "+
 			"its session %s is resumed in a new tab.", tab, wt, s.ID)
 		text = fmt.Sprintf("  RESUMED: %s is back, and its worker is gone from tab %s; "+
 			"resuming its session %s in a new tab (worktree %s)", id, tab, s.ID, wt)
@@ -163,7 +163,7 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 			return errInterrupted
 		}
 		o.appendNotes(keep, id, fmt.Sprintf(
-			"Orchestra: the worker resumed in Herdr tab %s never took up carrying on (worktree %s).", launched.tab, wt))
+			"Orchestra: the worker resumed in tab %s never took up carrying on (worktree %s).", launched.tab, wt))
 		return halt(ExitStuck, stopPaused, ": %s's worker, resumed in tab %s, never took up carrying on "+
 			"(worktree %s); stopping so it can be looked at", id, launched.tab, wt)
 	}

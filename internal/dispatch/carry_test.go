@@ -468,7 +468,7 @@ func TestTicketLeftRunningWhoseWorkerIsGoneIsWarnedOnce(t *testing.T) {
 		if got := warnings(h, "A"); !equal(got, []string{want}) {
 			t.Errorf("warnings:\n%s\nwant:\n%s", strings.Join(got, "\n"), want)
 		}
-		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in Herdr tab tab1 is gone, "+
+		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in tab tab1 is gone, "+
 			"with the ticket still in_progress after the last run left it running (PAUSED)") {
 			t.Errorf("notes on A: %q", notes)
 		}

@@ -19,7 +19,7 @@ func TestNudgeBreaksTheBlockedStreak(t *testing.T) {
 	}{
 		{StateBlocked, blockedLimit, "BLOCKED >4min: tab tab1 (A) needs attention"},
 		{StateUnknown, unknownLimit,
-			"UNKNOWN >5min: Herdr can't tell what the worker in tab tab1 (A) is doing; it needs attention"},
+			"UNKNOWN >5min: the terminal can't tell what the worker in tab tab1 (A) is doing; it needs attention"},
 	} {
 		t.Run(string(c.st), func(t *testing.T) {
 			t.Parallel()

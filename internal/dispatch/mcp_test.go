@@ -168,7 +168,7 @@ func TestARefusedMCPArgumentStopsTheRun(t *testing.T) {
 	h.herdr.refuseArgs = true
 	h.beads.add("A", "first", 1)
 	o, code := h.run()
-	if code != ExitTool || !strings.Contains(o.Final(), "Herdr refused the arguments giving it its MCP servers") {
+	if code != ExitTool || !strings.Contains(o.Final(), "the terminal refused the arguments giving it its MCP servers") {
 		t.Fatalf("exit %d, final %q", code, o.Final())
 	}
 	for _, args := range h.herdr.argsFor("A") {

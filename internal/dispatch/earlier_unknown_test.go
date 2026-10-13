@@ -30,7 +30,7 @@ func TestAnEarlierWorkerStayingUnknownStopsTheRunBeforeItsWorktree(t *testing.T)
 		h.beads.add("A", "first", 1)
 		h.herdr.agents = append(h.herdr.agents, &fakeAgent{name: "A", kind: "claude", pane: "elsewhere", status: "unknown"})
 		o, code := h.run()
-		want := "AGENT_BUSY: an earlier worker for A is still in its tab, though Herdr can't tell what it is doing"
+		want := "AGENT_BUSY: an earlier worker for A is still in its tab, though the terminal can't tell what it is doing"
 		if code != ExitTool || !strings.HasPrefix(o.Final(), want) {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
@@ -113,7 +113,7 @@ func TestAskedTicketWhoseWorkerStaysUnknownIsAdopted(t *testing.T) {
 			t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		ev := h.sink.text()
-		want := "  A's earlier worker is still in tab tab1, though Herdr can't tell what it is doing; " +
+		want := "  A's earlier worker is still in tab tab1, though the terminal can't tell what it is doing; " +
 			"adopting it rather than starting another"
 		if !strings.Contains(ev, want) || strings.Contains(ev, "renamed") {
 			t.Errorf("A's worker should be adopted, not renamed:\n%s", ev)

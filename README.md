@@ -124,7 +124,7 @@ Everything is also logged to `.orchestra/orchestra.log`. Scripts and agents shou
 | 0 | done: nothing left to start, nothing to run from the start (`✓ All done` or `Nothing ready to run`), the limit reached, or stopped after the running tickets as asked |
 | 2 | a setup problem (all are listed), or another run going in the repository |
 | 3 | a worker needs you: blocked, idle with its ticket in progress, or past the ticket limit |
-| 4 | a Herdr, Beads or git failure |
+| 4 | a terminal (Herdr or tmux), Beads or git failure |
 | 5 | uncommitted changes in the main checkout, or it left its branch |
 | 6 | a finished branch didn't fast-forward |
 | 7 | workers kept failing at once: the machine, not the tickets |

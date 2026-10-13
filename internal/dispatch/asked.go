@@ -126,7 +126,7 @@ func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
 // ticket stays asked, so leaveAsked labels it.
 func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *stopReason {
 	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
+		"Orchestra: the worker in tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
 		w.tab, w.after(), w.wt))
 	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
 		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
@@ -147,7 +147,7 @@ func (o *Loop) askedDropped(ctx context.Context, id string, w askedWorker) {
 // dropped, as what says.
 func (o *Loop) warnWorkerGone(ctx context.Context, id string, w askedWorker, what string) {
 	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in Herdr tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
+		"Orchestra: the worker in tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
 		w.tab, w.after(), w.wt))
 	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
 		"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+

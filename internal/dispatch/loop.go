@@ -25,7 +25,7 @@ const (
 	// a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past
 	// the ticket limit
 	ExitStuck       = 3
-	ExitTool        = 4   // Herdr, Beads or git failure, or a worker panicked
+	ExitTool        = 4   // terminal (Herdr or tmux), Beads or git failure, or a worker panicked
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
 	ExitEnvironment = 7   // workers kept failing at once, whichever ticket they had: the machine, not the tickets
@@ -213,7 +213,6 @@ const (
 	stopDirtyTree        stopKind = "DIRTY_TREE"
 	stopEnvironment      stopKind = "ENVIRONMENT"
 	stopGitFailed        stopKind = "GIT_FAILED"
-	stopHerdrFailed      stopKind = "HERDR_FAILED"
 	stopInterrupted      stopKind = "INTERRUPTED"
 	stopMergeFailed      stopKind = "MERGE_FAILED"
 	stopPanic            stopKind = "PANIC"
@@ -222,6 +221,7 @@ const (
 	stopStartFailed      stopKind = "START_FAILED"
 	stopStatusUnreadable stopKind = "STATUS_UNREADABLE"
 	stopTabFailed        stopKind = "TAB_FAILED"
+	stopTerminalFailed   stopKind = "TERMINAL_FAILED"
 	stopTicketLimit      stopKind = "TICKET_LIMIT"
 	stopUnknown          stopKind = "UNKNOWN"
 	stopWorktreeFailed   stopKind = "WORKTREE_FAILED"

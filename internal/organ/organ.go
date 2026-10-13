@@ -398,7 +398,7 @@ func (t Verdict) Note() string {
 
 const reviewSystem = "You write the end-of-run report for an automated coding pipeline. An " +
 	"orchestrator hands Beads tickets to coding agents (\"workers\") one at a time, each in " +
-	"its own git worktree and Herdr tab, and merges finished tickets into one branch. The " +
+	"its own git worktree and terminal tab, and merges finished tickets into one branch. The " +
 	"maintainer reads your report when they come back.\n\n" +
 	"Use only the evidence given; never invent tickets, commits or causes. Write Markdown, " +
 	"at most 20 lines in all:\n\n" +

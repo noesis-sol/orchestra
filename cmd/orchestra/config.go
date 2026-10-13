@@ -189,13 +189,13 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"       orchestra plan [--apply]\n"+
 			"       orchestra update [--check] [--force]\n\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
-			"as --concurrent allows, one worker (a coding agent) per Herdr tab and git worktree.\n"+
+			"as --concurrent allows, one worker (a coding agent) per tab and git worktree.\n"+
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
 			"In a terminal, without --feature, --ticket, --tickets or -plain, it first asks which: "+
 			"the current tickets, or a new feature you describe.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
-			"4 Herdr/Beads/git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
+			"4 terminal (Herdr or tmux), Beads or git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
 			"7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {

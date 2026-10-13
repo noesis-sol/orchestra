@@ -60,7 +60,7 @@ func cutUnnamed(t *testing.T, h *harness, claim time.Duration) (claimed <-chan s
 	if got, want := saved(t, h), savedCut(h); !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved %+v\nwant %+v", got, want)
 	}
-	if want := "A's start was cut short before Herdr saw a worker in tab tab1 to name A"; !strings.Contains(h.logged(), want) {
+	if want := "A's start was cut short before the terminal saw a worker in tab tab1 to name A"; !strings.Contains(h.logged(), want) {
 		t.Fatalf("log lacks %q:\n%s", want, h.logged())
 	}
 	if name := paneName(h.herdr, "pane1"); name != "" {

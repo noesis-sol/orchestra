@@ -55,7 +55,7 @@ func TestResumedWorkerThatNeverTakesItsMessageIsReported(t *testing.T) {
 		if took := time.Since(begun); took >= 5*time.Minute {
 			t.Errorf("the run took %v to stop; want it soon after the worker was gone, not after the idle grace", took)
 		}
-		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker resumed in Herdr tab tab2 never took up carrying on") {
+		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker resumed in tab tab2 never took up carrying on") {
 			t.Errorf("notes on A: %q", notes)
 		}
 	})

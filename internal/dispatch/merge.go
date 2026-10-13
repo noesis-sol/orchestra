@@ -342,11 +342,11 @@ func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
 	switch {
 	case err != nil:
 		o.log.Raw("", fmt.Errorf("cannot tell whether tab %s is still %s's, so it is left open: %w", tab, id, err))
-		return removed + "tab " + tab + " left open, as Herdr can't say whose it is"
+		return removed + "tab " + tab + " left open, as the terminal can't say whose it is"
 	case !open:
 		return removed + "its tab " + tab + " was closed already"
 	case label != id:
-		return fmt.Sprintf("%stab %s left open: Herdr has it labelled '%s' now, not %s, so it may not be its worker's",
+		return fmt.Sprintf("%stab %s left open: the terminal has it labelled '%s' now, not %s, so it may not be its worker's",
 			removed, tab, label, id)
 	}
 	if err := o.tabs.CloseTab(ctx, tab); err != nil {

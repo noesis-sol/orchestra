@@ -143,7 +143,7 @@ func TestGoneWorkerWithoutASessionPausesTheRun(t *testing.T) {
 		if n := len(h.herdr.argsFor("A")); n != 1 {
 			t.Errorf("started %d workers on A; want 1", n)
 		}
-		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in Herdr tab tab1 is gone") {
+		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the worker in tab tab1 is gone") {
 			t.Errorf("notes on A: %q", notes)
 		}
 	})

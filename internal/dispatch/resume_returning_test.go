@@ -54,7 +54,7 @@ func TestReturningTicketsGoneWorkerIsResumed(t *testing.T) {
 		if got := warnings(h, "A"); !equal(got, []string{warn}) {
 			t.Errorf("warnings %q\nwant %q", got, warn)
 		}
-		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the ticket is back, and its worker in Herdr tab tab1 "+
+		if notes := h.beads.notesOf("A"); !strings.Contains(notes, "the ticket is back, and its worker in tab tab1 "+
 			"is gone (worktree "+h.worktree("A")+"); its session "+testSession+" is resumed in a new tab") {
 			t.Errorf("notes on A: %q", notes)
 		}

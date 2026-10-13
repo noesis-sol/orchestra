@@ -114,8 +114,8 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		o, a, _ := newSettleLoop(t, script...)
 		start := time.Now()
 		_, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, nil)
-		if stop == nil || stop.code != ExitTool || stop.kind != stopHerdrFailed {
-			t.Fatalf("stop = %+v, want HERDR_FAILED", stop)
+		if stop == nil || stop.code != ExitTool || stop.kind != stopTerminalFailed {
+			t.Fatalf("stop = %+v, want TERMINAL_FAILED", stop)
 		}
 		if a.reads != maxFailedReads || time.Since(start) != (maxFailedReads-1)*statusPoll {
 			t.Errorf("read the status %d times in %s, want %d in %s: a minute's worth",
@@ -217,7 +217,7 @@ func TestRunStopsForAWorkerUnknownTooLong(t *testing.T) {
 		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "unknown" })
 		start := time.Now()
 		o, code := h.run()
-		want := "UNKNOWN >5min: Herdr can't tell what the worker in tab tab1 (A) is doing; it needs attention"
+		want := "UNKNOWN >5min: the terminal can't tell what the worker in tab tab1 (A) is doing; it needs attention"
 		if code != ExitStuck || o.Final() != want {
 			t.Fatalf("exit %d, final %q", code, o.Final())
 		}

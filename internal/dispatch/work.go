@@ -58,7 +58,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		return errInterrupted
 	}
 	if err != nil {
-		return halt(ExitTool, stopHerdrFailed,
+		return halt(ExitTool, stopTerminalFailed,
 			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
 	}
 	switch st {
@@ -67,8 +67,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 		// One Herdr can't tell the state of may be at work, as settling counts it (see waitSettled).
 		at, in := fmt.Sprintf("%s in tab %s", st, earlier.tab), fmt.Sprintf("%s in its tab", st)
 		if st == StateUnknown {
-			at = fmt.Sprintf("in tab %s, though Herdr can't tell what it is doing", earlier.tab)
-			in = "in its tab, though Herdr can't tell what it is doing"
+			at = fmt.Sprintf("in tab %s, though the terminal can't tell what it is doing", earlier.tab)
+			in = "in its tab, though the terminal can't tell what it is doing"
 		}
 		if asked {
 			o.info("  %s's earlier worker is still %s; adopting it rather than starting another", id, at)
@@ -208,7 +208,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			return errInterrupted
 		}
 		o.putAside(keep, t, asideTexts{
-			note: fmt.Sprintf("Orchestra: the worker in Herdr tab %s never started on its prompt; "+
+			note: fmt.Sprintf("Orchestra: the worker in tab %s never started on its prompt; "+
 				"deferred so it can be retried (worktree %s).", tab, wt),
 			reason: "the worker never started on its prompt",
 			detail: "its worker never started on the prompt",
@@ -291,7 +291,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop 
 		return errInterrupted
 	}
 	if err != nil {
-		return halt(ExitTool, stopHerdrFailed,
+		return halt(ExitTool, stopTerminalFailed,
 			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
 	}
 	switch {
@@ -417,7 +417,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 		}
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf(
-			"Orchestra: worker in Herdr tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
+			"Orchestra: worker in tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
 		return halt(ExitStuck, stopPaused,
 			": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
 	case outcomeUnreadable:
@@ -429,9 +429,9 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 			*how = settledFast
 		}
 		if !o.putAside(keep, t, asideTexts{
-			note: fmt.Sprintf("Orchestra: worker in Herdr tab %s settled with the ticket still '%s'; "+
+			note: fmt.Sprintf("Orchestra: worker in tab %s settled with the ticket still '%s'; "+
 				"deferred for review (worktree %s).", tab, s, wt),
-			reason:   fmt.Sprintf("worker finished without closing; see Herdr tab %s and worktree %s", tab, wt),
+			reason:   fmt.Sprintf("worker finished without closing; see tab %s and worktree %s", tab, wt),
 			detail:   "still " + string(s) + ", noted for review",
 			deferred: fmt.Sprintf("  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab),
 			failed:   fmt.Sprintf("%s still %s, and bd could not defer it", id, s),
