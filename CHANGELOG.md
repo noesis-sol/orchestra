@@ -18,6 +18,8 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard's title line gives how long the run has gone as the closing
+  line does: `1h12m`, not `1h12m0s`, at a whole minute.
 - `orchestra init`'s flags read the same in `orchestra -h`, in `orchestra init -h`
   and in the hint for flags given before `init`: each listed some and not
   others (`--mcp`, `--setup`, `--agent`). The hint now puts the usage line on

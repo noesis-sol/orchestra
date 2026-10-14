@@ -195,18 +195,9 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 	if err != nil {
 		return "", fmt.Errorf("cannot find the binary to replace: %w", err)
 	}
-	name := ArchiveName(rel.Tag, u.goos(), u.goarch())
-	archiveURL, ok := rel.Assets[name]
-	if !ok {
-		return exe, &MissingAssetError{Release: rel.Tag, Name: name, Platform: u.Platform()}
-	}
-	sumsURL, ok := rel.Assets[Checksums]
-	if !ok {
-		return exe, &MissingAssetError{Release: rel.Tag, Name: Checksums}
-	}
-	sigURL, ok := rel.Assets[Signature]
-	if !ok {
-		return exe, &MissingAssetError{Release: rel.Tag, Name: Signature}
+	a, err := u.assetsOf(rel)
+	if err != nil {
+		return exe, err
 	}
 	keys := u.Keys
 	if keys == nil {
@@ -231,44 +222,12 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 		}
 	}()
 
-	sums, err := u.get(ctx, RequestLimit, sumsURL, "application/octet-stream", maxDetails)
-	if err != nil {
-		return exe, fmt.Errorf("cannot download %s: %w", Checksums, err)
-	}
-	// Verified before any checksum in it is trusted, or the archive downloaded.
-	sig, err := u.get(ctx, RequestLimit, sigURL, "application/octet-stream", maxDetails)
-	if err != nil {
-		return exe, fmt.Errorf("cannot download %s: %w", Signature, err)
-	}
-	if err := Verify(sums, sig, keys); err != nil {
-		return exe, err
-	}
-	want, err := checksumOf(sums, name)
+	archive, err := u.fetchVerified(ctx, a, keys)
 	if err != nil {
 		return exe, err
 	}
-	archive, err := u.get(ctx, DownloadLimit, archiveURL, "application/octet-stream", maxArchive)
-	if err != nil {
-		return exe, fmt.Errorf("cannot download %s: %w", name, err)
-	}
-	if sum := sha256.Sum256(archive); hex.EncodeToString(sum[:]) != want {
-		return exe, &ChecksumError{Name: name, Want: want, Got: hex.EncodeToString(sum[:])}
-	}
-	if err := extract(archive, tmp); err != nil {
-		return exe, fmt.Errorf("cannot extract orchestra from %s: %w", name, err)
-	}
-	if err := tmp.Close(); err != nil {
+	if err := u.stage(ctx, tmp, archive, a.archive, rel.Tag); err != nil {
 		return exe, err
-	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
-		return exe, err
-	}
-	out, err := u.version(ctx, tmp.Name())
-	if err != nil {
-		return exe, fmt.Errorf("the new binary doesn't run: %w", err)
-	}
-	if got := strings.TrimSpace(out); got != "orchestra "+rel.Tag {
-		return exe, fmt.Errorf("the new binary's --version says %q, not orchestra %s", got, rel.Tag)
 	}
 	if err := os.Rename(tmp.Name(), exe); cannotWrite(err) {
 		return exe, &NotWritableError{Dir: dir, Err: err}
@@ -276,6 +235,81 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 		return exe, err
 	}
 	return exe, nil
+}
+
+// releaseAssets are the files of a release that Install downloads: the archive for its platform,
+// by name, and the addresses of each.
+type releaseAssets struct {
+	archive                     string // its name
+	archiveURL, sumsURL, sigURL string
+}
+
+// assetsOf finds in rel the files Install needs for u's platform, or a MissingAssetError for the
+// first it lacks.
+func (u Updater) assetsOf(rel Release) (releaseAssets, error) {
+	a := releaseAssets{archive: ArchiveName(rel.Tag, u.goos(), u.goarch())}
+	var ok bool
+	if a.archiveURL, ok = rel.Assets[a.archive]; !ok {
+		return a, &MissingAssetError{Release: rel.Tag, Name: a.archive, Platform: u.Platform()}
+	}
+	if a.sumsURL, ok = rel.Assets[Checksums]; !ok {
+		return a, &MissingAssetError{Release: rel.Tag, Name: Checksums}
+	}
+	if a.sigURL, ok = rel.Assets[Signature]; !ok {
+		return a, &MissingAssetError{Release: rel.Tag, Name: Signature}
+	}
+	return a, nil
+}
+
+// fetchVerified downloads checksums.txt and its signature, verifies the signature with keys, then
+// downloads the archive and checks its SHA-256 against checksums.txt, and returns the archive.
+func (u Updater) fetchVerified(ctx context.Context, a releaseAssets, keys []ed25519.PublicKey) ([]byte, error) {
+	sums, err := u.get(ctx, RequestLimit, a.sumsURL, "application/octet-stream", maxDetails)
+	if err != nil {
+		return nil, fmt.Errorf("cannot download %s: %w", Checksums, err)
+	}
+	// Verified before any checksum in it is trusted, or the archive downloaded.
+	sig, err := u.get(ctx, RequestLimit, a.sigURL, "application/octet-stream", maxDetails)
+	if err != nil {
+		return nil, fmt.Errorf("cannot download %s: %w", Signature, err)
+	}
+	if err := Verify(sums, sig, keys); err != nil {
+		return nil, err
+	}
+	want, err := checksumOf(sums, a.archive)
+	if err != nil {
+		return nil, err
+	}
+	archive, err := u.get(ctx, DownloadLimit, a.archiveURL, "application/octet-stream", maxArchive)
+	if err != nil {
+		return nil, fmt.Errorf("cannot download %s: %w", a.archive, err)
+	}
+	if sum := sha256.Sum256(archive); hex.EncodeToString(sum[:]) != want {
+		return nil, &ChecksumError{Name: a.archive, Want: want, Got: hex.EncodeToString(sum[:])}
+	}
+	return archive, nil
+}
+
+// stage writes the binary in archive, the file called name, to tmp and closes it, makes it
+// executable, and checks that it runs and names the release tag as its version.
+func (u Updater) stage(ctx context.Context, tmp *os.File, archive []byte, name, tag string) error {
+	if err := extract(archive, tmp); err != nil {
+		return fmt.Errorf("cannot extract orchestra from %s: %w", name, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+		return err
+	}
+	out, err := u.version(ctx, tmp.Name())
+	if err != nil {
+		return fmt.Errorf("the new binary doesn't run: %w", err)
+	}
+	if got := strings.TrimSpace(out); got != "orchestra "+tag {
+		return fmt.Errorf("the new binary's --version says %q, not orchestra %s", got, tag)
+	}
+	return nil
 }
 
 // version runs bin --version.

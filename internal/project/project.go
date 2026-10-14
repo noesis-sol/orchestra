@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -471,8 +470,9 @@ func fillTemplate(t, check string) string {
 }
 
 // Prerequisites reports what orchestra needs and whether it is there. getenv gives the environment
-// where bd may be installed off the PATH (see LocateBd).
-func Prerequisites(repo string, getenv func(string) string) []Step {
+// where bd may be installed off the PATH (see LocateBd); has reports whether this machine has a command
+// (herdr, tmux, cmux, claude), wherever orchestra would find it.
+func Prerequisites(repo string, getenv func(string) string, has func(cmd string) bool) []Step {
 	var steps []Step
 	mark := func(ok bool, what, fix string) {
 		if ok {
@@ -487,15 +487,18 @@ func Prerequisites(repo string, getenv func(string) string) []Step {
 		mark(onPath, "bd", "install Beads")
 	}
 	mark(fileExists(filepath.Join(repo, ".beads")), "Beads", "set it up here: bd init")
-	mark(onHost("herdr") || onHost("tmux") || onHost("cmux"), "herdr, tmux or cmux",
+	mark(has("herdr") || has("tmux") || has("cmux"), "herdr, tmux or cmux",
 		"install Herdr, tmux (brew install tmux, apt install tmux) or cmux; workers run in their tabs")
-	mark(onHost("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
+	mark(has("claude"), "claude", "install Claude Code; it runs the workers, triage and the report")
 	return steps
 }
 
 // NextSteps lists what is left for the user, in order. workerEffort is the project's worker_effort,
-// which it says how to choose when there is none.
-func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Choice, workerEffort string) []string {
+// which it says how to choose when there is none; has reports whether this machine has a command, as
+// for Prerequisites.
+func NextSteps(
+	ctx context.Context, repo string, steps []Step, pre []Step, c Choice, workerEffort string, has func(cmd string) bool,
+) []string {
 	var next []string
 	for _, p := range pre {
 		if p.Kind == StepMissing {
@@ -538,20 +541,8 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 	if len(commit) > 0 {
 		next = append(next, "Commit "+joinAnd(commit)+".")
 	}
-	next = append(next, startRun(onHost))
+	next = append(next, startRun(has))
 	return next
-}
-
-// cmuxApp is where the cmux app keeps its CLI, which is on the PATH only in a cmux terminal. A
-// variable for the tests.
-var cmuxApp = "/Applications/cmux.app/Contents/Resources/bin/cmux"
-
-// onHost reports whether this machine has cmd: on the PATH or, for cmux, in its app.
-func onHost(cmd string) bool {
-	if _, err := exec.LookPath(cmd); err == nil {
-		return true
-	}
-	return cmd == "cmux" && fileExists(cmuxApp)
 }
 
 // startRun says where to start a run from, on the branch finished tickets should land on, as has

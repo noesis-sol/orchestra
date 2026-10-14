@@ -33,10 +33,10 @@ func TestResolveEffort(t *testing.T) {
 func TestNextStepsMentionWorkerEffortUntilSet(t *testing.T) {
 	repo, _ := gitRepo(t)
 	steps, _ := Init(context.Background(), repo, "make check", false)
-	if next := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, ""), "\n"); !strings.Contains(next, `"worker_effort"`) {
+	if next := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, "", onPath), "\n"); !strings.Contains(next, `"worker_effort"`) {
 		t.Errorf("unset: %q", next)
 	}
-	if next := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, "medium"), "\n"); strings.Contains(next, "worker_effort") {
+	if next := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, "medium", onPath), "\n"); strings.Contains(next, "worker_effort") {
 		t.Errorf("set: %q", next)
 	}
 }

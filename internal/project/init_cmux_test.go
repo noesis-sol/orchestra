@@ -2,7 +2,7 @@ package project
 
 import (
 	"os"
-	"path/filepath"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -28,16 +28,19 @@ func TestStartRunFromACmuxTerminal(t *testing.T) {
 	}
 }
 
-// Outside a cmux terminal its CLI is not on the PATH but in the app, which counts as cmux being there.
-func TestPrerequisitesFindCmuxInItsApp(t *testing.T) {
-	t.Setenv("PATH", t.TempDir()) // no herdr, tmux or cmux on it
-	app := filepath.Join(t.TempDir(), "cmux")
-	old := cmuxApp
-	cmuxApp = app
-	t.Cleanup(func() { cmuxApp = old })
+// onPath is Prerequisites' and NextSteps' has for the tests that don't choose: the commands on the PATH.
+func onPath(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
 
-	terminal := func() Step {
-		for _, s := range Prerequisites(t.TempDir(), os.Getenv) {
+// A machine with cmux alone, wherever it is (outside a cmux terminal its CLI is in the app, which
+// the has given finds), has a terminal for the workers.
+func TestPrerequisitesTakeCmuxAlone(t *testing.T) {
+	terminal := func(installed ...string) Step {
+		for _, s := range Prerequisites(t.TempDir(), os.Getenv, func(cmd string) bool {
+			return slices.Contains(installed, cmd)
+		}) {
 			if s.Label == "herdr, tmux or cmux" {
 				return s
 			}
@@ -46,15 +49,9 @@ func TestPrerequisitesFindCmuxInItsApp(t *testing.T) {
 		return Step{}
 	}
 	if s := terminal(); s.Kind != StepMissing || !strings.Contains(s.Detail, "cmux") {
-		t.Errorf("without the cmux app: %+v, want it missing, with cmux among the fixes", s)
+		t.Errorf("without cmux: %+v, want it missing, with cmux among the fixes", s)
 	}
-	if err := os.WriteFile(app, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if s := terminal(); s.Kind != StepDone {
-		t.Errorf("with the cmux app: %+v, want it there", s)
-	}
-	if !onHost("cmux") || onHost("tmux") {
-		t.Error("onHost finds cmux only in its app, or tmux with none")
+	if s := terminal("cmux"); s.Kind != StepDone {
+		t.Errorf("with cmux: %+v, want it there", s)
 	}
 }

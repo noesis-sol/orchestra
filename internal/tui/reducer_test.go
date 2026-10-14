@@ -259,8 +259,8 @@ func TestTimesShownComeFromTheClock(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Base: "main"}, func() {}, func(bool) {}, nil)
 	at := m.began.Add(12*time.Minute + 500*time.Millisecond)
 	m.now = func() time.Time { return at }
-	if got := ansi.Strip(m.titleLine(80)); !strings.HasSuffix(got, "main · 12m0s") {
-		t.Errorf("title line %q should say the run has gone 12m0s", got)
+	if got := ansi.Strip(m.titleLine(80)); !strings.HasSuffix(got, "main · 12m") {
+		t.Errorf("title line %q should say the run has gone 12m", got)
 	}
 	head := m.workerHead(1, dispatch.Status{Ticket: "k-1", Started: at.Add(-90 * time.Second)})
 	if got := ansi.Strip(head); !strings.HasSuffix(got, "1m30s") {

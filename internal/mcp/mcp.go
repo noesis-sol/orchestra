@@ -77,7 +77,7 @@ func UserConfig(getenv func(string) string) string {
 // leniently, so one orchestra no longer understands is taken as not set rather than failing the
 // file.
 type userFile struct {
-	MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	serversFile // user scope
 	// Projects are Claude Code's records of each repository it has run in, read only for the
 	// repository Discover looks at: another's in a shape orchestra doesn't understand changes nothing.
 	Projects map[string]json.RawMessage `json:"projects"`
@@ -87,6 +87,12 @@ type userFile struct {
 	ChromeOn        lenient[bool] `json:"claudeInChromeDefaultEnabled"`
 	ChromeInstalled lenient[bool] `json:"cachedChromeExtensionInstalled"`
 	ChromeOnboarded lenient[bool] `json:"hasCompletedClaudeInChromeOnboarding"`
+}
+
+// serversFile is what names MCP servers in a file: a project's .mcp.json, ~/.claude.json, and its
+// record of each repository.
+type serversFile struct {
+	MCPServers map[string]json.RawMessage `json:"mcpServers"`
 }
 
 // lenient is a value of type T read from a file orchestra doesn't own: a value of another shape is
@@ -129,27 +135,15 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 			return nil, err
 		}
 	}
-	// Roots in order, so the first one's definition of a server wins whatever the map's order; keys
-	// sorted, so the same holds when several of them name one root.
-	keys := slices.Sorted(maps.Keys(user.Projects))
-	for _, root := range roots {
-		for _, key := range keys {
-			if !SamePath(key, root) {
-				continue
-			}
-			var local struct {
-				MCPServers map[string]json.RawMessage `json:"mcpServers"`
-			}
-			if err := json.Unmarshal(user.Projects[key], &local); err != nil {
-				return nil, fmt.Errorf("%s: projects[%q]: %w", userConfig, key, err)
-			}
-			add(ScopeLocal, local.MCPServers)
-		}
+	local, err := localServers(user, userConfig, roots)
+	if err != nil {
+		return nil, err
+	}
+	for _, defs := range local {
+		add(ScopeLocal, defs)
 	}
 	if len(roots) > 0 {
-		var shared struct {
-			MCPServers map[string]json.RawMessage `json:"mcpServers"`
-		}
+		var shared serversFile
 		if err := readJSON(filepath.Join(roots[0], ".mcp.json"), &shared); err != nil {
 			return nil, err
 		}
@@ -175,6 +169,27 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 		return servers[i].Name < servers[j].Name
 	})
 	return servers, nil
+}
+
+// localServers are the local-scope definitions in user, read from userConfig, for any of roots: each
+// root's in turn, so the first one's definition of a server wins whatever the map's order, and for a
+// root that several keys name, theirs in the keys' sorted order, so the same holds then.
+func localServers(user userFile, userConfig string, roots []string) ([]map[string]json.RawMessage, error) {
+	var local []map[string]json.RawMessage
+	keys := slices.Sorted(maps.Keys(user.Projects))
+	for _, root := range roots {
+		for _, key := range keys {
+			if !SamePath(key, root) {
+				continue
+			}
+			var p serversFile
+			if err := json.Unmarshal(user.Projects[key], &p); err != nil {
+				return nil, fmt.Errorf("%s: projects[%q]: %w", userConfig, key, err)
+			}
+			local = append(local, p.MCPServers)
+		}
+	}
+	return local, nil
 }
 
 // Find returns the server named name, if servers has it.

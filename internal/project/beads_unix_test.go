@@ -134,11 +134,11 @@ func TestSetUpBeadsInstallsWithHomebrewThenRunsBdInit(t *testing.T) {
 		!strings.Contains(working[1], "bd init --non-interactive") {
 		t.Errorf("working: %q", working)
 	}
-	pre := Prerequisites(repo, os.Getenv)
+	pre := Prerequisites(repo, os.Getenv, onPath)
 	if pre[0].Kind != StepDone || pre[1].Kind != StepDone {
 		t.Errorf("prerequisites: %+v", pre[:2])
 	}
-	next := strings.Join(NextSteps(context.Background(), repo, steps, pre, Choice{}, ""), "\n")
+	next := strings.Join(NextSteps(context.Background(), repo, steps, pre, Choice{}, "", onPath), "\n")
 	if strings.Contains(next, "bd init") || !strings.Contains(next, "Commit AGENTS.md.") {
 		t.Errorf("next:\n%s", next)
 	}
@@ -191,7 +191,7 @@ func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 	if got := calls(t, dir); got != "" {
 		t.Errorf("calls:\n%s", got)
 	}
-	pre := Prerequisites(repo, os.Getenv)
+	pre := Prerequisites(repo, os.Getenv, onPath)
 	if !same(pre[0], Step{Kind: StepMissing, Label: "bd", Detail: "install Beads"}) ||
 		!same(pre[1], Step{Kind: StepMissing, Label: "Beads", Detail: "set it up here: bd init"}) {
 		t.Errorf("prerequisites: %+v", pre[:2])
@@ -216,11 +216,11 @@ func TestSetUpBeadsSaysWhereTheInstallScriptPutBd(t *testing.T) {
 	if len(steps) != 1 || !same(steps[0], Step{Kind: StepMissing, Label: "bd", Detail: want}) {
 		t.Errorf("steps = %+v", steps)
 	}
-	pre := Prerequisites(repo, os.Getenv)
+	pre := Prerequisites(repo, os.Getenv, onPath)
 	if pre[0].Kind != StepMissing || !strings.HasPrefix(pre[0].Detail, "it is in "+bin+", which isn't on your PATH") {
 		t.Errorf("prerequisites: %+v", pre[0])
 	}
-	if next := NextSteps(context.Background(), repo, steps, pre, Choice{}, ""); !strings.HasPrefix(next[0],
+	if next := NextSteps(context.Background(), repo, steps, pre, Choice{}, "", onPath); !strings.HasPrefix(next[0],
 		"Fix what's missing above (bd: it is in "+bin) {
 		t.Errorf("next: %q", next[0])
 	}
@@ -259,8 +259,8 @@ func TestSetUpBeadsShowsWhyItFailed(t *testing.T) {
 	if len(steps) != 2 || !same(steps[1], Step{Kind: StepMissing, Label: "Beads", Detail: want}) {
 		t.Errorf("steps = %+v", steps)
 	}
-	pre := Prerequisites(repo, os.Getenv)
-	if next := NextSteps(context.Background(), repo, steps, pre, Choice{}, ""); next[0] !=
+	pre := Prerequisites(repo, os.Getenv, onPath)
+	if next := NextSteps(context.Background(), repo, steps, pre, Choice{}, "", onPath); next[0] !=
 		"Fix what's missing above (Beads: set it up here: bd init)." {
 		t.Errorf("next: %q", next)
 	}

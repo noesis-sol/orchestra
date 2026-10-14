@@ -60,36 +60,35 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 		fmt.Fprintln(stderr, "orchestra update:", err)
 		return dispatch.ExitTool
 	}
-	order, versioned := update.Compare(current, rel.Tag)
-	release := update.IsRelease(current)
+	v := verdictOf(current, rel.Tag)
 	if *check {
 		switch {
-		case current == rel.Tag:
+		case v.latest:
 			fmt.Fprintf(stdout, "orchestra %s is the latest release.\n", current)
-		case versioned && order > 0:
+		case v.newer:
 			fmt.Fprintf(stdout, "orchestra %s is newer than the latest release, %s.\n", current, rel.Tag)
-		case release:
+		case !v.clone:
 			fmt.Fprintf(stdout, "orchestra %s; the latest release is %s (%s): orchestra update installs it.\n",
 				current, rel.Tag, rel.URL)
 			return exitUpdateAvailable
 		default:
 			fmt.Fprintf(stdout, "orchestra %s is a build from a clone; the latest release is %s (%s): "+
 				"orchestra update --force installs it.\n", current, rel.Tag, rel.URL)
-			if !versioned || order < 0 {
+			if v.behind {
 				return exitUpdateAvailable
 			}
 		}
 		return dispatch.ExitOK
 	}
 	switch {
-	case current == rel.Tag:
+	case v.latest:
 		fmt.Fprintf(stdout, "orchestra %s is the latest release already.\n", current)
 		return dispatch.ExitOK
-	case !release && !*force:
+	case v.clone && !*force:
 		fmt.Fprintf(stderr, "orchestra update: orchestra %s at %s is a build from a clone, not a release. "+
 			"orchestra update --force replaces it with %s.\n", current, exe, rel.Tag)
 		return dispatch.ExitSetup
-	case versioned && order > 0 && !*force:
+	case v.newer && !*force:
 		fmt.Fprintf(stdout, "orchestra %s is newer than the latest release, %s: nothing to do "+
 			"(orchestra update --force installs %s).\n", current, rel.Tag, rel.Tag)
 		return dispatch.ExitOK
@@ -111,4 +110,24 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 	}
 	fmt.Fprintf(stdout, "Updated orchestra %s -> %s (%s)\nRelease notes: %s\n", current, rel.Tag, path, rel.URL)
 	return dispatch.ExitOK
+}
+
+// verdict is how a build stands against the latest release, which --check reports and orchestra
+// update acts on.
+type verdict struct {
+	latest bool // it is the latest release
+	newer  bool // it ranks above the latest release
+	behind bool // the latest release ranks above it, or it has no version to rank (dev)
+	clone  bool // it is a build from a clone (dev, a pseudo-version, +dirty), not a release
+}
+
+// verdictOf is how the build of version current stands against the latest release, tag.
+func verdictOf(current, tag string) verdict {
+	order, versioned := update.Compare(current, tag)
+	return verdict{
+		latest: current == tag,
+		newer:  versioned && order > 0,
+		behind: !versioned || order < 0,
+		clone:  !update.IsRelease(current),
+	}
 }

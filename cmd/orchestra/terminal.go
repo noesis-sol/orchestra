@@ -182,6 +182,15 @@ func installed(cmd string) bool {
 	return err == nil
 }
 
+// onHost reports whether this machine has cmd: on the PATH or, for cmux, in its app (cmux.Bin), its
+// CLI being on the PATH only in cmux's own terminals.
+func onHost(cmd string) bool {
+	if cmd == "cmux" {
+		return cmux.Bin() != ""
+	}
+	return installed(cmd)
+}
+
 // checkTerminal chooses the run's terminal (c.Terminal) as c.terminalAsked, the project's settings and
 // where orchestra runs decide, and finds what it needs there: the workspace or session for the
 // workers' tabs (c.Workspace), where orchestra runs (c.where: its own pane, whether the tabs are in

@@ -99,10 +99,10 @@ func signOff(
 	ctx context.Context, ui tui.InitScreen, repo string, steps []project.Step, c project.Choice, workerEffort string,
 	getenv func(string) string,
 ) {
-	pre := project.Prerequisites(repo, getenv)
+	pre := project.Prerequisites(repo, getenv, onHost)
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
-	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort))
+	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort, onHost))
 	ui.SignOff(!slices.ContainsFunc(pre, func(p project.Step) bool { return p.Kind == project.StepMissing }))
 }
 
