@@ -539,31 +539,6 @@ func outcomeOf(status TicketStatus) outcome {
 	return outcomeUnfinished
 }
 
-// closedOutcome starts at one so an unset outcome is no outcome, never "merge".
-type closedOutcome int
-
-const (
-	closedMerge closedOutcome = iota + 1
-	closedNoCommit
-	closedDirty
-	closedNoChange // nothing to merge: no commits of its own and a clean worktree
-)
-
-// A closed ticket is merged only with a commit naming it and a clean worktree. One with no commit
-// naming it, whose branch has no commits beyond Base (own, -1 when git can't count them) and whose
-// worktree is clean, closed with no change of its own: there is nothing to merge, or to review.
-func closedOutcomeOf(commit string, own int, worktreeDirty bool) closedOutcome {
-	switch {
-	case commit == "" && own == 0 && !worktreeDirty:
-		return closedNoChange
-	case commit == "":
-		return closedNoCommit
-	case worktreeDirty:
-		return closedDirty
-	}
-	return closedMerge
-}
-
 // closeTab closes a worker's tab; a failure is only logged, as the tab is then merely left open.
 func (o *Loop) closeTab(ctx context.Context, tab string) {
 	if err := o.tabs.CloseTab(ctx, tab); err != nil {

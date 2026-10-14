@@ -280,51 +280,6 @@ func (o *Loop) closedEvidence(ctx context.Context, id string) string {
 	return fmt.Sprintf("%s: %s\nClose reason: %s", id, t.Title, reason)
 }
 
-// maxDirs is the most directories the reviewer is given of those a ticket's commits change.
-const maxDirs = 20
-
-// evidence is what the reviewer is told of ticket id's failed check, check, which ran on its branch
-// rebased onto base: how it failed, the lines that say what failed and the directories the ticket's
-// own commits change, so the reviewer can tell a failure in its code from one elsewhere.
-func (f checkFail) evidence(id, check, base string) string {
-	var b strings.Builder
-	if f.setup != "" {
-		fmt.Fprintf(&b, "%s: the setup '%s', run before the check as the rebase changed the project's dependency "+
-			"files, %s on %s rebased onto %s at %s, so the check did not run; its output is in %s.\n",
-			id, f.setup, f.how, f.br, base, short(f.onto), f.output)
-	} else {
-		fmt.Fprintf(&b, "%s: '%s' %s on %s rebased onto %s at %s; its output is in %s.\n",
-			id, check, f.how, f.br, base, short(f.onto), f.output)
-	}
-	switch {
-	case len(f.said) == 0:
-		b.WriteString("It printed nothing.\n")
-	case f.saidEnd:
-		b.WriteString("No line of its output says what failed; its last lines:\n")
-	default:
-		b.WriteString("The lines of its output that say what failed:\n")
-	}
-	for _, l := range f.said {
-		b.WriteString("    " + l + "\n")
-	}
-	dirs := "none that git could list"
-	if len(f.dirs) > 0 {
-		var named []string
-		for _, d := range f.dirs[:min(len(f.dirs), maxDirs)] {
-			if d == "." {
-				d = "the top level (.)"
-			}
-			named = append(named, d)
-		}
-		dirs = strings.Join(named, ", ")
-		if more := len(f.dirs) - len(named); more > 0 {
-			dirs += fmt.Sprintf(" and %d more", more)
-		}
-	}
-	fmt.Fprintf(&b, "Directories that %s's own commits change (%s..%s): %s\n", id, short(f.onto), f.br, dirs)
-	return b.String()
-}
-
 // Review has the reviewer write the run report, followed by the end of the full check's output when
 // it failed and by what the run's organs cost, the report included.
 func (o *Loop) Review(ctx context.Context, code int, final string) (string, error) {

@@ -210,16 +210,6 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out *checkOutp
 			c.CheckFull, how, c.Base, short(f.at), f.suite, f.output, f.filed)})
 }
 
-// failingSuite is the suite a failed full check's output says it was running as it stopped: the
-// last line that starts with project.SuiteMarker; "" when none does. A full check's output is read
-// as it is printed (see checkOutput.suite).
-func failingSuite(out []byte) string {
-	var c checkOutput
-	_, _ = c.Write(out) // it never fails
-	c.end()
-	return c.suite
-}
-
 // saveFullCheckOutput writes a failed full check's whole output to the main checkout's
 // .orchestra/run/check-full.log and returns the file's path; the log's when it can't be written,
 // as the log has the end of the output.

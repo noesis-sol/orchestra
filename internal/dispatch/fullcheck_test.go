@@ -331,3 +331,13 @@ func TestFullCheckIsInTheReviewersEvidence(t *testing.T) {
 		}
 	})
 }
+
+// failingSuite is the suite a failed full check's output says it was running as it stopped: the
+// last line that starts with project.SuiteMarker; "" when none does. A full check's output is read
+// as it is printed (see checkOutput.suite).
+func failingSuite(out []byte) string {
+	var c checkOutput
+	_, _ = c.Write(out) // it never fails
+	c.end()
+	return c.suite
+}

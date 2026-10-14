@@ -492,3 +492,29 @@ func (o *Loop) typedPrompt(ctx context.Context, agent, prompt string) string {
 	}
 	return prompt
 }
+
+// refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch
+// was cut, so its worker starts from current code. A failed rebase is undone and it returns false:
+// the branch conflicts with Base.
+func (o *Loop) refreshBranch(ctx context.Context, wt, br string) bool {
+	c := o.cfg
+	if o.merger.IsAncestor(ctx, c.Repo, c.Base, br) {
+		return true // already on top of Base
+	}
+	if d := o.checkout.DirtyWorktree(ctx, wt); d != "" {
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
+			"  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base)})
+		return true
+	}
+	out, err := o.merger.Rebase(ctx, wt, c.Base)
+	o.log.Raw(out, err)
+	if err != nil {
+		if err := o.abortRebase(ctx, wt); err != nil {
+			o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  REBASE_ABORT_FAILED: %s is left mid-rebase onto %s; "+
+				"resolve and continue it there, or run git rebase --abort", wt, c.Base)})
+		}
+		return false
+	}
+	o.info("  rebased %s onto %s", br, c.Base)
+	return true
+}

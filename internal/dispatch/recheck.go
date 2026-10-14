@@ -3,8 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -176,39 +174,4 @@ func (o *Loop) whyNotRecheck(ctx context.Context, rc recheck) string {
 		return fmt.Sprintf("its worker is %s in tab %s", st, w.tab)
 	}
 	return ""
-}
-
-var (
-	// failedPackage matches a line that says what failed (see failureLines) naming a package that
-	// failed: go test's FAIL line, or gotestsum's === FAIL:.
-	failedPackage = regexp.MustCompile(`^(?:FAIL|=== FAIL:)\s+(\S+)`)
-	// failedFile matches one naming the file of a lint, vet or build error, at its position.
-	failedFile = regexp.MustCompile(`^([^\s:]+\.\w+):\d+(?::\d+)?: `)
-)
-
-// ownFailures lists the directories the ticket's own commits change (f.dirs) that the lines of its
-// failed check say it failed in, naming a package there or a file; none when they name none, or say
-// nothing (saidEnd), or when its setup failed: the setup's output names none of the ticket's code. A
-// package is named by its import path, which ends with its directory.
-func (f checkFail) ownFailures() []string {
-	if f.saidEnd || f.setup != "" {
-		return nil
-	}
-	var own []string
-	for _, line := range f.said {
-		var at string
-		if m := failedPackage.FindStringSubmatch(line); m != nil {
-			at = path.Clean(m[1])
-		} else if m := failedFile.FindStringSubmatch(line); m != nil {
-			at = path.Dir(path.Clean(m[1]))
-		} else {
-			continue
-		}
-		for _, d := range f.dirs {
-			if (at == d || d != "." && strings.HasSuffix(at, "/"+d)) && !slices.Contains(own, d) {
-				own = append(own, d)
-			}
-		}
-	}
-	return own
 }

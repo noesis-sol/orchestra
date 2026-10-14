@@ -8,6 +8,7 @@ import (
 	"hash/maphash"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -246,3 +247,19 @@ func (c *checkOutput) close() {
 		c.file = nil
 	}
 }
+
+var (
+	// failedAnywhere matches a line of a check's output, trimmed, that says a package or a test failed
+	// (go test's FAIL and --- FAIL:, gotestsum's === FAIL:, a bare FAIL saying nothing more aside), or
+	// that the race detector found a data race, in the test --- FAIL: then names.
+	failedAnywhere = regexp.MustCompile(`^(FAIL\W+\S|--- FAIL|=== FAIL)|DATA RACE|race detected`)
+	// failedAtStart matches a line that, unindented, says what failed: a panic (a test that timed out),
+	// a tool's own error, gotestsum's count of failures, golangci-lint's of issues, and a lint, vet or
+	// build error, which starts with its file's position. A failing test's own messages are indented.
+	failedAtStart = regexp.MustCompile(`^(panic:|(?i:error)\b|fatal:|level=error|DONE \d.*fail|\d+ issues?:|` +
+		`[^\s:]+\.\w+:\d+(:\d+)?: )`)
+)
+
+// flakyPrefix starts a line of a check's output that says a test failed and then passed on a rerun:
+// a convention for any project's check, which docs/setup.md's The checks documents.
+const flakyPrefix = "FLAKY:"
