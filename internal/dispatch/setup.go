@@ -41,12 +41,8 @@ func (o *Loop) setUp(ctx context.Context, w worker, before, onto string) (string
 		what = fileList(changed) + " changed in the rebase"
 	}
 	o.info("  %s: %s; running '%s' before the check", w.id, what, c.Setup)
-	out, output, err := o.runIn(ctx, w, c.Setup, setupLogName)
-	if err != nil {
-		if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
-			o.noteCheckFailed(ctx, w, onto, output, out, err, c.Setup)
-		}
-		return output, err
+	if run, output := o.runIn(ctx, w, onto, true); run.err != nil {
+		return output, run.err
 	}
 	if now != "" {
 		o.mu.Lock()

@@ -26,48 +26,98 @@ func (o *Loop) checkTimeout() time.Duration {
 // runCheck runs the project's check command in w's worktree, its branch rebased onto the commit
 // onto. It gives up after checkTimeout, stopping everything the check started, and returns
 // errCheckTimedOut then. When the check fails, the end of its output goes in the log and the whole of
-// it in the worktree's checkLogName (see saveCheckOutput), and what it said goes to the reviewer (see
+// it in the worktree's checkLogName (see keepOutput), and what it said goes to the reviewer (see
 // noteCheckFailed); runCheck returns where the output is. When it passes, each FLAKY: line it printed
 // is a warning (see reportFlaky).
 func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, error) {
-	out, output, err := o.runIn(ctx, w, o.cfg.Check, checkLogName)
-	if err != nil {
-		if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
-			o.noteCheckFailed(ctx, w, onto, output, out, err, "")
-		}
-		return output, err
+	run, output := o.runIn(ctx, w, onto, false)
+	if run.err == nil {
+		o.reportFlaky(w.id, "", run.out)
 	}
-	o.reportFlaky(w.id, "", out)
-	return "", nil
+	return output, run.err
 }
 
-// runIn runs the command line cmd, the check or the setup, in w's worktree and returns its output. It
-// gives up after checkTimeout, stopping everything cmd started, and returns errCheckTimedOut then.
-// When cmd fails, the end of its output goes in the log and the whole of it in the worktree's file
-// logName (see saveCheckOutput), whose path it returns as output. Only what is said of the output is
-// kept in memory (see checkOutput).
-func (o *Loop) runIn(ctx context.Context, w worker, cmd, logName string) (out *checkOutput, output string, err error) {
-	limit := o.checkTimeout()
+// runIn runs the check in w's worktree, or its setup when setup is set, and returns how it ran. It
+// gives up after checkTimeout, stopping everything it started, and run.err wraps errCheckTimedOut
+// then. When it fails, the end of its output goes in the log, the whole of it in the worktree's
+// checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
+// cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch rebased
+// onto the commit onto. Only what is said of the output is kept in memory (see checkOutput).
+func (o *Loop) runIn(ctx context.Context, w worker, onto string, setup bool) (run commandRun, output string) {
+	cmd, logName, setupCmd := o.cfg.Check, checkLogName, ""
+	if setup {
+		cmd, logName, setupCmd = o.cfg.Setup, setupLogName, o.cfg.Setup
+	}
+	run, _ = runLimited(ctx, w.wt, o.checkTimeout(), cmd)
+	defer run.out.close()
+	if run.err == nil {
+		return run, ""
+	}
+	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
+	output = o.keepOutput(w.wt, logName, "the check's", run.out)
+	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
+		o.noteCheckFailed(ctx, w, onto, output, run, setupCmd)
+	}
+	return run, output
+}
+
+// commandRun is how a command run within a time limit went (see runLimited): the check, its setup
+// or the full check.
+type commandRun struct {
+	out   *checkOutput  // what is kept of the output of the command that ran last, for the caller to close
+	err   error         // why it failed, wrapping errCheckTimedOut when its time limit stopped it; nil if it passed
+	limit time.Duration // the time limit it ran within
+}
+
+// runLimited runs the command lines cmds in dir one after another, for at most limit in all, until
+// one fails, stopping everything they started then or when ctx is cancelled. It returns how the last
+// one that ran went, its error wrapping errCheckTimedOut when limit stopped it (not when ctx did), and
+// the index in cmds of the one that failed, -1 when none did.
+func runLimited(ctx context.Context, dir string, limit time.Duration, cmds ...string) (commandRun, int) {
 	runCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	out, err = runOutput(runCtx, w.wt, cmd)
-	defer out.close()
-	if err != nil && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
+	run := commandRun{limit: limit}
+	for i, cmd := range cmds {
+		run.out.close()
+		if run.out, run.err = runOutput(runCtx, dir, cmd); run.err != nil {
+			if ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+				run.err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), run.err)
+			}
+			return run, i
+		}
 	}
-	if err != nil {
-		o.log.Raw(out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, err))
-		return out, o.saveCheckOutput(w.wt, logName, out), err
+	return run, -1
+}
+
+// timedOut reports whether r was stopped at its time limit.
+func (r commandRun) timedOut() bool {
+	return errors.Is(r.err, errCheckTimedOut)
+}
+
+// how says how r failed, for a line about it: it fails, or did not finish within its time limit.
+func (r commandRun) how() string {
+	if r.timedOut() {
+		return "did not finish within " + command.ShortDuration(r.limit)
 	}
-	return out, "", nil
+	return "fails"
+}
+
+// said is what r's output says of its failure: the lines that say what failed (see
+// checkOutput.failures), or with end set, when none do, its last lines, at most maxSaid of them, and
+// none when it printed nothing.
+func (r commandRun) said() (lines []string, end bool) {
+	if lines = r.out.failures(); len(lines) > 0 {
+		return lines, false
+	}
+	if last := r.out.lastLines(maxSaid); strings.TrimSpace(last) != "" {
+		lines = boundLines(strings.Split(last, "\n"), maxSaid)
+	}
+	return lines, true
 }
 
 // checkHow says how the check failed with err, for a line about it: it fails, or did not finish.
 func (o *Loop) checkHow(err error) string {
-	if errors.Is(err, errCheckTimedOut) {
-		return "did not finish within " + command.ShortDuration(o.checkTimeout())
-	}
-	return "fails"
+	return commandRun{err: err, limit: o.checkTimeout()}.how()
 }
 
 // checkLogName is the file in a worktree's .orchestra/run/ that holds the whole output of the last
@@ -75,23 +125,24 @@ func (o *Loop) checkHow(err error) string {
 // the name of the test that failed.
 const checkLogName = "check.log"
 
-// saveCheckOutput writes a failed check's whole output, out, to logName (checkLogName, or setupLogName for
-// the setup) in the worktree wt's .orchestra/run/, left for review with it, and returns the file's
-// path. The worker can change .orchestra/run/, so the file
-// is reached through an os.Root, as every run file is (see project.OpenRun). A file that can't be
-// written is logged, and the log's path returned: it has the end of the output.
-func (o *Loop) saveCheckOutput(wt, logName string, out *checkOutput) string {
+// keepOutput writes a failed command's whole output, out, to logName in the checkout dir's
+// .orchestra/run/ and returns the file's path: checkLogName or setupLogName in a ticket's worktree,
+// left for review with it, or fullCheckLogName in the main checkout. The worker can change
+// .orchestra/run/, so the file is reached through an os.Root, as every run file is (see
+// project.OpenRun). A file that can't be written is logged, what saying whose output it is ("the
+// check's"), and the log's path returned: it has the end of the output.
+func (o *Loop) keepOutput(dir, logName, what string, out *checkOutput) string {
 	rel := project.RunPath(logName)
-	root, err := project.OpenRun(wt)
+	root, err := project.OpenRun(dir)
 	if err == nil {
-		err = out.save(root, wt, rel)
+		err = out.save(root, dir, rel)
 		_ = root.Close() // nothing written is lost: WriteRun closed its file
 	}
 	if err != nil {
-		o.log.Raw("", fmt.Errorf("cannot keep the check's whole output in %s: %w", wt, err))
+		o.log.Raw("", fmt.Errorf("cannot keep %s whole output in %s: %w", what, dir, err))
 		return o.cfg.LogPath
 	}
-	return filepath.Join(wt, rel)
+	return filepath.Join(dir, rel)
 }
 
 // checkFail is what a ticket's failed check said, for the reviewer: the run report says what
@@ -99,7 +150,7 @@ func (o *Loop) saveCheckOutput(wt, logName string, out *checkOutput) string {
 type checkFail struct {
 	br, onto string   // the branch checked, rebased onto Base at onto
 	how      string   // as checkHow says
-	output   string   // where the whole output is, as saveCheckOutput returned it
+	output   string   // where the whole output is, as keepOutput returned it
 	said     []string // the lines of the output that say what failed (see checkOutput.failures)
 	saidEnd  bool     // no line said: said is the output's last lines, if it printed any
 	dirs     []string // the directories the ticket's own commits change, sorted (see ownDirs)
@@ -186,18 +237,13 @@ func (f checkFail) ownFailures() []string {
 	return own
 }
 
-// noteCheckFailed keeps for the reviewer what w's check said as it failed with err, or its setup when
-// setup is the setup command: the lines of its output, out, that say what failed, where out is kept
-// (output), and the directories that the ticket's commits on top of onto change.
-func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out *checkOutput, err error,
-	setup string) {
-	f := checkFail{br: w.br, onto: onto, how: o.checkHow(err), output: output, setup: setup}
-	if f.said = out.failures(); len(f.said) == 0 {
-		f.saidEnd = true
-		if end := out.lastLines(maxSaid); strings.TrimSpace(end) != "" {
-			f.said = boundLines(strings.Split(end, "\n"), maxSaid)
-		}
-	}
+// noteCheckFailed keeps for the reviewer what w's check said as it failed (run), or its setup when
+// setup is the setup command: the lines of its output that say what failed (see commandRun.said),
+// where the output is kept (output), and the directories that the ticket's commits on top of onto
+// change.
+func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, run commandRun, setup string) {
+	f := checkFail{br: w.br, onto: onto, how: run.how(), output: output, setup: setup}
+	f.said, f.saidEnd = run.said()
 	f.dirs = o.ownDirs(context.WithoutCancel(ctx), w.br, onto) // a read cut short would look like no change
 	o.mu.Lock()
 	defer o.mu.Unlock()
