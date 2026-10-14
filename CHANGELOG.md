@@ -4,7 +4,47 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.2] - 2026-10-14
+
+### Added
+
+- `orchestra init` asks for the Beads ticket prefix in its last stage,
+  prefilled with the current one (or, for a new Beads, the folder's name
+  bd init would use), and `--prefix <name>` sets it without a terminal: a
+  new Beads gets it from `bd init --prefix`, and an existing one's tickets
+  are renamed with `bd rename-prefix` once confirmed. The rename is refused
+  while a ticket not closed has a `wt/<id>` branch, the last run left
+  workers in `.orchestra/run/state.json`, or tickets are labelled
+  `unmerged`, as those would name IDs that no longer exist.
+- The dashboard shows a finished ticket's merge: `◷ to merge`, in blue,
+  while it waits for its turn behind another ticket's merge (`to merge
+  (2nd)` in Current, its place in line), and `◆ merging`, in pink, while
+  its rebase, check and fast-forward are under way, in the tickets table
+  and in Current, in place of `▶ working` and the worker's `done`. The
+  spinner in Current stops once a worker has finished, a static mark in
+  its place, so motion means a worker at work. Merges now go one at a
+  time in the order the tickets finish. A ticket handed back to its worker
+  reads `resolving` or `fixing` as before, then to merge or merging again.
+
+### Changed
+
+- While the run winds down, the dashboard's line above the hint is one
+  short amber line, `■ ■ ■ ■  Winding down · 3 running, no new tickets`:
+  a `■` for each ticket running when it began, amber while it runs, green
+  once merged, red once set aside. It was bold red, the colour for what
+  needs you, and listed the running tickets, wrapping in most panes; a
+  narrow pane now drops words and never wraps. The totals' `· held` marker
+  is amber too. The `DRAIN` log line and the **s** question still name the
+  tickets.
+- `orchestra update` no longer refuses while a run holds the repository's
+  lock: nothing runs the binary during a run, so the reason it gave
+  (workers' hooks call orchestra) wasn't true. The new binary is renamed
+  into place, so a run going keeps the build it started with.
+- A deferred ticket whose blockers have merged, and whose worktree has no
+  commits of its own but uncommitted changes, is no longer said to have a
+  worktree safe to remove, in the START block's `DEFERRED_FREE` line or the
+  box of a run with nothing to run: the line says the worktree holds
+  uncommitted changes and gives `git -C <worktree> status` to see them.
 
 ### Fixed
 
@@ -191,44 +231,6 @@ All notable changes to orchestra are documented here. The format follows
   again, rather than for each start: with a small limit, early starts could
   end a run `LIMIT_REACHED` with tickets left, and the done line counted
   them twice.
-### Changed
-
-- While the run winds down, the dashboard's line above the hint is one
-  short amber line, `■ ■ ■ ■  Winding down · 3 running, no new tickets`:
-  a `■` for each ticket running when it began, amber while it runs, green
-  once merged, red once set aside. It was bold red, the colour for what
-  needs you, and listed the running tickets, wrapping in most panes; a
-  narrow pane now drops words and never wraps. The totals' `· held` marker
-  is amber too. The `DRAIN` log line and the **s** question still name the
-  tickets.
-- `orchestra update` no longer refuses while a run holds the repository's
-  lock: nothing runs the binary during a run, so the reason it gave
-  (workers' hooks call orchestra) wasn't true. The new binary is renamed
-  into place, so a run going keeps the build it started with.
-- A deferred ticket whose blockers have merged, and whose worktree has no
-  commits of its own but uncommitted changes, is no longer said to have a
-  worktree safe to remove, in the START block's `DEFERRED_FREE` line or the
-  box of a run with nothing to run: the line says the worktree holds
-  uncommitted changes and gives `git -C <worktree> status` to see them.
-### Added
-
-- `orchestra init` asks for the Beads ticket prefix in its last stage,
-  prefilled with the current one (or, for a new Beads, the folder's name
-  bd init would use), and `--prefix <name>` sets it without a terminal: a
-  new Beads gets it from `bd init --prefix`, and an existing one's tickets
-  are renamed with `bd rename-prefix` once confirmed. The rename is refused
-  while a ticket not closed has a `wt/<id>` branch, the last run left
-  workers in `.orchestra/run/state.json`, or tickets are labelled
-  `unmerged`, as those would name IDs that no longer exist.
-- The dashboard shows a finished ticket's merge: `◷ to merge`, in blue,
-  while it waits for its turn behind another ticket's merge (`to merge
-  (2nd)` in Current, its place in line), and `◆ merging`, in pink, while
-  its rebase, check and fast-forward are under way, in the tickets table
-  and in Current, in place of `▶ working` and the worker's `done`. The
-  spinner in Current stops once a worker has finished, a static mark in
-  its place, so motion means a worker at work. Merges now go one at a
-  time in the order the tickets finish. A ticket handed back to its worker
-  reads `resolving` or `fixing` as before, then to merge or merging again.
 
 ## [0.7.1] - 2026-10-14
 
@@ -2008,6 +2010,7 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[0.7.2]: https://github.com/noesis-sol/orchestra/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/noesis-sol/orchestra/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/noesis-sol/orchestra/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noesis-sol/orchestra/compare/v0.5.1...v0.6.0
