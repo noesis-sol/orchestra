@@ -131,6 +131,10 @@ func TestLiveTabs(t *testing.T) {
 	}
 	// The title escapes a program writes, and the commands that run, rename no window of orchestra's.
 	l.tmux("send-keys", "-t", pane, `printf '\033kretitled\033\\'; printf '\033]2;titled\007'; sleep 0.2`, "Enter")
+	// Its title shows tmux has read both escapes; the second's wait then gives the command time to rename it.
+	l.eventually("the pane never read the escapes", func() bool {
+		return l.tmux("display-message", "-p", "-t", pane, "#{pane_title}") == "titled"
+	})
 	time.Sleep(time.Second)
 	if label, open, err := l.term.TabLabel(bg, tab); label != "x-1 #{pane_id}" || !open || err != nil {
 		t.Errorf("TabLabel = %q %v %v", label, open, err)
@@ -338,9 +342,10 @@ func TestLiveAgentGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.eventually("never gone once it exited", func() bool { return l.status("x-1") == dispatch.StateGone })
-	if got := l.tmux("display-message", "-p", "-t", pane, "#{pane_dead} #{pane_dead_status}"); got != "1 3" {
-		t.Errorf("the pane: %q, want it dead with exit status 3", got)
-	}
+	// tmux marks the pane dead as its terminal closes, and has its exit status once it has reaped it.
+	l.eventually("the pane never showed it dead with exit status 3", func() bool {
+		return l.tmux("display-message", "-p", "-t", pane, "#{pane_dead} #{pane_dead_status}") == "1 3"
+	})
 	if open, err := l.term.PaneOpen(bg, pane); !open || err != nil {
 		t.Errorf("PaneOpen = %v %v", open, err)
 	}
