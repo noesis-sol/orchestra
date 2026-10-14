@@ -11,10 +11,10 @@ import (
 )
 
 // waitSettled waits until the worker w settles, and returns when it went idle for good. Never answer
-// its prompts; stop if it stays blocked for 4 minutes, or in a status Herdr can't tell (unknown) for
-// 5. An idle worker has settled only once idleSettled says so: Herdr takes a worker for idle while
-// it starts up, and while it waits on its own background command. begun is when it was confirmed
-// started on its prompt. A status Herdr fails to read says nothing about the worker, so the wait
+// its prompts; stop if it stays blocked for 4 minutes, or in a status the terminal can't tell (unknown)
+// for 5. An idle worker has settled only once idleSettled says so: the terminal takes a worker for idle
+// while it starts up, and while it waits on its own background command. begun is when it was confirmed
+// started on its prompt. A status the terminal fails to read says nothing about the worker, so the wait
 // goes on through maxFailedReads of them in a row before the run stops; so does one of its ticket's
 // that bd fails to read while the worker is idle, which neither settles it nor tells it to continue.
 // A worker still going Config.TicketLimit after it started (dispatch) stops the run; without a
@@ -99,7 +99,7 @@ func (o *Loop) waitSettled(
 	}
 }
 
-// asksPermission says whether the worker w, in state st as Herdr shows it, waits on a permission
+// asksPermission says whether the worker w, in state st as the terminal shows it, waits on a permission
 // prompt, as its hooks reported since it was started or adopted.
 func (o *Loop) asksPermission(w worker, st AgentState) bool {
 	if !w.hooks || o.reporter == nil {
@@ -192,11 +192,11 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 	return idle.since, nil, false
 }
 
-// quietFor is how long the worker w, which Herdr has shown idle since since, has done nothing. A
+// quietFor is how long the worker w, which the terminal has shown idle since since, has done nothing. A
 // subagent in the background works on after its worker's turn has ended, and its tool uses are
 // reported as the worker's: while one runs, the last of them ends the quiet. A note of its hooks
-// ends it too: a subagent's stop, say, whose answer starts the worker's next turn, which Herdr may
-// not show yet.
+// ends it too: a subagent's stop, say, whose answer starts the worker's next turn, which the
+// terminal may not show yet.
 func (o *Loop) quietFor(w worker, since time.Time) time.Duration {
 	if !w.hooks || o.reporter == nil {
 		return time.Since(since)
@@ -219,7 +219,7 @@ func (o *Loop) subagentRunning(wt string) bool {
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
 const blockedLimit = 4 * time.Minute
 
-// unknownLimit is how long a worker's status may stay unknown (Herdr can't tell what it is doing)
+// unknownLimit is how long a worker's status may stay unknown (the terminal can't tell what it is doing)
 // before the run stops for it.
 const unknownLimit = 5 * time.Minute
 
@@ -227,12 +227,12 @@ const unknownLimit = 5 * time.Minute
 const longRunning = 2 * time.Hour
 
 // maxFailedReads is how many failed status reads in a row (a minute's worth), of the worker's from
-// Herdr or of its ticket's from bd, stop the wait on a worker.
+// the terminal or of its ticket's from bd, stop the wait on a worker.
 const maxFailedReads = 20
 
-// readStatus reads the worker's status, trying up to tries times while Herdr fails to answer. A
-// failure it tries again after is logged; the last, if Herdr never answers, is returned for the
-// caller to report. agent is the worker's Herdr name.
+// readStatus reads the worker's status, trying up to tries times while the terminal fails to
+// answer. A failure it tries again after is logged; the last, if the terminal never answers, is
+// returned for the caller to report. agent is the worker's name in the terminal.
 func (o *Loop) readStatus(ctx context.Context, agent string, tries int) (AgentState, error) {
 	for try := 1; ; try++ {
 		st, err := o.agents.Status(ctx, agent)
@@ -296,7 +296,7 @@ func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after t
 // or not: one in the background (as every subagent is in fork mode) outlives the turn that started
 // it, and its answer starts the next, and one still running after the Stop may be the one using
 // the tool. One that stopped after the Stop (see answerPending) has an answer on its way, which
-// starts the next turn before Herdr may show it.
+// starts the next turn before the terminal may show it.
 func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bool) {
 	if u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
 		u.At.Before(u.Stopped)) {

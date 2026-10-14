@@ -10,7 +10,7 @@ import (
 // ToolUse is what a worker last reported through its hooks.
 type ToolUse struct {
 	// PreToolUse (using Tool now), PermissionRequest (asking to use Tool: waiting on the answer
-	// while Herdr shows it at rest, using it once allowed), PostToolUse (between tools) or Stop
+	// while the terminal shows it at rest, using it once allowed), PostToolUse (between tools) or Stop
 	// (turn over)
 	Event   string
 	Tool    string    // Bash, Edit, Read, …
@@ -103,8 +103,8 @@ var testRunner = regexp.MustCompile(`(^|[\s;&|(])(` +
 
 // Doing names what a working worker is doing from what it reported: testing (the project's check
 // command or a test runner), editing, reading or running a subagent. A tool it asked permission
-// for is running once Herdr shows it working. "" means nothing more precise than Herdr's
-// "working": thinking between tools, another command, or no report.
+// for is running once the terminal shows it working. "" means nothing more precise than the
+// terminal's "working": thinking between tools, another command, or no report.
 func Doing(u ToolUse, check string) string {
 	if u.Event != "PreToolUse" && u.Event != EventPermission {
 		return ""
@@ -129,9 +129,9 @@ func Doing(u ToolUse, check string) string {
 // a subagent started and not stopped while it thinks between the subagent's tools.
 const DoingSubagent = "subagent"
 
-// waitsOnPermission says whether a worker Herdr shows in state st, whose hooks last reported u
-// (ok: they did), is waiting on a permission prompt: asked, and Herdr shows it at rest (idle,
-// blocked or done). A worker Herdr shows working was allowed, and is using the tool.
+// waitsOnPermission says whether a worker the terminal shows in state st, whose hooks last reported
+// u (ok: they did), is waiting on a permission prompt: asked, and the terminal shows it at rest
+// (idle, blocked or done). A worker the terminal shows working was allowed, and is using the tool.
 func waitsOnPermission(st AgentState, u ToolUse, ok bool) bool {
 	return ok && u.Event == EventPermission && (st == StateIdle || st == StateBlocked || st == StateDone)
 }
