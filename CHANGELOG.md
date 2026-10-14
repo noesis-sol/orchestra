@@ -94,6 +94,11 @@ All notable changes to orchestra are documented here. The format follows
   detached HEAD, is set aside with `OFF_BRANCH`, naming what the worktree has
   checked out. Before, the merge rebased and checked the other branch up to
   three times and ended in `MERGE_CONFLICT`, saying the base kept changing.
+- A finished ticket whose branch was rebased a third time, as the base moved
+  on after each of its first two rebases (commits made by hand), is merged
+  when the base stayed put while that rebase was checked. Before, the merge
+  ran the check and then gave up with `MERGE_CONFLICT`, saying the base kept
+  changing.
 - Ctrl+C while a ticket set aside for its failed check is checked once more
   no longer names it among the workers left running: only its check is cut
   short, and it stays set aside.

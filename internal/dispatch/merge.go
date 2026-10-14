@@ -63,7 +63,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	defer m.repo.release()
 	m.queue.lock()
 	defer m.queue.release() // held on every return; a hand-back lets go of it and takes it again
-	stop, done := mergePasses(func() (mergeStep, *stopReason) { return m.pass(ctx) })
+	stop, done := mergePasses(func(rebase bool) (mergeStep, *stopReason) { return m.pass(ctx, rebase) })
 	if !done {
 		o.leaveFor(m.keep, w.id, asideConflict, c.Base+" kept changing", c.Base+" kept changing", fmt.Sprintf(
 			"%s closed, but %s kept changing while its checks ran (commits made by hand?); "+
@@ -75,7 +75,8 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 // maxMergePasses is how many passes of a merge may find Base moved, and rebase onto it, while the
 // ticket holds the merge queue. Only merges move Base during a run, and they queue too; a second pass
 // covers a commit made by hand while the checks ran. A pass after a worker worked on the branch, the
-// queue let go of meanwhile, doesn't count (see mergeAgainAfterWorker).
+// queue let go of meanwhile, doesn't count (see mergeAgainAfterWorker). After the last of them, one
+// more pass merges the branch if Base stayed put while it was checked, and rebases no more.
 const maxMergePasses = 3
 
 // mergeStep is what a pass of a merge (see mergeRun.pass) leaves to do.
@@ -85,23 +86,25 @@ const (
 	mergeDone             mergeStep = iota // merged, cleaned up, set aside, or stopped: the merge is over
 	mergeAgain                             // rebased and checked while holding the queue: merge, or rebase again
 	mergeAgainAfterWorker                  // its worker resolved or fixed the branch: Base may have moved meanwhile
+	mergeBaseMoved                         // Base moved, on a pass that may not rebase: it kept changing
 )
 
 // mergePasses runs pass until it says the merge is done, returning its reason to stop, if any, and
-// true; or false once maxMergePasses passes have rebased onto a Base that kept moving (see
-// maxMergePasses).
-func mergePasses(pass func() (mergeStep, *stopReason)) (*stopReason, bool) {
-	for counted := 0; counted < maxMergePasses; {
-		step, stop := pass()
+// true; or false when Base moved once more after maxMergePasses passes had rebased onto it (see
+// maxMergePasses). pass may rebase until those passes have run out.
+func mergePasses(pass func(rebase bool) (mergeStep, *stopReason)) (*stopReason, bool) {
+	for counted := 0; ; {
+		step, stop := pass(counted < maxMergePasses)
 		switch step {
 		case mergeDone:
 			return stop, true
+		case mergeBaseMoved:
+			return nil, false
 		case mergeAgain:
 			counted++
 		case mergeAgainAfterWorker: // not counted: Base moved while the queue was let go of, as it may
 		}
 	}
-	return nil, false
 }
 
 // mergeRun is the merge of a finished ticket under way: its worker, the context its git work runs in
@@ -120,9 +123,9 @@ type mergeRun struct {
 	fixes       int // its failing check handed back to its worker to fix
 }
 
-// pass merges the ticket's branch if it is on top of Base, or rebases it onto Base and checks it, and
-// says what is left to do.
-func (m *mergeRun) pass(ctx context.Context) (mergeStep, *stopReason) {
+// pass merges the ticket's branch if it is on top of Base, or rebases it onto Base and checks it when
+// it may (rebase), and says what is left to do.
+func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReason) {
 	c := m.o.cfg
 	m.repo.lock()
 	// Its commits may undo each other, as when its worker found the change on Base already and
@@ -132,6 +135,10 @@ func (m *mergeRun) pass(ctx context.Context) (mergeStep, *stopReason) {
 	}
 	if m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br) {
 		return mergeDone, m.fastForward()
+	}
+	if !rebase {
+		m.repo.unlock()
+		return mergeBaseMoved, nil
 	}
 	r, conflicted, done := m.rebase()
 	switch {

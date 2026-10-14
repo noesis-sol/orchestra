@@ -11,8 +11,9 @@ import (
 
 // Only merges move Base during a run, and they queue, so a ticket's merge rebases at most once for
 // them; a commit made on Base by hand while the rebased code is checked has it rebased and checked
-// again. The merge makes three passes at most: when Base moves on after each rebase, the ticket is
-// set aside with MERGE_CONFLICT, "main kept changing", its branch left as its last rebase left it.
+// again. The merge rebases three times at most, then merges if Base stayed put while the last rebase
+// was checked: when Base moves on after each rebase, the ticket is set aside with MERGE_CONFLICT,
+// "main kept changing", its branch left as its last rebase left it.
 
 // movingBase is git in memory on which a commit lands on Base, as if made by hand, right after each
 // of the first moves rebases.
@@ -47,8 +48,8 @@ func TestAMergeWhileBaseKeepsMoving(t *testing.T) {
 	}{
 		{"never after its rebase", 0, true, 1},
 		{"after its first rebase", 1, true, 2},
-		// The third rebase, onto a Base that then stays put, is checked, but the passes have run out.
-		{"after its first two rebases", 2, false, 3},
+		// The third rebase, onto a Base that then stays put, is checked and merged.
+		{"after its first two rebases", 2, true, 3},
 		{"after every rebase", 3, false, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
