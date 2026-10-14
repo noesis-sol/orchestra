@@ -78,7 +78,8 @@ func runInit(
 			"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n"+
 			"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n"+
 			"each ticket's change in a fresh context, which the worker prompt then has workers run. In a\n"+
-			"terminal it asks for anything the flags don't give.\n\n")
+			"terminal it asks for anything the flags don't give. Run it from the main checkout, between\n"+
+			"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -120,6 +121,10 @@ func runInit(
 	repo, err := git.Git{}.TopLevel(ctx, dir)
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra init: not inside a git repository")
+		return dispatch.ExitSetup
+	}
+	if refusal := initRefusal(ctx, repo); refusal != "" {
+		fmt.Fprintln(stderr, "orchestra init:", refusal)
 		return dispatch.ExitSetup
 	}
 	existing, _, err := project.LoadSettings(repo)
@@ -212,6 +217,13 @@ func runInit(
 		choice.MCPUnasked = !mcpGiven && choice.MCP == nil
 	}
 
+	// Checked again once the form is answered, which can take a while: a run may have started since.
+	if refusal := initRefusal(ctx, repo); refusal != "" {
+		ui.Steps(scoutSteps(scoutSpent))
+		fmt.Fprintln(stderr, "orchestra init:", refusal)
+		return dispatch.ExitSetup
+	}
+
 	// Beads first: bd init commits what was staged, and init stages a moved worker prompt. Ctrl+C
 	// stops an install or bd init under way, which run in their own process groups, and init with it.
 	beadsCtx, stopBeads := signal.NotifyContext(ctx, stopSignals...)
@@ -276,6 +288,29 @@ func runInit(
 	}
 	ui.SignOff(ready)
 	return dispatch.ExitOK
+}
+
+// initRefusal is why init doesn't set up the repository whose checkout is repo, or "" when it may. Not
+// in a linked worktree: what it writes would land on that worktree's branch, a worker's ticket's, rather
+// than on the main checkout's. And not while a run holds the lock: the runners and .gitattributes it
+// rewrites leave the run's tree dirty, which stops the run at its next dispatch or merge, and the run
+// would pick up the tickets it files.
+func initRefusal(ctx context.Context, repo string) string {
+	if linked, err := (git.Git{}).LinkedWorktree(ctx, repo); err != nil {
+		return "could not tell whether " + repo + " is the main checkout: " + err.Error() + "."
+	} else if linked {
+		return repo + " is a linked worktree. Run this from the main checkout."
+	}
+	holder, held, err := project.RunHolder(ctx, repo)
+	switch {
+	case errors.Is(err, errors.ErrUnsupported): // no run lock on this system: nothing to check
+	case err != nil:
+		return "cannot tell whether a run is going: " + err.Error()
+	case held:
+		return fmt.Sprintf("%v. init changes files and tickets a run works from, which would stop it: "+
+			"set up between runs.", &project.HeldError{Repo: repo, Holder: holder})
+	}
+	return ""
 }
 
 // scoutSteps say what the scout's call cost, as claude answered it: init has no log for an ORGAN

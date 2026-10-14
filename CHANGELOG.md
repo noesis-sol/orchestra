@@ -14,6 +14,12 @@ All notable changes to orchestra are documented here. The format follows
   pane was closed. Herdr's variables beside tmux's or cmux's mean Herdr only
   when Herdr says orchestra runs in that pane; likewise cmux started from a
   Herdr pane.
+- `orchestra init` refuses, changing nothing, while a run holds the
+  repository's lock, naming the run, rather than rewrite the runners and
+  `.gitattributes` under it (which stopped the run with `DIRTY_TREE`) and
+  file tickets it would take up; and in a linked worktree, such as a
+  worker's, where it wrote `.orchestra/` and the runners onto that ticket's
+  branch.
 - A `solo` ticket next in line keeps its place when a slot frees while
   every slot was taken: a failed check due to be tried again no longer
   takes the slot ahead of it. And a `solo` ticket adopted after its
