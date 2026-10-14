@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -10,13 +11,24 @@ func planTicket(id string, prio int, created, text string) Ticket {
 	return Ticket{ID: id, Title: id, Status: "open", Priority: &prio, CreatedAt: created, Description: text}
 }
 
-// linesOf gives every file this many lines, except those listed.
-func linesOf(def int, files map[string]int) func(string) int {
-	return func(p string) int {
-		if n, ok := files[p]; ok {
-			return n
+// linesOf gives every file this many empty lines, except those listed.
+func linesOf(def int, files map[string]int) func(string) ([]byte, error) {
+	return func(p string) ([]byte, error) {
+		n, ok := files[p]
+		if !ok {
+			n = def
 		}
-		return def
+		return []byte(strings.Repeat("\n", n)), nil
+	}
+}
+
+// sourceOf gives the files listed these contents, and every other one 50 empty lines.
+func sourceOf(files map[string]string) func(string) ([]byte, error) {
+	return func(p string) ([]byte, error) {
+		if c, ok := files[p]; ok {
+			return []byte(c), nil
+		}
+		return []byte(strings.Repeat("\n", 50)), nil
 	}
 }
 
@@ -34,7 +46,9 @@ func TestPlanLinksTheHigherPriorityTicketFirst(t *testing.T) {
 		planTicket("high", 1, "2026-09-30T00:00:00Z", "Log each rebase in Loop.merge()."),
 		planTicket("other", 0, "2026-09-01T00:00:00Z", "Change refreshBranch() in internal/dispatch/merge.go."),
 	}
-	got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil)))
+	// low and other work in merge.go on different functions it mentions.
+	merge := sourceOf(map[string]string{"internal/dispatch/merge.go": "func (o *Loop) merge() { o.refreshBranch() }\n"})
+	got := linkList(PlanLinks(open, nil, trackedHere, "", merge))
 	if want := []string{"high>low:Loop.merge"}; !slices.Equal(got, want) {
 		t.Errorf("links %q, want %q", got, want)
 	}
@@ -43,7 +57,7 @@ func TestPlanLinksTheHigherPriorityTicketFirst(t *testing.T) {
 	open[0].Priority, open[1].Priority = open[1].Priority, open[0].Priority
 	*open[0].Priority = 2
 	*open[1].Priority = 2
-	if got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil))); !slices.Equal(got, []string{"low>high:Loop.merge"}) {
+	if got := linkList(PlanLinks(open, nil, trackedHere, "", merge)); !slices.Equal(got, []string{"low>high:Loop.merge"}) {
 		t.Errorf("same priority: links %q, want the older first", got)
 	}
 }
@@ -69,7 +83,8 @@ func TestPlanLinksByFunctionWhenBothNameOne(t *testing.T) {
 		planTicket("b", 2, "", "Change refreshBranch() in README.md."),
 		planTicket("c", 2, "", "Reword README.md."),
 	}
-	got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil)))
+	readme := sourceOf(map[string]string{"README.md": "Call waitSettled, then refreshBranch.\n"})
+	got := linkList(PlanLinks(open, nil, trackedHere, "", readme))
 	// a and b name different functions of one file, so they aren't linked. c names none, so the file
 	// decides for it: it waits for b, the nearest ticket before it, and for a, which b doesn't.
 	if want := []string{"b>c:README.md", "a>c:README.md"}; !slices.Equal(got, want) {

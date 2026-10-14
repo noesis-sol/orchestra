@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"bytes"
 	"cmp"
 	"slices"
 	"strings"
@@ -19,14 +20,18 @@ const SmallFileLines = 200
 
 // PlanLinks proposes blocks links that order the open tickets touching the same code, so they run
 // one after the other instead of side by side: the higher-priority ticket (then the older one, then
-// the lower ID by compareIDs) goes first. Two tickets are linked when both name functions and one of
-// them is the same, or, when either names none, they name the same small file (lines gives a
-// repository file's line count, 0 for one that doesn't exist yet). Area labels, predicted files and
-// the files the check command (check) names, unless a ticket's files metadata lists them, don't link
-// tickets, and a pair already ordered by existing links, directly or through other tickets, gets
-// none; each ticket is linked to the nearest one before it first, so tickets touching one function
-// form a chain.
-func PlanLinks(open []Ticket, existing []Link, tracked []string, check string, lines func(path string) int) []Link {
+// the lower ID by compareIDs) goes first. Two tickets are linked when they name the same function,
+// or work on the same small file and aren't compared on it by function, as the loop's footprints
+// are (sharedFile): a ticket works on a file it names and on one the other names that mentions a
+// function it names, and two tickets that both name functions a file mentions, none the same, work
+// in different places in it. read gives a repository file's contents, for its line count and the
+// functions it mentions; a file it can't read (one that doesn't exist yet) is small and mentions
+// none. Area labels, predicted files and the files the check command (check) names, unless a
+// ticket's files metadata lists them, don't link tickets, and a pair already ordered by existing
+// links, directly or through other tickets, gets none; each ticket is linked to the nearest one
+// before it first, so tickets touching one function form a chain.
+func PlanLinks(open []Ticket, existing []Link, tracked []string, check string,
+	read func(file string) ([]byte, error)) []Link {
 	ts := slices.Clone(open)
 	slices.SortStableFunc(ts, func(a, b Ticket) int {
 		return cmp.Or(
@@ -36,6 +41,7 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, check string, l
 		)
 	})
 	repo := newRepoFiles(tracked, check)
+	repo.read = read
 	fps := make([]Footprint, len(ts))
 	for i, t := range ts {
 		// A predicted footprint is a guess: good enough to keep two tickets apart for a while, not
@@ -48,7 +54,8 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, check string, l
 	isSmall := func(p string) bool {
 		s, ok := small[p]
 		if !ok {
-			s = lines(p) <= SmallFileLines
+			b, _ := read(p) // a file that can't be read counts as one not written yet
+			s = bytes.Count(b, []byte("\n")) <= SmallFileLines
 			small[p] = s
 		}
 		return s
@@ -61,7 +68,7 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, check string, l
 	for j := range ts {
 		for i := j - 1; i >= 0; i-- {
 			a, b := ts[i].ID, ts[j].ID
-			what := planShared(fps[i], fps[j], isSmall)
+			what := planShared(fps[i], fps[j], repo.mentions, isSmall)
 			if what == "" || reaches(after, a, b) || reaches(after, b, a) {
 				continue
 			}
@@ -117,24 +124,13 @@ func idNumber(part string) (string, bool) {
 }
 
 // planShared returns what two tickets' footprints share closely enough to order them, or "": a
-// function when both name functions, else a small file both name.
-func planShared(f, g Footprint, small func(string) bool) string {
-	if len(f.Funcs) > 0 && len(g.Funcs) > 0 {
-		for _, x := range f.Funcs {
-			for _, y := range g.Funcs {
-				if funcsMeet(x, y) {
-					return x
-				}
-			}
-		}
-		return ""
+// function both name, else a small file both work on that they aren't compared on by function (in
+// reports which functions a file mentions).
+func planShared(f, g Footprint, in func(file, fn string) bool, small func(string) bool) string {
+	if x := sharedFunc(f, g); x != "" {
+		return x
 	}
-	for _, p := range f.Files {
-		if slices.Contains(g.Files, p) && small(p) {
-			return p
-		}
-	}
-	return ""
+	return sharedFile(f, g, nil, in, small)
 }
 
 // reaches reports whether ticket to already waits for from, through the links in after.

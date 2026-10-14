@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -26,8 +23,8 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintf(fs.Output(), "Usage: orchestra plan [--apply]\n\n"+
 			"Propose blocks links between the open tickets that touch the same code, so they run one after\n"+
 			"the other: the higher-priority ticket first. Tickets are linked when they name the same\n"+
-			"function, or, when either names none, the same file of at most %d lines. Without --apply it\n"+
-			"only prints the proposal.\n\n", dispatch.SmallFileLines)
+			"function, or work on the same file of at most %d lines, unless both name functions it\n"+
+			"mentions and none is the same. Without --apply it only prints the proposal.\n\n", dispatch.SmallFileLines)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -62,10 +59,8 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.CheckFast, func(p string) int {
-		b, _ := os.ReadFile(filepath.Join(repo, p)) // a file that can't be read counts as one not written yet
-		return bytes.Count(b, []byte("\n"))
-	})
+	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.CheckFast,
+		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) })
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",
 			plural(len(open), "open ticket"))

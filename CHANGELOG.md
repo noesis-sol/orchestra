@@ -12,6 +12,11 @@ All notable changes to orchestra are documented here. The format follows
   as its child, rather than through `exec`, is no longer taken for gone, and
   concluded on, as soon as its first hook runs: only a pane orchestra didn't
   launch the agent in is gone once back at a shell's prompt.
+- `orchestra plan` compares two tickets as the dispatch footprints do: a
+  ticket naming only `Loop.merge` is ordered with one naming the small file
+  that mentions it, and two tickets naming functions are compared by function
+  in a file only when both name functions it mentions, so a stray function
+  name no longer hides a file they share.
 - `orchestra init` no longer runs `bd init` while you have changes staged,
   which bd committed along with its own files: it says what is staged and to
   commit or unstage it, then run init again.

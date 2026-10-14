@@ -216,8 +216,9 @@ predictor organ guesses its files in the background and caches them as `predicte
 `"footprint": false` in `settings.json` turns it off.
 
 After a batch of tickets is filed, `orchestra plan` proposes blocks links between open tickets that
-name the same function (or, when one names none, the same small file), the higher-priority ticket
-first, and changes nothing. Show the user the proposal; run `orchestra plan --apply` (which adds
+name the same function or work on the same small file (one a ticket names, or that mentions a
+function it names, unless both name different functions the file mentions), the higher-priority
+ticket first, and changes nothing. Show the user the proposal; run `orchestra plan --apply` (which adds
 them with `bd dep add`) only when they approve.
 
 ## While it runs

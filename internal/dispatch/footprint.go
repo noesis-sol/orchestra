@@ -486,23 +486,37 @@ func funcsMeet(a, b string) bool {
 }
 
 // shared returns what a ready ticket's footprint f shares with a running ticket's footprint r and
-// the files its worker has edited, or "". An area label and a function are shared outright. A
-// ticket works on a file it names and on one the other ticket names or the worker edited that
-// mentions a function it names (in reports whether one does), and a file both work on is shared
-// unless both name functions it mentions: they are compared by function, and none is the same.
+// the files its worker has edited, or "": an area label, a function (sharedFunc), or a file
+// (sharedFile).
 func shared(f, r Footprint, edited []string, in func(file, fn string) bool) string {
 	for _, a := range f.Areas {
 		if slices.Contains(r.Areas, a) {
 			return a
 		}
 	}
+	if x := sharedFunc(f, r); x != "" {
+		return x
+	}
+	return sharedFile(f, r, edited, in, nil)
+}
+
+// sharedFunc returns a function both footprints name, as f names it, or "".
+func sharedFunc(f, g Footprint) string {
 	for _, x := range f.Funcs {
-		for _, y := range r.Funcs {
+		for _, y := range g.Funcs {
 			if funcsMeet(x, y) {
 				return x
 			}
 		}
 	}
+	return ""
+}
+
+// sharedFile returns a file both footprints work on, for which keep holds (any, when keep is nil),
+// or "". A ticket works on a file it names and on one the other ticket names or r's worker edited
+// (edited) that mentions a function it names (in reports whether one does), and a file both work on
+// is shared unless both name functions it mentions: they are compared by function (sharedFunc).
+func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
 		return in != nil && slices.ContainsFunc(fp.Funcs, func(fn string) bool { return in(p, fn) })
 	}
@@ -515,7 +529,7 @@ func shared(f, r Footprint, edited []string, in func(file, fn string) bool) stri
 		fIn, rIn := namesIn(f, p), namesIn(r, p)
 		fAt := fIn || slices.Contains(f.Files, p)
 		rAt := rIn || slices.Contains(r.Files, p) || slices.Contains(edited, p)
-		if fAt && rAt && !(fIn && rIn) {
+		if fAt && rAt && !(fIn && rIn) && (keep == nil || keep(p)) {
 			return p
 		}
 	}
@@ -538,14 +552,14 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 // reading those compared by function from the checkout.
 func (o *Loop) readFiles(ctx context.Context) {
 	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo), o.cfg.Check)
-	o.files.read = func(file string) ([]byte, error) { return readSource(o.cfg.Repo, file) }
+	o.files.read = func(file string) ([]byte, error) { return ReadSource(o.cfg.Repo, file) }
 }
 
 // maxSource is the most of a file read for the functions it mentions.
 const maxSource = 4 << 20
 
-// readSource reads up to maxSource bytes of file in the repository at repo, never outside it.
-func readSource(repo, file string) ([]byte, error) {
+// ReadSource reads up to maxSource bytes of file in the repository at repo, never outside it.
+func ReadSource(repo, file string) ([]byte, error) {
 	root, err := os.OpenRoot(repo)
 	if err != nil {
 		return nil, err
