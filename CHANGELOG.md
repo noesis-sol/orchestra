@@ -33,6 +33,9 @@ All notable changes to orchestra are documented here. The format follows
   `loop.go`; and a stray name (`t.Run()`, `GitHub`) no longer turns off the
   shared-file check, which now compares by function only in a file that
   mentions functions both tickets name. `o.log.Raw()` names `Raw`.
+- With tmux before 3.8, the hint to attach to the workers' session names
+  the session tmux made for `--workspace foo.bar`, `foo_bar`, where it named
+  `foo.bar`, which those versions can't find.
 - The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
   off at its output token limit, where it was shown blank or half-written.
   Organ answers from an older claude CLI, without a schema, are read when

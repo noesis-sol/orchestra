@@ -166,6 +166,9 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 			how = "tmux switch-client -t "
 		}
 		target := c.Workspace
+		if tmux.SessionName(target) != target && !tmux.KeepsNames(ctx) {
+			target = tmux.SessionName(target) // the session NewSession starts, or finds, before tmux 3.8
+		}
 		if strings.Contains(target, ".") {
 			target += ":" // the session, where tmux would read "my.sess" as window "my", pane "sess"
 		}
