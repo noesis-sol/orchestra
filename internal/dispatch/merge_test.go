@@ -36,8 +36,9 @@ func newMergeFixture(t *testing.T, check string) *mergeFixture {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log: log, sink: sink, tabs: noTabs{}, notes: newFakeBeads(),
-		checkout: git.Git{}, worktrees: git.Git{}, merger: git.Git{}, history: git.Git{}}
+	o := New(Config{Repo: repo, Base: "main", Check: check, LogPath: "log"}, log, "", Deps{Tabs: noTabs{}, Notes: newFakeBeads(),
+		Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{}, History: git.Git{}})
+	o.sink = sink
 	return &mergeFixture{repo: repo, git: run, orch: o, sink: sink}
 }
 

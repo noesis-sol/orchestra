@@ -72,11 +72,10 @@ func TestPendingWhyStates(t *testing.T) {
 // nothing done waits only for the blockers the run knows have not merged. One whose UnmergedLabel bd
 // couldn't remove once it merged has merged, as the holds and DEFERRED_FREE find it.
 func TestUnmergedBlockersStaleLabel(t *testing.T) {
-	o := &Loop{
-		active:   map[string]Status{"k-run": {Ticket: "k-run"}},
-		askedIDs: map[string]workerSpot{"k-ask": {}},
-		unmerged: map[string]string{"k-left": earlierRun},
-	}
+	o := New(Config{}, nil, "", Deps{})
+	o.active = map[string]Status{"k-run": {Ticket: "k-run"}}
+	o.askedIDs = map[string]workerSpot{"k-ask": {}}
+	o.unmerged = map[string]string{"k-left": earlierRun}
 	blocks := func(id string, status TicketStatus, labels ...string) Ticket {
 		return Ticket{ID: id, Status: status, DependencyType: "blocks", Labels: labels}
 	}

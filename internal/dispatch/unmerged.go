@@ -33,9 +33,6 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 			id, id, c.Base, UnmergedLabel)
 		o.setParent(id, t.Parent)
 		o.mu.Lock()
-		if o.unmerged == nil {
-			o.unmerged = map[string]string{}
-		}
 		o.unmerged[id] = earlierRun
 		o.mu.Unlock()
 		o.setLabelled(id, true)
@@ -117,9 +114,6 @@ func isHash(s string) bool {
 func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) bool {
 	o.markAside(id)
 	o.mu.Lock()
-	if o.unmerged == nil {
-		o.unmerged = map[string]string{}
-	}
 	o.unmerged[id] = why
 	o.mu.Unlock()
 	return o.label(ctx, id)
@@ -219,9 +213,6 @@ func (o *Loop) unlabel(ctx context.Context, id string) {
 func (o *Loop) setLabelled(id string, labelled bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.labelled == nil {
-		o.labelled = map[string]bool{}
-	}
 	o.labelled[id] = labelled
 }
 

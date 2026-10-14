@@ -72,9 +72,6 @@ func (o *Loop) dueRecheck(ctx context.Context) (recheck, bool) {
 		}
 		o.mu.Lock()
 		o.rechecks = slices.Delete(o.rechecks, i, i+1) // only Run takes from it; merges only append
-		if o.rechecked == nil {
-			o.rechecked = map[string]bool{}
-		}
 		o.rechecked[rc.w.id] = true
 		o.mu.Unlock()
 		return rc, true

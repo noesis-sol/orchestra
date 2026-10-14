@@ -247,9 +247,6 @@ func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output strin
 	f.dirs = o.ownDirs(context.WithoutCancel(ctx), w.br, onto) // a read cut short would look like no change
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.checkSaid == nil {
-		o.checkSaid = map[string]checkFail{}
-	}
 	o.checkSaid[w.id] = f
 }
 

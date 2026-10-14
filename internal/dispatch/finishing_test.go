@@ -56,7 +56,7 @@ func TestFinishingNamesWhatAStopDoesNotCutShort(t *testing.T) {
 
 // Several at once come by ticket.
 func TestFinishingIsByTicket(t *testing.T) {
-	o := &Loop{}
+	o := New(Config{}, nil, "", Deps{})
 	defer o.markFinishing("b-2", finishMerge)()
 	unmark := o.markFinishing("a-1", finishWorktree)
 	got := o.Finishing()

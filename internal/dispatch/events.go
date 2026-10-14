@@ -155,9 +155,6 @@ func (o *Loop) tally(ev *Event) {
 		if o.counted[ev.Ticket] {
 			return
 		}
-		if o.counted == nil {
-			o.counted = map[string]bool{}
-		}
 		o.counted[ev.Ticket] = true
 		o.asideN++
 	case ev.Kind == EvDone:

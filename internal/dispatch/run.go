@@ -270,13 +270,23 @@ type runState struct {
 	queued       queue
 	soloShown    SoloState
 	unclosedSaid int
+	// unclosed: the tickets not closed that the run draws from, as pick last read them (see
+	// countUnclosed); -1 before the first read.
+	unclosed int
+
+	// Scheduling by footprint: the repository's files, the reason each ready ticket was last skipped
+	// and the shared edits warned about. The running tickets' footprints are the ledger's.
+	files    *repoFiles
+	skipSaid sayOnce
+	warned   map[string]bool
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
 	return &runState{
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
-		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1,
+		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
+		warned: map[string]bool{},
 	}
 }
 
@@ -376,7 +386,7 @@ func (r *runState) heedEnvironment() {
 // the maintainer asked it to wind down.
 func (r *runState) startTickets() {
 	for r.taking() && r.ctx.Err() == nil && len(r.inflight) < r.o.cfg.Concurrency {
-		t, q, s := r.o.next(r.ctx, r.inflight, &r.solo)
+		t, q, s := r.next()
 		if s != nil {
 			r.stops.add(s)
 			r.sayHold(s, "")
@@ -406,11 +416,11 @@ func (r *runState) start(t Ticket, q queue) {
 		o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 			"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 	}
-	r.queued, r.soloShown, r.unclosedSaid = q, r.solo.state(), o.unclosed
+	r.queued, r.soloShown, r.unclosedSaid = q, r.solo.state(), r.unclosed
 	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
 		Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
 		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
-	o.startFootprint(t)
+	r.startFootprint(t)
 	tr := o.newTicketRun(r.ctx, t)
 	r.launch(t.ID, true, &tr.how, tr.work)
 }
@@ -449,7 +459,7 @@ func (r *runState) follow() bool {
 	if r.stops.first != nil || r.ctx.Err() != nil {
 		return false
 	}
-	adopt, s := o.followAsked(r.ctx, r.inflight, r.taking())
+	adopt, s := r.followAsked()
 	for _, a := range adopt {
 		if HasLabel(a.t, SoloLabel) {
 			r.solo.running = a.t.ID // it runs alone from now on, as one dispatched does
@@ -490,7 +500,7 @@ func (r *runState) returned(res result) {
 	o := r.o
 	delete(r.inflight, res.id)
 	o.stoppedBy(res.id, res.stop)
-	o.endFootprint(res.id)
+	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
 	if res.counted && res.how == requeued {
 		r.count-- // it started too early, and counts once it starts again
@@ -517,12 +527,12 @@ func (r *runState) polled() {
 	o := r.o
 	r.follow()
 	if o.footprintOn() && len(r.inflight) > 1 {
-		o.readEdits() // warns when two workers edit the same file
+		r.readEdits() // warns when two workers edit the same file
 	}
 	// With a free slot, Run reads bd ready again as it starts tickets. With none, the queue count is
 	// brought up to date; a failed read waits for the next poll, as nothing depends on it.
 	if r.taking() && len(r.inflight) >= o.cfg.Concurrency {
-		if t, q, err := o.pick(r.ctx, r.inflight, &r.solo); err == nil {
+		if t, q, err := r.pick(); err == nil {
 			if t != nil {
 				q.queued++
 			}
@@ -535,7 +545,7 @@ func (r *runState) polled() {
 // (q), which solo ticket runs or is next, and how many tickets aren't closed, when any of that has
 // changed.
 func (r *runState) reportQueue(q queue) {
-	solo, unclosed := r.solo.state(), r.o.unclosed
+	solo, unclosed := r.solo.state(), r.unclosed
 	if q == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid {
 		return
 	}
@@ -613,7 +623,8 @@ func (o *Loop) sayWaiting(inflight map[string]bool) {
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; each read of it waits for a git write under way (repoMu), as a merge's
 // fast-forward, and lets go between reads, so git failing doesn't hold up the merges.
-func (o *Loop) next(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, *stopReason) {
+func (r *runState) next() (*Ticket, queue, *stopReason) {
+	o, ctx := r.o, r.ctx
 	s := o.checkoutUnready(ctx, "", &o.repoMu)
 	if ctx.Err() != nil {
 		return nil, queue{}, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
@@ -621,7 +632,7 @@ func (o *Loop) next(ctx context.Context, running map[string]bool, solo *soloQueu
 	if s != nil {
 		return nil, queue{}, s
 	}
-	t, q, err := o.pickTries(ctx, running, solo)
+	t, q, err := r.pickTries()
 	if ctx.Err() != nil {
 		return nil, queue{}, nil
 	}
@@ -641,9 +652,10 @@ const readyTries = 3
 // pickTries is pick, tried up to readyTries times a poll apart while bd fails, as when a worker's bd
 // (a claim, a close) holds the database: bd failing once or twice doesn't stop the run. It logs each
 // failure it tries again after.
-func (o *Loop) pickTries(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, error) {
+func (r *runState) pickTries() (*Ticket, queue, error) {
+	o, ctx := r.o, r.ctx
 	for try := 1; ; try++ {
-		t, q, err := o.pick(ctx, running, solo)
+		t, q, err := r.pick()
 		if err == nil || try == readyTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return t, q, err
 		}
@@ -699,8 +711,9 @@ func (q *soloQueue) update(next string, slot bool, t *Ticket, queued int) (why s
 // pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
 // ticket that can start, with how many others could and how many are held back, by what holds
 // them. With a free slot and none to start, those that could wait for a solo ticket, and count as
-// held back. It says once why they wait, keeping the solo tickets in solo.
-func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, error) {
+// held back. It says once why they wait, keeping the solo tickets in runState.solo.
+func (r *runState) pick() (*Ticket, queue, error) {
+	o, ctx, running, solo := r.o, r.ctx, r.inflight, &r.solo
 	ready, err := o.tickets.Ready(ctx, o.cfg.Ticket)
 	if err != nil {
 		return nil, queue{}, err
@@ -709,7 +722,7 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueu
 	if err != nil {
 		return nil, queue{}, listUnreadableError{err}
 	}
-	o.countUnclosed(ctx, open)
+	r.countUnclosed(ctx, open)
 	parents := o.parentsOpen(open, running)
 	// A ticket set aside in this run stays out of it, even if bd still lists it as ready (a defer
 	// that failed, say); otherwise it would be dispatched again at once, in a new tab each time. A
@@ -729,14 +742,14 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueu
 	slot := len(running) < o.cfg.Concurrency
 	overlaps := func(Ticket) bool { return false }
 	if slot && o.footprintOn() {
-		o.readFiles(ctx)
+		r.readFiles(ctx)
 		if len(running) > 0 {
-			o.readEdits()
-			overlaps = func(t Ticket) bool { return o.overlapsRunning(t, running) }
+			r.readEdits()
+			overlaps = func(t Ticket) bool { return r.overlapsRunning(t, running) }
 		}
 	}
 	if o.footprintOn() {
-		o.queuePredictions(ready, skip)
+		r.queuePredictions(ready, skip)
 	}
 	held := func(t Ticket) holdKind {
 		if k := o.held(ctx, t, running, parents); k != notHeld {

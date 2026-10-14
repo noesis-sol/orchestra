@@ -565,9 +565,10 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 
 // readFiles lists the repository's files for the footprints of the tickets about to be compared,
 // reading those compared by function from the checkout.
-func (o *Loop) readFiles(ctx context.Context) {
-	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo), o.cfg.Check)
-	o.files.read = func(file string) ([]byte, error) { return ReadSource(o.cfg.Repo, file) }
+func (r *runState) readFiles(ctx context.Context) {
+	c := r.o.cfg
+	r.files = newRepoFiles(r.o.checkout.TrackedFiles(ctx, c.Repo), c.Check)
+	r.files.read = func(file string) ([]byte, error) { return ReadSource(c.Repo, file) }
 }
 
 // maxSource is the most of a file read for the functions it mentions.
@@ -590,26 +591,24 @@ func ReadSource(repo, file string) ([]byte, error) {
 
 // footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the
 // prediction made in this run when bd hasn't handed back the one cached on the ticket.
-func (o *Loop) footprintOf(t Ticket) Footprint {
-	fp := ticketFootprint(t, o.files)
+func (r *runState) footprintOf(t Ticket) Footprint {
+	fp := ticketFootprint(t, r.files)
 	if fp.Empty() {
-		if files := o.prediction(t.ID); len(files) > 0 {
-			fp = predictedFootprint(files, o.files)
+		if files := r.o.prediction(t.ID); len(files) > 0 {
+			fp = predictedFootprint(files, r.files)
 		}
 	}
 	return fp
 }
 
 // startFootprint records a dispatched ticket's footprint, and logs it.
-func (o *Loop) startFootprint(t Ticket) {
+func (r *runState) startFootprint(t Ticket) {
+	o := r.o
 	if !o.footprintOn() {
 		return
 	}
-	fp := o.footprintOf(t)
+	fp := r.footprintOf(t)
 	o.mu.Lock()
-	if o.footprints == nil {
-		o.footprints = map[string]*runFootprint{}
-	}
 	o.footprints[t.ID] = &runFootprint{fp: fp}
 	o.mu.Unlock()
 	o.info("  %s footprint: %s", t.ID, fp)
@@ -625,25 +624,27 @@ func (o *Loop) footprintWorktree(id, wt string) {
 }
 
 // endFootprint forgets a ticket that is no longer running.
-func (o *Loop) endFootprint(id string) {
+func (r *runState) endFootprint(id string) {
+	o := r.o
 	o.mu.Lock()
 	delete(o.footprints, id)
 	o.mu.Unlock()
-	o.skipSaid.forget(id)
+	r.skipSaid.forget(id)
 }
 
 // readEdits brings each running ticket's edited files up to date from its worker's reports, and
 // warns once when two running workers edit the same file: the second to merge is likely to
 // conflict.
-func (o *Loop) readEdits() {
+func (r *runState) readEdits() {
+	o := r.o
 	if o.reporter == nil {
 		return
 	}
 	o.mu.Lock()
 	wts := map[string]string{}
-	for id, r := range o.footprints {
-		if r.wt != "" {
-			wts[id] = r.wt
+	for id, f := range o.footprints {
+		if f.wt != "" {
+			wts[id] = f.wt
 		}
 	}
 	o.mu.Unlock()
@@ -651,27 +652,24 @@ func (o *Loop) readEdits() {
 	for id, wt := range wts {
 		files := o.reporter.EditedFiles(wt)
 		for i, f := range files {
-			files[i] = o.files.file(f) // in the form the footprints' files are in
+			files[i] = r.files.file(f) // in the form the footprints' files are in
 		}
 		edited[id] = files
 	}
 	o.mu.Lock()
 	for id, files := range edited {
-		if r := o.footprints[id]; r != nil {
-			r.edited = files
+		if f := o.footprints[id]; f != nil {
+			f.edited = files
 		}
 	}
 	o.mu.Unlock()
 
 	for _, e := range sharedEdits(edited) {
 		key := e.a + " " + e.b + " " + e.file
-		if o.warned[key] {
+		if r.warned[key] {
 			continue
 		}
-		if o.warned == nil {
-			o.warned = map[string]bool{}
-		}
-		o.warned[key] = true
+		r.warned[key] = true
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
 			"  LIKELY_CONFLICT: %s and %s both edit %s; the second to merge may conflict", e.a, e.b, e.file)})
 	}
@@ -700,17 +698,18 @@ func sharedEdits(edited map[string][]string) []edit {
 
 // overlapsRunning reports whether ready ticket t's footprint overlaps a running ticket's, saying
 // why once. A solo ticket waits for every running ticket anyway, so it is never skipped for one.
-func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
+func (r *runState) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
+	o := r.o
 	if HasLabel(t, SoloLabel) {
 		return false
 	}
-	fp := o.footprintOf(t)
+	fp := r.footprintOf(t)
 	why := ""
 	if !fp.Empty() {
 		o.mu.Lock()
 		for _, id := range slices.Sorted(maps.Keys(runningIDs)) {
-			if r := o.footprints[id]; r != nil {
-				if what := shared(fp, r.fp, r.edited, o.files.mentions); what != "" {
+			if f := o.footprints[id]; f != nil {
+				if what := shared(fp, f.fp, f.edited, r.files.mentions); what != "" {
 					why = fmt.Sprintf("touches %s, like running %s", what, id)
 					break
 				}
@@ -718,7 +717,7 @@ func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 		}
 		o.mu.Unlock()
 	}
-	if o.skipSaid.changed(t.ID, why) {
+	if r.skipSaid.changed(t.ID, why) {
 		o.info("  skipping %s: %s", t.ID, why)
 	}
 	return why != ""

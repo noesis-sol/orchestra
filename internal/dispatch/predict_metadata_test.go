@@ -37,8 +37,9 @@ func TestPredictedPathWithASpaceReadsBackWhole(t *testing.T) {
 	if got := metadataList(b, PredictedKey); !slices.Equal(got, want) {
 		t.Errorf("read back %q, want %q", got, want)
 	}
-	o.readFiles(t.Context())
-	if fp := o.footprintOf(b); !slices.Equal(fp.Files, want) || !fp.Predicted {
+	r := newRunState(t.Context(), o)
+	r.readFiles(t.Context())
+	if fp := r.footprintOf(b); !slices.Equal(fp.Files, want) || !fp.Predicted {
 		t.Errorf("footprint in this run: %+v", fp)
 	}
 	tracked := o.checkout.TrackedFiles(t.Context(), h.repo)

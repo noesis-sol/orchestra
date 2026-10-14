@@ -32,38 +32,51 @@ const (
 	ExitInterrupted = 130 // stopped with Ctrl+C
 )
 
-// Loop is one orchestra run: it picks ready tickets, hands them to workers and merges them.
+// Loop is one orchestra run: it picks ready tickets, hands them to workers and merges them. Its state
+// is grouped by owner: each embedded struct says which lock guards its fields, or whose they are.
+// What only Run itself reads and writes is runState's.
 type Loop struct {
 	cfg    Config
 	log    *Log
-	sink   Sink
-	sinkMu sync.Mutex // sink, final and the counts below: workers and triage emit from goroutines of their own
-	prompt string     // worker prompt with the TICKET_ID placeholder
+	prompt string // worker prompt with the TICKET_ID placeholder
 
-	// unclosed: the tickets not closed that the run draws from, as pick last read them (see
-	// countUnclosed); -1 before the first read. Run's own.
-	unclosed int
+	deps        // the connections, set by New and never changed
+	tallies     // the sink and what the events sent to it counted, under sinkMu
+	ledger      // what the workers, Run and the merges share, under mu
+	carryover   // the workers carried over from the last run and left for the next, under leftMu
+	predictor   // predicting footprints, under predictMu
+	triageQueue // triage's queue, set by StartTriage before any worker runs
+	envHold     // holding for the environment: Run's own, and triage's once Run has returned
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
-	final     string // the stop or done line
-	// closedN and asideN: the tickets closed (merged, or with nothing to merge) and set aside in the run,
-	// counted as their events go out, under sinkMu (see tally); counted, the tickets asideN counts;
-	// closedIDs, the tickets closedN counts, in the order they closed.
-	closedN, asideN int
-	counted         map[string]bool
-	closedIDs       []string
-	// mergedN: the tickets merged into Base in this run, under mu (see countMerge); fullChecked: how
-	// the full check after the run went, once it has run (see FullCheck).
-	mergedN     int
-	fullChecked *fullCheck
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
 	repoMu sync.Mutex
-	merges mergeQueue        // the merge queue (see mergeTurn)
-	active map[string]Status // tickets being worked on; left set for those still running at the end
+	merges mergeQueue // the merge queue (see mergeTurn)
 
+	organCost organCost // what the run's organ calls cost
+	hookTally hookTally // what the workers' hooks noted: permission prompts, compactions
+	holdSaid  sayOnce   // why each held ticket waits, as last said
+	doneSaid  sayOnce   // parents said to be ready to close
+
+	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
+	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
+	// the run winds down is Run's own (runState.drained).
+	drainReqs chan drainRequest
+
+	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
+	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
+	poll time.Duration
+
+	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
+	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
+	ReportInterrupt bool
+}
+
+// deps are the loop's connections to Beads, the terminal, git, the workers' reports and the organs.
+type deps struct {
 	tickets   Tickets
 	notes     Notes
 	tabs      Tabs
@@ -77,19 +90,52 @@ type Loop struct {
 	history   History
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
-	organCost organCost       // what the run's organ calls cost
-	hookTally hookTally       // what the workers' hooks noted: permission prompts, compactions
+}
+
+// depsFrom are the connections d gives.
+func depsFrom(d Deps) deps {
+	return deps{
+		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
+		reporter: d.Reporter, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History,
+		organ: d.Advisor, organCtx: d.AdviceCtx,
+	}
+}
+
+// tallies is where the run's events go and what they counted, all under sinkMu: workers and triage
+// emit from goroutines of their own.
+type tallies struct {
+	sinkMu sync.Mutex
+	sink   Sink
+	final  string // the stop or done line
+	// closedN and asideN: the tickets closed (merged, or with nothing to merge) and set aside in the run,
+	// counted as their events go out (see tally); counted, the tickets asideN counts; closedIDs, the
+	// tickets closedN counts, in the order they closed.
+	closedN, asideN int
+	counted         map[string]bool
+	closedIDs       []string
+}
+
+// newTallies are the tallies of a run that has sent no events yet, to sink.
+func newTallies(sink Sink) tallies {
+	return tallies{sink: sink, counted: map[string]bool{}}
+}
+
+// ledger is what the workers, Run and the merges share, all under mu.
+type ledger struct {
 	mu        sync.Mutex
-	asideIDs  []string              // tickets deferred or left unmerged in this run
-	unmerged  map[string]string     // tickets closed but left unmerged, in this run or an earlier one, with why
-	checkSaid map[string]checkFail  // what each ticket's last check in this run said, if it failed
-	rechecks  []recheck             // tickets set aside for a failed check, to check again once Base moves on
-	rechecked map[string]bool       // tickets taken up to be checked again (see dueRecheck)
-	setUpFor  map[string]string     // the commit each finished ticket's dependencies were set up for (see setUp)
-	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
-	holdSaid  sayOnce               // why each held ticket waits, as last said (under its own lock)
-	blockers  map[string]blockLinks // each ready ticket's blockers and sources, kept for the run (see linksOf)
-	picks     int                   // how many times pick has read bd ready
+	active    map[string]Status    // tickets being worked on; left set for those still running at the end
+	finishing map[string]string    // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
+	asideIDs  []string             // tickets deferred or left unmerged in this run
+	unmerged  map[string]string    // tickets closed but left unmerged, in this run or an earlier one, with why
+	labelled  map[string]bool      // tickets carrying UnmergedLabel, which a merge removes
+	checkSaid map[string]checkFail // what each ticket's last check in this run said, if it failed
+	rechecks  []recheck            // tickets set aside for a failed check, to check again once Base moves on
+	rechecked map[string]bool      // tickets taken up to be checked again (see dueRecheck)
+	setUpFor  map[string]string    // the commit each finished ticket's dependencies were set up for (see setUp)
+	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
+	// many times pick has read bd ready.
+	blockers map[string]blockLinks
+	picks    int
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
 	askedIDs map[string]workerSpot
@@ -99,51 +145,65 @@ type Loop struct {
 	// sessionResumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
 	// resumeSession), which happens once for each.
 	sessionResumed map[string]bool
+	// parentOf: the parent of each ticket dispatched or left unmerged, which waits for it; footprints,
+	// the running tickets' footprints (see startFootprint).
+	parentOf   map[string]string
+	footprints map[string]*runFootprint
+	// mergedN: the tickets merged into Base in this run (see countMerge); fullChecked: how the full
+	// check after the run went, once it has run (see FullCheck).
+	mergedN     int
+	fullChecked *fullCheck
+	// noMore is why the run takes on no more work, as Run last saw it: it winds down, or holds for a
+	// stop; "" while it takes tickets. A merge reads it before handing a failed check back to its
+	// worker (see whyNotFixCheck).
+	noMore string
+}
+
+// newLedger is the ledger of a run that has done nothing yet.
+func newLedger() ledger {
+	return ledger{
+		active: map[string]Status{}, finishing: map[string]string{}, unmerged: map[string]string{},
+		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
+		setUpFor: map[string]string{}, blockers: map[string]blockLinks{}, askedIDs: map[string]workerSpot{},
+		placed: map[string]workerSpot{}, sessionResumed: map[string]bool{}, parentOf: map[string]string{},
+		footprints: map[string]*runFootprint{},
+	}
+}
+
+// carryover is the workers carried over from the last run and those left for the next. keptOut is
+// written as the run carries the last run's workers over, before carriedIn is set; from then on all
+// of it is under leftMu.
+type carryover struct {
+	leftMu sync.Mutex
 	// keptOut: the workers the last run left behind that this run doesn't carry over but doesn't
 	// drop either, on tickets outside its scope or that it couldn't check, saved again for a later
 	// run as they were.
 	keptOut []project.LeftWorker
-	// Under leftMu: whether the run has carried over the last run's workers (see loadCarried), and
+	// carriedIn: whether the run has carried over the last run's workers (see loadCarried); leftSaved,
 	// whether it has saved those it leaves for the next (see leaveBehind, SaveLeft).
-	leftMu    sync.Mutex
 	carriedIn bool
 	leftSaved bool
+}
 
-	parentOf  map[string]string // the parent of each ticket dispatched or left unmerged, which waits for it
-	doneSaid  sayOnce           // parents said to be ready to close (under its own lock)
-	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
-
-	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
-	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
-	footprints map[string]*runFootprint
-	files      *repoFiles
-	skipSaid   sayOnce
-	warned     map[string]bool
-
-	// Predicting footprints, under predictMu: whether the predictor runs, its queue, the tickets
-	// queued in this run and the predictions made. predictWake (buffered 1) says one was queued.
-	predictMu   sync.Mutex
-	predictOn   bool
-	predictQ    []Ticket
-	predictSeen map[string]bool
-	predicted   map[string][]string
-	predictWake chan struct{}
-
-	// Triage's queue, set by StartTriage before any worker runs. Workers send to triageQ until
-	// FinishTriage calls triageFinish, cancelling triageStop; triageDone closes when the triage
-	// goroutine returns.
+// triageQueue is triage's queue, set by StartTriage before any worker runs. Workers send to triageQ
+// until FinishTriage calls triageFinish, cancelling triageStop; triageDone closes when the triage
+// goroutine returns.
+type triageQueue struct {
 	triageQ      chan queuedDeferral
 	triageStop   context.Context
 	triageFinish context.CancelFunc
 	triageDone   chan struct{}
+}
 
-	// Holding for the environment, Run's own: the tickets whose workers failed at once in a row, the
-	// tickets triage blamed on the environment in a row, the reason once the run holds, with why,
-	// and whether the machine was probed in this run. Workers say how they settled on their result;
-	// triage hands its verdicts over on verdicts until Run has returned (runDone), then counts them
-	// itself, as nothing else does by then. envGen counts the holds a probe has ended: each deferral
-	// is stamped with it as it is queued for triage, and its verdict counts toward the hold only
-	// while envGen is unchanged. Only Run changes it, but workers read it as they defer: atomic.
+// envHold is the hold for the environment, Run's own until Run has returned (runDone), then
+// triage's: the tickets whose workers failed at once in a row, the tickets triage blamed on the
+// environment in a row, the reason once the run holds, with why, and whether the machine was probed
+// in this run. Workers say how they settled on their result; triage hands its verdicts over on
+// verdicts until Run has returned, then counts them itself, as nothing else does by then. envGen
+// counts the holds a probe has ended: each deferral is stamped with it as it is queued for triage,
+// and its verdict counts toward the hold only while envGen is unchanged. Only Run changes it, but
+// workers read it as they defer: atomic.
+type envHold struct {
 	fastFails   []string
 	envVerdicts []string
 	envStop     *stopReason
@@ -152,33 +212,15 @@ type Loop struct {
 	envGen      atomic.Uint64
 	verdicts    chan verdict
 	runDone     chan struct{}
-
-	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
-	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
-	// the run winds down is Run's own (runState.drained).
-	drainReqs chan drainRequest
-	// noMore is why the run takes on no more work, as Run last saw it: it winds down, or holds for a
-	// stop; "" while it takes tickets. Under mu: a merge reads it before handing a failed check back
-	// to its worker (see whyNotFixCheck).
-	noMore string
-
-	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
-	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
-	poll time.Duration
-
-	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
-	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
-	ReportInterrupt bool
 }
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 	return &Loop{
-		cfg: cfg, log: log, prompt: prompt, unclosed: -1,
-		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
-		reporter: d.Reporter, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History,
-		organ: d.Advisor, organCtx: d.AdviceCtx,
-		verdicts: make(chan verdict), runDone: make(chan struct{}), drainReqs: make(chan drainRequest, 1),
+		cfg: cfg, log: log, prompt: prompt,
+		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
+		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
+		drainReqs: make(chan drainRequest, 1),
 	}
 }
 
@@ -270,9 +312,6 @@ func (s *stopReason) Unwrap() error { return s.cause }
 func (o *Loop) setActive(st Status) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.active == nil {
-		o.active = map[string]Status{}
-	}
 	o.active[st.Ticket] = st
 }
 
@@ -315,9 +354,6 @@ type Finishing struct {
 func (o *Loop) markFinishing(id, what string) func() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.finishing == nil {
-		o.finishing = map[string]string{}
-	}
 	o.finishing[id] = what
 	return func() {
 		o.mu.Lock()

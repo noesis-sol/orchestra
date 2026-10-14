@@ -46,9 +46,6 @@ func (o *Loop) setUp(ctx context.Context, w worker, before, onto string) (string
 	}
 	if now != "" {
 		o.mu.Lock()
-		if o.setUpFor == nil {
-			o.setUpFor = map[string]string{}
-		}
 		o.setUpFor[w.id] = now
 		o.mu.Unlock()
 	}
@@ -65,9 +62,6 @@ func (o *Loop) setUpFrom(id, before string) string {
 		return from
 	}
 	if before != "" {
-		if o.setUpFor == nil {
-			o.setUpFor = map[string]string{}
-		}
 		o.setUpFor[id] = before
 	}
 	return before

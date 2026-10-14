@@ -63,7 +63,7 @@ func stubLoop(t *testing.T, g *stubGit) *Loop {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = log.Close() }) // a log the test doesn't read
-	return &Loop{cfg: Config{Repo: "/repo", Base: "main"}, log: log, checkout: g, merger: g}
+	return New(Config{Repo: "/repo", Base: "main"}, log, "", Deps{Checkout: g, Merger: g})
 }
 
 const (

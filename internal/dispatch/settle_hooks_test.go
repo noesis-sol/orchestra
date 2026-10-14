@@ -166,7 +166,7 @@ func TestIdleSettledIgnoresReportsBeforeTheAdoption(t *testing.T) {
 	}
 	for _, c := range cases {
 		hooks := &hookReporter{last: map[string]ToolUse{"wt": c.u}}
-		o := &Loop{reporter: hooks}
+		o := New(Config{}, nil, "", Deps{Reporter: hooks})
 		if settled, why := idleSettled("open", o.hooksOf(worker{wt: "wt", hooks: true, since: c.since}), c.since, time.Now(), time.Minute, time.Second); settled != c.settled {
 			t.Errorf("%s: settled = %v (%s), want %v", c.name, settled, why, c.settled)
 		}

@@ -66,7 +66,9 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 		t.Fatal(err)
 	}
 	a := &scriptedAgents{script: script}
-	return &Loop{log: log, sink: &recordSink{}, agents: a, tickets: readyTickets{}}, a, logPath
+	o := New(Config{}, log, "", Deps{Agents: a, Tickets: readyTickets{}})
+	o.sink = &recordSink{}
+	return o, a, logPath
 }
 
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.

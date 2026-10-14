@@ -39,7 +39,7 @@ func TestFailingGitIsNotADirtyTree(t *testing.T) {
 		fails := tc.fails
 		o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: readyTickets{{ID: "A"}}, Checkout: flakyCheckout{fails: &fails}})
 		o.poll = time.Millisecond
-		tk, _, s := o.next(context.Background(), nil, &soloQueue{})
+		tk, _, s := newRunState(context.Background(), o).next()
 		switch {
 		case tc.want == "" && (s != nil || tk == nil || tk.ID != "A"):
 			t.Errorf("%d failures: got %v (%+v), want A", tc.fails, tk, s)

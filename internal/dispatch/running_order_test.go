@@ -9,7 +9,7 @@ import (
 // reorder them from one call to the next. An older ticket still comes first.
 func TestRunningOrdersTicketsStartedTogetherByID(t *testing.T) {
 	t.Parallel()
-	var o Loop
+	o := New(Config{}, nil, "", Deps{})
 	at := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	for _, id := range []string{"e", "b", "d", "a", "c", "f", "h", "g"} {
 		o.setActive(Status{Ticket: id, Started: at})

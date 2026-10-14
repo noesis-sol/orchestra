@@ -32,9 +32,10 @@ type adoption struct {
 // its session resumed, once in a run (see resumeSession), whatever taking: an adoption counts toward
 // no limit. Without a session to resume, it stops the run, as a paused ticket does: the reason is
 // returned with the tickets adopted before it was found, and said at once; with taking false it is
-// dropped instead (askedDropped), as the run would only stop for it again and again. running is the
-// tickets running.
-func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking bool) ([]adoption, *stopReason) {
+// dropped instead (askedDropped), as the run would only stop for it again and again. taking is
+// runState.taking, and the tickets running are runState.inflight.
+func (r *runState) followAsked() ([]adoption, *stopReason) {
+	o, ctx, running, taking := r.o, r.ctx, r.inflight, r.taking()
 	var adopt []adoption
 	for _, id := range o.askedList() {
 		if running[id] {
@@ -53,7 +54,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 		case StatusDeferred:
 			o.askedDeferred(ctx, t, w)
 		case StatusClosed:
-			adopt = append(adopt, o.answeredInTab(t, w))
+			adopt = append(adopt, r.answeredInTab(t, w))
 		case StatusInProgress:
 			st, err := o.earlierState(ctx, id, w, 1)
 			if ctx.Err() != nil {
@@ -64,7 +65,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 				o.log.Raw("", err)
 			case st == StateGone:
 				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.claimSessionResume(id) {
-					adopt = append(adopt, o.resumedInTab(t, w, s))
+					adopt = append(adopt, r.resumedInTab(t, w, s))
 					break
 				}
 				if !taking {
@@ -76,7 +77,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || w.question == ""):
 				// left as it is: read again at the next poll, or labelled as the run ends
 			default:
-				adopt = append(adopt, o.answeredInTab(t, w))
+				adopt = append(adopt, r.answeredInTab(t, w))
 			}
 		}
 	}
@@ -86,8 +87,8 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 // answeredInTab says asked ticket t comes back, its worker w having claimed it again or closed it
 // in its tab, and records its footprint; the caller counts it running. One the last run left
 // running, with no question, comes back the same way.
-func (o *Loop) answeredInTab(t Ticket, w workerSpot) adoption {
-	id := t.ID
+func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
+	o, id := r.o, t.ID
 	o.setAsked(id, nil) // back from a question: set aside again, it stays out
 	o.setParent(id, t.Parent)
 	what := "claimed again"
@@ -104,7 +105,7 @@ func (o *Loop) answeredInTab(t Ticket, w workerSpot) adoption {
 		o.emit(Event{Kind: EvAnswered, Ticket: id, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 			"  ANSWERED: %s was %s in tab %s after %s (%s), so its worker is adopted", id, what, w.tab, w.question, w.title)})
 	}
-	o.startFootprint(t)
+	r.startFootprint(t)
 	return adoption{t: t, w: w}
 }
 
@@ -262,9 +263,6 @@ func (o *Loop) setAsked(id string, w *workerSpot) {
 	if w == nil {
 		delete(o.askedIDs, id)
 		return
-	}
-	if o.askedIDs == nil {
-		o.askedIDs = map[string]workerSpot{}
 	}
 	o.askedIDs[id] = *w
 }

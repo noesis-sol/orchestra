@@ -350,9 +350,6 @@ func ticketsOf(left []project.LeftWorker) []string {
 func (o *Loop) place(id string, w workerSpot) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.placed == nil {
-		o.placed = map[string]workerSpot{}
-	}
 	o.placed[id] = w
 }
 

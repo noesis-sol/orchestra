@@ -77,9 +77,9 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 
 | File | What's in it |
 | --- | --- |
-| `loop.go` | the `Loop` type, `Config`, exit codes, timings and shared helpers |
+| `loop.go` | the `Loop` type, its state grouped by owner (`deps`, `tallies`, `ledger`, `carryover`, `triageQueue`, `envHold`: each says which lock guards it, or whose it is), `Config`, exit codes, timings and shared helpers |
 | `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
-| `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts (tests in `run_test.go` and `schedule_test.go`) |
+| `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts; what only `Run` reads and writes is its `runState`'s (tests in `run_test.go` and `schedule_test.go`) |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
@@ -115,7 +115,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
-| `predict.go` | predicting the files of ready tickets that name none, in the background |
+| `predict.go` | predicting the files of ready tickets that name none, in the background; the `predictor`, its queue and predictions |
 | `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports; what every terminal keeps to: the launch contract, its refusals (`ErrNameRefused`, `ErrArgumentRefused`) and how long it waits for an agent |
 | `ticket.go` | `Ticket`, a Beads issue as the loop sees it: its status, labels, deferral and the question it waits on |
 | `activity.go` | what a worker's hooks report (`ToolUse`, `HookRecord`) and what the dashboard says it is doing (`Doing`) |

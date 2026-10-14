@@ -90,21 +90,21 @@ func (failingDescendants) Descendants(context.Context, string) ([]Ticket, error)
 // scope, the count is bd's list of tickets not closed.
 func TestUnclosedKeepsTheLastCountOnAFailedRead(t *testing.T) {
 	ctx := context.Background()
-	o := New(Config{Ticket: "R"}, nil, "", Deps{Tickets: failingDescendants{}})
-	open, _ := o.tickets.Unclosed(ctx)
-	o.countUnclosed(ctx, open)
-	if o.unclosed != -1 {
-		t.Errorf("unclosed %d before any read, want -1", o.unclosed)
+	r := newRunState(ctx, New(Config{Ticket: "R"}, nil, "", Deps{Tickets: failingDescendants{}}))
+	open, _ := r.o.tickets.Unclosed(ctx)
+	r.countUnclosed(ctx, open)
+	if r.unclosed != -1 {
+		t.Errorf("unclosed %d before any read, want -1", r.unclosed)
 	}
-	o.unclosed = 2
-	o.countUnclosed(ctx, open)
-	if o.unclosed != 2 {
-		t.Errorf("unclosed %d after a failed read, want the last, 2", o.unclosed)
+	r.unclosed = 2
+	r.countUnclosed(ctx, open)
+	if r.unclosed != 2 {
+		t.Errorf("unclosed %d after a failed read, want the last, 2", r.unclosed)
 	}
-	o = New(Config{}, nil, "", Deps{Tickets: failingDescendants{}})
-	o.countUnclosed(ctx, open)
-	if o.unclosed != 3 {
-		t.Errorf("unclosed %d without a scope, want 3", o.unclosed)
+	r = newRunState(ctx, New(Config{}, nil, "", Deps{Tickets: failingDescendants{}}))
+	r.countUnclosed(ctx, open)
+	if r.unclosed != 3 {
+		t.Errorf("unclosed %d without a scope, want 3", r.unclosed)
 	}
 }
 

@@ -47,7 +47,8 @@ func (s *stageSink) shown() []string {
 func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sink := &stageSink{}
-		o := &Loop{cfg: Config{Base: "main"}, sink: sink}
+		o := New(Config{Base: "main"}, nil, "", Deps{})
+		o.sink = sink
 		for _, id := range []string{"A", "B", "C"} {
 			o.setActive(Status{Ticket: id, Title: "Ticket " + id, Tab: "tab-" + id, Started: time.Now()})
 		}
@@ -116,7 +117,8 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 
 func TestMergeQueueShowsNoTicketNotWorkedOn(t *testing.T) {
 	sink := &stageSink{}
-	o := &Loop{cfg: Config{Base: "main"}, sink: sink}
+	o := New(Config{Base: "main"}, nil, "", Deps{})
+	o.sink = sink
 	q := &lockGuard{mu: mergeTurn{o: o, id: "gone"}}
 	q.lock()
 	q.release()

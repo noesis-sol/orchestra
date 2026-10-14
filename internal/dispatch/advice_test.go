@@ -15,7 +15,7 @@ import (
 )
 
 func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
-	o := &Loop{}
+	o := New(Config{}, nil, "", Deps{})
 	for _, id := range []string{"a", "b", "a", "c"} {
 		o.markAside(id)
 	}
@@ -47,8 +47,9 @@ func TestLiveOrgans(t *testing.T) {
 	if id == "" {
 		return
 	}
-	o := &Loop{cfg: Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, tickets: liveTickets{repo}, organ: organ.Client{Bin: "claude"},
-		startHead: os.Getenv("LIVE_START"), started: time.Now().Add(-time.Hour), log: &Log{}}
+	o := New(Config{Repo: repo, Base: os.Getenv("LIVE_BASE")}, &Log{}, "",
+		Deps{Tickets: liveTickets{repo}, Advisor: organ.Client{Bin: "claude"}})
+	o.startHead, o.started = os.Getenv("LIVE_START"), time.Now().Add(-time.Hour)
 	b, _ := os.ReadFile(filepath.Join(repo, ".claude", "orchestrate.log"))
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	for i, line := range slices.Backward(lines) {
@@ -194,8 +195,9 @@ func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := &Loop{log: log, sink: &recordSink{}, organ: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
-		organCtx: context.Background()}
+	o := New(Config{}, log, "", Deps{Advisor: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
+		AdviceCtx: context.Background()})
+	o.sink = &recordSink{}
 	o.queueTriage(context.Background(), organ.Deferral{ID: "before-start"}) // triage off: nothing happens
 	o.StartTriage()
 	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})

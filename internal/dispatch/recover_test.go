@@ -93,8 +93,9 @@ func TestTriagePanicOnlyFailsTriage(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{LogPath: logPath}, log: log, sink: sink, notes: panickyNotes{newFakeBeads(), "A"},
-		organ: organ.Client{Bin: fakeTriage(t)}, organCtx: context.Background()}
+	o := New(Config{LogPath: logPath}, log, "", Deps{Notes: panickyNotes{newFakeBeads(), "A"},
+		Advisor: organ.Client{Bin: fakeTriage(t)}, AdviceCtx: context.Background()})
+	o.sink = sink
 	o.StartTriage()
 	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
 	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
@@ -131,7 +132,8 @@ func TestWatcherPanicOnlyStopsWatching(t *testing.T) {
 		t.Fatal(err)
 	}
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{LogPath: logPath}, log: log, sink: sink, agents: panickyAgents{}}
+	o := New(Config{LogPath: logPath}, log, "", Deps{Agents: panickyAgents{}})
+	o.sink = sink
 	stop := o.watch(context.Background(), o.newWatcher("wt", Status{Ticket: "A"}))
 	stop() // returns: the watcher ended
 	if got := sink.text(); !strings.Contains(got, "  WATCH_FAILED for A: panic: runtime error: index out of range") {

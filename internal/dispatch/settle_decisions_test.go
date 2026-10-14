@@ -74,7 +74,7 @@ func TestHooksOf(t *testing.T) {
 		if c.u != nil {
 			r.last = map[string]ToolUse{"wt": *c.u}
 		}
-		o := &Loop{reporter: r}
+		o := New(Config{}, nil, "", Deps{Reporter: r})
 		if c.nilRep {
 			o.reporter = nil
 		}

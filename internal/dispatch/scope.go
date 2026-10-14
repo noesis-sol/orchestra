@@ -21,9 +21,6 @@ func (o *Loop) setParent(id, parent string) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.parentOf == nil {
-		o.parentOf = map[string]string{}
-	}
 	o.parentOf[id] = parent
 }
 
@@ -57,12 +54,13 @@ func (o *Loop) parentsOpen(open []Ticket, running map[string]bool) map[string]bo
 	return parentsOf(open, pending)
 }
 
-// countUnclosed sets Loop.unclosed from open, the tickets bd lists as not closed: all of them, or in
-// a scoped run those of the scope, its ticket and its descendants, as bd ready is read there. A
+// countUnclosed sets runState.unclosed from open, the tickets bd lists as not closed: all of them, or
+// in a scoped run those of the scope, its ticket and its descendants, as bd ready is read there. A
 // failed read of the descendants keeps the last count, as nothing depends on it.
-func (o *Loop) countUnclosed(ctx context.Context, open []Ticket) {
+func (r *runState) countUnclosed(ctx context.Context, open []Ticket) {
+	o := r.o
 	if o.cfg.Ticket == "" {
-		o.unclosed = len(open)
+		r.unclosed = len(open)
 		return
 	}
 	subs, err := o.tickets.Descendants(ctx, o.cfg.Ticket)
@@ -76,7 +74,7 @@ func (o *Loop) countUnclosed(ctx context.Context, open []Ticket) {
 			n++
 		}
 	}
-	o.unclosed = n
+	r.unclosed = n
 }
 
 // parentsOf returns the tickets that wait for their subtickets: the parents of open, the tickets bd

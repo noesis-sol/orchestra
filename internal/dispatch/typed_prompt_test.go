@@ -69,7 +69,8 @@ func TestLostEnterAfterATypedLinePressesEnter(t *testing.T) {
 				t.Fatal(err)
 			}
 			a := &boxAgents{typed: c.typed}
-			o := &Loop{log: log, sink: &recordSink{}, agents: typingAgents{a}}
+			o := New(Config{}, log, "", Deps{Agents: typingAgents{a}})
+			o.sink = &recordSink{}
 			if !o.deliverPrompt(context.Background(), "x-1", prompt) {
 				t.Error("the worker was not started on its prompt")
 			}

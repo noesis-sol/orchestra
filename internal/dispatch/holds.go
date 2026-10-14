@@ -222,9 +222,6 @@ func (o *Loop) linksOf(ctx context.Context, t Ticket) (links, error) {
 	}
 	if t.DependencyCount != nil {
 		o.mu.Lock()
-		if o.blockers == nil {
-			o.blockers = map[string]blockLinks{}
-		}
 		o.blockers[t.ID] = blockLinks{count: *t.DependencyCount, pick: o.picks, links: l}
 		o.mu.Unlock()
 	}

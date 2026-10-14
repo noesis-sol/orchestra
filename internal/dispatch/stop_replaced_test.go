@@ -124,7 +124,7 @@ func TestTurnEndedThroughAReplacedStop(t *testing.T) {
 		if c.subagents {
 			r = &subagentsRunning{hookReporter{last: map[string]ToolUse{"wt": c.u}}}
 		}
-		o := &Loop{reporter: r}
+		o := New(Config{}, nil, "", Deps{Reporter: r})
 		settled, why := idleSettled("closed", o.hooksOf(worker{wt: "wt", hooks: true, since: c.since}), c.since, time.Now(), time.Minute, time.Minute)
 		if c.settled && (!settled || !strings.HasPrefix(why, "Stop hook at ")) ||
 			!c.settled && settled {

@@ -18,7 +18,9 @@ func notifyingLoop(t *testing.T, project string) (*Loop, *alerts) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = log.Close() })
-	return &Loop{log: log, sink: &recordSink{}}, recordAlerts(log)
+	o := New(Config{}, log, "", Deps{})
+	o.sink = &recordSink{}
+	return o, recordAlerts(log)
 }
 
 // A notification is titled with the project alone and says in a few words what happened to which

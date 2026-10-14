@@ -140,8 +140,9 @@ func TestSkippingTheOrgansDropsTriageQuietly(t *testing.T) {
 	organCtx, skipOrgans := context.WithCancel(context.Background())
 	defer skipOrgans()
 	sink := &recordSink{}
-	o := &Loop{cfg: Config{LogPath: logPath}, log: log, sink: sink, notes: newFakeBeads(),
-		organ: organ.Client{Bin: slowTriage(t, started)}, organCtx: organCtx}
+	o := New(Config{LogPath: logPath}, log, "", Deps{Notes: newFakeBeads(),
+		Advisor: organ.Client{Bin: slowTriage(t, started)}, AdviceCtx: organCtx})
+	o.sink = sink
 	o.StartTriage()
 	for _, id := range []string{"A", "B", "C"} {
 		o.queueTriage(context.Background(), organ.Deferral{ID: id})
@@ -184,8 +185,9 @@ func TestNoEvidenceOnceTheOrgansAreSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	organCtx, skipOrgans := context.WithCancel(context.Background())
-	o := &Loop{log: log, sink: &recordSink{}, tickets: readyTickets{}, history: quietHistory{}, agents: noAgents{},
-		organ: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")}, organCtx: organCtx}
+	o := New(Config{}, log, "", Deps{Tickets: readyTickets{}, History: quietHistory{}, Agents: noAgents{},
+		Advisor: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")}, AdviceCtx: organCtx})
+	o.sink = &recordSink{}
 	reads := countEvidence(o)
 	o.StartTriage()
 	defer o.FinishTriage(context.Background())

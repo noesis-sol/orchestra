@@ -39,9 +39,6 @@ func (o *Loop) claimSessionResume(id string) bool {
 	if o.sessionResumed[id] {
 		return false
 	}
-	if o.sessionResumed == nil {
-		o.sessionResumed = map[string]bool{}
-	}
 	o.sessionResumed[id] = true
 	return true
 }
@@ -73,10 +70,10 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 // resumedInTab says asked ticket t, whose worker w is gone from its tab with the ticket in progress,
 // comes back to have its session s resumed (see adoptAsked), and records its footprint; the caller
 // counts it running.
-func (o *Loop) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
-	o.setAsked(t.ID, nil)
-	o.setParent(t.ID, t.Parent)
-	o.startFootprint(t)
+func (r *runState) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
+	r.o.setAsked(t.ID, nil)
+	r.o.setParent(t.ID, t.Parent)
+	r.startFootprint(t)
 	return adoption{t: t, w: w, resume: &s}
 }
 
