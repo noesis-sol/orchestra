@@ -208,8 +208,8 @@ func run(
 	if cfg.Feature != "" && cfg.Ticket == "" { // nothing filed to run
 		return status(featureCode)
 	}
-	out, isFile := stdout.(*os.File)
-	plain := cfg.Plain || !isFile || !term.IsTerminal(int(out.Fd()))
+	out, _ := stdout.(*os.File)
+	plain := plainOutput(cfg.Plain, getenv, stdin, stdout)
 	if nothingToRun(ctx, cfg, log, stdout, plain) {
 		return nil
 	}
@@ -225,6 +225,14 @@ func run(
 		return status(runPlain(ctx, r, stdout))
 	}
 	return status(runDashboard(ctx, r, stdin, out, stderr))
+}
+
+// plainOutput reports whether the run prints plain lines rather than drawing its dashboard: when
+// asked to (-plain), when stdout isn't a terminal, when the terminal can't draw one (TERM=dumb, as the
+// forms read it for their accessible form), or when stdin isn't one, as the dashboard's keys come in
+// on it.
+func plainOutput(asked bool, getenv func(string) string, stdin io.Reader, stdout io.Writer) bool {
+	return asked || getenv("TERM") == "dumb" || !isTerminal(stdin) || !isTerminal(stdout)
 }
 
 // nothingToRun ends the run c before its loop when it has nothing to run (see

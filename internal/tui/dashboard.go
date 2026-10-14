@@ -36,7 +36,8 @@ type Dashboard struct {
 	rows        []ticketRow // every ticket picked up in this run, oldest first
 	interrupted bool
 	final       *dispatch.Event // the stop or done event, printed by main after exit
-	received    int             // events received, for ProgramSink.Handoff
+	received    int             // events received before it quit, for ProgramSink.Handoff
+	quitting    bool            // it has asked to quit: the events still coming are for the printer
 	queued      int             // ready tickets waiting for a slot; -1 until the loop first says
 	unclosed    int             // the tickets not closed the run draws from; -1 until the loop says
 	solo        dispatch.SoloState
@@ -69,7 +70,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch key := msg.String(); {
 		case key == "ctrl+c": // at any time, the question open or not
-			m.interrupted = true
+			m.interrupted, m.quitting = true, true
 			m.cancel()
 			return m, tea.Quit
 		case m.asking && key == "y":
@@ -98,7 +99,11 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case eventMsg:
 		// Events update the dashboard in place; nothing is printed above it. The full lines are
-		// in the log file.
+		// in the log file. Those in after it has asked to quit, before the program exits (an organ's
+		// verdict, a warning), would go with the alternate screen: uncounted, Handoff prints them.
+		if m.quitting {
+			return m, nil
+		}
 		ev := dispatch.Event(msg)
 		m.received++
 		switch ev.Kind {
@@ -159,10 +164,11 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			// main prints the last line after the program exits, below the run's summary.
-			m.final, m.solo = &ev, dispatch.SoloState{}
+			m.final, m.solo, m.quitting = &ev, dispatch.SoloState{}, true
 			return m, tea.Quit
 		}
 	case Finished:
+		m.quitting = true
 		return m, tea.Quit
 	}
 	return m, nil
@@ -353,5 +359,5 @@ func (m Dashboard) Interrupted() bool { return m.interrupted }
 // Final is the event the run ended with, or nil.
 func (m Dashboard) Final() *dispatch.Event { return m.final }
 
-// Received is the number of the loop's events the dashboard received.
+// Received is the number of the loop's events the dashboard received before it asked to quit.
 func (m Dashboard) Received() int { return m.received }

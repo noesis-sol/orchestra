@@ -24,6 +24,11 @@ All notable changes to orchestra are documented here. The format follows
 - An asked ticket its worker closes as the run stops (`ASKED_UNMERGED`)
   says its worktree is left for the next run to merge, as the next run does,
   where it said left for review; docs/running.md said it wasn't carried over.
+- An organ's verdict or a warning that came in as the dashboard closed is
+  printed below the run's summary: it went with the alternate screen, and
+  only the log had it.
+- A run on a `TERM=dumb` terminal, or with a stdin that isn't a terminal,
+  prints plain lines, as it does for a pipe, where it drew the dashboard.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.

@@ -51,8 +51,9 @@ func (s *ProgramSink) Status(st dispatch.Status) {
 	s.p.Send(statusMsg(st))
 }
 
-// Handoff sends next the events after the first received (the final dashboard's Received) and,
-// from then on, everything. Call it once the program has exited.
+// Handoff sends next the events after the first received (the final dashboard's Received: those it
+// took in before it asked to quit, up to its final event) and, from then on, everything. Call it
+// once the program has exited.
 func (s *ProgramSink) Handoff(next dispatch.Sink, received int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
