@@ -13,8 +13,8 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// initFlags answer every question init asks, so that a test's init would write all it writes at once.
-var initFlags = []string{"init", "--check", "make check", "-c", "1", "--mcp", "", "--setup", "",
+// everyAnswer answers every question init asks, so that a test's init would write all it writes at once.
+var everyAnswer = []string{"init", "--check", "make check", "-c", "1", "--mcp", "", "--setup", "",
 	"--changelog-union", "--install-beads=false", "--verifier"}
 
 // assertUnchanged fails the test unless init left repo as gitRepo made it: no .orchestra/, no runners,
@@ -47,7 +47,7 @@ func TestInitIsRefusedDuringARun(t *testing.T) {
 	started := time.Now().Truncate(time.Minute)
 	holdLock(t, repo, project.Holder{PID: 44497, Started: started, Branch: "main", Pane: "w2B:p60"})
 
-	_, stderr, err := runIn(t, repo, nil, initFlags...)
+	_, stderr, err := runIn(t, repo, nil, everyAnswer...)
 	want := "orchestra init: orchestra is already running in "
 	held := "(pid 44497, since " + started.Format("15:04") + ", main, pane w2B:p60). init changes files"
 	if exitOf(err) != dispatch.ExitSetup || !strings.Contains(stderr, want) || !strings.Contains(stderr, held) {
@@ -64,7 +64,7 @@ func TestInitIsRefusedInALinkedWorktree(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "k-1")
 	git(repo, "worktree", "add", "-q", "-b", "wt/k-1", wt)
 
-	_, stderr, err := runIn(t, wt, nil, initFlags...)
+	_, stderr, err := runIn(t, wt, nil, everyAnswer...)
 	top := strings.TrimSpace(git(wt, "rev-parse", "--show-toplevel"))
 	if want := "orchestra init: " + top + " is a linked worktree. Run this from the main checkout.\n"; exitOf(err) !=
 		dispatch.ExitSetup || stderr != want {

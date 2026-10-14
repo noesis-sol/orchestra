@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,326 +26,361 @@ import (
 
 // runInit sets up .orchestra/ in the repository around dir, asking what it needs when run in a
 // terminal, and returns the exit code. It reads the form's answers from stdin and prints to stdout
-// and stderr.
+// and stderr. It plans what to set up from the project and the flags, asks the rest, sets up Beads,
+// then applies the choice.
 func runInit(
 	ctx context.Context, dir string, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) int {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	var checkFast, checkFull string
-	fs.StringVar(&checkFast, "check-fast", "", "the command "+project.FastRunner+" runs, orchestra's merge check "+
-		"(lint, build, the fast tests); \"\" for a check that passes at once (asked when omitted)")
-	fs.StringVar(&checkFast, "check", "", "alias of --check-fast")
-	fs.StringVar(&checkFull, "check-full", "", "the slower suites' command, which "+project.FullRunner+
-		" runs after check-fast.sh, once at the end of a run; \"\" for none")
-	var fastTimeout, fullTimeout time.Duration
-	fs.DurationVar(&fastTimeout, "check-fast-timeout", 0, "how long check-fast may run on a rebased ticket, "+
-		"e.g. 5m (asked when omitted; default "+project.DefaultCheckTimeoutText+")")
-	fs.DurationVar(&fastTimeout, "check-timeout", 0, "alias of --check-fast-timeout")
-	fs.DurationVar(&fullTimeout, "check-full-timeout", 0, "how long check-full may run at the end of a run, "+
-		"e.g. 90m (default "+project.DefaultCheckFullTimeoutText+")")
-	setup := fs.String("setup", "", "the command that installs the dependencies in a worktree, run before check-fast "+
-		"when a rebase changes a lockfile, e.g. \"npm ci\"; \"\" for none (offered for a lockfile when omitted; "+
-		"an existing setting is kept)")
-	force := fs.Bool("force", false, "replace an existing .orchestra/worker-prompt.md with the template")
-	union := fs.Bool("changelog-union", false, "add 'CHANGELOG.md merge=union' to .gitattributes, "+
-		"so two tickets' changelog entries don't conflict (asked when omitted; =false declines)")
-	mcpList := fs.String("mcp", "", "the MCP servers workers get, by name, comma-separated, e.g. postgres,firecrawl; "+
-		"\"\" for none (asked when omitted)")
-	installBeads := fs.Bool("install-beads", false, "install Beads (bd) where it is missing, with Homebrew or "+
-		"the Beads install script (asked when omitted; =false declines)")
-	verifier := fs.Bool("verifier", false, "write "+project.VerifierPath+", a subagent that checks each ticket's "+
-		"change against the ticket in a fresh context, and have the worker prompt run it before a worker closes "+
-		"its ticket (asked when omitted; =false declines)")
-	prefix := fs.String("prefix", "", "the Beads ticket prefix, IDs reading <prefix>-<hash>: lowercase letters, "+
-		"digits and hyphens, starting with a letter; for a new Beads bd init takes it, and an existing one's "+
-		"tickets are all renamed to it with bd rename-prefix (asked when omitted; kept when not given)")
-	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' agent kind, "+
-		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
-		"[AGENT_KIND]")
-	var concurrent int
-	fs.IntVar(&concurrent, "concurrent", 0, "tickets to run at the same time by default (asked when omitted)")
-	fs.IntVar(&concurrent, "c", 0, "shorthand for --concurrent")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] "+
-			"[--check-fast-timeout D] [--check-full-timeout D]\n"+
-			"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n"+
-			"                      [--install-beads] [--verifier] [--prefix name] [--force]\n\n"+
-			"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n"+
-			"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n"+
-			"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n"+
-			"checks' runners (scripts/check-fast.sh, the merge check, and scripts/check-full.sh, run once\n"+
-			"at the end of a run; one that is there and differs is kept unless its flag is given),\n"+
-			"settings.json (the checks, their time limits, how many tickets run at the same time and\n"+
-			"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n"+
-			"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n"+
-			"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n"+
-			"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n"+
-			"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n"+
-			"ticket prefix, renaming every ticket when it changes. In a\n"+
-			"terminal it asks for anything the flags don't give. Run it from the main checkout, between\n"+
-			"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n\n")
-		fs.PrintDefaults()
+	f, code, ok := parseInitFlags(args, getenv, stderr)
+	if !ok {
+		return code
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return dispatch.ExitOK
-		}
+	fail := func(why any) int {
+		fmt.Fprintln(stderr, "orchestra init:", why)
 		return dispatch.ExitSetup
 	}
-	if rest := fs.Args(); len(rest) > 0 {
-		fmt.Fprintf(stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
-		return dispatch.ExitSetup
-	}
-	given := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
-	fastGiven, fullGiven := given["check-fast"] || given["check"], given["check-full"]
-	timeoutGiven, fullTimeoutGiven := given["check-fast-timeout"] || given["check-timeout"], given["check-full-timeout"]
-	unionGiven, setupGiven := given["changelog-union"], given["setup"]
-	concurrentGiven, mcpGiven, installGiven := given["concurrent"] || given["c"], given["mcp"], given["install-beads"]
-	verifierGiven, prefixGiven := given["verifier"], given["prefix"]
-	for _, t := range []struct {
-		name  string
-		given bool
-		value time.Duration
-	}{
-		{"check-fast-timeout", given["check-fast-timeout"], fastTimeout},
-		{"check-timeout", given["check-timeout"], fastTimeout},
-		{"check-full-timeout", fullTimeoutGiven, fullTimeout},
-	} {
-		if t.given && t.value <= 0 {
-			fmt.Fprintf(stderr, "orchestra init: --%s must be a positive duration such as 5m\n", t.name)
-			return dispatch.ExitSetup
-		}
-	}
-	if concurrentGiven && (concurrent < 1 || concurrent > project.MaxConcurrency) {
-		fmt.Fprintf(stderr, "orchestra init: --concurrent must be between 1 and %d\n", project.MaxConcurrency)
-		return dispatch.ExitSetup
-	}
-
-	repo, err := git.Git{}.TopLevel(ctx, dir)
+	repo, existing, err := openInitRepo(ctx, dir)
 	if err != nil {
-		fmt.Fprintln(stderr, "orchestra init: not inside a git repository")
-		return dispatch.ExitSetup
+		return fail(err)
 	}
-	if refusal := initRefusal(ctx, repo); refusal != "" {
-		fmt.Fprintln(stderr, "orchestra init:", refusal)
-		return dispatch.ExitSetup
-	}
-	existing, _, err := project.LoadSettings(repo)
-	if err != nil {
-		fmt.Fprintln(stderr, "orchestra init:", err)
-		return dispatch.ExitSetup
-	}
-	promptText, _ := os.ReadFile(project.Locate(repo).Prompt) // no prompt yet: no check command to find in it
-	choice := project.DefaultChoice(existing, string(promptText))
-	switch {
-	case fastGiven:
-		choice.Fast = project.RunnerSuites(checkFast, "--check-fast", project.FastRunner)
-		choice.ReplaceFast, choice.CheckFrom = true, "--check-fast"
-	case choice.Fast != nil && len(*choice.Fast) == 0 && regularFile(filepath.Join(repo, project.CheckScript)):
-		// The project's own check, called as it is.
-		choice.Fast = &[]project.Suite{{Name: "the project's own check", Command: project.CheckScript,
-			FoundIn: project.CheckScript}}
-		choice.CheckFrom = project.CheckScript
-	}
-	if fullGiven {
-		choice.Full = project.RunnerSuites(checkFull, "--check-full", project.FullRunner)
-		choice.ReplaceFull = true
-	}
-	if concurrentGiven {
-		choice.Concurrent, choice.Unasked = concurrent, false
-	}
-	if timeoutGiven {
-		choice.CheckFastTimeout, choice.ReplacedTimeout = command.ShortDuration(fastTimeout), ""
-	}
-	if fullTimeoutGiven {
-		choice.CheckFullTimeout, choice.ReplacedFullTimeout = command.ShortDuration(fullTimeout), ""
-	}
-	if mcpGiven {
-		names := mcp.ParseNames(*mcpList)
-		choice.MCP = &names
-	}
-	choice.Servers, choice.ServersErr = mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, repo)...)
-	choice.SetupOffer, choice.SetupFrom = project.FindSetup(repo)
-	if setupGiven {
-		choice.Setup = strings.TrimSpace(*setup)
-	}
-	askSetup := !setupGiven && choice.Setup == "" && choice.SetupOffer != ""
-	askUnion := !unionGiven && project.OffersUnion(ctx, repo)
-	choice.Union = *union || askUnion // offered as yes
-	choice.Install = project.FindBeadsInstall(runtime.GOOS)
-	bd, onPath := project.LocateBd(getenv)
-	askInstall := !installGiven && bd == "" && choice.Install.Command != ""
-	choice.InstallBeads = *installBeads || askInstall // offered as yes
-	choice.Agent = *agent
-	askVerifier := !verifierGiven && project.OffersVerifier(repo, choice.Agent)
-	choice.Verifier = *verifier || askVerifier // offered as yes
-
-	// The ticket prefix, asked where bd is there or init offers to install it, and read only then: it
-	// takes a few bd calls.
 	interactive := isTerminal(stdin) && isTerminal(stdout)
-	askPrefix := interactive && !prefixGiven && (onPath || askInstall || *installBeads)
-	if askPrefix || prefixGiven {
-		if err := readPrefix(ctx, repo, &choice); err != nil {
-			if prefixGiven {
-				fmt.Fprintln(stderr, "orchestra init: --prefix: can't read the ticket prefix Beads has:", err)
-				return dispatch.ExitSetup
-			}
-			askPrefix = false // init can't tell what it would change
-			choice.Prefix, choice.PrefixWas = "", ""
-		}
-	}
-	if prefixGiven {
-		if code := takePrefix(*prefix, &choice, stderr); code != dispatch.ExitOK {
-			return code
-		}
+	choice, ask, err := planInit(ctx, repo, f, existing, getenv, interactive)
+	if err != nil {
+		return fail(err)
 	}
 
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
-	// Stage 2's choice of checks, unless a flag gives one of them.
-	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
-		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup,
-		Verifier: askVerifier, Prefix: askPrefix}
-	var scoutSpent []organ.Spend // by the scout's goroutine, which AskInit waits for before it returns
-	if interactive && ask.Any() {
-		if ask.Check {
-			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
-				Effort: scoutEffort(getenv, existing.OrganEffort),
-				Spent:  func(s organ.Spend) { scoutSpent = append(scoutSpent, s) }}
-			ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
-			ask.CheckScript = regularFile(filepath.Join(repo, project.CheckScript))
-			if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err == nil { // as they are
-				ask.Skill, err = project.PlanSkill(repo, choice.Agent)
-			}
-			if err != nil {
-				fmt.Fprintln(stderr, "orchestra init:", err)
-				return dispatch.ExitSetup
-			}
-		}
-		if err := tui.AskInit(stdin, stdout, &choice, ask); err != nil {
-			ui.Steps(scoutSteps(scoutSpent))
-			ui.Cancelled()
-			return dispatch.ExitSetup
-		}
-	} else {
-		if askUnion {
-			choice.Union, choice.UnionUnasked = false, true
-		}
-		if askInstall {
-			choice.InstallBeads, choice.InstallUnasked = false, true
-		}
-		if askVerifier {
-			choice.Verifier, choice.VerifierUnasked = false, true
-		}
-		choice.SetupUnasked = askSetup
-		choice.MCPUnasked = !mcpGiven && choice.MCP == nil
-	}
-
-	// Checked again once the form is answered, which can take a while: a run may have started since.
-	if refusal := initRefusal(ctx, repo); refusal != "" {
-		ui.Steps(scoutSteps(scoutSpent))
-		fmt.Fprintln(stderr, "orchestra init:", refusal)
+	scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"), Effort: scoutEffort(getenv, existing.OrganEffort)}
+	spent, err := askOrDefault(stdin, stdout, interactive, repo, &choice, ask, scout)
+	steps := scoutSteps(spent)
+	if err != nil {
+		ui.Steps(steps)
+		ui.Cancelled()
 		return dispatch.ExitSetup
 	}
-
-	// Beads first: bd init commits what was staged, and init stages a moved worker prompt; with the
-	// user's own changes staged, it doesn't run. Ctrl+C stops an install or bd init under way, which
-	// run in their own process groups, and init with it.
-	beadsCtx, stopBeads := signal.NotifyContext(ctx, stopSignals...)
-	steps := append(scoutSteps(scoutSpent), project.SetUpBeads(beadsCtx, repo, choice, getenv, ui.Working)...)
-	if beadsCtx.Err() == nil {
-		refusal := ""
-		if !choice.PrefixNew && choice.PrefixWas != "" && choice.Prefix != choice.PrefixWas {
-			refusal = prefixRefusal(beadsCtx, repo, choice.PrefixWas) // read again: the form can take a while
-		}
-		if s, ok := project.ApplyPrefix(beadsCtx, repo, choice, refusal); ok {
-			steps = append(steps, s)
-		}
+	// Checked again once the form is answered, which can take a while: a run may have started since.
+	if refusal := initRefusal(ctx, repo); refusal != "" {
+		ui.Steps(steps)
+		return fail(refusal)
 	}
-	stopped := beadsCtx.Err() != nil
-	stopBeads()
-	if stopped {
+	beadsSteps, stopped := setUpBeads(ctx, repo, choice, getenv, ui.Working)
+	if steps = append(steps, beadsSteps...); stopped {
 		ui.Steps(steps)
 		fmt.Fprintln(stderr, "orchestra init: stopped")
 		return dispatch.ExitInterrupted
 	}
-
-	initSteps, err := project.Init(ctx, repo, project.FastRunner, *force)
-	steps = append(steps, initSteps...)
-	if err == nil {
-		var runners []project.Step
-		runners, err = project.ApplyRunners(repo, choice)
-		steps = append(steps, runners...)
-	}
-	if err == nil {
-		var s project.Step
-		if s, err = project.ApplySettings(repo, choice); err == nil {
-			steps = append(steps, s, project.MCPStep(choice))
-			if s, ok := project.SetupStep(choice); ok {
-				steps = append(steps, s)
-			}
-		}
-	}
-	if err == nil {
-		var s project.Step
-		var ok bool
-		if s, ok, err = project.ApplyUnion(ctx, repo, choice); ok && err == nil {
-			steps = append(steps, s)
-		}
-	}
-	if err == nil {
-		var s project.Step
-		var ok bool
-		if s, ok, err = project.ApplySkill(repo, choice); ok && err == nil {
-			steps = append(steps, s)
-		}
-	}
-	if err == nil {
-		var s project.Step
-		var ok bool
-		if s, ok, err = project.ApplyVerifier(repo, choice); ok && err == nil {
-			steps = append(steps, s)
-		}
-	}
-	if err != nil {
+	applied, err := project.Apply(ctx, repo, choice, f.force)
+	if steps = append(steps, applied...); err != nil {
 		ui.Steps(steps)
-		fmt.Fprintln(stderr, "orchestra init:", err)
-		return dispatch.ExitSetup
+		return fail(err)
 	}
 	steps = append(steps, fileTestWork(ctx, repo, choice)...)
-	pre := project.Prerequisites(repo, getenv)
-	ui.Steps(steps)
-	ui.Prerequisites(pre)
-	ui.Next(project.NextSteps(ctx, repo, steps, pre, choice, existing.WorkerEffort))
-	ready := true
-	for _, p := range pre {
-		ready = ready && p.Kind != project.StepMissing
-	}
-	ui.SignOff(ready)
+	signOff(ctx, ui, repo, steps, choice, existing.WorkerEffort, getenv)
 	return dispatch.ExitOK
 }
 
-// takePrefix takes --prefix's value into the choice, and returns ExitOK, or the exit code once it has
-// said why it refuses it: not a prefix bd takes, or a rename of the tickets they can't have now. The
-// flag consents to the rename.
-func takePrefix(value string, c *project.Choice, stderr io.Writer) int {
-	p := project.NormalPrefix(value)
-	if p == c.PrefixWas {
-		return dispatch.ExitOK
+// openInitRepo finds the repository around dir that init sets up, and reads its settings. The error
+// is why init doesn't set it up.
+func openInitRepo(ctx context.Context, dir string) (repo string, existing project.Settings, err error) {
+	if repo, err = (git.Git{}).TopLevel(ctx, dir); err != nil {
+		return "", existing, errors.New("not inside a git repository")
+	}
+	if refusal := initRefusal(ctx, repo); refusal != "" {
+		return "", existing, errors.New(refusal)
+	}
+	existing, _, err = project.LoadSettings(repo)
+	return repo, existing, err
+}
+
+// signOff prints init's summary of the repository at repo: its steps, what orchestra needs, and what
+// is left for the user, workerEffort being the project's worker_effort.
+func signOff(
+	ctx context.Context, ui tui.InitScreen, repo string, steps []project.Step, c project.Choice, workerEffort string,
+	getenv func(string) string,
+) {
+	pre := project.Prerequisites(repo, getenv)
+	ui.Steps(steps)
+	ui.Prerequisites(pre)
+	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort))
+	ui.SignOff(!slices.ContainsFunc(pre, func(p project.Step) bool { return p.Kind == project.StepMissing }))
+}
+
+// initFlags are orchestra init's flags, each with whether the command line gives it.
+type initFlags struct {
+	checkFast, checkFull, setup, mcp, prefix project.Given[string]
+	fastTimeout, fullTimeout                 project.Given[time.Duration]
+	concurrent                               project.Given[int]
+	union, install, verifier                 project.Given[bool]
+	force                                    bool
+	agent                                    string // the workers' agent kind, AGENT_KIND's by default
+}
+
+// initUsage is what orchestra init -h says before its flags.
+const initUsage = "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] " +
+	"[--check-fast-timeout D] [--check-full-timeout D]\n" +
+	"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n" +
+	"                      [--install-beads] [--verifier] [--prefix name] [--force]\n\n" +
+	"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n" +
+	"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n" +
+	"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n" +
+	"checks' runners (scripts/check-fast.sh, the merge check, and scripts/check-full.sh, run once\n" +
+	"at the end of a run; one that is there and differs is kept unless its flag is given),\n" +
+	"settings.json (the checks, their time limits, how many tickets run at the same time and\n" +
+	"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n" +
+	"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n" +
+	"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n" +
+	"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n" +
+	"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n" +
+	"ticket prefix, renaming every ticket when it changes. In a\n" +
+	"terminal it asks for anything the flags don't give. Run it from the main checkout, between\n" +
+	"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n\n"
+
+// parseInitFlags reads init's flags in args, --agent defaulting to AGENT_KIND. ok is false where
+// init stops there with code: after -h, or once it has told stderr what is wrong with them.
+func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer) (f initFlags, code int, ok bool) {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	e := &envFlags{fs: fs, getenv: getenv}
+	bindGiven(e, fs.StringVar, &f.checkFast, "check-fast", "", "", parseText, "the command "+project.FastRunner+
+		" runs, orchestra's merge check (lint, build, the fast tests); \"\" for a check that passes at once "+
+		"(asked when omitted)").alias("check")
+	bindGiven(e, fs.StringVar, &f.checkFull, "check-full", "", "", parseText, "the slower suites' command, which "+
+		project.FullRunner+" runs after check-fast.sh, once at the end of a run; \"\" for none")
+	bindGiven(e, fs.DurationVar, &f.fastTimeout, "check-fast-timeout", "", 0, time.ParseDuration,
+		"how long check-fast may run on a rebased ticket, e.g. 5m (asked when omitted; default "+
+			project.DefaultCheckTimeoutText+")").alias("check-timeout").check = positive(&f.fastTimeout.Value)
+	bindGiven(e, fs.DurationVar, &f.fullTimeout, "check-full-timeout", "", 0, time.ParseDuration,
+		"how long check-full may run at the end of a run, e.g. 90m (default "+
+			project.DefaultCheckFullTimeoutText+")").check = positive(&f.fullTimeout.Value)
+	bindGiven(e, fs.StringVar, &f.setup, "setup", "", "", parseText, "the command that installs the dependencies "+
+		"in a worktree, run before check-fast when a rebase changes a lockfile, e.g. \"npm ci\"; \"\" for none "+
+		"(offered for a lockfile when omitted; an existing setting is kept)")
+	fs.BoolVar(&f.force, "force", false, "replace an existing .orchestra/worker-prompt.md with the template")
+	bindGiven(e, fs.BoolVar, &f.union, "changelog-union", "", false, parseOnOff, "add 'CHANGELOG.md merge=union' "+
+		"to .gitattributes, so two tickets' changelog entries don't conflict (asked when omitted; =false declines)")
+	bindGiven(e, fs.StringVar, &f.mcp, "mcp", "", "", parseText, "the MCP servers workers get, by name, "+
+		"comma-separated, e.g. postgres,firecrawl; \"\" for none (asked when omitted)")
+	bindGiven(e, fs.BoolVar, &f.install, "install-beads", "", false, parseOnOff, "install Beads (bd) where it is "+
+		"missing, with Homebrew or the Beads install script (asked when omitted; =false declines)")
+	bindGiven(e, fs.BoolVar, &f.verifier, "verifier", "", false, parseOnOff, "write "+project.VerifierPath+
+		", a subagent that checks each ticket's change against the ticket in a fresh context, and have the worker "+
+		"prompt run it before a worker closes its ticket (asked when omitted; =false declines)")
+	bindGiven(e, fs.StringVar, &f.prefix, "prefix", "", "", parseText, "the Beads ticket prefix, IDs reading "+
+		"<prefix>-<hash>: lowercase letters, digits and hyphens, starting with a letter; for a new Beads bd init "+
+		"takes it, and an existing one's tickets are all renamed to it with bd rename-prefix (asked when omitted; "+
+		"kept when not given)")
+	bindEnv(e, fs.StringVar, &f.agent, "agent", "AGENT_KIND", "claude", parseText, "the workers' agent kind, "+
+		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
+		"[AGENT_KIND]")
+	concurrent := bindGiven(e, fs.IntVar, &f.concurrent, "concurrent", "", 0, parseWhole,
+		"tickets to run at the same time by default (asked when omitted)")
+	concurrent.short("c")
+	concurrent.check = func(string) string {
+		if n := f.concurrent.Value; n < 1 || n > project.MaxConcurrency {
+			return fmt.Sprintf("--concurrent must be between 1 and %d", project.MaxConcurrency)
+		}
+		return ""
+	}
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), initUsage)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return f, dispatch.ExitOK, false
+		}
+		return f, dispatch.ExitSetup, false
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		fmt.Fprintf(stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
+		return f, dispatch.ExitSetup, false
+	}
+	if _, problems := e.settle(); len(problems) > 0 {
+		for _, p := range problems {
+			fmt.Fprintln(stderr, "orchestra init:", p)
+		}
+		return f, dispatch.ExitSetup, false
+	}
+	return f, dispatch.ExitOK, true
+}
+
+// positive is the check of a time limit's flag, given as name: init takes no limit of 0.
+func positive(d *time.Duration) func(name string) string {
+	return func(name string) string {
+		if *d <= 0 {
+			return "--" + name + " must be a positive duration such as 5m"
+		}
+		return ""
+	}
+}
+
+// planInit is what init would set up in repo, whose settings are existing: the choice, from the
+// project as it is and the flags, and the questions left to ask, those the flags don't answer, with
+// what the form needs for them in a terminal. It reads the ticket prefix only where it would ask
+// for it or --prefix gives one: that takes a few bd calls. The error is why init can't go on.
+func planInit(
+	ctx context.Context, repo string, f initFlags, existing project.Settings, getenv func(string) string,
+	interactive bool,
+) (project.Choice, tui.Ask, error) {
+	c := initChoice(repo, f, existing)
+	c.Servers, c.ServersErr = mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, repo)...)
+	c.SetupOffer, c.SetupFrom = project.FindSetup(repo)
+	c.Install = project.FindBeadsInstall(runtime.GOOS)
+	bd, onPath := project.LocateBd(getenv)
+	q := project.Questions{
+		// Stage 2's choice of checks, unless a flag gives one of them.
+		Check:       !f.checkFast.Given && !f.checkFull.Given,
+		Timeout:     !f.fastTimeout.Given,
+		FullTimeout: !f.fullTimeout.Given,
+		Concurrent:  !f.concurrent.Given,
+		MCP:         !f.mcp.Given,
+		Setup:       !f.setup.Given && c.Setup == "" && c.SetupOffer != "",
+		Union:       !f.union.Given && project.OffersUnion(ctx, repo),
+		Install:     !f.install.Given && bd == "" && c.Install.Command != "",
+		Verifier:    !f.verifier.Given && project.OffersVerifier(repo, c.Agent),
+	}
+	// Offered as yes.
+	c.Union, c.InstallBeads, c.Verifier = f.union.Value || q.Union, f.install.Value || q.Install,
+		f.verifier.Value || q.Verifier
+	// The ticket prefix, asked where bd is there or init offers to install it.
+	q.Prefix = interactive && !f.prefix.Given && (onPath || q.Install || f.install.Value)
+	if err := planPrefix(ctx, repo, f.prefix, &c, &q.Prefix); err != nil {
+		return c, tui.Ask{}, err
+	}
+	ask := tui.Ask{Questions: q}
+	if interactive && q.Check {
+		ask.CheckScript = regularFile(filepath.Join(repo, project.CheckScript))
+		var err error
+		if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err != nil { // as they are
+			return c, ask, err
+		}
+		if ask.Skill, err = project.PlanSkill(repo, c.Agent); err != nil {
+			return c, ask, err
+		}
+	}
+	return c, ask, nil
+}
+
+// initChoice is the choice init starts from in repo: the project's settings, existing, and its worker
+// prompt, with the flags given over them.
+func initChoice(repo string, f initFlags, existing project.Settings) project.Choice {
+	prompt, _ := os.ReadFile(project.Locate(repo).Prompt) // no prompt yet: no check command to find in it
+	c := project.DefaultChoice(existing, string(prompt))
+	switch {
+	case f.checkFast.Given:
+		c.Fast = project.RunnerSuites(f.checkFast.Value, "--check-fast", project.FastRunner)
+		c.ReplaceFast, c.CheckFrom = true, "--check-fast"
+	case c.Fast != nil && len(*c.Fast) == 0 && regularFile(filepath.Join(repo, project.CheckScript)):
+		// The project's own check, called as it is.
+		c.Fast = &[]project.Suite{{Name: "the project's own check", Command: project.CheckScript,
+			FoundIn: project.CheckScript}}
+		c.CheckFrom = project.CheckScript
+	}
+	if f.checkFull.Given {
+		c.Full = project.RunnerSuites(f.checkFull.Value, "--check-full", project.FullRunner)
+		c.ReplaceFull = true
+	}
+	if f.concurrent.Given {
+		c.Concurrent, c.Unasked.Concurrent = f.concurrent.Value, false
+	}
+	if f.fastTimeout.Given {
+		c.CheckFastTimeout, c.ReplacedTimeout = command.ShortDuration(f.fastTimeout.Value), ""
+	}
+	if f.fullTimeout.Given {
+		c.CheckFullTimeout, c.ReplacedFullTimeout = command.ShortDuration(f.fullTimeout.Value), ""
+	}
+	if f.mcp.Given {
+		names := mcp.ParseNames(f.mcp.Value)
+		c.MCP = &names
+	}
+	if f.setup.Given {
+		c.Setup = strings.TrimSpace(f.setup.Value)
+	}
+	c.Agent = f.agent
+	return c
+}
+
+// planPrefix reads the ticket prefix into the choice where init asks for it (*ask) or --prefix, flag,
+// gives one, and takes --prefix's. Where it can't read the prefix, init doesn't ask for it: it can't
+// tell what it would change. The error is why it can't take --prefix.
+func planPrefix(ctx context.Context, repo string, flag project.Given[string], c *project.Choice, ask *bool) error {
+	if !*ask && !flag.Given {
+		return nil
+	}
+	if err := readPrefix(ctx, repo, c); err != nil {
+		if flag.Given {
+			return fmt.Errorf("--prefix: can't read the ticket prefix Beads has: %w", err)
+		}
+		*ask = false
+		c.Prefix, c.PrefixWas = "", ""
+		return nil
+	}
+	if problem := takePrefix(flag, c); problem != "" {
+		return errors.New(problem)
+	}
+	return nil
+}
+
+// askOrDefault asks the questions ask names in a terminal (interactive), with the scout looking for
+// the suites of the project in repo, and returns what the scout's calls cost; the error is the form's,
+// cancelled. Outside a terminal it takes the questions as unasked (see Choice.DeclineUnasked).
+func askOrDefault(
+	in io.Reader, out io.Writer, interactive bool, repo string, c *project.Choice, ask tui.Ask, scout organ.Client,
+) (spent []organ.Spend, err error) {
+	if !interactive || !ask.Any() {
+		c.DeclineUnasked(ask.Questions)
+		return nil, nil
+	}
+	if ask.Check {
+		// By the scout's goroutine, which AskInit waits for before it returns.
+		scout.Spent = func(s organ.Spend) { spent = append(spent, s) }
+		ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
+	}
+	err = tui.AskInit(in, out, c, ask)
+	return spent, err
+}
+
+// setUpBeads installs bd and sets Beads up as the choice says, then changes the ticket prefix where it
+// does, and returns the steps, and whether Ctrl+C stopped it. Beads goes first: bd init commits what
+// was staged, and init stages a moved worker prompt; with the user's own changes staged, it doesn't
+// run. Ctrl+C stops an install or bd init under way, which run in their own process groups, and init
+// with it.
+func setUpBeads(
+	ctx context.Context, repo string, c project.Choice, getenv func(string) string, working func(string),
+) (steps []project.Step, stopped bool) {
+	beadsCtx, stop := signal.NotifyContext(ctx, stopSignals...)
+	defer stop()
+	steps = project.SetUpBeads(beadsCtx, repo, c, getenv, working)
+	if beadsCtx.Err() == nil {
+		refusal := ""
+		if !c.PrefixNew && c.PrefixWas != "" && c.Prefix != c.PrefixWas {
+			refusal = prefixRefusal(beadsCtx, repo, c.PrefixWas) // read again: the form can take a while
+		}
+		if s, ok := project.ApplyPrefix(beadsCtx, repo, c, refusal); ok {
+			steps = append(steps, s)
+		}
+	}
+	return steps, beadsCtx.Err() != nil
+}
+
+// takePrefix takes --prefix's value, where flag gives one, into the choice, and returns "", or why it
+// refuses it: not a prefix bd takes, or a rename of the tickets they can't have now. The flag consents
+// to the rename.
+func takePrefix(flag project.Given[string], c *project.Choice) string {
+	p := project.NormalPrefix(flag.Value)
+	if !flag.Given || p == c.PrefixWas {
+		return ""
 	}
 	if problem := project.PrefixProblem(p); problem != "" {
-		fmt.Fprintln(stderr, "orchestra init: --prefix "+problem)
-		return dispatch.ExitSetup
+		return "--prefix " + problem
 	}
 	if !c.PrefixNew && c.PrefixRefusal != "" {
-		fmt.Fprintf(stderr, "orchestra init: --prefix: the tickets can't be renamed from %s to %s while %s. "+
-			"Nothing was changed.\n", c.PrefixWas, p, c.PrefixRefusal)
-		return dispatch.ExitSetup
+		return fmt.Sprintf("--prefix: the tickets can't be renamed from %s to %s while %s. Nothing was changed.",
+			c.PrefixWas, p, c.PrefixRefusal)
 	}
 	c.Prefix, c.RenamePrefix = p, true
-	return dispatch.ExitOK
+	return ""
 }
 
 // initRefusal is why init doesn't set up the repository whose checkout is repo, or "" when it may. Not

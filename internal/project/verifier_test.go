@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ func verifierRepo(t *testing.T, fast, full []Suite) string {
 	if err := os.WriteFile(filepath.Join(repo, Dir, promptName), prompt, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyRunners(repo, Choice{Fast: &fast, Full: &full}); err != nil {
+	if _, err := ApplyRunners(context.Background(), repo, Choice{Fast: &fast, Full: &full}); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -38,7 +39,7 @@ func TestTheVerifierKnowsTheStackAndTheChecks(t *testing.T) {
 	repo := verifierRepo(t, []Suite{{Name: "check", Command: "scripts/check.sh"}},
 		[]Suite{{Name: "e2e", Command: "npm run e2e", Serial: true}})
 	c := Choice{Verifier: true, Agent: "claude", Stack: []string{"Go 1.26", "golangci-lint"}}
-	s, ok, err := ApplyVerifier(repo, c)
+	s, ok, err := oneStep(t, ApplyVerifier, repo, c)
 	if err != nil || !ok || s.Kind != StepDone || len(s.Commit) != 1 || s.Commit[0] != VerifierPath {
 		t.Fatalf("step %+v, %v, %v", s, ok, err)
 	}
@@ -66,7 +67,7 @@ func TestTheVerifierKnowsTheStackAndTheChecks(t *testing.T) {
 func TestTheVerifierIsAddedOnce(t *testing.T) {
 	repo := verifierRepo(t, []Suite{}, []Suite{})
 	c := Choice{Verifier: true}
-	if _, _, err := ApplyVerifier(repo, c); err != nil {
+	if _, _, err := oneStep(t, ApplyVerifier, repo, c); err != nil {
 		t.Fatal(err)
 	}
 	if OffersVerifier(repo, "claude") {
@@ -76,7 +77,7 @@ func TestTheVerifierIsAddedOnce(t *testing.T) {
 	if err := os.WriteFile(p, []byte("the project's own\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, _, err := ApplyVerifier(repo, c)
+	s, _, err := oneStep(t, ApplyVerifier, repo, c)
 	if err != nil || s.Kind != StepKept || len(s.Commit) != 0 {
 		t.Fatalf("again: %+v, %v", s, err)
 	}
@@ -100,13 +101,13 @@ func TestTheVerifierWithNothingToGoOn(t *testing.T) {
 
 func TestTheVerifierDeclinedOrUnasked(t *testing.T) {
 	repo := verifierRepo(t, []Suite{}, []Suite{})
-	if _, ok, err := ApplyVerifier(repo, Choice{}); ok || err != nil {
+	if _, ok, err := oneStep(t, ApplyVerifier, repo, Choice{}); ok || err != nil {
 		t.Errorf("declined: ok %v, %v", ok, err)
 	}
-	if s, ok, _ := ApplyVerifier(repo, Choice{VerifierUnasked: true}); !ok || !strings.Contains(s.Detail, "--verifier") {
+	if s, ok, _ := oneStep(t, ApplyVerifier, repo, Choice{Unasked: Questions{Verifier: true}}); !ok || !strings.Contains(s.Detail, "--verifier") {
 		t.Errorf("unasked: %+v", s)
 	}
-	if s, _, _ := ApplyVerifier(repo, Choice{Verifier: true, Agent: "codex"}); s.Kind != StepCaution {
+	if s, _, _ := oneStep(t, ApplyVerifier, repo, Choice{Verifier: true, Agent: "codex"}); s.Kind != StepCaution {
 		t.Errorf("codex: %+v", s)
 	}
 	if fileExists(filepath.Join(repo, filepath.FromSlash(VerifierPath))) {

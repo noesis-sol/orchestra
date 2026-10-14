@@ -162,33 +162,31 @@ type Choice struct {
 	// DefaultCheckTimeout and DefaultCheckFullTimeout.
 	CheckFastTimeout, CheckFullTimeout string
 	Concurrent                         int
-	Unasked                            bool // concurrent fell back to 1 without asking
-	Replaced                           int  // the out-of-range concurrency in settings that init replaced, or 0
+	Replaced                           int // the out-of-range concurrency in settings that init replaced, or 0
+	// Unasked are the questions init could neither ask nor take a flag's answer for, for the summary to
+	// say how to answer them (see DeclineUnasked); Concurrent among them from the start where the
+	// settings have no concurrency, which falls back to 1 unless asked or given.
+	Unasked Questions
 	// ReplacedTimeout and ReplacedFullTimeout are the check_fast_timeout and check_full_timeout in
 	// settings that every run would reject, which init dropped, or "".
 	ReplacedTimeout, ReplacedFullTimeout string
 	// Setup is settings.json's setup command as init writes it ("" removes it), SetupWas the one there,
 	// which init keeps unless --setup or the form changes it. SetupOffer is the command init offers for
-	// the lockfiles SetupFrom (see FindSetup), and SetupUnasked is set when init could neither ask nor
-	// take --setup.
+	// the lockfiles SetupFrom (see FindSetup).
 	Setup, SetupWas, SetupOffer string
 	SetupFrom                   []string
-	SetupUnasked                bool
-	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion); UnionUnasked is set
-	// when init could neither ask nor take --changelog-union.
-	Union, UnionUnasked bool
-	// MCP names the MCP servers workers get; nil leaves mcp_servers unset. MCPUnasked is set when
-	// init could neither ask nor take --mcp.
-	MCP        *[]string
-	MCPUnasked bool
+	// Union adds CHANGELOG.md merge=union to .gitattributes (see OffersUnion).
+	Union bool
+	// MCP names the MCP servers workers get; nil leaves mcp_servers unset.
+	MCP *[]string
 	// Servers are the MCP servers Claude Code knows for the repository, and ServersErr why they
 	// couldn't all be read.
 	Servers    []mcp.Server
 	ServersErr error
-	// Install is how init would install bd (see FindBeadsInstall), InstallBeads whether it does where
-	// bd is missing, and InstallUnasked is set when init could neither ask nor take --install-beads.
-	Install                      BeadsInstall
-	InstallBeads, InstallUnasked bool
+	// Install is how init would install bd (see FindBeadsInstall), and InstallBeads whether it does
+	// where bd is missing.
+	Install      BeadsInstall
+	InstallBeads bool
 	// Prefix is the Beads ticket prefix init sets, IDs reading <prefix>-<hash>, and PrefixWas the one
 	// there; for a repository without Beads (PrefixNew), the one bd init would give it (DefaultPrefix),
 	// bd init then taking Prefix. Both are "" where init neither asked nor took --prefix. For a change,
@@ -207,10 +205,40 @@ type Choice struct {
 	Agent        string
 	ReplaceSkill bool
 	// Verifier writes the verifier subagent and has the worker prompt run it (see ApplyVerifier), with
-	// Stack, what the scout found the project built with; VerifierUnasked is set when init could
-	// neither ask nor take --verifier.
-	Verifier, VerifierUnasked bool
-	Stack                     []string
+	// Stack, what the scout found the project built with.
+	Verifier bool
+	Stack    []string
+}
+
+// Questions name init's questions: those its form asks (the flags answer the rest), or, as a Choice's
+// Unasked, those it could neither ask nor take a flag's answer for.
+type Questions struct {
+	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
+	Timeout     bool // check-fast's time limit
+	FullTimeout bool // check-full's time limit
+	Concurrent  bool // tickets at the same time
+	Union       bool // whether to merge CHANGELOG.md by union
+	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
+	Install     bool // whether to install bd as the choice's Install says
+	Setup       bool // the setup command, starting from the one offered for the lockfiles found
+	Verifier    bool // whether to add the verifier subagent and have the worker prompt run it
+	Prefix      bool // the Beads ticket prefix, and whether to rename the tickets where it changes
+}
+
+// Any reports whether q names a question.
+func (q Questions) Any() bool { return q != Questions{} }
+
+// DeclineUnasked takes q, the questions init couldn't ask, as unasked: it notes them in c.Unasked and
+// declines what init offers as yes among them, the changelog's union, installing bd and the verifier.
+// The concurrency and the MCP servers stay unasked only where nothing chose them: the concurrency fell
+// back to 1, and no MCP servers are set.
+func (c *Choice) DeclineUnasked(q Questions) {
+	q.Concurrent = q.Concurrent && c.Unasked.Concurrent
+	q.MCP = q.MCP && c.MCP == nil
+	c.Unasked = q
+	c.Union = c.Union && !q.Union
+	c.InstallBeads = c.InstallBeads && !q.Install
+	c.Verifier = c.Verifier && !q.Verifier
 }
 
 // CheckScript is a project's own check, which check-fast.sh calls as a suite and init never edits.
@@ -245,7 +273,7 @@ func DefaultChoice(s Settings, prompt string) Choice {
 		c.Replaced, c.Concurrent = c.Concurrent, 0
 	}
 	if c.Concurrent == 0 {
-		c.Concurrent, c.Unasked = 1, true
+		c.Concurrent, c.Unasked.Concurrent = 1, true
 	}
 	return c
 }
@@ -297,7 +325,7 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "moved " + legacyPrompt + " to " + rel})
 	default:
-		if err := os.WriteFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
+		if err := writeFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
 			return done, err
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt",
@@ -324,10 +352,24 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 	return done, nil
 }
 
-// ApplySettings saves the choice to .orchestra/settings.json: the runners as check_fast and
+// ApplySettings saves the choice to .orchestra/settings.json (see settingsStep), and sums up the
+// MCP servers workers get and the setup command.
+func ApplySettings(_ context.Context, repo string, c Choice) ([]Step, error) {
+	s, err := settingsStep(repo, c)
+	if err != nil {
+		return nil, err
+	}
+	steps := []Step{s, mcpStep(c)}
+	if s, ok := setupStep(c); ok {
+		steps = append(steps, s)
+	}
+	return steps, nil
+}
+
+// settingsStep saves the choice to .orchestra/settings.json: the runners as check_fast and
 // check_full, under their new names whatever the settings called them, and the setup command where
 // the choice changes it. It fails, leaving the file as it was, when it can't read the settings.
-func ApplySettings(repo string, c Choice) (Step, error) {
+func settingsStep(repo string, c Choice) (Step, error) {
 	s, _, err := LoadSettings(repo) // keep the settings init doesn't ask about
 	if err != nil {
 		// Read wrong (changed since init read it), they would save as nothing: SaveSettings writes only
@@ -349,7 +391,7 @@ func ApplySettings(repo string, c Choice) (Step, error) {
 	if c.Replaced != 0 {
 		detail += fmt.Sprintf(" (settings had %d, outside 1 to %d)", c.Replaced, MaxConcurrency)
 	}
-	if c.Unasked {
+	if c.Unasked.Concurrent {
 		detail += " (not asked: no terminal; --concurrent sets it)"
 	}
 	var fast []Suite // those check-fast.sh runs

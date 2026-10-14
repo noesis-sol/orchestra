@@ -43,7 +43,7 @@ func TestInitKeepsTheSetup(t *testing.T) {
 		SetupFiles: &globs}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplySettings(repo, Choice{Concurrent: 2}); err != nil {
+	if _, err := settingsStep(repo, Choice{Concurrent: 2}); err != nil {
 		t.Fatal(err)
 	}
 	s, _, err := LoadSettings(repo)

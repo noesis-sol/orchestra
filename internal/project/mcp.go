@@ -50,15 +50,15 @@ func Connectors(servers []mcp.Server) []string {
 	return names
 }
 
-// MCPStep sums up the MCP servers workers get, for init's summary: each chosen server with where
+// mcpStep sums up the MCP servers workers get, for init's summary: each chosen server with where
 // it is defined, a chosen one this machine doesn't define (saved anyway: a teammate may define
 // it), and the claude.ai connectors workers can't have.
-func MCPStep(c Choice) Step {
+func mcpStep(c Choice) Step {
 	kind, detail := StepDone, ""
 	switch {
 	case c.MCP == nil:
 		kind, detail = StepCaution, "not chosen: workers load every MCP server Claude Code finds on this machine"
-		if c.MCPUnasked {
+		if c.Unasked.MCP {
 			detail += " (not asked: no terminal; --mcp sets them)"
 		}
 	case len(*c.MCP) == 0:

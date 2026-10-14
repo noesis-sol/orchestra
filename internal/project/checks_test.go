@@ -231,7 +231,7 @@ func TestApplyRunnersWritesKeepsAndReplaces(t *testing.T) {
 	repo := t.TempDir()
 	suites := &[]Suite{{Name: "unit tests", Command: "npm test", FoundIn: "package.json:7"}}
 	c := Choice{Fast: suites, Full: &[]Suite{}}
-	steps, err := ApplyRunners(repo, c)
+	steps, err := ApplyRunners(context.Background(), repo, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestApplyRunnersWritesKeepsAndReplaces(t *testing.T) {
 		t.Errorf("check-fast.sh:\n%s", got)
 	}
 	// Again, the same: kept, nothing to commit.
-	steps, _ = ApplyRunners(repo, c)
+	steps, _ = ApplyRunners(context.Background(), repo, c)
 	if steps[0].Kind != StepKept || steps[1].Kind != StepKept || len(steps[0].Commit) != 0 {
 		t.Errorf("again: %+v", steps)
 	}
@@ -262,18 +262,18 @@ func TestApplyRunnersWritesKeepsAndReplaces(t *testing.T) {
 	if !runners[0].Exists || !runners[0].Differs || runners[1].Differs {
 		t.Errorf("plan: %+v", runners)
 	}
-	steps, _ = ApplyRunners(repo, c)
+	steps, _ = ApplyRunners(context.Background(), repo, c)
 	if steps[0].Kind != StepCaution || !strings.Contains(steps[0].Detail, "differs from what init would write; kept") ||
 		read(t, filepath.Join(repo, FastRunner)) != edited {
 		t.Errorf("a differing runner: %+v", steps[0])
 	}
 	// Fast nil keeps it as it is, without a word about differing.
-	if steps, _ = ApplyRunners(repo, Choice{Full: &[]Suite{}}); steps[0].Kind != StepKept {
+	if steps, _ = ApplyRunners(context.Background(), repo, Choice{Full: &[]Suite{}}); steps[0].Kind != StepKept {
 		t.Errorf("nil keeps it: %+v", steps[0])
 	}
 	// Replacing it writes it, mode 755 again.
 	c.ReplaceFast = true
-	steps, _ = ApplyRunners(repo, c)
+	steps, _ = ApplyRunners(context.Background(), repo, c)
 	fi, _ := os.Stat(filepath.Join(repo, FastRunner))
 	if steps[0].Kind != StepDone || steps[0].Detail != "replaced "+FastRunner || fi.Mode().Perm() != 0o755 ||
 		read(t, filepath.Join(repo, FastRunner)) != FastScript(*suites) {
@@ -282,7 +282,7 @@ func TestApplyRunnersWritesKeepsAndReplaces(t *testing.T) {
 
 	// Nothing there and nothing to write it from: a runner that checks nothing.
 	empty := t.TempDir()
-	steps, _ = ApplyRunners(empty, Choice{})
+	steps, _ = ApplyRunners(context.Background(), empty, Choice{})
 	if steps[0].Kind != StepDone || !strings.Contains(steps[0].Detail, "checks nothing yet") ||
 		read(t, filepath.Join(empty, FastRunner)) != FastScript(nil) {
 		t.Errorf("none: %+v", steps)

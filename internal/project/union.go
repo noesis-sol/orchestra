@@ -32,37 +32,37 @@ func mergesByUnion(ctx context.Context, repo string) bool {
 }
 
 // ApplyUnion adds CHANGELOG.md merge=union to .gitattributes when the choice says so, and returns
-// the step for init's summary; ok is false when the project has no CHANGELOG.md.
-func ApplyUnion(ctx context.Context, repo string, c Choice) (s Step, ok bool, err error) {
+// the step for init's summary; none when the project has no CHANGELOG.md.
+func ApplyUnion(ctx context.Context, repo string, c Choice) ([]Step, error) {
 	if !fileExists(filepath.Join(repo, changelogName)) {
-		return Step{}, false, nil
+		return nil, nil
 	}
 	const label = "changelog"
 	const why = "two tickets adding entries at the same spot"
 	switch {
 	case mergesByUnion(ctx, repo):
-		return Step{Kind: StepKept, Label: label,
-			Detail: changelogName + " merges by union: " + why + " keep both"}, true, nil
-	case c.UnionUnasked:
-		return Step{Kind: StepCaution, Label: label, Detail: "not asked (no terminal): with " + why +
+		return []Step{{Kind: StepKept, Label: label,
+			Detail: changelogName + " merges by union: " + why + " keep both"}}, nil
+	case c.Unasked.Union:
+		return []Step{{Kind: StepCaution, Label: label, Detail: "not asked (no terminal): with " + why +
 			", the second one's rebase conflicts; --changelog-union adds " + unionLine + " to " + attributesName +
-			" so git keeps both sides' lines"}, true, nil
+			" so git keeps both sides' lines"}}, nil
 	case !c.Union:
-		return Step{Kind: StepKept, Label: label,
-			Detail: attributesName + " left as it is: " + why + " will conflict"}, true, nil
+		return []Step{{Kind: StepKept, Label: label,
+			Detail: attributesName + " left as it is: " + why + " will conflict"}}, nil
 	}
 	p := filepath.Join(repo, attributesName)
 	b, err := os.ReadFile(p)
 	if err != nil && !os.IsNotExist(err) {
-		return Step{}, true, err
+		return nil, err
 	}
 	text := string(b)
 	if text != "" && !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
 	if err := writeFile(p, []byte(text+unionLine+"\n"), 0o644); err != nil {
-		return Step{}, true, err
+		return nil, err
 	}
-	return Step{Kind: StepDone, Label: label, Detail: "added " + unionLine + " to " + attributesName + ": with " + why +
-		", git keeps both sides' lines instead of stopping on a conflict"}, true, nil
+	return []Step{{Kind: StepDone, Label: label, Detail: "added " + unionLine + " to " + attributesName + ": with " +
+		why + ", git keeps both sides' lines instead of stopping on a conflict"}}, nil
 }

@@ -176,7 +176,7 @@ func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 		c    Choice
 		want string
 	}{
-		{Choice{Install: in, InstallUnasked: true},
+		{Choice{Install: in, Unasked: Questions{Install: true}},
 			"not installed; not asked (no terminal): --install-beads installs it with Homebrew (brew install beads)"},
 		{Choice{Install: in}, "not installed (declined); install it with brew install beads"},
 		{Choice{Install: FindBeadsInstall("windows"), InstallBeads: true}, "orchestra can't install it here; " +

@@ -47,7 +47,7 @@ func TestFindSetupOffersACommandPerEcosystemsLockfile(t *testing.T) {
 func TestSetupStepSaysWhatInitDidWithTheSetupCommand(t *testing.T) {
 	found := Choice{SetupOffer: "npm ci", SetupFrom: []string{"package-lock.json"}}
 	with := func(c Choice, setup, was string, unasked bool) Choice {
-		c.Setup, c.SetupWas, c.SetupUnasked = setup, was, unasked
+		c.Setup, c.SetupWas, c.Unasked.Setup = setup, was, unasked
 		return c
 	}
 	for _, tc := range []struct {
@@ -66,7 +66,7 @@ func TestSetupStepSaysWhatInitDidWithTheSetupCommand(t *testing.T) {
 		{"unasked flag", with(found, "", "", true), StepCaution, "--setup 'npm ci' sets"},
 		{"declined", with(found, "", "", false), StepKept, "found package-lock.json; no setup command"},
 	} {
-		s, ok := SetupStep(tc.c)
+		s, ok := setupStep(tc.c)
 		if tc.want == "" {
 			if ok {
 				t.Errorf("%s: a step %+v, want none", tc.name, s)

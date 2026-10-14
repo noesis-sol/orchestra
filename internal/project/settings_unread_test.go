@@ -16,7 +16,7 @@ func TestApplySettingsKeepsSettingsItCannotRead(t *testing.T) {
 	if err := os.WriteFile(SettingsPath(repo), before, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplySettings(repo, Choice{Concurrent: 2}); err == nil {
+	if _, err := settingsStep(repo, Choice{Concurrent: 2}); err == nil {
 		t.Error("ApplySettings saved settings it could not read")
 	}
 	after, err := os.ReadFile(SettingsPath(repo))

@@ -36,7 +36,7 @@ func TestApplySettingsSavesTheMCPServersNamesOnly(t *testing.T) {
 		{new([]string), `[]`}, // a nil list is none too
 		{nil, ""},
 	} {
-		if _, err := ApplySettings(repo, Choice{Concurrent: 1, MCP: tc.mcp, Servers: testServers}); err != nil {
+		if _, err := settingsStep(repo, Choice{Concurrent: 1, MCP: tc.mcp, Servers: testServers}); err != nil {
 			t.Fatal(err)
 		}
 		raw, _ := os.ReadFile(SettingsPath(repo))
@@ -93,12 +93,12 @@ func TestMCPStepExplainsWhatWorkersGet(t *testing.T) {
 			[]string{"workers get exa (user, http), claude-in-chrome (built into Claude Code)"}},
 		{"chrome not set up", Choice{MCP: names(mcp.Chrome), Servers: testServers}, StepCaution,
 			[]string{"claude-in-chrome isn't set up on this machine (set it up: claude --chrome)"}},
-		{"unasked", Choice{MCPUnasked: true, Servers: testServers}, StepCaution,
+		{"unasked", Choice{Unasked: Questions{MCP: true}, Servers: testServers}, StepCaution,
 			[]string{"not chosen: workers load every MCP server", "not asked: no terminal; --mcp sets them"}},
 		{"unreadable", Choice{MCP: names(), ServersErr: errors.New("bad json")}, StepCaution,
 			[]string{"couldn't read Claude Code's MCP config: bad json"}},
 	} {
-		st := MCPStep(tc.c)
+		st := mcpStep(tc.c)
 		if st.Kind != tc.kind || st.Label != "MCP servers" {
 			t.Errorf("%s: %+v", tc.name, st)
 		}

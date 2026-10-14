@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -94,35 +95,35 @@ func PlanSkill(repo, agent string) (SkillPlan, error) {
 
 // ApplySkill installs the create-check-suite skill in the project's skill folder for the workers'
 // agent, to be committed, where the choice files test work. It keeps a copy that differs unless the
-// choice replaces it, and says what it did; ok is false where the choice files no test work.
-func ApplySkill(repo string, c Choice) (s Step, ok bool, err error) {
+// choice replaces it, and says what it did; it returns no step where the choice files no test work.
+func ApplySkill(_ context.Context, repo string, c Choice) ([]Step, error) {
 	if !c.FilesTestWork() {
-		return Step{}, false, nil
+		return nil, nil
 	}
 	p, err := PlanSkill(repo, c.Agent)
 	if err != nil {
-		return Step{}, true, err
+		return nil, err
 	}
 	const label = "skill"
 	switch {
 	case p.Dir == "":
-		return Step{Kind: StepCaution, Label: label, Detail: "the workers' agent is " + c.Agent +
-			", whose skill folder orchestra doesn't know: " + skills.CreateCheckSuiteName + " isn't installed"}, true, nil
+		return []Step{{Kind: StepCaution, Label: label, Detail: "the workers' agent is " + c.Agent +
+			", whose skill folder orchestra doesn't know: " + skills.CreateCheckSuiteName + " isn't installed"}}, nil
 	case p.Exists && !p.Differs:
-		return Step{Kind: StepKept, Label: label, Detail: p.Dir + "/ is there; left as it is"}, true, nil
+		return []Step{{Kind: StepKept, Label: label, Detail: p.Dir + "/ is there; left as it is"}}, nil
 	case p.Differs && !c.ReplaceSkill:
-		return Step{Kind: StepCaution, Label: label, Detail: p.Dir +
-			"/ differs from orchestra's; kept (remove it and run orchestra init again for orchestra's)"}, true, nil
+		return []Step{{Kind: StepCaution, Label: label, Detail: p.Dir +
+			"/ differs from orchestra's; kept (remove it and run orchestra init again for orchestra's)"}}, nil
 	}
 	if err := writeSkill(filepath.Join(repo, filepath.FromSlash(p.Dir))); err != nil {
-		return Step{}, true, err
+		return nil, err
 	}
 	detail := "wrote " + p.Dir + "/"
 	if p.Exists {
 		detail = "replaced " + p.Dir + "/"
 	}
 	detail += ", for the tickets that set up the project's tests"
-	return Step{Kind: StepDone, Label: label, Detail: detail, Commit: []string{p.Dir + "/"}}, true, nil
+	return []Step{{Kind: StepDone, Label: label, Detail: detail, Commit: []string{p.Dir + "/"}}}, nil
 }
 
 // writeSkill writes the create-check-suite skill's files into dir, over the ones there; a file of

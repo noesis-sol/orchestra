@@ -33,9 +33,9 @@ func FindSetup(repo string) (command string, lockfiles []string) {
 	return strings.Join(commands, " && "), lockfiles
 }
 
-// SetupStep is the step for init's summary of the setup command; ok is false when there is nothing to
+// setupStep is the step for init's summary of the setup command; ok is false when there is nothing to
 // say: no setup command, none before, and no lockfile to offer one for.
-func SetupStep(c Choice) (s Step, ok bool) {
+func setupStep(c Choice) (s Step, ok bool) {
 	const label = "setup"
 	const when = " runs before check-fast on a ticket whose rebase changes a dependency file"
 	found := "found " + joinAnd(c.SetupFrom)
@@ -45,7 +45,7 @@ func SetupStep(c Choice) (s Step, ok bool) {
 			" has it; --setup replaces it)"}, true
 	case c.Setup != "":
 		return Step{Kind: StepDone, Label: label, Detail: "'" + c.Setup + "'" + when}, true
-	case c.SetupUnasked:
+	case c.Unasked.Setup:
 		return Step{Kind: StepCaution, Label: label, Detail: fmt.Sprintf("not asked (no terminal): %s, and a "+
 			"ticket rebased over a dependency change is checked against the dependencies installed before it; "+
 			"--setup '%s' sets the command that installs them", found, c.SetupOffer)}, true

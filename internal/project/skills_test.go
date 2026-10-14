@@ -41,7 +41,7 @@ func TestApplySkillInstallsTheSkillOnlyForTestWork(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()
 			c := Choice{Tests: tc.tests, FileUntested: tc.fileUntested, Agent: tc.agent}
-			s, ok, err := ApplySkill(repo, c)
+			s, ok, err := oneStep(t, ApplySkill, repo, c)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +97,7 @@ func TestApplySkillKeepsOrReplacesACopyThatDiffers(t *testing.T) {
 			if err != nil || p != (SkillPlan{Dir: dir, Exists: true, Differs: true}) {
 				t.Fatalf("PlanSkill = %+v, %v", p, err)
 			}
-			s, ok, err := ApplySkill(repo, Choice{Tests: TestsScratch, Agent: "claude", ReplaceSkill: tc.replace})
+			s, ok, err := oneStep(t, ApplySkill, repo, Choice{Tests: TestsScratch, Agent: "claude", ReplaceSkill: tc.replace})
 			if err != nil || !ok {
 				t.Fatalf("ApplySkill: %v, %v", ok, err)
 			}
@@ -120,13 +120,13 @@ func TestApplySkillKeepsOrReplacesACopyThatDiffers(t *testing.T) {
 func TestApplySkillLeavesTheSameCopyAndNamesAnUnknownAgent(t *testing.T) {
 	repo := t.TempDir()
 	c := Choice{Tests: TestsFound, FileUntested: true, Agent: "codex"}
-	if _, _, err := ApplySkill(repo, c); err != nil {
+	if _, _, err := oneStep(t, ApplySkill, repo, c); err != nil {
 		t.Fatal(err)
 	}
 	if p, err := PlanSkill(repo, "codex"); err != nil || !p.Exists || p.Differs {
 		t.Errorf("PlanSkill after installing = %+v, %v", p, err)
 	}
-	s, ok, err := ApplySkill(repo, c)
+	s, ok, err := oneStep(t, ApplySkill, repo, c)
 	if err != nil || !ok || s.Kind != StepKept || s.Detail != ".agents/skills/create-check-suite/ is there; left as it is" {
 		t.Errorf("again: %+v, %v, %v", s, ok, err)
 	}
@@ -140,7 +140,7 @@ func TestApplySkillLeavesTheSameCopyAndNamesAnUnknownAgent(t *testing.T) {
 	}
 
 	repo = t.TempDir()
-	s, ok, err = ApplySkill(repo, Choice{Tests: TestsScratch, Agent: "aider"})
+	s, ok, err = oneStep(t, ApplySkill, repo, Choice{Tests: TestsScratch, Agent: "aider"})
 	if err != nil || !ok || s.Kind != StepCaution || !strings.Contains(s.Detail, "the workers' agent is aider") {
 		t.Errorf("an unknown agent: %+v, %v, %v", s, ok, err)
 	}

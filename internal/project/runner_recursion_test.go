@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -52,7 +53,7 @@ func TestApplyRunnersLeavesOutSuitesThatRunARunner(t *testing.T) {
 			{Name: "e2e", Command: "npm run e2e"},
 		},
 	}
-	steps, err := ApplyRunners(repo, c)
+	steps, err := ApplyRunners(context.Background(), repo, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestApplyRunnersLeavesOutSuitesThatRunARunner(t *testing.T) {
 	if runners[0].Differs || runners[1].Differs || len(runners[0].Left) != 2 || len(runners[1].Left) != 2 {
 		t.Errorf("plan again: %+v", runners)
 	}
-	steps, _ = ApplyRunners(repo, c)
+	steps, _ = ApplyRunners(context.Background(), repo, c)
 	if len(steps) != 2 || steps[0].Kind != StepKept || steps[1].Kind != StepKept {
 		t.Errorf("again: %+v", steps)
 	}
@@ -99,7 +100,7 @@ func TestApplyRunnersLeavesOutSuitesThatRunARunner(t *testing.T) {
 func TestARunnerOfOnlyRunnersChecksNothing(t *testing.T) {
 	repo := t.TempDir()
 	c := Choice{Fast: &[]Suite{{Command: FullRunner, FoundIn: "--check-fast"}}, Full: &[]Suite{}, Concurrent: 1}
-	if _, err := ApplyRunners(repo, c); err != nil {
+	if _, err := ApplyRunners(context.Background(), repo, c); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{FastRunner, FullRunner} {
@@ -110,7 +111,7 @@ func TestARunnerOfOnlyRunnersChecksNothing(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, Dir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := ApplySettings(repo, c)
+	s, err := settingsStep(repo, c)
 	if err != nil || !strings.Contains(s.Detail, "check-fast checks nothing yet") || strings.Contains(s.Detail, FullRunner) {
 		t.Errorf("settings: %+v, %v", s, err)
 	}

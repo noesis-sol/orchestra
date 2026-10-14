@@ -88,11 +88,13 @@ type envFlags struct {
 // envBinding is a flag bound to the variable that gives its default.
 type envBinding struct {
 	fs       *flag.FlagSet
-	names    []string      // the flag's, then its shorthands'
-	envGiven bool          // the variable gave the flag's default
-	problem  string        // the variable's value the flag doesn't take: a problem unless the flag is set
-	given    *bool         // set to whether the flag or the variable gave the value; nil where nothing asks
-	check    func() string // the problem with the value the flag is set to; nil for none
+	names    []string // the flag's, then its shorthands' and aliases'
+	envGiven bool     // the variable gave the flag's default
+	problem  string   // the variable's value the flag doesn't take: a problem unless the flag is set
+	given    *bool    // set to whether the flag or the variable gave the value; nil where nothing asks
+	// the problem with the value the flag is set to, as given under name, the first of names the command
+	// line sets; nil for none
+	check func(name string) string
 }
 
 // bindEnv defines the flag name for dst with define, the FlagSet's method for T such as IntVar. Its
@@ -122,7 +124,7 @@ func bindGiven[T any](
 // bindWhole is bindEnv for a whole number, which the flag's value must be as the variable's must.
 func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) {
 	b := bindEnv(e, e.fs.IntVar, dst, name, env, def, parseWhole, usage)
-	b.check = func() string {
+	b.check = func(string) string {
 		if *dst < 0 {
 			return fmt.Sprintf("-%s must be a whole number (got %d).", name, *dst)
 		}
@@ -136,6 +138,13 @@ func (b *envBinding) short(short string) {
 	b.names = append(b.names, short)
 }
 
+// alias defines alias as another name for the flag, and returns b.
+func (b *envBinding) alias(alias string) *envBinding {
+	b.fs.Var(b.fs.Lookup(b.names[0]).Value, alias, "alias of --"+b.names[0])
+	b.names = append(b.names, alias)
+	return b
+}
+
 // settle reconciles each flag with its variable once the flags are parsed: a variable's problem
 // counts only when no flag overrides it, and a flag set is held to its check. set is the flags the
 // command line sets.
@@ -143,12 +152,13 @@ func (e *envFlags) settle() (set map[string]bool, problems []string) {
 	set = map[string]bool{}
 	e.fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	for _, b := range e.bindings {
-		flagSet := slices.ContainsFunc(b.names, func(n string) bool { return set[n] })
+		i := slices.IndexFunc(b.names, func(n string) bool { return set[n] })
+		flagSet := i >= 0
 		switch {
 		case !flagSet && b.problem != "":
 			problems = append(problems, b.problem)
 		case flagSet && b.check != nil:
-			if p := b.check(); p != "" {
+			if p := b.check(b.names[i]); p != "" {
 				problems = append(problems, p)
 			}
 		}

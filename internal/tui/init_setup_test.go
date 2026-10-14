@@ -20,7 +20,9 @@ func TestInitFormOffersTheSetupCommandForTheLockfiles(t *testing.T) {
 		{"emptied", "\x15\r", ""},
 	} {
 		c := project.Choice{SetupOffer: "npm ci", SetupFrom: []string{"package-lock.json"}}
-		term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(in, out, &c, Ask{Setup: true}) })
+		term := askOn(t, func(in io.Reader, out io.Writer) error {
+			return AskInit(in, out, &c, Ask{Questions: project.Questions{Setup: true}})
+		})
 		term.waitFor(t, "Found package-lock.json.")
 		term.typeSteps(t, []keysOn{{onSetup, tc.keys}})
 		if err := term.end(t); err != nil {

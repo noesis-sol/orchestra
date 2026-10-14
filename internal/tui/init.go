@@ -430,18 +430,9 @@ func renameField(c *project.Choice) *formField {
 	return f
 }
 
-// Ask names the questions AskInit asks: those the flags didn't answer.
+// Ask names the questions AskInit asks, those the flags didn't answer, with what they need.
 type Ask struct {
-	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
-	Timeout     bool // check-fast's time limit
-	FullTimeout bool // check-full's time limit
-	Concurrent  bool // tickets at the same time
-	Union       bool // whether to merge CHANGELOG.md by union
-	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
-	Install     bool // whether to install bd as the choice's Install says
-	Setup       bool // the setup command, starting from the one offered for the lockfiles found
-	Verifier    bool // whether to add the verifier subagent and have the worker prompt run it
-	Prefix      bool // the Beads ticket prefix, and whether to rename the tickets where it changes
+	project.Questions
 	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
 	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
 	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
@@ -450,12 +441,6 @@ type Ask struct {
 	Runners     []project.Runner
 	Skill       project.SkillPlan
 	CheckScript bool
-}
-
-// Any reports whether a has a question to ask.
-func (a Ask) Any() bool {
-	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install || a.Setup ||
-		a.Verifier || a.Prefix
 }
 
 // initStage is a stage of the init form: a header, then its questions. The form shows one stage at
@@ -694,7 +679,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		stage2.apply()
 	}
 	if ask.Concurrent {
-		c.Concurrent, c.Unasked = option, false
+		c.Concurrent, c.Unasked.Concurrent = option, false
 		if option == customConcurrency {
 			n, err := parseConcurrency(custom)
 			if err != nil {
@@ -705,7 +690,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	}
 	if ask.MCP && len(mcpOpts) > 0 {
 		chosen := append([]string{}, servers...)
-		c.MCP, c.MCPUnasked = &chosen, false
+		c.MCP, c.Unasked.MCP = &chosen, false
 	}
 	return nil
 }

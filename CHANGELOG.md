@@ -58,6 +58,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- `orchestra init` reports every flag it can't take at once, as a run does,
+  rather than the first: `--check-full-timeout 0 -c 0` names both.
+- `orchestra init --force` writes the worker prompt through a temporary
+  file, as it writes the settings: a full disk or a crash no longer leaves
+  it empty or half written.
 - While the run winds down, the dashboard's line above the hint is one
   short amber line, `■ ■ ■ ■  Winding down · 3 running, no new tickets`:
   a `■` for each ticket running when it began, amber while it runs, green

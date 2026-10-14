@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"os"
@@ -83,19 +84,19 @@ func runnerSuites(repo, path string) ([]string, error) {
 
 // ApplyVerifier writes the verifier subagent where the choice adds it, keeping one that is there, and
 // appends the worker prompt's section that runs it where the prompt lacks one. It runs after Init and
-// ApplyRunners, reading the worker prompt and the runners they wrote. ok is false where init has
-// nothing to say: the verifier neither chosen nor asked about.
-func ApplyVerifier(repo string, c Choice) (s Step, ok bool, err error) {
+// ApplyRunners, reading the worker prompt and the runners they wrote. It returns no step where init
+// has nothing to say: the verifier neither chosen nor asked about.
+func ApplyVerifier(_ context.Context, repo string, c Choice) ([]Step, error) {
 	const label = "verifier"
 	switch {
-	case c.VerifierUnasked:
-		return Step{Kind: StepKept, Label: label, Detail: "not asked (no terminal): --verifier writes " +
-			VerifierPath + ", a subagent that checks each ticket's change in a fresh context"}, true, nil
+	case c.Unasked.Verifier:
+		return []Step{{Kind: StepKept, Label: label, Detail: "not asked (no terminal): --verifier writes " +
+			VerifierPath + ", a subagent that checks each ticket's change in a fresh context"}}, nil
 	case !c.Verifier:
-		return Step{}, false, nil
+		return nil, nil
 	case !writesSubagents(c.Agent):
-		return Step{Kind: StepCaution, Label: label, Detail: "the workers' agent is " + c.Agent +
-			", and orchestra writes subagents for Claude Code's only: " + VerifierPath + " isn't written"}, true, nil
+		return []Step{{Kind: StepCaution, Label: label, Detail: "the workers' agent is " + c.Agent +
+			", and orchestra writes subagents for Claude Code's only: " + VerifierPath + " isn't written"}}, nil
 	}
 	var did []string
 	var commit []string
@@ -105,17 +106,17 @@ func ApplyVerifier(repo string, c Choice) (s Step, ok bool, err error) {
 	} else {
 		fast, err := runnerSuites(repo, FastRunner)
 		if err != nil {
-			return Step{}, true, err
+			return nil, err
 		}
 		full, err := runnerSuites(repo, FullRunner)
 		if err != nil {
-			return Step{}, true, err
+			return nil, err
 		}
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return Step{}, true, err
+			return nil, err
 		}
 		if err := writeFile(p, []byte(VerifierText(c.Stack, fast, full)), 0o644); err != nil {
-			return Step{}, true, err
+			return nil, err
 		}
 		did = append(did, "wrote "+VerifierPath)
 		commit = append(commit, VerifierPath)
@@ -123,7 +124,7 @@ func ApplyVerifier(repo string, c Choice) (s Step, ok bool, err error) {
 	prompt := filepath.Join(repo, Dir, promptName)
 	text, err := os.ReadFile(prompt)
 	if err != nil {
-		return Step{}, true, err // Init wrote it, or kept the one there
+		return nil, err // Init wrote it, or kept the one there
 	}
 	if usesVerifier(string(text)) {
 		did = append(did, "the worker prompt runs it already")
@@ -133,7 +134,7 @@ func ApplyVerifier(repo string, c Choice) (s Step, ok bool, err error) {
 			t += "\n"
 		}
 		if err := writeFile(prompt, []byte(t+verifierSection), 0o644); err != nil {
-			return Step{}, true, err
+			return nil, err
 		}
 		did = append(did, "the worker prompt has workers run it before they close a ticket")
 	}
@@ -141,5 +142,5 @@ func ApplyVerifier(repo string, c Choice) (s Step, ok bool, err error) {
 	if len(commit) == 0 && usesVerifier(string(text)) {
 		kind = StepKept
 	}
-	return Step{Kind: kind, Label: label, Detail: strings.Join(did, "; "), Commit: commit}, true, nil
+	return []Step{{Kind: kind, Label: label, Detail: strings.Join(did, "; "), Commit: commit}}, nil
 }

@@ -88,7 +88,7 @@ func TestTheScoutStartsWhenStage2IsReached(t *testing.T) {
 		return fourSuites, nil
 	}
 	c := project.Choice{Union: true}
-	term := askChecks(t, &c, Ask{Union: true, Check: true, Scout: scout})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Union: true, Check: true}, Scout: scout})
 	term.waitFor(t, onUnion)
 	select {
 	case <-started:
@@ -122,7 +122,7 @@ func TestTheChoiceStartsOnUseThemWithSuitesAndOnScratchWithout(t *testing.T) {
 			"> Create from scratch with the create-check-suite skill", "The scout found no suites. No manifest, no CI."},
 	} {
 		c := project.Choice{}
-		term := askChecks(t, &c, Ask{Check: true, Scout: finds(tc.found, nil)})
+		term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(tc.found, nil)})
 		term.typeSteps(t, []keysOn{{onChoice, ""}, {tc.starts, ""}, {tc.because, "\x03"}})
 		_ = term.end(t)
 	}
@@ -141,7 +141,7 @@ func TestUseThemAsTheyAreWritesTheSuitesTicked(t *testing.T) {
 			[]string{"npm run integration"}},
 	} {
 		c := project.Choice{}
-		term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
+		term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(fourSuites, nil)})
 		term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, tc.fastKeys}, {onFull, "\r"},
 			{onUntested, "\r"}})
 		if err := term.end(t); err != nil {
@@ -174,7 +174,7 @@ func TestUseThemAsTheyAreWritesTheSuitesTicked(t *testing.T) {
 
 func TestUseThemAsTheyAreCanFileTicketsForUntestedAreas(t *testing.T) {
 	c := project.Choice{}
-	term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(fourSuites, nil)})
 	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "y"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestUseThemAsTheyAreCanFileTicketsForUntestedAreas(t *testing.T) {
 
 func TestCreateFromScratchWritesRunnersThatCheckNothing(t *testing.T) {
 	c := project.Choice{}
-	term := askChecks(t, &c, Ask{Check: true, Timeout: true, FullTimeout: true,
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true, Timeout: true, FullTimeout: true},
 		Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil)})
 	term.typeSteps(t, []keysOn{{onScratch, "\r"}, {onTimeout, "\r"}, {onFullTime, "\x7f\x7f\x7f90m\r"}})
 	if err := term.end(t); err != nil {
@@ -216,7 +216,7 @@ func TestManualWritesTheCommandTyped(t *testing.T) {
 		{"", []string{}}, // a runner that checks nothing
 	} {
 		c := project.Choice{Fast: &[]project.Suite{{Command: "make old"}}}
-		term := askChecks(t, &c, Ask{Check: true, Scout: finds(fourSuites, nil)})
+		term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(fourSuites, nil)})
 		term.typeSteps(t, []keysOn{{onFound, down + down + "\r"},
 			{onCheck, "\x15" + tc.typed + "\r"}}) // Ctrl+U clears what is there
 		if err := term.end(t); err != nil {
@@ -234,7 +234,7 @@ func TestManualWritesTheCommandTyped(t *testing.T) {
 func TestAScoutThatFailsLandsOnManualWithWhy(t *testing.T) {
 	c := project.Choice{}
 	failed := &organ.ScoutError{Failure: organ.ScoutTimedOut, Err: errors.New("timed out after 5m")}
-	term := askChecks(t, &c, Ask{Check: true, Scout: finds(organ.Scouting{}, failed)})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)})
 	term.typeSteps(t, []keysOn{{"The scout timed out after 5m.", ""}, {onManual, "\r"}, {onCheck, "make check\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestEscSkipsTheScoutForManual(t *testing.T) {
 		return organ.Scouting{}, ctx.Err()
 	}
 	c := project.Choice{}
-	term := askChecks(t, &c, Ask{Check: true, Scout: scout})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: scout})
 	term.typeSteps(t, []keysOn{{onScouting, "\x1b"}, {"The search was skipped with Esc.", ""}, {onManual, "\r"},
 		{onCheck, "make check\r"}})
 	if err := term.end(t); err != nil {
@@ -274,7 +274,7 @@ func TestCtrlCWhileTheScoutLooksCancelsAndStopsIt(t *testing.T) {
 		return organ.Scouting{}, ctx.Err()
 	}
 	c := project.Choice{}
-	term := askChecks(t, &c, Ask{Check: true, Scout: scout})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true}, Scout: scout})
 	term.typeSteps(t, []keysOn{{onScouting, "\x03"}})
 	if err := term.end(t); err == nil {
 		t.Fatal("Ctrl+C while the scout looks: the form went on")
@@ -293,7 +293,7 @@ func TestKeepOrReplaceARunnerThatDiffers(t *testing.T) {
 		replace bool
 	}{{"\r", false}, {down + "\r", true}} {
 		c := project.Choice{}
-		ask := Ask{Check: true, Scout: finds(fourSuites, nil),
+		ask := Ask{Questions: project.Questions{Check: true}, Scout: finds(fourSuites, nil),
 			Runners: []project.Runner{{Path: project.FastRunner, Script: old, Exists: true}}}
 		term := askChecks(t, &c, ask)
 		term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
@@ -312,7 +312,7 @@ func TestARunnerThatIsTheSameIsntAskedAbout(t *testing.T) {
 	same := project.FastScript([]project.Suite{{Name: "check", Command: "scripts/check.sh", FoundIn: "scripts/check.sh:1"},
 		{Name: "unit tests", Command: "npm test", FoundIn: "package.json:7"}})
 	c := project.Choice{}
-	ask := Ask{Check: true, Timeout: true, Scout: finds(fourSuites, nil),
+	ask := Ask{Questions: project.Questions{Check: true, Timeout: true}, Scout: finds(fourSuites, nil),
 		Runners: []project.Runner{{Path: project.FastRunner, Script: same, Exists: true}}}
 	term := askChecks(t, &c, ask)
 	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
@@ -327,7 +327,7 @@ func TestARunnerThatIsTheSameIsntAskedAbout(t *testing.T) {
 
 func TestKeepOrReplaceTheSkillThatDiffers(t *testing.T) {
 	c := project.Choice{}
-	ask := Ask{Check: true, Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil),
+	ask := Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil),
 		Skill: project.SkillPlan{Dir: ".claude/skills/create-check-suite", Exists: true, Differs: true}}
 	term := askChecks(t, &c, ask)
 	term.typeSteps(t, []keysOn{{onScratch, "\r"},
@@ -346,7 +346,7 @@ func TestAccessibleStage2SaysWhatTheScoutFound(t *testing.T) {
 	var out strings.Builder
 	failed := &organ.ScoutError{Failure: organ.ScoutNoClaude, Err: errors.New("claude not found")}
 	// The choice: Manual, the default; the check command.
-	if err := AskInit(typed("3", "make check"), &out, &c, Ask{Check: true, Scout: finds(organ.Scouting{}, failed)}); err != nil {
+	if err := AskInit(typed("3", "make check"), &out, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)}); err != nil {
 		t.Fatal(err)
 	}
 	screen := ansi.Strip(out.String())

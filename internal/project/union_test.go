@@ -13,7 +13,7 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 	if OffersUnion(context.Background(), repo) {
 		t.Error("offered without a CHANGELOG.md")
 	}
-	if _, ok, err := ApplyUnion(context.Background(), repo, Choice{Union: true}); ok || err != nil {
+	if _, ok, err := oneStep(t, ApplyUnion, repo, Choice{Union: true}); ok || err != nil {
 		t.Errorf("no CHANGELOG.md: ok = %v, err = %v", ok, err)
 	}
 
@@ -27,17 +27,17 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 	if !OffersUnion(context.Background(), repo) {
 		t.Fatal("not offered for a CHANGELOG.md without merge=union")
 	}
-	for _, c := range []Choice{{UnionUnasked: true}, {}} {
-		s, ok, err := ApplyUnion(context.Background(), repo, c)
+	for _, c := range []Choice{{Unasked: Questions{Union: true}}, {}} {
+		s, ok, err := oneStep(t, ApplyUnion, repo, c)
 		if !ok || err != nil || read(t, attrs) != "*.png binary" {
 			t.Errorf("%+v: ok = %v, err = %v, .gitattributes = %q", c, ok, err, read(t, attrs))
 		}
-		if c.UnionUnasked && (s.Kind != StepCaution || !strings.Contains(s.Detail, "--changelog-union")) {
+		if c.Unasked.Union && (s.Kind != StepCaution || !strings.Contains(s.Detail, "--changelog-union")) {
 			t.Errorf("unasked: %+v", s)
 		}
 	}
 
-	s, ok, err := ApplyUnion(context.Background(), repo, Choice{Union: true})
+	s, ok, err := oneStep(t, ApplyUnion, repo, Choice{Union: true})
 	if !ok || err != nil || s.Kind != StepDone {
 		t.Fatalf("chosen: %+v, ok = %v, err = %v", s, ok, err)
 	}
@@ -47,7 +47,7 @@ func TestApplyUnionOnlyAddsTheLineWhenChosen(t *testing.T) {
 	if OffersUnion(context.Background(), repo) {
 		t.Error("offered again once .gitattributes has the line")
 	}
-	if s, _, _ := ApplyUnion(context.Background(), repo, Choice{Union: true}); s.Kind != StepKept || strings.Count(read(t, attrs), "merge=union") != 1 {
+	if s, _, _ := oneStep(t, ApplyUnion, repo, Choice{Union: true}); s.Kind != StepKept || strings.Count(read(t, attrs), "merge=union") != 1 {
 		t.Errorf("second run: %+v, .gitattributes = %q", s, read(t, attrs))
 	}
 	if next := strings.Join(NextSteps(context.Background(), repo, nil, nil, Choice{}, ""), "\n"); !strings.Contains(next, "Commit .gitattributes.") {

@@ -14,7 +14,7 @@ import (
 func TestASelectLeftShowsItsAnswerTicked(t *testing.T) {
 	c := project.Choice{Concurrent: 1, Servers: testServers}
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(in, out, &c, Ask{Concurrent: true, MCP: true})
+		return AskInit(in, out, &c, Ask{Questions: project.Questions{Concurrent: true, MCP: true}})
 	})
 	term.waitFor(t, "> 1  · one at a time")
 	term.waitFor(t, "exa  · user scope")

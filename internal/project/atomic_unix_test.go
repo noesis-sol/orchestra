@@ -155,7 +155,7 @@ func TestFailedWritesKeepTheProjectsFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	readOnly(t, repo)
-	if _, _, err := ApplyUnion(context.Background(), repo, Choice{Union: true}); err == nil {
+	if _, err := ApplyUnion(context.Background(), repo, Choice{Union: true}); err == nil {
 		t.Error("ApplyUnion: no error in a read-only folder")
 	}
 	if got := read(t, attrs); got != "*.png binary\n" {

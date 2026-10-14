@@ -22,7 +22,7 @@ func TestTheVerifierIsAskedWithTheStackTheScoutFound(t *testing.T) {
 		found := fourSuites
 		found.Stack = []string{"TypeScript 5", "Playwright"}
 		c := project.Choice{Verifier: true} // offered as yes
-		term := askChecks(t, &c, Ask{Check: true, Verifier: true, Scout: finds(found, nil)})
+		term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true, Verifier: true}, Scout: finds(found, nil)})
 		term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
 			{"It is told the stack: TypeScript 5, Playwright.", ""}, {onVerifier, tc.key}})
 		if err := term.end(t); err != nil {
@@ -37,7 +37,7 @@ func TestTheVerifierIsAskedWithTheStackTheScoutFound(t *testing.T) {
 // With no scouting, the verifier is still asked, with no stack to name.
 func TestTheVerifierIsAskedWithoutTheScout(t *testing.T) {
 	c := project.Choice{Verifier: true}
-	term := askChecks(t, &c, Ask{Check: true, Verifier: true, Scout: finds(organ.Scouting{}, errors.New("no claude"))})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true, Verifier: true}, Scout: finds(organ.Scouting{}, errors.New("no claude"))})
 	term.typeSteps(t, []keysOn{{onManual, "\r"}, {onCheck, "make check\r"}, {onVerifier, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)

@@ -34,7 +34,7 @@ func TestAccessibleScoutDropsControlSequences(t *testing.T) {
 		{"error", organ.Scouting{}, &organ.ScoutError{Failure: organ.ScoutFailed, Err: errors.New("Fix " + hostile + "it")}},
 	} {
 		stage := &initStage{}
-		addChecks(stage, &project.Choice{}, Ask{Check: true, Scout: finds(tc.found, tc.err)}, true)
+		addChecks(stage, &project.Choice{}, Ask{Questions: project.Questions{Check: true}, Scout: finds(tc.found, tc.err)}, true)
 		var out strings.Builder
 		if err := stage.fields[0].RunAccessible(&out, strings.NewReader("")); err != nil {
 			t.Fatal(err)
@@ -47,7 +47,7 @@ func TestAccessibleScoutDropsControlSequences(t *testing.T) {
 // writes the suite's command as the scout gave it.
 func TestScoutFormDropsControlSequences(t *testing.T) {
 	c := project.Choice{Verifier: true}
-	term := askChecks(t, &c, Ask{Check: true, Verifier: true, Scout: finds(hostileScouting, nil)})
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true, Verifier: true}, Scout: finds(hostileScouting, nil)})
 	term.typeSteps(t, []keysOn{{"The scout found 1 suite. Fix it.", ""},
 		{onFound, "\r"}, {"npm test  · unit tests · package.json · needs db", "\r"},
 		{onUntested, "\r"}, {"It is told the stack: TypeScript.", ""}, {onVerifier, "\r"}})

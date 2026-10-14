@@ -136,7 +136,7 @@ func installBd(
 	switch {
 	case in.Command == "":
 		return missing("not installed, and orchestra can't install it here; install it " + in.Manual)
-	case c.InstallUnasked:
+	case c.Unasked.Install:
 		return missing("not installed; not asked (no terminal): --install-beads installs it with " + in.Method +
 			" (" + in.Command + ")")
 	case !c.InstallBeads:

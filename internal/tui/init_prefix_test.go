@@ -27,7 +27,9 @@ func TestEnterKeepsTheTicketPrefix(t *testing.T) {
 		"new Beads": {Prefix: "orchestra", PrefixWas: "orchestra", PrefixNew: true},
 		"existing":  existingPrefix(),
 	} {
-		term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(in, out, &c, Ask{Prefix: true}) })
+		term := askOn(t, func(in io.Reader, out io.Writer) error {
+			return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+		})
 		term.waitFor(t, onPrefix)
 		term.waitFor(t, "orchestra")
 		term.typeKeys(t, "\r")
@@ -46,7 +48,9 @@ func TestEnterKeepsTheTicketPrefix(t *testing.T) {
 func TestChangingTheTicketPrefixAsksToRenameTheTickets(t *testing.T) {
 	for _, answer := range []string{"y", "n"} {
 		c := existingPrefix()
-		term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(in, out, &c, Ask{Prefix: true}) })
+		term := askOn(t, func(in io.Reader, out io.Writer) error {
+			return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+		})
 		term.typeSteps(t, []keysOn{
 			{onPrefix, ctrlU + "orc-"},
 			{"orc-", "\r"},
@@ -63,7 +67,9 @@ func TestChangingTheTicketPrefixAsksToRenameTheTickets(t *testing.T) {
 
 func TestTheFormRefusesAnInvalidTicketPrefix(t *testing.T) {
 	c := project.Choice{Prefix: "orchestra", PrefixWas: "orchestra", PrefixNew: true}
-	term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(in, out, &c, Ask{Prefix: true}) })
+	term := askOn(t, func(in io.Reader, out io.Writer) error {
+		return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+	})
 	term.typeSteps(t, []keysOn{
 		{onPrefix, ctrlU + "Orc"},
 		{"Orc", "\r"},
@@ -83,7 +89,9 @@ func TestTheFormRefusesAnInvalidTicketPrefix(t *testing.T) {
 func TestTheFormKeepsTheTicketPrefixWhileTheTicketsCantBeRenamed(t *testing.T) {
 	c := existingPrefix()
 	c.PrefixRefusal = "the last run left workers on orchestra-a1 (in .orchestra/run/state.json)"
-	term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(in, out, &c, Ask{Prefix: true}) })
+	term := askOn(t, func(in io.Reader, out io.Writer) error {
+		return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+	})
 	term.typeSteps(t, []keysOn{
 		{"It stays orchestra for now", ctrlU + "orc"},
 		{"orc", "\r"},
@@ -111,7 +119,7 @@ func TestAccessibleFormAsksForTheTicketPrefix(t *testing.T) {
 	} {
 		c := existingPrefix()
 		var out strings.Builder
-		if err := AskInit(typed(tc.answers...), &out, &c, Ask{Prefix: true}); err != nil {
+		if err := AskInit(typed(tc.answers...), &out, &c, Ask{Questions: project.Questions{Prefix: true}}); err != nil {
 			t.Fatalf("%v: %v\n%s", tc.answers, err, out.String())
 		}
 		if c.Prefix != tc.prefix || c.RenamePrefix != tc.rename {

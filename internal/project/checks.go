@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -352,7 +353,7 @@ func RunnerCommands(script string) []string {
 
 // ApplyRunners writes the choice's runners, mode 755, keeping one that differs from what init would
 // write unless the choice replaces it, and says what it did.
-func ApplyRunners(repo string, c Choice) ([]Step, error) {
+func ApplyRunners(_ context.Context, repo string, c Choice) ([]Step, error) {
 	runners, err := PlanRunners(repo, c)
 	if err != nil {
 		return nil, err
