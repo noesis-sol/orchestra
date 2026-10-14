@@ -19,6 +19,8 @@ type fakeAgent struct {
 	name, kind, pane string
 	status           AgentState
 	prompted         bool
+	boxed            bool // its prompt sits in its input box, not submitted (see enterLate)
+	entered          bool // Enter was pressed on it, and it starts as WaitStarted gives up
 	late             bool // Herdr doesn't see it yet: adoption gives up, and the next pane read misses it
 }
 
@@ -47,6 +49,7 @@ type fakeHerdr struct {
 	labelFails   bool                   // TabLabel fails, as when Herdr is busy
 	launchFails  map[string]bool        // LaunchInPane fails for these tickets
 	promptFails  map[string]bool        // pasting the prompt never submits it
+	enterLate    map[string]bool        // a pasted prompt stays in the box; Enter starts it just after WaitStarted gives up
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
 	launchSlow   map[string]bool        // the worker LaunchInPane starts appears only after the adoption gives up
 	onAdopt      func(id string)        // called with the ticket's ID as AdoptAgent begins, where a test presses Ctrl+C; nil: none
@@ -63,7 +66,7 @@ type fakeHerdr struct {
 
 func newFakeHerdr(t *testing.T, beads *fakeBeads) *fakeHerdr {
 	return &fakeHerdr{t: t, beads: beads, panes: map[string]fakePane{}, labels: map[string]string{}, behaviours: map[string][]behaviour{}, args: map[string][][]string{},
-		launchFails: map[string]bool{}, promptFails: map[string]bool{}, startUnnamed: map[string]bool{},
+		launchFails: map[string]bool{}, promptFails: map[string]bool{}, enterLate: map[string]bool{}, startUnnamed: map[string]bool{},
 		launchSlow: map[string]bool{}, launchLost: map[string]bool{}, resumeDrops: map[string]bool{}, showsAs: map[string]AgentState{}, statusHangs: map[string]bool{}}
 }
 
@@ -349,7 +352,15 @@ func (h *fakeHerdr) Status(ctx context.Context, name string) (AgentState, error)
 	return StateGone, nil
 }
 
-func (h *fakeHerdr) Screen(ctx context.Context, name string, state AgentState) string { return "" }
+// Screen shows the agent's input box holding its prompt while it is boxed, and nothing else.
+func (h *fakeHerdr) Screen(ctx context.Context, name string, state AgentState) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a := h.agent(name); a != nil && a.boxed {
+		return "❯ [Pasted text #1 +3 lines]\n────"
+	}
+	return ""
+}
 
 // Prompt starts the worker on its prompt and returns, as Herdr's does once it sees the worker
 // working, after promptTakes.
@@ -382,15 +393,32 @@ func (h *fakeHerdr) submit(name, prompt string) error {
 	if h.promptFails[h.panes[a.pane].ticket] {
 		return errors.New("herdr agent prompt: the agent did not start")
 	}
+	if h.enterLate[h.panes[a.pane].ticket] {
+		a.boxed = true
+		return errors.New("herdr agent prompt: the agent did not start")
+	}
 	h.prompt(a)
 	return nil
 }
 
-func (h *fakeHerdr) SendKeys(ctx context.Context, name string, keys ...string) error { return nil }
+// SendKeys presses Enter on a boxed prompt, which the agent starts on only as WaitStarted gives up.
+func (h *fakeHerdr) SendKeys(ctx context.Context, name string, keys ...string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a := h.agent(name); a != nil && a.boxed && slices.Contains(keys, "enter") {
+		a.entered = true
+	}
+	return nil
+}
 
 func (h *fakeHerdr) WaitStarted(ctx context.Context, name string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	a := h.agent(name)
+	if a != nil && a.entered {
+		a.boxed, a.entered = false, false
+		h.prompt(a) // a moment too late
+		return false
+	}
 	return a != nil && a.prompted
 }

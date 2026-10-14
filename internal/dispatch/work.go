@@ -86,9 +86,36 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 					id, earlier.tab, earlier.told())
 				return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
 			}
+			if ctx.Err() != nil {
+				return errInterrupted
+			}
+			// Not seen to take it up, it may have all the same, as when Herdr lost sight of it or it
+			// started just after Enter was pressed: one at work now is adopted, as its branch must not
+			// be rebased under it; only one still idle, or gone, is replaced.
+			st, err = o.earlierKnownState(ctx, id, earlier)
+			if ctx.Err() != nil {
+				return errInterrupted
+			}
+			if err != nil {
+				return halt(ExitTool, stopTerminalFailed,
+					": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
+			}
+			switch st {
+			case StateWorking, StateBlocked, StateUnknown:
+				o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
+					id, earlier.tab, st, earlier.told())
+				return o.adopt(ctx, t, agent, earlier, st, adopted, how)
+			case StateGone:
+				o.info("  %s's earlier worker in tab %s has gone; starting a new one", id, earlier.tab)
+			default:
+				o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
+			}
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
+		}
+		if st == StateGone {
+			break // no name to free
 		}
 		name := o.namer.FreeName(ctx, agent)
 		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
@@ -332,7 +359,7 @@ func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool
 		return true
 	}
 	if ctx.Err() == nil {
-		o.log.Raw("", fmt.Errorf("%s's earlier worker in tab %s did not take up being told %s; starting a new one",
+		o.log.Raw("", fmt.Errorf("%s's earlier worker in tab %s did not take up being told %s",
 			id, w.tab, w.told()))
 	}
 	return false

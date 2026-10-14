@@ -31,6 +31,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+### Fixed
+
+- A ticket back from a question whose earlier worker, told the answer is in,
+  wasn't seen to take that up is read again: one working by then, as when
+  it started just after Herdr gave up waiting, is adopted rather than
+  renamed with a second worker started on its rebased branch.
 - A ticket that asked a question earlier in the run, and whose worker, once
   it was answered, found it needs a ticket not merged yet, runs again once
   that ticket merges, as WAITS_FOR_MERGE says, rather than staying out of the
