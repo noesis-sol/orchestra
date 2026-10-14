@@ -1,7 +1,7 @@
 // Package tmux is orchestra's adapter for tmux, the terminal workers run in where Herdr isn't: a
 // worker's tab is a tmux window, named with its ticket's ID, and its agent the Claude Code session
 // launched in the window's pane. tmux can't tell what a session is doing, as Herdr reads it from the
-// screen: the session's hooks tell it (claude.State), and tmux whether its process is still there.
+// screen: the session's hooks tell it (hookterm.AgentUI), and tmux whether its process is still there.
 package tmux
 
 import (
@@ -43,7 +43,7 @@ type Terminal struct {
 const (
 	agentOption   = "@orchestra-agent"   // the agent's name, the ticket's ID
 	kindOption    = "@orchestra-kind"    // the kind launched there, such as claude
-	recordsOption = "@orchestra-records" // the folder its hooks write their records to (claude.Records)
+	recordsOption = "@orchestra-records" // the folder its hooks write their records to (AgentUI.Records)
 	repoOption    = "@orchestra-repo"    // the repository of the run that named it (Terminal.Repo)
 	pidOption     = "@orchestra-pid"     // the process ID of what orchestra launched there, its pane_pid then
 )

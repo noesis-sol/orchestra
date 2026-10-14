@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -34,23 +33,23 @@ func (t Terminal) agentSurface(name string) (string, surfaceEntry, bool, error) 
 // state is the state of the agent the book has in surface id: gone once cmux has no such surface,
 // once nothing was launched there, once its session ended, or once the process the launch started
 // is no longer in its workspace (killed, crashed, or ended by cmux quitting, none of which runs a
-// hook); otherwise what its hooks tell, read with its visible screen (claude.Hooks.Settle). A process
+// hook); otherwise what its hooks tell, read with its visible screen (the AgentUI of its kind). A process
 // cmux can't list, or hasn't yet, is taken to be there.
 func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) dispatch.AgentState {
 	ws, open := l.workspaces[key(id)]
 	if !open || e.Kind == "" {
 		return dispatch.StateGone
 	}
-	h := claude.ReadHooks(e.Records, e.Dir)
-	if h.State == dispatch.StateGone {
-		return h.State
+	told, settle := hookterm.UI(e.Kind).Read(e.Records, e.Dir)
+	if told == dispatch.StateGone {
+		return told
 	}
 	if pid, at, ok := t.launched(id); ok {
 		if alive, err := t.running(ctx, ws, pid, at); err == nil && !alive {
 			return dispatch.StateGone
 		}
 	}
-	return h.Settle(func() (string, error) { return t.readScreen(ctx, ws, id, true) })
+	return settle(func() (string, error) { return t.readScreen(ctx, ws, id, true) })
 }
 
 // running reports whether process pid, launched at since, runs in the workspace, as cmux's top lists

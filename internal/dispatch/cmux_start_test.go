@@ -14,6 +14,7 @@ func TestStartSaysCmuxWorkersHaveWorkspacesOfTheirOwn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		h.cfg.Terminal, h.cfg.Workspace = project.TerminalCmux, ""
+		h.cfg.TerminalLabels = terminalLabels
 		h.beads.add("A", "first", 1)
 		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); w.close(); return "idle" })
 		h.run()

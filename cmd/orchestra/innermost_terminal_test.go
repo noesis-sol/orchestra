@@ -43,12 +43,12 @@ func TestPickTerminalInnermost(t *testing.T) {
 			asked := ""
 			got, problem := pickTerminal(project.TerminalAuto, func(k string) string { return tc.env[k] },
 				func(cmd string) bool { return cmd != "tmux" || tc.tmux },
-				func(pane string) bool { asked = pane; return tc.own })
+				func(k terminalKind) bool { asked = k.name; return tc.own })
 			if got != tc.want || problem != "" {
 				t.Errorf("got %q, problem %q; want %q", got, problem, tc.want)
 			}
-			if want := map[bool]string{true: "w1:p1"}[tc.asked]; asked != want {
-				t.Errorf("asked about Herdr pane %q, want %q", asked, want)
+			if want := map[bool]string{true: project.TerminalHerdr}[tc.asked]; asked != want {
+				t.Errorf("asked whether orchestra runs in a pane of %q, want %q", asked, want)
 			}
 		})
 	}
@@ -74,11 +74,13 @@ func herdrForeground(t *testing.T, group int, pids ...int) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// orchestra runs in a Herdr pane when its process group is in the pane's foreground, or Herdr names
-// its process there; not when another program, a tmux client say, is, nor when Herdr doesn't have the
-// pane or answer.
+// orchestra runs in the Herdr pane HERDR_PANE_ID names when its process group is in the pane's
+// foreground, or Herdr names its process there; not when another program, a tmux client say, is, nor
+// when Herdr doesn't have the pane or answer.
 func TestOwnHerdrPane(t *testing.T) {
-	own := ownHerdrPane(t.Context())
+	own := func(pane string) bool {
+		return ownHerdrPane(t.Context(), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
+	}
 	herdrForeground(t, processGroup(), processGroup())
 	if !own("w1:p1") {
 		t.Error("orchestra's group in the foreground: not its pane")

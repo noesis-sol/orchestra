@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
@@ -96,7 +95,7 @@ var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh"
 
 // state is the state of the agent in the pane p: gone once its process exited (the pane dead), its
 // session ended or a pane orchestra's launch no longer runs is back at a shell; otherwise what its
-// hooks tell, read with its visible screen (claude.Hooks.Settle).
+// hooks tell, read with its visible screen (the AgentUI of its kind).
 // A shell counts only once a hook ran: as the agent starts, the shell that runs it shows for a moment.
 // Nor does it count in a pane whose process is the one orchestra launched: that runs the agent through
 // exec, and ends dead; a shell there is a wrapper script that runs the agent as its child, which tmux
@@ -105,14 +104,14 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if p.dead || p.kind == "" {
 		return dispatch.StateGone
 	}
-	h := claude.ReadHooks(p.records, p.dir)
+	told, settle := hookterm.UI(p.kind).Read(p.records, p.dir)
 	switch {
-	case h.State == dispatch.StateGone:
-		return h.State
-	case h.State != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
+	case told == dispatch.StateGone:
+		return told
+	case told != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
 		return dispatch.StateGone
 	}
-	return h.Settle(func() (string, error) { return t.capture(ctx, p.id, true) })
+	return settle(func() (string, error) { return t.capture(ctx, p.id, true) })
 }
 
 // capture reads the pane's screen: its last dispatch.ScreenLines lines, or only those of the visible

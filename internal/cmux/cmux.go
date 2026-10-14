@@ -2,7 +2,7 @@
 // agents that a CLI controls through a socket: a worker's tab is a cmux workspace of its own, named
 // with its ticket's ID, and its pane the workspace's terminal surface, where its Claude Code session
 // runs. cmux can't tell what a session is doing, as Herdr reads it from the screen: the session's
-// hooks tell it (claude.State), and cmux whether a claude process still runs in the surface.
+// hooks tell it (hookterm.AgentUI), and cmux whether a claude process still runs in the surface.
 //
 // Every workspace and surface is addressed by its UUID (--id-format uuids), never by a short ref
 // such as workspace:2: before cmux 0.65.0 (manaflow-ai/cmux#13633) short refs were numbered afresh

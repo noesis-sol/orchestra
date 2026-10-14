@@ -41,7 +41,7 @@ func settle(t *testing.T, args []string, env map[string]string, settings string)
 // settings.json where it has one, over its default.
 func TestPrecedence(t *testing.T) {
 	terminal := func(c options, s project.Settings) any {
-		got, err := project.ResolveTerminal(c.terminalAsked, s)
+		got, err := project.ResolveTerminal(c.terminalAsked, s, terminalChoices())
 		if err != nil {
 			return err
 		}

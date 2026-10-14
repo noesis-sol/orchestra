@@ -28,6 +28,9 @@ func TestStartRunSaysWhereToStartFrom(t *testing.T) {
 	}
 }
 
+// terminals are the choices a run gives ResolveTerminal (cmd/orchestra's terminalChoices).
+var terminals = []string{TerminalHerdr, TerminalTmux, TerminalCmux, TerminalAuto}
+
 func TestResolveTerminal(t *testing.T) {
 	for _, tc := range []struct {
 		flag, setting, want string
@@ -40,7 +43,7 @@ func TestResolveTerminal(t *testing.T) {
 		{"screen", "", "", true},
 		{"", "screen", "", true},
 	} {
-		got, err := ResolveTerminal(tc.flag, Settings{Terminal: tc.setting})
+		got, err := ResolveTerminal(tc.flag, Settings{Terminal: tc.setting}, terminals)
 		if got != tc.want || (err != nil) != tc.err {
 			t.Errorf("flag %q, setting %q: %q %v, want %q (an error: %v)", tc.flag, tc.setting, got, err, tc.want, tc.err)
 		}

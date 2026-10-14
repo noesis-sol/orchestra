@@ -19,7 +19,7 @@ func TestWorkerLeftInTheOtherTerminalIsKeptForARunInIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		h.cfg.Check = "true"
-		h.cfg.Terminal = project.TerminalTmux
+		h.cfg.Terminal, h.cfg.TerminalLabels = project.TerminalTmux, terminalLabels
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
 		h.beads.link("B", "A", "blocks")
@@ -87,6 +87,7 @@ func TestRunSaysHowToSeeWorkersOutOfSight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		h.cfg.Terminal, h.cfg.Workspace = project.TerminalTmux, "orchestra-app"
+		h.cfg.TerminalLabels = terminalLabels
 		h.cfg.Watch = "tmux attach -t orchestra-app"
 		h.beads.add("A", "first", 1)
 		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })

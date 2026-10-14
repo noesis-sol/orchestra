@@ -408,28 +408,31 @@ func because(err error) string {
 
 // Config is what a run needs to know.
 type Config struct {
-	Repo         string
-	Base         string // branch finished tickets are merged into
-	Workspace    string // Herdr workspace or tmux session for the worker tabs; none under cmux
-	Terminal     string // what workers run in, project.TerminalHerdr, TerminalTmux or TerminalCmux; "" is Herdr
-	Watch        string // how to see the workers' tabs from elsewhere (tmux attach -t …); "" if in sight
-	Limit        int
-	DoneSoFar    int
-	AgentKind    string
-	WTRoot       string
-	LogPath      string
-	ReportsDir   string
-	LaunchPrompt bool          // give Claude workers their prompt at launch instead of pasting it
-	Concurrency  int           // tickets worked on at the same time
-	TicketLimit  time.Duration // a worker still going this long after dispatch stops the run; 0 for none
-	Check        string        // the project's merge check (check_fast), from .orchestra/settings.json
-	CheckTimeout time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
-	Version      string        // orchestra's version, for the log
-	NoFootprint  bool          // start tickets side by side even when their footprints overlap
-	Predict      bool          // have the predictor organ guess the files of ready tickets naming none
-	Ticket       string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
-	Feature      string        // the feature request (--feature) Ticket, its epic, was planned from; "" for none
-	ExcludeTypes []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
+	Repo      string
+	Base      string // branch finished tickets are merged into
+	Workspace string // Herdr workspace or tmux session for the worker tabs; none under cmux
+	Terminal  string // what workers run in, project.TerminalHerdr, TerminalTmux or TerminalCmux; "" is Herdr
+	// TerminalLabels are how the log names each terminal, by its name (Terminal's): the run's and those
+	// workers left for a run elsewhere ran in.
+	TerminalLabels map[string]TerminalLabel
+	Watch          string // how to see the workers' tabs from elsewhere (tmux attach -t …); "" if in sight
+	Limit          int
+	DoneSoFar      int
+	AgentKind      string
+	WTRoot         string
+	LogPath        string
+	ReportsDir     string
+	LaunchPrompt   bool          // give Claude workers their prompt at launch instead of pasting it
+	Concurrency    int           // tickets worked on at the same time
+	TicketLimit    time.Duration // a worker still going this long after dispatch stops the run; 0 for none
+	Check          string        // the project's merge check (check_fast), from .orchestra/settings.json
+	CheckTimeout   time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
+	Version        string        // orchestra's version, for the log
+	NoFootprint    bool          // start tickets side by side even when their footprints overlap
+	Predict        bool          // have the predictor organ guess the files of ready tickets naming none
+	Ticket         string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
+	Feature        string        // the feature request (--feature) Ticket, its epic, was planned from; "" for none
+	ExcludeTypes   []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
 	// CheckFull is every check (check_full), from .orchestra/settings.json, run once at the end of a
 	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.
 	CheckFull        string
@@ -467,6 +470,24 @@ type Config struct {
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.
 	MCP *[]mcp.Server
+}
+
+// TerminalLabel is how a run's log names a terminal and the place of its workers' tabs.
+type TerminalLabel struct {
+	Name  string // the terminal, as the log says it: Herdr, tmux
+	Tabs  string // the place of the workers' tabs, as the START line calls Workspace: workspace, session
+	Where string // what the START line says in Workspace's place, for a terminal with none; "" for Workspace
+}
+
+// terminalLabel is how the log names the terminal t: as TerminalLabels has it, else by its name, its
+// tabs in a workspace.
+func (c Config) terminalLabel(t string) TerminalLabel {
+	for name, l := range c.TerminalLabels {
+		if project.SameTerminal(name, t) {
+			return l
+		}
+	}
+	return TerminalLabel{Name: t, Tabs: "workspace"}
 }
 
 // ClaudeWorkers reports whether the workers are Claude Code agents (AgentKind claude), which alone

@@ -39,7 +39,7 @@ func TestPickTerminal(t *testing.T) {
 				return ""
 			}
 			has := func(cmd string) bool { return strings.Contains(strings.Join(tc.installed, " "), cmd) }
-			got, problem := pickTerminal(tc.choice, getenv, has, func(string) bool { return true })
+			got, problem := pickTerminal(tc.choice, getenv, has, func(terminalKind) bool { return true })
 			if got != tc.want || (problem != "") != tc.problem {
 				t.Errorf("got %q, problem %q; want %q, a problem: %v", got, problem, tc.want, tc.problem)
 			}

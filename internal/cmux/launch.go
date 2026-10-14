@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // launchDir is the folder beside the book where a surface's launch script, and the process ID of
@@ -72,7 +72,7 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	if err := os.WriteFile(path, []byte(script.String()), 0o600); err != nil {
 		return fmt.Errorf("cannot write the command for cmux surface %s: %w", surface, err)
 	}
-	records, _ := claude.RecordsOf(args) // "" when launched without hooks
+	records, _ := hookterm.UI(kind).Records(args) // "" when launched without hooks
 	if err := t.edit(func(b *book) error {
 		e := b.Surfaces[key(surface)]
 		e.Kind, e.Records = kind, records

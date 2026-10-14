@@ -74,17 +74,8 @@ func (o *Loop) loadCarried(ctx context.Context) {
 	}
 	for _, t := range slices.Sorted(maps.Keys(elsewhere)) {
 		o.info("  kept for a run in %s, as this run in %s can't reach their workers: %s",
-			TerminalName(t), TerminalName(o.cfg.Terminal), strings.Join(elsewhere[t], ", "))
+			o.cfg.terminalLabel(t).Name, o.cfg.terminalLabel(o.cfg.Terminal).Name, strings.Join(elsewhere[t], ", "))
 	}
-}
-
-// TerminalName is the name of the terminal t (project.TerminalHerdr, TerminalTmux, TerminalCmux) as
-// orchestra says it: Herdr for "".
-func TerminalName(t string) string {
-	if project.SameTerminal(t, project.TerminalHerdr) {
-		return "Herdr"
-	}
-	return t
 }
 
 // state is what the worker was left waiting on, for a list of them: "asked Q", or "left running:

@@ -12,6 +12,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/herdr"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tmux"
 )
@@ -27,43 +28,152 @@ import (
 const noTerminal = "No terminal for the workers: run orchestra from a Herdr pane or a cmux terminal, or install " +
 	"tmux (brew install tmux, apt install tmux) to run it anywhere."
 
-// pickTerminal chooses the terminal for choice (project.TerminalHerdr, TerminalTmux, TerminalCmux or
-// TerminalAuto): auto is the terminal orchestra runs in, the innermost first (Herdr in a Herdr pane,
-// tmux in tmux, cmux in a cmux terminal), else tmux when has finds it, else none, and the problem
-// says so. A terminal started from a pane of another copies that one's variables into its own panes:
-// Herdr's (HERDR_ENV=1) beside tmux's or cmux's are those of the terminal orchestra runs in only when
-// ownPane says it runs in the Herdr pane they name (HERDR_PANE_ID), else of a Herdr around the other.
+// terminalKind is a terminal workers run in: its adapter is a package of its own (internal/herdr,
+// internal/tmux, internal/cmux), and a row of terminalKinds tells a run how to choose it, check it and
+// open it, and how the log names it.
+type terminalKind struct {
+	// name is the terminal's, as settings.json's "terminal", --terminal and the run's state file have it.
+	name string
+	// label is how the log names it and the place of its workers' tabs.
+	label dispatch.TerminalLabel
+	// inside reports whether orchestra runs in one of its panes, as its variables in getenv say (has
+	// finds a command on the PATH).
+	inside func(getenv func(string) string, has func(cmd string) bool) bool
+	// depth is how deep the terminal's panes are where terminals run one in another: one started from a
+	// pane of another copies that one's variables into its own panes, so where several terminals'
+	// variables are set orchestra runs in the deepest, unless ownPane says it runs in another's pane.
+	depth int
+	// ownPane reports whether orchestra runs in the terminal's pane that getenv names, where another
+	// terminal's variables are set too; nil for a terminal that can't tell.
+	ownPane func(ctx context.Context, getenv func(string) string) bool
+	// fallback has a run left to auto outside every terminal pick this one when its command is installed.
+	fallback bool
+	// check finds what a run needs in the terminal, in c (see checkTerminal), and returns the problems.
+	check func(ctx context.Context, c *options, getenv func(string) string) []string
+	// hookDriven is a terminal that can't read what an agent is doing from its screen: its workers, the
+	// probe's and the interview's claude report through hooks (hookterm), so only an agent whose sessions
+	// do (hookterm.Reports) runs in it.
+	hookDriven bool
+	// open is the terminal as the run c uses it.
+	open func(c options) workerTerminal
+}
+
+// terminalKinds are the terminals workers run in, in the order a problem lists them: adding one is its
+// package and a row here.
+var terminalKinds = []terminalKind{
+	{
+		name:  project.TerminalHerdr,
+		label: dispatch.TerminalLabel{Name: "Herdr", Tabs: "workspace"},
+		inside: func(getenv func(string) string, _ func(string) bool) bool {
+			return getenv("HERDR_ENV") == "1"
+		},
+		depth:   0,
+		ownPane: ownHerdrPane,
+		check:   checkHerdr,
+		open:    func(options) workerTerminal { return herdr.Terminal{} },
+	},
+	{
+		name:  project.TerminalTmux,
+		label: dispatch.TerminalLabel{Name: "tmux", Tabs: "session"},
+		inside: func(getenv func(string) string, has func(string) bool) bool {
+			return getenv("TMUX") != "" && has("tmux")
+		},
+		depth:      2,
+		fallback:   true,
+		check:      checkTmux,
+		hookDriven: true,
+		open:       func(c options) workerTerminal { return tmuxSession{tmux.Terminal{Repo: c.Repo}} },
+	},
+	{
+		name:  project.TerminalCmux,
+		label: dispatch.TerminalLabel{Name: "cmux", Tabs: "workspaces", Where: "one per ticket"},
+		inside: func(getenv func(string) string, _ func(string) bool) bool {
+			return getenv("CMUX_WORKSPACE_ID") != ""
+		},
+		depth:      1,
+		check:      checkCmux,
+		hookDriven: true,
+		open: func(c options) workerTerminal {
+			return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.where.cmuxWorkspace}
+		},
+	},
+}
+
+// terminalNamed is the terminal named name in terminalKinds; "" is Herdr (project.SameTerminal).
+func terminalNamed(name string) terminalKind {
+	for _, k := range terminalKinds {
+		if project.SameTerminal(k.name, name) {
+			return k
+		}
+	}
+	return terminalKinds[0] // checkTerminal takes no other name
+}
+
+// terminalChoices are the terminals' names and auto, as --terminal and settings.json take them.
+func terminalChoices() []string {
+	var names []string
+	for _, k := range terminalKinds {
+		names = append(names, k.name)
+	}
+	return append(names, project.TerminalAuto)
+}
+
+// terminalLabels are how the log names each terminal (dispatch.Config.TerminalLabels).
+func terminalLabels() map[string]dispatch.TerminalLabel {
+	labels := make(map[string]dispatch.TerminalLabel, len(terminalKinds))
+	for _, k := range terminalKinds {
+		labels[k.name] = k.label
+	}
+	return labels
+}
+
+// pickTerminal chooses the terminal for choice (a terminal's name or project.TerminalAuto): auto is the
+// terminal orchestra runs in, whose variables getenv has (terminalKind.inside), the innermost first,
+// else the fallback terminal when has finds it, else none, and the problem says so. A terminal
+// started from a pane of another copies that one's variables into its own panes, so where several
+// terminals' are set, orchestra runs in the deepest, unless ownPane says it runs in the pane of one
+// that can tell (Herdr: its HERDR_PANE_ID), where a terminal started from it would run instead.
 func pickTerminal(choice string, getenv func(string) string, has func(cmd string) bool,
-	ownPane func(pane string) bool) (string, string) {
+	ownPane func(k terminalKind) bool) (string, string) {
 	if choice != project.TerminalAuto {
 		return choice, ""
 	}
-	inTmux := getenv("TMUX") != "" && has("tmux")
-	inCmux := getenv("CMUX_WORKSPACE_ID") != ""
-	switch {
-	case getenv("HERDR_ENV") == "1" && (!inTmux && !inCmux || ownPane(getenv("HERDR_PANE_ID"))):
-		return project.TerminalHerdr, ""
-	case inTmux:
-		return project.TerminalTmux, ""
-	case inCmux:
-		return project.TerminalCmux, ""
-	case has("tmux"):
-		return project.TerminalTmux, ""
+	var in []terminalKind
+	for _, k := range terminalKinds {
+		if k.inside(getenv, has) {
+			in = append(in, k)
+		}
+	}
+	if len(in) == 1 {
+		return in[0].name, ""
+	}
+	for _, k := range in {
+		if k.ownPane != nil && ownPane(k) {
+			return k.name, ""
+		}
+	}
+	if len(in) > 0 {
+		return slices.MaxFunc(in, func(a, b terminalKind) int { return a.depth - b.depth }).name, ""
+	}
+	for _, k := range terminalKinds {
+		if k.fallback && has(k.name) {
+			return k.name, ""
+		}
 	}
 	return "", noTerminal
 }
 
-// ownHerdrPane reports whether orchestra runs in the Herdr pane: whether its process group is the one
-// in the foreground of the pane's terminal, where a terminal started from the pane, a tmux client say,
-// would be instead. A pane Herdr doesn't have, or a Herdr that doesn't answer, is not orchestra's.
-func ownHerdrPane(ctx context.Context) func(pane string) bool {
-	return func(pane string) bool {
-		if pane == "" {
-			return false
-		}
-		group, pids, err := herdr.PaneForeground(ctx, pane)
-		return err == nil && (group == processGroup() || slices.Contains(pids, os.Getpid()))
+// ownHerdrPane reports whether orchestra runs in the Herdr pane HERDR_PANE_ID names: whether its process
+// group is the one in the foreground of the pane's terminal, where a terminal started from the pane, a
+// tmux client say, would be instead. A pane Herdr doesn't have, or a Herdr that doesn't answer, is not
+// orchestra's.
+func ownHerdrPane(ctx context.Context, getenv func(string) string) bool {
+	pane := getenv("HERDR_PANE_ID")
+	if pane == "" {
+		return false
 	}
+	group, pids, err := herdr.PaneForeground(ctx, pane)
+	return err == nil && (group == processGroup() || slices.Contains(pids, os.Getpid()))
 }
 
 // installed reports whether cmd is on the PATH.
@@ -75,24 +185,37 @@ func installed(cmd string) bool {
 // checkTerminal chooses the run's terminal (c.Terminal) as c.terminalAsked, the project's settings and
 // where orchestra runs decide, and finds what it needs there: the workspace or session for the
 // workers' tabs (c.Workspace), where orchestra runs (c.where: its own pane, whether the tabs are in
-// sight) and how to see the tabs if not (c.Watch). It returns the setup problems.
+// sight), how to see the tabs if not (c.Watch) and how the log names terminals. A hook-driven
+// terminal takes only workers whose sessions report through hooks, and has the probe's report
+// through them too. It returns the setup problems.
 func checkTerminal(ctx context.Context, c *options, settings project.Settings, getenv func(string) string) []string {
-	choice, err := project.ResolveTerminal(c.terminalAsked, settings)
+	choice, err := project.ResolveTerminal(c.terminalAsked, settings, terminalChoices())
 	if err != nil {
 		return []string{err.Error() + "."}
 	}
-	t, problem := pickTerminal(choice, getenv, installed, ownHerdrPane(ctx))
+	t, problem := pickTerminal(choice, getenv, installed,
+		func(k terminalKind) bool { return k.ownPane(ctx, getenv) })
 	if problem != "" {
 		return []string{problem}
 	}
-	c.Terminal = t
-	switch t {
-	case project.TerminalTmux:
-		return checkTmux(ctx, c, getenv)
-	case project.TerminalCmux:
-		return checkCmux(ctx, c, getenv)
+	c.Terminal, c.TerminalLabels = t, terminalLabels()
+	k := terminalNamed(t)
+	var problems []string
+	if k.hookDriven {
+		if !hookterm.Reports(c.AgentKind) {
+			problems = append(problems, hookWorkers(k.name, c.AgentKind))
+		}
+		c.ProbeHooks = true
 	}
-	return checkHerdr(ctx, c, getenv)
+	return append(problems, k.check(ctx, c, getenv)...)
+}
+
+// hookWorkers is the problem of a run in the hook-driven terminal whose workers are agent, whose
+// sessions don't report through hooks (hookterm.Reports): it names those that do.
+func hookWorkers(terminal, agent string) string {
+	return "Workers in " + terminal + " must be Claude Code (got -agent " + agent + ", or AGENT_KIND): " +
+		"only Claude workers report through hooks, which tell orchestra what they are doing. " +
+		"Run from a Herdr pane for other agents."
 }
 
 // checkHerdr finds the Herdr pane orchestra runs in and the workspace for the workers' tabs.
@@ -119,8 +242,7 @@ func checkHerdr(ctx context.Context, c *options, getenv func(string) string) []s
 
 // checkTmux finds the tmux session for the workers' windows: --workspace's, else orchestra's own
 // when it runs in tmux, else orchestra-<repository folder>, which the run starts, detached, when
-// it opens its first window. The probe's worker reports through hooks, as tmux can't say what a
-// worker does.
+// it opens its first window.
 func checkTmux(ctx context.Context, c *options, getenv func(string) string) []string {
 	var problems []string
 	if !installed("tmux") {
@@ -130,12 +252,6 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 		problems = append(problems, v+" is too old: orchestra needs tmux "+tmux.MinVersion+" or later. "+
 			"Upgrade it (brew upgrade tmux, apt install tmux), or run orchestra from a Herdr pane with --terminal herdr.")
 	}
-	if !c.ClaudeWorkers() {
-		problems = append(problems, "Workers in tmux must be Claude Code (got -agent "+c.AgentKind+", or AGENT_KIND): "+
-			"only Claude workers report through hooks, which tell orchestra what they are doing. "+
-			"Run from a Herdr pane for other agents.")
-	}
-	c.ProbeHooks = true
 	own := ""
 	if getenv("TMUX") != "" && getenv("TMUX_PANE") != "" {
 		c.where.pane = getenv("TMUX_PANE")
@@ -180,20 +296,13 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 
 // checkCmux finds the cmux terminal orchestra runs in: each worker's workspace opens in its window,
 // and the interview splits its surface. cmux answers only processes started in its terminals, so
-// outside one it can't be used. As under tmux, workers must be Claude Code, whose hooks say what
-// they are doing, and the probe's worker reports through hooks too.
+// outside one it can't be used.
 func checkCmux(ctx context.Context, c *options, getenv func(string) string) []string {
 	var problems []string
-	if !c.ClaudeWorkers() {
-		problems = append(problems, "Workers in cmux must be Claude Code (got -agent "+c.AgentKind+", or AGENT_KIND): "+
-			"only Claude workers report through hooks, which tell orchestra what they are doing. "+
-			"Run from a Herdr pane for other agents.")
-	}
 	if c.Workspace != "" {
 		problems = append(problems, "--workspace has no use under cmux, where each worker has a workspace of its own: "+
 			"leave it out.")
 	}
-	c.ProbeHooks = true
 	c.where = runsIn{pane: getenv("CMUX_SURFACE_ID"), cmuxWorkspace: getenv("CMUX_WORKSPACE_ID"), inSight: true}
 	switch {
 	case cmux.Bin() == "":
@@ -225,13 +334,7 @@ type workerTerminal interface {
 
 // terminalOf is c's terminal.
 func terminalOf(c options) workerTerminal {
-	switch c.Terminal {
-	case project.TerminalTmux:
-		return tmuxSession{tmux.Terminal{Repo: c.Repo}}
-	case project.TerminalCmux:
-		return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.where.cmuxWorkspace}
-	}
-	return herdr.Terminal{}
+	return terminalNamed(c.Terminal).open(c)
 }
 
 // tmuxSession is tmux for a run's workers: the session their windows open in is started, detached,

@@ -113,7 +113,7 @@ func runInterview(
 	session := terminal
 	if pane != "" {
 		s := paneSession{panes: terminalOf(c), pane: pane, repo: c.Repo, request: c.Feature, fallback: terminal,
-			hooks: !project.SameTerminal(c.Terminal, project.TerminalHerdr), out: stdout, err: stderr}
+			hooks: terminalNamed(c.Terminal).hookDriven, out: stdout, err: stderr}
 		if out, ok := stdout.(*os.File); ok && isTerminal(out) {
 			s.progress = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 			s.tracker = tracker

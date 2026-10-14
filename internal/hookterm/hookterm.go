@@ -1,10 +1,10 @@
 // Package hookterm is what orchestra's hook-driven terminals, tmux and cmux, share: terminals that
 // can't tell what a Claude Code session is doing, as Herdr reads it from the screen, so that the
-// session's hooks tell it (claude.State). An adapter for one writes its own primitives (tabs,
-// launching, whether a process is still there, reading the screen, pasting, pressing a key, what it
-// keeps of each pane) and calls these for the rest: its errors (Error), waiting for an agent's state
-// (Agents), the end of a prompt, Herdr's key names (ParseKey), free agent names (FreeName) and whether
-// something listens on a socket (Probe).
+// session's hooks tell it, as its kind's AgentUI reads them (UI). An adapter for one writes its own
+// primitives (tabs, launching, whether a process is still there, reading the screen, pasting, pressing
+// a key, what it keeps of each pane) and calls these for the rest: its errors (Error), what an agent's
+// hooks and screen tell (UI), waiting for an agent's state (Agents), the end of a prompt, Herdr's key
+// names (ParseKey), free agent names (FreeName) and whether something listens on a socket (Probe).
 package hookterm
 
 import (

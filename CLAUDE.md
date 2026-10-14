@@ -90,16 +90,17 @@ tickets into the branch it runs on. **Organs** are its one-shot advisers (triage
 tools and no MCP servers. The README defines both terms; use them consistently.
 
 - `cmd/orchestra`: flags and settings, choosing the terminal (`terminal.go`: the one it runs in, Herdr, tmux or cmux,
-  else tmux), `orchestra init`, `orchestra plan`, the dashboard or plain output, signals, the organ phase after a run.
+  else tmux; each terminal a row of `terminalKinds`), `orchestra init`, `orchestra plan`, the dashboard or plain output,
+  signals, the organ phase after a run.
 - `internal/dispatch`: the run loop, one file per concern (docs/development.md lists them). It reaches Beads, the
   terminal (Herdr, tmux or cmux), git and workers' reports only through the interfaces in `deps.go`.
 - Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state
   from their hooks), `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their
-  state from their hooks), `internal/hookterm` (what tmux and cmux share: their errors, waiting for a worker's
-  state, the end of a prompt, key names, free agent names, probing a socket), `internal/git` (git),
-  `internal/command` (every external command: context, time limit, process group), `internal/claude` (workers'
-  hooks, the state they give, and what their screen adds to it), `internal/mcp` (discovering MCP servers for
-  workers).
+  state from their hooks), `internal/hookterm` (what tmux and cmux share: their errors, the agents whose hooks they read
+  (`AgentUI`), waiting for a worker's state, the end of a prompt, key names, free agent names, probing a socket),
+  `internal/git` (git), `internal/command` (every external command: context, time limit, process group),
+  `internal/claude` (workers' hooks, the state they give, and what their screen adds to it), `internal/mcp` (discovering
+  MCP servers for workers).
 - Test helpers: `internal/faketool` (fake commands), `internal/claudetest` (a fake Claude Code that runs its hooks,
   for the tests on a real tmux or cmux), `internal/tmuxtest` and `internal/cmuxtest` (a tmux server or cmux app of
   the test's own), `internal/gittest`.

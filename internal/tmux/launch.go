@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // launch runs kind with args in the pane, in place of what ran there, and returns at once. The
@@ -25,7 +25,7 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 		script.WriteString(" " + command.ShellQuote(a))
 	}
 	opts := []string{"-p", "-t", pane, kindOption, kind, ";", "set-option", "-p", "-t", pane, "remain-on-exit", "on"}
-	if records, ok := claude.RecordsOf(args); ok {
+	if records, ok := hookterm.UI(kind).Records(args); ok {
 		opts = append(opts, ";", "set-option", "-p", "-t", pane, recordsOption, records)
 	} else {
 		opts = append(opts, ";", "set-option", "-p", "-u", "-t", pane, recordsOption)

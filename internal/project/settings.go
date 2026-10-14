@@ -456,7 +456,8 @@ func ResolveEffort(flagValue, key, setting string) (string, error) {
 }
 
 // The terminals workers run in, as settings.json's "terminal", --terminal and the run's state file
-// name them, and auto, which picks one where orchestra runs.
+// name them, and auto, which picks one where orchestra runs. Which terminals there are is the run's
+// table of them (cmd/orchestra's terminalKinds), which passes them to ResolveTerminal.
 const (
 	TerminalHerdr = "herdr"
 	TerminalTmux  = "tmux"
@@ -464,14 +465,12 @@ const (
 	TerminalAuto  = "auto"
 )
 
-// Terminals are the choices of terminal, as a problem lists them.
-var Terminals = []string{TerminalHerdr, TerminalTmux, TerminalCmux, TerminalAuto}
-
-// ResolveTerminal picks a run's terminal: flagValue (from --terminal or ORCHESTRA_TERMINAL) unless
-// it is empty, else the project's setting, else TerminalAuto, for the run to choose where it runs.
-func ResolveTerminal(flagValue string, s Settings) (string, error) {
-	return resolve(givenText(flagValue), oneOfFlag("--terminal (or ORCHESTRA_TERMINAL)", Terminals),
-		choiceSetting("terminal", s.Terminal, Terminals), TerminalAuto)
+// ResolveTerminal picks a run's terminal among choices (the terminals and TerminalAuto, in the order a
+// problem lists them): flagValue (from --terminal or ORCHESTRA_TERMINAL) unless it is empty, else the
+// project's setting, else TerminalAuto, for the run to choose where it runs.
+func ResolveTerminal(flagValue string, s Settings, choices []string) (string, error) {
+	return resolve(givenText(flagValue), oneOfFlag("--terminal (or ORCHESTRA_TERMINAL)", choices),
+		choiceSetting("terminal", s.Terminal, choices), TerminalAuto)
 }
 
 // SameTerminal reports whether a and b name the same terminal; "" is Herdr, where every worker ran

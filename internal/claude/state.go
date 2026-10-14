@@ -44,6 +44,19 @@ func RecordsOf(args []string) (string, bool) {
 	return "", false
 }
 
+// UI is Claude Code as a hook-driven terminal knows its sessions (hookterm.AgentUI): by its hooks'
+// records, read with its screen.
+type UI struct{}
+
+// Records is RecordsOf.
+func (UI) Records(args []string) (string, bool) { return RecordsOf(args) }
+
+// Read is ReadHooks: the session's state as its hooks tell it, and Settle.
+func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (string, error)) dispatch.AgentState) {
+	h := ReadHooks(records, dir)
+	return h.State, h.Settle
+}
+
 // State is what the Claude session whose hooks write to the folder records (see Records) is doing,
 // as they tell it:
 //
