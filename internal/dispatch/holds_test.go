@@ -52,7 +52,7 @@ func aBlocksB() fakeTickets {
 
 func (f *mergeFixture) next(t *testing.T, running map[string]bool) string {
 	t.Helper()
-	tk, _, s := f.orch.next(context.Background(), running)
+	tk, _, s := f.orch.next(context.Background(), running, &soloQueue{})
 	if s != nil {
 		t.Fatal(s)
 	}
@@ -246,11 +246,11 @@ func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
 	o.markAside("deferred")
 	o.markAside("answered")
 	o.setAsked("answered", &workerSpot{question: "Q"})
-	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "answered" {
+	if tk, _, s := o.next(context.Background(), nil, &soloQueue{}); s != nil || tk == nil || tk.ID != "answered" {
 		t.Fatalf("got %v (%v), want the ticket whose question was answered", tk, s)
 	}
 	o.setAsked("answered", nil) // dispatched again, then set aside for another reason
-	if tk, _, s := o.next(context.Background(), nil); s != nil || tk == nil || tk.ID != "fresh" {
+	if tk, _, s := o.next(context.Background(), nil, &soloQueue{}); s != nil || tk == nil || tk.ID != "fresh" {
 		t.Fatalf("got %v (%v), want the fresh ticket", tk, s)
 	}
 }

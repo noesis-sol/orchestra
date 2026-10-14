@@ -226,31 +226,68 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 		return err == nil && strings.TrimSpace(string(b)) == "ok"
 	}
 
-	// An earlier probe's worker, left open because it failed, may hold the name.
 	agent := o.agentName(probeID)
+	if err := o.freeProbeName(ctx, agent); err != nil {
+		return "", err
+	}
+	args, err := o.probeArgs()
+	if err != nil {
+		return "", err
+	}
+	tab, deadline, err := o.startProbe(ctx, agent, args)
+	if err != nil {
+		return tab, err
+	}
+	prompt := fmt.Sprintf("Orchestra is checking that commands run on this machine; there is no ticket. "+
+		"Run exactly this one shell command, then stop without doing anything else: echo ok > %s",
+		command.ShellQuote(filepath.Join(c.Repo, proof)))
+	if !o.deliverPrompt(ctx, agent, prompt) {
+		return tab, fmt.Errorf("it never started on its prompt (tab %s)", tab)
+	}
+	return tab, o.awaitProbe(ctx, agent, tab, deadline, ran)
+}
+
+// freeProbeName renames an earlier probe's worker, left open because it failed, that may hold the
+// probe worker's name, agent.
+func (o *Loop) freeProbeName(ctx context.Context, agent string) error {
 	if st, err := o.readStatus(ctx, agent, 5); err != nil || st != StateGone { // unreadable: the name may be taken
 		if name := o.namer.FreeName(ctx, agent); name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
-			return "", fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
+			return fmt.Errorf("an earlier worker holds the name %s and could not be renamed", agent)
 		}
 	}
-	// It runs one echo, so a Claude probe starts without MCP servers, and plainly if Herdr
-	// refuses the argument.
-	var args []string
-	if c.ClaudeWorkers() {
-		args = []string{"--strict-mcp-config"}
-		if c.ProbeHooks && o.reporter != nil {
-			report, err := o.reporter.ReportArgsIn(c.Repo, project.ProbeRun)
-			if err != nil {
-				return "", fmt.Errorf("cannot set it up to report what it does: %w", err)
-			}
-			args = append(args, report...)
-		}
+	return nil
+}
+
+// probeArgs are the probe worker's arguments. It runs one echo, so a Claude probe starts without
+// MCP servers, reporting what it does when the project asks for that (Config.ProbeHooks).
+func (o *Loop) probeArgs() ([]string, error) {
+	c := o.cfg
+	if !c.ClaudeWorkers() {
+		return nil, nil
 	}
+	args := []string{"--strict-mcp-config"}
+	if c.ProbeHooks && o.reporter != nil {
+		report, err := o.reporter.ReportArgsIn(c.Repo, project.ProbeRun)
+		if err != nil {
+			return nil, fmt.Errorf("cannot set it up to report what it does: %w", err)
+		}
+		args = append(args, report...)
+	}
+	return args, nil
+}
+
+// startProbe starts the probe worker, agent, with args in a tab of its own in the main checkout,
+// plainly if the terminal refuses the arguments. It returns the tab, once made, and when the probe
+// runs out of time: probeLimit after its tab was made.
+func (o *Loop) startProbe(
+	ctx context.Context, agent string, args []string,
+) (tab string, deadline time.Time, err error) {
+	c := o.cfg
 	tab, pane, err := o.tabs.CreateTab(ctx, c.Workspace, c.Repo, probeID)
 	if err != nil {
-		return "", fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
+		return "", time.Time{}, fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
-	deadline := time.Now().Add(probeLimit)
+	deadline = time.Now().Add(probeLimit)
 	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
 	if err != nil && len(args) > 0 && errors.Is(err, ErrArgumentRefused) {
 		o.log.Raw("", err)
@@ -259,33 +296,34 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	if err != nil {
 		// 'agent start' can fail while the agent still comes up.
 		if st, serr := o.agents.Status(ctx, agent); serr != nil || st == StateGone { // the start's error is the one to report
-			return tab, fmt.Errorf("it could not be started in tab %s: %s", tab, strings.Join(strings.Fields(err.Error()), " "))
+			return tab, deadline, fmt.Errorf("it could not be started in tab %s: %s",
+				tab, strings.Join(strings.Fields(err.Error()), " "))
 		}
 		o.log.Raw("", err) // it came up all the same
 	}
 	o.info("  probe worker %s started in tab %s", agent, tab)
-	prompt := fmt.Sprintf("Orchestra is checking that commands run on this machine; there is no ticket. "+
-		"Run exactly this one shell command, then stop without doing anything else: echo ok > %s",
-		command.ShellQuote(filepath.Join(c.Repo, proof)))
-	if !o.deliverPrompt(ctx, agent, prompt) {
-		return tab, fmt.Errorf("it never started on its prompt (tab %s)", tab)
-	}
+	return tab, deadline, nil
+}
+
+// awaitProbe waits until the probe worker, agent in tab, has run its command (ran says whether it
+// has), and returns why it didn't: it went away or stopped without, or deadline passed.
+func (o *Loop) awaitProbe(ctx context.Context, agent, tab string, deadline time.Time, ran func() bool) error {
 	for {
 		if ran() {
-			return tab, nil
+			return nil
 		}
 		st, err := o.agents.Status(ctx, agent) // unreadable: asked again after the next poll
 		switch {
 		case err == nil && st == StateGone:
-			return tab, fmt.Errorf("it went away without running its command (tab %s)", tab)
+			return fmt.Errorf("it went away without running its command (tab %s)", tab)
 		case err == nil && (st == StateIdle || st == StateDone) && !ran():
-			return tab, fmt.Errorf("it stopped without running its command; see tab %s", tab)
+			return fmt.Errorf("it stopped without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
-			return tab, fmt.Errorf("it ran no command within %s; see tab %s",
+			return fmt.Errorf("it ran no command within %s; see tab %s",
 				command.ShortDuration(probeLimit), tab)
 		}
 		if !sleep(ctx, o.pollEvery()) {
-			return tab, errors.New("interrupted")
+			return errors.New("interrupted")
 		}
 	}
 }

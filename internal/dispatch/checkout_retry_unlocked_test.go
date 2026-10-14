@@ -38,7 +38,7 @@ func TestNextLetsGoOfTheRepositoryBetweenTries(t *testing.T) {
 			Deps{Tickets: readyTickets{{ID: "A"}}, Checkout: signallingCheckout{failed: failed}})
 		picked := make(chan *Ticket, 1)
 		go func() {
-			tk, _, s := o.next(t.Context(), nil)
+			tk, _, s := o.next(t.Context(), nil, &soloQueue{})
 			if s != nil {
 				t.Errorf("stopped: %v", s)
 			}

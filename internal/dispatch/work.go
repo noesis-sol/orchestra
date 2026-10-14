@@ -12,6 +12,48 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
+// earlierAction is what work does with a returning ticket's earlier worker (see earlierStep).
+type earlierAction int
+
+const (
+	leaveEarlier   earlierAction = iota // none is left: nothing to do
+	adoptEarlier                        // adopt it: it carries the ticket on
+	tellEarlier                         // tell it to carry on, and adopt it if it does
+	stopForEarlier                      // stop the run: it is at work, and a second worker must not start beside it
+	renameEarlier                       // rename it, for the new worker to have its name
+)
+
+// earlierStep is what work does with a returning ticket's earlier worker in state st, asked saying
+// the ticket is back from a question asked in this run. One at work, or that the terminal can't
+// tell the state of (which may be at work, as settling counts it: see waitSettled), is adopted
+// when it was left by a question, and stops the run otherwise. One
+// left idle or done by a question is told to carry on. Any other still there is renamed.
+func earlierStep(st AgentState, asked bool) earlierAction {
+	switch st {
+	case StateGone:
+		return leaveEarlier
+	case StateWorking, StateBlocked, StateUnknown:
+		if asked {
+			return adoptEarlier
+		}
+		return stopForEarlier
+	case StateIdle, StateDone:
+		if asked {
+			return tellEarlier
+		}
+	}
+	return renameEarlier
+}
+
+// stillIn says where an earlier worker in state st still is, where (its tab), and what it is
+// doing there when the terminal can tell.
+func stillIn(st AgentState, where string) string {
+	if st == StateUnknown {
+		return "in " + where + ", though the terminal can't tell what it is doing"
+	}
+	return fmt.Sprintf("%s in %s", st, where)
+}
+
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
 // ticket then stays listed as active (still being worked on), or, back from a question before its
 // earlier worker is told anything, asked. It sets how to how the worker settled, for the hold for
@@ -54,61 +96,58 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 		return halt(ExitTool, stopTerminalFailed,
 			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
 	}
-	switch st {
-	case StateGone:
-	case StateWorking, StateBlocked, StateUnknown:
-		// One Herdr can't tell the state of may be at work, as settling counts it (see waitSettled).
-		at, in := fmt.Sprintf("%s in tab %s", st, earlier.tab), fmt.Sprintf("%s in its tab", st)
-		if st == StateUnknown {
-			at = fmt.Sprintf("in tab %s, though the terminal can't tell what it is doing", earlier.tab)
-			in = "in its tab, though the terminal can't tell what it is doing"
-		}
-		if asked {
-			o.info("  %s's earlier worker is still %s; adopting it rather than starting another", id, at)
-			return o.adopt(ctx, t, agent, earlier, st, adopted, how)
-		}
+	step := earlierStep(st, asked)
+	switch step {
+	case adoptEarlier:
+		o.info("  %s's earlier worker is still %s; adopting it rather than starting another",
+			id, stillIn(st, "tab "+earlier.tab))
+		return o.adopt(ctx, t, agent, earlier, st, adopted, how)
+	case stopForEarlier:
 		return halt(ExitTool, stopAgentBusy,
-			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s", id, in, br)
-	default:
-		if asked && (st == StateIdle || st == StateDone) {
-			// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
-			// ticket from now on, as one adopted does.
-			o.takeOn(t, earlier)
-			if o.tellToCarryOn(ctx, id, agent, earlier) {
-				o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
-					id, earlier.tab, earlier.told())
-				return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
-			}
-			if ctx.Err() != nil {
-				return errInterrupted
-			}
-			// Not seen to take it up, it may have all the same, as when Herdr lost sight of it or it
-			// started just after Enter was pressed: one at work now is adopted, as its branch must not
-			// be rebased under it; only one still idle, or gone, is replaced.
-			st, err = o.earlierKnownState(ctx, id, earlier)
-			if ctx.Err() != nil {
-				return errInterrupted
-			}
-			if err != nil {
-				return halt(ExitTool, stopTerminalFailed,
-					": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
-			}
-			switch st {
-			case StateWorking, StateBlocked, StateUnknown:
-				o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
-					id, earlier.tab, st, earlier.told())
-				return o.adopt(ctx, t, agent, earlier, st, adopted, how)
-			case StateGone:
-				o.info("  %s's earlier worker in tab %s has gone; starting a new one", id, earlier.tab)
-			default:
-				o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
-			}
+			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s",
+			id, stillIn(st, "its tab"), br)
+	case tellEarlier:
+		// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
+		// ticket from now on, as one adopted does.
+		o.takeOn(t, earlier)
+		if o.tellToCarryOn(ctx, id, agent, earlier) {
+			o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
+				id, earlier.tab, earlier.told())
+			return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
 		}
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		if st == StateGone {
-			break // no name to free
+		// Not seen to take it up, it may have all the same, as when Herdr lost sight of it or it
+		// started just after Enter was pressed: one at work now is adopted, as its branch must not
+		// be rebased under it; only one still idle, or gone, is replaced.
+		st, err = o.earlierKnownState(ctx, id, earlier)
+		if ctx.Err() != nil {
+			return errInterrupted
+		}
+		if err != nil {
+			return halt(ExitTool, stopTerminalFailed,
+				": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
+		}
+		switch st {
+		case StateWorking, StateBlocked, StateUnknown:
+			o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
+				id, earlier.tab, st, earlier.told())
+			return o.adopt(ctx, t, agent, earlier, st, adopted, how)
+		case StateGone:
+			o.info("  %s's earlier worker in tab %s has gone; starting a new one", id, earlier.tab)
+			step = leaveEarlier // no name to free
+		default:
+			o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
+			step = renameEarlier
+		}
+		if ctx.Err() != nil {
+			return errInterrupted
+		}
+	}
+	if step == renameEarlier {
+		if ctx.Err() != nil {
+			return errInterrupted
 		}
 		name := o.namer.FreeName(ctx, agent)
 		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {

@@ -179,35 +179,16 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	c := o.cfg
 	tag := organ.EvidenceID()
 	commits := o.history.Subjects(ctx, c.Repo, o.startHead+".."+c.Base)
-	var setAside, checks strings.Builder
+	var setAside strings.Builder
 	for _, id := range o.asideList() {
-		show := o.tickets.Describe(ctx, id)
-		setAside.WriteString(show + "\n")
-		if f, ok := o.checkSaidOf(id); ok {
-			checks.WriteString(f.evidence(id, c.Check, c.Base) + "\n")
-		}
+		setAside.WriteString(o.tickets.Describe(ctx, id) + "\n")
 	}
 	var closed strings.Builder
 	for _, id := range o.closedInRun() {
 		closed.WriteString(o.closedEvidence(ctx, id) + "\n")
 	}
-	failedChecks := ""
-	if checks.Len() > 0 {
-		failedChecks = organ.Section(tag, "What the check said of each ticket set aside after its check failed",
-			checks.String())
-	}
-	fullChecked := ""
-	if f, ok := o.fullCheckOf(); ok {
-		fullChecked = organ.Section(tag, "The full check, run once on "+c.Base+" after the run's last merge",
-			f.evidence(c.CheckFull, c.Base))
-	}
-	var stopped strings.Builder
-	for _, st := range o.activeList() {
-		show := o.tickets.Describe(ctx, st.Ticket)
-		fmt.Fprintf(&stopped, "%s was in progress in tab %s when the run stopped.\n\n"+
-			"%s\n\nEnd of its worker's terminal:\n%s\n\n",
-			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(ctx, o.agentName(st.Ticket), ""), 60))
-	}
+	failedChecks, fullChecked := o.failedChecksSection(tag), o.fullCheckSection(tag)
+	stopped := o.stoppedEvidence(ctx)
 	stillReady := "unknown, bd could not list them"
 	if ready, err := o.tickets.Ready(ctx, c.Ticket); err == nil {
 		stillReady = fmt.Sprintf("%d", len(ready))
@@ -216,7 +197,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	if strings.HasPrefix(final, "DRAINED") {
 		meaning = "the maintainer asked the run to stop after its running tickets, and they finished"
 	}
-	scope, outside, feature := "Run", "", ""
+	scope, feature := "Run", ""
 	if c.Ticket != "" {
 		scope = fmt.Sprintf("Run of ticket %s and its subtickets only", c.Ticket)
 		if c.Feature != "" {
@@ -224,16 +205,8 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 				"--feature) just before the run", c.Ticket)
 			feature = organ.Section(tag, "The feature request epic "+c.Ticket+" was planned from", c.Feature)
 		}
-		if subs, err := o.tickets.Descendants(ctx, c.Ticket); err == nil {
-			if filed, err := o.filedOutside(ctx, subs); err == nil {
-				for _, t := range filed {
-					outside += o.tickets.Describe(ctx, t.ID) + "\n"
-				}
-				outside = organ.Section(tag, fmt.Sprintf(
-					"Follow-ups filed in this run outside the scope of %s, left for a later run", c.Ticket), outside)
-			}
-		}
 	}
+	outside := o.outsideScopeSection(ctx, tag)
 	// The final line goes inside the tags: it can quote what the run gathered, such as a triage
 	// summary written from a ticket. orchestra's own line on the run comes last, after the evidence,
 	// as Claude reads long inputs best with the request at the end.
@@ -244,7 +217,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 			closed.String()) +
 		organ.Section(tag, "Tickets set aside in this run (bd show, including triage notes)", setAside.String()) +
 		failedChecks + fullChecked +
-		organ.Section(tag, "Tickets in progress when the run stopped", stopped.String()) +
+		organ.Section(tag, "Tickets in progress when the run stopped", stopped) +
 		organ.Section(tag, "Tickets still ready", stillReady) +
 		organ.Section(tag, "Permission prompts and compactions of this run's workers, as their hooks noted them",
 			o.hookEvidence()) +
@@ -252,6 +225,70 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		outside + feature +
 		fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Write its report.\n",
 			scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning)
+}
+
+// failedChecksSection is the reviewer's section, tagged tag, on what the check said of each ticket
+// set aside after its check failed, or "" when there is none.
+func (o *Loop) failedChecksSection(tag string) string {
+	c := o.cfg
+	var checks strings.Builder
+	for _, id := range o.asideList() {
+		if f, ok := o.checkSaidOf(id); ok {
+			checks.WriteString(f.evidence(id, c.Check, c.Base) + "\n")
+		}
+	}
+	if checks.Len() == 0 {
+		return ""
+	}
+	return organ.Section(tag, "What the check said of each ticket set aside after its check failed", checks.String())
+}
+
+// fullCheckSection is the reviewer's section, tagged tag, on the full check run after the run's
+// last merge, or "" when none ran.
+func (o *Loop) fullCheckSection(tag string) string {
+	f, ok := o.fullCheckOf()
+	if !ok {
+		return ""
+	}
+	return organ.Section(tag, "The full check, run once on "+o.cfg.Base+" after the run's last merge",
+		f.evidence(o.cfg.CheckFull, o.cfg.Base))
+}
+
+// stoppedEvidence tells the reviewer of each ticket in progress when the run stopped: its tab, bd
+// show and the end of its worker's terminal.
+func (o *Loop) stoppedEvidence(ctx context.Context) string {
+	var stopped strings.Builder
+	for _, st := range o.activeList() {
+		show := o.tickets.Describe(ctx, st.Ticket)
+		fmt.Fprintf(&stopped, "%s was in progress in tab %s when the run stopped.\n\n"+
+			"%s\n\nEnd of its worker's terminal:\n%s\n\n",
+			st.Ticket, st.Tab, show, lastLines(o.agents.Screen(ctx, o.agentName(st.Ticket), ""), 60))
+	}
+	return stopped.String()
+}
+
+// outsideScopeSection is the reviewer's section, tagged tag, on the follow-ups a scoped run filed
+// outside its scope, left for a later run; "" for a run of the whole queue, or when bd couldn't
+// tell them.
+func (o *Loop) outsideScopeSection(ctx context.Context, tag string) string {
+	c := o.cfg
+	if c.Ticket == "" {
+		return ""
+	}
+	subs, err := o.tickets.Descendants(ctx, c.Ticket)
+	if err != nil {
+		return ""
+	}
+	filed, err := o.filedOutside(ctx, subs)
+	if err != nil {
+		return ""
+	}
+	var outside strings.Builder
+	for _, t := range filed {
+		outside.WriteString(o.tickets.Describe(ctx, t.ID) + "\n")
+	}
+	return organ.Section(tag, fmt.Sprintf(
+		"Follow-ups filed in this run outside the scope of %s, left for a later run", c.Ticket), outside.String())
 }
 
 // closeReasonWidth is how many characters of a closed ticket's close reason the reviewer is given:

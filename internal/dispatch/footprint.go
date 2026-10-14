@@ -370,39 +370,10 @@ func eachPathToken(text string, take func(tok string) bool) {
 }
 
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
-	files, funcs := map[string]bool{}, map[string]bool{}
 	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria, t.Notes}, "\n")
-	eachPathToken(text, func(tok string) bool {
-		if found := repo.resolve(tok, false); len(found) > 0 {
-			for _, f := range found {
-				if !repo.checks(f) { // "scripts/check.sh passes" says nothing about where a ticket works
-					files[f] = true
-				}
-			}
-			return true
-		}
-		if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
-			funcs[tok] = true
-			return true
-		}
-		return false
-	})
-	for _, m := range called.FindAllStringSubmatch(text, -1) {
-		if f := funcName(m[1]); f != "" {
-			funcs[f] = true
-		}
-	}
-	for _, m := range codeSpan.FindAllStringSubmatch(text, -1) {
-		code := strings.TrimSpace(m[1])
-		if camelCase.MatchString(code) && !camelWords[code] {
-			funcs[code] = true
-		}
-		for _, c := range callIn.FindAllStringSubmatch(code, -1) {
-			if f := funcName(c[1]); f != "" {
-				funcs[f] = true
-			}
-		}
-	}
+	files, funcs := pathsIn(text, repo)
+	maps.Copy(funcs, callsIn(text))
+	maps.Copy(funcs, codeSpansIn(text))
 	for _, f := range metadataList(t, FilesKey) {
 		for _, p := range repo.resolve(f, true) {
 			files[p] = true
@@ -420,6 +391,57 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 		return predictedFootprint(metadataList(t, PredictedKey), repo)
 	}
 	return fp
+}
+
+// pathsIn returns the repository files the words of text that may be paths name, but those the
+// check command names, and the Type.method words among them that name no file.
+func pathsIn(text string, repo *repoFiles) (files, funcs map[string]bool) {
+	files, funcs = map[string]bool{}, map[string]bool{}
+	eachPathToken(text, func(tok string) bool {
+		if found := repo.resolve(tok, false); len(found) > 0 {
+			for _, f := range found {
+				if !repo.checks(f) { // "scripts/check.sh passes" says nothing about where a ticket works
+					files[f] = true
+				}
+			}
+			return true
+		}
+		if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
+			funcs[tok] = true
+			return true
+		}
+		return false
+	})
+	return files, funcs
+}
+
+// callsIn returns the functions text names with their parentheses: refreshBranch(), Loop.merge().
+func callsIn(text string) map[string]bool {
+	funcs := map[string]bool{}
+	for _, m := range called.FindAllStringSubmatch(text, -1) {
+		if f := funcName(m[1]); f != "" {
+			funcs[f] = true
+		}
+	}
+	return funcs
+}
+
+// codeSpansIn returns the functions text names in its code spans: an identifier with a hump
+// (`waitSettled`), or a call with or without arguments (`o.agentName(id)`).
+func codeSpansIn(text string) map[string]bool {
+	funcs := map[string]bool{}
+	for _, m := range codeSpan.FindAllStringSubmatch(text, -1) {
+		code := strings.TrimSpace(m[1])
+		if camelCase.MatchString(code) && !camelWords[code] {
+			funcs[code] = true
+		}
+		for _, c := range callIn.FindAllStringSubmatch(code, -1) {
+			if f := funcName(c[1]); f != "" {
+				funcs[f] = true
+			}
+		}
+	}
+	return funcs
 }
 
 // predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it
@@ -641,23 +663,39 @@ func (o *Loop) readEdits() {
 	}
 	o.mu.Unlock()
 
+	for _, e := range sharedEdits(edited) {
+		key := e.a + " " + e.b + " " + e.file
+		if o.warned[key] {
+			continue
+		}
+		if o.warned == nil {
+			o.warned = map[string]bool{}
+		}
+		o.warned[key] = true
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
+			"  LIKELY_CONFLICT: %s and %s both edit %s; the second to merge may conflict", e.a, e.b, e.file)})
+	}
+}
+
+// edit is a file the workers of two running tickets, a before b, both edited.
+type edit struct{ a, b, file string }
+
+// sharedEdits returns the files two running tickets' workers both edited, from the files each
+// ticket's worker edited (edited, by ticket): by the pair, in the order of the tickets' IDs, then
+// as a's worker lists them.
+func sharedEdits(edited map[string][]string) []edit {
+	var both []edit
 	ids := slices.Sorted(maps.Keys(edited))
 	for i, a := range ids {
 		for _, b := range ids[i+1:] {
 			for _, f := range edited[a] {
-				key := a + " " + b + " " + f
-				if !slices.Contains(edited[b], f) || o.warned[key] {
-					continue
+				if slices.Contains(edited[b], f) {
+					both = append(both, edit{a, b, f})
 				}
-				if o.warned == nil {
-					o.warned = map[string]bool{}
-				}
-				o.warned[key] = true
-				o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
-					"  LIKELY_CONFLICT: %s and %s both edit %s; the second to merge may conflict", a, b, f)})
 			}
 		}
 	}
+	return both
 }
 
 // overlapsRunning reports whether ready ticket t's footprint overlaps a running ticket's, saying
