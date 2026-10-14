@@ -69,9 +69,11 @@ func (cleanCheckout) TrackedFiles(ctx context.Context, repo string) []string { r
 // newWorktrees creates every worktree.
 type newWorktrees struct{}
 
-func (newWorktrees) WorktreeOf(ctx context.Context, repo, branch string) string { return "" }
-func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) bool    { return false }
-func (newWorktrees) Prune(ctx context.Context, repo string) (string, error)     { return "", nil }
+func (newWorktrees) WorktreeOf(ctx context.Context, repo, branch string) (string, error) {
+	return "", nil
+}
+func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) bool { return false }
+func (newWorktrees) Prune(ctx context.Context, repo string) (string, error)  { return "", nil }
 func (newWorktrees) AddWorktree(ctx context.Context, repo, path, branch string) (string, error) {
 	return "", nil
 }

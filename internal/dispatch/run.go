@@ -151,6 +151,9 @@ func (o *Loop) Run(ctx context.Context) int {
 	if o.loadCarried(ctx); ctx.Err() != nil {
 		return o.interrupted(ctx)
 	}
+	o.leftMu.Lock()
+	o.carriedIn = true // from here, quitting at once saves the workers left (see SaveLeft)
+	o.leftMu.Unlock()
 	o.sayDeferredFree(ctx) // knowing what is carried over and unmerged
 	defer o.startPredicting()()
 

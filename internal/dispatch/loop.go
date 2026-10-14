@@ -108,9 +108,16 @@ type Loop struct {
 	// resumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
 	// resumeGone), which happens once for each.
 	resumed map[string]bool
-	// keptOut: the workers the last run left behind on tickets outside this run's scope, saved again
-	// for a later run as they were.
-	keptOut   []project.LeftWorker
+	// keptOut: the workers the last run left behind that this run doesn't carry over but doesn't
+	// drop either, on tickets outside its scope or that it couldn't check, saved again for a later
+	// run as they were.
+	keptOut []project.LeftWorker
+	// Under leftMu: whether the run has carried over the last run's workers (see loadCarried), and
+	// whether it has saved those it leaves for the next (see leaveBehind, SaveLeft).
+	leftMu    sync.Mutex
+	carriedIn bool
+	leftSaved bool
+
 	parentOf  map[string]string // the parent of each ticket dispatched or left unmerged, which waits for it
 	doneSaid  map[string]bool   // parents said to be ready to close
 	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say

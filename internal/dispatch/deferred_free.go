@@ -102,11 +102,11 @@ func (f freeing) blockers(info Ticket) ([]string, bool) {
 }
 
 // emptyWorktree returns the worktree a worker left for ticket id when its branch has no commits
-// beyond Base, or "": none, or git can't count them.
+// beyond Base, or "": none, or git can't list the worktrees or count the commits.
 func (f freeing) emptyWorktree(ctx context.Context, id string) string {
 	br := branchOf(id)
-	wt := f.worktrees.WorktreeOf(ctx, f.cfg.Repo, br)
-	if wt == "" || f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br) != 0 {
+	wt, err := f.worktrees.WorktreeOf(ctx, f.cfg.Repo, br)
+	if err != nil || wt == "" || f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br) != 0 {
 		return ""
 	}
 	return wt

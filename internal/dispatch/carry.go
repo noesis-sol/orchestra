@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -54,10 +55,11 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			kept = append(kept, e.Ticket+" ("+w.state()+")")
 			continue
 		}
-		if !o.carriedStands(ctx, e.Ticket, &w) {
-			if ctx.Err() != nil { // Ctrl+C: a check cut short drops nothing; it is kept as it was
-				o.keptOut = append(o.keptOut, e)
-			}
+		switch o.carriedStands(ctx, e.Ticket, &w) {
+		case carryDrop:
+			continue
+		case carryKeep: // unchecked, not gone: the next run checks it again
+			o.keptOut = append(o.keptOut, e)
 			continue
 		}
 		o.setAsked(e.Ticket, &w)
@@ -111,38 +113,54 @@ func (o *Loop) scoped(ctx context.Context) func(id string) bool {
 	return func(id string) bool { return in[id] }
 }
 
+// carryCheck is what carriedStands makes of a worker the last run left behind.
+type carryCheck int
+
+const (
+	carryOn   carryCheck = iota // carried over into this run
+	carryDrop                   // gone: forgotten, as said
+	carryKeep                   // not checked: kept as it was, for the next run to check
+)
+
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
 // with its branch's own commits already on Base, since its ForkKey or else w's fork, was merged by
 // hand (see branchMerged). A worker
 // left unnamed in its pane is named (see earlierState). A ticket in progress whose worker is gone is
 // carried over if its session can be resumed (see resumeGone); without one, it has nothing to carry
-// on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker;
-// a check that Ctrl+C cut short returns false without a word, for loadCarried to keep the worker as
-// it was. The question the ticket now waits on, if any, replaces the one in w, and a ticket labelled
-// UnmergedLabel loses the label when it merges.
-func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) bool {
+// on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker.
+// One it can't check, as bd can't show its ticket or git can't list the worktrees, isn't gone for
+// that: it is kept, saying why, as is one whose check Ctrl+C cut short, without a word. The question
+// the ticket now waits on, if any, replaces the one in w, and a ticket labelled UnmergedLabel loses
+// the label when it merges.
+func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) carryCheck {
 	c := o.cfg
 	br := branchOf(id)
+	unchecked := func(why string, err error) carryCheck {
+		if ctx.Err() == nil { // else cut short by Ctrl+C, not gone (see loadCarried)
+			o.info("  %s, carried over from the last run, is kept for the next run: %s%s", id, why, because(err))
+		}
+		return carryKeep
+	}
 	t, err := o.showTries(ctx, id)
 	if err != nil {
-		if ctx.Err() != nil {
-			return false // cut short by Ctrl+C, not gone (see loadCarried)
-		}
-		o.info("  %s, carried over from the last run, is dropped: bd can't show it%s", id, because(err))
-		return false
+		return unchecked("bd can't show it", err)
 	}
-	if wt := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt == "" || !mcp.SamePath(wt, w.wt) {
+	wt, err := o.worktrees.WorktreeOf(ctx, c.Repo, br)
+	if err != nil {
+		return unchecked("git can't list the worktrees, to find its own", err)
+	}
+	if wt == "" || !mcp.SamePath(wt, w.wt) {
 		if ctx.Err() != nil {
-			return false
+			return carryKeep
 		}
 		o.info("  %s, carried over from the last run, is dropped: its worktree %s is gone", id, w.wt)
-		return false
+		return carryDrop
 	}
 	if t.Status == StatusClosed {
 		if commit := branchMerged(ctx, c, o.merger, t, w.fork); commit != "" {
 			o.info("  %s, carried over from the last run, is dropped: %s is on %s already (%s)", id, br, c.Base, commit)
-			return false
+			return carryDrop
 		}
 	}
 	if q := OpenQuestion(t); q != nil {
@@ -157,13 +175,13 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) boo
 	_, resumable := o.sessionOf(w.wt, w.hooks)
 	if t.Status == StatusInProgress && err == nil && st == StateGone && !resumable {
 		o.warnWorkerGone(ctx, id, *w, "so it isn't carried over")
-		return false
+		return carryDrop
 	}
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true)
 	}
 	o.setParent(id, t.Parent) // its parent waits for it, should it close in its tab (see openParents)
-	return true
+	return carryOn
 }
 
 // earlierState reads the state of ticket id's earlier worker by its Herdr name, as readStatus does
@@ -219,7 +237,7 @@ func (o *Loop) earlierKnownState(ctx context.Context, id string, w askedWorker) 
 }
 
 // showTries reads ticket id, trying up to three times while bd fails, as when another bd holds the
-// database: a ticket bd can't show isn't carried over.
+// database: a ticket bd can't show isn't carried over, but kept for the next run.
 func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 	for try := 1; ; try++ {
 		t, err := o.tickets.Show(ctx, id)
@@ -237,7 +255,10 @@ func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 func (o *Loop) leaveBehind(ctx context.Context) {
 	o.leaveRunning(context.WithoutCancel(ctx))
 	o.leaveAsked(ctx)
-	left := o.saveCarried(context.WithoutCancel(ctx))
+	o.leftMu.Lock()
+	left := o.saveCarried(context.WithoutCancel(ctx), "")
+	o.leftSaved = true
+	o.leftMu.Unlock()
 	o.mu.Lock()
 	left = left || len(o.unmerged) > 0
 	o.mu.Unlock()
@@ -246,15 +267,32 @@ func (o *Loop) leaveBehind(ctx context.Context) {
 	}
 }
 
+// SaveLeft saves the workers the run leaves behind for the next run, as the run does as it ends
+// (see leaveBehind), for orchestra to call as it quits at once, with the stopped run still winding
+// down: the run's own saving never comes then. A worker still at work is saved as left running,
+// INTERRUPTED. It labels no ticket (leaveRunning, leaveAsked), which would wait on bd: the next run
+// carries the workers over from .orchestra/run/state.json alone. It does nothing before the run has
+// carried over the last run's workers, as the file then still holds those it has yet to check, nor
+// once the run has saved its own. It is safe to call from another goroutine than Run's.
+func (o *Loop) SaveLeft() {
+	o.leftMu.Lock()
+	defer o.leftMu.Unlock()
+	if o.carriedIn && !o.leftSaved {
+		o.saveCarried(context.Background(), stopInterrupted)
+	}
+}
+
 // saveCarried writes the workers this run leaves behind for the next one, as it ends: those on
 // tickets still waiting on a question, those it leaves running, and those it kept for a later run.
+// A worker left running that hasn't stopped the run is saved as left so, running: "" when Run's
+// workers have all returned. The caller holds leftMu.
 // A ticket it left for review (unmerged) isn't among them, nor one whose rebase it left in progress
 // for the maintainer to finish (see workerNames). It notes where each one's branch was cut from Base,
 // unless that is known already, so that the next run takes only the branch's own commits for its
 // merge: a worker waiting on a question has no ForkKey (see carriedStands). It says which, and warns
 // when they can't be saved: the next run then carries none of them over. It reports whether it left
 // any of this run's workers in their tabs.
-func (o *Loop) saveCarried(ctx context.Context) bool {
+func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 	var left []project.LeftWorker
 	var said []string
 	add := func(id string, w askedWorker) {
@@ -277,6 +315,7 @@ func (o *Loop) saveCarried(ctx context.Context) bool {
 		why := o.unmerged[id]
 		o.mu.Unlock()
 		if ok && !st.Resolving && !st.Fixing && (why == "" || why == earlierRun) {
+			w.left = cmp.Or(w.left, running)
 			add(id, w)
 		}
 	}

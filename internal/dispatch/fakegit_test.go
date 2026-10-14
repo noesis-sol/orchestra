@@ -157,15 +157,15 @@ func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) []string {
 
 // Worktrees
 
-func (g *fakeGit) WorktreeOf(ctx context.Context, repo, branch string) string {
+func (g *fakeGit) WorktreeOf(ctx context.Context, repo, branch string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for wt, br := range g.worktrees {
 		if br == branch {
-			return wt
+			return wt, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func (g *fakeGit) HasBranch(ctx context.Context, repo, branch string) bool {

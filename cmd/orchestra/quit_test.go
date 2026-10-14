@@ -14,14 +14,16 @@ import (
 )
 
 // windingLoop is a stopped loop winding down: the workers left running, and what is under way
-// that a stop doesn't cut short.
+// that a stop doesn't cut short. saves counts its savings of the workers it leaves for the next run.
 type windingLoop struct {
 	running   []dispatch.Status
 	finishing []dispatch.Finishing
+	saves     int
 }
 
 func (l *windingLoop) Running() []dispatch.Status      { return l.running }
 func (l *windingLoop) Finishing() []dispatch.Finishing { return l.finishing }
+func (l *windingLoop) SaveLeft()                       { l.saves++ }
 
 // quitRig is a stop watch that quits as orchestra does, with what it showed, its log and the exit
 // codes it exited with.

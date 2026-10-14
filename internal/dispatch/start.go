@@ -85,7 +85,8 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, c
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
 	o.log.Raw(o.worktrees.Prune(ctx, c.Repo)) // forget a worktree whose folder was deleted, so it isn't reused
-	if wt := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
+	// When git can't list the worktrees, none is reused, and adding one fails with git's reason.
+	if wt, _ := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
 		return wt, !o.refreshBranch(ctx, wt, br), nil
 	}

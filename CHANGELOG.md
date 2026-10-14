@@ -21,6 +21,14 @@ All notable changes to orchestra are documented here. The format follows
   Code's trust or MCP-servers dialog in its output, as a diff of orchestra's
   own terminal code does, reads idle rather than blocked: the screen is
   looked at for those dialogs only before the session's first turn.
+- A worker the last run left behind that the next run can't check, as `bd`
+  can't show its ticket or `git` can't list the worktrees for a moment, is
+  kept for the run after (`<id>, carried over from the last run, is kept for
+  the next run: …`) rather than dropped and forgotten.
+- Quitting at once with a second Ctrl+C (or SIGTERM, SIGHUP) saves the
+  workers the run leaves in `.orchestra/run/state.json`, those at work as
+  left running `INTERRUPTED`, so the next run carries them over; it saved
+  none before.
 - The dashboard's totals and the run's closing "N set aside" leave out
   tickets a hold for the environment reopened: back in the queue, they show
   `◷ waiting`, and one that merges later counts only as completed. The

@@ -39,12 +39,13 @@ type stopWatch struct {
 }
 
 // quitter is what a further stop signal needs to end orchestra: the loop, to say which of its
-// workers are left running and what is under way that a stop doesn't cut short, the log, where to
-// show the lines, and how to exit.
+// workers are left running and what is under way that a stop doesn't cut short, and to save the
+// workers it leaves for the next run, the log, where to show the lines, and how to exit.
 type quitter struct {
 	loop interface {
 		Running() []dispatch.Status
 		Finishing() []dispatch.Finishing
+		SaveLeft()
 	}
 	log  *dispatch.Log
 	out  tui.Printer
@@ -144,7 +145,9 @@ func (w *stopWatch) windDown() {
 
 // further handles stop signal s, which came while a phase it stopped winds down. Nothing under
 // way that a stop doesn't cut short (a merge, a worktree being set up), it ends orchestra at once,
-// exit code 130: it logs and shows a line naming the workers left running, and closes the log.
+// exit code 130: it saves the workers the loop leaves for the next run, as the loop would have as it
+// ended (see dispatch.Loop.SaveLeft: their tickets aren't labelled, which would wait on bd), logs
+// and shows a line naming the workers left running, and closes the log.
 // Otherwise the first says what is under way and how to abandon it, and waits for the next phase,
 // skipping the organs, as before; the one after it ends orchestra, naming what was abandoned.
 // Commands under way run in their own process groups, so they run on after orchestra has gone.
@@ -167,6 +170,7 @@ func (w *stopWatch) further(s os.Signal) {
 		q.out.Event(ev)
 		return
 	}
+	q.loop.SaveLeft() // the loop's own saving, as it ends, never comes
 	ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted,
 		Text: dispatch.QuitLine(stoppedHow(s), q.loop.Running(), under), Time: time.Now()}
 	q.log.Line(ev.Time, ev.Text) // not as a notification: orchestra doesn't wait for one now

@@ -139,11 +139,14 @@ func parseWorktreeOf(porcelain, branch string) string {
 	return ""
 }
 
-// WorktreeOf returns the path of the worktree that has branch checked out, or "".
-func (Git) WorktreeOf(ctx context.Context, repo, branch string) string {
-	// On failure none is found, and adding one fails with git's reason.
-	out, _ := command.Output(ctx, command.ReadLimit, repo, "git", "worktree", "list", "--porcelain")
-	return parseWorktreeOf(out, branch)
+// WorktreeOf returns the path of the worktree that has branch checked out, or "" when none has. The
+// error is git failing to list the worktrees: then whether one has the branch is unknown.
+func (Git) WorktreeOf(ctx context.Context, repo, branch string) (string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	return parseWorktreeOf(out, branch), nil
 }
 
 // HasBranch reports whether repo has the local branch.

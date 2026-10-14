@@ -134,7 +134,8 @@ type Checkout interface {
 
 // Worktrees manages the per-ticket worktrees and their branches.
 type Worktrees interface {
-	WorktreeOf(ctx context.Context, repo, branch string) string
+	// the worktree that has branch checked out, or "" for none; the error is git failing to tell
+	WorktreeOf(ctx context.Context, repo, branch string) (string, error)
 	HasBranch(ctx context.Context, repo, branch string) bool
 	Prune(ctx context.Context, repo string) (string, error)
 	AddWorktree(ctx context.Context, repo, path, branch string) (string, error)
