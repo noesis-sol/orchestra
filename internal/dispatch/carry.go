@@ -283,9 +283,10 @@ func (o *Loop) SaveLeft() {
 }
 
 // saveCarried writes the workers this run leaves behind for the next one, as it ends: those on
-// tickets still waiting on a question, those it leaves running, and those it kept for a later run.
-// A worker left running that hasn't stopped the run is saved as left so, running: "" when Run's
-// workers have all returned. The caller holds leftMu.
+// tickets asked (still waiting on a question, or closed or claimed again in their tabs too late for
+// this run to merge or adopt them: see leaveAsked), those it leaves running, and those it kept for
+// a later run. A worker left running that hasn't stopped the run is saved as left so, running: ""
+// when Run's workers have all returned. The caller holds leftMu.
 // A ticket it left for review (unmerged) isn't among them, nor one whose rebase it left in progress
 // for the maintainer to finish (see workerNames). It notes where each one's branch was cut from Base,
 // unless that is known already, so that the next run takes only the branch's own commits for its

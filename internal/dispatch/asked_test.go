@@ -302,7 +302,7 @@ func TestAskedTicketWhoseWorkerIsGoneStopsTheRun(t *testing.T) {
 }
 
 // An asked ticket its worker closes while the run holds for a failure is not merged: as the run
-// ends it is left for review and labelled, so the tickets it blocks wait for it in later runs.
+// ends it is left for the next run and labelled, so the tickets it blocks wait for it in later runs.
 func TestAskedTicketClosedWhileTheRunHoldsIsLabelled(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

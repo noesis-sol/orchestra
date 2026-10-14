@@ -21,6 +21,9 @@ All notable changes to orchestra are documented here. The format follows
   links between the two commands and start it without the source's code.
   The ticket about to start has its links read again, which also catches a
   blocker swapped for another.
+- An asked ticket its worker closes as the run stops (`ASKED_UNMERGED`)
+  says its worktree is left for the next run to merge, as the next run does,
+  where it said left for review; docs/running.md said it wasn't carried over.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.

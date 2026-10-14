@@ -157,8 +157,9 @@ func (o *Loop) warnWorkerGone(ctx context.Context, id string, w askedWorker, wha
 
 // leaveAsked reads each asked ticket once more as the run ends. Its worker may have carried on in
 // its tab, and nothing merges the ticket once orchestra has gone: one closed or in progress is
-// labelled UnmergedLabel, as leaveRunning labels a ticket left running, and a closed one is left
-// for review. One its worker deferred is set aside as deferred. ctx is the run's: the reads and
+// labelled UnmergedLabel, as leaveRunning labels a ticket left running. Both stay asked, so
+// saveCarried leaves them to the next run, which merges a closed one as it does one closed between
+// runs. One its worker deferred is set aside as deferred. ctx is the run's: the reads and
 // labels go on after Ctrl+C, triage doesn't (see askedDeferred).
 func (o *Loop) leaveAsked(ctx context.Context) {
 	c := o.cfg
@@ -179,7 +180,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 				kind = "LEFT_UNMERGED" // carried over from the last run, which left it running
 			}
 			text := fmt.Sprintf("  %s: %s was closed in tab %s after %s, "+
-				"and the run ends before merging it; worktree %s left for review", kind, id, w.tab, w.after(), w.wt)
+				"and the run ends before merging it; worktree %s left for the next run to merge", kind, id, w.tab, w.after(), w.wt)
 			if o.leaveUnmerged(keep, id, kind) {
 				text += fmt.Sprintf(", labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
 					"in later runs too", UnmergedLabel, id, c.Base)
