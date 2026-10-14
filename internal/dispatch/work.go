@@ -105,7 +105,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
 	if asked && st == StateGone {
 		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.claimSessionResume(id) {
-			return r.resumeSession(ctx, wt, earlier.tab, earlier.question, true, s)
+			return r.resumeSession(ctx, wt, earlier.tab, earlier.question, backFromQuestion, s)
 		}
 	}
 	return r.start(ctx, wt)
@@ -438,7 +438,7 @@ func (r *ticketRun) adoptAsked(ctx context.Context, w workerSpot, resume *Sessio
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
 	if resume != nil {
-		return r.resumeSession(ctx, w.wt, w.tab, w.question, false, *resume)
+		return r.resumeSession(ctx, w.wt, w.tab, w.question, goneMidTicket, *resume)
 	}
 	st, err := o.readStatus(ctx, r.agent, 5)
 	adopted := time.Now() // its hooks reported anything older in its earlier turns

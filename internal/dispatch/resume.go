@@ -58,7 +58,7 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 	o, id := r.o, r.id
 	s, ok := o.sessionOf(w.wt, w.hooks)
 	if ok && o.claimSessionResume(id) {
-		return r.resumeSession(ctx, w.wt, w.tab, "", false, s)
+		return r.resumeSession(ctx, w.wt, w.tab, "", goneMidTicket, s)
 	}
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, "")
 	again := ""
@@ -80,44 +80,66 @@ func (o *Loop) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
 	return adoption{t: t, w: w, resume: &s}
 }
 
-// resumeSession starts the ticket's worker again, gone from tab with the ticket in progress, or back
-// through bd ready, open, for it to claim again, in a new tab in its worktree wt, resuming its
-// session s, and tells it to carry on; question is the one it was left waiting on, if any, answered
-// since. The worker is then adopted, as one back from a question is (see adopt), its ticket limit
-// counted afresh. It returns as work does.
-func (r *ticketRun) resumeSession(ctx context.Context, wt, tab, question string, back bool, s Session) *stopReason {
-	o, c, t, id, keep := r.o, r.o.cfg, r.t, r.id, r.keep
-	note := workerGoneNote(tab, wt, "") + fmt.Sprintf("; its session %s is resumed in a new tab.", s.ID)
-	text := fmt.Sprintf("  RESUMED: %s's worker is gone from tab %s with the ticket in progress; "+
-		"resuming its session %s in a new tab (worktree %s)", id, tab, s.ID, wt)
-	if back {
-		note = fmt.Sprintf("Orchestra: the ticket is back, and its worker in tab %s is gone (worktree %s); "+
-			"its session %s is resumed in a new tab.", tab, wt, s.ID)
-		text = fmt.Sprintf("  RESUMED: %s is back, and its worker is gone from tab %s; "+
-			"resuming its session %s in a new tab (worktree %s)", id, tab, s.ID, wt)
+// resumeWhy is why a worker has its session resumed (see resumeSession).
+type resumeWhy int
+
+const (
+	goneMidTicket    resumeWhy = iota // its worker gone from its tab with the ticket in progress
+	backFromQuestion                  // the ticket back through bd ready, open, for it to claim again
+)
+
+// resumeTexts is what is said as a worker has its session resumed: the note on its ticket, the
+// log's line and what the worker is told.
+type resumeTexts struct {
+	note, text, msg string
+}
+
+// texts is what is said as ticket id's worker, gone from tab, has its session sid resumed in a new
+// tab in worktree wt for why; question is the one it was left waiting on, if any, answered since.
+func (why resumeWhy) texts(id, tab, wt, question, sid string) resumeTexts {
+	answered := ""
+	if question != "" {
+		answered = fmt.Sprintf(" Your question %s is answered: read the answer with bd show %s.", question, question)
 	}
-	o.appendNotes(keep, id, note)
-	o.emit(Event{Kind: EvWarn, Ticket: id, Title: t.Title, Detail: "its worker gone, its session resumed", Text: text})
+	if why == backFromQuestion {
+		return resumeTexts{
+			note: fmt.Sprintf("Orchestra: the ticket is back, and its worker in tab %s is gone (worktree %s); "+
+				"its session %s is resumed in a new tab.", tab, wt, sid),
+			text: fmt.Sprintf("  RESUMED: %s is back, and its worker is gone from tab %s; "+
+				"resuming its session %s in a new tab (worktree %s)", id, tab, sid, wt),
+			msg: fmt.Sprintf("Orchestra: your worker stopped, its tab gone, and this is your session resumed: "+
+				"%s is yours again.", id) + answered + fmt.Sprintf(" Claim %s again with bd update %s --claim, "+
+				"and carry on with it where you left off, as your instructions say.", id, id),
+		}
+	}
+	return resumeTexts{
+		note: workerGoneNote(tab, wt, "") + fmt.Sprintf("; its session %s is resumed in a new tab.", sid),
+		text: fmt.Sprintf("  RESUMED: %s's worker is gone from tab %s with the ticket in progress; "+
+			"resuming its session %s in a new tab (worktree %s)", id, tab, sid, wt),
+		msg: fmt.Sprintf("Orchestra: your worker stopped, its tab gone, with %s still in progress, "+
+			"and this is your session resumed. Carry on with %s where you left off, as your instructions say.",
+			id, id) + answered,
+	}
+}
+
+// resumeSession starts the ticket's worker again, gone from tab, for why, in a new tab in its
+// worktree wt, resuming its session s, and tells it to carry on; question is the one it was left
+// waiting on, if any, answered since. The worker is then adopted, as one back from a question is
+// (see adopt), its ticket limit counted afresh. It returns as work does.
+func (r *ticketRun) resumeSession(ctx context.Context, wt, tab, question string, why resumeWhy,
+	s Session) *stopReason {
+	o, c, t, id, keep := r.o, r.o.cfg, r.t, r.id, r.keep
+	said := why.texts(id, tab, wt, question, s.ID)
+	o.appendNotes(keep, id, said.note)
+	o.emit(Event{Kind: EvWarn, Ticket: id, Title: t.Title, Detail: "its worker gone, its session resumed",
+		Text: said.text})
 
 	ws, done, stop := r.setup(ctx, wt, true)
 	if done {
 		return stop
 	}
 
-	msg := fmt.Sprintf("Orchestra: your worker stopped, its tab gone, with %s still in progress, "+
-		"and this is your session resumed. Carry on with %s where you left off, as your instructions say.", id, id)
-	if question != "" {
-		msg += fmt.Sprintf(" Your question %s is answered: read the answer with bd show %s.", question, question)
-	}
-	if back {
-		msg = fmt.Sprintf("Orchestra: your worker stopped, its tab gone, and this is your session resumed: "+
-			"%s is yours again.", id)
-		if question != "" {
-			msg += fmt.Sprintf(" Your question %s is answered: read the answer with bd show %s.", question, question)
-		}
-		msg += fmt.Sprintf(" Claim %s again with bd update %s --claim, "+
-			"and carry on with it where you left off, as your instructions say.", id, id)
-	}
+	msg := said.msg
 	launch := ""
 	if c.LaunchPrompt {
 		launch = msg // one line: Herdr passes it as it is
