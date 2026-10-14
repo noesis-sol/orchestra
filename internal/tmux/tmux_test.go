@@ -216,7 +216,7 @@ func TestCreateTabOpensANamedWindowThatKeepsItsName(t *testing.T) {
 		t.Fatalf("got %q %q %v", tab, pane, err)
 	}
 	want := [][]string{
-		{"new-window", "-d", "-t", "orchestra-repo:", "-c", "/work/a##b", "-n", "orchestra-x.1", "-P", "-F",
+		{"new-window", "-d", "-t", "=orchestra-repo:", "-c", "/work/a##b", "-n", "orchestra-x.1", "-P", "-F",
 			"#{window_id} #{pane_id}"},
 		{"set-option", "-w", "-t", "@4", "automatic-rename", "off", ";", "set-option", "-w", "-t", "@4",
 			"allow-rename", "off"},

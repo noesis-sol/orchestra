@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/cmux"
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -142,7 +143,11 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 		if getenv("TMUX") != "" {
 			how = "tmux switch-client -t "
 		}
-		c.Watch = how + shellWord(c.Workspace)
+		target := c.Workspace
+		if strings.Contains(target, ".") {
+			target += ":" // the session, where tmux would read "my.sess" as window "my", pane "sess"
+		}
+		c.Watch = how + shellWord(target)
 	}
 	return problems
 }
@@ -223,8 +228,9 @@ type tmuxSession struct {
 
 // CreateTab opens a window as tmux.Terminal does, in session, which it starts first if need be.
 func (t tmuxSession) CreateTab(ctx context.Context, session, cwd, label string) (tab, pane string, err error) {
-	if err := t.NewSession(ctx, session, t.repo); err != nil {
+	id, err := t.NewSession(ctx, session, t.repo)
+	if err != nil {
 		return "", "", err
 	}
-	return t.Terminal.CreateTab(ctx, session, cwd, label)
+	return t.Terminal.CreateTab(ctx, id, cwd, label)
 }

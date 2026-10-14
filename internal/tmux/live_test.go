@@ -194,15 +194,21 @@ func TestLivePanesAndSessions(t *testing.T) {
 	}
 
 	name := SessionName("orchestra-my.repo")
+	var ids []string
 	for range 2 {
-		if err := l.term.NewSession(bg, name, l.dir); err != nil {
+		id, err := l.term.NewSession(bg, name, l.dir)
+		if err != nil {
 			t.Fatal(err)
 		}
+		ids = append(ids, id)
+	}
+	if ids[0] != ids[1] {
+		t.Errorf("started twice: %q", ids)
 	}
 	if got := l.tmux("list-sessions", "-F", "#{session_name}"); got != "orchestra-my_repo\nt" {
 		t.Errorf("sessions:\n%s", got)
 	}
-	if _, _, err := l.term.CreateTab(bg, name, l.dir, "x-2"); err != nil {
+	if _, _, err := l.term.CreateTab(bg, ids[0], l.dir, "x-2"); err != nil {
 		t.Errorf("a window in the new session: %v", err)
 	}
 }

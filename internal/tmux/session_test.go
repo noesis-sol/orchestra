@@ -1,14 +1,11 @@
 package tmux
 
 import (
-	"os"
 	"reflect"
 	"testing"
-
-	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
-func TestSessionNameIsAsTmuxKeepsIt(t *testing.T) {
+func TestSessionNameIsOneEveryTmuxKeeps(t *testing.T) {
 	for name, want := range map[string]string{
 		"orchestra-app":     "orchestra-app",
 		"orchestra-my.site": "orchestra-my_site",
@@ -54,13 +51,15 @@ func TestPaneSessionFailsWithTmux(t *testing.T) {
 
 func TestNewSessionStartsADetachedSession(t *testing.T) {
 	f := newFakeTmux(t)
-	f.fail("has-session", "can't find session: orchestra-app")
-	if err := (Terminal{}).NewSession(bg, "orchestra-app", "/work/a#b"); err != nil {
-		t.Fatal(err)
+	f.answer("list-sessions", "$0 orchestra-app-2\n")
+	f.answer("new-session", "$1\n")
+	id, err := Terminal{}.NewSession(bg, "orchestra-app", "/work/a#b")
+	if err != nil || id != "$1" {
+		t.Fatalf("NewSession = %q %v", id, err)
 	}
 	want := [][]string{
-		{"has-session", "-t", "=orchestra-app"},
-		{"new-session", "-d", "-s", "orchestra-app", "-c", "/work/a##b"},
+		{"list-sessions", "-F", "#{session_id} #{session_name}"},
+		{"new-session", "-d", "-s", "orchestra-app", "-c", "/work/a##b", "-P", "-F", "#{session_id}"},
 	}
 	if got := f.calls(); !reflect.DeepEqual(got, want) {
 		t.Errorf("called %q, want %q", got, want)
@@ -69,38 +68,39 @@ func TestNewSessionStartsADetachedSession(t *testing.T) {
 
 func TestNewSessionKeepsASessionThatIsThere(t *testing.T) {
 	f := newFakeTmux(t)
-	if err := (Terminal{}).NewSession(bg, "orchestra-app", "/work"); err != nil {
-		t.Fatal(err)
+	f.answer("list-sessions", "$0 orchestra\n$3 orchestra-app\n")
+	if id, err := (Terminal{}).NewSession(bg, "orchestra-app", "/work"); err != nil || id != "$3" {
+		t.Fatalf("NewSession = %q %v", id, err)
 	}
-	if got := f.ops(); !reflect.DeepEqual(got, []string{"has-session"}) {
-		t.Errorf("called %q, want has-session alone", got)
+	if got := f.ops(); !reflect.DeepEqual(got, []string{"list-sessions"}) {
+		t.Errorf("called %q, want list-sessions alone", got)
 	}
 }
 
 // Another orchestra made the session between the look and the start: it is there, so no error.
 func TestNewSessionMadeMeanwhileIsNoError(t *testing.T) {
-	newFakeTmux(t)
-	// A tmux whose has-session finds the session from its second call on.
-	d := t.TempDir()
-	faketool.Write(t, d, "tmux", `d='`+d+`'
-case "$1" in
-has-session) [ -f "$d/looked" ] && exit 0; : > "$d/looked"; echo "can't find session" >&2; exit 1 ;;
-new-session) echo 'duplicate session: orchestra-app' >&2; exit 1 ;;
-esac
-exit 0
-`)
-	t.Setenv("PATH", d+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if err := (Terminal{}).NewSession(bg, "orchestra-app", "/work"); err != nil {
-		t.Fatal(err)
+	f := newFakeTmux(t)
+	f.fail("new-session", "duplicate session: orchestra-app")
+	f.after("list-sessions", `echo '$2 orchestra-app' > "$d/out-list-sessions"`)
+	if id, err := (Terminal{}).NewSession(bg, "orchestra-app", "/work"); err != nil || id != "$2" {
+		t.Fatalf("NewSession = %q %v", id, err)
 	}
 }
 
 func TestNewSessionThatTmuxCannotStartFails(t *testing.T) {
 	f := newFakeTmux(t)
-	f.fail("has-session", "can't find session: orchestra-app")
+	f.fail("list-sessions", "no server running on /tmp/tmux-501/default")
 	f.fail("new-session", "create window failed")
-	err := Terminal{}.NewSession(bg, "orchestra-app", "/work")
+	_, err := Terminal{}.NewSession(bg, "orchestra-app", "/work")
 	if err == nil || Missing(err) {
 		t.Errorf("got %v, want new-session's failure", err)
+	}
+}
+
+func TestNewSessionWhoseAnswerCannotBeReadFails(t *testing.T) {
+	f := newFakeTmux(t)
+	f.answer("new-session", "garbled\n")
+	if id, err := (Terminal{}).NewSession(bg, "orchestra-app", "/work"); err == nil {
+		t.Errorf("NewSession = %q, want an error", id)
 	}
 }

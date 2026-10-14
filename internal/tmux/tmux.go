@@ -170,7 +170,8 @@ func noServer(path string) bool {
 // start directory, so that it arrives as it is.
 func literal(s string) string { return strings.ReplaceAll(s, "#", "##") }
 
-// isID reports whether s is a tmux ID of the kind prefix says: @ for a window, % for a pane.
+// isID reports whether s is a tmux ID of the kind prefix says: $ for a session, @ for a window, % for
+// a pane.
 func isID(s string, prefix byte) bool {
 	if len(s) < 2 || s[0] != prefix {
 		return false
@@ -180,12 +181,17 @@ func isID(s string, prefix byte) bool {
 }
 
 // CreateTab opens a window named label in session, starting in cwd, without switching to it, and
-// returns the window's ID and its pane's. The window keeps its name: neither tmux's automatic
-// renaming nor the title escapes Claude Code writes change it. A window opened whose answer can't
-// be read, or whose name can't be kept, is closed again.
+// returns the window's ID and its pane's. session is the session's ID (NewSession), or its name,
+// which must hold no ':'. The window keeps its name: neither tmux's automatic renaming nor the title
+// escapes Claude Code writes change it. A window opened whose answer can't be read, or whose name
+// can't be kept, is closed again.
 func (t Terminal) CreateTab(ctx context.Context, session, cwd, label string) (tab, pane string, err error) {
+	target := "=" + session + ":" // the session so named, not one whose name starts so; '.' and all
+	if isID(session, '$') {
+		target = session + ":"
+	}
 	out, err := t.run(ctx, command.ReadLimit, "new-window", session,
-		"-d", "-t", session+":", "-c", literal(cwd), "-n", literal(label), "-P", "-F", "#{window_id} #{pane_id}")
+		"-d", "-t", target, "-c", literal(cwd), "-n", literal(label), "-P", "-F", "#{window_id} #{pane_id}")
 	if err != nil {
 		return "", "", err
 	}

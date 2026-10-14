@@ -14,6 +14,12 @@ All notable changes to orchestra are documented here. The format follows
   event stream has a `reopened` event for them. The dashboard's Deferred
   total is now **Set aside**, and counts tickets left for review
   (`CHECKS_FAILED`, closed without a commit, …) as well as deferred ones.
+- In tmux, workers' windows open in a session whose name holds `.`, as tmux
+  3.8 keeps it: orchestra run in a session named `my.sess`, or with
+  `--workspace foo.bar`, no longer fails to open any window. A session named
+  after a repository folder holding `#` is made under that name, not one
+  tmux expanded from it, and `--workspace foo.bar` works with tmux 3.0 to
+  3.7 as well, in the session `foo_bar`.
 - cmux starts workers in a repository whose path holds a quote, such as
   `~/Projects/Bob's app`: the line orchestra types to launch them no longer
   holds a backslash, which cmux refused to type.
