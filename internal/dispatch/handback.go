@@ -214,7 +214,7 @@ func short(hash string) string {
 func (o *Loop) setHandedBack(id string, resolving, fixing bool) Status {
 	o.mu.Lock()
 	st := o.active[id]
-	st.Resolving, st.Fixing = resolving, fixing
+	st.Resolving, st.Fixing, st.Merge, st.Place = resolving, fixing, MergeNone, 0 // it joins the queue again after
 	if st.Ticket != "" {
 		o.active[id] = st
 	}

@@ -69,10 +69,8 @@ type Loop struct {
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
 	repoMu sync.Mutex
-	// mergeMu is the merge queue: a finished ticket holds it through rebase, check and merge, so
-	// Base doesn't move while its rebased code is checked. Worktree creation isn't held up.
-	mergeMu sync.Mutex
-	active  map[string]Status // tickets being worked on; left set for those still running at the end
+	merges mergeQueue        // the merge queue (see mergeTurn)
+	active map[string]Status // tickets being worked on; left set for those still running at the end
 
 	tickets   Tickets
 	notes     Notes

@@ -87,6 +87,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `settle.go` | waiting for a worker to settle (the terminal's status, its Stop hook or the start-up grace), telling one that stopped with its ticket in progress to continue, reading its status, the dashboard watcher |
 | `resume.go` | resuming a Claude worker gone from its tab with its ticket in progress, or back from its answered question: its session, recorded by its hooks, in a new tab, once per ticket in a run |
 | `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup (the worker's tab only while the terminal still has it labelled with the ticket's ID) |
+| `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |

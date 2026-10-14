@@ -125,9 +125,9 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 		o.info("  %s is not checked again: %s; it stays set aside", id, why)
 		return nil
 	}
-	st := Status{Ticket: id, Title: rc.title, Tab: rc.w.tab, Started: time.Now()}
+	st := Status{Ticket: id, Title: rc.title, Tab: rc.w.tab, Started: time.Now(),
+		Activity: "checking again: " + c.Base + " moved on since its check failed"} // kept as it merges (see showMerge)
 	o.setActive(st)
-	st.Activity = "checking again: " + c.Base + " moved on since its check failed"
 	o.status(st)
 	defer o.status(Status{Ticket: id, Gone: true})
 	o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(

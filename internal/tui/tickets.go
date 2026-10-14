@@ -103,7 +103,8 @@ func (m *Dashboard) working(id, title string) {
 }
 
 // cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
-// its title, and in its state what its worker is doing (doingLabel, or ""); a completed one only
+// its title, and in its state what its worker is doing (doingLabel, or ""), or once it is done, where
+// its work is in the merge queue; a completed one only
 // its merged commit; a set-aside one why, with triage's verdict; a blocked one why it can't merge.
 func (r ticketRow) cells(width int, doing string) [3]string {
 	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, 8), "…") }
@@ -137,6 +138,10 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 		state = deferredStyle.Render("⟳ fixing")
 	case "testing":
 		state = testingStyle.Render("▶ testing")
+	case toMergeLabel:
+		state = toMergeStyle.Render("◷ " + toMergeLabel)
+	case mergingLabel:
+		state = mergingStyle.Render("◆ " + mergingLabel)
 	case "editing", "reading", dispatch.DoingSubagent:
 		state = pickedStyle.Render("▶ " + doing)
 	case permissionLabel: // red, as a blocked worker's box reads; "permission" is too wide for the column

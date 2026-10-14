@@ -17,6 +17,8 @@ var (
 	grey   = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
 	purple = lipgloss.AdaptiveColor{Light: "#6D28D9", Dark: "#A78BFA"}
 	lilac  = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#C4B5FD"} // a lighter purple, for text
+	blue   = lipgloss.AdaptiveColor{Light: "#1D4ED8", Dark: "#60A5FA"}
+	pink   = lipgloss.AdaptiveColor{Light: "#BE185D", Dark: "#F472B6"}
 	chalk  = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#E5E7EB"} // nearer the text's own colour than faint
 )
 
@@ -32,6 +34,8 @@ var (
 	organStyle    = lipgloss.NewStyle().Foreground(purple).Bold(true) // an organ's output
 	sayStyle      = lipgloss.NewStyle().Foreground(lilac)             // the organ phase's progress
 	testingStyle  = lipgloss.NewStyle().Foreground(yellow).Bold(true) // a worker running checks
+	toMergeStyle  = lipgloss.NewStyle().Foreground(blue)              // finished, waiting for its turn to merge
+	mergingStyle  = lipgloss.NewStyle().Foreground(pink).Bold(true)   // its merge under way
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
 			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)

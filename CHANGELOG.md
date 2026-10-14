@@ -23,6 +23,17 @@ All notable changes to orchestra are documented here. The format follows
   worktree safe to remove, in the START block's `DEFERRED_FREE` line or the
   box of a run with nothing to run: the line says the worktree holds
   uncommitted changes and gives `git -C <worktree> status` to see them.
+### Added
+
+- The dashboard shows a finished ticket's merge: `◷ to merge`, in blue,
+  while it waits for its turn behind another ticket's merge (`to merge
+  (2nd)` in Current, its place in line), and `◆ merging`, in pink, while
+  its rebase, check and fast-forward are under way, in the tickets table
+  and in Current, in place of `▶ working` and the worker's `done`. The
+  spinner in Current stops once a worker has finished, a static mark in
+  its place, so motion means a worker at work. Merges now go one at a
+  time in the order the tickets finish. A ticket handed back to its worker
+  reads `resolving` or `fixing` as before, then to merge or merging again.
 
 ## [0.7.1] - 2026-10-14
 

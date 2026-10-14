@@ -59,7 +59,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 	keep := context.WithoutCancel(ctx)
 	defer o.markFinishing(id, finishMerge)()
-	repo, queue := &held{mu: &o.repoMu}, &held{mu: &o.mergeMu} // let go of even if the merge panics
+	repo, queue := &held{mu: &o.repoMu}, &held{mu: mergeTurn{o: o, id: id}} // let go of even if the merge panics
 	defer repo.release()
 	queue.lock()
 	defer queue.release() // held on every return; a hand-back lets go of it and takes it again

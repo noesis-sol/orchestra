@@ -48,8 +48,43 @@ func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 		num = keyStyle.Render(fmt.Sprint(n)) + " "
 	}
 	elapsed := time.Since(st.Started).Truncate(time.Second)
-	return fmt.Sprintf("%s%s %s  %s  %s", num, m.spin.View(), pickedStyle.Render(st.Ticket),
-		agentStyle(doingLabel(st)), dimStyle.Render(elapsed.String()))
+	label := agentStyle(doingLabel(st))
+	if st.Merge == dispatch.MergeQueued && st.Place > 0 {
+		label = toMergeStyle.Render(fmt.Sprintf("%s (%s)", toMergeLabel, ordinal(st.Place)))
+	}
+	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), pickedStyle.Render(st.Ticket), label,
+		dimStyle.Render(elapsed.String()))
+}
+
+// mark is what heads a worker's line: the spinner while its worker is at work, a hand-back included,
+// and once it has finished, a static mark, so that motion means a worker at work: its merge stage's,
+// or a dot. It is as wide as the spinner.
+func (m Dashboard) mark(st dispatch.Status) string {
+	switch {
+	case st.Resolving || st.Fixing:
+	case st.Merge == dispatch.MergeQueued:
+		return toMergeStyle.Render("◷") + " "
+	case st.Merge == dispatch.MergeRunning:
+		return mergingStyle.Render("◆") + " "
+	case st.Agent == dispatch.StateDone:
+		return doneStyle.Render("•") + " "
+	}
+	return m.spin.View()
+}
+
+// ordinal is n as a place in line: 1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st.
+func ordinal(n int) string {
+	suffix := "th"
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		suffix = "st"
+	case n%10 == 2:
+		suffix = "nd"
+	case n%10 == 3:
+		suffix = "rd"
+	}
+	return fmt.Sprint(n) + suffix
 }
 
 // goTo switches the terminal to the tab of the worker numbered n in Current, as the list stands now:
@@ -168,6 +203,10 @@ func doingLabel(st dispatch.Status) string {
 		return "resolving"
 	case st.Fixing:
 		return "fixing check"
+	case st.Merge == dispatch.MergeQueued:
+		return toMergeLabel
+	case st.Merge == dispatch.MergeRunning:
+		return mergingLabel
 	case st.Unreadable:
 		return "unreadable"
 	case st.Permission:
@@ -181,6 +220,13 @@ func doingLabel(st dispatch.Status) string {
 // permissionLabel is the status of a worker waiting on a permission prompt.
 const permissionLabel = "permission"
 
+// The status of a ticket whose worker is done with it, in the merge queue: waiting for its turn, and
+// its merge under way.
+const (
+	toMergeLabel = string(dispatch.MergeQueued)
+	mergingLabel = string(dispatch.MergeRunning)
+)
+
 func agentStyle(s string) string {
 	switch s {
 	case string(dispatch.StateWorking), "editing", "reading", dispatch.DoingSubagent:
@@ -191,6 +237,10 @@ func agentStyle(s string) string {
 		return stopStyle.Render(s + " — waiting for you")
 	case string(dispatch.StateDone): // finished its turn: green, not bold, as its ticket isn't merged yet
 		return doneStyle.Render(s)
+	case toMergeLabel:
+		return toMergeStyle.Render(s)
+	case mergingLabel:
+		return mergingStyle.Render(s)
 	case "":
 		return ""
 	}

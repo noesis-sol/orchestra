@@ -112,8 +112,12 @@ type Status struct {
 	Permission bool
 	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
 	// worker, and is left in progress until the worker finishes it.
-	Resolving  bool
-	Fixing     bool // its check failed on its rebased branch and was handed back to its worker to fix
+	Resolving bool
+	Fixing    bool // its check failed on its rebased branch and was handed back to its worker to fix
+	// Merge: its worker done, where its work is in the merge queue: MergeQueued, Place in line (1: next),
+	// or MergeRunning; MergeNone while its worker works, a hand-back included.
+	Merge      MergeStage
+	Place      int
 	Unreadable bool // the last read of Agent failed
 	Gone       bool
 }
