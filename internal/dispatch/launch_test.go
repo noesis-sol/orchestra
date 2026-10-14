@@ -8,18 +8,20 @@ import (
 )
 
 // launch recovers a worker's panic as PANIC and leaves its ticket active, as it does a ticket whose
-// work returns a reason to stop; one whose work returns none is no longer active.
+// work returns a reason to stop; one whose work returns none is no longer active. Either way, the
+// result says how its worker settled, as work set it.
 func TestLaunchRecoversAPanicAndClearsAFinishedTicket(t *testing.T) {
 	stopped := halt(ExitTool, stopTerminalFailed, ": the terminal is gone")
 	for _, tc := range []struct {
 		name       string
-		work       func(ctx context.Context, how *settling) *stopReason
+		work       func(ctx context.Context) *stopReason
+		how        settling // what work sets how to before it returns or panics
 		kind       stopKind
 		stillThere bool
 	}{
-		{"finished", func(context.Context, *settling) *stopReason { return nil }, "", false},
-		{"stopped", func(context.Context, *settling) *stopReason { return stopped }, stopTerminalFailed, true},
-		{"panicked", func(context.Context, *settling) *stopReason { panic("no tab for A") }, stopPanic, true},
+		{"finished", func(context.Context) *stopReason { return nil }, settledSlow, "", false},
+		{"stopped", func(context.Context) *stopReason { return stopped }, unsettled, stopTerminalFailed, true},
+		{"panicked", func(context.Context) *stopReason { panic("no tab for A") }, settledFast, stopPanic, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logPath := filepath.Join(t.TempDir(), "orchestra.log")
@@ -30,8 +32,15 @@ func TestLaunchRecoversAPanicAndClearsAFinishedTicket(t *testing.T) {
 			o := New(Config{LogPath: logPath, Concurrency: 1}, log, "", Deps{})
 			o.setActive(Status{Ticket: "A", Tab: "w1"})
 			r := newRunState(context.Background(), o)
-			r.launch("A", true, tc.work)
+			var how settling
+			r.launch("A", true, &how, func(ctx context.Context) *stopReason {
+				how = tc.how
+				return tc.work(ctx)
+			})
 			res := <-r.results
+			if res.how != tc.how {
+				t.Errorf("settled %v, want %v", res.how, tc.how)
+			}
 			if res.id != "A" || !res.counted {
 				t.Errorf("result for %q, counted %v; want A, counted", res.id, res.counted)
 			}

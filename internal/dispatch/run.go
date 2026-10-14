@@ -379,20 +379,24 @@ func (r *runState) start(t Ticket, queued int) {
 		Queued: queued, Solo: r.soloShown, Unclosed: r.unclosedSaid,
 		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
 	o.startFootprint(t)
-	r.launch(t.ID, true, func(ctx context.Context, how *settling) *stopReason { return o.work(ctx, t, how) })
+	tr := o.newTicketRun(r.ctx, t)
+	r.launch(t.ID, true, &tr.how, tr.work)
 }
 
-// launch runs ticket id's worker, work, on a goroutine of its own, which hands its result to Run.
-// The ticket runs from now until Run takes the result. counted says that it counts toward
-// Config.Limit. A ticket whose work returns no reason to stop is no longer active; one that
-// returns a reason stays listed, and so does one whose work panics: the panic is that reason,
-// PANIC (see panicStop).
-func (r *runState) launch(id string, counted bool, work func(ctx context.Context, how *settling) *stopReason) {
+// launch runs ticket id's worker, work, on a goroutine of its own, which hands its result to Run,
+// with how its worker settled, as work sets how (nil: it has no worker to settle). The ticket runs
+// from now until Run takes the result. counted says that it counts toward Config.Limit. A ticket
+// whose work returns no reason to stop is no longer active; one that returns a reason stays
+// listed, and so does one whose work panics: the panic is that reason, PANIC (see panicStop).
+func (r *runState) launch(id string, counted bool, how *settling, work func(ctx context.Context) *stopReason) {
 	r.inflight[id] = true
 	o, ctx, results := r.o, r.ctx, r.results
 	go func() {
 		res := result{id: id, counted: counted}
 		defer func() {
+			if how != nil {
+				res.how = *how
+			}
 			if p := recover(); p != nil {
 				res.stop = o.panicStop(id, p)
 			} else if res.stop == nil {
@@ -400,7 +404,7 @@ func (r *runState) launch(id string, counted bool, work func(ctx context.Context
 			}
 			results <- res
 		}()
-		res.stop = work(ctx, &res.how)
+		res.stop = work(ctx)
 	}()
 }
 
@@ -418,8 +422,9 @@ func (r *runState) follow() bool {
 		if HasLabel(a.t, SoloLabel) {
 			r.solo.running = a.t.ID // it runs alone from now on, as one dispatched does
 		}
-		r.launch(a.t.ID, false, func(ctx context.Context, how *settling) *stopReason {
-			return o.adoptAsked(ctx, a, how)
+		tr := o.newTicketRun(r.ctx, a.t)
+		r.launch(a.t.ID, false, &tr.how, func(ctx context.Context) *stopReason {
+			return tr.adoptAsked(ctx, a.w, a.resume)
 		})
 	}
 	if s != nil {

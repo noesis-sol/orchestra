@@ -97,7 +97,7 @@ func (r *runState) recheckTickets() {
 		if !ok {
 			return
 		}
-		r.launch(rc.w.id, false, func(ctx context.Context, _ *settling) *stopReason { return o.recheck(ctx, rc) })
+		r.launch(rc.w.id, false, nil, func(ctx context.Context) *stopReason { return o.recheck(ctx, rc) })
 	}
 }
 

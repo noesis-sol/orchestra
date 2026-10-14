@@ -54,153 +54,209 @@ func stillIn(st AgentState, where string) string {
 	return fmt.Sprintf("%s in %s", st, where)
 }
 
+// ticketRun is one ticket's run, from its worker's start or adoption to its outcome: the ticket,
+// its branch, its worker's name, the context for what must finish once begun, and how the worker
+// settled, which launch hands to Run for the hold for the environment.
+type ticketRun struct {
+	o             *Loop
+	t             Ticket
+	id, br, agent string
+	// What must finish once begun (making the worktree, merging, the notes on what happened) runs on
+	// keep, which Ctrl+C doesn't cancel, so the repository and the ticket aren't left half done.
+	// Each command still has its time limit.
+	keep context.Context
+	how  settling // how the worker settled, set as it does
+}
+
+// newTicketRun is ticket t's run, its worker started or adopted on ctx.
+func (o *Loop) newTicketRun(ctx context.Context, t Ticket) *ticketRun {
+	return &ticketRun{o: o, t: t, id: t.ID, br: branchOf(t.ID),
+		// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
+		agent: o.agentName(t.ID),
+		keep:  context.WithoutCancel(ctx)}
+}
+
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
 // ticket then stays listed as active (still being worked on), or, back from a question before its
-// earlier worker is told anything, asked. It sets how to how the worker settled, for the hold for
-// the environment. A panic in it is such a reason, PANIC, which launch, running it, recovers.
-func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
-	c := o.cfg
-	id, br := t.ID, branchOf(t.ID)
+// earlier worker is told anything, asked. It sets r.how to how the worker settled, for the hold
+// for the environment. A panic in it is such a reason, PANIC, which launch, running it, recovers.
+func (r *ticketRun) work(ctx context.Context) *stopReason {
+	o, id := r.o, r.id
 	// Back from a question, the ticket stays asked, for a stop or Ctrl+C to leave it as it was (see
 	// leaveAsked, saveCarried), until its earlier worker is told to carry on or adopted (see takeOn),
 	// or a new worker is to take it.
 	earlier, asked := o.asked(id)
-	if HasLabel(t, UnmergedLabel) {
+	if HasLabel(r.t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
-
 	if ctx.Err() != nil {
 		return errInterrupted // Ctrl+C came as it was dispatched
 	}
-	// What must finish once begun (making the worktree, merging, the notes on what happened) runs on
-	// keep, which Ctrl+C doesn't cancel, so the repository and the ticket aren't left half done.
-	// Each command still has its time limit.
-	keep := context.WithoutCancel(ctx)
-
-	// The worker's Herdr name: Herdr takes fewer characters than a ticket ID can hold.
-	agent := o.agentName(id)
-
-	// A returning ticket's earlier worker may still sit in its tab under the ticket's name, which
-	// Herdr keeps unique, or, carried over from a run cut short as it started it, unnamed in its pane
-	// (see earlierState). It is looked at before the worktree is touched: one still at work there
-	// must not have its branch rebased under it. One left by a question asked in this run may have
-	// had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in. Any
-	// other is renamed so the new worker can have the name; its tab stays as it is. One Herdr can't
-	// tell the state of is read again for a while, and then counts as still at work.
-	st, err := o.earlierKnownState(ctx, id, earlier)
-	adopted := time.Now() // an adopted worker's hooks reported anything older in its earlier turns
-	if ctx.Err() != nil {
-		return errInterrupted
-	}
-	if err != nil {
-		return halt(ExitTool, stopTerminalFailed,
-			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
-	}
-	step := earlierStep(st, asked)
-	switch step {
-	case adoptEarlier:
-		o.info("  %s's earlier worker is still %s; adopting it rather than starting another",
-			id, stillIn(st, "tab "+earlier.tab))
-		return o.adopt(ctx, t, agent, earlier, st, adopted, how)
-	case stopForEarlier:
-		return halt(ExitTool, stopAgentBusy,
-			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s",
-			id, stillIn(st, "its tab"), br)
-	case tellEarlier:
-		// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
-		// ticket from now on, as one adopted does.
-		o.takeOn(t, earlier)
-		if o.tellToCarryOn(ctx, id, agent, earlier) {
-			o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
-				id, earlier.tab, earlier.told())
-			return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
-		}
-		if ctx.Err() != nil {
-			return errInterrupted
-		}
-		// Not seen to take it up, it may have all the same, as when Herdr lost sight of it or it
-		// started just after Enter was pressed: one at work now is adopted, as its branch must not
-		// be rebased under it; only one still idle, or gone, is replaced.
-		st, err = o.earlierKnownState(ctx, id, earlier)
-		if ctx.Err() != nil {
-			return errInterrupted
-		}
-		if err != nil {
-			return halt(ExitTool, stopTerminalFailed,
-				": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
-		}
-		switch st {
-		case StateWorking, StateBlocked, StateUnknown:
-			o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
-				id, earlier.tab, st, earlier.told())
-			return o.adopt(ctx, t, agent, earlier, st, adopted, how)
-		case StateGone:
-			o.info("  %s's earlier worker in tab %s has gone; starting a new one", id, earlier.tab)
-			step = leaveEarlier // no name to free
-		default:
-			o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
-			step = renameEarlier
-		}
-		if ctx.Err() != nil {
-			return errInterrupted
-		}
-	}
-	if step == renameEarlier {
-		if ctx.Err() != nil {
-			return errInterrupted
-		}
-		name := o.namer.FreeName(ctx, agent)
-		if name == "" || o.namer.RenameAgent(ctx, agent, name) != nil {
-			if ctx.Err() != nil {
-				return errInterrupted
-			}
-			return halt(ExitTool, stopAgentNameTaken, ": an earlier worker for %s holds its name and could not be renamed", id)
-		}
-		o.info("  earlier worker for %s renamed to %s; its tab is left open", id, name)
+	st, done, stop := r.takeUpEarlier(ctx, earlier, asked)
+	if done {
+		return stop
 	}
 	o.setAsked(id, nil) // back from a question: set aside again once this worker settles, it stays out
-
-	// One worktree per ticket. A ticket that comes back (deferral ended) resumes its old branch.
-	wt, conflicts, s := o.prepareWorktree(keep, id, br)
-	if s != nil {
-		return s
-	}
-	o.footprintWorktree(id, wt)
-	if conflicts {
-		// A worker is told not to rebase, so it would work on a stale base and its merge would end
-		// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.
-		o.putAside(keep, t, asideTexts{
-			note: fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. "+
-				"Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), "+
-				"then bring it back with: bd undefer %s",
-				br, c.Base, command.ShellWord(wt), c.Base, id),
-			reason: fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt),
-			detail: "its branch conflicts with " + c.Base,
-			deferred: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; "+
-				"rebase it in %s, then bd undefer %s",
-				br, c.Base, id, wt, id),
-			failed: fmt.Sprintf("%s conflicts with %s, and bd could not defer %s", br, c.Base, id),
-			then:   "rebase it in " + wt,
-		})
-		return nil
+	wt, done, stop := r.prepare()
+	if done {
+		return stop
 	}
 	// Back from a question with its earlier worker gone from its tab, the ticket has that worker's
 	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
 	if asked && st == StateGone {
 		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.claimSessionResume(id) {
-			return o.resumeSession(ctx, t, wt, earlier.tab, earlier.question, true, s, how)
+			return r.resumeSession(ctx, wt, earlier.tab, earlier.question, true, s)
 		}
 	}
+	return r.start(ctx, wt)
+}
 
-	ws, done, stop := o.setup(ctx, keep, t, wt, false)
+// takeUpEarlier deals with a returning ticket's earlier worker, earlier, asked saying the ticket is
+// back from a question asked in this run (see earlierStep). It may still sit in its tab under the
+// ticket's name, which Herdr keeps unique, or, carried over from a run cut short as it started it,
+// unnamed in its pane (see earlierState). It is looked at before the worktree is touched: one still
+// at work there must not have its branch rebased under it. One left by a question asked in this run
+// may have had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in.
+// Any other is renamed so the new worker can have the name; its tab stays as it is. One Herdr can't
+// tell the state of is read again for a while, and then counts as still at work. It returns the
+// earlier worker's state as last read, and whether the ticket's run is over, with the reason the
+// run must stop, if any.
+func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked bool) (AgentState, bool,
+	*stopReason) {
+	o, id := r.o, r.id
+	st, err := o.earlierKnownState(ctx, id, earlier)
+	adopted := time.Now() // an adopted worker's hooks reported anything older in its earlier turns
+	if ctx.Err() != nil {
+		return st, true, errInterrupted
+	}
+	if err != nil {
+		return st, true, halt(ExitTool, stopTerminalFailed,
+			": cannot tell whether an earlier worker for %s is still in its tab: %v", id, err).causedBy(err)
+	}
+	switch earlierStep(st, asked) {
+	case adoptEarlier:
+		o.info("  %s's earlier worker is still %s; adopting it rather than starting another",
+			id, stillIn(st, "tab "+earlier.tab))
+		return st, true, r.adopt(ctx, earlier, st, adopted)
+	case stopForEarlier:
+		return st, true, halt(ExitTool, stopAgentBusy,
+			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s",
+			id, stillIn(st, "its tab"), r.br)
+	case tellEarlier:
+		return r.tellEarlier(ctx, earlier, adopted)
+	case renameEarlier:
+		stop := r.renameEarlier(ctx)
+		return st, stop != nil, stop
+	}
+	return st, false, nil
+}
+
+// tellEarlier tells the earlier worker of a ticket back from its answered question, idle in its
+// tab, to carry on, and adopts it if it does, as of adopted. It returns as takeUpEarlier does.
+func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, adopted time.Time) (AgentState,
+	bool, *stopReason) {
+	o, id := r.o, r.id
+	// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
+	// ticket from now on, as one adopted does.
+	o.takeOn(r.t, earlier)
+	if o.tellToCarryOn(ctx, id, r.agent, earlier) {
+		o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
+			id, earlier.tab, earlier.told())
+		return StateWorking, true, r.adopt(ctx, earlier, StateWorking, adopted)
+	}
+	if ctx.Err() != nil {
+		return StateIdle, true, errInterrupted
+	}
+	// Not seen to take it up, it may have all the same, as when Herdr lost sight of it or it
+	// started just after Enter was pressed: one at work now is adopted, as its branch must not
+	// be rebased under it; only one still idle, or gone, is replaced.
+	st, err := o.earlierKnownState(ctx, id, earlier)
+	if ctx.Err() != nil {
+		return st, true, errInterrupted
+	}
+	if err != nil {
+		return st, true, halt(ExitTool, stopTerminalFailed,
+			": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
+	}
+	switch st {
+	case StateWorking, StateBlocked, StateUnknown:
+		o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
+			id, earlier.tab, st, earlier.told())
+		return st, true, r.adopt(ctx, earlier, st, adopted)
+	case StateGone:
+		o.info("  %s's earlier worker in tab %s has gone; starting a new one", id, earlier.tab)
+		if ctx.Err() != nil {
+			return st, true, errInterrupted
+		}
+		return st, false, nil // no name to free
+	}
+	o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
+	stop := r.renameEarlier(ctx)
+	return st, stop != nil, stop
+}
+
+// renameEarlier renames the earlier worker still in its tab under the ticket's name, for the new
+// worker to have the name. It returns the reason the run must stop when it can't.
+func (r *ticketRun) renameEarlier(ctx context.Context) *stopReason {
+	o := r.o
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	name := o.namer.FreeName(ctx, r.agent)
+	if name == "" || o.namer.RenameAgent(ctx, r.agent, name) != nil {
+		if ctx.Err() != nil {
+			return errInterrupted
+		}
+		return halt(ExitTool, stopAgentNameTaken, ": an earlier worker for %s holds its name and could not be renamed", r.id)
+	}
+	o.info("  earlier worker for %s renamed to %s; its tab is left open", r.id, name)
+	return nil
+}
+
+// prepare makes the ticket's worktree, wt: one per ticket, and a ticket that comes back (deferral
+// ended) resumes its old branch. It reports whether the ticket's run is over, with the reason the
+// run must stop, if any: a branch that conflicts with Base sets the ticket aside.
+func (r *ticketRun) prepare() (string, bool, *stopReason) {
+	o, c, id, br := r.o, r.o.cfg, r.id, r.br
+	wt, conflicts, s := o.prepareWorktree(r.keep, id, br)
+	if s != nil {
+		return wt, true, s
+	}
+	o.footprintWorktree(id, wt)
+	if !conflicts {
+		return wt, false, nil
+	}
+	// A worker is told not to rebase, so it would work on a stale base and its merge would end
+	// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.
+	o.putAside(r.keep, r.t, asideTexts{
+		note: fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. "+
+			"Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), "+
+			"then bring it back with: bd undefer %s",
+			br, c.Base, command.ShellWord(wt), c.Base, id),
+		reason: fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt),
+		detail: "its branch conflicts with " + c.Base,
+		deferred: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; "+
+			"rebase it in %s, then bd undefer %s",
+			br, c.Base, id, wt, id),
+		failed: fmt.Sprintf("%s conflicts with %s, and bd could not defer %s", br, c.Base, id),
+		then:   "rebase it in " + wt,
+	})
+	return wt, true, nil
+}
+
+// start starts a new worker on the ticket in worktree wt, and once it has begun on its prompt,
+// concludes it. It returns as work does.
+func (r *ticketRun) start(ctx context.Context, wt string) *stopReason {
+	o, c, id := r.o, r.o.cfg, r.id
+	ws, done, stop := r.setup(ctx, wt, false)
 	if done {
 		return stop
 	}
 	prompt := ws.prompt
 
-	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
+	head := o.checkout.Head(ctx, c.Repo, r.br) // a worker that commits moves it
 
-	launched, stop := o.startWorker(ctx, t, agent, wt, ws.args, ws.launch, "")
+	launched, stop := o.startWorker(ctx, r.t, r.agent, wt, ws.args, ws.launch, "")
 	if stop != nil {
 		return stop
 	}
@@ -210,15 +266,15 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 	defer o.status(Status{Ticket: id, Gone: true})
 	tab, started := launched.tab, launched.started
 
-	w := o.newWatcher(wt, Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
+	w := o.newWatcher(wt, Status{Ticket: id, Title: r.t.Title, Tab: tab, Started: started})
 	stopWatch := o.watch(ctx, w)
 	defer stopWatch()
 
-	if !o.promptTaken(ctx, id, agent, prompt, launched.atLaunch, false) {
+	if !o.promptTaken(ctx, id, r.agent, prompt, launched.atLaunch, false) {
 		if ctx.Err() != nil {
 			return errInterrupted
 		}
-		o.putAside(keep, t, asideTexts{
+		o.putAside(r.keep, r.t, asideTexts{
 			note: fmt.Sprintf("Orchestra: the worker in tab %s never started on its prompt; "+
 				"deferred so it can be retried (worktree %s).", tab, wt),
 			reason: "the worker never started on its prompt",
@@ -233,8 +289,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 
 	stopWatch() // the settle loop reports from here on
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
-	return o.conclude(ctx, t, worker{id: id, br: br, wt: wt, tab: tab, agent: agent, started: started,
-		hooks: launched.hooks}, head, w.report, how)
+	return r.conclude(ctx, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, started: started,
+		hooks: launched.hooks}, head, w.report)
 }
 
 // workerSetup is what a worker is started with: its arguments and, for a new worker (not resumed),
@@ -246,28 +302,27 @@ type workerSetup struct {
 	full   string // a new worker's whole prompt, pasted if it starts without its rules
 }
 
-// setup prepares the files ticket t's worker, new or resumed, starts with in worktree wt (see
+// setup prepares the files the ticket's worker, new or resumed, starts with in worktree wt (see
 // workerFiles). It reports whether the worker is not to start, and why the run must stop then, if
-// it must: a run file leading out of the worktree sets the ticket aside (see setAsideEscaped), on
-// keep, and the MCP servers failing otherwise stop the run.
-func (o *Loop) setup(ctx, keep context.Context, t Ticket, wt string, resumed bool) (workerSetup, bool, *stopReason) {
-	ws, err := o.workerFiles(ctx, t, wt, resumed)
+// it must: a run file leading out of the worktree sets the ticket aside (see setAsideEscaped), and
+// the MCP servers failing otherwise stop the run.
+func (r *ticketRun) setup(ctx context.Context, wt string, resumed bool) (workerSetup, bool, *stopReason) {
+	ws, err := r.o.workerFiles(ctx, r.id, wt, resumed)
 	if e := escapeOf(err); e != nil {
-		return ws, true, o.setAsideEscaped(keep, t, wt, e)
+		return ws, true, r.o.setAsideEscaped(r.keep, r.t, wt, e)
 	}
 	if err != nil {
-		return ws, true, halt(ExitTool, stopStartFailed, " for %s: %v", t.ID, err).causedBy(err)
+		return ws, true, halt(ExitTool, stopStartFailed, " for %s: %v", r.id, err).causedBy(err)
 	}
 	return ws, false, nil
 }
 
-// workerFiles prepares ticket t's worker's files in worktree wt: its MCP servers, its standing
+// workerFiles prepares ticket id's worker's files in worktree wt: its MCP servers, its standing
 // rules, a new worker's prompt file and a Claude worker's hooks. It returns the first error that
 // stops the worker from starting: an escape (see escapeOf), or the MCP servers failing. The others
 // the worker does without are logged, and left out.
-func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed bool) (workerSetup, error) {
+func (o *Loop) workerFiles(ctx context.Context, id, wt string, resumed bool) (workerSetup, error) {
 	c := o.cfg
-	id := t.ID
 	var ws workerSetup
 	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
 	// every server on the machine, so a file it can't have stops the run rather than the worker.
@@ -339,22 +394,20 @@ func optional[T any](log *Log, v T, err error, what string) (T, error) {
 
 // adopt takes on the worker an asked ticket left in its tab, which carries on with the ticket now
 // its question is answered, as if it had just been started on it: it waits for it to settle and
-// merges or sets aside its work as usual. st is its status, as just read, at adopted; how is set as
-// in work.
-func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w workerSpot, st AgentState, adopted time.Time,
-	how *settling) *stopReason {
-	id := t.ID
-	base := o.takeOn(t, w)
+// merges or sets aside its work as usual. st is its status, as just read, at adopted.
+func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adopted time.Time) *stopReason {
+	o, id := r.o, r.id
+	base := o.takeOn(r.t, w)
 	o.footprintWorktree(id, w.wt)
-	head := o.checkout.Head(ctx, o.cfg.Repo, branchOf(id))
+	head := o.checkout.Head(ctx, o.cfg.Repo, r.br)
 	running := base
 	running.Agent = st
 	o.status(running)
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.
-	return o.conclude(ctx, t, worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab, agent: agent,
-		started: base.Started, hooks: w.hooks, since: adopted}, head, o.newWatcher(w.wt, base).report, how)
+	return r.conclude(ctx, worker{id: id, br: r.br, wt: w.wt, tab: w.tab, agent: r.agent,
+		started: base.Started, hooks: w.hooks, since: adopted}, head, o.newWatcher(w.wt, base).report)
 }
 
 // takeOn makes the worker an asked ticket t left in its tab, w, the ticket's again, as it is told to
@@ -375,21 +428,19 @@ func (o *Loop) takeOn(t Ticket, w workerSpot) Status {
 // closed it there without it coming back through bd ready (see followAsked), as work takes on one
 // that is still working when its ticket comes back. One idle with its ticket in progress is told
 // the answer is in; one that closed it settles at once and its work is merged; one gone from its tab
-// has its session resumed. It returns and sets how as work does.
-func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopReason {
-	t, w := a.t, a.w
-	id := t.ID
+// has its session resumed. It returns as work does.
+func (r *ticketRun) adoptAsked(ctx context.Context, w workerSpot, resume *Session) *stopReason {
+	o, t, id := r.o, r.t, r.id
 	// Its worker's from now on, so a stop or Ctrl+C before it settles leaves it labelled and carried
 	// over: it is no longer asked.
 	o.takeOn(t, w)
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
-	agent := o.agentName(id)
-	if a.resume != nil {
-		return o.resumeSession(ctx, t, w.wt, w.tab, w.question, false, *a.resume, how)
+	if resume != nil {
+		return r.resumeSession(ctx, w.wt, w.tab, w.question, false, *resume)
 	}
-	st, err := o.readStatus(ctx, agent, 5)
+	st, err := o.readStatus(ctx, r.agent, 5)
 	adopted := time.Now() // its hooks reported anything older in its earlier turns
 	if ctx.Err() != nil {
 		return errInterrupted
@@ -399,7 +450,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopR
 			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
 	}
 	switch {
-	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.tellToCarryOn(ctx, id, agent, w):
+	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.tellToCarryOn(ctx, id, r.agent, w):
 		o.info("  %s's worker in tab %s was told %s and carries on; adopting it", id, w.tab, w.told())
 		st = StateWorking
 	case ctx.Err() != nil:
@@ -407,7 +458,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopR
 	default:
 		o.info("  %s's worker in tab %s is %s with the ticket %s; adopting it", id, w.tab, st, t.Status)
 	}
-	return o.adopt(ctx, t, agent, w, st, adopted, how)
+	return r.adopt(ctx, w, st, adopted)
 }
 
 // budgetNote tells a worker the time its ticket has when the run sets a ticket limit, as agents pace
@@ -459,11 +510,12 @@ type worker struct {
 	since                  time.Time // its hooks' reports count from then on (zero: any report counts)
 }
 
-// conclude waits for ticket t's worker, w, to settle, and then does what its ticket's status says:
+// conclude waits for the ticket's worker, w, to settle, and then does what its ticket's status says:
 // merge it, set it aside, or stop the run. head is its branch's commit before the worker began. It
-// sets how to how the worker settled, as work does.
-func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
-	report func(ctx context.Context, st AgentState, err error), how *settling) *stopReason {
+// sets r.how to how the worker settled.
+func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
+	report func(ctx context.Context, st AgentState, err error)) *stopReason {
+	o, t, keep := r.o, r.t, r.keep
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	idleAt, stop := o.waitSettled(ctx, w, time.Now(), report)
 	if stop != nil {
@@ -475,9 +527,8 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 	// worker has settled: what follows is bookkeeping, on keep, but for the waits merging has (a
 	// check, a worker resolving conflicts) and evidence for triage, which Ctrl+C skips. bd failing
 	// once, as when another bd holds the database, doesn't stop the run: the ticket is read again.
-	keep := context.WithoutCancel(ctx)
 	info, showErr := o.showTries(keep, id)
-	*how = settledSlow
+	r.how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
 		o.markAside(id)
 		o.setAsked(id, &workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
@@ -500,7 +551,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 	// aside for review as below.
 	if s := info.Status; s == StatusOpen || s == StatusInProgress {
 		if on := o.unmergedBlockers(info); len(on) > 0 && o.nothingDone(keep, w) {
-			*how = requeued // neither failed at once nor done: the hold for the environment counts it for nothing
+			r.how = requeued // neither failed at once nor done: the hold for the environment counts it for nothing
 			o.waitForMerge(keep, t, w, s, on)
 			return nil
 		}
@@ -517,7 +568,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 		o.triageDeferred(ctx, id, "the worker deferred it", wt)
 	case outcomePaused:
 		if o.workerGone(keep, w.agent) {
-			return o.pausedGone(ctx, t, w, how)
+			return r.pausedGone(ctx, w)
 		}
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf(
@@ -530,7 +581,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 			id, because(showErr), wt, tab).causedBy(showErr)
 	case outcomeUnfinished:
 		if o.failedAtOnce(keep, s, w.started, idleAt, br, head, wt) {
-			*how = settledFast
+			r.how = settledFast
 		}
 		if !o.putAside(keep, t, asideTexts{
 			note: fmt.Sprintf("Orchestra: worker in tab %s settled with the ticket still '%s'; "+
