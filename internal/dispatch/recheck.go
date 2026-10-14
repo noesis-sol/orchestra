@@ -86,10 +86,11 @@ func (o *Loop) dueRecheck(ctx context.Context) (recheck, bool) {
 
 // recheckTickets starts checking again, while slots are free, each ticket set aside for a failed
 // check whose Base has moved on since: none once something has stopped the run or the maintainer
-// has asked it to wind down, nor while a solo ticket runs or is next.
+// has asked it to wind down, nor while a solo ticket runs or is next: first in line at the last
+// pick, even one made with every slot taken.
 func (r *runState) recheckTickets() {
 	o := r.o
-	for r.stops.first == nil && r.ctx.Err() == nil && o.solo == "" && o.soloNext == "" &&
+	for r.stops.first == nil && r.ctx.Err() == nil && o.solo == "" && o.soloFirst == "" &&
 		len(r.inflight) < o.cfg.Concurrency {
 		if r.winding() {
 			return

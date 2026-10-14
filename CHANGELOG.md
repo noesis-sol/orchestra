@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A `solo` ticket next in line keeps its place when a slot frees while
+  every slot was taken: a failed check due to be tried again no longer
+  takes the slot ahead of it. And a `solo` ticket adopted after its
+  question, its worker carrying on in its tab, runs alone as a dispatched
+  one does: no new ticket starts beside it.
 - `bd ready` or `bd list` failing once or twice, as when a worker's `bd`
   holds the database, no longer stops the run with `READY_UNREADABLE`: the
   queue is read again a poll later, up to three times, and each failure is

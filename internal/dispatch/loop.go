@@ -41,11 +41,13 @@ type Loop struct {
 	prompt string     // worker prompt with the TICKET_ID placeholder
 
 	// Tickets labelled SoloLabel, Run's own: the one running, the one next in line waiting for the
-	// running tickets to finish, and the wait last logged. What the dashboard was last told is
-	// runState's.
-	solo     string
-	soloNext string
-	soloSaid string
+	// running tickets to finish, the one first in line at the last pick, whether or not a slot was
+	// free (no recheck takes a slot ahead of it), and the wait last logged. What the dashboard was
+	// last told is runState's.
+	solo      string
+	soloNext  string
+	soloFirst string
+	soloSaid  string
 	// unclosed: the tickets not closed that the run draws from, as pick last read them (see
 	// countUnclosed); -1 before the first read. Run's own, like the solo tickets.
 	unclosed int

@@ -400,6 +400,9 @@ func (r *runState) follow() bool {
 	}
 	adopt, s := o.followAsked(r.ctx, r.inflight, r.taking())
 	for _, a := range adopt {
+		if HasLabel(a.t, SoloLabel) {
+			o.solo = a.t.ID // it runs alone from now on, as one dispatched does
+		}
 		r.launch(a.t.ID, func(ctx context.Context, how *settling) *stopReason {
 			return o.adoptAsked(ctx, a, how)
 		})
@@ -646,7 +649,9 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	held := func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }
 	t, queued, next := pickNext(ready, skip, held, len(running), o.solo)
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
-	// with one worker) the tickets wait for a slot as they would anyway.
+	// with one worker) the tickets wait for a slot as they would anyway. It still goes ahead of a
+	// recheck when a slot frees, which recheckTickets decides before the next pick.
+	o.soloFirst = next
 	if !slot {
 		next = ""
 	}
