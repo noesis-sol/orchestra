@@ -247,12 +247,12 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 	fs.SetOutput(output)
 	f := defineRunFlags(fs, getenv)
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
-			"       orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] "+
-			"[--mcp names] [--force]\n"+
-			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
-			"       orchestra plan [--apply]\n"+
-			"       orchestra update [--check] [--force]\n\n"+
+		fmt.Fprint(fs.Output(), "Usage: orchestra [flags]\n"+
+			"       orchestra --feature \"<request>\" [--yes] [flags]\n")
+		for _, c := range subcommands {
+			fmt.Fprint(fs.Output(), usageLines("       ", c.name, c.synopsis))
+		}
+		fmt.Fprint(fs.Output(), "\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
 			"as --concurrent allows, one worker (a coding agent) per tab and git worktree.\n"+
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
@@ -267,15 +267,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		return f, nil, err
 	}
 	if rest := fs.Args(); len(rest) > 0 {
-		switch rest[0] {
-		case "init":
-			fmt.Fprintln(fs.Output(), "orchestra: init comes before its flags: "+
-				"orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] [--force]")
-		case "plan":
-			fmt.Fprintln(fs.Output(), "orchestra: plan comes before its flags: orchestra plan [--apply]")
-		case "update":
-			fmt.Fprintln(fs.Output(), "orchestra: update comes before its flags: orchestra update [--check] [--force]")
-		default:
+		if c, ok := findSubcommand(rest[0]); ok {
+			fmt.Fprintf(fs.Output(), "orchestra: %s comes before its flags:\n%s", c.name, usageLines("  ", c.name, c.synopsis))
+		} else {
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}
 		return f, nil, errUnexpectedArgs

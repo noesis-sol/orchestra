@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/update"
@@ -14,6 +15,19 @@ import (
 // exitUpdateAvailable is orchestra update --check's exit code when the latest release would replace
 // this build.
 const exitUpdateAvailable = 1
+
+// updateSynopsis is orchestra update's flags, as its usage line gives them (see subcommand).
+const updateSynopsis = "[--check] [--force]"
+
+// runUpdateHere is orchestra update on the binary running, of this build's version. It returns the exit code.
+func runUpdateHere(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(stderr, "orchestra update: cannot find this binary:", err)
+		return dispatch.ExitSetup
+	}
+	return runUpdate(ctx, args, buildVersion(), exe, update.Updater{}, stdout, stderr)
+}
 
 // runUpdate replaces the binary at exe, orchestra of version current, with the latest release's, which
 // u reads and installs. It returns the exit code.
@@ -28,7 +42,7 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 	check := fs.Bool("check", false, "only say whether a newer release is out; change nothing")
 	force := fs.Bool("force", false, "replace a build from a clone (dev, a pseudo-version) or a newer one too")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra update [--check] [--force]\n\n"+
+		fmt.Fprint(fs.Output(), usageLines("Usage: ", "update", updateSynopsis)+"\n"+
 			"Replace this orchestra with the latest GitHub Release's binary, its SHA-256 checked against the\n"+
 			"release's checksums.txt. A build from a clone is replaced only with --force. A run going\n"+
 			"keeps the build it started with; the next run starts the new one.\n\n")
@@ -37,15 +51,8 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 			"1 --check: a newer release is out,\n2 refused (flags, a build from a clone, "+
 			"a folder it can't write in), 4 the update failed.\n")
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return dispatch.ExitOK
-		}
-		return dispatch.ExitSetup
-	}
-	if rest := fs.Args(); len(rest) > 0 {
-		fmt.Fprintf(stderr, "orchestra update: unexpected argument %q (see orchestra update -h)\n", rest[0])
-		return dispatch.ExitSetup
+	if code, ok := parseArgs(fs, args, "update"); !ok {
+		return code
 	}
 
 	rel, err := u.Latest(ctx)

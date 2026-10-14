@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra init`'s flags read the same in `orchestra -h`, in `orchestra init -h`
+  and in the hint for flags given before `init`: each listed some and not
+  others (`--mcp`, `--setup`, `--agent`). The hint now puts the usage line on
+  a line of its own, for `plan` and `update` too.
 - A worker that stops with nothing done no longer goes back in the queue
   (`WAITS_FOR_MERGE`) for a blocker that has merged but kept its `unmerged`
   label, as when `bd` couldn't remove it (`LABEL_FAILED`): the holds then

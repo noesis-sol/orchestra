@@ -116,12 +116,14 @@ type initFlags struct {
 	agent                                    string // the workers' agent kind, AGENT_KIND's by default
 }
 
-// initUsage is what orchestra init -h says before its flags.
-const initUsage = "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] " +
+// initSynopsis is orchestra init's flags, as its usage line gives them (see subcommand).
+const initSynopsis = "[--check-fast \"<command>\"] [--check-full \"<command>\"] " +
 	"[--check-fast-timeout D] [--check-full-timeout D]\n" +
-	"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n" +
-	"                      [--install-beads] [--verifier] [--prefix name] [--force]\n\n" +
-	"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n" +
+	"[--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n" +
+	"[--install-beads] [--verifier] [--prefix name] [--agent kind] [--force]"
+
+// initAbout is what orchestra init -h says between its usage line and its flags.
+const initAbout = "Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n" +
 	"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n" +
 	"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n" +
 	"checks' runners (scripts/check-fast.sh, the merge check, and scripts/check-full.sh, run once\n" +
@@ -183,18 +185,11 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 		return ""
 	}
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), initUsage)
+		fmt.Fprint(fs.Output(), usageLines("Usage: ", "init", initSynopsis)+"\n"+initAbout)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return f, dispatch.ExitOK, false
-		}
-		return f, dispatch.ExitSetup, false
-	}
-	if rest := fs.Args(); len(rest) > 0 {
-		fmt.Fprintf(stderr, "orchestra init: unexpected argument %q (see orchestra init -h)\n", rest[0])
-		return f, dispatch.ExitSetup, false
+	if code, ok := parseArgs(fs, args, "init"); !ok {
+		return f, code, false
 	}
 	if _, problems := e.settle(); len(problems) > 0 {
 		for _, p := range problems {

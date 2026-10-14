@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +12,9 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
+// planSynopsis is orchestra plan's flags, as its usage line gives them (see subcommand).
+const planSynopsis = "[--apply]"
+
 // runPlan proposes blocks links between the open tickets that touch the same code, in the
 // repository around dir, and adds them with --apply. It returns the exit code.
 func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) int {
@@ -20,22 +22,15 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	fs.SetOutput(stderr)
 	apply := fs.Bool("apply", false, "add the proposed links with bd dep add")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: orchestra plan [--apply]\n\n"+
+		fmt.Fprintf(fs.Output(), usageLines("Usage: ", "plan", planSynopsis)+"\n"+
 			"Propose blocks links between the open tickets that touch the same code, so they run one after\n"+
 			"the other: the higher-priority ticket first. Tickets are linked when they name the same\n"+
 			"function, or work on the same file of at most %d lines, unless both name functions it\n"+
 			"mentions and none is the same. Without --apply it only prints the proposal.\n\n", dispatch.SmallFileLines)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return dispatch.ExitOK
-		}
-		return dispatch.ExitSetup
-	}
-	if rest := fs.Args(); len(rest) > 0 {
-		fmt.Fprintf(stderr, "orchestra plan: unexpected argument %q (see orchestra plan -h)\n", rest[0])
-		return dispatch.ExitSetup
+	if code, ok := parseArgs(fs, args, "plan"); !ok {
+		return code
 	}
 	repo, err := git.Git{}.TopLevel(ctx, dir)
 	if err != nil {

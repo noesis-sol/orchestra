@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -19,7 +21,6 @@ import (
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
-	"github.com/noesis-sol/orchestra/internal/update"
 
 	"golang.org/x/term"
 )
@@ -71,160 +72,284 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 	"  orchestra init\n" +
 	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
 
-// run is orchestra: 'orchestra init …', 'orchestra plan …', 'orchestra update …' or a run. It returns nil or
-// an exitStatus.
-// A run's setup, held until it ends (the lock, the stop signals' watch, the log), the question of
-// what it works on, and a feature typed there or given with --feature are here; runPlain or
-// runDashboard runs the loop and the organ phase after it.
+// cmdEnv is what a command reads and writes besides its arguments: the environment and the three
+// standard streams.
+type cmdEnv struct {
+	getenv         func(string) string
+	stdin          io.Reader
+	stdout, stderr io.Writer
+}
+
+// subcommand is a command of orchestra's other than a run, named by the argument after 'orchestra'.
+type subcommand struct {
+	name string
+	// synopsis is its flags, as its usage line gives them after 'orchestra <name> ', a newline where
+	// the line breaks: the main usage, the hint for flags given before it and its own -h all read it.
+	synopsis string
+	run      func(ctx context.Context, args []string, e cmdEnv) int // its exit code
+}
+
+// subcommands are orchestra's subcommands, in the order the main usage lists them.
+var subcommands = []subcommand{
+	{"init", initSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
+		return runInit(ctx, ".", args, e.getenv, e.stdin, e.stdout, e.stderr)
+	}},
+	{"plan", planSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
+		return runPlan(ctx, ".", args, e.stdout, e.stderr)
+	}},
+	{"update", updateSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
+		return runUpdateHere(ctx, args, e.stdout, e.stderr)
+	}},
+}
+
+// findSubcommand is the subcommand called name, if there is one.
+func findSubcommand(name string) (subcommand, bool) {
+	for _, c := range subcommands {
+		if c.name == name {
+			return c, true
+		}
+	}
+	return subcommand{}, false
+}
+
+// usageLines is the usage line of 'orchestra name' with flags synopsis, after prefix: its lines
+// after the first lined up under the first flag, each ending in a newline.
+func usageLines(prefix, name, synopsis string) string {
+	head := prefix + "orchestra " + name + " "
+	return head + strings.ReplaceAll(synopsis, "\n", "\n"+strings.Repeat(" ", len(head))) + "\n"
+}
+
+// parseArgs parses the flags of 'orchestra cmd' in args with fs, whose output is stderr, and
+// refuses a positional argument. ok is false where the command stops there with code: after -h, or
+// once fs's output says what is wrong with them.
+func parseArgs(fs *flag.FlagSet, args []string, cmd string) (code int, ok bool) {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return dispatch.ExitOK, false
+		}
+		return dispatch.ExitSetup, false
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		fmt.Fprintf(fs.Output(), "orchestra %s: unexpected argument %q (see orchestra %s -h)\n", cmd, rest[0], cmd)
+		return dispatch.ExitSetup, false
+	}
+	return dispatch.ExitOK, true
+}
+
+// run is orchestra: a subcommand ('orchestra init …', 'orchestra plan …', 'orchestra update …') or a
+// run. It returns nil or an exitStatus.
+//
+// A run reads its configuration, opens its session (held until it ends: the lock, the stop
+// signals' watch, the log), settles what it works on (the question, and a feature typed there or
+// given with --feature), then runs its loop and the organ phase after it.
 func run(
 	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
 ) (err error) {
-	if len(args) > 1 && args[1] == "init" {
-		return status(runInit(ctx, ".", args[2:], getenv, stdin, stdout, stderr))
-	}
-	if len(args) > 1 && args[1] == "plan" {
-		return status(runPlan(ctx, ".", args[2:], stdout, stderr))
-	}
-	if len(args) > 1 && args[1] == "update" {
-		exe, err := os.Executable()
-		if err != nil {
-			fmt.Fprintln(stderr, "orchestra update: cannot find this binary:", err)
-			return exitStatus(dispatch.ExitSetup)
+	e := cmdEnv{getenv: getenv, stdin: stdin, stdout: stdout, stderr: stderr}
+	if len(args) > 1 {
+		if c, ok := findSubcommand(args[1]); ok {
+			return status(c.run(ctx, args[2:], e))
 		}
-		return status(runUpdate(ctx, args[2:], buildVersion(), exe, update.Updater{}, stdout, stderr))
 	}
-	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
+	cfg, code, ok := configure(ctx, args[1:], e)
+	if !ok {
+		return status(code)
+	}
+	s, code := openSession(ctx, cfg, e)
+	defer s.close(&err)
+	if code != dispatch.ExitOK {
+		return status(code)
+	}
+	if code, ok := s.chooseWork(ctx); !ok {
+		return status(code)
+	}
+	return status(s.runLoop(ctx))
+}
+
+// configure reads a run's flags in args and its setup, and reports what stops it before it starts:
+// after -h or -version, or with a problem, ok is false and the run ends with code, all said.
+func configure(ctx context.Context, args []string, e cmdEnv) (cfg options, code int, ok bool) {
+	cfg, problems, err := loadConfig(ctx, args, e.getenv, e.stderr)
 	switch {
 	case errors.Is(err, flag.ErrHelp):
-		return nil
+		return cfg, dispatch.ExitOK, false
 	case err != nil:
-		return exitStatus(dispatch.ExitSetup)
+		return cfg, dispatch.ExitSetup, false
 	case cfg.showVersion:
-		fmt.Fprintln(stdout, "orchestra", buildVersion())
-		return nil
+		fmt.Fprintln(e.stdout, "orchestra", buildVersion())
+		return cfg, dispatch.ExitOK, false
 	}
 	if cfg.notSetUp || len(problems) > 0 {
 		heading := "orchestra cannot start:"
 		if cfg.notSetUp {
-			fmt.Fprintln(stderr, notSetUpMessage)
+			fmt.Fprintln(e.stderr, notSetUpMessage)
 			heading = "\nAlso fix before a run:"
 		}
 		if len(problems) > 0 {
-			fmt.Fprintln(stderr, heading)
+			fmt.Fprintln(e.stderr, heading)
 		}
 		for _, p := range problems {
-			fmt.Fprintln(stderr, "  - "+p)
+			fmt.Fprintln(e.stderr, "  - "+p)
 		}
-		return exitStatus(dispatch.ExitSetup)
+		return cfg, dispatch.ExitSetup, false
 	}
+	return cfg, dispatch.ExitOK, true
+}
+
+// session is a run's setup, held until it ends: its lock, the worker prompt, the stop signals'
+// watch, its log and the check for a newer release, and what the run settles on as it goes.
+type session struct {
+	cfg     options
+	e       cmdEnv
+	started time.Time      // the run's start, as its lock and each record of its event stream give it
+	holder  project.Holder // what the lock says of the run
+	lock    *project.RunLock
+	prompt  string
+	stops   *stopWatch
+	log     *dispatch.Log
+	undo    []func(err error) // what close does, the last added first, given the run's result
+}
+
+// onClose adds f to what close does, before everything added so far.
+func (s *session) onClose(f func(err error)) { s.undo = append(s.undo, f) }
+
+// close undoes what openSession set up, the last first, *err being the run's result: the check for a
+// newer release says what it found, the log records the end and closes, the stop signals have their
+// default effect again, and the lock is released.
+func (s *session) close(err *error) {
+	for _, undo := range slices.Backward(s.undo) {
+		undo(*err)
+	}
+}
+
+// openSession sets up the run cfg describes, and goes into its repository. The session is never nil:
+// where code isn't 0 it stopped there, all said, and its close undoes what it got to.
+func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code int) {
+	s = &session{cfg: cfg, e: e, started: time.Now()}
 	// One run at a time in a repository: a second would race this one for the same tickets, worktrees
 	// and branch. Taken before anything changes, a --feature request's screening included, and held
 	// until orchestra exits, after the organ phase.
-	started := time.Now() // the run's start, as its lock and each record of its event stream give it
-	holder := project.Holder{
-		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
+	s.holder = project.Holder{
+		PID: os.Getpid(), Started: s.started, Version: buildVersion(), Branch: cfg.Base,
 		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: cfg.where.pane,
 	}
-	lock, lockErr := project.LockRun(ctx, cfg.Repo, holder)
+	lock, lockErr := project.LockRun(ctx, cfg.Repo, s.holder)
 	var held *project.HeldError
 	switch {
 	case errors.As(lockErr, &held):
-		fmt.Fprintf(stderr, "orchestra cannot start:\n  - %v. One run at a time works on a repository: "+
+		fmt.Fprintf(e.stderr, "orchestra cannot start:\n  - %v. One run at a time works on a repository: "+
 			"follow that one, or stop it first.\n", held)
-		return exitStatus(dispatch.ExitSetup)
+		return s, dispatch.ExitSetup
 	case errors.Is(lockErr, errors.ErrUnsupported): // logged below
 	case lockErr != nil:
-		fmt.Fprintln(stderr, "orchestra cannot take its run lock:", lockErr)
-		return exitStatus(dispatch.ExitSetup)
+		fmt.Fprintln(e.stderr, "orchestra cannot take its run lock:", lockErr)
+		return s, dispatch.ExitSetup
 	}
-	defer func() { _ = lock.Close() }() // only releases it; orchestra exiting would too
+	s.lock = lock
+	s.onClose(func(error) { _ = lock.Close() }) // only releases it; orchestra exiting would too
 
 	prompt, err := os.ReadFile(cfg.WorkerPrompt)
 	if err != nil {
-		fmt.Fprintln(stderr, "orchestra cannot read the worker prompt:", err)
-		return exitStatus(dispatch.ExitSetup)
+		fmt.Fprintln(e.stderr, "orchestra cannot read the worker prompt:", err)
+		return s, dispatch.ExitSetup
 	}
+	s.prompt = string(prompt)
 	for _, dir := range []string{cfg.WTRoot, filepath.Dir(cfg.LogPath)} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			fmt.Fprintln(stderr, "orchestra cannot create its folder:", err)
-			return exitStatus(dispatch.ExitSetup)
+			fmt.Fprintln(e.stderr, "orchestra cannot create its folder:", err)
+			return s, dispatch.ExitSetup
 		}
 	}
 	// From here to the end, closing the log included, a stop signal doesn't end orchestra outright.
-	stops := catchStops()
-	defer stops.release()
-	log, err := dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo))
-	if err != nil {
-		fmt.Fprintln(stderr, "orchestra cannot open its log:", err)
-		return exitStatus(dispatch.ExitSetup)
+	s.stops = catchStops()
+	s.onClose(func(error) { s.stops.release() })
+	if s.log, err = dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo)); err != nil {
+		fmt.Fprintln(e.stderr, "orchestra cannot open its log:", err)
+		return s, dispatch.ExitSetup
 	}
-	defer func() { // records how the run ended, and shows its last notifications before orchestra exits
-		log.End(exitCode(err))
-		if err := log.Close(); err != nil {
-			fmt.Fprintln(stderr, "orchestra cannot close its log:", err)
+	s.onClose(func(err error) { // records how the run ended, and shows its last notifications before orchestra exits
+		s.log.End(exitCode(err))
+		if err := s.log.Close(); err != nil {
+			fmt.Fprintln(e.stderr, "orchestra cannot close its log:", err)
 		}
-	}()
+	})
 	if errors.Is(lockErr, errors.ErrUnsupported) {
-		log.Line(time.Now(), "no run lock on "+runtime.GOOS+": nothing stops a second run in this repository")
+		s.log.Line(time.Now(), "no run lock on "+runtime.GOOS+": nothing stops a second run in this repository")
 	}
 	// A newer release is looked for while the run goes, and mentioned as it ends (newer.go).
-	check := startUpdateCheck(ctx, getenv)
-	defer func() { showNewer(check, !cfg.Plain && isTerminal(stdout), stdout, stderr) }()
+	check := startUpdateCheck(ctx, e.getenv)
+	s.onClose(func(error) { showNewer(check, !cfg.Plain && isTerminal(e.stdout), e.stdout, e.stderr) })
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
-		log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
+		s.log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
 	if err := os.Chdir(cfg.Repo); err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitStatus(dispatch.ExitSetup)
+		fmt.Fprintln(e.stderr, err)
+		return s, dispatch.ExitSetup
 	}
+	return s, dispatch.ExitOK
+}
+
+// chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or
+// given with --feature is talked through or planned, and filed, the run then scoped to its epic. It
+// records the run's start. ok is false where the run ends there with code: the question left, or
+// nothing filed to run.
+func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
+	cfg, e := &s.cfg, s.e
 	typed := false // the feature was typed at the question rather than given with --feature
-	if asksWork(cfg, isTerminal(stdin) && isTerminal(stdout)) {
-		feature, code := askWork(ctx, stops, cfg, stdin, stdout, stderr)
+	if asksWork(*cfg, isTerminal(e.stdin) && isTerminal(e.stdout)) {
+		feature, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr)
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
-			return exitStatus(code)
+			return code, false
 		}
 		cfg.Feature, typed = feature, feature != "" // "" for the current tickets
 		// The lock, taken before the question, says from now on what --feature would have.
 		if typed {
-			holder.Feature = feature
-			if err := lock.Rewrite(holder); err != nil {
-				log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
+			s.holder.Feature = feature
+			if err := s.lock.Rewrite(s.holder); err != nil {
+				s.log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
 			}
 		}
 	}
 	featureCode := dispatch.ExitOK
-	switch off := interviewOff(cfg); { // the run is scoped to the epic filed
+	switch off := interviewOff(*cfg); { // the run is scoped to the epic filed
 	case cfg.Feature == "":
 	case typed && off == "": // talked through with the user, and filed, in a Claude Code session
-		cfg.Ticket, featureCode = runInterview(ctx, stops, cfg, holder.Pane, log, stdin, stdout, stderr)
+		cfg.Ticket, featureCode = runInterview(ctx, s.stops, *cfg, s.holder.Pane, s.log, e.stdin, e.stdout, e.stderr)
 	default: // planned by the organs, and filed by orchestra
 		if typed {
-			fmt.Fprintf(stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)
+			fmt.Fprintf(e.stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)
 		}
-		cfg.Ticket, featureCode = runFeature(ctx, stops, cfg, log, stdin, stdout, stderr)
+		cfg.Ticket, featureCode = runFeature(ctx, s.stops, *cfg, s.log, e.stdin, e.stdout, e.stderr)
 	}
-	log.Begin(cfg.Repo, dispatch.RunStart{Started: started, Version: buildVersion(), Repo: cfg.Repo, Branch: cfg.Base,
-		Scope: cfg.Ticket, Feature: cfg.Feature, Concurrency: cfg.Concurrency})
+	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: buildVersion(), Repo: cfg.Repo,
+		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Concurrency: cfg.Concurrency})
 	if cfg.Feature != "" && cfg.Ticket == "" { // nothing filed to run
-		return status(featureCode)
+		return featureCode, false
 	}
-	out, _ := stdout.(*os.File)
-	plain := plainOutput(cfg.Plain, getenv, stdin, stdout)
-	if nothingToRun(ctx, cfg, log, stdout, plain) {
-		return nil
+	return dispatch.ExitOK, true
+}
+
+// runLoop runs the loop, plain or on the dashboard, and the organ phase after it, unless there is
+// nothing to run. It returns the exit code.
+func (s *session) runLoop(ctx context.Context) int {
+	cfg, e := s.cfg, s.e
+	out, _ := e.stdout.(*os.File)
+	plain := plainOutput(cfg.Plain, e.getenv, e.stdin, e.stdout)
+	if nothingToRun(ctx, cfg, s.log, e.stdout, plain) {
+		return dispatch.ExitOK
 	}
 
 	organCtx, cancelOrgans := context.WithCancel(context.Background())
 	defer cancelOrgans()
-	orch := newLoop(organCtx, &cfg, log, string(prompt))
+	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()
 	}
-	r := loopRun{orch: orch, cfg: cfg, stops: stops, log: log, cancelOrgans: cancelOrgans}
+	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, cancelOrgans: cancelOrgans}
 	if plain {
-		return status(runPlain(ctx, r, stdout))
+		return runPlain(ctx, r, e.stdout)
 	}
-	return status(runDashboard(ctx, r, stdin, out, stderr))
+	return runDashboard(ctx, r, e.stdin, out, e.stderr)
 }
 
 // plainOutput reports whether the run prints plain lines rather than drawing its dashboard: when
