@@ -54,7 +54,7 @@ func TestTicketFootprintLeavesOutTheCheckCommandsFiles(t *testing.T) {
 func TestTicketsNamingTheCheckScriptRunSideBySide(t *testing.T) {
 	t.Parallel()
 	a := Footprint{Files: []string{"scripts/check.sh"}}
-	if what := shared(a, a, nil); what != "scripts/check.sh" {
+	if what := shared(a, a, nil, nil); what != "scripts/check.sh" {
 		t.Errorf("two tickets listing the check script share %q", what)
 	}
 

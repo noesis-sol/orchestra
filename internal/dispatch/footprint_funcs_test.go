@@ -51,7 +51,7 @@ func TestTicketFootprintKeepsRealNamesBesideKeywords(t *testing.T) {
 	}
 	other := TicketFootprint(Ticket{ID: "y", Description: "Wrap the probe in go func() and synctest.Wait() on it, " +
 		"then `pickNext`."}, trackedHere, "")
-	if what := shared(other, fp, nil); what != "" {
+	if what := shared(other, fp, nil, nil); what != "" {
 		t.Errorf("unrelated tickets share %q", what)
 	}
 }

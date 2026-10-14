@@ -17,7 +17,7 @@ func TestTicketFootprintDropsNamesOutsideTheRepository(t *testing.T) {
 			if !fp.Empty() {
 				t.Errorf("%s (files known: %t): %+v, want nothing named", meta, tracked != nil, fp)
 			}
-			if what := shared(fp, fp, nil); what != "" {
+			if what := shared(fp, fp, nil, nil); what != "" {
 				t.Errorf("%s (files known: %t): two such tickets share %q", meta, tracked != nil, what)
 			}
 

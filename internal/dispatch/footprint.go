@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -71,16 +74,24 @@ var (
 	extension      = regexp.MustCompile(`\.[A-Za-z][A-Za-z0-9]*$`)
 	// typeMethod is Type.method, which a path token without a known extension may be.
 	typeMethod = regexp.MustCompile(`^[A-Z]\w*\.[A-Za-z_]\w*$`)
-	// called is a function named with its parentheses: refreshBranch(), Loop.merge().
-	called = regexp.MustCompile(`\b((?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*)\(\)`)
+	// called is a function named with its parentheses: refreshBranch(), Loop.merge(), o.log.Raw().
+	called = regexp.MustCompile(`\b((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)\(\)`)
 	// codeSpan is Markdown's `code`, where a function is often named without parentheses.
 	codeSpan = regexp.MustCompile("`([^`\n]+)`")
 	// callIn is a call in a code span, with or without arguments: o.agentName(id).
-	callIn = regexp.MustCompile(`\b((?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*)\(`)
+	callIn = regexp.MustCompile(`\b((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)\(`)
 	// camelCase is an identifier with a hump (waitSettled, LastToolUse), which in a code span is
 	// code, where a plain word (solo, bd) may not be.
 	camelCase = regexp.MustCompile(`^[A-Za-z_]\w*[a-z0-9][A-Z]\w*$`)
+	// identifier is a word of source code, for the functions a file mentions.
+	identifier = regexp.MustCompile(`[A-Za-z_]\w*`)
 )
+
+// camelWords are names written with a hump that are no code of the project's: GitHub, macOS.
+var camelWords = setOf(`GitHub GitLab BitBucket JavaScript TypeScript CoffeeScript PostgreSQL MySQL SQLite MongoDB
+	MariaDB GraphQL WebSocket WebSockets YouTube LinkedIn OpenAI PowerShell WordPress DevOps DockerHub NuGet PyPI
+	NumPy SciPy PyTorch TensorFlow FastAPI LaTeX OpenAPI IntelliJ JetBrains VSCode iOS iPadOS macOS tvOS watchOS
+	visionOS iPhone iPad iCloud iTerm iTerm2 eBPF`)
 
 // sourceExtensions are the file extensions a bare name (loop.go) is taken for a file by when the
 // repository's files aren't known.
@@ -106,6 +117,11 @@ type repoFiles struct {
 	byBase map[string][]string // the files' NFC forms, by base name
 	dirs   map[string]bool     // the folders' NFC forms
 	check  map[string]bool     // the files the check command names (scripts/check.sh)
+	// read gives a repository file's contents, to find the functions it mentions; nil when they
+	// can't be read.
+	read  func(file string) ([]byte, error)
+	mu    sync.Mutex
+	words map[string]map[string]bool // the identifiers in each file read, nil for one that can't be
 }
 
 // newRepoFiles indexes the files git tracks (nil when git couldn't list them) and finds the files
@@ -138,6 +154,35 @@ func newRepoFiles(tracked []string, check string) *repoFiles {
 	return r
 }
 
+// mentions reports whether repository file file mentions function fn, by its name and its type
+// when it gives one (Loop.merge: Loop and merge), as identifiers. A file that can't be read (a new
+// one, or the contents unknown) mentions none.
+func (r *repoFiles) mentions(file, fn string) bool {
+	if r == nil || r.read == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	words, ok := r.words[file]
+	if !ok {
+		if b, err := r.read(file); err == nil {
+			words = map[string]bool{}
+			for _, w := range identifier.FindAll(b, -1) {
+				words[string(w)] = true
+			}
+		}
+		if r.words == nil {
+			r.words = map[string]map[string]bool{}
+		}
+		r.words[file] = words
+	}
+	typ, name, ok := strings.Cut(fn, ".")
+	if !ok {
+		return words[fn]
+	}
+	return words[typ] && words[name]
+}
+
 // checks reports whether f is a file the check command names.
 func (r *repoFiles) checks(f string) bool { return r != nil && r.check[f] }
 
@@ -163,10 +208,12 @@ func (r *repoFiles) file(name string) string {
 }
 
 // resolve returns the repository files name means, in whichever Unicode form, as git lists them:
-// itself, the files it ends, or a new file in an existing folder. explicit keeps a name that means
-// none of these (a files metadata entry says it is one), but never one that can't be a path in the
-// repository (repoPath). Without the repository's files, a name with a folder or a known extension
-// is kept. A name kept but not tracked is given in NFC.
+// itself and every file it ends (run.go means ./run.go and internal/dispatch/run.go), or a new file
+// in an existing folder. explicit, for a files metadata entry, also takes a folder (internal/dispatch/,
+// or dispatch/) for the files under it and a glob (*.go, internal/**/*_test.go) for the files it
+// matches, and keeps a name that means none of these as a file the ticket adds, but never one that
+// can't be a path in the repository (repoPath). Without the repository's files, a name with a folder
+// or a known extension is kept. A name kept but not tracked is given in NFC.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
 	if !repoPath(name) {
@@ -179,22 +226,69 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 		}
 		return nil
 	}
-	if fs := r.files[name]; fs != nil {
-		return fs
+	name = path.Clean(name)
+	if explicit && strings.ContainsAny(name, "*?[") {
+		return r.glob(name)
 	}
-	var ends []string
+	found := slices.Clone(r.files[name])
 	for _, n := range r.byBase[path.Base(name)] {
 		if strings.HasSuffix(n, "/"+name) {
-			ends = append(ends, r.files[n]...)
+			found = append(found, r.files[n]...)
+		}
+	}
+	if explicit {
+		for _, n := range slices.Sorted(maps.Keys(r.files)) {
+			if strings.HasPrefix(n, name+"/") || strings.Contains(n, "/"+name+"/") {
+				found = append(found, r.files[n]...)
+			}
 		}
 	}
 	switch {
-	case len(ends) > 0:
-		return ends
+	case len(found) > 0:
+		return found
 	case explicit || strings.Contains(name, "/") && r.dirs[path.Dir(name)]:
 		return []string{name}
 	}
 	return nil
+}
+
+// glob returns the files pattern matches, in any folder as a partial path does: its last part a
+// file's name or a folder's, holding every file under it. * and ? match within a part of a path, and
+// ** any number of folders.
+func (r *repoFiles) glob(pattern string) []string {
+	pat := append([]string{"**"}, strings.Split(pattern, "/")...)
+	var found []string
+	for _, n := range slices.Sorted(maps.Keys(r.files)) {
+		parts := strings.Split(n, "/")
+		for end := 1; end <= len(parts); end++ {
+			if globMatch(pat, parts[:end]) {
+				found = append(found, r.files[n]...)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// globMatch reports whether the parts of a path match the pattern's, path.Match for each but **,
+// which matches any number of them.
+func globMatch(pat, parts []string) bool {
+	if len(pat) == 0 {
+		return len(parts) == 0
+	}
+	if pat[0] == "**" {
+		for i := range len(parts) + 1 {
+			if globMatch(pat[1:], parts[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(parts) == 0 {
+		return false
+	}
+	ok, _ := path.Match(pat[0], parts[0]) // a malformed pattern matches nothing
+	return ok && globMatch(pat[1:], parts[1:])
 }
 
 // stdPackages are standard packages whose functions tickets name in passing (os.WriteFile,
@@ -212,16 +306,33 @@ var goWords = setOf(`break case chan const continue default defer else fallthrou
 	any bool byte comparable complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune
 	string uint uint8 uint16 uint32 uint64 uintptr`)
 
-// funcName is a function as the footprint keeps it: a lower-case qualifier is a package or a
-// variable (o.merge), not a type, and is left off. "" for a standard package's function and for a
-// Go keyword or builtin called bare; a method of the same name (o.close) is kept.
+// testVars are the names tests give a *testing.T, B or F, and testingMethods those types' methods:
+// t.Run() and b.Loop() are no functions of the project's.
+var (
+	testVars       = setOf(`t b f tb`)
+	testingMethods = setOf(`Add Attr Chdir Cleanup Context Deadline Error Errorf Fail FailNow Failed Fatal Fatalf
+		Fuzz Helper Log Logf Loop Name Output Parallel ReportAllocs ReportMetric ResetTimer Run RunParallel SetBytes
+		Setenv Skip SkipNow Skipf Skipped StartTimer StopTimer TempDir`)
+)
+
+// funcName is a function as the footprint keeps it, from a call's name: a lower-case qualifier is a
+// package, a variable or a field (o.merge, o.log.Raw), not a type, and is left off. "" for a standard
+// package's function or variable's method (os.WriteFile, os.Stdout.Write), a test's method (t.Run)
+// and a Go keyword or builtin called bare; a method of the same name (o.close) is kept.
 func funcName(s string) string {
-	q, name, ok := strings.Cut(s, ".")
-	switch {
-	case !ok && goWords[s] || ok && stdPackages[q]:
-		return ""
-	case !ok || q[0] >= 'A' && q[0] <= 'Z':
+	parts := strings.Split(s, ".")
+	name := parts[len(parts)-1]
+	if len(parts) == 1 {
+		if goWords[s] {
+			return ""
+		}
 		return s
+	}
+	switch q := parts[len(parts)-2]; {
+	case stdPackages[parts[0]] || testVars[q] && testingMethods[name]:
+		return ""
+	case q[0] >= 'A' && q[0] <= 'Z':
+		return q + "." + name
 	}
 	return name
 }
@@ -283,7 +394,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	}
 	for _, m := range codeSpan.FindAllStringSubmatch(text, -1) {
 		code := strings.TrimSpace(m[1])
-		if camelCase.MatchString(code) {
+		if camelCase.MatchString(code) && !camelWords[code] {
 			funcs[code] = true
 		}
 		for _, c := range callIn.FindAllStringSubmatch(code, -1) {
@@ -375,28 +486,36 @@ func funcsMeet(a, b string) bool {
 }
 
 // shared returns what a ready ticket's footprint f shares with a running ticket's footprint r and
-// the files its worker has edited, or "". An area label is shared outright. Functions are compared
-// when both tickets name some, else files. Files the worker edited outside what its ticket named
-// are compared at file level whatever the ticket names.
-func shared(f, r Footprint, edited []string) string {
+// the files its worker has edited, or "". An area label and a function are shared outright. A
+// ticket works on a file it names and on one the other ticket names or the worker edited that
+// mentions a function it names (in reports whether one does), and a file both work on is shared
+// unless both name functions it mentions: they are compared by function, and none is the same.
+func shared(f, r Footprint, edited []string, in func(file, fn string) bool) string {
 	for _, a := range f.Areas {
 		if slices.Contains(r.Areas, a) {
 			return a
 		}
 	}
-	byFunc := len(f.Funcs) > 0 && len(r.Funcs) > 0
-	if byFunc {
-		for _, x := range f.Funcs {
-			for _, y := range r.Funcs {
-				if funcsMeet(x, y) {
-					return x
-				}
+	for _, x := range f.Funcs {
+		for _, y := range r.Funcs {
+			if funcsMeet(x, y) {
+				return x
 			}
 		}
 	}
-	for _, p := range f.Files {
-		named := slices.Contains(r.Files, p)
-		if named && !byFunc || slices.Contains(edited, p) && !(named && byFunc) {
+	namesIn := func(fp Footprint, p string) bool {
+		return in != nil && slices.ContainsFunc(fp.Funcs, func(fn string) bool { return in(p, fn) })
+	}
+	seen := map[string]bool{}
+	for _, p := range slices.Concat(f.Files, r.Files, edited) {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		fIn, rIn := namesIn(f, p), namesIn(r, p)
+		fAt := fIn || slices.Contains(f.Files, p)
+		rAt := rIn || slices.Contains(r.Files, p) || slices.Contains(edited, p)
+		if fAt && rAt && !(fIn && rIn) {
 			return p
 		}
 	}
@@ -415,9 +534,29 @@ type runFootprint struct {
 // the project turned it off.
 func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFootprint }
 
-// readFiles lists the repository's files for the footprints of the tickets about to be compared.
+// readFiles lists the repository's files for the footprints of the tickets about to be compared,
+// reading those compared by function from the checkout.
 func (o *Loop) readFiles(ctx context.Context) {
 	o.files = newRepoFiles(o.checkout.TrackedFiles(ctx, o.cfg.Repo), o.cfg.Check)
+	o.files.read = func(file string) ([]byte, error) { return readSource(o.cfg.Repo, file) }
+}
+
+// maxSource is the most of a file read for the functions it mentions.
+const maxSource = 4 << 20
+
+// readSource reads up to maxSource bytes of file in the repository at repo, never outside it.
+func readSource(repo, file string) ([]byte, error) {
+	root, err := os.OpenRoot(repo)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }() // opened read-only: nothing to flush
+	f, err := root.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only
+	return io.ReadAll(io.LimitReader(f, maxSource))
 }
 
 // footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the
@@ -526,7 +665,7 @@ func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 		o.mu.Lock()
 		for _, id := range slices.Sorted(maps.Keys(runningIDs)) {
 			if r := o.footprints[id]; r != nil {
-				if what := shared(fp, r.fp, r.edited); what != "" {
+				if what := shared(fp, r.fp, r.edited, o.files.mentions); what != "" {
 					why = fmt.Sprintf("touches %s, like running %s", what, id)
 					break
 				}

@@ -26,6 +26,13 @@ All notable changes to orchestra are documented here. The format follows
   ticket set aside to rebase by hand or for a run-files link, and
   `orchestra init`'s `export PATH=…` for bd. With such a repository or
   `WT_ROOT`, the pasted command broke or acted on another path.
+- Footprints overlap where they missed: a bare name (`run.go`) means every
+  file of that name, the top-level one no longer hiding the others; a
+  folder or glob in the `files` metadata means the files under it or
+  matching it; a ticket naming only `Loop.merge` overlaps one naming
+  `loop.go`; and a stray name (`t.Run()`, `GitHub`) no longer turns off the
+  shared-file check, which now compares by function only in a file that
+  mentions functions both tickets name. `o.log.Raw()` names `Raw`.
 - The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
   off at its output token limit, where it was shown blank or half-written.
   Organ answers from an older claude CLI, without a schema, are read when

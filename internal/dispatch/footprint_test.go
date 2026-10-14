@@ -109,7 +109,7 @@ func TestSharedComparesFunctionsWhenBothNameThem(t *testing.T) {
 		if c.edited != "" {
 			edited = []string{c.edited}
 		}
-		if got := shared(c.ready, c.run, edited); got != c.want {
+		if got := shared(c.ready, c.run, edited, mergeSources); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
