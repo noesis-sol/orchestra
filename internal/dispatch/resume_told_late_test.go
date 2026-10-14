@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 )
 
 // An asked ticket comes back and its earlier worker, idle in its tab, is told the answer is in, but
@@ -25,7 +26,11 @@ func TestAskedWorkerStartingLateOnBeingToldIsAdopted(t *testing.T) {
 				h.herdr.mu.Unlock()
 				return "idle"
 			},
-			finishes("a.txt")) // once told the answer is in
+			func(w *fakeWorker) AgentState { // once told the answer is in
+				// Still at work as the run reads it again: one that finished at once would be idle by then.
+				time.Sleep(time.Minute)
+				return finishes("a.txt")(w)
+			})
 		h.worker("B", func(w *fakeWorker) AgentState {
 			w.beads.set("Q", "closed") // the maintainer answers meanwhile
 			return finishes("b.txt")(w)
