@@ -20,6 +20,9 @@ All notable changes to orchestra are documented here. The format follows
   file tickets it would take up; and in a linked worktree, such as a
   worker's, where it wrote `.orchestra/` and the runners onto that ticket's
   branch.
+- Run from a linked worktree, workers get the worktree's local-scope
+  definition of an MCP server that `~/.claude.json` also defines for the
+  main checkout, every run, instead of either one by chance.
 - A `solo` ticket next in line keeps its place when a slot frees while
   every slot was taken: a failed check due to be tried again no longer
   takes the slot ahead of it. And a `solo` ticket adopted after its

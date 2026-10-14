@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -109,10 +110,10 @@ func (l *lenient[T]) UnmarshalJSON(b []byte) error {
 
 // Discover lists the MCP servers Claude Code knows for the repository checked out at roots[0], by
 // name: user and local scope from userConfig (local scope under any of roots, such as the main
-// checkout of a worktree), project scope from roots[0]/.mcp.json, the claude.ai connectors,
-// which aren't Available, and Chrome when Claude Code has it set up. A name in more than one scope
-// is listed once, from the scope Claude Code uses: local, then project, then user. Missing files
-// name no servers.
+// checkout of a worktree, an earlier root's definition winning), project scope from
+// roots[0]/.mcp.json, the claude.ai connectors, which aren't Available, and Chrome when Claude Code
+// has it set up. A name in more than one scope is listed once, from the scope Claude Code uses:
+// local, then project, then user. Missing files name no servers.
 func Discover(userConfig string, roots ...string) ([]Server, error) {
 	byName := map[string]Server{}
 	add := func(scope string, defs map[string]json.RawMessage) {
@@ -128,11 +129,13 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 			return nil, err
 		}
 	}
-	for key, p := range user.Projects {
-		for _, root := range roots {
+	// Roots in order, so the first one's definition of a server wins whatever the map's order; keys
+	// sorted, so the same holds when several of them name one root.
+	keys := slices.Sorted(maps.Keys(user.Projects))
+	for _, root := range roots {
+		for _, key := range keys {
 			if SamePath(key, root) {
-				add(ScopeLocal, p.MCPServers)
-				break
+				add(ScopeLocal, user.Projects[key].MCPServers)
 			}
 		}
 	}
