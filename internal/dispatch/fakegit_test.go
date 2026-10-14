@@ -64,6 +64,17 @@ func (g *fakeGit) commitIn(wt, subject string, files ...string) error {
 	return nil
 }
 
+// switchTo puts the worktree on branch, made from the commit it is on if there is no such branch, as
+// git switch -c does; "" detaches its HEAD there, as git switch --detach does.
+func (g *fakeGit) switchTo(wt, branch string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.branches[branch]; !ok && branch != "" {
+		g.branches[branch] = g.resolve(g.worktrees[wt])
+	}
+	g.worktrees[wt] = branch
+}
+
 // conflict makes every rebase of branch stop on conflicts in files.
 func (g *fakeGit) conflict(branch string, files ...string) {
 	g.mu.Lock()
@@ -133,7 +144,15 @@ func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) map
 	return nil
 }
 
-func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error) { return g.base, nil }
+// CurrentBranch is the branch the worktree is on, "" when detached; the main checkout is on the base.
+func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if br, ok := g.worktrees[repo]; ok {
+		return br, nil
+	}
+	return g.base, nil
+}
 
 func (g *fakeGit) Head(ctx context.Context, repo, rev string) string {
 	g.mu.Lock()

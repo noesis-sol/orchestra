@@ -380,6 +380,10 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   closed with no change` instead, and its worktree, branch and tab are removed.
 - `CLOSED_UNCOMMITTED`: closed with a commit naming it, but its worktree has uncommitted changes:
   commit or discard them, then merge its branch by hand.
+- `OFF_BRANCH`: closed, but its worktree has another branch or a detached HEAD checked out rather
+  than its own `wt/<id>`, as when its worker switched, against its rules. Nothing was rebased,
+  checked or merged. Look at both branches with the user, bring the work onto `wt/<id>`, switch the
+  worktree back, then merge it by hand.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
   holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or

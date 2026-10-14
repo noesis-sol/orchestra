@@ -22,6 +22,11 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	keep := context.WithoutCancel(ctx) // a read cut short would look like no commit
+	// Its commits may be on the branch its worktree is on instead, and a rebase would rebase that.
+	if on := o.offBranch(keep, w); on != "" {
+		o.leaveOffBranch(keep, w, on)
+		return nil
+	}
 	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
 	own := o.merger.CountCommits(keep, c.Repo, c.Base+".."+br)
 	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
@@ -112,8 +117,15 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			return nil
 		}
 
-		// Base moved on while the ticket ran: rebase it, still under the lock. git won't rebase a
-		// worktree with uncommitted changes, as a check that rewrites the files it tracks leaves.
+		// Base moved on while the ticket ran: rebase it, still under the lock. git rebases what the
+		// worktree has checked out, which must be br, as its worker may have switched since finish
+		// looked, resolving a conflict. git won't rebase a worktree with uncommitted changes, as a
+		// check that rewrites the files it tracks leaves.
+		if on := o.offBranch(keep, w); on != "" {
+			repo.unlock()
+			o.leaveOffBranch(keep, w, on)
+			return nil
+		}
 		if files := o.uncommitted(keep, wt); len(files) > 0 {
 			repo.unlock()
 			o.leaveDirtyWorktree(keep, w, files)
@@ -282,6 +294,32 @@ func (o *Loop) leaveRebaseFailed(ctx context.Context, w worker, err error) {
 		"  REBASE_FAILED: %s closed, but git could not rebase %s onto %s, which moved on while it ran%s; "+
 			"worktree %s and tab %s left for review (git output is in %s)",
 		w.id, w.br, c.Base, because(err), w.wt, w.tab, c.LogPath)})
+}
+
+// offBranch says what w's worktree has checked out when it isn't w's branch, as when its worker
+// switched to another branch or detached HEAD, against its rules: "" when it is on the branch, or git
+// can't say (its own errors then set the ticket aside if need be). A rebase in the worktree would
+// rebase what it has checked out, so w.br would never come to be on top of Base.
+func (o *Loop) offBranch(ctx context.Context, w worker) string {
+	on, err := o.checkout.CurrentBranch(ctx, w.wt)
+	switch {
+	case err != nil || on == w.br:
+		return ""
+	case on != "":
+		return on + " checked out"
+	case o.merger.RebaseInProgress(ctx, w.wt):
+		return "a rebase in progress, on a detached HEAD"
+	}
+	return "a detached HEAD"
+}
+
+// leaveOffBranch sets aside w's closed ticket, its worktree having on (see offBranch) rather than
+// its branch: nothing is rebased, checked or merged.
+func (o *Loop) leaveOffBranch(ctx context.Context, w worker, on string) {
+	o.leaveUnmerged(ctx, w.id, "OFF_BRANCH")
+	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "worktree not on " + w.br, Text: fmt.Sprintf(
+		"  OFF_BRANCH: %s closed, but its worktree %s has %s, not %s; worktree and tab %s left for review",
+		w.id, w.wt, on, w.br, w.tab)})
 }
 
 // failedResolved says why the branch of r's ticket, its rebase resolved by its worker, is set aside, as

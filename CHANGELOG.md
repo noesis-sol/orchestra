@@ -15,6 +15,10 @@ All notable changes to orchestra are documented here. The format follows
   fails with `cmux closed other workspaces too` when the maintainer, or
   another orchestra run, closes one in cmux while orchestra waits for cmux to
   list the close: only what went by the time cmux answered it counts.
+- A finished ticket whose worktree its worker left on another branch, or on a
+  detached HEAD, is set aside with `OFF_BRANCH`, naming what the worktree has
+  checked out. Before, the merge rebased and checked the other branch up to
+  three times and ended in `MERGE_CONFLICT`, saying the base kept changing.
 - Ctrl+C while a ticket set aside for its failed check is checked once more
   no longer names it among the workers left running: only its check is cut
   short, and it stays set aside.
