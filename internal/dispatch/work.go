@@ -454,8 +454,9 @@ func (o *Loop) nothingDone(ctx context.Context, w worker) bool {
 
 // waitForMerge puts ticket t back in the queue, open, once its worker, w, has stopped with it still
 // status (open or in progress) and nothing done, having found it blocked by tickets not merged yet,
-// on. Its worktree, branch and tab hold nothing, so they are removed. It is neither set aside nor
-// triaged: the holds start it again once they merge, from a Base with their code (see holds.why).
+// on. Its worktree, branch and tab hold nothing, so they are removed. It is neither set aside, even
+// if it asked a question earlier in the run, nor triaged: the holds start it again once they merge,
+// from a Base with their code (see holds.why).
 func (o *Loop) waitForMerge(ctx context.Context, t Ticket, w worker, status TicketStatus, on []string) {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
@@ -471,6 +472,8 @@ func (o *Loop) waitForMerge(ctx context.Context, t Ticket, w worker, status Tick
 				id, status, blockers, because(err), id)})
 		}
 	}
+	// Back in the queue, it is no longer set aside: not as a ticket that asked earlier in the run.
+	o.unmarkAside(id)
 	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: started before %s merged; back in the queue until %s.", blockers, does))
 	o.repoMu.Lock()
 	cleaned := o.removeWorktree(ctx, id, wt, br)

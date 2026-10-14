@@ -17,6 +17,13 @@ All notable changes to orchestra are documented here. The format follows
   cmux's version with `cmux version`, again whenever the app updates its
   CLI, and an older cmux is used as before.
 
+### Fixed
+
+- A ticket that asked a question earlier in the run, and whose worker, once
+  it was answered, found it needs a ticket not merged yet, runs again once
+  that ticket merges, as WAITS_FOR_MERGE says, rather than staying out of the
+  run and being reported as set aside.
+
 ## [0.7.0] - 2026-10-13
 
 ### Added
