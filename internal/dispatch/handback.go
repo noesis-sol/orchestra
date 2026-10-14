@@ -75,34 +75,58 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 // the result itself. It returns why the resolution failed, or "" once the branch is on top of onto
 // with the ticket's own commits, or those of them Base hasn't already, to be checked next (see
 // checkRebased) or closed as unchanged when none are left, or errInterrupted after
-// Ctrl+C (the rebase is left as it is). Neither lock is held: the worker may take minutes. The resolve timeout
-// runs from the hand-back, not from when the worker is seen to take it.
+// Ctrl+C (the rebase is left as it is). Neither lock is held: the worker may take minutes.
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
-	c := o.cfg
+	line := fmt.Sprintf("  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve "+
+		"(up to %s)", r.br, o.cfg.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(o.handBackLimit()))
+	return o.handBackTo(ctx, r, handResolving, line, o.resolvePrompt(r), func() string {
+		return o.verifyResolved(ctx, r)
+	})
+}
+
+// handMode is what a ticket's worker is handed back, as the dashboard shows it.
+type handMode int
+
+const (
+	handNone      handMode = iota // nothing, or nothing any longer
+	handResolving                 // its rebase stopped on conflicts, to resolve (see handBack)
+	handFixing                    // a check failing on its rebased branch, to fix (see fixCheck)
+)
+
+// handBackLimit is how long a worker may take over a hand-back, from when it is handed back.
+func (o *Loop) handBackLimit() time.Duration {
+	return orDefault(o.cfg.ResolveTimeout, project.DefaultResolveTimeout)
+}
+
+// handBackTo hands r's ticket back to its idle worker as mode says, with line for the log and prompt
+// for the worker, waits for it to settle (see waitResolved), and then returns why verify, which looks
+// at what the worker left without taking its word for it, rejects that: "" when it doesn't. It returns
+// why the hand-back failed before that, or errInterrupted after Ctrl+C, the worker's work left as it is.
+// Neither lock is held: the worker may take minutes. The time limit, handBackLimit, runs from the
+// hand-back, not from when the worker is seen to take it.
+func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line, prompt string,
+	verify func() string) (string, *stopReason) {
 	agent := o.agentName(r.id)
-	limit := orDefault(c.ResolveTimeout, project.DefaultResolveTimeout)
+	limit := o.handBackLimit()
 	deadline := time.Now().Add(limit)
-	base := o.setHandedBack(r.id, true, false)
-	w := o.newWatcher(r.wt, base)
-	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: fmt.Sprintf(
-		"  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve (up to %s)",
-		r.br, c.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(limit))})
-	if !o.deliverPrompt(ctx, agent, o.resolvePrompt(r)) {
+	w := o.newWatcher(r.wt, o.setHandedBack(r.id, mode))
+	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: line})
+	if !o.deliverPrompt(ctx, agent, prompt) {
 		if ctx.Err() != nil {
 			return "", errInterrupted
 		}
-		o.setHandedBack(r.id, false, false)
+		o.setHandedBack(r.id, handNone)
 		return "its worker did not take the prompt", nil
 	}
 	why := o.waitResolved(ctx, agent, r.wt, deadline, limit, w.report)
 	if ctx.Err() != nil {
 		return "", errInterrupted
 	}
-	o.setHandedBack(r.id, false, false)
+	o.setHandedBack(r.id, handNone)
 	if why != "" {
 		return why, nil
 	}
-	return o.verifyResolved(ctx, r), nil
+	return verify(), nil
 }
 
 // waitResolved waits for the worker to settle after its hand-back, which it took and has started
@@ -172,32 +196,64 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 	return ""
 }
 
-// undoResolution puts the branch back as the ticket closed it after a failed hand-back: the
-// rebase aborted, or, finished but rejected, the branch reset to its earlier commit when the
-// worktree is clean. It says what it did. The caller holds repoMu.
+// undoResolution puts the branch back as the ticket closed it after a failed hand-back (see
+// restoreBranch) and says what it did. The caller holds repoMu.
 func (o *Loop) undoResolution(ctx context.Context, r rebaseStop) string {
-	c := o.cfg
+	return o.restoreBranch(ctx, r, r.head).afterResolution()
+}
+
+// restored is what restoreBranch did with a ticket's branch to put it back at commit to, for the
+// caller to say.
+type restored struct {
+	br, wt, to string
+	stuck      bool   // a rebase in progress could not be aborted, so nothing more was done
+	aborted    bool   // a rebase in progress was aborted
+	dirty      bool   // the worktree has changes, so the branch was left where it is
+	now        string // where the branch was, after any abort; reset to to unless it was there or dirty
+	err        error  // why the reset failed
+}
+
+// restoreBranch puts r's branch back at commit to after a hand-back to its worker is rejected: a rebase
+// in progress aborted, and the branch reset to to when it is elsewhere and the worktree is clean. The
+// caller holds repoMu.
+func (o *Loop) restoreBranch(ctx context.Context, r rebaseStop, to string) restored {
+	x := restored{br: r.br, wt: r.wt, to: to}
 	if o.merger.RebaseInProgress(ctx, r.wt) {
 		if err := o.abortRebase(ctx, r.wt); err != nil {
-			return "the rebase could not be aborted, so " + r.wt + " is left mid-rebase"
+			x.stuck = true
+			return x
 		}
+		x.aborted = true
+	}
+	x.dirty = o.checkout.DirtyWorktree(ctx, r.wt) != ""
+	x.now = o.checkout.Head(ctx, o.cfg.Repo, r.br)
+	if x.now == to || x.dirty {
+		return x
+	}
+	var out string
+	out, x.err = o.merger.ResetBranch(ctx, r.wt, to)
+	o.log.Raw(out, x.err)
+	return x
+}
+
+// afterResolution says what restoreBranch did after a rejected resolution of the rebase: to is the
+// branch's commit before the rebase.
+func (x restored) afterResolution() string {
+	switch {
+	case x.stuck:
+		return "the rebase could not be aborted, so " + x.wt + " is left mid-rebase"
+	case x.aborted && x.now == x.to:
 		return "the rebase was aborted"
-	}
-	now := o.checkout.Head(ctx, c.Repo, r.br)
-	if now == r.head {
-		return r.br + " is as the ticket closed it"
-	}
-	if o.checkout.DirtyWorktree(ctx, r.wt) != "" {
-		return fmt.Sprintf("%s is left as its worker left it (it was at %s before the rebase)", r.br, short(r.head))
-	}
-	out, err := o.merger.ResetBranch(ctx, r.wt, r.head)
-	o.log.Raw(out, err)
-	if err != nil {
+	case x.now == x.to:
+		return x.br + " is as the ticket closed it"
+	case x.dirty:
+		return fmt.Sprintf("%s is left as its worker left it (it was at %s before the rebase)", x.br, short(x.to))
+	case x.err != nil:
 		return fmt.Sprintf("%s could not be reset to %s, where it was before the rebase; it is left at %s",
-			r.br, short(r.head), short(now))
+			x.br, short(x.to), short(x.now))
 	}
 	return fmt.Sprintf("%s was reset to %s, where it was before the rebase (its worker's attempt is %s)",
-		r.br, short(r.head), short(now))
+		x.br, short(x.to), short(x.now))
 }
 
 func short(hash string) string {
@@ -207,11 +263,11 @@ func short(hash string) string {
 	return hash
 }
 
-// setHandedBack marks a running ticket as having its rebase handed back to its worker to resolve, or
-// its failed check to fix, or neither any longer, shows that on the dashboard at once, and returns its
-// status as the dashboard shows it. Its worker is idle then: before it takes the hand-back, and once
-// it is done with it.
-func (o *Loop) setHandedBack(id string, resolving, fixing bool) Status {
+// setHandedBack marks a running ticket as handed back to its worker as mode says, or no longer,
+// shows that on the dashboard at once, and returns its status as the dashboard shows it. Its worker is
+// idle then: before it takes the hand-back, and once it is done with it.
+func (o *Loop) setHandedBack(id string, mode handMode) Status {
+	resolving, fixing := mode == handResolving, mode == handFixing
 	o.mu.Lock()
 	st := o.active[id]
 	st.Resolving, st.Fixing, st.Merge, st.Place = resolving, fixing, MergeNone, 0 // it joins the queue again after

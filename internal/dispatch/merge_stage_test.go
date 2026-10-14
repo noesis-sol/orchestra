@@ -84,7 +84,7 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		expect("A is done: B's turn, and C moves up", "B merging", "C to merge 1")
 
 		// B is handed back to its worker, which lets go of the queue: C's turn.
-		o.setHandedBack("B", false, true)
+		o.setHandedBack("B", handFixing)
 		turns["B"].unlock()
 		synctest.Wait()
 		expect("B handed back to fix its check", "B fixing", "C merging")
@@ -93,7 +93,7 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		}
 
 		// Its worker done, B joins the queue again, behind C.
-		o.setHandedBack("B", false, false)
+		o.setHandedBack("B", handNone)
 		take("B")
 		expect("B back in line behind C", "B to merge 1")
 		turns["C"].release()

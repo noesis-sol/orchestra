@@ -95,7 +95,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
-| `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution |
+| `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution; the hand-back itself (`handBackTo`) and putting the branch back after one is rejected (`restoreBranch`), shared with `checkback.go` |
 | `checkoutput.go` | what is kept of the output of the check, the setup and the full check as they print it: the whole in a temporary file, saved when they fail, and in memory its end, what failed, its `FLAKY:` lines and suite, each bounded |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
 | `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets; `pendingWhy`, the one rule for whether a ticket has merged |

@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // When the check fails on a finished ticket's branch rebased onto Base, after a clean rebase or once
@@ -147,35 +145,20 @@ func times(n int) string {
 // the nth hand-back in its merge, waits for it to finish, and then looks at what it left (see
 // verifyFixed). It returns what the worker committed, as in "2 commits", or why the hand-back failed,
 // or errInterrupted after Ctrl+C. Neither lock is held: the worker may take minutes. The time limit is
-// the one for resolving conflicts, from the hand-back.
+// the one for resolving conflicts, from the hand-back (see handBackTo).
 func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checked, n int) (fixed, why string,
 	stop *stopReason) {
 	c := o.cfg
-	agent := o.agentName(r.id)
-	limit := orDefault(c.ResolveTimeout, project.DefaultResolveTimeout)
-	deadline := time.Now().Add(limit)
-	w := o.newWatcher(r.wt, o.setHandedBack(r.id, false, true))
-	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: fmt.Sprintf(
-		"  FIXING: %s on %s rebased onto %s; handed back to its worker in tab %s to fix (%d of %d, up to %s)",
-		o.failedHow(res.setup, res.err), r.br, c.Base, r.tab, n, c.CheckHandBacks,
-		command.ShortDuration(limit))})
-	if !o.deliverPrompt(ctx, agent, o.fixPrompt(context.WithoutCancel(ctx), r, res)) {
-		if ctx.Err() != nil {
-			return "", "", errInterrupted
-		}
-		o.setHandedBack(r.id, false, false)
-		return "", "its worker did not take the prompt", nil
-	}
-	why = o.waitResolved(ctx, agent, r.wt, deadline, limit, w.report)
-	if ctx.Err() != nil {
-		return "", "", errInterrupted
-	}
-	o.setHandedBack(r.id, false, false)
-	if why != "" {
-		return "", why, nil
-	}
-	fixed, why = o.verifyFixed(ctx, r, at)
-	return fixed, why, nil
+	line := fmt.Sprintf("  FIXING: %s on %s rebased onto %s; handed back to its worker in tab %s to fix "+
+		"(%d of %d, up to %s)", o.failedHow(res.setup, res.err), r.br, c.Base, r.tab, n, c.CheckHandBacks,
+		command.ShortDuration(o.handBackLimit()))
+	prompt := o.fixPrompt(context.WithoutCancel(ctx), r, res)
+	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, func() string {
+		var rejected string
+		fixed, rejected = o.verifyFixed(ctx, r, at)
+		return rejected
+	})
+	return fixed, why, stop
 }
 
 // maxLanded is the most commits a check hand-back lists of those that landed on Base.
@@ -242,30 +225,28 @@ func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed,
 }
 
 // undoFix puts r's branch back at at, where its check failed, after the fix its worker was asked for
-// is rejected: a rebase it began aborted, and the branch reset when the worktree is clean. It says
-// what it did, as words to add to why the fix was rejected. The caller holds repoMu.
+// is rejected (see restoreBranch). It says what it did, as words to add to why the fix was rejected.
+// The caller holds repoMu.
 func (o *Loop) undoFix(ctx context.Context, r rebaseStop, at string) string {
-	c := o.cfg
-	if o.merger.RebaseInProgress(ctx, r.wt) {
-		if err := o.abortRebase(ctx, r.wt); err != nil {
-			return "; its rebase could not be aborted, so " + r.wt + " is left mid-rebase"
-		}
-	}
-	if o.checkout.DirtyWorktree(ctx, r.wt) != "" {
-		return "; " + r.wt + " is left as its worker left it"
-	}
-	now := o.checkout.Head(ctx, c.Repo, r.br)
-	if now == at {
+	return o.restoreBranch(ctx, r, at).afterFix()
+}
+
+// afterFix says what restoreBranch did after a rejected fix of a failed check, as words to add to why
+// it was rejected: to is the commit the check failed on.
+func (x restored) afterFix() string {
+	switch {
+	case x.stuck:
+		return "; its rebase could not be aborted, so " + x.wt + " is left mid-rebase"
+	case x.dirty:
+		return "; " + x.wt + " is left as its worker left it"
+	case x.now == x.to:
 		return ""
-	}
-	out, err := o.merger.ResetBranch(ctx, r.wt, at)
-	o.log.Raw(out, err)
-	if err != nil {
+	case x.err != nil:
 		return fmt.Sprintf("; %s could not be reset to %s, where the check failed, and is left at %s",
-			r.br, short(at), short(now))
+			x.br, short(x.to), short(x.now))
 	}
 	return fmt.Sprintf("; %s was reset to %s, where the check failed (its worker's attempt is %s)",
-		r.br, short(at), short(now))
+		x.br, short(x.to), short(x.now))
 }
 
 // handedBack says what came of the hand-backs of a failure to the ticket's worker, for a line or a
