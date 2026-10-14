@@ -60,6 +60,21 @@ type HookRecord struct {
 	Noted       time.Time // when the hooks last noted one of these, or a session's start or end; zero: never
 }
 
+// SubagentQuiet is how long a subagent started and not stopped may go without any hook reporting
+// before it counts as ended. Claude Code runs no SubagentStop for a subagent cut off by Esc, nor a
+// Stop for the turn, and a crash may end one the same way: without this, the worker would read
+// working for the rest of its session. A subagent at work reports each tool use; one running a
+// single command longer than this is taken as ended until its next report, as a background one
+// left idle that long already settles its worker (quietFor).
+const SubagentQuiet = idleGrace
+
+// SubagentsRunning reports whether a subagent the record counts is still running at now, the
+// worker's hooks having last reported a tool use (of any of its agents) at used: until no hook has
+// reported anything for SubagentQuiet.
+func (r HookRecord) SubagentsRunning(used, now time.Time) bool {
+	return r.Subagents > 0 && now.Sub(later(r.Noted, used)) < SubagentQuiet
+}
+
 // Evidence says what the record shows of a worker's session that its transcript and screen may not:
 // permission prompts and compactions, one line each; "" when there were none.
 func (r HookRecord) Evidence() string {

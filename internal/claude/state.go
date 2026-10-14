@@ -54,8 +54,9 @@ func RecordsOf(args []string) (string, bool) {
 //     not done since, nor a prompt, nor the notification that it waits at its prompt (as after a
 //     refusal, which ends the turn), whatever its other agents report meanwhile; or after a
 //     notification of a dialog waiting on an answer;
-//   - working while a subagent runs, after a prompt (UserPromptSubmit) until the turn's Stop, or
-//     after a tool use with no turn recorded;
+//   - working while a subagent runs (dispatch.HookRecord.SubagentsRunning: one started and not
+//     stopped, until no hook has reported anything for dispatch.SubagentQuiet), after a prompt
+//     (UserPromptSubmit) until the turn's Stop, or after a tool use with no turn recorded;
 //   - idle after the turn's Stop, even where a tool use reported later replaced it, as an agent Claude
 //     Code forks at the end of a turn reports one it is refused (see turnEnded in dispatch) — but a
 //     tool that finished after it means the turn goes on; after the notification that it waits at
@@ -77,10 +78,15 @@ func StateAsked(records string) (dispatch.AgentState, bool) {
 	if err != nil {
 		return dispatch.StateUnknown, false
 	}
-	defer func() { _ = root.Close() }() // read-only: nothing to lose
-	b, _, _ := readIn(root, eventsName) // none yet: no session started
-	return state(readRecord(root, activityName), readRecord(root, turnName), readRecord(root, noticeName),
-		readAsked(root), readSessions(b))
+	defer func() { _ = root.Close() }()    // read-only: nothing to lose
+	b, fi, err := readIn(root, eventsName) // none yet: no session started
+	var noted time.Time
+	if err == nil {
+		noted = fi.ModTime()
+	}
+	activity := readRecord(root, activityName)
+	return state(activity, readRecord(root, turnName), readRecord(root, noticeName), readAsked(root),
+		readSessions(b, noted, activity.at, time.Now()))
 }
 
 // TurnRecorded reports whether the records (see Records) tell a turn of the session: a prompt or a
@@ -130,10 +136,9 @@ const (
 )
 
 // sessions is what the events log says of the sessions and subagents: whether one started, whether
-// the last one ended for good, and how many subagents run.
+// the last one ended for good, and whether a subagent runs.
 type sessions struct {
-	started, ended bool
-	subagents      int
+	started, ended, subagents bool
 }
 
 // state is State's reading of the records, and whether it is blocked on a permission prompt asked
@@ -149,7 +154,7 @@ func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentStat
 		case elicitation:
 			return dispatch.StateBlocked, false
 		case idlePrompt:
-			if s.subagents > 0 {
+			if s.subagents {
 				return dispatch.StateWorking, false
 			}
 			return dispatch.StateIdle, false
@@ -163,7 +168,7 @@ func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentStat
 
 // unasked is state's reading of records that tell no prompt or dialog waiting on an answer.
 func unasked(activity, turn record, s sessions) dispatch.AgentState {
-	if s.subagents > 0 {
+	if s.subagents {
 		return dispatch.StateWorking
 	}
 	switch turn.event {
@@ -219,9 +224,10 @@ func readAsked(root *os.Root) record {
 }
 
 // readSessions reads the hooks' notes, one JSON line each, for the sessions' starts and ends and the
-// subagents running, skipping a line it can't read. A session ended to be cleared is followed by
-// another, which may not have started yet.
-func readSessions(b []byte) sessions {
+// subagents running at now, skipping a line it can't read; the notes were last written at noted, and
+// the last tool use reported at used. A session ended to be cleared is followed by another, which
+// may not have started yet.
+func readSessions(b []byte, noted, used, now time.Time) sessions {
 	var s sessions
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
@@ -239,7 +245,9 @@ func readSessions(b []byte) sessions {
 			s.ended = e.Reason != "clear"
 		}
 	}
-	s.subagents = parseEvents(b).Subagents
+	r := parseEvents(b)
+	r.Noted = noted
+	s.subagents = r.SubagentsRunning(used, now)
 	return s
 }
 

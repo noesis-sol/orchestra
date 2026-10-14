@@ -122,12 +122,14 @@ func TestStateFromHookRecords(t *testing.T) {
 
 // playHooks runs steps in turn with the hooks ReportArgs installs in wt, and returns the state its
 // records then give. Each step's records are dated a second after the step before's: a file's time
-// can be as coarse as the kernel's clock tick, finer than two hooks run one after the other.
+// can be as coarse as the kernel's clock tick, finer than two hooks run one after the other. The
+// dates are a minute before now, which no hook writes at, and recent: a subagent quiet for
+// dispatch.SubagentQuiet counts as ended.
 func playHooks(t *testing.T, wt string, steps []hookStep) dispatch.AgentState {
 	t.Helper()
 	settings := reportingSettings(t, wt, false)
 	records := Records(wt, "")
-	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := time.Now().Add(-time.Minute).Truncate(time.Second)
 	dated := map[string]time.Time{}
 	for _, s := range steps {
 		if s.resume {

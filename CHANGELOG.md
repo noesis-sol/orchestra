@@ -17,6 +17,10 @@ All notable changes to orchestra are documented here. The format follows
   that mentions it, and two tickets naming functions are compared by function
   in a file only when both name functions it mentions, so a stray function
   name no longer hides a file they share.
+- A Claude worker whose subagent was cut off by Esc, which runs no
+  `SubagentStop`, no longer reads working for the rest of its session nor
+  holds its turn open: a subagent counts as running only while hooks report,
+  and as ended once none has for 10 minutes.
 - `orchestra init` no longer runs `bd init` while you have changes staged,
   which bd committed along with its own files: it says what is staged and to
   commit or unstage it, then run init again.

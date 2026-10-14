@@ -203,12 +203,17 @@ func (o *Loop) quietFor(w worker, since time.Time) time.Duration {
 	}
 	rec := o.reporter.HookRecord(w.wt)
 	since = later(since, rec.Noted)
-	if rec.Subagents > 0 {
-		if u, ok := o.reporter.LastToolUse(w.wt); ok {
-			since = later(since, u.At)
-		}
+	if u, ok := o.reporter.LastToolUse(w.wt); ok && rec.SubagentsRunning(u.At, time.Now()) {
+		since = later(since, u.At)
 	}
 	return time.Since(since)
+}
+
+// subagentRunning says whether the hooks of the worker in wt tell a subagent still running: one
+// started and not stopped, while hooks keep reporting (HookRecord.SubagentsRunning).
+func (o *Loop) subagentRunning(wt string) bool {
+	u, _ := o.reporter.LastToolUse(wt) // none: no tool use to count
+	return o.reporter.HookRecord(wt).SubagentsRunning(u.At, time.Now())
 }
 
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
@@ -296,7 +301,7 @@ func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bo
 		u.At.Before(u.Stopped)) {
 		return time.Time{}, false, false
 	}
-	if o.reporter.HookRecord(wt).Subagents > 0 {
+	if o.subagentRunning(wt) {
 		return time.Time{}, false, false
 	}
 	if u.Event == "Stop" {
@@ -360,7 +365,7 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 				}
 				return true, why
 			}
-			if o.reporter.HookRecord(wt).Subagents > 0 {
+			if o.subagentRunning(wt) {
 				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
 					command.ShortDuration(idleGrace), u.Event)
 			}
@@ -408,7 +413,7 @@ func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 			if ok {
 				s.Doing = Doing(u, o.cfg.Check)
 			}
-			if s.Doing == "" && rec.Subagents > 0 {
+			if s.Doing == "" && rec.SubagentsRunning(u.At, time.Now()) {
 				s.Doing = DoingSubagent
 			}
 		case waitsOnPermission(st, u, ok):
