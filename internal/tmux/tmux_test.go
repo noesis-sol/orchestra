@@ -148,7 +148,7 @@ func (f *fakeTmux) call(op string) []string {
 // paneLine is one pane as list-panes lists it with paneFormat.
 type paneLine struct {
 	id, window, agent, kind, records, repo, command, dir string
-	dead                                                 bool
+	dead, launched                                       bool
 }
 
 func (p paneLine) String() string {
@@ -156,11 +156,16 @@ func (p paneLine) String() string {
 	if p.dead {
 		dead = "1"
 	}
+	launched := "0"
+	if p.launched {
+		launched = "1"
+	}
 	window := p.window
 	if window == "" {
 		window = "@1"
 	}
-	return strings.Join([]string{p.id, window, dead, p.agent, p.kind, p.records, p.repo, p.command, p.dir}, "\t")
+	return strings.Join([]string{p.id, window, dead, launched, p.agent, p.kind, p.records, p.repo, p.command, p.dir},
+		"\t")
 }
 
 // listPanes has tmux list these panes.
@@ -397,9 +402,13 @@ func TestPaneOpen(t *testing.T) {
 			t.Errorf("PaneOpen(%s) = %v %v", p, open, err)
 		}
 	}
-	f.answer("list-panes", "%1\t@1\tmaybe\t\t\t\t\tzsh\t/\n")
+	f.answer("list-panes", "%1\t@1\tmaybe\t0\t\t\t\t\tzsh\t/\n")
 	if _, err := (Terminal{}).PaneOpen(bg, "%1"); err == nil {
 		t.Error("odd output should be an error")
+	}
+	f.answer("list-panes", "%1\t@1\t0\tmaybe\t\t\t\t\tzsh\t/\n")
+	if _, err := (Terminal{}).PaneOpen(bg, "%1"); err == nil {
+		t.Error("an odd launched should be an error")
 	}
 	f.answer("list-panes", "%1\t@1\t0\n")
 	if _, err := (Terminal{}).PaneOpen(bg, "%1"); err == nil {
@@ -426,9 +435,14 @@ func TestLaunchInPaneRunsTheAgentInPlaceOfTheShell(t *testing.T) {
 		t.Errorf("set-option got:\n%q\nwant:\n%q", got, want)
 	}
 	respawn := f.call("respawn-pane")
-	if len(respawn) != 9 || !slices.Equal(respawn[:6], []string{"respawn-pane", "-k", "-t", "%5", "-e",
+	if len(respawn) != 17 || !slices.Equal(respawn[:6], []string{"respawn-pane", "-k", "-t", "%5", "-e",
 		"PATH=" + os.Getenv("PATH")}) || respawn[6] != "/bin/sh" || respawn[7] != "-c" {
 		t.Fatalf("respawn-pane got %q", respawn)
+	}
+	// The pane keeps the process ID of what it launched.
+	if got := respawn[9:]; !slices.Equal(got, []string{";", "set-option", "-p", "-F", "-t", "%5", "@orchestra-pid",
+		"#{pane_pid}"}) {
+		t.Errorf("after respawn-pane got %q", got)
 	}
 	// The command line gives the agent its arguments exactly.
 	script := strings.Replace(respawn[8], "exec 'claude'", `printf '%s\0'`, 1)
@@ -576,6 +590,12 @@ func TestStatus(t *testing.T) {
 		{"exited", paneLine{records: workingRecords(t), dead: true}, "", dispatch.StateGone},
 		{"back at its shell", paneLine{records: workingRecords(t), command: "-zsh"}, "", dispatch.StateGone},
 		{"its shell, starting", paneLine{records: records(t), command: "sh"}, "", dispatch.StateUnknown},
+		{"launched, a wrapper script", paneLine{records: workingRecords(t), command: "bash", launched: true}, "",
+			dispatch.StateWorking},
+		{"launched, a wrapper script, idle", paneLine{records: idleRecords(t), command: "sh", launched: true}, "",
+			dispatch.StateIdle},
+		{"launched, exited", paneLine{records: workingRecords(t), command: "bash", launched: true, dead: true}, "",
+			dispatch.StateGone},
 		{"no hook yet", paneLine{records: records(t)}, "Welcome to Claude Code", dispatch.StateUnknown},
 		{"trust dialog", paneLine{records: records(t)}, trust, dispatch.StateBlocked},
 		{"MCP dialog", paneLine{records: idleRecords(t)}, mcp, dispatch.StateBlocked},

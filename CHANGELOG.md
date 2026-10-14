@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- In tmux, a worker whose `claude` is a wrapper script that runs Claude Code
+  as its child, rather than through `exec`, is no longer taken for gone, and
+  concluded on, as soon as its first hook runs: only a pane orchestra didn't
+  launch the agent in is gone once back at a shell's prompt.
 - `orchestra init` no longer runs `bd init` while you have changes staged,
   which bd committed along with its own files: it says what is staged and to
   commit or unstage it, then run init again.

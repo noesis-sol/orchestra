@@ -46,6 +46,7 @@ const (
 	kindOption    = "@orchestra-kind"    // the kind launched there, such as claude
 	recordsOption = "@orchestra-records" // the folder its hooks write their records to (claude.Records)
 	repoOption    = "@orchestra-repo"    // the repository of the run that named it (Terminal.Repo)
+	pidOption     = "@orchestra-pid"     // the process ID of what orchestra launched there, its pane_pid then
 )
 
 // poll is how often a wait reads the worker's state again.
@@ -325,6 +326,7 @@ func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
 type paneInfo struct {
 	id, window   string
 	dead         bool   // its process exited (remain-on-exit keeps it open)
+	launched     bool   // its process is the one orchestra launched (pidOption), not one another respawned
 	agent, kind  string // the agent's name and kind; kind "" if no agent was launched there
 	records      string // where its hooks write their records; "" if it was launched without them
 	repo         string // the repository of the run that named its agent; "" if none, or an older orchestra did
@@ -332,8 +334,9 @@ type paneInfo struct {
 }
 
 // paneFormat lists a pane for panes, its fields in the order panes reads them.
-const paneFormat = "#{pane_id}\t#{window_id}\t#{pane_dead}\t#{" + agentOption + "}\t#{" + kindOption + "}\t#{" +
-	recordsOption + "}\t#{" + repoOption + "}\t#{pane_current_command}\t#{pane_current_path}"
+const paneFormat = "#{pane_id}\t#{window_id}\t#{pane_dead}\t#{==:#{pane_pid},#{" + pidOption + "}}\t#{" +
+	agentOption + "}\t#{" + kindOption + "}\t#{" + recordsOption + "}\t#{" + repoOption + "}\t#{pane_current_command}\t" +
+	"#{pane_current_path}"
 
 // panes lists every pane tmux has, in every session: none when no tmux server runs.
 func (t Terminal) panes(ctx context.Context) ([]paneInfo, error) {
@@ -346,12 +349,13 @@ func (t Terminal) panes(ctx context.Context) ([]paneInfo, error) {
 	}
 	var ps []paneInfo
 	for line := range lines(out) {
-		f := strings.SplitN(line, "\t", 9)
-		if len(f) != 9 || !isID(f[0], '%') || !isID(f[1], '@') || f[2] != "0" && f[2] != "1" {
+		f := strings.SplitN(line, "\t", 10)
+		if len(f) != 10 || !isID(f[0], '%') || !isID(f[1], '@') || f[2] != "0" && f[2] != "1" ||
+			f[3] != "0" && f[3] != "1" {
 			return nil, odd("list-panes", "", out)
 		}
-		ps = append(ps, paneInfo{id: f[0], window: f[1], dead: f[2] == "1", agent: f[3], kind: f[4], records: f[5],
-			repo: f[6], command: f[7], dir: f[8]})
+		ps = append(ps, paneInfo{id: f[0], window: f[1], dead: f[2] == "1", launched: f[3] == "1", agent: f[4],
+			kind: f[5], records: f[6], repo: f[7], command: f[8], dir: f[9]})
 	}
 	return ps, nil
 }
@@ -399,7 +403,9 @@ func (t Terminal) agentPane(ctx context.Context, name string) (paneInfo, bool, e
 // launch runs kind with args in the pane, in place of what ran there, and returns at once. The
 // command runs with orchestra's PATH, as orchestra would run it, through no shell's line editor, so
 // an argument may be of any length and span lines. The pane stays open when it exits, for its
-// screen to be read. With a name, the agent is given it.
+// screen to be read. With a name, the agent is given it. The pane keeps the process ID of what it
+// launched (pidOption), so that state knows the pane's process for its own, which ends dead, never at a
+// shell's prompt.
 func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []string) error {
 	if !isID(pane, '%') {
 		return missing("respawn-pane", pane, "pane")
@@ -424,7 +430,8 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 		}
 	}
 	_, err := t.run(ctx, command.ReadLimit, "respawn-pane", pane,
-		"-k", "-t", pane, "-e", "PATH="+os.Getenv("PATH"), "/bin/sh", "-c", script.String())
+		"-k", "-t", pane, "-e", "PATH="+os.Getenv("PATH"), "/bin/sh", "-c", script.String(),
+		";", "set-option", "-p", "-F", "-t", pane, pidOption, "#{pane_pid}")
 	return err
 }
 
@@ -559,11 +566,14 @@ func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState,
 var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu"}
 
 // state is the state of the agent in the pane p: gone once its process exited (the pane dead), its
-// session ended or the pane is back at a shell; otherwise what its hooks tell (claude.State), and
-// blocked while its screen shows a dialog that runs no hook, which only comes before its first turn
-// (claude.TurnRecorded). A permission prompt its hooks tell asked is blocked only while its screen
-// still shows it: once allowed, which runs no hook, its tool runs.
+// session ended or a pane orchestra's launch no longer runs is back at a shell; otherwise what its
+// hooks tell (claude.State), and blocked while its screen shows a dialog that runs no hook, which only
+// comes before its first turn (claude.TurnRecorded). A permission prompt its hooks tell asked is
+// blocked only while its screen still shows it: once allowed, which runs no hook, its tool runs.
 // A shell counts only once a hook ran: as the agent starts, the shell that runs it shows for a moment.
+// Nor does it count in a pane whose process is the one orchestra launched: that runs the agent through
+// exec, and ends dead; a shell there is a wrapper script that runs the agent as its child, which tmux
+// names as the foreground process.
 func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if p.dead || p.kind == "" {
 		return dispatch.StateGone
@@ -576,7 +586,7 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	switch {
 	case st == dispatch.StateGone:
 		return st
-	case st != dispatch.StateUnknown && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
+	case st != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
 		return dispatch.StateGone
 	case st == dispatch.StateUnknown || (st == dispatch.StateIdle && !claude.TurnRecorded(records)):
 		if screen, err := t.capture(ctx, p.id, false); err == nil && showsDialog(screen) {
