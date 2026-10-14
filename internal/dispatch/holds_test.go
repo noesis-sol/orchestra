@@ -112,7 +112,7 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 				t.Fatal(err)
 			}
 			return wt
-		}, "CLOSED_WITHOUT_COMMIT"},
+		}, "CLOSED_UNCOMMITTED"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

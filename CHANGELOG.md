@@ -33,6 +33,19 @@ All notable changes to orchestra are documented here. The format follows
   still in progress, is no longer told to continue just as the subagent's
   answer starts its next turn: a subagent's stop after the worker's Stop
   hook keeps the turn going until the turn on its answer ends.
+- A ticket left `unmerged` whose branch was squash-merged by hand and kept
+  loses its label when a run starts: the base holds the branch's changes and
+  a commit on it names the ticket. Before, it held the tickets it blocks in
+  every later run.
+- A main checkout with a local change to a file a ticket's branch renamed
+  stops the merge with `DIRTY_TREE` naming that file, rather than
+  `MERGE_FAILED`.
+- Two full-check suites whose names begin alike past a ticket title's 60
+  characters each get a ticket of their own, rather than sharing one.
+- A ticket closed with a commit but uncommitted changes in its worktree is
+  left for review as `CLOSED_UNCOMMITTED`, no longer `CLOSED_WITHOUT_COMMIT`.
+- Exit code 4's meaning in the run report and `--help` names cmux along with
+  Herdr and tmux.
 - In tmux, a worker whose `claude` is a wrapper script that runs Claude Code
   as its child, rather than through `exec`, is no longer taken for gone, and
   concluded on, as soon as its first hook runs: only a pane orchestra didn't

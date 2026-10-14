@@ -362,7 +362,7 @@ func exitMeaning(code int) string {
 	case ExitStuck:
 		return "a worker was blocked, paused or ran past its time limit and needs attention"
 	case ExitTool:
-		return "a terminal (Herdr or tmux), Beads or git command failed"
+		return "a terminal (Herdr, tmux or cmux), Beads or git command failed"
 	case ExitDirty:
 		return "the main checkout had uncommitted changes or left its branch"
 	case ExitMerge:

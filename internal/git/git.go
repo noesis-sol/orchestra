@@ -293,7 +293,8 @@ func (Git) Tracks(ctx context.Context, repo, path string) bool {
 // ChangedFiles lists the files that differ between commits from and to in repo, or every file in
 // to when from is "" (to is the first commit). It lists none if git can't.
 func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {
-	args := []string{"diff", "--name-only", "-z", from, to, "--"}
+	// --no-renames: a renamed file is listed under both its paths, so its old one is too.
+	args := []string{"diff", "--no-renames", "--name-only", "-z", from, to, "--"}
 	if from == "" {
 		args = []string{"ls-tree", "-r", "--name-only", "-z", to}
 	}
@@ -429,6 +430,20 @@ func (Git) Unchanged(ctx context.Context, repo, base, branch string) bool {
 	// base...branch: from the merge-base to branch. --quiet exits 1 on a difference, as on a failure.
 	_, err := command.Output(ctx, command.ReadLimit, repo, "git", "diff", "--quiet", base+"..."+branch, "--")
 	return err == nil
+}
+
+// Holds reports whether base holds branch's changes already: merging branch into it would change
+// nothing, as after the branch was squash-merged or its commits were cherry-picked onto base. It
+// reports false when git can't tell, as git before 2.38 can't (merge-tree --write-tree).
+func (g Git) Holds(ctx context.Context, repo, base, branch string) bool {
+	// merge-tree prints the merged tree on its first line, and exits 1 on conflicts.
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "merge-tree", "--write-tree", base, branch)
+	if err != nil {
+		return false
+	}
+	merged, _, _ := strings.Cut(out, "\n")
+	tree := g.Head(ctx, repo, base+"^{tree}")
+	return tree != "" && strings.TrimSpace(merged) == tree
 }
 
 // ResetBranch moves the branch checked out in worktree to rev, with its files.

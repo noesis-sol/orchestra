@@ -90,7 +90,8 @@ type Event struct {
 	// Blocked: Ticket's work is done, but it can't merge until the maintainer acts; why, in a few
 	// words ("main checkout has uncommitted changes", "merge conflict in a.go"). Set on the EvHold or
 	// EvStop for a DIRTY_TREE, GIT_FAILED or MERGE_FAILED met as it merged, and on an EvWarn for its
-	// MERGE_CONFLICT; not on CHECKS_FAILED or CLOSED_WITHOUT_COMMIT, where the work itself needs a look.
+	// MERGE_CONFLICT; not on CHECKS_FAILED, CLOSED_WITHOUT_COMMIT or CLOSED_UNCOMMITTED, where the
+	// work itself needs a look.
 	Blocked string
 	// Suite and Output: for an EvFullCheck that failed, the suite it failed in (the last line its
 	// output starts with project.SuiteMarker, or else the check itself; "" when the setup before it

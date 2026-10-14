@@ -25,7 +25,7 @@ const (
 	// a worker stayed blocked or unknown too long, went idle with its ticket in_progress, or ran past
 	// the ticket limit
 	ExitStuck       = 3
-	ExitTool        = 4   // terminal (Herdr or tmux), Beads or git failure, or a worker panicked
+	ExitTool        = 4   // terminal (Herdr, tmux or cmux), Beads or git failure, or a worker panicked
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
 	ExitEnvironment = 7   // workers kept failing at once, whichever ticket they had: the machine, not the tickets

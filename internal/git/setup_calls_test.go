@@ -81,8 +81,9 @@ func TestChangesAndChangedFiles(t *testing.T) {
 
 	git("add", ".")
 	git("commit", "-q", "-m", "Change")
-	// git sees the rename, and names the file as it is now.
-	if got := g.ChangedFiles(ctx, repo, first, "HEAD"); !slices.Equal(got, []string{"new/c.md", "renamed.md", "sub dir/b.md"}) {
+	// A renamed file is named as it was too: a local change to a.md is in the way of the change.
+	want2 := []string{"a.md", "new/c.md", "renamed.md", "sub dir/b.md"}
+	if got := g.ChangedFiles(ctx, repo, first, "HEAD"); !slices.Equal(got, want2) {
 		t.Errorf("changed since the first commit: %q", got)
 	}
 

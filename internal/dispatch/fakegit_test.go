@@ -367,6 +367,29 @@ func (g *fakeGit) Unchanged(ctx context.Context, repo, base, branch string) bool
 	return true
 }
 
+// Holds reports whether each file the commits of branch not in base's history add is added by a
+// commit of base's not in branch's made after them: base has the branch's changes, as after a
+// squash merge.
+func (g *fakeGit) Holds(ctx context.Context, repo, base, branch string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	own := g.only(base, branch)
+	var on []string
+	for _, c := range g.only(branch, base) {
+		if len(own) == 0 || c.hash > own[len(own)-1].hash { // hashes count up as commits are made
+			on = append(on, c.files...)
+		}
+	}
+	for _, c := range own {
+		for _, f := range c.files {
+			if !slices.Contains(on, f) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (g *fakeGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

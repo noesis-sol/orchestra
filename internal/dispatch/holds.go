@@ -239,7 +239,8 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 
 // mergedSince returns the commit on Base naming ticket t, which an earlier run left unmerged, when
 // it has merged since, by hand: its branch (wt/<id>) is on Base with a commit of its own naming it,
-// or its branch is gone and a commit on Base since the branch was cut (ForkKey) names it. It
+// or squash-merged (see branchMerged), or its branch is gone and a commit on Base since the branch
+// was cut (ForkKey) names it. It
 // returns "" when it hasn't, or git can't tell. loadUnmerged and CheckNothingToRun both ask it, so
 // that a run and its check agree on what is merged.
 func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, t Ticket) string {
@@ -257,13 +258,18 @@ func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merg
 // (see ownCommits), or "". A branch with no commits of its own is always on Base: an older commit
 // naming the ticket there, such as another ticket's mentioning it or an earlier attempt at it, is
 // not its merge. fork is where the branch was cut, as the run that left its worker behind found it
-// (see saveCarried), for a ticket with no ForkKey; "" if not known.
+// (see saveCarried), for a ticket with no ForkKey; "" if not known. A branch squash-merged by hand
+// and kept is not on Base, but Base holds its changes: then a commit on Base that the branch doesn't
+// have names the ticket, and is returned.
 func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket, fork string) string {
 	br := branchOf(t.ID)
-	if !merger.IsAncestor(ctx, c.Repo, br, c.Base) {
+	if merger.IsAncestor(ctx, c.Repo, br, c.Base) {
+		return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
+	}
+	if !merger.Holds(ctx, c.Repo, c.Base, br) {
 		return ""
 	}
-	return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
+	return merger.CommitNamingOn(ctx, c.Repo, br+".."+c.Base, t.ID)
 }
 
 // ForkKey is the metadata key holding the commit on Base that a ticket's branch was cut from (their

@@ -309,7 +309,7 @@ func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_WITHOUT_COMMIT: A closed") || !strings.Contains(ev, "has uncommitted changes") {
+	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_UNCOMMITTED: A closed") || !strings.Contains(ev, "has uncommitted changes") {
 		t.Errorf("events:\n%s", ev)
 	}
 	if log := h.mainLog(); strings.Contains(log, "A: add a.txt") {

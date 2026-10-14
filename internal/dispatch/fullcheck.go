@@ -241,14 +241,32 @@ func (o *Loop) saveFullCheckOutput(out *checkOutput) string {
 // titleWidth is the most runes a ticket's title has, as workers are asked to keep them.
 const titleWidth = 60
 
+// fullCheckPrefix begins the title of a ticket filed for a full check's suite.
+const fullCheckPrefix = "Full check fails: "
+
 // fullCheckTitle is the title of the ticket filed for suite: one open with it, and FullCheckLabel,
-// is the suite's.
+// is the suite's, or one of the suites its title, cut, begins (see filedForSuite).
 func fullCheckTitle(suite string) string {
-	title := "Full check fails: " + suite
+	title := fullCheckPrefix + suite
 	if r := []rune(title); len(r) > titleWidth {
 		title = string(r[:titleWidth-1]) + "…"
 	}
 	return title
+}
+
+// filedForSuite reports whether ticket id, labelled FullCheckLabel and titled fullCheckTitle(suite),
+// is suite's. A title cut to titleWidth stands for every suite it begins, so the ticket's
+// description, which names its suite, says which; false when bd can't show it.
+func (o *Loop) filedForSuite(ctx context.Context, id, suite string) bool {
+	if fullCheckTitle(suite) == fullCheckPrefix+suite {
+		return true
+	}
+	t, err := o.tickets.Show(ctx, id)
+	if err != nil {
+		o.log.Raw("", err) // a second ticket is easier to close than a failure nobody hears of
+		return false
+	}
+	return strings.Contains(t.Description, "in the suite "+suite+", at the end of the run")
 }
 
 // fileFullCheck files a P2 ticket for f's suite, which the full check failed in (how: "fails"), with
@@ -262,7 +280,7 @@ func (o *Loop) fileFullCheck(ctx context.Context, f fullCheck, how string, out *
 		o.log.Raw("", err) // a second ticket is easier to close than a failure nobody hears of
 	}
 	for _, t := range open {
-		if t.Title == title && HasLabel(t, FullCheckLabel) {
+		if t.Title == title && HasLabel(t, FullCheckLabel) && o.filedForSuite(ctx, t.ID, f.suite) {
 			o.appendNotes(ctx, t.ID, fmt.Sprintf("Orchestra: the full check '%s' %s again on %s at %s, in the suite %s, "+
 				"at the end of the run of %s; the whole output is in %s.",
 				c.CheckFull, how, c.Base, short(f.at), f.suite, o.started.Format("2006-01-02 15:04"), f.output))

@@ -104,6 +104,7 @@ func (upToDate) ConflictedFiles(ctx context.Context, worktree string) []string  
 func (upToDate) RebaseInProgress(ctx context.Context, worktree string) bool          { return false }
 func (upToDate) CountCommits(ctx context.Context, repo, revs string) int             { return 0 }
 func (upToDate) Unchanged(ctx context.Context, repo, base, branch string) bool       { return false }
+func (upToDate) Holds(ctx context.Context, repo, base, branch string) bool           { return false }
 func (upToDate) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	return "", nil
 }

@@ -375,9 +375,11 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   or tells it, idle, that the question is answered, and merges its work as usual. A run that ends
   with the ticket still asked leaves it to the next run, which does the same: the user may answer
   between runs, in the tab or with `bd human respond`.
-- `CLOSED_WITHOUT_COMMIT`: closed, but its branch has commits and none names it, or its worktree has
-  uncommitted changes. A ticket closed with no commits and no changes says `<id> closed with no
-  change` instead, and its worktree, branch and tab are removed.
+- `CLOSED_WITHOUT_COMMIT`: closed, but its branch has commits and none names it, or it has none and
+  its worktree has uncommitted changes. A ticket closed with no commits and no changes says `<id>
+  closed with no change` instead, and its worktree, branch and tab are removed.
+- `CLOSED_UNCOMMITTED`: closed with a commit naming it, but its worktree has uncommitted changes:
+  commit or discard them, then merge its branch by hand.
 - `<id> waits: <blocker> closed but not merged (…)`: a ready ticket held because a ticket blocking
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
   holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or

@@ -32,9 +32,9 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed without a commit", Text: fmt.Sprintf(
 			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
 	case closedDirty:
-		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
+		o.leaveUnmerged(keep, id, "CLOSED_UNCOMMITTED")
 		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed with uncommitted changes", Text: fmt.Sprintf(
-			"  CLOSED_WITHOUT_COMMIT: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
+			"  CLOSED_UNCOMMITTED: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
 			id, commit, wt, tab)})
 	case closedMerge:
 		return o.merge(ctx, w)

@@ -162,6 +162,8 @@ type Merger interface {
 	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
 	// branch's tree is its merge-base's with base: its commits, taken together, change nothing
 	Unchanged(ctx context.Context, repo, base, branch string) bool
+	// base holds branch's changes: merging it would change nothing, as after a squash merge
+	Holds(ctx context.Context, repo, base, branch string) bool
 	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }
