@@ -4,7 +4,28 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.1] - 2026-10-14
+
+### Changed
+
+- Under cmux 0.65.0 or later, a worker's prompt is pasted into its input
+  box with `cmux paste`, bracketed, so a prompt of several lines arrives
+  whole, rather than going through `.orchestra/run/cmux-prompt-*.md`; and
+  what orchestra types or presses in its workers' terminals goes with
+  `--force`, which cmux 0.65.0's input guard needs before letting a key into
+  a Claude Code dialog, such as the trust-this-folder one. orchestra reads
+  cmux's version with `cmux version`, again whenever the app updates its
+  CLI, and an older cmux is used as before.
+- Under cmux 0.65.0 or later, orchestra closes a worker's workspace, and
+  the interview's split, with `--force`, which cmux now needs to close a
+  terminal a program runs in, and waits for cmux to list a workspace or
+  split it opened, and to drop one it closed, as cmux answers before it
+  does. A worker that `cmux top` doesn't list yet, as its list is a sample
+  taken every few seconds, is no longer taken for gone.
+- The cmux tests run against a real cmux in CI, on macOS, in place of the
+  checks a person made by hand before a release (docs/development.md, The
+  cmux tests): a cmux app of each test's own, with its socket open to the
+  test, and a fake Claude Code.
 
 ### Fixed
 
@@ -76,32 +97,6 @@ All notable changes to orchestra are documented here. The format follows
   such as a test suite: Claude Code runs no hook as a prompt is allowed, so
   orchestra now checks its screen for the dialog, and reads the worker as
   working once the dialog is gone.
-
-### Changed
-
-- Under cmux 0.65.0 or later, a worker's prompt is pasted into its input
-  box with `cmux paste`, bracketed, so a prompt of several lines arrives
-  whole, rather than going through `.orchestra/run/cmux-prompt-*.md`; and
-  what orchestra types or presses in its workers' terminals goes with
-  `--force`, which cmux 0.65.0's input guard needs before letting a key into
-  a Claude Code dialog, such as the trust-this-folder one. orchestra reads
-  cmux's version with `cmux version`, again whenever the app updates its
-  CLI, and an older cmux is used as before.
-- Under cmux 0.65.0 or later, orchestra closes a worker's workspace, and
-  the interview's split, with `--force`, which cmux now needs to close a
-  terminal a program runs in, and waits for cmux to list a workspace or
-  split it opened, and to drop one it closed, as cmux answers before it
-  does. A worker that `cmux top` doesn't list yet, as its list is a sample
-  taken every few seconds, is no longer taken for gone.
-- The cmux tests run against a real cmux in CI, on macOS, in place of the
-  checks a person made by hand before a release (docs/development.md, The
-  cmux tests): a cmux app of each test's own, with its socket open to the
-  test, and a fake Claude Code.
-
-### Fixed
-
-### Fixed
-
 - A ticket back from a question whose earlier worker, told the answer is in,
   wasn't seen to take that up is read again: one working by then, as when
   it started just after Herdr gave up waiting, is adopted rather than
@@ -1787,6 +1782,7 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[0.7.1]: https://github.com/noesis-sol/orchestra/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/noesis-sol/orchestra/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noesis-sol/orchestra/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/noesis-sol/orchestra/compare/v0.5.0...v0.5.1
