@@ -37,7 +37,7 @@ func TestMetadataListReadsEveryForm(t *testing.T) {
 	for _, c := range cases {
 		for _, key := range []string{FilesKey, PredictedKey} {
 			meta := strings.ReplaceAll(c.meta, `files`, key)
-			got := metadataList([]byte(meta), key)
+			got := metadataList(Ticket{Metadata: []byte(meta)}, key)
 			if !slices.Equal(got, c.want) {
 				t.Errorf("%s (%s): %q, want %q", c.name, key, got, c.want)
 			}

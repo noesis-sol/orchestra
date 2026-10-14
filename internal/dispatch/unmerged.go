@@ -99,13 +99,8 @@ func ownCommits(t Ticket, fork, rev string) string {
 // than a commit hash: the metadata is anyone's to change, and git takes a revision beginning with a
 // dash for an option.
 func forkOf(t Ticket) string {
-	var s string
-	if json.Unmarshal(t.Metadata, &s) == nil {
-		t.Metadata = json.RawMessage(s) // an object encoded as a string
-	}
-	var meta map[string]json.RawMessage
 	var fork string
-	if json.Unmarshal(t.Metadata, &meta) != nil || json.Unmarshal(meta[ForkKey], &fork) != nil || !isHash(fork) {
+	if json.Unmarshal(t.metadataField(ForkKey), &fork) != nil || !isHash(fork) {
 		return ""
 	}
 	return fork
@@ -128,6 +123,31 @@ func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) bool {
 	o.unmerged[id] = why
 	o.mu.Unlock()
 	return o.label(ctx, id)
+}
+
+// asideKind is what a closed ticket is left unmerged for: the word its warning begins with, kept as
+// why it is unmerged (see unmergedWhy).
+type asideKind string
+
+// The kinds of closed ticket left unmerged for review, or for the next run to merge.
+const (
+	asideNoCommit      asideKind = "CLOSED_WITHOUT_COMMIT" // no commit on its branch names it
+	asideUncommitted   asideKind = "CLOSED_UNCOMMITTED"    // its worktree has uncommitted changes
+	asideConflict      asideKind = "MERGE_CONFLICT"        // its branch conflicts with Base, or Base kept changing
+	asideDirty         asideKind = "DIRTY_WORKTREE"        // uncommitted changes keep its branch from a rebase
+	asideRebaseFailed  asideKind = "REBASE_FAILED"         // git could not rebase its branch onto Base
+	asideOffBranch     asideKind = "OFF_BRANCH"            // its worktree is not on its branch
+	asideChecksFailed  asideKind = "CHECKS_FAILED"         // its check failed on its branch rebased onto Base
+	asideAskedUnmerged asideKind = "ASKED_UNMERGED"        // closed after its question, as the run ended
+	asideLeftUnmerged  asideKind = "LEFT_UNMERGED"         // closed where the last run left it, as this one ended
+)
+
+// leaveFor leaves closed ticket id unmerged for k (see leaveUnmerged) and warns of it with
+// "  <k>: <text>"; detail and blocked are the dashboard's (Event.Detail, Event.Blocked).
+func (o *Loop) leaveFor(ctx context.Context, id string, k asideKind, detail, blocked, text string) {
+	o.leaveUnmerged(ctx, id, string(k))
+	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: detail, Blocked: blocked,
+		Text: "  " + string(k) + ": " + text})
 }
 
 // leaveRunning labels UnmergedLabel each ticket whose worker is left running as the run ends, after

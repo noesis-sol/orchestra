@@ -26,14 +26,11 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	case closedNoChange:
 		o.closedUnchanged(keep, w, fmt.Sprintf("%s has no commits beyond %s and its worktree is clean", br, c.Base))
 	case closedNoCommit:
-		o.leaveUnmerged(keep, id, "CLOSED_WITHOUT_COMMIT")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed without a commit", Text: fmt.Sprintf(
-			"  CLOSED_WITHOUT_COMMIT: no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab)})
+		o.leaveFor(keep, id, asideNoCommit, "closed without a commit", "", fmt.Sprintf(
+			"no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab))
 	case closedDirty:
-		o.leaveUnmerged(keep, id, "CLOSED_UNCOMMITTED")
-		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "closed with uncommitted changes", Text: fmt.Sprintf(
-			"  CLOSED_UNCOMMITTED: %s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review",
-			id, commit, wt, tab)})
+		o.leaveFor(keep, id, asideUncommitted, "closed with uncommitted changes", "", fmt.Sprintf(
+			"%s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab))
 	case closedMerge:
 		return o.merge(ctx, w)
 	}
@@ -209,11 +206,9 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		}
 		// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
 	}
-	o.leaveUnmerged(keep, id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: c.Base + " kept changing",
-		Blocked: c.Base + " kept changing", Text: fmt.Sprintf(
-			"  MERGE_CONFLICT: %s closed, but %s kept changing while its checks ran (commits made by hand?); "+
-				"worktree %s and tab %s left for review", id, c.Base, wt, tab)})
+	o.leaveFor(keep, id, asideConflict, c.Base+" kept changing", c.Base+" kept changing", fmt.Sprintf(
+		"%s closed, but %s kept changing while its checks ran (commits made by hand?); "+
+			"worktree %s and tab %s left for review", id, c.Base, wt, tab))
 	return nil
 }
 
@@ -271,22 +266,20 @@ func (o *Loop) uncommitted(ctx context.Context, wt string) []string {
 // its worktree has uncommitted changes to files.
 func (o *Loop) leaveDirtyWorktree(ctx context.Context, w worker, files []string) {
 	c := o.cfg
-	o.leaveUnmerged(ctx, w.id, "DIRTY_WORKTREE")
-	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "uncommitted changes in its worktree", Text: fmt.Sprintf(
-		"  DIRTY_WORKTREE: %s closed, but %s has uncommitted changes to %s, so %s can't be rebased onto %s, "+
+	o.leaveFor(ctx, w.id, asideDirty, "uncommitted changes in its worktree", "", fmt.Sprintf(
+		"%s closed, but %s has uncommitted changes to %s, so %s can't be rebased onto %s, "+
 			"which moved on while it ran; worktree %s and tab %s left for review (commit or undo them, rebase onto %s, "+
-			"check, merge)", w.id, w.wt, strings.Join(files, ", "), w.br, c.Base, w.wt, w.tab, c.Base)})
+			"check, merge)", w.id, w.wt, strings.Join(files, ", "), w.br, c.Base, w.wt, w.tab, c.Base))
 }
 
 // leaveRebaseFailed sets aside w's ticket, as git could not rebase its branch onto Base, saying
 // why in err, without stopping on conflicts: no rebase is left in progress to resolve or abort.
 func (o *Loop) leaveRebaseFailed(ctx context.Context, w worker, err error) {
 	c := o.cfg
-	o.leaveUnmerged(ctx, w.id, "REBASE_FAILED")
-	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "rebase failed", Text: fmt.Sprintf(
-		"  REBASE_FAILED: %s closed, but git could not rebase %s onto %s, which moved on while it ran%s; "+
+	o.leaveFor(ctx, w.id, asideRebaseFailed, "rebase failed", "", fmt.Sprintf(
+		"%s closed, but git could not rebase %s onto %s, which moved on while it ran%s; "+
 			"worktree %s and tab %s left for review (git output is in %s)",
-		w.id, w.br, c.Base, because(err), w.wt, w.tab, c.LogPath)})
+		w.id, w.br, c.Base, because(err), w.wt, w.tab, c.LogPath))
 }
 
 // offBranch says what w's worktree has checked out when it isn't w's branch, as when its worker
@@ -309,10 +302,9 @@ func (o *Loop) offBranch(ctx context.Context, w worker) string {
 // leaveOffBranch sets aside w's closed ticket, its worktree having on (see offBranch) rather than
 // its branch: nothing is rebased, checked or merged.
 func (o *Loop) leaveOffBranch(ctx context.Context, w worker, on string) {
-	o.leaveUnmerged(ctx, w.id, "OFF_BRANCH")
-	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "worktree not on " + w.br, Text: fmt.Sprintf(
-		"  OFF_BRANCH: %s closed, but its worktree %s has %s, not %s; worktree and tab %s left for review",
-		w.id, w.wt, on, w.br, w.tab)})
+	o.leaveFor(ctx, w.id, asideOffBranch, "worktree not on "+w.br, "", fmt.Sprintf(
+		"%s closed, but its worktree %s has %s, not %s; worktree and tab %s left for review",
+		w.id, w.wt, on, w.br, w.tab))
 }
 
 // failedResolved says why the branch of r's ticket, its rebase resolved by its worker, is set aside, as
@@ -321,7 +313,7 @@ func (o *Loop) failedResolved(r rebaseStop, res checked) string {
 	if res.err == nil {
 		return ""
 	}
-	why := fmt.Sprintf("%s %s on the resolved %s", o.failedWhat(res.setup), o.checkHow(res.err), r.br)
+	why := fmt.Sprintf("%s on the resolved %s", o.failedHow(res.setup, res.err), r.br)
 	if !errors.Is(res.err, errCheckTimedOut) {
 		why += fmt.Sprintf(" (output is in %s)", res.output)
 	}
@@ -336,20 +328,13 @@ func (o *Loop) failedResolved(r rebaseStop, res checked) string {
 func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
 	c := o.cfg
 	id := r.id
-	o.leaveUnmerged(ctx, id, "CHECKS_FAILED")
-	why := "checks failed"
-	if res.setup {
-		why = "setup failed"
-	}
-	if errors.Is(res.err, errCheckTimedOut) {
-		why = strings.Replace(why, "failed", "timed out", 1)
-	}
+	why := checksFailedDetail(res.setup, errors.Is(res.err, errCheckTimedOut))
 	tried := ""
 	switch h := res.handedBack(); {
 	case h != "":
 		tried = fmt.Sprintf(", after it was handed back to its worker to fix %s (see its notes)", times(len(res.tries)))
-		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s %s on %s rebased onto %s (output is in %s); it was %s; "+
-			"so %s was set aside for review.", o.failedWhat(res.setup), o.checkHow(res.err), r.br, c.Base, res.output, h, id))
+		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s on %s rebased onto %s (output is in %s); it was %s; "+
+			"so %s was set aside for review.", o.failedHow(res.setup, res.err), r.br, c.Base, res.output, h, id))
 	case res.not != "":
 		tried = "; not handed back to its worker: " + res.not
 	}
@@ -358,10 +343,23 @@ func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
 	if !o.isRechecked(id) {
 		again, later = "", o.awaitRecheck(ctx, r.worker, r.onto)
 	}
-	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: why + again, Text: fmt.Sprintf(
-		"  CHECKS_FAILED: %s closed, but %s %s%s on %s rebased onto %s%s; "+
-			"worktree %s and tab %s left for review (output is in %s)%s",
-		id, o.failedWhat(res.setup), o.checkHow(res.err), again, r.br, c.Base, tried, r.wt, r.tab, res.output, later)})
+	o.leaveFor(ctx, id, asideChecksFailed, why+again, "", fmt.Sprintf(
+		"%s closed, but %s%s on %s rebased onto %s%s; worktree %s and tab %s left for review (output is in %s)%s",
+		id, o.failedHow(res.setup, res.err), again, r.br, c.Base, tried, r.wt, r.tab, res.output, later))
+}
+
+// checksFailedDetail is the dashboard's short why for a ticket set aside as its check, or the setup
+// before it, failed or did not finish.
+func checksFailedDetail(setup, timedOut bool) string {
+	switch {
+	case setup && timedOut:
+		return "setup timed out"
+	case setup:
+		return "setup failed"
+	case timedOut:
+		return "checks timed out"
+	}
+	return "checks failed"
 }
 
 // closedUnchanged cleans up after w's ticket, closed with no change of its own, as when tickets merged
@@ -438,12 +436,10 @@ func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
 // resolved.
 func (o *Loop) leaveConflict(ctx context.Context, r rebaseStop, why string) {
 	c := o.cfg
-	o.leaveUnmerged(ctx, r.id, "MERGE_CONFLICT")
-	o.emit(Event{Kind: EvWarn, Ticket: r.id, Aside: true, Detail: "conflicts with " + c.Base,
-		Blocked: conflictIn(r.files, c.Base), Text: fmt.Sprintf(
-			"  MERGE_CONFLICT: %s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
-				"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
-			r.id, r.br, c.Base, why, r.wt, r.tab, c.Base)})
+	o.leaveFor(ctx, r.id, asideConflict, "conflicts with "+c.Base, conflictIn(r.files, c.Base), fmt.Sprintf(
+		"%s closed, but %s conflicts with %s, which moved on while it ran (%s); "+
+			"worktree %s and tab %s left for review (rebase onto %s, check, merge)",
+		r.id, r.br, c.Base, why, r.wt, r.tab, c.Base))
 }
 
 // conflictIn says in a few words where a ticket's branch conflicts with base: in files, when git

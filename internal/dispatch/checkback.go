@@ -54,8 +54,8 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *held, r rebaseStop
 			if err == nil {
 				res.tries = append(res.tries, "its worker committed "+fixed+" and the check passes")
 			} else {
-				res.tries = append(res.tries, fmt.Sprintf("its worker committed %s, but %s %s still (output is in %s)",
-					fixed, o.failedWhat(setup), o.checkHow(err), output))
+				res.tries = append(res.tries, fmt.Sprintf("its worker committed %s, but %s still (output is in %s)",
+					fixed, o.failedHow(setup, err), output))
 			}
 		}
 		if err == nil {
@@ -105,6 +105,12 @@ func (o *Loop) failedWhat(setup bool) string {
 	return "'" + o.cfg.Check + "'"
 }
 
+// failedHow says what failed on a rebased branch with err and how, for a line about it, as
+// failedWhat and checkHow say: "'go test ./...' fails", say.
+func (o *Loop) failedHow(setup bool, err error) string {
+	return o.failedWhat(setup) + " " + o.checkHow(err)
+}
+
 // whyNotFixCheck says why a failure on r's branch at commit at, as res says, can't be handed back to
 // the ticket's worker to fix, fixes being the hand-backs so far, or "" if it can.
 func (o *Loop) whyNotFixCheck(ctx context.Context, r rebaseStop, res checked, fixes int, at string) string {
@@ -150,8 +156,8 @@ func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checke
 	deadline := time.Now().Add(limit)
 	w := o.newWatcher(r.wt, o.setHandedBack(r.id, false, true))
 	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: fmt.Sprintf(
-		"  FIXING: %s %s on %s rebased onto %s; handed back to its worker in tab %s to fix (%d of %d, up to %s)",
-		o.failedWhat(res.setup), o.checkHow(res.err), r.br, c.Base, r.tab, n, c.CheckHandBacks,
+		"  FIXING: %s on %s rebased onto %s; handed back to its worker in tab %s to fix (%d of %d, up to %s)",
+		o.failedHow(res.setup, res.err), r.br, c.Base, r.tab, n, c.CheckHandBacks,
 		command.ShortDuration(limit))})
 	if !o.deliverPrompt(ctx, agent, o.fixPrompt(context.WithoutCancel(ctx), r, res)) {
 		if ctx.Err() != nil {
@@ -193,14 +199,14 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 	} else {
 		landed = strings.Join(boundLines(strings.Split(landed, "\n"), maxLanded), "\n")
 	}
-	return fmt.Sprintf("%s moved on while you worked, and %s was rebased onto it; now %s %s on it. "+
+	return fmt.Sprintf("%s moved on while you worked, and %s was rebased onto it; now %s on it. "+
 		"Its whole output is in %s; %s\n\n"+
 		"What landed on %s since your branch was cut (git log --oneline %s..%s):\n%s\n\n"+
 		"Fix %s so that the check passes, keeping the intent of both your change and what landed on %s. "+
 		"Run '%s' in the foreground until it passes, then commit the fix on %s with %s in the commit message. "+
 		"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket "+
 		"changes, and no uncommitted changes left. Say DONE when the fix is committed.",
-		c.Base, r.br, o.failedWhat(res.setup), o.checkHow(res.err), res.output, said,
+		c.Base, r.br, o.failedHow(res.setup, res.err), res.output, said,
 		c.Base, short(r.head), short(r.onto), landed,
 		r.br, c.Base, c.Check, r.br, r.id)
 }

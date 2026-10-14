@@ -126,9 +126,7 @@ func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
 // the reason the run stops for it, as for a paused ticket, holding it at once with n running. The
 // ticket stays asked, so leaveAsked labels it.
 func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *stopReason {
-	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
-		w.tab, w.after(), w.wt))
+	o.noteWorkerGone(ctx, id, w.tab, w.wt, w.after())
 	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
 		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
 	o.emit(Event{Kind: EvHold, Ticket: id, Text: holdLine(s, n)})
@@ -147,13 +145,27 @@ func (o *Loop) askedDropped(ctx context.Context, id string, w askedWorker) {
 // warnWorkerGone warns about and notes ticket id, in progress with its worker w gone from its tab and
 // dropped, as what says.
 func (o *Loop) warnWorkerGone(ctx context.Context, id string, w askedWorker, what string) {
-	o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-		"Orchestra: the worker in tab %s is gone, with the ticket still in_progress after %s (worktree %s).",
-		w.tab, w.after(), w.wt))
+	o.noteWorkerGone(ctx, id, w.tab, w.wt, w.after())
 	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
 		"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
 			"%s; reopen it to run it again (bd update %s --status open), or finish it by hand",
 		id, w.after(), w.tab, w.wt, what, id)})
+}
+
+// noteWorkerGone notes on ticket id that its worker is gone from tab, with the ticket still in
+// progress after what after says, if anything, in worktree wt.
+func (o *Loop) noteWorkerGone(ctx context.Context, id, tab, wt, after string) {
+	o.appendNotes(context.WithoutCancel(ctx), id, workerGoneNote(tab, wt, after)+".")
+}
+
+// workerGoneNote says that the worker in tab is gone, with its ticket still in progress after what
+// after says, if anything, in worktree wt; the caller ends the sentence.
+func workerGoneNote(tab, wt, after string) string {
+	if after != "" {
+		after = " after " + after
+	}
+	return fmt.Sprintf("Orchestra: the worker in tab %s is gone, with the ticket still in_progress%s (worktree %s)",
+		tab, after, wt)
 }
 
 // leaveAsked reads each asked ticket once more as the run ends. Its worker may have carried on in
@@ -176,13 +188,14 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 		case StatusDeferred:
 			o.askedDeferred(ctx, t, w)
 		case StatusClosed:
-			kind := "ASKED_UNMERGED"
+			kind := asideAskedUnmerged
 			if w.question == "" {
-				kind = "LEFT_UNMERGED" // carried over from the last run, which left it running
+				kind = asideLeftUnmerged // carried over from the last run, which left it running
 			}
 			text := fmt.Sprintf("  %s: %s was closed in tab %s after %s, "+
 				"and the run ends before merging it; worktree %s left for the next run to merge", kind, id, w.tab, w.after(), w.wt)
-			if o.leaveUnmerged(keep, id, kind) {
+			// Not leaveFor: the warning says whether bd labelled it.
+			if o.leaveUnmerged(keep, id, string(kind)) {
 				text += fmt.Sprintf(", labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
 					"in later runs too", UnmergedLabel, id, c.Base)
 			}

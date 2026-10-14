@@ -109,9 +109,8 @@ func (c Config) excludes(t Ticket) bool {
 func (o *Loop) parentDone(ctx context.Context, id string, running map[string]bool) {
 	o.mu.Lock()
 	p := o.parentOf[id]
-	said := o.doneSaid[p]
 	o.mu.Unlock()
-	if p == "" || said || o.unmergedWhy(id) != "" {
+	if p == "" || o.doneSaid.last(p) != "" || o.unmergedWhy(id) != "" {
 		return
 	}
 	parent, err := o.tickets.Show(ctx, p)
@@ -126,12 +125,9 @@ func (o *Loop) parentDone(ctx context.Context, id string, running map[string]boo
 	if parents[p] {
 		return
 	}
-	o.mu.Lock()
-	if o.doneSaid == nil {
-		o.doneSaid = map[string]bool{}
+	if !o.doneSaid.changed(p, "ready to close") {
+		return
 	}
-	o.doneSaid[p] = true
-	o.mu.Unlock()
 	o.info("  all of %s's subtickets are merged; close it with: bd close %s (or bd epic close-eligible)", p, p)
 }
 

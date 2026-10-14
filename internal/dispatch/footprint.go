@@ -42,7 +42,7 @@ const FilesKey = "files"
 
 // TicketFiles returns the files the ticket's metadata lists under FilesKey, as written, in any of
 // those forms.
-func TicketFiles(t Ticket) []string { return metadataList(t.Metadata, FilesKey) }
+func TicketFiles(t Ticket) []string { return metadataList(t, FilesKey) }
 
 // PredictedKey is the metadata key caching the files the predictor organ expects a ticket naming
 // nothing to change, kept apart from the maintainer's FilesKey.
@@ -403,7 +403,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 			}
 		}
 	}
-	for _, f := range metadataList(t.Metadata, FilesKey) {
+	for _, f := range metadataList(t, FilesKey) {
 		for _, p := range repo.resolve(f, true) {
 			files[p] = true
 		}
@@ -417,7 +417,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	fp.Files, fp.Funcs = slices.Sorted(maps.Keys(files)), slices.Sorted(maps.Keys(funcs))
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
-		return predictedFootprint(metadataList(t.Metadata, PredictedKey), repo)
+		return predictedFootprint(metadataList(t, PredictedKey), repo)
 	}
 	return fp
 }
@@ -438,22 +438,15 @@ func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
 
 // metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, a
 // list encoded in a string (bd update <id> --set-metadata 'files=["a.go","b.go"]' stores one), or
-// one string of them separated by commas or spaces. bd gives the metadata as an object or as one
-// encoded in a string.
-func metadataList(raw json.RawMessage, key string) []string {
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		raw = json.RawMessage(s)
-	}
-	var meta map[string]json.RawMessage
-	if json.Unmarshal(raw, &meta) != nil {
-		return nil
-	}
+// one string of them separated by commas or spaces (see Ticket.metadataField).
+func metadataList(t Ticket, key string) []string {
+	field := t.metadataField(key)
 	var list []string
-	if json.Unmarshal(meta[key], &list) == nil {
+	if json.Unmarshal(field, &list) == nil {
 		return list
 	}
-	if json.Unmarshal(meta[key], &s) != nil {
+	var s string
+	if json.Unmarshal(field, &s) != nil {
 		return nil
 	}
 	var inString []string
@@ -612,9 +605,9 @@ func (o *Loop) footprintWorktree(id, wt string) {
 // endFootprint forgets a ticket that is no longer running.
 func (o *Loop) endFootprint(id string) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	delete(o.footprints, id)
-	delete(o.skipSaid, id)
+	o.mu.Unlock()
+	o.skipSaid.forget(id)
 }
 
 // readEdits brings each running ticket's edited files up to date from its worker's reports, and
@@ -687,14 +680,7 @@ func (o *Loop) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 		}
 		o.mu.Unlock()
 	}
-	o.mu.Lock()
-	said := o.skipSaid[t.ID]
-	if o.skipSaid == nil {
-		o.skipSaid = map[string]string{}
-	}
-	o.skipSaid[t.ID] = why
-	o.mu.Unlock()
-	if why != "" && why != said {
+	if o.skipSaid.changed(t.ID, why) {
 		o.info("  skipping %s: %s", t.ID, why)
 	}
 	return why != ""

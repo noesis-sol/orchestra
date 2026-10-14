@@ -3,24 +3,51 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
 // saying why once (see holds).
 func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]bool) bool {
 	h, _ := o.holds(running, parents).why(ctx, t) // linksOf has logged bd's error; the ticket waits
-	why := h.why
-	o.mu.Lock()
-	said := o.holdSaid[t.ID]
-	if o.holdSaid == nil {
-		o.holdSaid = map[string]string{}
+	if o.holdSaid.changed(t.ID, h.why) {
+		o.info("  %s waits: %s", t.ID, h.why)
 	}
-	o.holdSaid[t.ID] = why
-	o.mu.Unlock()
-	if why != "" && why != said {
-		o.info("  %s waits: %s", t.ID, why)
+	return h.why != ""
+}
+
+// sayOnce is why each ticket was last said to wait, or be skipped, so that it is said again only
+// when the reason changes. Its zero value is ready to use, from any goroutine.
+type sayOnce struct {
+	mu   sync.Mutex
+	said map[string]string
+}
+
+// changed records why as ticket id's reason, "" for none, and reports whether it is one to say: not
+// "", and not the reason last recorded.
+func (s *sayOnce) changed(id, why string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	said := s.said[id]
+	if s.said == nil {
+		s.said = map[string]string{}
 	}
-	return why != ""
+	s.said[id] = why
+	return why != "" && why != said
+}
+
+// last is the reason last recorded for ticket id, or "".
+func (s *sayOnce) last(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.said[id]
+}
+
+// forget drops ticket id's reason, so that the next one is said whatever it is.
+func (s *sayOnce) forget(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.said, id)
 }
 
 // holds is what keeps a ready ticket waiting. Workers close their ticket before it merges, and bd

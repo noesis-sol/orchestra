@@ -95,7 +95,7 @@ type Loop struct {
 	rechecked map[string]bool       // tickets taken up to be checked again (see dueRecheck)
 	setUpFor  map[string]string     // the commit each finished ticket's dependencies were set up for (see setUp)
 	labelled  map[string]bool       // tickets carrying UnmergedLabel, which a merge removes
-	holdSaid  map[string]string     // why each held ticket waits, as last said
+	holdSaid  sayOnce               // why each held ticket waits, as last said (under its own lock)
 	blockers  map[string]blockLinks // each ready ticket's blockers and sources, kept for the run (see linksOf)
 	picks     int                   // how many times pick has read bd ready
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
@@ -118,14 +118,14 @@ type Loop struct {
 	leftSaved bool
 
 	parentOf  map[string]string // the parent of each ticket dispatched or left unmerged, which waits for it
-	doneSaid  map[string]bool   // parents said to be ready to close
+	doneSaid  sayOnce           // parents said to be ready to close (under its own lock)
 	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
 
 	// Scheduling by footprint. The running tickets' footprints, under mu; the repository's files,
 	// the reason each ready ticket was last skipped and the shared edits warned about, Run's own.
 	footprints map[string]*runFootprint
 	files      *repoFiles
-	skipSaid   map[string]string
+	skipSaid   sayOnce
 	warned     map[string]bool
 
 	// Predicting footprints, under predictMu: whether the predictor runs, its queue, the tickets

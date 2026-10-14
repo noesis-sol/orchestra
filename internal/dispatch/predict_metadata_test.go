@@ -34,7 +34,7 @@ func TestPredictedPathWithASpaceReadsBackWhole(t *testing.T) {
 	if b, err = h.beads.Show(t.Context(), "B"); err != nil { // as bd hands it back, with the prediction
 		t.Fatal(err)
 	}
-	if got := metadataList(b.Metadata, PredictedKey); !slices.Equal(got, want) {
+	if got := metadataList(b, PredictedKey); !slices.Equal(got, want) {
 		t.Errorf("read back %q, want %q", got, want)
 	}
 	o.readFiles(t.Context())
@@ -50,7 +50,8 @@ func TestPredictedPathWithASpaceReadsBackWhole(t *testing.T) {
 // A prediction cached before it was a JSON list, joined with commas, still reads as it did.
 func TestPredictionCachedWithCommasStillReads(t *testing.T) {
 	meta := []byte(`{"predicted_files": "internal/dispatch/run.go,internal/tui/run.go"}`)
-	if got := metadataList(meta, PredictedKey); !slices.Equal(got, []string{"internal/dispatch/run.go", "internal/tui/run.go"}) {
+	got := metadataList(Ticket{Metadata: meta}, PredictedKey)
+	if !slices.Equal(got, []string{"internal/dispatch/run.go", "internal/tui/run.go"}) {
 		t.Errorf("read back %q", got)
 	}
 	fp := TicketFootprint(Ticket{Title: "Say hello", Metadata: meta}, trackedHere, "")

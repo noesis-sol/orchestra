@@ -39,13 +39,19 @@ func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
-			!dispatch.HasLabel(t, dispatch.HumanLabel) {
+		if dispatchable(t, excludeTypes) {
 			open = append(open, t)
 		}
 	}
 	byPriority(open)
 	return open, nil
+}
+
+// dispatchable reports whether ticket t is open, not a question for the maintainer, and not of the
+// excluded issue types.
+func dispatchable(t dispatch.Ticket, excludeTypes []string) bool {
+	return t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
+		!dispatch.HasLabel(t, dispatch.HumanLabel)
 }
 
 // byPriority sorts tickets highest priority (lowest number) first, keeping bd's order otherwise.
@@ -84,8 +90,7 @@ func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch
 	}
 	var open []dispatch.Ticket
 	for _, t := range all {
-		if t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
-			!dispatch.HasLabel(t, dispatch.HumanLabel) {
+		if dispatchable(t, excludeTypes) {
 			open = append(open, t)
 		}
 	}
@@ -170,13 +175,23 @@ func (b Tracker) ready(ctx context.Context, extra ...string) ([]dispatch.Ticket,
 	}
 	out, runErr := b.bd(ctx, command.ReadLimit, append(args, extra...)...)
 	ready, err := parseReady([]byte(out), b.ExcludeTypes)
-	switch {
-	case err != nil && runErr != nil:
-		return nil, runErr
-	case err != nil:
-		return nil, fmt.Errorf("could not parse 'bd ready --json': %w", err)
+	if err = readFailed("bd ready --json", err, runErr); err != nil {
+		return nil, err
 	}
 	return ready, nil
+}
+
+// readFailed is the error of a read of cmd's output, which failed to parse with parseErr, when bd
+// ran with runErr: bd's error when it failed too, as that carries its stderr; nil when the output
+// parsed.
+func readFailed(cmd string, parseErr, runErr error) error {
+	switch {
+	case parseErr == nil:
+		return nil
+	case runErr != nil:
+		return runErr
+	}
+	return fmt.Errorf("could not parse '%s': %w", cmd, parseErr)
 }
 
 // Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
@@ -217,11 +232,8 @@ func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket,
 func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
 	out, runErr := b.bd(ctx, command.ReadLimit, "list", "--json", "--limit", "0", "--parent", id)
 	children, links, err := parseLinked([]byte(out))
-	switch {
-	case err != nil && runErr != nil:
-		return nil, nil, runErr
-	case err != nil:
-		return nil, nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	if err = readFailed("bd list --json", err, runErr); err != nil {
+		return nil, nil, err
 	}
 	return children, links, nil
 }
@@ -232,11 +244,8 @@ func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ..
 	args = append([]string{"list", "--json", "--limit", "0"}, args...)
 	out, runErr := b.bd(ctx, command.ReadLimit, args...)
 	tickets, err := parseList([]byte(out), status)
-	switch {
-	case err != nil && runErr != nil:
-		return nil, runErr
-	case err != nil:
-		return nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	if err = readFailed("bd list --json", err, runErr); err != nil {
+		return nil, err
 	}
 	return tickets, nil
 }
@@ -247,11 +256,8 @@ func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ..
 func (b Tracker) Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
 	out, runErr := b.bd(ctx, command.ReadLimit, "list", "--json", "--status", "open", "--limit", "0")
 	open, links, err := parseOpen([]byte(out), b.ExcludeTypes)
-	switch {
-	case err != nil && runErr != nil:
-		return nil, nil, runErr
-	case err != nil:
-		return nil, nil, fmt.Errorf("could not parse 'bd list --json': %w", err)
+	if err = readFailed("bd list --json", err, runErr); err != nil {
+		return nil, nil, err
 	}
 	return open, links, nil
 }

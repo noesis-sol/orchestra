@@ -50,6 +50,21 @@ func (t Ticket) DeferredUntilLater(now time.Time) bool {
 	return err == nil && until.After(now)
 }
 
+// metadataField returns the value the ticket's metadata holds at key, or nil when it holds none or
+// isn't an object: bd gives the metadata as an object or as one encoded in a string.
+func (t Ticket) metadataField(key string) json.RawMessage {
+	raw := t.Metadata
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		raw = json.RawMessage(s) // an object encoded as a string
+	}
+	var meta map[string]json.RawMessage
+	if json.Unmarshal(raw, &meta) != nil {
+		return nil
+	}
+	return meta[key]
+}
+
 // TicketStatus is a ticket's status as Beads stores it, or StatusUnknown when bd can't say.
 type TicketStatus string
 
