@@ -655,7 +655,15 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 		o.queuePredictions(ready, skip)
 	}
 	held := func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }
+	o.mu.Lock()
+	o.picks++
+	o.mu.Unlock()
 	t, queued, next := pickNext(ready, skip, held, len(running), o.solo)
+	// The ticket to start is held on its links as they are now: one kept from an earlier pick may
+	// lack a discovered-from link added since. Read again, the links hold it or the pick stands.
+	for slot && t != nil && o.staleLinks(t.ID) {
+		t, queued, next = pickNext(ready, skip, held, len(running), o.solo)
+	}
 	// A solo ticket holds something back only when a slot is free; with every slot taken (always,
 	// with one worker) the tickets wait for a slot as they would anyway. It still goes ahead of a
 	// recheck when a slot frees, which recheckTickets decides before the next pick.

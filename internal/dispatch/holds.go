@@ -130,17 +130,19 @@ type links struct {
 	sources  []string
 }
 
-// blockLinks are the links of a ready ticket, read when bd ready counted count tickets blocking it.
+// blockLinks are the links of a ready ticket, read when bd ready counted count tickets blocking it,
+// in the pick'th pick of the run.
 type blockLinks struct {
 	count int
+	pick  int
 	links links
 }
 
 // linksOf returns the tickets ready ticket t waits on, or why bd show can't say, which it logs.
-// They are read once per run: bd ready's count of t's blockers changes whenever a blocks link is
-// added or removed, and only then are they read again. A discovered-from link, which bd ready
-// doesn't count, is made as the follow-up is filed, so the first read, from the same bd show as its
-// blockers, has it. Without a count they are read every time.
+// They are kept for the run: bd ready's count of t's blockers changes whenever a blocks link is
+// added or removed, and then they are read again. Nothing bd ready shows changes with a
+// discovered-from link, as one bd dep add makes after the follow-up is filed, so the ticket picked
+// to start has its links read again first (see staleLinks). Without a count they are read every time.
 func (o *Loop) linksOf(ctx context.Context, t Ticket) (links, error) {
 	o.mu.Lock()
 	b, seen := o.blockers[t.ID]
@@ -158,10 +160,24 @@ func (o *Loop) linksOf(ctx context.Context, t Ticket) (links, error) {
 		if o.blockers == nil {
 			o.blockers = map[string]blockLinks{}
 		}
-		o.blockers[t.ID] = blockLinks{count: *t.DependencyCount, links: l}
+		o.blockers[t.ID] = blockLinks{count: *t.DependencyCount, pick: o.picks, links: l}
 		o.mu.Unlock()
 	}
 	return l, nil
+}
+
+// staleLinks forgets ticket id's links when they were kept from an earlier pick, so that the next
+// hold read them again, and reports whether it did. A ticket picked to start is held on links read
+// in this pick, not on ones a link added since has made stale.
+func (o *Loop) staleLinks(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	b, seen := o.blockers[id]
+	if !seen || b.pick == o.picks {
+		return false
+	}
+	delete(o.blockers, id)
+	return true
 }
 
 // showLinks returns the tickets ticket id waits on, as bd show gives them, or why it can't.

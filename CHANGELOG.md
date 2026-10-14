@@ -15,6 +15,12 @@ All notable changes to orchestra are documented here. The format follows
   no longer adds a second check suite when the scout's runs
   `scripts/check.sh` as `$PWD/scripts/check.sh`, through `bash -c`, or
   before `&&`.
+- A follow-up linked to the ticket it was discovered from in a second
+  command (`bd create`, then `bd dep add … discovered-from`) waits for that
+  ticket to merge, as one filed with the link does: the run could read its
+  links between the two commands and start it without the source's code.
+  The ticket about to start has its links read again, which also catches a
+  blocker swapped for another.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.
