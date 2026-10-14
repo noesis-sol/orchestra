@@ -17,12 +17,12 @@ import (
 	"time"
 )
 
-// Claude is a fake Claude Code for a tmux pane or a cmux terminal, for faketool.Func: it reads the --settings file it is
-// given and runs its hooks as Claude Code would, with the input Claude Code gives them, as it goes
-// through a script of steps. Its folder, $FAKE_CLAUDE (see ClaudeEnv), holds the script, one step a
-// line: script, or script.resume for a session it resumes (--resume <ID>). It logs what it did
-// there (log), and keeps its sessions' transcripts there too, where Claude Code keeps them
-// (projects/<folder>/<ID>.jsonl).
+// Claude is a fake Claude Code for a tmux pane or a cmux terminal, for faketool.Func: it reads the
+// --settings file it is given and runs its hooks as Claude Code would, with the input Claude Code
+// gives them, as it goes through a script of steps. Its folder, $FAKE_CLAUDE (see ClaudeEnv), holds
+// the script, one step a line: script, or script.resume for a session it resumes (--resume <ID>). It
+// logs what it did there (log), and keeps its sessions' transcripts there too, where Claude Code
+// keeps them (projects/<folder>/<ID>.jsonl).
 //
 // The steps, each logged as it ends; a command runs with sh -c in the working directory, its ticket
 // as $ID (the folder's name, as a ticket's worktree is named):
