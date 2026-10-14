@@ -159,6 +159,11 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 	case c.Repo != "":
 		c.Workspace = tmux.SessionName("orchestra-" + filepath.Base(c.Repo))
 	}
+	if strings.Contains(c.Workspace, ":") && c.Workspace != own {
+		// tmux splits a target at its first ':', session from window, so a session named foo:bar,
+		// which tmux 3.8 keeps, can't be attached to by name: it is foo_bar on every tmux.
+		c.Workspace = tmux.SessionName(c.Workspace)
+	}
 	c.inSight = own != "" && c.Workspace == own
 	if !c.inSight && c.Workspace != "" {
 		how := "tmux attach -t "

@@ -109,6 +109,10 @@ All notable changes to orchestra are documented here. The format follows
 - With tmux before 3.8, the hint to attach to the workers' session names
   the session tmux made for `--workspace foo.bar`, `foo_bar`, where it named
   `foo.bar`, which those versions can't find.
+- Under tmux, `--workspace foo:bar` runs the workers in the session `foo_bar`
+  on every tmux, as before 3.8: tmux 3.8 kept `foo:bar`, which the hint to
+  attach to it couldn't name, as tmux reads `foo:bar` as session `foo`,
+  window `bar`.
 - The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
   off at its output token limit, where it was shown blank or half-written.
   Organ answers from an older claude CLI, without a schema, are read when
