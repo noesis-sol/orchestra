@@ -6,6 +6,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard's **In queue** counts the ready tickets held back, waiting
+  for something besides a free slot: `0 of 29 · 4 held back`. A ticket
+  skipped for overlapping a running one, a parent waiting for its
+  subtickets, one waiting for a blocker to merge and those behind a solo
+  ticket counted nowhere, so a queue of 0 beside empty slots looked like
+  nothing to do; only the log said why. The `dispatch` and `queue` events
+  carry them as `held` and `held_by`, by reason.
+
 ### Fixed
 
 - `orchestra init`'s flags read the same in `orchestra -h`, in `orchestra init -h`

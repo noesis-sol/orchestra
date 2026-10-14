@@ -297,6 +297,16 @@ func (m Dashboard) queueCount() (n, of string) {
 	return fmt.Sprint(m.queued), of
 }
 
+// heldBack is what follows the queue's count while ready tickets are held back, waiting for
+// something besides a slot (an overlap with a running ticket, their subtickets, a ticket to merge, a
+// solo ticket): " · 4 held back", or "" with none.
+func (m Dashboard) heldBack() string {
+	if n := m.held.Total(); n > 0 && m.queued >= 0 {
+		return heldBackStyle.Render(fmt.Sprintf(" · %d held back", n))
+	}
+	return ""
+}
+
 // statsTable is the run's totals as one strip: a column per total, label over value, in the
 // events' colours. Too narrow a pane gets the one-line form instead.
 func (m Dashboard) statsTable(w int) string {
@@ -309,6 +319,7 @@ func (m Dashboard) statsTable(w int) string {
 	if m.queued < 0 {
 		queued = dimStyle.Render(n)
 	}
+	queued += m.heldBack()
 	if m.draining {
 		queued += windDownStyle.Render(" · held") // not taken while the run winds down
 	}
@@ -345,7 +356,7 @@ func (m Dashboard) statsLine(w int) string {
 		parts = append(parts, t.part())
 	}
 	n, of := m.queueCount()
-	queue := dimStyle.Render("queue " + n + of)
+	queue := dimStyle.Render("queue "+n+of) + m.heldBack()
 	if m.draining {
 		queue += windDownStyle.Render(" held") // not taken while the run winds down
 	}

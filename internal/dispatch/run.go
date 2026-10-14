@@ -21,6 +21,38 @@ type SoloState struct {
 	Next   bool
 }
 
+// HeldBack is how many ready tickets wait for something besides a free slot, by what holds them
+// back; none of them counts among those queued for a slot. The zero value is none.
+type HeldBack struct {
+	Overlap int // their footprint overlaps a running ticket's
+	Parent  int // their subtickets are not all closed and merged
+	Merge   int // a ticket blocking them, or the one they were filed from, has not merged
+	Solo    int // a solo ticket runs, or is next and waits for the running tickets to finish
+}
+
+// Total is how many tickets h holds back.
+func (h HeldBack) Total() int { return h.Overlap + h.Parent + h.Merge + h.Solo }
+
+// add counts one ticket held back by kind.
+func (h *HeldBack) add(kind holdKind) {
+	switch kind {
+	case notHeld:
+	case heldOverlap:
+		h.Overlap++
+	case heldParent:
+		h.Parent++
+	default:
+		h.Merge++
+	}
+}
+
+// queue is how many ready tickets a pick found besides the one to start: waiting for a slot
+// (queued), and held back.
+type queue struct {
+	queued int
+	held   HeldBack
+}
+
 // InterruptedError is the cause a run's context is cancelled with to say what stopped the run, as
 // in "by SIGTERM". Without it the loop reports Ctrl+C.
 type InterruptedError string
@@ -233,9 +265,9 @@ type runState struct {
 	drained  bool            // the maintainer asked to stop after the running tickets, as last said
 
 	solo soloQueue // the tickets labelled SoloLabel
-	// The queue size last reported, -1 before the first, and the solo ticket and the tickets not
-	// closed with it (see reportQueue).
-	queued       int
+	// The queue last reported, its queued -1 before the first, and the solo ticket and the tickets
+	// not closed with it (see reportQueue).
+	queued       queue
 	soloShown    SoloState
 	unclosedSaid int
 }
@@ -244,7 +276,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 	return &runState{
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
-		count: o.cfg.DoneSoFar, queued: -1, unclosedSaid: -1,
+		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1,
 	}
 }
 
@@ -344,25 +376,25 @@ func (r *runState) heedEnvironment() {
 // the maintainer asked it to wind down.
 func (r *runState) startTickets() {
 	for r.taking() && r.ctx.Err() == nil && len(r.inflight) < r.o.cfg.Concurrency {
-		t, queued, s := r.o.next(r.ctx, r.inflight, &r.solo)
+		t, q, s := r.o.next(r.ctx, r.inflight, &r.solo)
 		if s != nil {
 			r.stops.add(s)
 			r.sayHold(s, "")
 			return
 		}
 		if t == nil {
-			r.reportQueue(queued)
+			r.reportQueue(q)
 			return // nothing ready that isn't already running, or it waits for a solo ticket
 		}
 		if r.takeDrainRequest() {
 			return
 		}
-		r.start(*t, queued)
+		r.start(*t, q)
 	}
 }
 
-// start hands ticket t to a worker, with queued tickets ready behind it.
-func (r *runState) start(t Ticket, queued int) {
+// start hands ticket t to a worker, with the queue q behind it.
+func (r *runState) start(t Ticket, q queue) {
 	o, c := r.o, r.o.cfg
 	r.count++
 	o.setParent(t.ID, t.Parent)
@@ -374,9 +406,9 @@ func (r *runState) start(t Ticket, queued int) {
 		o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 			"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 	}
-	r.queued, r.soloShown, r.unclosedSaid = queued, r.solo.state(), o.unclosed
+	r.queued, r.soloShown, r.unclosedSaid = q, r.solo.state(), o.unclosed
 	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
-		Queued: queued, Solo: r.soloShown, Unclosed: r.unclosedSaid,
+		Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
 		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
 	o.startFootprint(t)
 	tr := o.newTicketRun(r.ctx, t)
@@ -490,24 +522,25 @@ func (r *runState) polled() {
 	// With a free slot, Run reads bd ready again as it starts tickets. With none, the queue count is
 	// brought up to date; a failed read waits for the next poll, as nothing depends on it.
 	if r.taking() && len(r.inflight) >= o.cfg.Concurrency {
-		if t, queued, err := o.pick(r.ctx, r.inflight, &r.solo); err == nil {
+		if t, q, err := o.pick(r.ctx, r.inflight, &r.solo); err == nil {
 			if t != nil {
-				queued++
+				q.queued++
 			}
-			r.reportQueue(queued)
+			r.reportQueue(q)
 		}
 	}
 }
 
-// reportQueue tells the dashboard how many ready tickets wait for a slot, which solo ticket runs or
-// is next, and how many tickets aren't closed, when any of that has changed.
-func (r *runState) reportQueue(n int) {
+// reportQueue tells the dashboard how many ready tickets wait for a slot and how many are held back
+// (q), which solo ticket runs or is next, and how many tickets aren't closed, when any of that has
+// changed.
+func (r *runState) reportQueue(q queue) {
 	solo, unclosed := r.solo.state(), r.o.unclosed
-	if n == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid {
+	if q == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid {
 		return
 	}
-	r.queued, r.soloShown, r.unclosedSaid = n, solo, unclosed
-	r.o.emit(Event{Kind: EvQueue, Queued: n, Solo: solo, Unclosed: unclosed})
+	r.queued, r.soloShown, r.unclosedSaid = q, solo, unclosed
+	r.o.emit(Event{Kind: EvQueue, Queued: q.queued, Held: q.held, Solo: solo, Unclosed: unclosed})
 }
 
 // end ends the run, once nothing runs or Ctrl+C came, and returns its exit code. It leaves behind
@@ -580,26 +613,26 @@ func (o *Loop) sayWaiting(inflight map[string]bool) {
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
 // are fast-forwarded into it; each read of it waits for a git write under way (repoMu), as a merge's
 // fast-forward, and lets go between reads, so git failing doesn't hold up the merges.
-func (o *Loop) next(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, int, *stopReason) {
+func (o *Loop) next(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, *stopReason) {
 	s := o.checkoutUnready(ctx, "", &o.repoMu)
 	if ctx.Err() != nil {
-		return nil, 0, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
+		return nil, queue{}, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
 	}
 	if s != nil {
-		return nil, 0, s
+		return nil, queue{}, s
 	}
-	t, queued, err := o.pickTries(ctx, running, solo)
+	t, q, err := o.pickTries(ctx, running, solo)
 	if ctx.Err() != nil {
-		return nil, 0, nil
+		return nil, queue{}, nil
 	}
 	if err != nil {
 		what := "'bd ready --json'"
 		if errors.As(err, new(listUnreadableError)) {
 			what = "'bd list --json'"
 		}
-		return nil, 0, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
+		return nil, queue{}, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
 	}
-	return t, queued, nil
+	return t, q, nil
 }
 
 // readyTries is how many times next reads the queue while bd fails before it stops the run.
@@ -608,11 +641,11 @@ const readyTries = 3
 // pickTries is pick, tried up to readyTries times a poll apart while bd fails, as when a worker's bd
 // (a claim, a close) holds the database: bd failing once or twice doesn't stop the run. It logs each
 // failure it tries again after.
-func (o *Loop) pickTries(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, int, error) {
+func (o *Loop) pickTries(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, error) {
 	for try := 1; ; try++ {
-		t, queued, err := o.pick(ctx, running, solo)
+		t, q, err := o.pick(ctx, running, solo)
 		if err == nil || try == readyTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
-			return t, queued, err
+			return t, q, err
 		}
 		o.log.Raw("", fmt.Errorf("could not read the queue (try %d of %d), reading it again: %w", try, readyTries, err))
 	}
@@ -664,16 +697,17 @@ func (q *soloQueue) update(next string, slot bool, t *Ticket, queued int) (why s
 }
 
 // pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
-// ticket that can start, with how many others could; with none, how many wait for a solo ticket.
-// It says once why they wait, keeping the solo tickets in solo.
-func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, int, error) {
+// ticket that can start, with how many others could and how many are held back, by what holds
+// them. With a free slot and none to start, those that could wait for a solo ticket, and count as
+// held back. It says once why they wait, keeping the solo tickets in solo.
+func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueue) (*Ticket, queue, error) {
 	ready, err := o.tickets.Ready(ctx, o.cfg.Ticket)
 	if err != nil {
-		return nil, 0, err
+		return nil, queue{}, err
 	}
 	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
-		return nil, 0, listUnreadableError{err}
+		return nil, queue{}, listUnreadableError{err}
 	}
 	o.countUnclosed(ctx, open)
 	parents := o.parentsOpen(open, running)
@@ -704,20 +738,31 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool, solo *soloQueu
 	if o.footprintOn() {
 		o.queuePredictions(ready, skip)
 	}
-	held := func(t Ticket) bool { return o.held(ctx, t, running, parents) || overlaps(t) }
+	held := func(t Ticket) holdKind {
+		if k := o.held(ctx, t, running, parents); k != notHeld {
+			return k
+		}
+		if overlaps(t) {
+			return heldOverlap
+		}
+		return notHeld
+	}
 	o.mu.Lock()
 	o.picks++
 	o.mu.Unlock()
-	t, queued, next := pickNext(ready, skip, held, len(running), solo.running)
+	t, q, next := pickNext(ready, skip, held, len(running), solo.running)
 	// The ticket to start is held on its links as they are now: one kept from an earlier pick may
 	// lack a discovered-from link added since. Read again, the links hold it or the pick stands.
 	for slot && t != nil && o.staleLinks(t.ID) {
-		t, queued, next = pickNext(ready, skip, held, len(running), solo.running)
+		t, q, next = pickNext(ready, skip, held, len(running), solo.running)
 	}
-	if why := solo.update(next, slot, t, queued); why != "" {
+	if why := solo.update(next, slot, t, q.queued); why != "" {
 		o.info("  %s", why)
 	}
-	return t, queued, nil
+	if slot && t == nil {
+		q.held.Solo, q.queued = q.queued, 0 // with a slot free, only a solo ticket keeps them waiting
+	}
+	return t, q, nil
 }
 
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
@@ -782,26 +827,35 @@ func (alreadyLocked) Lock()   {}
 func (alreadyLocked) Unlock() {}
 
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
-// how many other ready tickets aren't either. A ticket labelled SoloLabel runs alone: while solo
-// (the one running, or "") runs nothing starts, and one first in line starts only once none of
-// the running tickets are left, holding back the tickets behind it until then so it isn't
-// starved; next names it. With no ticket to start, queued is how many wait.
+// in q how many other ready tickets aren't either (queued), and how many not skipped are held, by
+// what holds them (held returns it). A ticket labelled SoloLabel runs alone: while solo (the one
+// running, or "") runs nothing starts, and one first in line starts only once none of the running
+// tickets are left, holding back the tickets behind it until then so it isn't starved; next names
+// it. With no ticket to start, queued is how many wait.
 func pickNext(
-	ready []Ticket, skip map[string]bool, held func(Ticket) bool, running int, solo string,
-) (t *Ticket, queued int, next string) {
+	ready []Ticket, skip map[string]bool, held func(Ticket) holdKind, running int, solo string,
+) (t *Ticket, q queue, next string) {
 	var free []Ticket
 	for _, t := range ready {
-		if !skip[t.ID] && !held(t) {
-			free = append(free, t)
+		if skip[t.ID] {
+			continue
 		}
+		if k := held(t); k != notHeld {
+			q.held.add(k)
+			continue
+		}
+		free = append(free, t)
 	}
 	switch {
 	case len(free) == 0:
-		return nil, 0, ""
+		return nil, q, ""
 	case solo != "":
-		return nil, len(free), ""
+		q.queued = len(free)
+		return nil, q, ""
 	case HasLabel(free[0], SoloLabel) && running > 0:
-		return nil, len(free), free[0].ID
+		q.queued = len(free)
+		return nil, q, free[0].ID
 	}
-	return &free[0], len(free) - 1, ""
+	q.queued = len(free) - 1
+	return &free[0], q, ""
 }

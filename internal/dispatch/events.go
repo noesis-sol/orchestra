@@ -60,6 +60,7 @@ type Event struct {
 	// EvAnswered; the verdict's summary for EvTriage.
 	Title  string
 	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
+	Held   HeldBack  // EvDispatch and EvQueue: ready tickets held back, waiting for something besides a slot
 	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
 	// Unclosed: for EvDispatch and EvQueue, the tickets not closed that the run draws from (in a
 	// scoped run, the scope's); -1 before the run could read them.

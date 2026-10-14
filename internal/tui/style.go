@@ -34,6 +34,7 @@ var (
 	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside
 	stopStyle     = lipgloss.NewStyle().Foreground(red).Bold(true)   // needs you
 	windDownStyle = lipgloss.NewStyle().Foreground(amber)            // winding down: the maintainer's choice, not a need
+	heldBackStyle = lipgloss.NewStyle().Foreground(yellow)           // ready tickets held back, waiting on other tickets
 	doneStyle     = lipgloss.NewStyle().Foreground(green)
 	organStyle    = lipgloss.NewStyle().Foreground(purple).Bold(true) // an organ's output
 	sayStyle      = lipgloss.NewStyle().Foreground(lilac)             // the organ phase's progress

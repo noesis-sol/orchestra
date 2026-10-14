@@ -6,14 +6,17 @@ import (
 	"sync"
 )
 
-// held reports whether a ready ticket must wait for a ticket blocking it, or for its subtickets,
-// saying why once (see holds).
-func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]bool) bool {
+// held returns what makes a ready ticket wait for a ticket blocking it, or for its subtickets, or
+// notHeld, saying why once (see holds).
+func (o *Loop) held(ctx context.Context, t Ticket, running, parents map[string]bool) holdKind {
 	h, _ := o.holds(running, parents).why(ctx, t) // linksOf has logged bd's error; the ticket waits
 	if o.holdSaid.changed(t.ID, h.why) {
 		o.info("  %s waits: %s", t.ID, h.why)
 	}
-	return h.why != ""
+	if h.why == "" {
+		return notHeld
+	}
+	return h.kind
 }
 
 // sayOnce is why each ticket was last said to wait, or be skipped, so that it is said again only
@@ -86,6 +89,7 @@ const (
 	heldParent            // its subtickets are not all closed and merged
 	heldBlocked           // a ticket blocking it has not merged, or bd can't say which block it
 	heldFollowUp          // the ticket it was discovered from has not merged
+	heldOverlap           // its footprint overlaps a running ticket's, with a slot free (see overlapsRunning)
 )
 
 // hold is why a ready ticket can't start yet, and what holds it; why is "" when nothing does.

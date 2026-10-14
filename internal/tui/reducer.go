@@ -108,10 +108,10 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 	}
 	switch ev.Kind {
 	case dispatch.EvDispatch:
-		m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
+		m.queued, m.held, m.unclosed, m.solo = ev.Queued, ev.Held, ev.Unclosed, ev.Solo
 		m.pickUp(ev.Ticket, ev.Title)
 	case dispatch.EvQueue:
-		m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
+		m.queued, m.held, m.unclosed, m.solo = ev.Queued, ev.Held, ev.Unclosed, ev.Solo
 	case dispatch.EvWarn:
 		// Only a ticket the warning sets aside is for review, its row saying why as a deferred
 		// one does, or blocked, when only its merge needs the maintainer (MERGE_CONFLICT). The

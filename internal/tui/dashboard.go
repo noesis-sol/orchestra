@@ -36,11 +36,12 @@ type Dashboard struct {
 	height      int
 	rows        []ticketRow // every ticket picked up in this run, oldest first
 	interrupted bool
-	final       *dispatch.Event // the stop or done event, printed by main after exit
-	received    int             // events received before it quit, for ProgramSink.Handoff
-	quitting    bool            // it has asked to quit: the events still coming are for the printer
-	queued      int             // ready tickets waiting for a slot; -1 until the loop first says
-	unclosed    int             // the tickets not closed the run draws from; -1 until the loop says
+	final       *dispatch.Event   // the stop or done event, printed by main after exit
+	received    int               // events received before it quit, for ProgramSink.Handoff
+	quitting    bool              // it has asked to quit: the events still coming are for the printer
+	queued      int               // ready tickets waiting for a slot; -1 until the loop first says
+	held        dispatch.HeldBack // ready tickets held back, waiting for something besides a slot
+	unclosed    int               // the tickets not closed the run draws from; -1 until the loop says
 	solo        dispatch.SoloState
 	began       time.Time
 	now         func() time.Time // the clock the times shown are read from

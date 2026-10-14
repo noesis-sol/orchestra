@@ -52,9 +52,9 @@ type startRecord struct {
 	Concurrency int    `json:"concurrency"`
 }
 
-// eventRecord is an Event. Queued, Unclosed and Solo are given for EvDispatch and EvQueue, N and
-// Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
-// once read.
+// eventRecord is an Event. Queued, Held, Unclosed and Solo are given for EvDispatch and EvQueue, N
+// and Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
+// once read, the tickets held back only when there are some.
 type eventRecord struct {
 	recordHead
 	Ticket   string      `json:"ticket,omitempty"`
@@ -68,8 +68,18 @@ type eventRecord struct {
 	N        *int        `json:"n,omitempty"`
 	Limit    *int        `json:"limit,omitempty"`
 	Queued   *int        `json:"queued,omitempty"`
+	Held     int         `json:"held,omitempty"`
+	HeldBy   *heldRecord `json:"held_by,omitempty"`
 	Unclosed *int        `json:"unclosed,omitempty"`
 	Solo     *soloRecord `json:"solo,omitempty"`
+}
+
+// heldRecord is a HeldBack: how many ready tickets each reason holds back.
+type heldRecord struct {
+	Overlap int `json:"overlap,omitempty"`
+	Parent  int `json:"parent,omitempty"`
+	Merge   int `json:"merge,omitempty"`
+	Solo    int `json:"solo,omitempty"`
 }
 
 // soloRecord is a SoloState.
@@ -133,6 +143,9 @@ func (l *Log) Record(ev Event) {
 	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
+		if h := ev.Held; h.Total() > 0 {
+			r.Held, r.HeldBy = h.Total(), &heldRecord{Overlap: h.Overlap, Parent: h.Parent, Merge: h.Merge, Solo: h.Solo}
+		}
 		if ev.Unclosed >= 0 {
 			r.Unclosed = &ev.Unclosed
 		}
