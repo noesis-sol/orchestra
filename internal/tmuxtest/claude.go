@@ -34,8 +34,9 @@ import (
 //	say <text>          the line of text is shown, as a dialog that runs no hook
 //	bash <command>      the Bash tool runs the command (PreToolUse, PostToolUse)
 //	write <path> <text> the Write tool writes the line of text to the file (PreToolUse, PostToolUse)
-//	permission <command> a permission prompt for the Bash tool runs the command once a line is typed in
-//	                    answer (PermissionRequest, Notification permission_prompt, then as bash)
+//	permission <command> the Bash tool asks for permission to run the command, and runs it once a line is
+//	                    typed in answer (PreToolUse, PermissionRequest, Notification permission_prompt, then
+//	                    PostToolUse once it ran: none as it is allowed)
 //	stop                the turn ends (Stop)
 //	keys                every line typed from here on is kept in keys, until the line "exit"
 //	idle                every line typed from here on, submitted, is a turn that ends at once
@@ -284,16 +285,19 @@ func (c *claude) prompt() error {
 
 // bash runs the Bash tool on command.
 func (c *claude) bash(command string) error {
-	return c.tool("Bash", map[string]any{"command": command}, func() error {
-		cmd := exec.Command("/bin/sh", "-c", command)
-		cmd.Dir, cmd.Env = c.cwd, append(os.Environ(), "ID="+c.id)
-		out, err := cmd.CombinedOutput()
-		fmt.Printf("%s", out)
-		if err != nil {
-			return fmt.Errorf("%s: %w: %s", command, err, out)
-		}
-		return nil
-	})
+	return c.tool("Bash", map[string]any{"command": command}, func() error { return c.run(command) })
+}
+
+// run runs command as the Bash tool does, showing its output.
+func (c *claude) run(command string) error {
+	cmd := exec.Command("/bin/sh", "-c", command)
+	cmd.Dir, cmd.Env = c.cwd, append(os.Environ(), "ID="+c.id)
+	out, err := cmd.CombinedOutput()
+	fmt.Printf("%s", out)
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", command, err, out)
+	}
+	return nil
 }
 
 // tool uses the tool with input, running it with use between its PreToolUse and PostToolUse.
@@ -309,19 +313,25 @@ func (c *claude) tool(name string, input map[string]any, use func() error) error
 	return err
 }
 
-// permission asks for permission to run command with the Bash tool, and runs it once answered.
+// permission uses the Bash tool on command, asking for permission first, as Claude Code does: after
+// its PreToolUse, its dialog shown (PermissionRequest, Notification permission_prompt) until a line is
+// typed in answer, and then cleared from the screen as the command runs, which runs no hook until its
+// PostToolUse.
 func (c *claude) permission(command string) error {
 	input := map[string]any{"command": command}
-	fmt.Printf("Bash command\n  %s\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n", command)
-	c.hook("PermissionRequest", "Bash", map[string]any{"tool_name": "Bash", "tool_input": input})
-	c.hook("Notification", "", map[string]any{"message": "Claude needs your permission to use Bash",
-		"notification_type": "permission_prompt"})
-	answer, err := c.in.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("the input ended before the permission prompt was answered: %w", err)
-	}
-	c.logf("permission answered %q", strings.TrimSpace(answer))
-	return c.bash(command)
+	return c.tool("Bash", input, func() error {
+		fmt.Printf("Bash command\n  %s\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n", command)
+		c.hook("PermissionRequest", "Bash", map[string]any{"tool_name": "Bash", "tool_input": input})
+		c.hook("Notification", "", map[string]any{"message": "Claude needs your permission to use Bash",
+			"notification_type": "permission_prompt"})
+		answer, err := c.in.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("the input ended before the permission prompt was answered: %w", err)
+		}
+		c.logf("permission answered %q", strings.TrimSpace(answer))
+		fmt.Printf("\x1b[2J\x1b[H● Bash(%s)\n  Running…\n", command)
+		return c.run(command)
+	})
 }
 
 // keys keeps every line typed, until the line exit.

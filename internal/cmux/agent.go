@@ -34,7 +34,9 @@ func (t Terminal) agentSurface(name string) (string, surfaceEntry, bool, error) 
 // once nothing was launched there, once its session ended, or once the process the launch started
 // is no longer in its workspace (killed, crashed, or ended by cmux quitting, none of which runs a
 // hook); otherwise what its hooks tell (claude.State), and blocked while its screen shows a dialog
-// that runs no hook. A process cmux can't list is taken to be there.
+// that runs no hook. A permission prompt its hooks tell asked is blocked only while its screen still
+// shows it: once allowed, which runs no hook, its tool runs. A process cmux can't list is taken to be
+// there.
 func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) dispatch.AgentState {
 	ws, open := l.workspaces[key(id)]
 	if !open || e.Kind == "" {
@@ -44,7 +46,7 @@ func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout
 	if records == "" {
 		records = claude.Records(e.Dir, "") // launched without hooks: a ticket's worktree has them there
 	}
-	st := claude.State(records)
+	st, asked := claude.StateAsked(records)
 	if st == dispatch.StateGone {
 		return st
 	}
@@ -53,9 +55,14 @@ func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout
 			return dispatch.StateGone
 		}
 	}
-	if st == dispatch.StateUnknown || st == dispatch.StateIdle {
+	switch {
+	case st == dispatch.StateUnknown || st == dispatch.StateIdle:
 		if screen, err := t.readScreen(ctx, ws, id, true); err == nil && showsDialog(screen) {
 			return dispatch.StateBlocked
+		}
+	case asked:
+		if screen, err := t.readScreen(ctx, ws, id, true); err == nil && screen != "" && !claude.ShowsPermission(screen) {
+			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
 		}
 	}
 	return st

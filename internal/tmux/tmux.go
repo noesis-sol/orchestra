@@ -527,8 +527,9 @@ var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh"
 
 // state is the state of the agent in the pane p: gone once its process exited (the pane dead), its
 // session ended or the pane is back at a shell; otherwise what its hooks tell (claude.State), and
-// blocked while its screen shows a dialog that runs no hook. A shell counts only once a hook ran: as
-// the agent starts, the shell that runs it shows for a moment.
+// blocked while its screen shows a dialog that runs no hook. A permission prompt its hooks tell asked
+// is blocked only while its screen still shows it: once allowed, which runs no hook, its tool runs.
+// A shell counts only once a hook ran: as the agent starts, the shell that runs it shows for a moment.
 func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if p.dead || p.kind == "" {
 		return dispatch.StateGone
@@ -537,7 +538,7 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if records == "" {
 		records = claude.Records(p.dir, "") // launched without hooks: a ticket's worktree has them there
 	}
-	st := claude.State(records)
+	st, asked := claude.StateAsked(records)
 	switch {
 	case st == dispatch.StateGone:
 		return st
@@ -546,6 +547,10 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	case st == dispatch.StateUnknown || st == dispatch.StateIdle:
 		if screen, err := t.capture(ctx, p.id, false); err == nil && showsDialog(screen) {
 			return dispatch.StateBlocked
+		}
+	case asked:
+		if screen, err := t.capture(ctx, p.id, true); err == nil && screen != "" && !claude.ShowsPermission(screen) {
+			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
 		}
 	}
 	return st

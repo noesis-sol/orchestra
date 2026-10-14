@@ -62,14 +62,37 @@ func RecordsOf(args []string) (string, bool) {
 //   - unknown before any hook ran, as while claude starts or shows a dialog that runs no hook (trust
 //     this folder): the terminal's screen may say more.
 func State(records string) dispatch.AgentState {
+	st, _ := StateAsked(records)
+	return st
+}
+
+// StateAsked is State, and whether it is blocked on a permission prompt the records tell asked and
+// not answered. Claude Code runs no hook as a permission is allowed (PreToolUse runs before it asks,
+// PostToolUse once the tool is done), so one allowed reads asked until its tool is done, however long
+// that takes: the terminal's screen says whether its dialog still shows (ShowsPermission).
+func StateAsked(records string) (dispatch.AgentState, bool) {
 	root, err := os.OpenRoot(records)
 	if err != nil {
-		return dispatch.StateUnknown
+		return dispatch.StateUnknown, false
 	}
 	defer func() { _ = root.Close() }() // read-only: nothing to lose
 	b, _, _ := readIn(root, eventsName) // none yet: no session started
 	return state(readRecord(root, activityName), readRecord(root, turnName), readRecord(root, noticeName),
 		readSessions(b))
+}
+
+// ShowsPermission reports whether the bottom of screen, a Claude session's visible screen, shows its
+// permission dialog: the question "Do you want to proceed?" (or to make an edit, create a file, …)
+// or the first of its answers, "1. Yes".
+func ShowsPermission(screen string) bool {
+	lines := strings.Split(strings.ToLower(screen), "\n")
+	for _, l := range lines[max(0, len(lines)-25):] {
+		l = strings.TrimLeft(l, " \t│|❯>") // its frame, and the cursor on the answer chosen
+		if strings.HasPrefix(l, "do you want to ") || strings.HasPrefix(l, "1. yes") {
+			return true
+		}
+	}
+	return false
 }
 
 // record is one of the hooks' replaced records: the event, a notification's type, and when it was
@@ -98,25 +121,34 @@ type sessions struct {
 	subagents      int
 }
 
-func state(activity, turn, notice record, s sessions) dispatch.AgentState {
+// state is State's reading of the records, and whether it is blocked on a permission prompt asked
+// (see StateAsked).
+func state(activity, turn, notice record, s sessions) (dispatch.AgentState, bool) {
 	if s.ended {
-		return dispatch.StateGone
+		return dispatch.StateGone, false
 	}
 	if notice.after(activity) && notice.after(turn) {
 		switch notice.notification {
-		case permissionPrompt, elicitation:
-			return dispatch.StateBlocked
+		case permissionPrompt:
+			return dispatch.StateBlocked, true
+		case elicitation:
+			return dispatch.StateBlocked, false
 		case idlePrompt:
 			if s.subagents > 0 {
-				return dispatch.StateWorking
+				return dispatch.StateWorking, false
 			}
-			return dispatch.StateIdle
+			return dispatch.StateIdle, false
 		}
 	}
 	if activity.event == dispatch.EventPermission && !turn.after(activity) &&
 		!(notice.notification == idlePrompt && notice.after(activity)) {
-		return dispatch.StateBlocked
+		return dispatch.StateBlocked, true
 	}
+	return unasked(activity, turn, s), false
+}
+
+// unasked is state's reading of records that tell no prompt or dialog waiting on an answer.
+func unasked(activity, turn record, s sessions) dispatch.AgentState {
 	if s.subagents > 0 {
 		return dispatch.StateWorking
 	}

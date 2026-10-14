@@ -11,6 +11,12 @@ All notable changes to orchestra are documented here. The format follows
 - cmux starts workers in a repository whose path holds a quote, such as
   `~/Projects/Bob's app`: the line orchestra types to launch them no longer
   holds a backslash, which cmux refused to type.
+- In tmux and cmux, a worker that was allowed a tool on a permission prompt
+  no longer reads as blocked until the tool is done, which stopped the run
+  with `BLOCKED >4min` while the worker ran a long command it was allowed,
+  such as a test suite: Claude Code runs no hook as a prompt is allowed, so
+  orchestra now checks its screen for the dialog, and reads the worker as
+  working once the dialog is gone.
 
 ### Changed
 
