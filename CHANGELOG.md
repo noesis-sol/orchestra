@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard's totals and the run's closing "N set aside" leave out
+  tickets a hold for the environment reopened: back in the queue, they show
+  `◷ waiting`, and one that merges later counts only as completed. The
+  event stream has a `reopened` event for them. The dashboard's Deferred
+  total is now **Set aside**, and counts tickets left for review
+  (`CHECKS_FAILED`, closed without a commit, …) as well as deferred ones.
 - cmux starts workers in a repository whose path holds a quote, such as
   `~/Projects/Bob's app`: the line orchestra types to launch them no longer
   holds a backslash, which cmux refused to type.

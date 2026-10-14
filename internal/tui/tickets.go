@@ -75,6 +75,19 @@ func (m Dashboard) needsYou() int {
 	return n
 }
 
+// setAside is how many tickets the run has set aside: deferred, or left for review. One that
+// leaves either state (back in the queue after an environment hold, merged after a check run
+// again, dispatched again) no longer counts. One blocked from merging counts under needsYou.
+func (m Dashboard) setAside() int {
+	n := 0
+	for _, r := range m.rows {
+		if r.state == rowDeferred || r.state == rowReview {
+			n++
+		}
+	}
+	return n
+}
+
 // working shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
 // run, keeps its row, which drops the old verdict; title "" keeps the row's.
 func (m *Dashboard) working(id, title string) {
@@ -195,9 +208,9 @@ func (m Dashboard) statsTable(w int) string {
 		}
 		return style.Render(fmt.Sprintf("%s %d", mark, n))
 	}
-	deferred := count(m.deferred, "↷", deferredStyle)
+	aside := count(m.setAside(), "↷", deferredStyle)
 	if m.triaged > 0 {
-		deferred += organStyle.Render(fmt.Sprintf(" ◆ %d", m.triaged))
+		aside += organStyle.Render(fmt.Sprintf(" ◆ %d", m.triaged))
 	}
 	queued := dimStyle.Render("—")
 	if m.queued >= 0 {
@@ -206,10 +219,10 @@ func (m Dashboard) statsTable(w int) string {
 	if m.draining {
 		queued += deferredStyle.Render(" · held") // not taken while the run winds down
 	}
-	labels := []string{"Completed", "Deferred", "Needs you", "Workers", "In queue"}
+	labels := []string{"Completed", "Set aside", "Needs you", "Workers", "In queue"}
 	values := []string{
 		count(m.closed, "✓", closedStyle),
-		deferred,
+		aside,
 		count(m.needsYou(), "?", stopStyle),
 		pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" of %d", max(m.cfg.Concurrency, 1))),
 		queued,
@@ -259,7 +272,7 @@ func (m Dashboard) statsLine(w int) string {
 	}
 	parts := []string{
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
-		deferredStyle.Render(fmt.Sprintf("↷ %d", m.deferred)),
+		deferredStyle.Render(fmt.Sprintf("↷ %d", m.setAside())),
 		stopStyle.Render(fmt.Sprintf("? %d", m.needsYou())),
 		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
 			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),

@@ -33,6 +33,7 @@ const (
 	EvTriage                // the triage organ's verdict on a deferred ticket
 	EvAsked                 // a ticket waits on the maintainer's answer to a question
 	EvWaits                 // a ticket started before a ticket blocking it merged: back in the queue until it does
+	EvReopened              // a ticket set aside was put back in the queue: no longer set aside
 	EvHold                  // something stopped the run; no new tickets while the running ones finish
 	EvDrain                 // the maintainer asked to stop after the running tickets
 	EvResume                // the maintainer took that back
@@ -45,7 +46,8 @@ const (
 // kindNames are the kinds' names in the event stream, which programs read: keep them as they are.
 var kindNames = [...]string{
 	EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred", EvWarn: "warn",
-	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits", EvHold: "hold",
+	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
+	EvReopened: "reopened", EvHold: "hold",
 	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered",
 	EvFullCheck: "full_check",
 }
@@ -75,8 +77,8 @@ type Event struct {
 	Unclosed int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
 	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
-	// the tickets it waits for, as in "A, B"; for EvStop, what stopped the run, the word its line
-	// starts with (PAUSED, INTERRUPTED, …).
+	// the tickets it waits for, as in "A, B"; for EvReopened, why it is back in the queue; for
+	// EvStop, what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
 	Detail string
 	Text   string // the full line written to the log file
 	// Closed and SetAside: for EvDone, the tickets closed in the run (merged, or with nothing to
@@ -513,7 +515,8 @@ func (o *Loop) emit(ev Event) {
 
 // tally counts the tickets closed and set aside in the run, as their events say, and gives the
 // counts to the run's EvDone. A ticket set aside counts once, however many times it is (its check
-// failing again, say), and no longer once it merges (see recheck).
+// failing again, say), and no longer once it merges (see recheck) or is back in the queue
+// (EvReopened).
 func (o *Loop) tally(ev *Event) {
 	o.sinkMu.Lock()
 	defer o.sinkMu.Unlock()
@@ -523,10 +526,9 @@ func (o *Loop) tally(ev *Event) {
 		if !slices.Contains(o.closedIDs, ev.Ticket) {
 			o.closedIDs = append(o.closedIDs, ev.Ticket)
 		}
-		if o.counted[ev.Ticket] {
-			o.asideN--
-			delete(o.counted, ev.Ticket)
-		}
+		o.uncount(ev.Ticket)
+	case ev.Kind == EvReopened:
+		o.uncount(ev.Ticket)
 	case ev.Kind == EvDeferred, ev.Kind == EvWarn && ev.Aside && ev.Ticket != "":
 		if o.counted[ev.Ticket] {
 			return
@@ -538,6 +540,14 @@ func (o *Loop) tally(ev *Event) {
 		o.asideN++
 	case ev.Kind == EvDone:
 		ev.Closed, ev.SetAside = o.closedN, o.asideN
+	}
+}
+
+// uncount takes ticket id out of those asideN counts, if it is there. Its caller holds sinkMu.
+func (o *Loop) uncount(id string) {
+	if o.counted[id] {
+		o.asideN--
+		delete(o.counted, id)
 	}
 }
 

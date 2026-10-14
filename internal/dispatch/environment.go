@@ -137,7 +137,9 @@ func (o *Loop) reopenFailed(ctx context.Context, id string) {
 	o.unmarkAside(id)
 	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, "+
 		"so the run held for the environment rather than for this ticket.")
-	o.info("  %s reopened: its worker failed at once, like the tickets before it", id)
+	// No longer set aside: the dashboard's total and the run's closing count leave it out.
+	o.emit(Event{Kind: EvReopened, Ticket: id, Detail: "the run held for the environment", Text: fmt.Sprintf(
+		"  %s reopened: its worker failed at once, like the tickets before it", id)})
 }
 
 // probeID labels the probe worker's tab, and names it as a ticket's worker would be named.

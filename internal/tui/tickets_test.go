@@ -18,8 +18,8 @@ func TestTicketRowsFollowEachTicket(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvTriage, Ticket: "kinieta-vzg", Detail: "environment · high", Title: "prompt never submitted"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-kco", Title: "Open the property model"},
 	)
-	if len(m.rows) != 3 || m.closed != 1 || m.deferred != 1 || m.triaged != 1 {
-		t.Fatalf("rows %+v closed %d deferred %d triaged %d", m.rows, m.closed, m.deferred, m.triaged)
+	if len(m.rows) != 3 || m.closed != 1 || m.setAside() != 1 || m.triaged != 1 {
+		t.Fatalf("rows %+v closed %d set aside %d triaged %d", m.rows, m.closed, m.setAside(), m.triaged)
 	}
 	m.width, m.height = 70, 40
 	view := ansi.Strip(m.View())
@@ -88,8 +88,9 @@ func TestAskedTicketDeferredLeavesTheAskedCount(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
 		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-1", Detail: "by the worker"})
-	if len(m.rows) != 1 || m.rows[0].state != rowDeferred || m.needsYou() != 0 || m.deferred != 1 {
-		t.Fatalf("rows %+v, needs you %d, deferred %d; want k-1 deferred and nothing asked", m.rows, m.needsYou(), m.deferred)
+	if len(m.rows) != 1 || m.rows[0].state != rowDeferred || m.needsYou() != 0 || m.setAside() != 1 {
+		t.Fatalf("rows %+v, needs you %d, set aside %d; want k-1 deferred and nothing asked",
+			m.rows, m.needsYou(), m.setAside())
 	}
 }
 

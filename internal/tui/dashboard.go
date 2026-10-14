@@ -30,7 +30,6 @@ type Dashboard struct {
 	draining    bool                       // the maintainer asked to stop after the running tickets
 	asking      bool                       // the question whether to stop after them, or to go on, is open
 	closed      int
-	deferred    int
 	triaged     int
 	width       int
 	height      int
@@ -112,7 +111,6 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.closed++
 			m.setRow(ev.Ticket, rowDone, ev.Detail)
 		case dispatch.EvDeferred:
-			m.deferred++
 			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
 		case dispatch.EvWarn:
 			// Only a ticket the warning sets aside is for review, its row saying why as a deferred
@@ -130,6 +128,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
 		case dispatch.EvWaits: // back in the queue: its row shows it working again once it is dispatched
 			m.setRow(ev.Ticket, rowWaiting, "for "+ev.Detail+" to merge")
+		case dispatch.EvReopened: // set aside, now back in the queue: no longer counted set aside
+			m.setRow(ev.Ticket, rowWaiting, "back in the queue: "+ev.Detail)
 		case dispatch.EvAnswered: // its title for a ticket carried over from the last run, with no row yet
 			m.working(ev.Ticket, ev.Title)
 		case dispatch.EvTriage:

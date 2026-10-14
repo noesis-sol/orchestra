@@ -51,7 +51,8 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 
 func TestViewFitsThePaneWidth(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {}, func(string) {})
-	m.closed, m.deferred, m.queued = 2, 1, 17
+	m.closed, m.queued = 2, 17
+	m.rows = []ticketRow{{id: "kinieta-vzg", state: rowDeferred, note: "still open, noted for review"}}
 	m.began = time.Now().Add(-12 * time.Minute)
 	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
 		Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
