@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/cmux"
@@ -29,22 +31,40 @@ const noTerminal = "No terminal for the workers: run orchestra from a Herdr pane
 // pickTerminal chooses the terminal for choice (project.TerminalHerdr, TerminalTmux, TerminalCmux or
 // TerminalAuto): auto is the terminal orchestra runs in, the innermost first (Herdr in a Herdr pane,
 // tmux in tmux, cmux in a cmux terminal), else tmux when has finds it, else none, and the problem
-// says so.
-func pickTerminal(choice string, getenv func(string) string, has func(cmd string) bool) (string, string) {
+// says so. A terminal started from a pane of another copies that one's variables into its own panes:
+// Herdr's (HERDR_ENV=1) beside tmux's or cmux's are those of the terminal orchestra runs in only when
+// ownPane says it runs in the Herdr pane they name (HERDR_PANE_ID), else of a Herdr around the other.
+func pickTerminal(choice string, getenv func(string) string, has func(cmd string) bool,
+	ownPane func(pane string) bool) (string, string) {
 	if choice != project.TerminalAuto {
 		return choice, ""
 	}
+	inTmux := getenv("TMUX") != "" && has("tmux")
+	inCmux := getenv("CMUX_WORKSPACE_ID") != ""
 	switch {
-	case getenv("HERDR_ENV") == "1":
+	case getenv("HERDR_ENV") == "1" && (!inTmux && !inCmux || ownPane(getenv("HERDR_PANE_ID"))):
 		return project.TerminalHerdr, ""
-	case getenv("TMUX") != "" && has("tmux"):
+	case inTmux:
 		return project.TerminalTmux, ""
-	case getenv("CMUX_WORKSPACE_ID") != "":
+	case inCmux:
 		return project.TerminalCmux, ""
 	case has("tmux"):
 		return project.TerminalTmux, ""
 	}
 	return "", noTerminal
+}
+
+// ownHerdrPane reports whether orchestra runs in the Herdr pane: whether its process group is the one
+// in the foreground of the pane's terminal, where a terminal started from the pane, a tmux client say,
+// would be instead. A pane Herdr doesn't have, or a Herdr that doesn't answer, is not orchestra's.
+func ownHerdrPane(ctx context.Context) func(pane string) bool {
+	return func(pane string) bool {
+		if pane == "" {
+			return false
+		}
+		group, pids, err := herdr.PaneForeground(ctx, pane)
+		return err == nil && (group == processGroup() || slices.Contains(pids, os.Getpid()))
+	}
 }
 
 // installed reports whether cmd is on the PATH.
@@ -66,7 +86,7 @@ func checkTerminal(ctx context.Context, c *options, getenv func(string) string) 
 	if err != nil {
 		return []string{err.Error() + "."}
 	}
-	t, problem := pickTerminal(choice, getenv, installed)
+	t, problem := pickTerminal(choice, getenv, installed, ownHerdrPane(ctx))
 	if problem != "" {
 		return []string{problem}
 	}

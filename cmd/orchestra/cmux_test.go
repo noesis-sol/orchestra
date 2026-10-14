@@ -27,7 +27,7 @@ func TestPickTerminalInCmux(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, problem := pickTerminal(tc.choice, func(k string) string { return tc.env[k] },
-				func(string) bool { return true })
+				func(string) bool { return true }, func(string) bool { return true })
 			if got != tc.want || problem != "" {
 				t.Errorf("got %q, problem %q; want %q", got, problem, tc.want)
 			}

@@ -54,7 +54,7 @@ git switch -c batch/$(date +%F)
 orchestra
 ```
 
-Workers run in the terminal orchestra runs in, or in tmux when it runs in none of them:
+Workers run in the terminal orchestra runs in, the innermost when one runs in another, or in tmux when it runs in none of them:
 
 | Terminal | Chosen by default | Each worker gets | To watch the workers |
 |---|---|---|---|

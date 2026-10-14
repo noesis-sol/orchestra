@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Left to choose its terminal, orchestra run in tmux started from a Herdr
+  pane picks tmux, the terminal it runs in, rather than Herdr, whose
+  `HERDR_ENV` and `HERDR_PANE_ID` tmux copied into its panes, even once that
+  pane was closed. Herdr's variables beside tmux's or cmux's mean Herdr only
+  when Herdr says orchestra runs in that pane; likewise cmux started from a
+  Herdr pane.
 - A `solo` ticket next in line keeps its place when a slot frees while
   every slot was taken: a failed check due to be tried again no longer
   takes the slot ahead of it. And a `solo` ticket adopted after its

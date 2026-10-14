@@ -534,3 +534,30 @@ func CurrentWorkspace(ctx context.Context, getenv func(string) string) string {
 	}
 	return r.Result.Pane.WorkspaceID
 }
+
+// PaneForeground returns the process group in the foreground of the pane's terminal and the IDs of
+// its processes: those of a program run in the pane itself, or of the terminal (a tmux client, say)
+// that runs in it.
+func PaneForeground(ctx context.Context, pane string) (group int, pids []int, err error) {
+	out, err := run(ctx, command.ReadLimit, "pane", "process-info", "--pane", pane)
+	if err != nil {
+		return 0, nil, err
+	}
+	var r struct {
+		Result struct {
+			Info struct {
+				Group     int `json:"foreground_process_group_id"`
+				Processes []struct {
+					PID int `json:"pid"`
+				} `json:"foreground_processes"`
+			} `json:"process_info"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Info.Group == 0 {
+		return 0, nil, fmt.Errorf("unexpected 'herdr pane process-info' output: %s", out)
+	}
+	for _, p := range r.Result.Info.Processes {
+		pids = append(pids, p.PID)
+	}
+	return r.Result.Info.Group, pids, nil
+}
