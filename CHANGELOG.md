@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Ctrl+C while a ticket set aside for its failed check is checked once more
+  no longer names it among the workers left running: only its check is cut
+  short, and it stays set aside.
+- Waiting to read the main checkout again after git failed no longer holds up
+  the merges and the worktrees being made meanwhile.
+- A worker start whose arguments the terminal refuses, with none left to drop,
+  stops at once with `START_FAILED … the terminal refused the arguments`,
+  rather than asking nine more times with the same ones.
+- A run no longer opens the dashboard only to end at once when the only
+  worker the last run left behind is in the other terminal.
+- Ctrl+C as a finished run leaves its workers behind no longer turns its
+  `READY_EMPTY` (exit 0) into `INTERRUPTED` (exit 130).
 - In tmux, a worker whose `claude` is a wrapper script that runs Claude Code
   as its child, rather than through `exec`, is no longer taken for gone, and
   concluded on, as soon as its first hook runs: only a pane orchestra didn't

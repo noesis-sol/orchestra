@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -497,14 +498,16 @@ func (r *runState) reportQueue(n int) {
 
 // end ends the run, once nothing runs or Ctrl+C came, and returns its exit code. It leaves behind
 // the workers that stopped the run, if any, and those waiting on a question, and says how the run
-// ended.
+// ended. A run interrupted only once it has come to its end, as it leaves its workers behind, ends as
+// it came to: Ctrl+C then cuts short nothing it would report.
 func (r *runState) end() int {
 	o, c := r.o, r.o.cfg
+	interrupted := r.ctx.Err() != nil
 	o.settle(r.keep, r.results, r.inflight) // after Ctrl+C: otherwise none is in flight
 	o.leaveBehind(r.ctx)
 	var end string
 	switch {
-	case r.ctx.Err() != nil:
+	case interrupted:
 		return o.interrupted(r.ctx)
 	case r.stops.first != nil:
 		return o.stop(r.stops.first, r.stops.line())
@@ -515,7 +518,7 @@ func (r *runState) end() int {
 	default:
 		end = fmt.Sprintf("READY_EMPTY after %d tickets", r.count)
 	}
-	o.emit(Event{Kind: EvDone, N: r.count, Limit: c.Limit, Text: end + o.endScope(r.ctx)})
+	o.emit(Event{Kind: EvDone, N: r.count, Limit: c.Limit, Text: end + o.endScope(r.keep)})
 	return ExitOK
 }
 
@@ -561,11 +564,10 @@ func (o *Loop) sayWaiting(inflight map[string]bool) {
 
 // next returns the highest-priority ready ticket not already running, with how many others are
 // ready, or a reason to stop. The main checkout must be clean and on Base, since finished tickets
-// are fast-forwarded into it; the check waits for any merge in progress.
+// are fast-forwarded into it; each read of it waits for a git write under way (repoMu), as a merge's
+// fast-forward, and lets go between reads, so git failing doesn't hold up the merges.
 func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int, *stopReason) {
-	o.repoMu.Lock()
-	s := o.checkoutUnready(ctx, "")
-	o.repoMu.Unlock()
+	s := o.checkoutUnready(ctx, "", &o.repoMu)
 	if ctx.Err() != nil {
 		return nil, 0, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
 	}
@@ -690,8 +692,8 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
 // not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
 // Base. held, when set, says what is left for review: a finished ticket, which the reason then
-// blocks from merging. The caller holds repoMu.
-func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
+// blocks from merging. lock is held for each read of the checkout (see readCheckout).
+func (o *Loop) checkoutUnready(ctx context.Context, held string, lock sync.Locker) *stopReason {
 	c := o.cfg
 	stop := func(s *stopReason, why string) *stopReason {
 		if held == "" {
@@ -699,7 +701,7 @@ func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 		}
 		return s.blocks(why)
 	}
-	dirty, branch, err := o.readCheckout(ctx)
+	dirty, branch, err := o.readCheckout(ctx, lock)
 	if err != nil {
 		return stop(halt(ExitTool, stopGitFailed,
 			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err), "git failed")
@@ -721,14 +723,19 @@ func (o *Loop) checkoutUnready(ctx context.Context, held string) *stopReason {
 // moment on a busy machine, and that says nothing about the checkout.
 const gitTries = 3
 
-// readCheckout returns the main checkout's uncommitted changes and its branch, or git's error.
-func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err error) {
+// readCheckout returns the main checkout's uncommitted changes and its branch, or git's error. It
+// holds lock for each try and lets go of it while it waits to try again: repoMu for a caller that
+// doesn't hold it, heldAlready for one that does.
+func (o *Loop) readCheckout(ctx context.Context, lock sync.Locker) (dirty, branch string, err error) {
 	c := o.cfg
 	for try := 1; ; try++ {
+		lock.Lock()
 		if dirty, err = o.checkout.DirtyTree(ctx, c.Repo); err == nil {
-			if branch, err = o.checkout.CurrentBranch(ctx, c.Repo); err == nil {
-				return dirty, branch, nil
-			}
+			branch, err = o.checkout.CurrentBranch(ctx, c.Repo)
+		}
+		lock.Unlock()
+		if err == nil {
+			return dirty, branch, nil
 		}
 		if try == gitTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return "", "", err
@@ -736,6 +743,12 @@ func (o *Loop) readCheckout(ctx context.Context) (dirty, branch string, err erro
 		o.log.Raw("", err) // tried again; only the error returned is the caller's to report
 	}
 }
+
+// heldAlready is the lock readCheckout takes for a caller that holds repoMu already.
+type heldAlready struct{}
+
+func (heldAlready) Lock()   {}
+func (heldAlready) Unlock() {}
 
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
 // how many other ready tickets aren't either. A ticket labelled SoloLabel runs alone: while solo

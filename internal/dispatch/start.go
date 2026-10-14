@@ -316,7 +316,8 @@ func (s *workerStart) waitLaunched(ctx context.Context, why error) (launched boo
 }
 
 // throughHerdr starts the worker with herdr agent start, its prompt then to be pasted, in up to 10
-// attempts. 'agent start' can report failure while the agent is still coming up (agent_not_ready
+// attempts; arguments the terminal refuses are dropped where they can be, and stop the start where
+// they can't. 'agent start' can report failure while the agent is still coming up (agent_not_ready
 // keeps the name), and a retry then finds the pane occupied, so after each failure it checks
 // whether the agent is there before trying again.
 func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
@@ -341,6 +342,11 @@ func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
 			return halt(ExitTool, stopStartFailed,
 				" for %s in tab %s: the terminal refused the arguments giving it its MCP servers (%v)",
 				s.id, s.tab, err).causedBy(err)
+		}
+		if o.starter.IsArgumentRefused(err) {
+			// Nothing is left to drop, and the same arguments would be refused on every try.
+			return halt(ExitTool, stopStartFailed, " for %s in tab %s: the terminal refused the arguments %q (%v)",
+				s.id, s.tab, strings.Join(args, " "), err).causedBy(err)
 		}
 		if !sleep(ctx, startRetry) {
 			return s.interrupted(ctx)

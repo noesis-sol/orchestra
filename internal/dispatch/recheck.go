@@ -136,7 +136,21 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 	if stop = o.merge(ctx, rc.w); stop == nil && o.unmergedWhy(id) == "" {
 		o.unmarkAside(id) // merged: no longer set aside, nor for the reviewer
 	}
+	if stop == errInterrupted && !o.handedBack(id) {
+		// Only its check was cut short: no worker of it is left running, and it stays set aside.
+		o.clearActive(id)
+		o.info("  %s's check once more was cut short; it stays set aside", id)
+	}
 	return stop
+}
+
+// handedBack reports whether ticket id's worker has its rebase to resolve or its check to fix (see
+// setHandedBack).
+func (o *Loop) handedBack(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	st := o.active[id]
+	return st.Resolving || st.Fixing
 }
 
 // whyNotRecheck says why rc's ticket is left as it is rather than checked again, or "".

@@ -70,7 +70,8 @@ type WorktreeCheckout interface {
 
 // CheckNothingToRun returns why a run as c sets it has nothing to run, or nil when it has
 // something: bd ready, in the run's scope and as the loop reads it, lists a ticket the loop would
-// start, or the last run left a worker (on a ticket in the scope) for this one to carry on with. A
+// start, or the last run left a worker (on a ticket in the scope, in the run's terminal) for this one
+// to carry on with. A
 // ready ticket the loop would hold back at its start (see holds) is not one it would start: a parent
 // whose subtickets are not all closed and merged, or a ticket a closed but unmerged ticket blocks or
 // was discovered from. A ticket labelled UnmergedLabel that git finds merged since (see mergedSince)
@@ -97,7 +98,8 @@ func CheckNothingToRun(
 	}
 	in := scopeIDs(c.Ticket, subs)
 	for _, w := range s.Workers {
-		if c.Ticket == "" || in[w.Ticket] {
+		// One left in the other terminal is kept for a run there, as loadCarried keeps it.
+		if project.SameTerminal(w.Terminal, c.Terminal) && (c.Ticket == "" || in[w.Ticket]) {
 			return nil, nil // carried over, as loadCarried does
 		}
 	}

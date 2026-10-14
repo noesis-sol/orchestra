@@ -79,7 +79,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		}
 		if o.merger.IsAncestor(keep, c.Repo, c.Base, br) {
 			left := fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)
-			if s := o.checkoutUnready(keep, left); s != nil {
+			if s := o.checkoutUnready(keep, left, heldAlready{}); s != nil {
 				repo.unlock()
 				o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or GIT_FAILED
 				return s
