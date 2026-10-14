@@ -1,7 +1,8 @@
 # Runs scripts/check.sh, the project's full check (go vet, the race tests, golangci-lint), on Linux
 # and macOS for each push to main and each pull request: orchestra runs the check on the machine it
 # runs on, macOS so far, and ships Linux binaries too. Both install tmux and require the tests that run
-# it. docs/development.md (Continuous integration).
+# it; macOS also installs cmux and requires the tests that run it. docs/development.md (Continuous
+# integration).
 name: Check
 
 on:
@@ -48,7 +49,19 @@ jobs:
           fi
           tmux -V
 
+      # The real-cmux tests (internal/cmux's TestLive…, internal/dispatch's TestCmuxRun…, cmd/orchestra's
+      # TestCmux… in cmux) start the cmux app, macOS only, with a home folder of their own and its socket
+      # open to any process (internal/cmuxtest); ORCHESTRA_REQUIRE_CMUX=1 fails them rather than skip.
+      # The cask is the current cmux, as users update to it; the log says which.
+      - name: Install cmux
+        if: runner.os == 'macOS'
+        run: |
+          brew install --cask cmux
+          xattr -dr com.apple.quarantine /Applications/cmux.app || true # started from the test, not Finder
+          /Applications/cmux.app/Contents/Resources/bin/cmux version
+
       - name: Check
         run: scripts/check.sh
         env:
           ORCHESTRA_REQUIRE_TMUX: "1"
+          ORCHESTRA_REQUIRE_CMUX: ${{ runner.os == 'macOS' && '1' || '' }}

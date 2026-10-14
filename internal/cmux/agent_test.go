@@ -52,7 +52,7 @@ func TestLaunchInPaneRunsTheAgentThroughAScript(t *testing.T) {
 	if got := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"); !slices.Equal(got, wantOut) {
 		t.Errorf("the agent would get %q, want %q", got, wantOut)
 	}
-	if _, ok := term.launched(workSF); !ok {
+	if _, _, ok := term.launched(workSF); !ok {
 		t.Error("the script wrote no process ID")
 	}
 	if err := term.LaunchInPane(bg, userWS, "claude", nil); !Missing(err) {

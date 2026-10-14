@@ -91,6 +91,9 @@ exit 0
 	app := appBin
 	appBin = filepath.Join(dir, "no-app", "cmux")
 	t.Cleanup(func() { appBin = app })
+	wait := settle
+	settle = 0 // the fake's list shows at once what it opened or closed
+	t.Cleanup(func() { settle = wait })
 	return &fakeCmux{t: t, dir: dir}
 }
 

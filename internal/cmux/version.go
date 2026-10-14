@@ -17,9 +17,10 @@ import (
 // orchestra presses keys into Claude Code's dialogs, and before 0.65.0 --force is no flag but text,
 // typed into the terminal. From 0.65.0 (manaflow-ai/cmux#14837) cmux paste also pastes text from its
 // stdin as Cmd+V does: bracketed, when the program asked for it, as Claude Code does, so its lines
-// arrive together.
+// arrive together. From 0.65.0, too, close-workspace and close-surface refuse to close a terminal a
+// process runs in, unless given --force.
 type features struct {
-	force bool // send and send-key take --force, before the text or key
+	force bool // send and send-key take --force, before the text or key; close-workspace and close-surface too
 	paste bool // cmux paste pastes its stdin into a surface
 }
 

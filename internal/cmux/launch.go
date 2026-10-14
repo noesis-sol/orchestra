@@ -94,11 +94,11 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 // an answer or a prompt. Unlike tmux's, a launch in cmux types into what runs rather than replacing
 // it. A process cmux can't list is taken to be there.
 func (t Terminal) stillRuns(ctx context.Context, workspace, surface string) error {
-	pid, ok := t.launched(surface)
+	pid, at, ok := t.launched(surface)
 	if !ok {
 		return nil
 	}
-	alive, err := t.running(ctx, workspace, pid)
+	alive, err := t.running(ctx, workspace, pid, at)
 	switch {
 	case err != nil:
 		return fmt.Errorf("cannot tell whether the last launch in cmux surface %s still runs: %w", surface, err)
@@ -109,15 +109,20 @@ func (t Terminal) stillRuns(ctx context.Context, workspace, surface string) erro
 	return nil
 }
 
-// launched returns the process ID the surface's last launch wrote, and false when it wrote none:
-// the script hasn't run yet, or nothing was launched.
-func (t Terminal) launched(surface string) (int, bool) {
-	b, err := os.ReadFile(t.launchPath(surface, ".pid"))
+// launched returns the process ID the surface's last launch wrote, and when it wrote it, and false
+// when it wrote none: the script hasn't run yet, or nothing was launched.
+func (t Terminal) launched(surface string) (int, time.Time, bool) {
+	path := t.launchPath(surface, ".pid")
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return 0, false
+		return 0, time.Time{}, false
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, time.Time{}, false
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	return pid, err == nil && pid > 0
+	return pid, fi.ModTime(), err == nil && pid > 0
 }
 
 // typeLine types line into the surface of workspace and presses Enter.

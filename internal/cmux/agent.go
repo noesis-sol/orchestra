@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
@@ -36,7 +37,7 @@ func (t Terminal) agentSurface(name string) (string, surfaceEntry, bool, error) 
 // hook); otherwise what its hooks tell (claude.State), and blocked while its screen shows a dialog
 // that runs no hook, which only comes before its first turn (claude.TurnRecorded). A permission
 // prompt its hooks tell asked is blocked only while its screen still shows it: once allowed, which
-// runs no hook, its tool runs. A process cmux can't list is taken to be there.
+// runs no hook, its tool runs. A process cmux can't list, or hasn't yet, is taken to be there.
 func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) dispatch.AgentState {
 	ws, open := l.workspaces[key(id)]
 	if !open || e.Kind == "" {
@@ -50,8 +51,8 @@ func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout
 	if st == dispatch.StateGone {
 		return st
 	}
-	if pid, ok := t.launched(id); ok {
-		if alive, err := t.running(ctx, ws, pid); err == nil && !alive {
+	if pid, at, ok := t.launched(id); ok {
+		if alive, err := t.running(ctx, ws, pid, at); err == nil && !alive {
 			return dispatch.StateGone
 		}
 	}
@@ -68,11 +69,12 @@ func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout
 	return st
 }
 
-// running reports whether process pid runs in the workspace, as cmux's top lists its processes. A
+// running reports whether process pid, launched at since, runs in the workspace, as cmux's top lists
+// its processes; one that top's sample can't have listed is taken to run as long as it exists. A
 // process ID names what a launch started from the script's start (which writes it) to its command's
-// end, as the command replaces the script; the workspace is orchestra's, so a process given the
-// same ID since isn't found there.
-func (t Terminal) running(ctx context.Context, workspace string, pid int) (bool, error) {
+// end, as the command replaces the script; the workspace is orchestra's, so a process given the same
+// ID since isn't found there.
+func (t Terminal) running(ctx context.Context, workspace string, pid int, since time.Time) (bool, error) {
 	out, err := t.run(ctx, "top", workspace, true, "--processes", "--workspace", workspace)
 	if err != nil {
 		return false, err
@@ -81,17 +83,55 @@ func (t Terminal) running(ctx context.Context, workspace string, pid int) (bool,
 	if err := json.Unmarshal([]byte(out), &v); err != nil {
 		return false, odd("top", workspace, out)
 	}
-	return hasPID(v, pid), nil
+	if hasPID(v, pid) {
+		return true, nil
+	}
+	return !sampledSince(v, since) && exists(pid), nil
 }
 
-// hasPID reports whether the JSON value v holds an object whose pid is pid, at any depth.
+// exists reports whether a process pid exists, on this machine, where cmux runs too.
+func exists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+// sampledSince reports whether the JSON value v, cmux top's answer, lists every process cmux had
+// after since. From 0.65.0 top answers from a sample of the processes, taken every few seconds, which
+// says when it was taken (sampled_at, to the second) and whether it found them all
+// (enumeration_complete): a process started after the sample, or missed by it, isn't listed. An
+// answer that says nothing of its sample, as before 0.65.0, lists the processes cmux has.
+func sampledSince(v any, since time.Time) bool {
+	m, _ := v.(map[string]any)
+	sample, ok := m["sample"].(map[string]any)
+	if !ok {
+		return true
+	}
+	if complete, ok := sample["enumeration_complete"].(bool); ok && !complete {
+		return false
+	}
+	at, ok := sample["sampled_at"].(string)
+	if !ok {
+		return true
+	}
+	taken, err := time.Parse(time.RFC3339, at)
+	return err != nil || taken.After(since)
+}
+
+// hasPID reports whether the JSON value v lists process pid, at any depth: an object whose pid is
+// pid, or pid in a list of process IDs (pids, tty_process_pids…) other than missing_pids, those of
+// processes gone. cmux 0.65.0 lists a terminal's processes it can't put down to one program
+// (tty-collision, unattributed) only in such lists.
 func hasPID(v any, pid int) bool {
 	switch v := v.(type) {
 	case map[string]any:
 		if n, ok := v["pid"].(float64); ok && int(n) == pid {
 			return true
 		}
-		for _, c := range v {
+		for k, c := range v {
+			if l, ok := c.([]any); ok && strings.HasSuffix(k, "pids") && k != "missing_pids" &&
+				slices.ContainsFunc(l, func(n any) bool { f, ok := n.(float64); return ok && int(f) == pid }) {
+				return true
+			}
 			if hasPID(c, pid) {
 				return true
 			}

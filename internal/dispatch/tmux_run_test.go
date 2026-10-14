@@ -30,7 +30,7 @@ import (
 
 var _ = faketool.Func("claude", tmuxtest.Claude)
 
-// tmuxRun is a run's repository, tracker, tmux and worker.
+// tmuxRun is a run's repository, tracker, tmux and worker; or cmux, for a cmuxRun.
 type tmuxRun struct {
 	t         *testing.T
 	repo      string
@@ -39,6 +39,19 @@ type tmuxRun struct {
 	term      tmux.Terminal
 	log       string
 	sink      *tmuxSink
+	// The workers' terminal, as the loop is given it, which it is set in, and the workspace it opens
+	// their tabs in.
+	terminal  runTerminal
+	kind      string // project.TerminalTmux or TerminalCmux
+	workspace string
+}
+
+// runTerminal is a terminal as a run uses it for its workers.
+type runTerminal interface {
+	dispatch.Tabs
+	dispatch.Starter
+	dispatch.Namer
+	dispatch.Agents
 }
 
 // newTmuxRun sets up a repository on main and a backlog of one open ticket, tx-1, whose worker takes
@@ -48,6 +61,15 @@ func newTmuxRun(t *testing.T, script, resumed []string) *tmuxRun {
 	if testing.Short() {
 		t.Skip("skipped by -short: a whole run in a real tmux")
 	}
+	r := newRunFixture(t, script, resumed)
+	r.term = tmux.Terminal{Socket: tmuxtest.Server(t, "orch", r.repo)}
+	r.terminal, r.kind, r.workspace = r.term, project.TerminalTmux, "orch"
+	return r
+}
+
+// newRunFixture sets up the repository and backlog of newTmuxRun, with no terminal.
+func newRunFixture(t *testing.T, script, resumed []string) *tmuxRun {
+	t.Helper()
 	r := &tmuxRun{t: t, repo: t.TempDir(), bdDir: t.TempDir(), claudeDir: t.TempDir(),
 		log: filepath.Join(t.TempDir(), "orchestra.log"), sink: &tmuxSink{}}
 	r.git(r.repo, "init", "-q", "-b", "main")
@@ -76,7 +98,6 @@ exit 0
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r.write(filepath.Join(r.claudeDir, "script"), strings.Join(script, "\n")+"\n")
 	r.write(filepath.Join(r.claudeDir, "script.resume"), strings.Join(resumed, "\n")+"\n")
-	r.term = tmux.Terminal{Socket: tmuxtest.Server(t, "orch", r.repo)}
 	return r
 }
 
@@ -101,6 +122,9 @@ func (r *tmuxRun) git(dir string, args ...string) string {
 	return out
 }
 
+// wtRoot is the folder of the run's worktrees, the same for each run of the test.
+func (r *tmuxRun) wtRoot() string { return filepath.Join(filepath.Dir(r.log), "worktrees") }
+
 // loop is the run's loop, as orchestra makes it for workers in tmux, polling its workers often.
 func (r *tmuxRun) loop() *dispatch.Loop {
 	r.t.Helper()
@@ -109,10 +133,10 @@ func (r *tmuxRun) loop() *dispatch.Loop {
 		r.t.Fatal(err)
 	}
 	tracker := beads.Tracker{Repo: r.repo}
-	cfg := dispatch.Config{Repo: r.repo, Base: "main", Workspace: "orch", Terminal: project.TerminalTmux, Limit: 10,
-		Concurrency: 1, AgentKind: "claude", WTRoot: r.t.TempDir(), LogPath: r.log, ProbeHooks: true}
+	cfg := dispatch.Config{Repo: r.repo, Base: "main", Workspace: r.workspace, Terminal: r.kind, Limit: 10,
+		Concurrency: 1, AgentKind: "claude", WTRoot: r.wtRoot(), LogPath: r.log, ProbeHooks: true}
 	o := dispatch.New(cfg, log, "Work on TICKET_ID.", dispatch.Deps{
-		Tickets: tracker, Notes: tracker, Tabs: r.term, Starter: r.term, Namer: r.term, Agents: r.term,
+		Tickets: tracker, Notes: tracker, Tabs: r.terminal, Starter: r.terminal, Namer: r.terminal, Agents: r.terminal,
 		Reporter: claude.Reporter{}, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{}, History: git.Git{},
 		Advisor: organ.Client{Bin: filepath.Join(r.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
 	o.SetSink(r.sink)

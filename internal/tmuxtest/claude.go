@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Claude is a fake Claude Code for a tmux pane, for faketool.Func: it reads the --settings file it is
+// Claude is a fake Claude Code for a tmux pane or a cmux terminal, for faketool.Func: it reads the --settings file it is
 // given and runs its hooks as Claude Code would, with the input Claude Code gives them, as it goes
 // through a script of steps. Its folder, $FAKE_CLAUDE (see ClaudeEnv), holds the script, one step a
 // line: script, or script.resume for a session it resumes (--resume <ID>). It logs what it did
@@ -27,9 +27,12 @@ import (
 // The steps, each logged as it ends; a command runs with sh -c in the working directory, its ticket
 // as $ID (the folder's name, as a ticket's worktree is named):
 //
+//	trust               the dialog asking whether to trust the folder, which runs no hook, until a line is typed
 //	start               the session starts (SessionStart; source startup, or resume) and bracketed paste is on
 //	prompt              a pasted prompt, up to the paste's end and an Enter, is submitted (UserPromptSubmit) and
-//	                    kept in prompt-<n>, from 1, counting those of the sessions before
+//	                    kept in prompt-<n>, from 1, counting those of the sessions before; or a line typed,
+//	                    as a cmux before 0.65.0 gives a prompt, the prompt being the text of the file it names
+//	                    after @, if it does, as Claude Code attaches it
 //	sleep <duration>    nothing for that long, as a turn that takes time
 //	say <text>          the line of text is shown, as a dialog that runs no hook
 //	bash <command>      the Bash tool runs the command (PreToolUse, PostToolUse)
@@ -164,6 +167,8 @@ func (c *claude) logf(format string, args ...any) {
 // step takes one step; done says the process ends, with status.
 func (c *claude) step(step, arg string) (status int, done bool, err error) {
 	switch step {
+	case "trust":
+		return 0, false, c.trust()
 	case "start":
 		return 0, false, c.start()
 	case "prompt":
@@ -245,14 +250,32 @@ func (c *claude) record(entry map[string]any) error {
 	return err
 }
 
+// trust shows the dialog asking whether to trust the folder, as Claude Code does before a session
+// starts in a folder it hasn't been told to trust, and waits for the line that answers it, which
+// clears the screen.
+func (c *claude) trust() error {
+	fmt.Printf("Quick safety check: Is this a project you created or one you trust?\n" +
+		"❯ 1. Yes, I trust this folder\n  2. No, exit\n")
+	answer, err := c.in.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("the input ended before the trust dialog was answered: %w", err)
+	}
+	c.logf("trust answered %q", strings.TrimSpace(answer))
+	fmt.Print("\x1b[H\x1b[2J") // the dialog is gone from the screen, as Claude Code draws its own over it
+	return nil
+}
+
 // The bracketed paste's markers around a pasted text.
 const (
 	pasteStart = "\x1b[200~"
 	pasteEnd   = "\x1b[201~"
 )
 
+// attached is a file named after @ in a message, which Claude Code attaches to it.
+var attached = regexp.MustCompile(`(?:^|\s)@(\S+)`)
+
 // prompt reads a pasted prompt up to the line its paste ends on, which the Enter after it ends, and
-// submits it.
+// submits it; or a line typed, as it is, or the text of the file it attaches (@).
 func (c *claude) prompt() error {
 	var lines []string
 	for {
@@ -261,6 +284,14 @@ func (c *claude) prompt() error {
 			return fmt.Errorf("the input ended before a pasted prompt was submitted: %w", err)
 		}
 		line = strings.TrimSuffix(line, "\n")
+		if len(lines) == 0 && !strings.Contains(line, pasteStart) {
+			typed, err := c.typed(line)
+			if err != nil {
+				return err
+			}
+			lines = append(lines, typed)
+			break
+		}
 		end := strings.Contains(line, pasteEnd)
 		lines = append(lines, strings.ReplaceAll(strings.ReplaceAll(line, pasteStart, ""), pasteEnd, ""))
 		if end {
@@ -281,6 +312,24 @@ func (c *claude) prompt() error {
 	}
 	c.hook("UserPromptSubmit", "", map[string]any{"prompt": text})
 	return nil
+}
+
+// typed is the prompt in a line typed: the line, or the text of the file it attaches (@).
+func (c *claude) typed(line string) (string, error) {
+	m := attached.FindStringSubmatch(line)
+	if m == nil {
+		return line, nil
+	}
+	path := m[1]
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(c.cwd, path)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("the prompt's attachment: %w", err)
+	}
+	c.logf("attached %s", m[1])
+	return string(b), nil
 }
 
 // bash runs the Bash tool on command.

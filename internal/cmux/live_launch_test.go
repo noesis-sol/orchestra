@@ -28,7 +28,7 @@ func TestLaunchIsRefusedWhileTheLastOneRuns(t *testing.T) {
 	if got := f.writes(); len(got) > 0 {
 		t.Errorf("typed into a terminal that runs claude: %q", got)
 	}
-	if pid, ok := term.launched(workSF); !ok || pid != 4242 {
+	if pid, _, ok := term.launched(workSF); !ok || pid != 4242 {
 		t.Errorf("the running launch's process ID went: %d %v", pid, ok)
 	}
 

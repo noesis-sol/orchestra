@@ -72,6 +72,16 @@ All notable changes to orchestra are documented here. The format follows
   a Claude Code dialog, such as the trust-this-folder one. orchestra reads
   cmux's version with `cmux version`, again whenever the app updates its
   CLI, and an older cmux is used as before.
+- Under cmux 0.65.0 or later, orchestra closes a worker's workspace, and
+  the interview's split, with `--force`, which cmux now needs to close a
+  terminal a program runs in, and waits for cmux to list a workspace or
+  split it opened, and to drop one it closed, as cmux answers before it
+  does. A worker that `cmux top` doesn't list yet, as its list is a sample
+  taken every few seconds, is no longer taken for gone.
+- The cmux tests run against a real cmux in CI, on macOS, in place of the
+  checks a person made by hand before a release (docs/development.md, The
+  cmux tests): a cmux app of each test's own, with its socket open to the
+  test, and a fake Claude Code.
 
 ### Fixed
 
