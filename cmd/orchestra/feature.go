@@ -106,18 +106,20 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	if code, stopped := f.interrupted(ctx); stopped {
 		return "", code
 	}
+	reason := tui.Printable(s.Reason) // the organ's words, which can quote the request or the README
 	switch {
 	case err != nil:
-		fmt.Fprintln(f.err, "orchestra couldn't screen the request:", dispatch.FirstLine(err.Error()))
-		f.logLine("FEATURE not screened: " + dispatch.FirstLine(err.Error()))
+		detail := tui.Printable(dispatch.FirstLine(err.Error())) // it can quote the organ's reply
+		fmt.Fprintln(f.err, "orchestra couldn't screen the request:", detail)
+		f.logLine("FEATURE not screened: " + detail)
 		return "", dispatch.ExitSetup
 	case s.Verdict == organ.ScreenReject:
-		fmt.Fprintln(f.err, "orchestra won't plan this request:", s.Reason)
-		f.logLine("FEATURE rejected: " + s.Reason)
+		fmt.Fprintln(f.err, "orchestra won't plan this request:", reason)
+		f.logLine("FEATURE rejected: " + reason)
 		return "", dispatch.ExitSetup
 	case s.Verdict == organ.ScreenUnclear:
-		fmt.Fprintln(f.err, "orchestra can't plan this request yet:", s.Reason)
-		f.logLine("FEATURE unclear: " + s.Reason)
+		fmt.Fprintln(f.err, "orchestra can't plan this request yet:", reason)
+		f.logLine("FEATURE unclear: " + reason)
 		return "", dispatch.ExitSetup
 	}
 

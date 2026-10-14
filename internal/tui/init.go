@@ -344,7 +344,7 @@ func verifierDescription(stack []string) string {
 		"in a fresh context, seeing the diff but not the reasoning behind it, and has the worker prompt run it " +
 		"before a worker closes its ticket. It costs a subagent's run per ticket."
 	if len(stack) > 0 {
-		d += "\nIt is told the stack: " + strings.Join(stack, ", ") + "."
+		d += "\nIt is told the stack: " + Printable(strings.Join(stack, ", ")) + "." // the scout's words
 	}
 	return d
 }

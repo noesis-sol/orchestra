@@ -13,6 +13,11 @@ All notable changes to orchestra are documented here. The format follows
   takes the slot ahead of it. And a `solo` ticket adopted after its
   question, its worker carrying on in its tab, runs alone as a dispatched
   one does: no new ticket starts beside it.
+- `orchestra init` and `orchestra feature` show what the scout and the
+  screen organ say (the scout's note, suites and stack, the screen's reason,
+  their errors) without the escape sequences and control characters a
+  repository's files or a request could make them echo, in the form and in
+  accessible mode.
 - `bd ready` or `bd list` failing once or twice, as when a worker's `bd`
   holds the database, no longer stops the run with `READY_UNREADABLE`: the
   queue is read again a poll later, up to three times, and each failure is

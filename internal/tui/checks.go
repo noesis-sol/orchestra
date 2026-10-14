@@ -404,7 +404,7 @@ func (s *checksStage) settle(found organ.Scouting, err error) {
 	var why string
 	switch {
 	case err != nil:
-		s.picked, why = choseManual, capitalize(err.Error())+"."
+		s.picked, why = choseManual, capitalize(Printable(err.Error()))+"." // it can quote the scout's reply
 	case len(found.Suites) == 0:
 		s.picked, why = choseScratch, "The scout found no suites."
 	default:
@@ -412,7 +412,7 @@ func (s *checksStage) settle(found organ.Scouting, err error) {
 		s.suites = found.Suites
 	}
 	if err == nil && found.Note != "" {
-		why += " " + found.Note
+		why += " " + Printable(found.Note) // the scout's words, from files the repository holds
 	}
 	s.scout.outcome = why
 	if err == nil {
@@ -460,7 +460,7 @@ func suiteLabel(su organ.Suite) string {
 	if !su.ParallelSafe {
 		about = append(about, "takes turns") // in a runner, between lock and unlock
 	}
-	return su.Command + "  · " + strings.Join(about, " · ")
+	return Printable(su.Command + "  · " + strings.Join(about, " · ")) // the scout's words
 }
 
 // fullOffered are the suites check-full's checklist offers: those the scout put in the full tier.
