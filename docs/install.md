@@ -17,48 +17,36 @@ It installs in `/usr/local/bin` where it can write there, and otherwise in `~/.l
 
 ## With Go, or from a clone
 
+Both need Go 1.26:
+
 ```
 go install github.com/noesis-sol/orchestra/cmd/orchestra@latest
 ```
 
-Or build it from a clone, on the commit you want, and install it over the one on your `PATH`:
+Or, in a clone on the commit you want:
 
 ```
 go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 sudo install -m 755 /tmp/orchestra "$(command -v orchestra)"
 ```
 
-The build runs as you; only the install needs `sudo`, and only where the folder belongs to root, as `/usr/local/bin` usually does. For a first install, name the folder: `/usr/local/bin/orchestra`. `install` replaces the file rather than writing over it, so a run going keeps the build it started with and the next run starts the new one.
-
-`go install` and a build from a clone need Go 1.26.
+`sudo` only where the folder is root's, as `/usr/local/bin` usually is.
 
 ## Updating
 
-`orchestra update` replaces orchestra with the latest [GitHub Release](https://github.com/noesis-sol/orchestra/releases)'s binary for your platform (darwin or linux, amd64 or arm64):
+`orchestra update` installs the latest release for your platform after verifying its signed checksums; without a valid signature it installs nothing. `--check` only says whether one is out (exit 1 if so, 0 if not). Where the folder is root's, run `sudo orchestra update`: orchestra never calls `sudo`. A build from a clone is replaced only with `--force`. A run going keeps its build; the next starts the new one.
 
-1. It verifies the release's `checksums.txt` with its signature, `checksums.txt.sig`, against the release keys built into orchestra, and installs nothing from a release without a valid one (there is no override).
-2. It checks the archive's SHA-256 against `checksums.txt`, and that the new binary's `--version` names the release, before putting it in place.
-3. It prints the old and new versions and the release's page.
-
-`orchestra update --check` only says whether a newer release is out, and changes nothing: it exits 1 when there is one, 0 when not. A build from a clone (`dev`, or a version naming a commit, [below](#which-version-you-have)) is replaced only with `--force`.
-
-Where the binary's folder belongs to root, run `sudo orchestra update`; orchestra never calls `sudo` itself. It works during a run: nothing runs the binary while a run goes (workers' hooks are shell commands, the organs are `claude`), and the new binary is renamed into place, so the run keeps the build it started with and the next run starts the new one.
-
-## Build provenance
-
-The signature shows a release was made by orchestra's release workflow, which alone holds the signing key. As a second check, by hand, each archive carries the workflow's build provenance, which the [GitHub CLI](https://cli.github.com/) verifies for an archive you downloaded:
+To check a release archive's build provenance with the [GitHub CLI](https://cli.github.com/):
 
 ```
 gh attestation verify orchestra_X.Y.Z_darwin_arm64.tar.gz --repo noesis-sol/orchestra
 ```
 
-## The newer-release notice
-
-A run on a release build ends, on a terminal, with `orchestra vX.Y.Z is available (you have vA.B.C): orchestra update` when a newer release is out. It asks GitHub in the background as it starts, at most once a day, keeping the answer in `orchestra/latest-release.json` in your user cache folder (`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), and a slow or failed check is dropped without delaying or failing the run. The log and the event stream don't have the line, and builds from a clone never check. `ORCHESTRA_NO_UPDATE_CHECK=1` turns the check off: no request, no cache.
+A release build checks GitHub at most once a day, in the background, and says when a newer release is out. `ORCHESTRA_NO_UPDATE_CHECK=1` turns that off.
 
 ## Which version you have
 
-`orchestra --version` (or `-v`) shows which version you have. A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is commit `d70b642867ad`, which `git rev-parse --short=12 HEAD` prints in the clone, and a version ending in `+dirty` was built with uncommitted changes.
+`orchestra --version`. A build from a clone ends with its commit's 12-character hash; `+dirty` means uncommitted changes.
 
 ## What orchestra needs
 
