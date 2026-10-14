@@ -61,7 +61,7 @@ func TestTicketStartedBeforeItsBlockerMergedWaitsForIt(t *testing.T) {
 				code := o.Run(t.Context())
 				o.FinishTriage(t.Context())
 
-				if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+				if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 					t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 				}
 				if got := closedIDs(h); !equal(got, []string{"A", "B"}) {
@@ -163,7 +163,7 @@ func TestTicketBlockedByAnUnmergedTicketWaitsForIt(t *testing.T) {
 		h.beads.add("B", "ticket B", 2)
 		h.worker("B", needs("U", StatusOpen)) // once: a second dispatch fails the test
 		o, code := h.run()
-		if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
+		if code != ExitOK || o.Final() != "READY_EMPTY after 0 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		if got := h.sink.of(EvWaits); len(got) != 1 || !strings.HasPrefix(got[0], "B   WAITS_FOR_MERGE: B waits for U to merge") {

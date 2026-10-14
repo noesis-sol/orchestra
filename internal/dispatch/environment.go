@@ -39,13 +39,15 @@ func (o *Loop) failedAtOnce(ctx context.Context, status TicketStatus, started, i
 		o.checkout.Head(ctx, c.Repo, br) == head && o.checkout.DirtyWorktree(ctx, wt) == ""
 }
 
-// settling is how a worker settled, as the hold counts it.
+// settling is how a worker settled, as the hold counts it. One requeued doesn't count toward
+// Config.Limit either.
 type settling int
 
 const (
 	unsettled   settling = iota // it never settled with its ticket read: the row goes on
 	settledFast                 // it failed at once, as one its environment fails does
 	settledSlow                 // any other way, which ends the row
+	requeued                    // back in the queue, to wait for a ticket to merge: as unsettled
 )
 
 // settled counts a settled worker toward the hold: one that failed at once adds to the tickets
@@ -53,7 +55,7 @@ const (
 // reopened too. Run calls it with each result.
 func (o *Loop) settled(ctx context.Context, id string, how settling) {
 	n := o.cfg.EnvHoldCount
-	if n == 0 || how == unsettled {
+	if n == 0 || how == unsettled || how == requeued {
 		return
 	}
 	if how != settledFast {

@@ -128,9 +128,10 @@ const readyPoll = 30 * time.Second
 
 // result is what a worker returns to Run.
 type result struct {
-	id   string
-	stop *stopReason
-	how  settling // for the hold for the environment
+	id      string
+	stop    *stopReason
+	how     settling // for the hold for the environment, and Config.Limit
+	counted bool     // started by start, so it counts toward Config.Limit
 }
 
 // Run works through bd ready (in a scoped run, one ticket and its descendants) with up to
@@ -226,7 +227,7 @@ type runState struct {
 
 	results  chan result     // buffered: a worker finishing after settle never blocks
 	inflight map[string]bool // the tickets whose workers haven't returned
-	count    int             // the tickets dispatched, with those done in earlier runs (Config.DoneSoFar)
+	count    int             // the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar)
 	stops    stops           // the reasons the run stops for, first to last
 	envSaid  bool            // the hold for the environment is taken up
 	drained  bool            // the maintainer asked to stop after the running tickets, as last said
@@ -377,16 +378,17 @@ func (r *runState) start(t Ticket, queued int) {
 		Queued: queued, Solo: r.soloShown, Unclosed: r.unclosedSaid,
 		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
 	o.startFootprint(t)
-	r.launch(t.ID, func(ctx context.Context, how *settling) *stopReason { return o.work(ctx, t, how) })
+	r.launch(t.ID, true, func(ctx context.Context, how *settling) *stopReason { return o.work(ctx, t, how) })
 }
 
 // launch runs ticket id's worker, work, on a goroutine of its own, which hands its result to Run.
-// The ticket runs from now until Run takes the result.
-func (r *runState) launch(id string, work func(ctx context.Context, how *settling) *stopReason) {
+// The ticket runs from now until Run takes the result. counted says that it counts toward
+// Config.Limit.
+func (r *runState) launch(id string, counted bool, work func(ctx context.Context, how *settling) *stopReason) {
 	r.inflight[id] = true
 	ctx, results := r.ctx, r.results
 	go func() {
-		res := result{id: id}
+		res := result{id: id, counted: counted}
 		res.stop = work(ctx, &res.how)
 		results <- res
 	}()
@@ -406,7 +408,7 @@ func (r *runState) follow() bool {
 		if HasLabel(a.t, SoloLabel) {
 			o.solo = a.t.ID // it runs alone from now on, as one dispatched does
 		}
-		r.launch(a.t.ID, func(ctx context.Context, how *settling) *stopReason {
+		r.launch(a.t.ID, false, func(ctx context.Context, how *settling) *stopReason {
 			return o.adoptAsked(ctx, a, how)
 		})
 	}
@@ -443,6 +445,9 @@ func (r *runState) returned(res result) {
 	o.stoppedBy(res.id, res.stop)
 	o.endFootprint(res.id)
 	o.settled(r.keep, res.id, res.how)
+	if res.counted && res.how == requeued {
+		r.count-- // it started too early, and counts once it starts again
+	}
 	if res.id == o.solo {
 		o.solo = ""
 	}

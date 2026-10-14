@@ -21,6 +21,11 @@ All notable changes to orchestra are documented here. The format follows
   can't read, such as one edited while its form was open to hold a value of
   the wrong type: it stops with the error and leaves the file as it was,
   where it wrote back only its own choices and lost every other setting.
+- A ticket that started too early and went back in the queue to wait for
+  its blocker (`WAITS_FOR_MERGE`) counts toward `--limit` once, as it starts
+  again, rather than for each start: with a small limit, early starts could
+  end a run `LIMIT_REACHED` with tickets left, and the done line counted
+  them twice.
 ### Changed
 
 - `orchestra update` no longer refuses while a run holds the repository's

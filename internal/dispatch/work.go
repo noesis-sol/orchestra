@@ -423,7 +423,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 	// aside for review as below.
 	if s := info.Status; s == StatusOpen || s == StatusInProgress {
 		if on := o.unmergedBlockers(info); len(on) > 0 && o.nothingDone(keep, w) {
-			*how = unsettled // neither failed at once nor done: the hold for the environment counts it for nothing
+			*how = requeued // neither failed at once nor done: the hold for the environment counts it for nothing
 			o.waitForMerge(keep, t, w, s, on)
 			return nil
 		}

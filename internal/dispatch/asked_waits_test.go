@@ -21,7 +21,7 @@ func TestAnsweredTicketThatWaitsForMergeRunsAgain(t *testing.T) {
 		h.worker("B", asksAndGoes, needs("A", StatusOpen), finishes("b.txt"))
 		h.worker("C", answersThenFinishes("c.txt"))
 		o, code := h.run()
-		if code != ExitOK || o.Final() != "READY_EMPTY after 5 tickets" {
+		if code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		if n := dispatches(h, "B"); n != 3 {
