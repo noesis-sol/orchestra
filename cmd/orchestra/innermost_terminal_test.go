@@ -114,15 +114,15 @@ func TestConfigTmuxStartedFromAHerdrPane(t *testing.T) {
 	t.Setenv("TMUX_PANE", "%4")
 	herdrForeground(t, 1<<30, 1<<30) // the tmux client
 	c, p := loadWith(t)
-	if len(p) > 0 || c.Terminal != project.TerminalTmux || c.Workspace != "work" || c.pane != "%4" || !c.inSight {
+	if len(p) > 0 || c.Terminal != project.TerminalTmux || c.Workspace != "work" || c.where.pane != "%4" || !c.where.inSight {
 		t.Errorf("tmux from a Herdr pane: terminal %q, session %q, pane %q, in sight %v, problems %v",
-			c.Terminal, c.Workspace, c.pane, c.inSight, p)
+			c.Terminal, c.Workspace, c.where.pane, c.where.inSight, p)
 	}
 
 	herdrForeground(t, processGroup(), os.Getpid())
 	c, p = loadWith(t)
-	if len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || c.pane != "w7Q:p2" {
+	if len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || c.where.pane != "w7Q:p2" {
 		t.Errorf("a Herdr pane in tmux: terminal %q, workspace %q, pane %q, problems %v", c.Terminal, c.Workspace,
-			c.pane, p)
+			c.where.pane, p)
 	}
 }

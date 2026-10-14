@@ -56,13 +56,13 @@ func TestConfigCmuxInACmuxTerminal(t *testing.T) {
 	if len(p) > 0 {
 		t.Fatalf("problems: %v", p)
 	}
-	if c.Terminal != project.TerminalCmux || c.Workspace != "" || c.pane != "7A1B2C3D-4E5F-4061-9728-394A5B6C7D8E" ||
-		c.cmuxWorkspace != "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6" || !c.inSight || c.Watch != "" || !c.ProbeHooks {
+	if c.Terminal != project.TerminalCmux || c.Workspace != "" || c.where.pane != "7A1B2C3D-4E5F-4061-9728-394A5B6C7D8E" ||
+		c.where.cmuxWorkspace != "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6" || !c.where.inSight || c.Watch != "" || !c.ProbeHooks {
 		t.Errorf("terminal %q, workspace %q, pane %q, own workspace %q, in sight %v, watch %q, probe hooks %v",
-			c.Terminal, c.Workspace, c.pane, c.cmuxWorkspace, c.inSight, c.Watch, c.ProbeHooks)
+			c.Terminal, c.Workspace, c.where.pane, c.where.cmuxWorkspace, c.where.inSight, c.Watch, c.ProbeHooks)
 	}
 	term, ok := terminalOf(c).(cmux.Terminal)
-	if !ok || term.Own != c.cmuxWorkspace || term.Book != filepath.Join(c.Repo, ".orchestra", "run", "cmux.json") {
+	if !ok || term.Own != c.where.cmuxWorkspace || term.Book != filepath.Join(c.Repo, ".orchestra", "run", "cmux.json") {
 		t.Errorf("the terminal is %#v", terminalOf(c))
 	}
 }

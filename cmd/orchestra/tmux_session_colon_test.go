@@ -24,8 +24,8 @@ exit 1
 		if len(p) > 0 {
 			t.Fatalf("%s: problems: %v", version, p)
 		}
-		if c.Workspace != "foo_bar_baz" || c.Watch != "tmux attach -t foo_bar_baz" || c.inSight {
-			t.Errorf("%s: session %q, watch %q, in sight %v", version, c.Workspace, c.Watch, c.inSight)
+		if c.Workspace != "foo_bar_baz" || c.Watch != "tmux attach -t foo_bar_baz" || c.where.inSight {
+			t.Errorf("%s: session %q, watch %q, in sight %v", version, c.Workspace, c.Watch, c.where.inSight)
 		}
 
 		t.Setenv("HERDR_ENV", "")
@@ -36,8 +36,8 @@ exit 1
 			if len(p) > 0 {
 				t.Fatalf("%s %v: problems: %v", version, args, p)
 			}
-			if c.Workspace != "foo:bar" || c.Watch != "" || !c.inSight {
-				t.Errorf("%s %v: session %q, watch %q, in sight %v", version, args, c.Workspace, c.Watch, c.inSight)
+			if c.Workspace != "foo:bar" || c.Watch != "" || !c.where.inSight {
+				t.Errorf("%s %v: session %q, watch %q, in sight %v", version, args, c.Workspace, c.Watch, c.where.inSight)
 			}
 		}
 	}

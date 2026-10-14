@@ -29,7 +29,7 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 }
 
 // hostTools puts a bd and a herdr at the end of PATH, for a run's check that they're installed
-// (checkHost) on a machine without them, such as CI's. They fail if run: a test that runs one puts
+// (checkTools) on a machine without them, such as CI's. They fail if run: a test that runs one puts
 // its own first on PATH.
 func hostTools(t *testing.T) {
 	t.Helper()

@@ -123,7 +123,7 @@ func run(
 	started := time.Now() // the run's start, as its lock and each record of its event stream give it
 	holder := project.Holder{
 		PID: os.Getpid(), Started: started, Version: buildVersion(), Branch: cfg.Base,
-		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: cfg.pane,
+		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: cfg.where.pane,
 	}
 	lock, lockErr := project.LockRun(ctx, cfg.Repo, holder)
 	var held *project.HeldError

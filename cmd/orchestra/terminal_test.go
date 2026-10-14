@@ -93,9 +93,9 @@ func TestConfigTmuxOutsideTmuxUsesASessionOfItsOwn(t *testing.T) {
 	}
 	session := "orchestra-" + strings.ReplaceAll(filepath.Base(repo), ".", "_")
 	if c.Terminal != project.TerminalTmux || c.Workspace != session || c.Watch != "tmux attach -t "+session ||
-		c.inSight || c.pane != "" || !c.ProbeHooks {
+		c.where.inSight || c.where.pane != "" || !c.ProbeHooks {
 		t.Errorf("terminal %q, session %q, watch %q, in sight %v, pane %q, probe hooks %v",
-			c.Terminal, c.Workspace, c.Watch, c.inSight, c.pane, c.ProbeHooks)
+			c.Terminal, c.Workspace, c.Watch, c.where.inSight, c.where.pane, c.ProbeHooks)
 	}
 }
 
@@ -111,16 +111,16 @@ func TestConfigTmuxInsideTmuxUsesItsOwnSession(t *testing.T) {
 	if len(p) > 0 {
 		t.Fatalf("problems: %v", p)
 	}
-	if c.Terminal != project.TerminalTmux || c.Workspace != "work" || c.Watch != "" || !c.inSight || c.pane != "%4" {
+	if c.Terminal != project.TerminalTmux || c.Workspace != "work" || c.Watch != "" || !c.where.inSight || c.where.pane != "%4" {
 		t.Errorf("terminal %q, session %q, watch %q, in sight %v, pane %q", c.Terminal, c.Workspace, c.Watch,
-			c.inSight, c.pane)
+			c.where.inSight, c.where.pane)
 	}
 	c, p = loadWith(t, "--workspace", "my workers")
 	if len(p) > 0 {
 		t.Fatalf("problems: %v", p)
 	}
-	if c.Workspace != "my workers" || c.Watch != "tmux switch-client -t 'my workers'" || c.inSight {
-		t.Errorf("session %q, watch %q, in sight %v", c.Workspace, c.Watch, c.inSight)
+	if c.Workspace != "my workers" || c.Watch != "tmux switch-client -t 'my workers'" || c.where.inSight {
+		t.Errorf("session %q, watch %q, in sight %v", c.Workspace, c.Watch, c.where.inSight)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestConfigTerminalPrecedence(t *testing.T) {
 	configFixture(t, `{"terminal": "tmux"}`)
 	fakeTmux(t)
 	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
-	if c, p := loadWith(t); len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || !c.inSight {
+	if c, p := loadWith(t); len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || !c.where.inSight {
 		t.Errorf("ORCHESTRA_TERMINAL: terminal %q, workspace %q, problems %v", c.Terminal, c.Workspace, p)
 	}
 	if c, p := loadWith(t, "--terminal", "tmux"); len(p) > 0 || c.Terminal != project.TerminalTmux {
@@ -187,9 +187,9 @@ func TestConfigHerdrInAHerdrPane(t *testing.T) {
 	fakeTmux(t)
 	t.Setenv("HERDR_PANE_ID", "w7Q:p2")
 	c, p := loadWith(t)
-	if len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || c.pane != "w7Q:p2" ||
-		!c.inSight || c.Watch != "" || c.ProbeHooks {
+	if len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || c.where.pane != "w7Q:p2" ||
+		!c.where.inSight || c.Watch != "" || c.ProbeHooks {
 		t.Errorf("terminal %q, workspace %q, pane %q, in sight %v, watch %q, probe hooks %v, problems %v",
-			c.Terminal, c.Workspace, c.pane, c.inSight, c.Watch, c.ProbeHooks, p)
+			c.Terminal, c.Workspace, c.where.pane, c.where.inSight, c.Watch, c.ProbeHooks, p)
 	}
 }

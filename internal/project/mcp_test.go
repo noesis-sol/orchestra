@@ -113,7 +113,7 @@ func TestMCPStepExplainsWhatWorkersGet(t *testing.T) {
 func TestNextStepsMentionMCPWhenNoneWereChosen(t *testing.T) {
 	repo, _ := gitRepo(t)
 	hint := func(c Choice) bool {
-		return strings.Contains(strings.Join(NextSteps(context.Background(), repo, nil, nil, c), "\n"), "--mcp")
+		return strings.Contains(strings.Join(NextSteps(context.Background(), repo, nil, nil, c, ""), "\n"), "--mcp")
 	}
 	if !hint(Choice{Servers: testServers}) || !hint(Choice{MCP: names(), Servers: testServers}) {
 		t.Error("none chosen with servers defined: no --mcp hint")

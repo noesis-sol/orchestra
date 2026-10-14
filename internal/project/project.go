@@ -451,8 +451,9 @@ func Prerequisites(repo string, getenv func(string) string) []Step {
 	return steps
 }
 
-// NextSteps lists what is left for the user, in order.
-func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Choice) []string {
+// NextSteps lists what is left for the user, in order. workerEffort is the project's worker_effort,
+// which it says how to choose when there is none.
+func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Choice, workerEffort string) []string {
 	var next []string
 	for _, p := range pre {
 		if p.Kind == StepMissing {
@@ -473,7 +474,7 @@ func NextSteps(ctx context.Context, repo string, steps []Step, pre []Step, c Cho
 				strings.Join(names, ", ")+"):\norchestra init --mcp <name>,<name>")
 		}
 	}
-	if s, _, err := LoadSettings(repo); err == nil && s.WorkerEffort == "" {
+	if workerEffort == "" {
 		next = append(next, "Workers run at Claude Code's default effort. To choose one, set \"worker_effort\" ("+
 			strings.Join(Efforts, ", ")+") in "+Dir+"/"+SettingsName+", or run with --worker-effort.")
 	}

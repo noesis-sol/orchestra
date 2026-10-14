@@ -67,7 +67,7 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	// no scrollback: a terminal that reflows a frame as the pane resizes can't push its rows out of
 	// Bubble Tea's reach, as it can on the normal screen.
 	var focus func(tab string) // none when the workers' tabs are out of orchestra's sight
-	if r.cfg.inSight {
+	if r.cfg.where.inSight {
 		focus = focusTab(ctx, r.log, terminalOf(r.cfg))
 	}
 	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focus),

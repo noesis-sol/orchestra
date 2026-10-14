@@ -72,16 +72,12 @@ func installed(cmd string) bool {
 	return err == nil
 }
 
-// checkTerminal chooses the run's terminal (c.Terminal) as c.terminal, the project's settings and
+// checkTerminal chooses the run's terminal (c.Terminal) as c.terminalAsked, the project's settings and
 // where orchestra runs decide, and finds what it needs there: the workspace or session for the
-// workers' tabs (c.Workspace), orchestra's own pane (c.pane), whether the tabs are in sight
-// (c.inSight) and how to see them if not (c.Watch). It returns the setup problems.
-func checkTerminal(ctx context.Context, c *options, getenv func(string) string) []string {
-	var settings project.Settings
-	if c.Repo != "" {
-		settings, _, _ = project.LoadSettings(c.Repo) // resolveProject reports settings it can't read
-	}
-	choice, err := project.ResolveTerminal(c.terminal, settings)
+// workers' tabs (c.Workspace), where orchestra runs (c.where: its own pane, whether the tabs are in
+// sight) and how to see the tabs if not (c.Watch). It returns the setup problems.
+func checkTerminal(ctx context.Context, c *options, settings project.Settings, getenv func(string) string) []string {
+	choice, err := project.ResolveTerminal(c.terminalAsked, settings)
 	if err != nil {
 		return []string{err.Error() + "."}
 	}
@@ -102,7 +98,7 @@ func checkTerminal(ctx context.Context, c *options, getenv func(string) string) 
 // checkHerdr finds the Herdr pane orchestra runs in and the workspace for the workers' tabs.
 func checkHerdr(ctx context.Context, c *options, getenv func(string) string) []string {
 	var problems []string
-	c.pane, c.inSight = getenv("HERDR_PANE_ID"), true
+	c.where.pane, c.where.inSight = getenv("HERDR_PANE_ID"), true
 	if c.Workspace == "" {
 		c.Workspace = herdr.CurrentWorkspace(ctx, getenv)
 	}
@@ -142,8 +138,8 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 	c.ProbeHooks = true
 	own := ""
 	if getenv("TMUX") != "" && getenv("TMUX_PANE") != "" {
-		c.pane = getenv("TMUX_PANE")
-		name, err := (tmux.Terminal{}).PaneSession(ctx, c.pane)
+		c.where.pane = getenv("TMUX_PANE")
+		name, err := (tmux.Terminal{}).PaneSession(ctx, c.where.pane)
 		switch {
 		case err == nil:
 			own = name
@@ -164,8 +160,8 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 		// which tmux 3.8 keeps, can't be attached to by name: it is foo_bar on every tmux.
 		c.Workspace = tmux.SessionName(c.Workspace)
 	}
-	c.inSight = own != "" && c.Workspace == own
-	if !c.inSight && c.Workspace != "" {
+	c.where.inSight = own != "" && c.Workspace == own
+	if !c.where.inSight && c.Workspace != "" {
 		how := "tmux attach -t "
 		if getenv("TMUX") != "" {
 			how = "tmux switch-client -t "
@@ -198,12 +194,12 @@ func checkCmux(ctx context.Context, c *options, getenv func(string) string) []st
 			"leave it out.")
 	}
 	c.ProbeHooks = true
-	c.pane, c.cmuxWorkspace, c.inSight = getenv("CMUX_SURFACE_ID"), getenv("CMUX_WORKSPACE_ID"), true
+	c.where = runsIn{pane: getenv("CMUX_SURFACE_ID"), cmuxWorkspace: getenv("CMUX_WORKSPACE_ID"), inSight: true}
 	switch {
 	case cmux.Bin() == "":
 		problems = append(problems, "Required command not found: cmux (the workers' terminal). Install cmux "+
 			"(https://cmux.com), or choose another: orchestra --terminal tmux")
-	case c.cmuxWorkspace == "":
+	case c.where.cmuxWorkspace == "":
 		problems = append(problems, "Not running inside a cmux terminal (CMUX_WORKSPACE_ID is not set), and cmux "+
 			"answers only programs started in its terminals. Run orchestra from a cmux terminal, "+
 			"or choose another: orchestra --terminal tmux")
@@ -233,7 +229,7 @@ func terminalOf(c options) workerTerminal {
 	case project.TerminalTmux:
 		return tmuxSession{tmux.Terminal{Repo: c.Repo}}
 	case project.TerminalCmux:
-		return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.cmuxWorkspace}
+		return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.where.cmuxWorkspace}
 	}
 	return herdr.Terminal{}
 }

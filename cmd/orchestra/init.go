@@ -316,7 +316,7 @@ func runInit(
 	pre := project.Prerequisites(repo, getenv)
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
-	ui.Next(project.NextSteps(ctx, repo, steps, pre, choice))
+	ui.Next(project.NextSteps(ctx, repo, steps, pre, choice, existing.WorkerEffort))
 	ready := true
 	for _, p := range pre {
 		ready = ready && p.Kind != project.StepMissing
@@ -352,10 +352,8 @@ func takePrefix(value string, c *project.Choice, stderr io.Writer) int {
 // rewrites leave the run's tree dirty, which stops the run at its next dispatch or merge, and the run
 // would pick up the tickets it files.
 func initRefusal(ctx context.Context, repo string) string {
-	if linked, err := (git.Git{}).LinkedWorktree(ctx, repo); err != nil {
-		return "could not tell whether " + repo + " is the main checkout: " + err.Error() + "."
-	} else if linked {
-		return repo + " is a linked worktree. Run this from the main checkout."
+	if p := mainCheckoutProblem(ctx, repo); p != "" {
+		return p
 	}
 	holder, held, err := project.RunHolder(ctx, repo)
 	switch {

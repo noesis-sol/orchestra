@@ -90,8 +90,14 @@ type options struct {
 	Yes          bool   // file a --feature plan without asking
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
-	terminal     string // the terminal asked for (--terminal, ORCHESTRA_TERMINAL); "" leaves it to the project
-	pane         string // orchestra's own Herdr or tmux pane, or cmux surface; "" when it runs in none
+	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
+	terminalAsked string
+	where         runsIn // where orchestra itself runs, as checkTerminal finds it
+}
+
+// runsIn is where orchestra itself runs in the run's terminal: only the terminal checks set it.
+type runsIn struct {
+	pane string // orchestra's own Herdr or tmux pane, or cmux surface; "" when it runs in none
 	// orchestra's own cmux workspace (CMUX_WORKSPACE_ID), which the run never closes; "" outside cmux
 	cmuxWorkspace string
 	inSight       bool // the workers' tabs are where orchestra runs, for the dashboard's number keys to go to
@@ -104,6 +110,10 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // and collects every setup problem, so they can be reported together. The error is the flag
 // package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
 // argument such as 'init' after a flag; both have been reported to output.
+//
+// Its phases, in the order their problems are reported: the flags; the repository; the terminal,
+// under the project's settings, read once here for it and the project; the commands a run calls;
+// then, in a repository, the project's settings and layout and its checkout.
 func loadConfig(
 	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
 ) (options, []string, error) {
@@ -111,9 +121,13 @@ func loadConfig(
 	if err != nil || c.showVersion {
 		return c, nil, err
 	}
-	problems = append(problems, checkHost(ctx, &c, getenv)...)
+	problems = append(problems, findRepo(ctx, &c)...)
+	settings, unreadable := loadSettings(c.Repo)
+	problems = append(problems, checkTerminal(ctx, &c, settings, getenv)...)
+	problems = append(problems, checkTools()...)
 	if c.Repo != "" {
-		problems = append(problems, resolveProject(ctx, &c, given, getenv)...)
+		problems = append(problems, unreadable...)
+		problems = append(problems, resolveProject(ctx, &c, given, settings, getenv)...)
 		problems = append(problems, checkCheckout(ctx, &c)...)
 	}
 	return c, problems, nil
@@ -137,7 +151,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
 			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list); "+
 			"none under cmux, where each worker has a workspace of its own")
-	fs.StringVar(&c.terminal, "terminal", getenv("ORCHESTRA_TERMINAL"),
+	fs.StringVar(&c.terminalAsked, "terminal", getenv("ORCHESTRA_TERMINAL"),
 		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
 	limit, limitProblem := envInt(getenv, "LIMIT", 40)
@@ -307,17 +321,32 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	}, problems, nil
 }
 
-// checkHost finds what a run needs around the project: its repository (c.Repo), the terminal the
-// workers run in and the workspace or session for their tabs (see checkTerminal), and the commands
-// it calls.
-func checkHost(ctx context.Context, c *options, getenv func(string) string) []string {
-	var problems []string
-	if repo, err := (git.Git{}).TopLevel(ctx, ""); err == nil {
-		c.Repo = repo
-	} else {
-		problems = append(problems, "Not inside a git repository: cd into the project first.")
+// findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory.
+func findRepo(ctx context.Context, c *options) []string {
+	repo, err := (git.Git{}).TopLevel(ctx, "")
+	if err != nil {
+		return []string{"Not inside a git repository: cd into the project first."}
 	}
-	problems = append(problems, checkTerminal(ctx, c, getenv)...)
+	c.Repo = repo
+	return nil
+}
+
+// loadSettings reads the settings of the project in repo, none outside a repository ("" for repo).
+// Settings it can't read are a problem, and as none they leave every choice to the flags and defaults.
+func loadSettings(repo string) (project.Settings, []string) {
+	if repo == "" {
+		return project.Settings{}, nil
+	}
+	settings, _, err := project.LoadSettings(repo)
+	if err != nil {
+		return project.Settings{}, []string{"Unreadable settings: " + err.Error()}
+	}
+	return settings, nil
+}
+
+// checkTools checks that the commands a run calls, whatever its terminal, are installed.
+func checkTools() []string {
+	var problems []string
 	for _, cmd := range []string{"bd", "git"} {
 		if !installed(cmd) {
 			problems = append(problems, "Required command not found: "+cmd)
@@ -328,7 +357,9 @@ func checkHost(ctx context.Context, c *options, getenv func(string) string) []st
 
 // resolveProject reads what the project in c.Repo decides, under the flags and variables in c
 // that override it: its layout under .orchestra/ and its settings.
-func resolveProject(ctx context.Context, c *options, given overrides, getenv func(string) string) []string {
+func resolveProject(
+	ctx context.Context, c *options, given overrides, settings project.Settings, getenv func(string) string,
+) []string {
 	var problems []string
 	lay := project.Locate(c.Repo)
 	if c.ownPrompt = c.WorkerPrompt != ""; !c.ownPrompt {
@@ -337,10 +368,6 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 		c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 	}
 	c.LogPath, c.ReportsDir = lay.Log, lay.Reports
-	settings, _, err := project.LoadSettings(c.Repo)
-	if err != nil {
-		problems = append(problems, "Unreadable settings: "+err.Error())
-	}
 	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
@@ -449,10 +476,8 @@ func checkCheckout(ctx context.Context, c *options) []string {
 	}
 
 	// Finished tickets are merged into the main checkout's branch, so run from there, on a branch.
-	if linked, err := (git.Git{}).LinkedWorktree(ctx, c.Repo); err != nil {
-		problems = append(problems, "Could not tell whether "+c.Repo+" is the main checkout: "+err.Error()+".")
-	} else if linked {
-		problems = append(problems, c.Repo+" is a linked worktree. Run this from the main checkout.")
+	if p := mainCheckoutProblem(ctx, c.Repo); p != "" {
+		problems = append(problems, strings.ToUpper(p[:1])+p[1:])
 	}
 	if base, err := (git.Git{}).CurrentBranch(ctx, c.Repo); err != nil {
 		problems = append(problems, "Could not read the main checkout's branch: "+err.Error()+".")
@@ -472,6 +497,20 @@ func checkCheckout(ctx context.Context, c *options) []string {
 			"WT_ROOT (%s) must be outside the repository, or git sees the worktrees as untracked files.", c.WTRoot))
 	}
 	return problems
+}
+
+// mainCheckoutProblem says why repo, a checkout's top level, can't be told to be the main checkout, or
+// returns "": a linked worktree's branch is a worker's ticket's, not the one finished tickets land on.
+// The problem is worded for init, after "orchestra init: "; a run's setup problems start with a capital.
+func mainCheckoutProblem(ctx context.Context, repo string) string {
+	linked, err := (git.Git{}).LinkedWorktree(ctx, repo)
+	switch {
+	case err != nil:
+		return "could not tell whether " + repo + " is the main checkout: " + err.Error() + "."
+	case linked:
+		return repo + " is a linked worktree. Run this from the main checkout."
+	}
+	return ""
 }
 
 // scopeProblem says why a run can't be scoped to ticket id (--ticket), or returns "": the ticket
