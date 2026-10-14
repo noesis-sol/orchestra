@@ -561,7 +561,7 @@ func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int,
 	if s != nil {
 		return nil, 0, s
 	}
-	t, queued, err := o.pick(ctx, running)
+	t, queued, err := o.pickTries(ctx, running)
 	if ctx.Err() != nil {
 		return nil, 0, nil
 	}
@@ -573,6 +573,22 @@ func (o *Loop) next(ctx context.Context, running map[string]bool) (*Ticket, int,
 		return nil, 0, halt(ExitTool, stopReadyUnreadable, ": could not read %s%s", what, because(err)).causedBy(err)
 	}
 	return t, queued, nil
+}
+
+// readyTries is how many times next reads the queue while bd fails before it stops the run.
+const readyTries = 3
+
+// pickTries is pick, tried up to readyTries times a poll apart while bd fails, as when a worker's bd
+// (a claim, a close) holds the database: bd failing once or twice doesn't stop the run. It logs each
+// failure it tries again after.
+func (o *Loop) pickTries(ctx context.Context, running map[string]bool) (*Ticket, int, error) {
+	for try := 1; ; try++ {
+		t, queued, err := o.pick(ctx, running)
+		if err == nil || try == readyTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
+			return t, queued, err
+		}
+		o.log.Raw("", fmt.Errorf("could not read the queue (try %d of %d), reading it again: %w", try, readyTries, err))
+	}
 }
 
 // soloState is the solo ticket running, or else the one next in line.

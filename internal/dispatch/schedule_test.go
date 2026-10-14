@@ -83,6 +83,7 @@ func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
 		log, "", Deps{Tickets: onceReady{calls: new(atomic.Int32)}, Tabs: gatedTabs{gated: "A", release: release},
 			Agents: noAgents{}, Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}})
 	o.SetSink(sink)
+	o.poll = time.Millisecond // bd ready is read readyTries times, a poll apart
 	// Without the HOLD, A would wait forever; let it go so the test fails rather than hangs.
 	late := time.AfterFunc(patience, func() { sink.once.Do(func() { close(release) }) })
 	defer late.Stop()
@@ -116,6 +117,7 @@ func TestReadyUnreadableSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: unreadableReady{}, Checkout: cleanCheckout{}})
+	o.poll = time.Millisecond // bd ready is read readyTries times, a poll apart
 	_, _, s := o.next(context.Background(), nil)
 	want := "READY_UNREADABLE: could not read 'bd ready --json': bd defer A: exit status 1: Error: database is locked (another bd holds it)"
 	if s == nil || s.kind != stopReadyUnreadable || !errors.Is(s, errBd) || s.Error() != want {

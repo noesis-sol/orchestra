@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `bd ready` or `bd list` failing once or twice, as when a worker's `bd`
+  holds the database, no longer stops the run with `READY_UNREADABLE`: the
+  queue is read again a poll later, up to three times, and each failure is
+  logged.
 - The dashboard's totals and the run's closing "N set aside" leave out
   tickets a hold for the environment reopened: back in the queue, they show
   `◷ waiting`, and one that merges later counts only as completed. The
