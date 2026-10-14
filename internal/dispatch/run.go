@@ -387,14 +387,23 @@ func (r *runState) start(t Ticket, queued int) {
 
 // launch runs ticket id's worker, work, on a goroutine of its own, which hands its result to Run.
 // The ticket runs from now until Run takes the result. counted says that it counts toward
-// Config.Limit.
+// Config.Limit. A ticket whose work returns no reason to stop is no longer active; one that
+// returns a reason stays listed, and so does one whose work panics: the panic is that reason,
+// PANIC (see panicStop).
 func (r *runState) launch(id string, counted bool, work func(ctx context.Context, how *settling) *stopReason) {
 	r.inflight[id] = true
-	ctx, results := r.ctx, r.results
+	o, ctx, results := r.o, r.ctx, r.results
 	go func() {
 		res := result{id: id, counted: counted}
+		defer func() {
+			if p := recover(); p != nil {
+				res.stop = o.panicStop(id, p)
+			} else if res.stop == nil {
+				o.clearActive(id)
+			}
+			results <- res
+		}()
 		res.stop = work(ctx, &res.how)
-		results <- res
 	}()
 }
 

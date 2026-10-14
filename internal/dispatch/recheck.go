@@ -109,13 +109,6 @@ func (r *runState) recheckTickets() {
 func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 	c := o.cfg
 	id := rc.w.id
-	defer func() {
-		if p := recover(); p != nil {
-			stop = o.panicStop(id, p)
-		} else if stop == nil {
-			o.clearActive(id)
-		}
-	}()
 	if why := o.whyNotRecheck(ctx, rc); why != "" {
 		if ctx.Err() != nil {
 			return errInterrupted // a read cut short says nothing of the ticket

@@ -15,17 +15,10 @@ import (
 // work runs one ticket from worktree to merge. It returns a reason when the run must stop; the
 // ticket then stays listed as active (still being worked on), or, back from a question before its
 // earlier worker is told anything, asked. It sets how to how the worker settled, for the hold for
-// the environment. A panic in it is such a reason: PANIC.
-func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopReason) {
+// the environment. A panic in it is such a reason, PANIC, which launch, running it, recovers.
+func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 	c := o.cfg
 	id, br := t.ID, branchOf(t.ID)
-	defer func() {
-		if p := recover(); p != nil {
-			stop = o.panicStop(id, p)
-		} else if stop == nil {
-			o.clearActive(id)
-		}
-	}()
 	// Back from a question, the ticket stays asked, for a stop or Ctrl+C to leave it as it was (see
 	// leaveAsked, saveCarried), until its earlier worker is told to carry on or adopted (see takeOn),
 	// or a new worker is to take it.
@@ -292,16 +285,9 @@ func (o *Loop) takeOn(t Ticket, w askedWorker) Status {
 // that is still working when its ticket comes back. One idle with its ticket in progress is told
 // the answer is in; one that closed it settles at once and its work is merged; one gone from its tab
 // has its session resumed. It returns and sets how as work does.
-func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) (stop *stopReason) {
+func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopReason {
 	t, w := a.t, a.w
 	id := t.ID
-	defer func() {
-		if p := recover(); p != nil {
-			stop = o.panicStop(id, p)
-		} else if stop == nil {
-			o.clearActive(id)
-		}
-	}()
 	// Its worker's from now on, so a stop or Ctrl+C before it settles leaves it labelled and carried
 	// over: it is no longer asked.
 	o.takeOn(t, w)
