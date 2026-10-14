@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker whose MCP server asks it a question in the same second as the tool
+  use that asks, on a filesystem with 1-second file times (HFS+, exFAT), reads
+  blocked rather than working until its time limit.
 - Ctrl+C while a ticket set aside for its failed check is checked once more
   no longer names it among the workers left running: only its check is cut
   short, and it stays set aside.

@@ -53,7 +53,8 @@ func RecordsOf(args []string) (string, bool) {
 //   - blocked while a permission prompt one of its agents asked is not answered: that agent's tool
 //     not done since, nor a prompt, nor the notification that it waits at its prompt (as after a
 //     refusal, which ends the turn), whatever its other agents report meanwhile; or after a
-//     notification of a dialog waiting on an answer;
+//     notification of a dialog waiting on an answer (one written in the same tick of the file's clock as
+//     the prompt or the tool use that asks came after them);
 //   - working while a subagent runs (dispatch.HookRecord.SubagentsRunning: one started and not
 //     stopped, until no hook has reported anything for dispatch.SubagentQuiet), after a prompt
 //     (UserPromptSubmit) until the turn's Stop, or after a tool use with no turn recorded;
@@ -128,6 +129,17 @@ func (r record) after(o record) bool {
 	return !r.at.IsZero() && r.at.After(o.at)
 }
 
+// follows says whether r, the notice of a dialog waiting on an answer, came after o: written after it,
+// or in the same tick of a coarse clock (a filesystem's 1-second times, say) where o is a record such a
+// dialog can only follow, the prompt or the tool use that asks.
+func (r record) follows(o record) bool {
+	switch o.event {
+	case "UserPromptSubmit", "PreToolUse", dispatch.EventPermission:
+		return !r.at.IsZero() && !r.at.Before(o.at)
+	}
+	return r.after(o)
+}
+
 // The notifications State reads: Claude Code waits at its prompt, or on an answer to a dialog.
 const (
 	idlePrompt       = "idle_prompt"
@@ -147,12 +159,16 @@ func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentStat
 	if s.ended {
 		return dispatch.StateGone, false
 	}
-	if notice.after(activity) && notice.after(turn) {
+	if notice.follows(activity) && notice.follows(turn) {
 		switch notice.notification {
 		case permissionPrompt:
 			return dispatch.StateBlocked, true
 		case elicitation:
 			return dispatch.StateBlocked, false
+		}
+	}
+	if notice.after(activity) && notice.after(turn) {
+		switch notice.notification {
 		case idlePrompt:
 			if s.subagents {
 				return dispatch.StateWorking, false
