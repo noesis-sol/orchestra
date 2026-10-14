@@ -100,7 +100,7 @@ func (t Terminal) CreateTab(ctx context.Context, _, cwd, label string) (tab, pan
 		})
 		if err == nil {
 			// One cmux doesn't list yet would read as gone; a list that fails undoes nothing.
-			_, _ = t.awaitLayout(ctx, false, func(l layout) bool { return l.workspaces[pane] == tab })
+			_, _, _ = t.awaitLayout(ctx, false, func(l layout) bool { return l.workspaces[pane] == tab })
 			return tab, pane, nil
 		}
 	}
@@ -155,12 +155,13 @@ func awaitClosing(ctx context.Context) (func(), error) {
 }
 
 // closeWorkspace closes workspace tab, as long as it is still named label, and checks with cmux's
-// list that it went, and that every other workspace stayed. It drops the workspace from the book
-// once it is gone.
+// list that it went, and that every other workspace stayed until cmux answered the close (see
+// lostBy). It drops the workspace from the book once it is gone.
 func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 	if t.Own != "" && sameID(tab, t.Own) {
 		return &Error{Op: "close-workspace", Target: tab, Err: errors.New("it is orchestra's own workspace")}
 	}
+	args := t.closeArgs(ctx, "--workspace", tab)
 	done, err := awaitClosing(ctx)
 	if err != nil {
 		return err
@@ -178,8 +179,8 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 		return &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("it is named %q now, not %s, so "+
 			"orchestra leaves it open", title, label)}
 	}
-	_, err = t.run(ctx, "close-workspace", tab, false, t.closeArgs(ctx, "--workspace", tab)...)
-	after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
+	_, err = t.run(ctx, "close-workspace", tab, false, args...)
+	answered, after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
 		_, still := l.titles[key(tab)]
 		return !still
 	})
@@ -190,8 +191,8 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 		return fmt.Errorf("cmux closed workspace %s, but could not say what is left open: %w", tab, lerr)
 	}
 	var lost []string
-	for id, other := range before.titles {
-		if _, still := after.titles[id]; !still && id != key(tab) {
+	for id, other := range lostBy(before.titles, answered.titles, after.titles) {
+		if id != key(tab) {
 			lost = append(lost, fmt.Sprintf("%s (%s)", id, other))
 		}
 	}
@@ -224,24 +225,45 @@ func (t Terminal) closeArgs(ctx context.Context, args ...string) []string {
 	return args
 }
 
+// lostBy returns what cmux listed before a close (before) and no longer once it answered it
+// (answered), and that stayed gone (after): what the close may have closed. What went only later,
+// while orchestra waited for cmux's list to settle, is not counted, though from 0.65.0 cmux answers
+// a forced close before what it ends is gone: in those seconds the maintainer may close a workspace
+// in cmux, or another orchestra run one of its own, which closing doesn't keep out. cmux 0.64.22's
+// close of a terminal it wasn't asked for (manaflow-ai/cmux#12524) showed by the time it answered.
+func lostBy(before, answered, after map[string]string) map[string]string {
+	lost := map[string]string{}
+	for id, v := range before {
+		_, kept := answered[id]
+		_, back := after[id]
+		if !kept && !back {
+			lost[id] = v
+		}
+	}
+	return lost
+}
+
 // settle is how long orchestra waits for cmux's list to show what it opened or closed: from 0.65.0,
 // cmux answers before a new terminal is listed, and a forced close before the terminal it ends is
 // gone.
 var settle = 5 * time.Second
 
 // awaitLayout lists what cmux has, again until done says the list shows what was asked of cmux, for
-// up to settle, and returns the last list. With once, after a command that failed, it lists it
-// once.
-func (t Terminal) awaitLayout(ctx context.Context, once bool, done func(layout) bool) (layout, error) {
+// up to settle, and returns the first list, made as soon as cmux answered, and the last. With once,
+// after a command that failed, it lists it once.
+func (t Terminal) awaitLayout(ctx context.Context, once bool, done func(layout) bool) (first, last layout, err error) {
 	deadline := time.Now().Add(settle)
-	for {
+	for n := 0; ; n++ {
 		l, err := t.layout(ctx)
+		if n == 0 {
+			first = l
+		}
 		if err != nil || once || done(l) || time.Now().After(deadline) {
-			return l, err
+			return first, l, err
 		}
 		select {
 		case <-ctx.Done():
-			return l, nil // what is left open is as the list says
+			return first, l, nil // what is left open is as the list says
 		case <-time.After(poll / 2):
 		}
 	}
@@ -318,7 +340,7 @@ func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, erro
 		return "", err
 	}
 	// One cmux doesn't list yet would read as closed; a list that fails undoes nothing.
-	_, _ = t.awaitLayout(ctx, false, func(l layout) bool { _, ok := l.workspaces[split]; return ok })
+	_, _, _ = t.awaitLayout(ctx, false, func(l layout) bool { _, ok := l.workspaces[split]; return ok })
 	return split, nil
 }
 
@@ -335,6 +357,7 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 		return &Error{Op: "close-surface", Target: pane, Err: errors.New("orchestra didn't split that terminal off, " +
 			"so it leaves it open")}
 	}
+	args := t.closeArgs(ctx, "--workspace", entry.Workspace, "--surface", pane)
 	done, err := awaitClosing(ctx)
 	if err != nil {
 		return err
@@ -347,9 +370,8 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 	if _, open := before.workspaces[key(pane)]; !open {
 		return t.forgetSurface(pane)
 	}
-	_, err = t.run(ctx, "close-surface", pane, false,
-		t.closeArgs(ctx, "--workspace", entry.Workspace, "--surface", pane)...)
-	after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
+	_, err = t.run(ctx, "close-surface", pane, false, args...)
+	answered, after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
 		_, still := l.workspaces[key(pane)]
 		return !still
 	})
@@ -360,8 +382,8 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 		return fmt.Errorf("cmux closed terminal %s, but could not say what is left open: %w", pane, lerr)
 	}
 	var lost []string
-	for id, ws := range before.workspaces {
-		if _, still := after.workspaces[id]; !still && id != key(pane) && ws == key(entry.Workspace) {
+	for id, ws := range lostBy(before.workspaces, answered.workspaces, after.workspaces) {
+		if id != key(pane) && ws == key(entry.Workspace) {
 			lost = append(lost, id)
 		}
 	}
