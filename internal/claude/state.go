@@ -16,9 +16,10 @@ import (
 
 // A terminal that can't read a Claude session's screen, as Herdr does, tells what it is doing from
 // its hooks' records instead (see hookSettings): the last report (activity), the start or end of its
-// last turn (turn), the last notification (notice) and the log of its sessions and subagents
-// (events). Each record is replaced as it comes, so the ones written later, by their files' times,
-// tell the latest. Whether the session's process is still there is the terminal's to say.
+// last turn (turn), the last notification (notice), the permission prompts its agents asked and are
+// not done with (asked) and the log of its sessions and subagents (events). Each record is replaced
+// as it comes, so the ones written later, by their files' times, tell the latest. Whether the
+// session's process is still there is the terminal's to say.
 
 // Records is the folder the hooks loaded with ReportArgsIn(dir, folder) write their records to;
 // folder "" is the one of ReportArgs(dir), dir's .orchestra/run/.
@@ -49,9 +50,10 @@ func RecordsOf(args []string) (string, bool) {
 //
 //   - gone once a SessionEnd came after the last SessionStart, unless it ended to clear the session,
 //     which starts another at once;
-//   - blocked while a permission prompt it asked is not answered: no tool use reported since, nor a
-//     prompt, nor the notification that it waits at its prompt (as after a refusal, which ends the
-//     turn); or after a notification of a dialog waiting on an answer;
+//   - blocked while a permission prompt one of its agents asked is not answered: that agent's tool
+//     not done since, nor a prompt, nor the notification that it waits at its prompt (as after a
+//     refusal, which ends the turn), whatever its other agents report meanwhile; or after a
+//     notification of a dialog waiting on an answer;
 //   - working while a subagent runs, after a prompt (UserPromptSubmit) until the turn's Stop, or
 //     after a tool use with no turn recorded;
 //   - idle after the turn's Stop, even where a tool use reported later replaced it, as an agent Claude
@@ -78,7 +80,7 @@ func StateAsked(records string) (dispatch.AgentState, bool) {
 	defer func() { _ = root.Close() }() // read-only: nothing to lose
 	b, _, _ := readIn(root, eventsName) // none yet: no session started
 	return state(readRecord(root, activityName), readRecord(root, turnName), readRecord(root, noticeName),
-		readSessions(b))
+		readAsked(root), readSessions(b))
 }
 
 // TurnRecorded reports whether the records (see Records) tell a turn of the session: a prompt or a
@@ -135,8 +137,8 @@ type sessions struct {
 }
 
 // state is State's reading of the records, and whether it is blocked on a permission prompt asked
-// (see StateAsked).
-func state(activity, turn, notice record, s sessions) (dispatch.AgentState, bool) {
+// (see StateAsked); asked is the latest prompt an agent asked and is not done with.
+func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentState, bool) {
 	if s.ended {
 		return dispatch.StateGone, false
 	}
@@ -153,8 +155,7 @@ func state(activity, turn, notice record, s sessions) (dispatch.AgentState, bool
 			return dispatch.StateIdle, false
 		}
 	}
-	if activity.event == dispatch.EventPermission && !turn.after(activity) &&
-		!(notice.notification == idlePrompt && notice.after(activity)) {
+	if asked.after(turn) && !(notice.notification == idlePrompt && notice.after(asked)) {
 		return dispatch.StateBlocked, true
 	}
 	return unasked(activity, turn, s), false
@@ -201,6 +202,20 @@ func readRecord(root *os.Root, name string) record {
 		return record{}
 	}
 	return record{event: in.Event, notification: in.Notification, at: fi.ModTime()}
+}
+
+// readAsked returns the latest of the permission prompts' records in root, an os.Root at the records'
+// folder (see hookSettings): a permission prompt asked, dated, and a zero record when there is none.
+// One asked earlier tells no more: a turn or a notification that answers the latest came after it too.
+func readAsked(root *os.Root) record {
+	names, _ := askedRecords(root, ".") // none to read: none asked
+	var latest record
+	for _, name := range names {
+		if fi, err := root.Lstat(name); err == nil && fi.Mode().IsRegular() && fi.ModTime().After(latest.at) {
+			latest = record{event: dispatch.EventPermission, at: fi.ModTime()}
+		}
+	}
+	return latest
 }
 
 // readSessions reads the hooks' notes, one JSON line each, for the sessions' starts and ends and the

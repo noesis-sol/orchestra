@@ -7,8 +7,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -25,6 +28,7 @@ const (
 	sessionName  = "session.json"  // the worker's Claude Code session, written by its SessionStart hook
 	eventsName   = "events"        // permission prompts, compactions, subagents and sessions, one per line, appended
 	noticeName   = "notice.json"   // the last notification (a dialog shown, waiting on input), written by the hooks
+	askedPrefix  = "asked-"        // + an agent's ID ("main" for the session's own): the tool it asked to use
 )
 
 // Reporter sets workers up to report what they are doing and reads what they reported.
@@ -76,14 +80,18 @@ func reportArgs(dir, folder string, stale ...string) ([]string, error) {
 			return nil, project.RunError(dir, rel(""), err)
 		}
 	}
-	for _, name := range stale {
+	asked, err := askedRecords(root, rel(""))
+	if err != nil {
+		return nil, project.RunError(dir, rel(""), err)
+	}
+	for _, name := range append(stale, asked...) { // the agents that asked ended with the earlier session
 		if err := project.RemoveRun(root, dir, rel(name)); err != nil {
 			return nil, err
 		}
 	}
 	at := func(name string) string { return filepath.Join(dir, rel(name)) }
 	settings := hookSettings(records{activity: at(activityName), turn: at(turnName), edits: at(editsName),
-		session: at(sessionName), events: at(eventsName), notice: at(noticeName)})
+		session: at(sessionName), events: at(eventsName), notice: at(noticeName), asked: at(askedPrefix)})
 	b, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return nil, err
@@ -94,8 +102,27 @@ func reportArgs(dir, folder string, stale ...string) ([]string, error) {
 	return []string{"--settings", at(settingsName)}, nil
 }
 
-// records are the paths of the files the hooks write.
-type records struct{ activity, turn, edits, session, events, notice string }
+// records are the paths of the files the hooks write; asked is the start of the paths of the
+// permission prompts asked, one per agent.
+type records struct{ activity, turn, edits, session, events, notice, asked string }
+
+// askedRecords returns the names of the permission prompts' records (askedPrefix) in folder, relative
+// to root, as the hooks left them; none when the folder isn't there.
+func askedRecords(root *os.Root, folder string) ([]string, error) {
+	f, err := root.Open(folder)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only: nothing to lose
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(names, func(n string) bool { return !strings.HasPrefix(n, askedPrefix) }), nil
+}
 
 // hookSettings records the hook's input before each tool use (the tool and its arguments), and
 // only the event after a tool use (failed or not) and at the end of a turn: a finished tool's input
@@ -117,6 +144,12 @@ type records struct{ activity, turn, edits, session, events, notice string }
 // clear, logout, …), one JSON line each: those don't replace the record of the last tool use, which
 // a subagent's own tool uses keep replacing. A line is short and appended in one write, so lines of hooks that run
 // at once (subagents side by side) don't mix. A value with a quote or a backslash is noted empty.
+//
+// Each agent's permission prompt also writes the tool it asks to use to a record of that agent's
+// own (asked, then its ID, "main" for the session's): another agent's tool uses, which replace
+// activity, leave it, so a prompt one subagent waits on still shows while another works. The tool's
+// end (PostToolUse or PostToolUseFailure of the same agent and tool) removes it, as does the
+// subagent's stop; a prompt refused, which ends the turn, is told by the turn's records.
 //
 // A reporting hook must never change what the worker does, and Claude Code takes a hook's exit
 // status 2 as "block": the tool call is refused, or the turn may not end. dash, /bin/sh on Debian
@@ -149,16 +182,28 @@ func hookSettings(r records) map[string]any {
 	// quote inside the input's strings is escaped, so one in a Write's content can't match.
 	// note appends the event to events, with the named string fields of its input: names, IDs and
 	// words, each found as the first such key, which a quote escaped inside a string can't fake.
+	field := func(f string) string {
+		return f + `=$(printf '%s' "$in" | grep -oE '"` + f + `" *: *"[^"\\]*"' | head -n 1 | ` +
+			`sed -E 's/^[^:]*: *"//; s/"$//')`
+	}
 	note := func(name string, fields ...string) string {
 		line, format, args := `in=$(cat)`, `{"hook_event_name":"`+name+`"`, ""
 		for _, f := range fields {
-			line += `; ` + f + `=$(printf '%s' "$in" | grep -oE '"` + f + `" *: *"[^"\\]*"' | head -n 1 | ` +
-				`sed -E 's/^[^:]*: *"//; s/"$//')`
+			line += `; ` + field(f)
 			format += `,"` + f + `":"%s"`
 			args += ` "$` + f + `"`
 		}
 		return line + `; printf '` + format + `}\n'` + args + ` >> ` + command.ShellQuote(events)
 	}
+	// askedBy sets f to the asking agent's record, its ID kept to the characters of a file's name, and
+	// then runs then.
+	askedBy := func(then string) string {
+		return `in=$(cat); ` + field("agent_id") + `; ` + field("tool_name") +
+			`; a=$(printf '%s' "$agent_id" | tr -cd 'A-Za-z0-9_-'); f=` + command.ShellQuote(r.asked) +
+			`"${a:-main}"; ` + then
+	}
+	asked := askedBy(`printf '%s' "$tool_name" > "$f.$$" && mv -f "$f.$$" "$f"`)
+	answered := askedBy(`[ "$(cat "$f")" = "$tool_name" ] && rm -f "$f"`)
 	edited := `grep -oE '"(file_path|notebook_path)" *: *"[^"]*"' | head -n 1 | sed -E 's/^[^:]*: *"//; s/"$//' >> ` +
 		command.ShellQuote(edits)
 	return map[string]any{"hooks": map[string]any{
@@ -166,16 +211,26 @@ func hookSettings(r records) map[string]any {
 			map[string]any{"matcher": "*", "hooks": hook(write("cat"))},
 			map[string]any{"matcher": "Edit|MultiEdit|Write|NotebookEdit", "hooks": hook(edited)},
 		},
-		"PostToolUse": []any{map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))}},
+		"PostToolUse": []any{
+			map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))},
+			map[string]any{"matcher": "*", "hooks": hook(answered)},
+		},
 		// Claude Code runs PostToolUse after a tool that succeeded only; this is the other case.
-		"PostToolUseFailure": []any{map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))}},
+		"PostToolUseFailure": []any{
+			map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))},
+			map[string]any{"matcher": "*", "hooks": hook(answered)},
+		},
 		"PermissionRequest": []any{
 			map[string]any{"matcher": "*", "hooks": hook(write("cat"))},
 			map[string]any{"matcher": "*", "hooks": hook(note("PermissionRequest", "tool_name"))},
+			map[string]any{"matcher": "*", "hooks": hook(asked)},
 		},
 		"PreCompact":    []any{map[string]any{"hooks": hook(note("PreCompact", "trigger"))}},
 		"SubagentStart": []any{map[string]any{"hooks": hook(note("SubagentStart", "agent_id", "agent_type"))}},
-		"SubagentStop":  []any{map[string]any{"hooks": hook(note("SubagentStop", "agent_id", "agent_type"))}},
+		"SubagentStop": []any{
+			map[string]any{"hooks": hook(note("SubagentStop", "agent_id", "agent_type"))},
+			map[string]any{"hooks": hook(askedBy(`rm -f "$f"`))},
+		},
 		"Stop": []any{
 			map[string]any{"hooks": hook(event("Stop"))},
 			map[string]any{"hooks": hook(turnAt("Stop"))},

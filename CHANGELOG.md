@@ -37,6 +37,9 @@ All notable changes to orchestra are documented here. The format follows
 - The dashboard's tickets table cuts ticket IDs longer than a third of its
   width with `…`, so long IDs no longer squeeze titles and notes out of
   sight; IDs are measured in screen cells rather than bytes.
+- Under tmux and cmux, a worker whose subagent waits on a permission prompt
+  reads blocked while another subagent works, where that one's tool uses hid
+  the prompt and the worker read working until the ticket's time limit.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.

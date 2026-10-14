@@ -136,11 +136,13 @@ func playHooks(t *testing.T, wt string, steps []hookStep) dispatch.AgentState {
 			runHooks(t, settings, s.event, s.input)
 		}
 		clock = clock.Add(time.Second)
-		for _, name := range allRecords {
+		entries, _ := os.ReadDir(records) // none yet: nothing written
+		for _, e := range entries {
+			name := e.Name()
 			path := filepath.Join(records, name)
 			fi, err := os.Stat(path)
-			if err != nil || fi.ModTime().Equal(dated[name]) {
-				continue // not there, or not written by this step
+			if err != nil || name == settingsName || fi.ModTime().Equal(dated[name]) {
+				continue // not there, not a record, or not written by this step
 			}
 			if err := os.Chtimes(path, clock, clock); err != nil {
 				t.Fatal(err)
