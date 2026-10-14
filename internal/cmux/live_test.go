@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
+	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/cmuxtest"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
-	"github.com/noesis-sol/orchestra/internal/tmuxtest"
 )
 
 // The tests in this file run the real cmux, an app of the test's own (cmuxtest.Start), and a fake
-// Claude Code that runs the hooks orchestra gives it (tmuxtest.Claude): what cmux does that the fake
+// Claude Code that runs the hooks orchestra gives it (claudetest.Claude): what cmux does that the fake
 // cmux can only be told to do, such as opening a workspace without switching to it, typing into a
 // shell, showing a dialog on its screen and listing the processes in a workspace.
 
-var _ = faketool.Func("claude", tmuxtest.Claude)
+var _ = faketool.Func("claude", claudetest.Claude)
 
 // live is a cmux of the test's own, with orchestra's book of it, and a fake claude on PATH that goes
 // through its script; workspaces start in dir, whose name has a space and a '#'.
@@ -41,7 +41,7 @@ func newLive(t *testing.T) *live {
 		t.Fatal(err)
 	}
 	bin, claudeDir := t.TempDir(), t.TempDir()
-	faketool.WriteFunc(t, bin, "claude", tmuxtest.ClaudeEnv(claudeDir))
+	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	term := Terminal{Book: filepath.Join(t.TempDir(), BookName), Own: app.Own}
 	return &live{t: t, app: app, term: term, dir: dir, claudeDir: claudeDir}

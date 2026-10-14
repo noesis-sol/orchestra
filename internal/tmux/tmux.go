@@ -9,13 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -72,12 +70,12 @@ func odd(op, target, out string) error { return hookterm.Odd(tool, op, target, o
 
 // run runs the tmux command op for target, with args after op, and returns its stdout.
 func (t Terminal) run(ctx context.Context, limit time.Duration, op, target string, args ...string) (string, error) {
-	return t.runWithInput(ctx, limit, op, target, nil, args...)
+	return t.runWithInput(ctx, limit, op, target, "", args...)
 }
 
-// runWithInput is run with input on tmux's stdin (nil for none). Several commands can be given at
-// once, separated by ";" arguments, op naming the first.
-func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, target string, input *string,
+// runWithInput is run with input on tmux's stdin. Several commands can be given at once, separated by
+// ";" arguments, op naming the first.
+func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, target, input string,
 	args ...string) (string, error) {
 	argv := []string{op}
 	for _, a := range args {
@@ -92,13 +90,7 @@ func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, tar
 	if t.Socket != "" {
 		argv = append([]string{"-L", t.Socket}, argv...)
 	}
-	var out string
-	var err error
-	if input == nil {
-		out, err = command.Output(ctx, limit, "", "tmux", argv...)
-	} else {
-		out, err = command.OutputWithInput(ctx, limit, "", nil, *input, "tmux", argv...)
-	}
+	out, err := command.OutputWithInput(ctx, limit, "", nil, input, "tmux", argv...)
 	if err == nil {
 		return out, nil
 	}
@@ -132,14 +124,7 @@ func (t Terminal) socketPath() string {
 
 // noServer reports whether no tmux server listens on the socket at path: there is no socket, or it
 // refuses the connection, as a server that exited leaves it. tmux's own message isn't read.
-func noServer(path string) bool {
-	c, err := net.DialTimeout("unix", path, time.Second)
-	if err == nil {
-		_ = c.Close() // only connected to see that it can be
-		return false
-	}
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)
-}
+func noServer(path string) bool { return hookterm.Probe(path) == hookterm.SocketGone }
 
 // literal escapes s for an argument tmux expands as a format (#{…}), such as a window's name or a
 // start directory, so that it arrives as it is.

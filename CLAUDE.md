@@ -96,9 +96,13 @@ tools and no MCP servers. The README defines both terms; use them consistently.
 - Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state
   from their hooks), `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their
   state from their hooks), `internal/hookterm` (what tmux and cmux share: their errors, waiting for a worker's
-  state, the end of a prompt, key names, free agent names), `internal/git` (git), `internal/command` (every
-  external command: context, time limit, process group), `internal/claude` (workers' hooks, the state they give,
-  and what their screen adds to it), `internal/mcp` (discovering MCP servers for workers).
+  state, the end of a prompt, key names, free agent names, probing a socket), `internal/git` (git),
+  `internal/command` (every external command: context, time limit, process group), `internal/claude` (workers'
+  hooks, the state they give, and what their screen adds to it), `internal/mcp` (discovering MCP servers for
+  workers).
+- Test helpers: `internal/faketool` (fake commands), `internal/claudetest` (a fake Claude Code that runs its hooks,
+  for the tests on a real tmux or cmux), `internal/tmuxtest` and `internal/cmuxtest` (a tmux server or cmux app of
+  the test's own), `internal/gittest`.
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`
   (settings, worker prompt, init, per-ticket files). `internal/tui`: the Bubble Tea dashboard and init's screen.

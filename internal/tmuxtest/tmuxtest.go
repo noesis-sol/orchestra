@@ -7,17 +7,15 @@ package tmuxtest
 
 import (
 	"context"
-	"errors"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // RequireVar is the variable that, set to 1, has a test needing tmux fail where tmux isn't installed,
@@ -81,11 +79,4 @@ func Require(t testing.TB) {
 }
 
 // listening reports whether a tmux server still takes connections on the socket at path.
-func listening(path string) bool {
-	c, err := net.DialTimeout("unix", path, time.Second)
-	if err == nil {
-		_ = c.Close() // only connected to see that it can be
-		return true
-	}
-	return !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ECONNREFUSED)
-}
+func listening(path string) bool { return hookterm.Probe(path) != hookterm.SocketGone }

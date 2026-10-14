@@ -1,4 +1,7 @@
-package tmuxtest
+// Package claudetest is a fake Claude Code for tests that run a real terminal (tmux or cmux): a
+// program that runs the hooks orchestra gives it as Claude Code would, and goes through a script of
+// steps.
+package claudetest
 
 import (
 	"bufio"
@@ -19,7 +22,7 @@ import (
 
 // Claude is a fake Claude Code for a tmux pane or a cmux terminal, for faketool.Func: it reads the
 // --settings file it is given and runs its hooks as Claude Code would, with the input Claude Code
-// gives them, as it goes through a script of steps. Its folder, $FAKE_CLAUDE (see ClaudeEnv), holds
+// gives them, as it goes through a script of steps. Its folder, $FAKE_CLAUDE (see Env), holds
 // the script, one step a line: script, or script.resume for a session it resumes (--resume <ID>). It
 // logs what it did there (log), and keeps its sessions' transcripts there too, where Claude Code
 // keeps them (projects/<folder>/<ID>.jsonl).
@@ -80,8 +83,8 @@ func Claude(args []string) int {
 	return 0
 }
 
-// ClaudeEnv is the environment WriteFunc gives the fake Claude whose folder is dir.
-func ClaudeEnv(dir string) string { return "FAKE_CLAUDE=" + dir }
+// Env is the environment WriteFunc gives the fake Claude whose folder is dir.
+func Env(dir string) string { return "FAKE_CLAUDE=" + dir }
 
 // claude is one run of the fake Claude.
 type claude struct {

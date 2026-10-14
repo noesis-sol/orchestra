@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +28,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // RequireVar is the variable that, set to 1, runs the tests that need cmux and has them fail where
@@ -261,17 +261,7 @@ func env() []string {
 }
 
 // answers reports whether something listens on the socket at path.
-func answers(path string) bool {
-	if path == "" {
-		return false
-	}
-	c, err := net.DialTimeout("unix", path, time.Second)
-	if err != nil {
-		return false
-	}
-	_ = c.Close() // only connected to see that it can be
-	return true
-}
+func answers(path string) bool { return hookterm.Probe(path) == hookterm.SocketListening }
 
 // log is what the app printed.
 func (a *App) log() string {

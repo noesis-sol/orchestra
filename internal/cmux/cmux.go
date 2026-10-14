@@ -20,13 +20,10 @@ package cmux
 import (
 	"context"
 	"errors"
-	"net"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
@@ -150,14 +147,4 @@ func socketPath() string {
 
 // noServer reports whether nothing listens on the socket at path: there is no socket, or it refuses
 // the connection, as one cmux left as it quit does. cmux's own message isn't read.
-func noServer(path string) bool {
-	if path == "" {
-		return false
-	}
-	c, err := net.DialTimeout("unix", path, time.Second)
-	if err == nil {
-		_ = c.Close() // only connected to see that it can be
-		return false
-	}
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)
-}
+func noServer(path string) bool { return path != "" && hookterm.Probe(path) == hookterm.SocketGone }

@@ -154,7 +154,7 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 	}
 	paste := func() error {
 		buf := "orchestra-" + strings.TrimPrefix(p.id, "%")
-		if _, err := t.runWithInput(ctx, command.ReadLimit, "load-buffer", name, &prompt, "-b", buf, "-"); err != nil {
+		if _, err := t.runWithInput(ctx, command.ReadLimit, "load-buffer", name, prompt, "-b", buf, "-"); err != nil {
 			return err
 		}
 		_, err := t.run(ctx, command.ReadLimit, "paste-buffer", name, "-d", "-p", "-b", buf, "-t", p.id)

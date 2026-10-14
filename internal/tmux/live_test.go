@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
+	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -16,11 +17,11 @@ import (
 )
 
 // The tests in this file run the real tmux, each its own server (tmuxtest.Server), and a fake Claude
-// Code that runs the hooks orchestra gives it (tmuxtest.Claude): what tmux does that the fake tmux
+// Code that runs the hooks orchestra gives it (claudetest.Claude): what tmux does that the fake tmux
 // can only be told to do, such as keeping a window's name, pasting a prompt bracketed and keeping a
 // dead pane open.
 
-var _ = faketool.Func("claude", tmuxtest.Claude)
+var _ = faketool.Func("claude", claudetest.Claude)
 
 // live is a tmux server of the test's own, with a session t, and a fake claude on PATH that goes
 // through script; t's working directory is dir, whose name has a '#', which tmux would expand.
@@ -41,7 +42,7 @@ func newLive(t *testing.T) *live {
 		t.Fatal(err)
 	}
 	bin, claudeDir := t.TempDir(), t.TempDir()
-	faketool.WriteFunc(t, bin, "claude", tmuxtest.ClaudeEnv(claudeDir))
+	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return &live{t: t, term: Terminal{Socket: tmuxtest.Server(t, "t", dir)}, dir: dir, claudeDir: claudeDir}
 }

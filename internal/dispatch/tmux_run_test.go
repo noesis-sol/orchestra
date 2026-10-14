@@ -12,6 +12,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/claude"
+	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -25,17 +26,17 @@ import (
 // The scenarios in this file are whole runs as orchestra makes them with workers in tmux: the loop
 // on the real tmux (a server of the test's own, tmuxtest.Server), Beads through bd, real git, and
 // workers' reports through the hooks orchestra gives them. The workers are a fake Claude Code
-// (tmuxtest.Claude) that runs those hooks as Claude Code would, and the tracker a fake bd that keeps
+// (claudetest.Claude) that runs those hooks as Claude Code would, and the tracker a fake bd that keeps
 // one ticket, tx-1, which the worker claims and closes. Herdr's runs are tested through the fakes.
 
-var _ = faketool.Func("claude", tmuxtest.Claude)
+var _ = faketool.Func("claude", claudetest.Claude)
 
 // tmuxRun is a run's repository, tracker, tmux and worker; or cmux, for a cmuxRun.
 type tmuxRun struct {
 	t         *testing.T
 	repo      string
 	bdDir     string // the fake bd's folder: status, the ticket's; calls, each call's arguments
-	claudeDir string // the fake claude's folder (tmuxtest.Claude)
+	claudeDir string // the fake claude's folder (claudetest.Claude)
 	term      tmux.Terminal
 	log       string
 	sink      *tmuxSink
@@ -55,7 +56,7 @@ type runTerminal interface {
 }
 
 // newTmuxRun sets up a repository on main and a backlog of one open ticket, tx-1, whose worker takes
-// the steps of script (tmuxtest.Claude), and of resumed when its session is resumed.
+// the steps of script (claudetest.Claude), and of resumed when its session is resumed.
 func newTmuxRun(t *testing.T, script, resumed []string) *tmuxRun {
 	t.Helper()
 	if testing.Short() {
@@ -94,7 +95,7 @@ case "$1 $2" in
 esac
 exit 0
 `)
-	faketool.WriteFunc(t, bin, "claude", tmuxtest.ClaudeEnv(r.claudeDir))
+	faketool.WriteFunc(t, bin, "claude", claudetest.Env(r.claudeDir))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r.write(filepath.Join(r.claudeDir, "script"), strings.Join(script, "\n")+"\n")
 	r.write(filepath.Join(r.claudeDir, "script.resume"), strings.Join(resumed, "\n")+"\n")

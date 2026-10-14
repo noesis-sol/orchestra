@@ -11,12 +11,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/cmux"
 	"github.com/noesis-sol/orchestra/internal/cmuxtest"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/project"
-	"github.com/noesis-sol/orchestra/internal/tmuxtest"
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
@@ -24,7 +24,7 @@ import (
 // workspace and terminal stand for orchestra's own, where it would run: what orchestra does in cmux
 // beyond a run's workers, the interview and the dashboard's keys.
 
-var _ = faketool.Func("claude", tmuxtest.Claude)
+var _ = faketool.Func("claude", claudetest.Claude)
 
 // The interview opens claude in a terminal split to the right of orchestra's, with its hooks; once
 // claude has filed the feature and its turn has ended, the split closes, and orchestra's terminal
@@ -33,7 +33,7 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 	app := cmuxtest.Start(t)
 	repo, _ := gitRepo(t)
 	bin, claudeDir := t.TempDir(), t.TempDir()
-	faketool.WriteFunc(t, bin, "claude", tmuxtest.ClaudeEnv(claudeDir))
+	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	script := []string{"start", "sleep 2s", "write " + project.RunPath(project.FeatureName) + ` {"epic":"f-1"}`, "stop",
 		"idle"}
