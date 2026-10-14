@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -70,11 +71,13 @@ func wrapAround(lead, list, tail string, width int, indent string) []string {
 	return lines
 }
 
+// capitalize is s with its first letter, which may take more than a byte, in upper case.
 func capitalize(s string) string {
-	if s == "" {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 || r == utf8.RuneError {
 		return s
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // overlay draws fg over the middle of bg, a view w wide.
@@ -117,16 +120,20 @@ func box(w, h int, border lipgloss.TerminalColor, content string) string {
 }
 
 // wordWrap breaks s between words only (not at hyphens, as in worker-prompt.md), cutting a word
-// longer than the width.
+// longer than the width. A character wider than the width, one that no cut fits, gets a line of its own.
 func wordWrap(s string, width int) []string {
 	var lines []string
 	line := ""
 	for word := range strings.FieldsSeq(s) {
-		for ansi.StringWidth(word) > width { // a word too long for any line
+		for word != "" && ansi.StringWidth(word) > width { // a word too long for any line
 			if line != "" {
 				lines, line = append(lines, line), ""
 			}
 			cut := ansi.Truncate(word, width, "")
+			if cut == "" {
+				_, size := utf8.DecodeRuneInString(word)
+				cut = word[:size]
+			}
 			lines, word = append(lines, cut), word[len(cut):]
 		}
 		switch {

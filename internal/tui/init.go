@@ -288,7 +288,9 @@ func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string)
 			label := s.Name + "  · built into Claude Code, drives Chrome on this machine"
 			opts = append(opts, huh.NewOption(label, s.Name))
 		case s.Available():
-			opts = append(opts, huh.NewOption(fmt.Sprintf("%s  · %s scope, %s", s.Name, s.Scope, s.Type), s.Name))
+			// The name and type as a config file has them, .mcp.json a teammate's: shown printable.
+			label := fmt.Sprintf("%s  · %s scope, %s", oneLine(s.Name), s.Scope, oneLine(s.Type))
+			opts = append(opts, huh.NewOption(label, s.Name))
 		}
 	}
 	for _, name := range current {
@@ -297,7 +299,7 @@ func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string)
 			if name == mcp.Chrome {
 				missing = "  · Claude in Chrome isn't set up on this machine"
 			}
-			opts = append(opts, huh.NewOption(name+missing, name))
+			opts = append(opts, huh.NewOption(oneLine(name)+missing, name)) // settings.json's, committed
 		}
 		if s, ok := mcp.Find(c.Servers, name); !ok || s.Available() {
 			selected = append(selected, name)
@@ -311,7 +313,7 @@ func mcpDescription(c project.Choice) string {
 	d := "Workers get only the servers chosen here. settings.json keeps " +
 		"their names; each machine's Claude Code config defines them."
 	if connectors := project.Connectors(c.Servers); len(connectors) > 0 {
-		d += "\nNot available to workers (claude.ai connector): " + strings.Join(connectors, ", ") + "."
+		d += "\nNot available to workers (claude.ai connector): " + oneLine(strings.Join(connectors, ", ")) + "."
 	}
 	return d
 }

@@ -73,17 +73,17 @@ func TestDiscoverReadsTheRecordsItUnderstandsBesideOnesItDoesnt(t *testing.T) {
 
 func TestDiscoverStillFailsOnAConfigItCannotRead(t *testing.T) {
 	for name, content := range map[string]string{
-		"not JSON":                      `mcpServers = {}`,
-		"cut short":                     `{"mcpServers": {"exa": {"command": "exa"}}, "claudeAiMcpEverConnected": [`,
-		"mcpServers a list":             `{"mcpServers": ["exa"]}`,
-		"mcpServers a string":           `{"mcpServers": "exa"}`,
-		"a project's mcpServers a list": `{"projects": {"/repo": {"mcpServers": ["postgres"]}}}`,
-		"projects a list":               `{"projects": ["/repo"]}`,
+		"not JSON":                         `mcpServers = {}`,
+		"cut short":                        `{"mcpServers": {"exa": {"command": "exa"}}, "claudeAiMcpEverConnected": [`,
+		"mcpServers a list":                `{"mcpServers": ["exa"]}`,
+		"mcpServers a string":              `{"mcpServers": "exa"}`,
+		"this project's mcpServers a list": `{"projects": {"<repo>": {"mcpServers": ["postgres"]}}}`,
+		"projects a list":                  `{"projects": ["/repo"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			config := filepath.Join(t.TempDir(), ".claude.json")
-			write(t, config, content)
-			servers, err := Discover(config, t.TempDir())
+			config, repo := filepath.Join(t.TempDir(), ".claude.json"), t.TempDir()
+			write(t, config, strings.ReplaceAll(content, "<repo>", repo))
+			servers, err := Discover(config, repo)
 			if err == nil || !strings.Contains(err.Error(), config) {
 				t.Fatalf("servers = %v, err = %v; want an error naming %s", servers, err, config)
 			}

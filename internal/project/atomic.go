@@ -20,9 +20,7 @@ import (
 // was. A symlink at path is followed, as os.WriteFile follows it: the file it leads to is
 // replaced, and the link kept.
 func writeFile(path string, b []byte, perm fs.FileMode) error {
-	if to, err := filepath.EvalSymlinks(path); err == nil {
-		path = to
-	} // else there is no file there yet, nor one a link leads to: writeRoot makes it
+	path = linkTarget(path)
 	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return err
@@ -32,6 +30,26 @@ func writeFile(path string, b []byte, perm fs.FileMode) error {
 		return fmt.Errorf("cannot write %s: %w", path, err)
 	}
 	return nil
+}
+
+// linkTarget is the file the symlinks at path lead to, as opening path follows them, or path when
+// it isn't a link. The file needn't be there: a link that leads to none, as os.WriteFile follows
+// it, gives the file it would make.
+func linkTarget(path string) string {
+	if to, err := filepath.EvalSymlinks(path); err == nil {
+		return to
+	}
+	for range 255 { // as many links as Linux follows; a loop then fails the write
+		to, err := os.Readlink(path)
+		if err != nil {
+			return path // no file there yet, nor a link: writeRoot makes it
+		}
+		if !filepath.IsAbs(to) {
+			to = filepath.Join(filepath.Dir(path), to)
+		}
+		path = to
+	}
+	return path
 }
 
 // writeRoot writes b to the file name in root: to a temporary file in the same folder first,

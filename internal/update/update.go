@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -122,6 +123,12 @@ func (e *NotWritableError) Error() string { return fmt.Sprintf("cannot write in 
 
 func (e *NotWritableError) Unwrap() error { return e.Err }
 
+// cannotWrite reports whether err is a folder orchestra update may not write in: one it lacks the
+// permission for, or one on a read-only filesystem.
+func cannotWrite(err error) bool {
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS)
+}
+
 // Platform is u's GOOS/GOARCH.
 func (u Updater) Platform() string { return u.goos() + "/" + u.goarch() }
 
@@ -211,7 +218,7 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 	// Made first, so that a folder it can't write in fails before the download.
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, ".orchestra-update-*")
-	if errors.Is(err, fs.ErrPermission) {
+	if cannotWrite(err) {
 		return exe, &NotWritableError{Dir: dir, Err: err}
 	}
 	if err != nil {
@@ -263,7 +270,7 @@ func (u Updater) Install(ctx context.Context, rel Release, exe string) (_ string
 	if got := strings.TrimSpace(out); got != "orchestra "+rel.Tag {
 		return exe, fmt.Errorf("the new binary's --version says %q, not orchestra %s", got, rel.Tag)
 	}
-	if err := os.Rename(tmp.Name(), exe); errors.Is(err, fs.ErrPermission) {
+	if err := os.Rename(tmp.Name(), exe); cannotWrite(err) {
 		return exe, &NotWritableError{Dir: dir, Err: err}
 	} else if err != nil {
 		return exe, err

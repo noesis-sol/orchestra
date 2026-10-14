@@ -3,12 +3,14 @@ package tui
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/x/ansi"
+	"golang.org/x/term"
 )
 
 // A busy line: a step the orchestrator works on outside the event stream, such as the run report,
@@ -106,11 +108,24 @@ func (b *Busy) spin(text, hint string) {
 		if hint != "" {
 			line += " " + sayStyle.Render(hint)
 		}
-		if b.p.Width > 1 {
-			line = ansi.Truncate(line, b.p.Width-1, "") // a line that wrapped couldn't be redrawn
-		}
+		line = ansi.Truncate(line, b.p.lineWidth()-1, "") // a line that wrapped couldn't be redrawn
 		b.p.live.draw(b.p.Out, line)
 	}
+}
+
+// lineWidth is the width the busy line is cut to: the terminal's at the frame, as a resize during
+// the step changes it, else the printer's, else 80, as for a terminal that says it has no columns
+// (a fresh pseudo-terminal can), where an uncut line would wrap and its frames pile up.
+func (p Printer) lineWidth() int {
+	if f, ok := p.Out.(*os.File); ok {
+		if w, _, err := term.GetSize(int(f.Fd())); err == nil && w > 1 {
+			return w
+		}
+	}
+	if p.Width > 1 {
+		return p.Width
+	}
+	return 80
 }
 
 // end stops the spinner, if any, waits for its goroutine and clears its line.

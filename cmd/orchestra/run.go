@@ -263,9 +263,10 @@ func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.W
 	return true
 }
 
-// termWidth is the width of the terminal out, or 80 when it can't be read.
+// termWidth is the width of the terminal out, or 80 when it can't be read or says it has no columns,
+// as a fresh pseudo-terminal can.
 func termWidth(out *os.File) int {
-	if w, _, err := term.GetSize(int(out.Fd())); err == nil {
+	if w, _, err := term.GetSize(int(out.Fd())); err == nil && w > 0 {
 		return w
 	}
 	return 80

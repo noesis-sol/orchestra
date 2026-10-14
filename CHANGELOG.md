@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra update` on a read-only filesystem gives the advice to run it
+  as the folder's owner (exit 2), where it said only that the update failed.
+  A busy line on a terminal that reports no width, as a fresh pseudo-terminal
+  can, or one resized during the step, stays on one line instead of piling
+  up its frames. `orchestra init` runs the scout at its own effort when
+  `ORGAN_EFFORT` or `organ_effort` isn't an effort, rather than passing it
+  to claude; another repository's record in `~/.claude.json` in a shape
+  orchestra doesn't understand no longer fails init or a run; and MCP server
+  names from `.mcp.json` are shown printable in init's choice. A settings
+  file that is a symlink to no file yet is written where the link leads, as
+  before it was replaced by a regular file.
+
 - The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
   off at its output token limit, where it was shown blank or half-written.
   Organ answers from an older claude CLI, without a schema, are read when

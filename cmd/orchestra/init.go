@@ -187,7 +187,7 @@ func runInit(
 	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
 		if ask.Check {
 			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
-				Effort: envOr(getenv, "ORGAN_EFFORT", existing.OrganEffort),
+				Effort: scoutEffort(getenv, existing.OrganEffort),
 				Spent:  func(s organ.Spend) { scoutSpent = append(scoutSpent, s) }}
 			ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
 			if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err == nil { // as they are
@@ -312,6 +312,17 @@ func initRefusal(ctx context.Context, repo string) string {
 			"set up between runs.", &project.HeldError{Repo: repo, Holder: holder})
 	}
 	return ""
+}
+
+// scoutEffort is the effort the scout runs at: ORGAN_EFFORT's, else settings.json's organ_effort, checked
+// as a run checks them. One that isn't an effort would reach claude --effort and fail the scout:
+// the scout runs at its own instead, and a run says what is wrong with it.
+func scoutEffort(getenv func(string) string, setting string) string {
+	effort, err := project.ResolveEffort(getenv("ORGAN_EFFORT"), "organ_effort", setting)
+	if err != nil {
+		return ""
+	}
+	return effort
 }
 
 // scoutSteps say what the scout's call cost, as claude answered it: init has no log for an ORGAN

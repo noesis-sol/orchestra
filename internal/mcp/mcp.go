@@ -78,9 +78,9 @@ func UserConfig(getenv func(string) string) string {
 // file.
 type userFile struct {
 	MCPServers map[string]json.RawMessage `json:"mcpServers"`
-	Projects   map[string]struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
-	} `json:"projects"`
+	// Projects are Claude Code's records of each repository it has run in, read only for the
+	// repository Discover looks at: another's in a shape orchestra doesn't understand changes nothing.
+	Projects map[string]json.RawMessage `json:"projects"`
 	// ClaudeAIConnectors are the claude.ai connectors this machine's Claude Code has connected to.
 	ClaudeAIConnectors lenient[[]string] `json:"claudeAiMcpEverConnected"`
 	// Claude Code records that Claude in Chrome is set up on this machine in any of these.
@@ -134,9 +134,16 @@ func Discover(userConfig string, roots ...string) ([]Server, error) {
 	keys := slices.Sorted(maps.Keys(user.Projects))
 	for _, root := range roots {
 		for _, key := range keys {
-			if SamePath(key, root) {
-				add(ScopeLocal, user.Projects[key].MCPServers)
+			if !SamePath(key, root) {
+				continue
 			}
+			var local struct {
+				MCPServers map[string]json.RawMessage `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(user.Projects[key], &local); err != nil {
+				return nil, fmt.Errorf("%s: projects[%q]: %w", userConfig, key, err)
+			}
+			add(ScopeLocal, local.MCPServers)
 		}
 	}
 	if len(roots) > 0 {
@@ -181,7 +188,9 @@ func Find(servers []Server, name string) (Server, bool) {
 }
 
 // ParseNames reads a comma-separated list of server names, as --mcp takes it: "" is none.
-// Duplicates and empty entries are dropped; the result is never nil.
+// Duplicates and empty entries are dropped; the result is never nil. A name with a comma in it,
+// which claude mcp add refuses (its names are letters, digits, - and _) but a hand-written
+// .mcp.json can hold, can't be given here: init's form and settings.json's mcp_servers list take it.
 func ParseNames(list string) []string {
 	names := []string{}
 	seen := map[string]bool{}
