@@ -147,13 +147,9 @@ func interviewInPaneOn(
 		session.tracker = filedEpic{}
 	}
 	o.epic, o.code = featureInterview{
-		request: paneRequest,
-		repo:    repo,
-		session: session.talk,
-		tracker: filedEpic{},
-		in:      strings.NewReader(answer),
-		out:     &out,
-		err:     &errOut,
+		featureIO: featureIO{request: paneRequest, repo: repo, in: strings.NewReader(answer), out: &out, err: &errOut},
+		session:   session.talk,
+		tracker:   filedEpic{},
 	}.run(ctx)
 	o.out, o.err = out.String(), errOut.String()
 	return o

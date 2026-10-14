@@ -50,8 +50,10 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 			t.Error("the interview fell back to orchestra's terminal")
 			return nil
 		}, out: &out, err: &errOut}
-	epic, code := featureInterview{request: paneRequest, repo: repo, session: session.talk, tracker: filedEpic{},
-		in: strings.NewReader("y\n"), out: &out, err: &errOut}.run(t.Context())
+	epic, code := featureInterview{
+		featureIO: featureIO{request: paneRequest, repo: repo, in: strings.NewReader("y\n"), out: &out, err: &errOut},
+		session:   session.talk, tracker: filedEpic{},
+	}.run(t.Context())
 	logged, _ := os.ReadFile(filepath.Join(claudeDir, "log")) // none reads as nothing
 	if epic != "f-1" || code != dispatch.ExitOK || errOut.Len() > 0 {
 		t.Fatalf("the interview filed %q, exit %d; stderr:\n%s\nclaude's log:\n%s", epic, code, errOut.String(), logged)

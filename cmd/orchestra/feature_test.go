@@ -154,8 +154,10 @@ func featureFixture(t *testing.T, organs featureOrgans, tracker featureTracker, 
 	t.Helper()
 	repo, _ := gitRepo(t)
 	var out, errOut strings.Builder
-	return featureRun{request: "Add a --json flag", repo: repo, yes: yes, terminal: terminal, organs: organs,
-		tracker: tracker, in: strings.NewReader(in), out: &out, err: &errOut}, &out, &errOut
+	return featureRun{
+		featureIO: featureIO{request: "Add a --json flag", repo: repo, in: strings.NewReader(in), out: &out, err: &errOut},
+		yes:       yes, terminal: terminal, organs: organs, tracker: tracker,
+	}, &out, &errOut
 }
 
 func TestFeatureFilesTheConfirmedPlan(t *testing.T) {

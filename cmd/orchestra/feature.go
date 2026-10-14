@@ -39,17 +39,30 @@ type featureTracker interface {
 	AddBlock(ctx context.Context, blocker, blocked string) error
 }
 
-// featureRun is one --feature request on its way to a filed epic.
-type featureRun struct {
+// featureIO is what a feature run and a feature interview share: the request, the main checkout it
+// is for, the log and the streams it talks on.
+type featureIO struct {
 	request  string
 	repo     string
+	log      *dispatch.Log // nil in tests
+	in       io.Reader
+	out, err io.Writer
+}
+
+// logLine writes text to the run's log, if there is one.
+func (f featureIO) logLine(text string) {
+	if f.log != nil {
+		f.log.Line(time.Now(), text)
+	}
+}
+
+// featureRun is one --feature request on its way to a filed epic.
+type featureRun struct {
+	featureIO
 	yes      bool // file without asking
 	terminal bool // in and out are a terminal to ask on
 	organs   featureOrgans
 	tracker  featureTracker
-	log      *dispatch.Log // nil in tests
-	in       io.Reader
-	out, err io.Writer
 	say      tui.Printer // the busy lines: a Terminal printer on out, when out is a terminal; else none
 }
 
@@ -67,32 +80,45 @@ func runFeature(
 		say = tui.Terminal(out, termWidth(out))
 	}
 	return featureRun{
-		request: c.Feature,
-		repo:    c.Repo,
-		yes:     c.Yes,
+		featureIO: featureIO{request: c.Feature, repo: c.Repo, log: log, in: stdin, out: stdout, err: stderr},
+		yes:       c.Yes,
 		// The plan and the question go to stdout: asked with stdout sent to a file, the question
 		// would wait for an answer to something nobody sees.
 		terminal: isTerminal(stdin) && isTerminal(stdout),
 		organs:   organ.Client{Bin: "claude", Model: c.OrganModel, Effort: c.OrganEffort, Spent: log.OrganSpent},
 		tracker:  beads.Tracker{Repo: c.Repo},
-		log:      log,
-		in:       stdin,
-		out:      stdout,
-		err:      stderr,
 		say:      say,
 	}.run(ctx)
 }
 
+// run screens the request, gathers the evidence for its plan, plans it, has the plan confirmed and
+// files it; each step but the last, ending the run, returns false with the exit code, having said why.
 func (f featureRun) run(ctx context.Context) (string, int) {
-	switch code := cleanCheckout(ctx, f.repo, f.err); code {
-	case dispatch.ExitOK:
-	case dispatch.ExitInterrupted:
-		code, _ = f.interrupted(ctx)
-		return "", code
-	default:
+	if code := cleanCheckout(ctx, f.repo, f.err); code != dispatch.ExitOK {
+		if code == dispatch.ExitInterrupted {
+			code, _ = f.interrupted(ctx)
+		}
 		return "", code
 	}
+	if code, on := f.screen(ctx); !on {
+		return "", code
+	}
+	ev, code, on := f.gather(ctx)
+	if !on {
+		return "", code
+	}
+	p, code, on := f.plan(ctx, ev)
+	if !on {
+		return "", code
+	}
+	if code, on := f.confirmFiling(ctx, p); !on {
+		return "", code
+	}
+	return f.file(ctx, p)
+}
 
+// screen has the screen organ judge the request, and goes on when it is one to plan.
+func (f featureRun) screen(ctx context.Context) (int, bool) {
 	busy := f.busy("screening the request with claude…", "Screening the request with Claude…", "")
 	s, err := f.organs.Screen(ctx, organ.Request{Text: f.request, Repo: filepath.Base(f.repo), README: f.readme()})
 	switch {
@@ -104,7 +130,7 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		busy.Done("Request screened")
 	}
 	if code, stopped := f.interrupted(ctx); stopped {
-		return "", code
+		return code, false
 	}
 	reason := tui.Printable(s.Reason) // the organ's words, which can quote the request or the README
 	switch {
@@ -112,26 +138,31 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		detail := tui.Printable(dispatch.FirstLine(err.Error())) // it can quote the organ's reply
 		fmt.Fprintln(f.err, "orchestra couldn't screen the request:", detail)
 		f.logLine("FEATURE not screened: " + detail)
-		return "", dispatch.ExitSetup
+		return dispatch.ExitSetup, false
 	case s.Verdict == organ.ScreenReject:
 		fmt.Fprintln(f.err, "orchestra won't plan this request:", reason)
 		f.logLine("FEATURE rejected: " + reason)
-		return "", dispatch.ExitSetup
+		return dispatch.ExitSetup, false
 	case s.Verdict == organ.ScreenUnclear:
 		fmt.Fprintln(f.err, "orchestra can't plan this request yet:", reason)
 		f.logLine("FEATURE unclear: " + reason)
-		return "", dispatch.ExitSetup
+		return dispatch.ExitSetup, false
 	}
+	return dispatch.ExitOK, true
+}
 
+// gather gathers the evidence the plan organ plans the request from: the repository's files and the
+// tickets not closed.
+func (f featureRun) gather(ctx context.Context) (organ.FeatureEvidence, int, bool) {
 	// Every ticket not closed, epics too, so the plan doesn't repeat one: one left in progress by a
 	// stopped run, or set aside with bd defer, is still to be done.
 	unclosed, err := f.tracker.Unclosed(ctx)
 	if err != nil {
 		if code, stopped := f.interrupted(ctx); stopped {
-			return "", code
+			return organ.FeatureEvidence{}, code, false
 		}
 		fmt.Fprintln(f.err, "orchestra couldn't plan the request: cannot read the tickets:", err)
-		return "", dispatch.ExitTool
+		return organ.FeatureEvidence{}, dispatch.ExitTool, false
 	}
 	tickets := make([]organ.UnclosedTicket, len(unclosed))
 	for i, t := range unclosed {
@@ -140,12 +171,17 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	ev, err := organ.GatherFeature(ctx, f.repo, f.request, git.Git{}.TrackedFiles(ctx, f.repo), tickets)
 	if err != nil {
 		if code, stopped := f.interrupted(ctx); stopped {
-			return "", code
+			return organ.FeatureEvidence{}, code, false
 		}
 		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", err)
-		return "", dispatch.ExitSetup
+		return organ.FeatureEvidence{}, dispatch.ExitSetup, false
 	}
-	busy = f.busy("planning the feature with claude… (this can take a few minutes; ctrl+c stops it)",
+	return ev, dispatch.ExitOK, true
+}
+
+// plan has the plan organ turn the request into an epic and its tickets, and goes on when it did.
+func (f featureRun) plan(ctx context.Context, ev organ.FeatureEvidence) (organ.FeaturePlan, int, bool) {
+	busy := f.busy("planning the feature with claude… (this can take a few minutes; ctrl+c stops it)",
 		"Planning the feature with Claude…", "(this can take a few minutes; Ctrl+C stops it)")
 	p, err := f.organs.PlanFeature(ctx, ev)
 	switch {
@@ -159,13 +195,13 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		busy.Done("Feature planned")
 	}
 	if code, stopped := f.interrupted(ctx); stopped {
-		return "", code
+		return p, code, false
 	}
 	switch {
 	case err != nil:
 		fmt.Fprintln(f.err, "orchestra couldn't plan the request:", tui.Printable(dispatch.FirstLine(err.Error())))
 		f.logLine("FEATURE not planned: " + dispatch.FirstLine(err.Error()))
-		return "", dispatch.ExitSetup
+		return p, dispatch.ExitSetup, false
 	case p.NeedsAnswers():
 		fmt.Fprintln(f.err, "orchestra needs answers before it can plan this request:")
 		for _, q := range p.Questions {
@@ -174,9 +210,14 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 		fmt.Fprintln(f.err, "Nothing was filed. Run it again with the answers in the request: "+
 			"orchestra --feature \"<the request, and the answers>\"")
 		f.logLine(fmt.Sprintf("FEATURE needs answers: %d questions", len(p.Questions)))
-		return "", dispatch.ExitSetup
+		return p, dispatch.ExitSetup, false
 	}
+	return p, dispatch.ExitOK, true
+}
 
+// confirmFiling shows the plan and goes on when it is to be filed: with --yes, or once the
+// maintainer says yes on the terminal.
+func (f featureRun) confirmFiling(ctx context.Context, p organ.FeaturePlan) (int, bool) {
 	showPlan(f.out, p)
 	question := fmt.Sprintf("File these %d tickets and start the run?", len(p.Tickets))
 	if len(p.Tickets) == 1 {
@@ -187,19 +228,19 @@ func (f featureRun) run(ctx context.Context) (string, int) {
 	case !f.terminal:
 		fmt.Fprintln(f.err, "orchestra has no terminal to ask on: nothing was filed. "+
 			"Pass --yes to file the plan without asking.")
-		return "", dispatch.ExitSetup
+		return dispatch.ExitSetup, false
 	default:
 		ok, err := confirm(ctx, f.in, f.out, question)
 		if err != nil {
 			fmt.Fprintln(f.err, "orchestra: stopped before filing; nothing was filed.")
-			return "", dispatch.ExitInterrupted
+			return dispatch.ExitInterrupted, false
 		}
 		if !ok {
 			fmt.Fprintln(f.out, "Nothing was filed.")
-			return "", dispatch.ExitOK
+			return dispatch.ExitOK, false
 		}
 	}
-	return f.file(ctx, p)
+	return dispatch.ExitOK, true
 }
 
 // busy shows a step under way, which Done must end: on a terminal a busy line, the styled text with
@@ -255,12 +296,6 @@ func (f featureRun) readme() string {
 		return ""
 	}
 	return string(b)
-}
-
-func (f featureRun) logLine(text string) {
-	if f.log != nil {
-		f.log.Line(time.Now(), text)
-	}
 }
 
 // showPlan prints the plan for the maintainer to confirm: the epic, then each ticket with its type,

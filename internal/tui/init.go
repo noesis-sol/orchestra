@@ -514,17 +514,66 @@ func timeLimit(title, description, placeholder string, value *string) *huh.Input
 // huh.ErrUserAborted, as the end of in does in the accessible form (TERM=dumb), and init then writes
 // and installs nothing.
 func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
-	workers, checks := &initStage{name: "Workers"}, &initStage{name: "Checks"}
+	workers, answers := workersStage(c, ask)
+	checks := &initStage{name: "Checks"}
+	accessible := os.Getenv("TERM") == "dumb" // huh's accessible form, which asks with plain lines
+	var stage2 *checksStage
+	if ask.Check {
+		stage2 = addChecks(checks, c, ask, accessible)
+		defer stage2.scout.wait()
+	}
+	settled := func() bool { return stage2 == nil || stage2.scout.poll() }
+	checksStageFields(checks, c, ask, stage2, settled)
+	var stages []*initStage
+	for _, s := range []*initStage{workers, checks} {
+		if len(s.fields) > 0 {
+			stages = append(stages, s)
+		}
+	}
+	if len(stages) == 0 {
+		return nil
+	}
+	form, fields := buildForm(stages, in, out)
+	var err error
+	if accessible {
+		err = runAccessible(context.Background(), fields, in, out)
+	} else {
+		var scout *scoutRun
+		if stage2 != nil {
+			scout = stage2.scout
+		}
+		err = runForm(form, scout, in, out)
+	}
+	if err != nil {
+		return err
+	}
+	return applyAnswers(c, ask, answers, stage2)
+}
+
+// workersAnswers are the answers of the Workers stage that are asked into variables of their own
+// rather than into the choice, which applyAnswers sets on it once the form is submitted.
+type workersAnswers struct {
+	option  int      // the option chosen for tickets at the same time, or customConcurrency
+	custom  string   // the number typed for Custom…
+	mcp     bool     // whether the MCP servers were offered
+	servers []string // the MCP servers chosen
+}
+
+// workersStage is the Workers stage with the questions ask names: installing Beads, tickets at the
+// same time, merging CHANGELOG.md by union and the MCP servers for workers. With no MCP server to
+// offer, the choice is none.
+func workersStage(c *project.Choice, ask Ask) (*initStage, *workersAnswers) {
+	workers, a := &initStage{name: "Workers"}, &workersAnswers{}
 	if ask.Install {
 		workers.add(installField(c))
 	}
-	option, custom := concurrencyStart(c.Concurrent)
+	a.option, a.custom = concurrencyStart(c.Concurrent)
 	if ask.Concurrent {
 		workers.add(newBoundedSelect(huh.NewSelect[int]().
 			Title("Tickets at the same time").
 			Description("Each gets its own worker, worktree and checks. A run can override it with --concurrent."),
-			&option, concurrencyOptions()...))
-		typed := workers.add(huh.NewInput().
+			&a.option, concurrencyOptions()...))
+		hide(workers.add(huh.NewInput().
 			Title("Number of tickets at the same time").
 			Description(fmt.Sprintf("From 1 to %d. Above %d: a big machine, and tickets that rarely touch "+
 				"the same files.", project.MaxConcurrency, len(concurrencyNotes))).
@@ -533,9 +582,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 				_, err := parseConcurrency(v)
 				return err
 			}).
-			Value(&custom))
-		typed.hidden = func() bool { return option != customConcurrency }
-		typed.wasHidden = typed.isHidden()
+			Value(&a.custom)), func() bool { return a.option != customConcurrency })
 	}
 	if ask.Union {
 		workers.add(huh.NewConfirm().
@@ -548,46 +595,47 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 			Value(&c.Union))
 	}
 	mcpOpts, servers := mcpOptions(*c)
-	if ask.MCP && len(mcpOpts) > 0 {
+	a.servers, a.mcp = servers, ask.MCP && len(mcpOpts) > 0
+	if a.mcp {
 		// Not filterable: Esc, which ends a filter, cancels the form.
 		workers.add(newWrappingMultiSelect(huh.NewMultiSelect[string]().
 			Title("MCP servers for workers").
 			Description(mcpDescription(*c)).
 			Filterable(false),
-			&servers, mcpOpts...))
+			&a.servers, mcpOpts...))
 	}
 	if ask.MCP && len(mcpOpts) == 0 {
 		c.MCP = &[]string{}
 	}
-	accessible := os.Getenv("TERM") == "dumb" // huh's accessible form, which asks with plain lines
-	var stage2 *checksStage
-	if ask.Check {
-		stage2 = addChecks(checks, c, ask, accessible)
-		defer stage2.scout.wait()
-	}
-	settled := func() bool { return stage2 == nil || stage2.scout.poll() }
+	return workers, a
+}
+
+// checksStageFields adds to the Checks stage, after stage 2's choice of checks (nil when not asked),
+// the questions ask names that wait for the scout, until settled: the checks' time limits, the setup
+// command, the verifier and the ticket prefix, with its rename.
+func checksStageFields(checks *initStage, c *project.Choice, ask Ask, stage2 *checksStage, settled func() bool) {
 	if ask.Timeout {
 		if c.CheckFastTimeout == "" {
 			c.CheckFastTimeout = project.DefaultCheckTimeoutText
 		}
-		hide(checks.add(timeLimit("check-fast time limit", "How long orchestra lets "+project.FastRunner+
+		untilSettled(checks.add(timeLimit("check-fast time limit", "How long orchestra lets "+project.FastRunner+
 			" run on a rebased ticket before it stops it and sets the ticket aside; other finished tickets "+
 			"wait for it meanwhile. A run can override it with --check-timeout.", "e.g. 5m, 45m",
-			&c.CheckFastTimeout)), func() bool { return !settled() })
+			&c.CheckFastTimeout)), settled)
 	}
 	if ask.FullTimeout {
 		if c.CheckFullTimeout == "" {
 			c.CheckFullTimeout = project.DefaultCheckFullTimeoutText
 		}
-		hide(checks.add(timeLimit("check-full time limit", "How long orchestra lets "+project.FullRunner+
+		untilSettled(checks.add(timeLimit("check-full time limit", "How long orchestra lets "+project.FullRunner+
 			" run at the end of a run before it stops it. A run can override it with --check-full-timeout.",
-			"e.g. 60m, 2h", &c.CheckFullTimeout)), func() bool { return !settled() })
+			"e.g. 60m, 2h", &c.CheckFullTimeout)), settled)
 	}
 	if ask.Setup {
 		if c.Setup == "" {
 			c.Setup = c.SetupOffer
 		}
-		hide(checks.add(setupField(c)), func() bool { return !settled() })
+		untilSettled(checks.add(setupField(c)), settled)
 	}
 	if ask.Verifier {
 		// Last: asked once the scout has said what the project is built with.
@@ -595,11 +643,11 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		if stage2 != nil {
 			stage2.verifier = field
 		}
-		hide(checks.add(field), func() bool { return !settled() })
+		untilSettled(checks.add(field), settled)
 	}
 	if ask.Prefix {
 		// Last: its rename asks to confirm what it changes everywhere.
-		hide(checks.add(prefixField(c)), func() bool { return !settled() })
+		untilSettled(checks.add(prefixField(c)), settled)
 		rename := renameField(c)
 		checks.fields = append(checks.fields, rename)
 		hide(rename, func() bool {
@@ -608,15 +656,17 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 				project.PrefixProblem(p) != ""
 		})
 	}
-	var stages []*initStage
-	for _, s := range []*initStage{workers, checks} {
-		if len(s.fields) > 0 {
-			stages = append(stages, s)
-		}
-	}
-	if len(stages) == 0 {
-		return nil
-	}
+}
+
+// untilSettled hides f until settled says so.
+func untilSettled(f *formField, settled func() bool) {
+	hide(f, func() bool { return !settled() })
+}
+
+// buildForm is the form asking the stages on in and out, each a group under its stepper, the fields
+// drawing their own gaps and headers in a theme of their own; and its fields, in order, for huh's
+// accessible form.
+func buildForm(stages []*initStage, in io.Reader, out io.Writer) (*huh.Form, []huh.Field) {
 	theme := huh.ThemeCharm()
 	gap := theme.FieldSeparator.Render()
 	theme.FieldSeparator = lipgloss.NewStyle()              // each formField draws its own
@@ -631,6 +681,7 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		names[i] = s.name
 	}
 	groups := make([]*huh.Group, len(stages))
+	var fields []huh.Field
 	for i, s := range stages {
 		header := stageHeader(s.name, i+1, len(stages))
 		group := make([]huh.Field, len(s.fields))
@@ -646,30 +697,17 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 			f.WithTheme(f.own)
 			group[j] = f
 		}
+		fields = append(fields, group...)
 		groups[i] = huh.NewGroup(group...).Title(stepper(names, i+1))
 	}
 	keys := huh.NewDefaultKeyMap()
 	keys.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
-	form := huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out)
-	var err error
-	if accessible {
-		var fields []huh.Field
-		for _, s := range stages {
-			for _, f := range s.fields {
-				fields = append(fields, f)
-			}
-		}
-		err = runAccessible(context.Background(), fields, in, out)
-	} else {
-		var scout *scoutRun
-		if stage2 != nil {
-			scout = stage2.scout
-		}
-		err = runForm(form, scout, in, out)
-	}
-	if err != nil {
-		return err
-	}
+	return huh.NewForm(groups...).WithTheme(theme).WithKeyMap(keys).WithInput(in).WithOutput(out), fields
+}
+
+// applyAnswers sets on the choice the answers the form left elsewhere, once it is submitted: trimmed
+// text, the prefix typed, stage 2's choice of checks (nil when not asked) and the Workers stage's.
+func applyAnswers(c *project.Choice, ask Ask, a *workersAnswers, stage2 *checksStage) error {
 	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
 	c.CheckFullTimeout = strings.TrimSpace(c.CheckFullTimeout)
 	c.Setup = strings.TrimSpace(c.Setup)
@@ -680,17 +718,17 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		stage2.apply()
 	}
 	if ask.Concurrent {
-		c.Concurrent, c.Unasked.Concurrent = option, false
-		if option == customConcurrency {
-			n, err := parseConcurrency(custom)
+		c.Concurrent, c.Unasked.Concurrent = a.option, false
+		if a.option == customConcurrency {
+			n, err := parseConcurrency(a.custom)
 			if err != nil {
 				return err // the form doesn't submit one
 			}
 			c.Concurrent = n
 		}
 	}
-	if ask.MCP && len(mcpOpts) > 0 {
-		chosen := append([]string{}, servers...)
+	if a.mcp {
+		chosen := append([]string{}, a.servers...)
 		c.MCP, c.Unasked.MCP = &chosen, false
 	}
 	return nil

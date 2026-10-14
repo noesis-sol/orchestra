@@ -66,13 +66,9 @@ func interviewOff(c options) string {
 // featureInterview is a feature typed at the start, talked through and filed in a Claude Code
 // session, on its way to a run.
 type featureInterview struct {
-	request  string
-	repo     string
-	session  func(ctx context.Context, prompt string) error // the session, its instructions in prompt
-	tracker  epicTracker
-	log      *dispatch.Log // nil in tests
-	in       io.Reader
-	out, err io.Writer
+	featureIO
+	session func(ctx context.Context, prompt string) error // the session, its instructions in prompt
+	tracker epicTracker
 }
 
 // epicTracker is bd as the interview reads the epic it filed (beads.Tracker).
@@ -121,14 +117,9 @@ func runInterview(
 		session = s.talk
 	}
 	return featureInterview{
-		request: c.Feature,
-		repo:    c.Repo,
-		session: session,
-		tracker: tracker,
-		log:     log,
-		in:      stdin,
-		out:     stdout,
-		err:     stderr,
+		featureIO: featureIO{request: c.Feature, repo: c.Repo, log: log, in: stdin, out: stdout, err: stderr},
+		session:   session,
+		tracker:   tracker,
 	}.run(ctx)
 }
 
@@ -215,12 +206,6 @@ func (f featureInterview) stopped(epic string) int {
 		fmt.Fprintf(f.err, "The interview filed %s; start the run on it with: orchestra --ticket %s\n", epic, epic)
 	}
 	return dispatch.ExitInterrupted
-}
-
-func (f featureInterview) logLine(text string) {
-	if f.log != nil {
-		f.log.Line(time.Now(), text)
-	}
 }
 
 // interviewPanes is the terminal as the interview in a pane uses it (herdr.Terminal, tmux.Terminal,
