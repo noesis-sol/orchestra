@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -279,16 +280,16 @@ func (Reporter) HookRecord(worktree string) dispatch.HookRecord {
 	if err != nil {
 		return dispatch.HookRecord{}
 	}
-	r := parseEvents(b)
-	r.Noted = fi.ModTime()
-	return r
+	return parseEvents(b, fi.ModTime())
 }
 
-// parseEvents reads the hooks' notes, one JSON line each, skipping a line it can't read. A subagent
-// is running from its start to its stop, matched by its ID.
-func parseEvents(b []byte) dispatch.HookRecord {
-	var r dispatch.HookRecord
+// parseEvents reads the hooks' notes, one JSON line each, the last of them noted at noted, skipping a
+// line it can't read. A subagent is running from its start to its stop, matched by its ID; a stop
+// with no start is of none of the worker's (Claude Code's forks at the end of a turn note one).
+func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
+	r := dispatch.HookRecord{Noted: noted}
 	running := map[string]bool{}
+	stoppedLast := false // the last note read is a running subagent's stop
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		var e struct {
@@ -300,6 +301,7 @@ func parseEvents(b []byte) dispatch.HookRecord {
 		if json.Unmarshal(sc.Bytes(), &e) != nil {
 			continue
 		}
+		stoppedLast = e.Event == "SubagentStop" && running[e.Agent]
 		switch e.Event {
 		case dispatch.EventPermission:
 			if e.Tool == "" {
@@ -318,6 +320,9 @@ func parseEvents(b []byte) dispatch.HookRecord {
 		}
 	}
 	r.Subagents = len(running)
+	if stoppedLast {
+		r.SubagentStopped = noted
+	}
 	return r
 }
 

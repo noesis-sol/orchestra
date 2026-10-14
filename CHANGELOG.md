@@ -29,6 +29,10 @@ All notable changes to orchestra are documented here. The format follows
   cmux closed the other too, and leave both in `.orchestra/run/cmux.json`:
   orchestra closes one at a time, and drops a closed workspace from its book
   even when the check finds another gone.
+- A worker whose background subagent stops after its turn ended, its ticket
+  still in progress, is no longer told to continue just as the subagent's
+  answer starts its next turn: a subagent's stop after the worker's Stop
+  hook keeps the turn going until the turn on its answer ends.
 - In tmux, a worker whose `claude` is a wrapper script that runs Claude Code
   as its child, rather than through `exec`, is no longer taken for gone, and
   concluded on, as soon as its first hook runs: only a pane orchestra didn't

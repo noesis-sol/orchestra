@@ -54,10 +54,13 @@ const EventPermission = "PermissionRequest"
 // HookRecord is what a worker's hooks noted besides its last tool use, since it was started (or
 // resumed): the permission prompts it waited on, its context's compactions and its subagents.
 type HookRecord struct {
-	Permissions []string  // the tool each permission prompt asked about, oldest first
-	Compactions []string  // what triggered each compaction (auto, or manual: /compact), oldest first
-	Subagents   int       // subagents started and not stopped
-	Noted       time.Time // when the hooks last noted one of these, or a session's start or end; zero: never
+	Permissions []string // the tool each permission prompt asked about, oldest first
+	Compactions []string // what triggered each compaction (auto, or manual: /compact), oldest first
+	Subagents   int      // subagents started and not stopped
+	// When a subagent started and stopped, if its stop is the hooks' last note (its answer starts
+	// the worker's next turn); zero otherwise
+	SubagentStopped time.Time
+	Noted           time.Time // when the hooks last noted one of these, or a session's start or end; zero: never
 }
 
 // SubagentQuiet is how long a subagent started and not stopped may go without any hook reporting

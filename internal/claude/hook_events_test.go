@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -98,12 +99,12 @@ func TestParseEvents(t *testing.T) {
 {"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":"Explore"}
 {"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":"Explore"}
 `)
-	rec := parseEvents(b)
+	rec := parseEvents(b, time.Time{})
 	if !slices.Equal(rec.Permissions, []string{"Edit", "an unnamed tool"}) ||
 		!slices.Equal(rec.Compactions, []string{"unknown trigger"}) || rec.Subagents != 1 {
 		t.Errorf("%+v", rec)
 	}
-	if rec := parseEvents(nil); rec.Permissions != nil || rec.Compactions != nil || rec.Subagents != 0 {
+	if rec := parseEvents(nil, time.Time{}); rec.Permissions != nil || rec.Compactions != nil || rec.Subagents != 0 {
 		t.Errorf("nothing noted: %+v", rec)
 	}
 }

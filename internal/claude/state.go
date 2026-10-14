@@ -245,8 +245,7 @@ func readSessions(b []byte, noted, used, now time.Time) sessions {
 			s.ended = e.Reason != "clear"
 		}
 	}
-	r := parseEvents(b)
-	r.Noted = noted
+	r := parseEvents(b, noted)
 	s.subagents = r.SubagentsRunning(used, now)
 	return s
 }

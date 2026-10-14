@@ -295,19 +295,29 @@ func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after t
 // starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on, Stop
 // or not: one in the background (as every subagent is in fork mode) outlives the turn that started
 // it, and its answer starts the next, and one still running after the Stop may be the one using
-// the tool.
+// the tool. One that stopped after the Stop (see answerPending) has an answer on its way, which
+// starts the next turn before Herdr may show it.
 func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bool) {
 	if u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
 		u.At.Before(u.Stopped)) {
 		return time.Time{}, false, false
 	}
-	if o.subagentRunning(wt) {
+	at, replaced = u.At, false
+	if u.Event != "Stop" {
+		at, replaced = u.Stopped, true
+	}
+	if o.subagentRunning(wt) || answerPending(o.reporter.HookRecord(wt), at) {
 		return time.Time{}, false, false
 	}
-	if u.Event == "Stop" {
-		return u.At, true, false
-	}
-	return u.Stopped, true, true
+	return at, true, replaced
+}
+
+// answerPending says whether a subagent of the worker whose hooks noted rec stopped after its Stop
+// hook at stop (zero: of unknown time, which nothing counts as after), so that its answer starts the
+// worker's next turn. Only a subagent that started counts: Claude Code's forks at the end of a turn
+// note a stop of their own, a moment after the Stop.
+func answerPending(rec HookRecord, stop time.Time) bool {
+	return !stop.IsZero() && rec.SubagentStopped.After(stop)
 }
 
 // nudge tells ticket id's worker, idle at the end of its turn, that its ticket is still open and
@@ -340,7 +350,8 @@ func later(a, b time.Time) time.Time {
 // what decided it. A ticket in progress gets idleGrace, as its worker may be waiting on its own
 // background command. Otherwise a worker that reports through hooks has settled at its Stop hook,
 // the end of its turn, even where a PreToolUse record of no turn replaced it (see turnEnded): the
-// record is removed before it starts, so any Stop came after its prompt. While a subagent runs, the turn goes on.
+// record is removed before it starts, so any Stop came after its prompt. While a subagent runs, the turn goes on,
+// as it does after one that stopped past the Stop, until the turn on its answer ends.
 // An adopted worker's record is not, so a report before since (or of unknown time, with since set)
 // is of an earlier turn, and doesn't count. While its last report is a tool use it is mid-turn,
 // whatever Herdr says, for up to idleGrace (a turn that fails ends without a Stop). Before its first
@@ -368,6 +379,15 @@ func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since tim
 			if o.subagentRunning(wt) {
 				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
 					command.ShortDuration(idleGrace), u.Event)
+			}
+			rec, stop := o.reporter.HookRecord(wt), u.Stopped
+			if u.Event == "Stop" {
+				stop = u.At
+			}
+			if answerPending(rec, stop) {
+				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a subagent stopped at %s, past the "+
+					"turn's Stop hook, with no turn on its answer", command.ShortDuration(idleGrace),
+					rec.SubagentStopped.Format("15:04:05"))
 			}
 			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
 				command.ShortDuration(idleGrace), u.Event, u.Reporter())
