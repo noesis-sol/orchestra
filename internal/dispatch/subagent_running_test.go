@@ -53,20 +53,21 @@ func TestWorkerWaitsOnASubagentPastItsStop(t *testing.T) {
 func TestStopWithASubagentRunningIsMidTurn(t *testing.T) {
 	stop := time.Now()
 	u := ToolUse{Event: "Stop", At: stop, Stopped: stop}
+	w := worker{wt: "wt", hooks: true}
 	o := &Loop{reporter: &subagentsRunning{hookReporter{last: map[string]ToolUse{"wt": u}}}}
-	if _, ended, _ := o.turnEnded("wt", u); ended {
+	if _, ended, _ := turnEnded(o.hooksOf(w), time.Now()); ended {
 		t.Error("turn ended at a Stop with a subagent running")
 	}
-	settled, why := o.idleSettled("closed", "wt", true, time.Time{}, time.Minute, time.Minute)
+	settled, why := idleSettled("closed", o.hooksOf(w), time.Time{}, time.Now(), time.Minute, time.Minute)
 	if settled {
 		t.Errorf("settled (%s) a minute after a Stop with a subagent running", why)
 	}
-	settled, why = o.idleSettled("closed", "wt", true, time.Time{}, idleGrace, time.Minute)
+	settled, why = idleSettled("closed", o.hooksOf(w), time.Time{}, time.Now(), idleGrace, time.Minute)
 	if !settled || !strings.Contains(why, "with a subagent still running") {
 		t.Errorf("after the idle grace: settled = %v (%s), want true, naming the subagent", settled, why)
 	}
 	o.reporter = &hookReporter{last: map[string]ToolUse{"wt": u}}
-	if at, ended, _ := o.turnEnded("wt", u); !ended || !at.Equal(stop) {
+	if at, ended, _ := turnEnded(o.hooksOf(w), time.Now()); !ended || !at.Equal(stop) {
 		t.Errorf("with no subagent: turnEnded = %v, %v, want the Stop's time", at, ended)
 	}
 }

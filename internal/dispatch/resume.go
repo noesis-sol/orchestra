@@ -25,7 +25,7 @@ import (
 // hooks or not, and false when there is none: a worker that isn't Claude, or one without hooks,
 // records none.
 func (o *Loop) sessionOf(wt string, hooks bool) (Session, bool) {
-	if o.reporter == nil || !hooks || !o.cfg.ClaudeWorkers() {
+	if !hooks || !o.hooksRecorded() {
 		return Session{}, false
 	}
 	return o.reporter.Session(wt)

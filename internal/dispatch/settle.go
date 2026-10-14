@@ -12,21 +12,20 @@ import (
 
 // waitSettled waits until the worker w settles, and returns when it went idle for good. Never answer
 // its prompts; stop if it stays blocked for 4 minutes, or in a status the terminal can't tell (unknown)
-// for 5. An idle worker has settled only once idleSettled says so: the terminal takes a worker for idle
-// while it starts up, and while it waits on its own background command. begun is when it was confirmed
-// started on its prompt. A status the terminal fails to read says nothing about the worker, so the wait
-// goes on through maxFailedReads of them in a row before the run stops; so does one of its ticket's
-// that bd fails to read while the worker is idle, which neither settles it nor tells it to continue.
-// A worker still going Config.TicketLimit after it started (dispatch) stops the run; without a
-// limit, one still going after longRunning is reported once. Each status read goes to report (nil:
-// none), for the dashboard. A worker whose turn ends with its ticket still in progress is told to
-// continue, up to maxNudges times, before its idle grace runs (see nudge); one whose turn ends with
-// its ticket in progress but waiting on a question it asked has settled at that Stop hook (see
-// endOfTurn).
+// for 5 (see stuck). An idle worker has settled only once idleSettled says so: the terminal takes a
+// worker for idle while it starts up, and while it waits on its own background command. begun is when
+// it was confirmed started on its prompt. A status the terminal fails to read says nothing about the
+// worker, so the wait goes on through maxFailedReads of them in a row before the run stops; so does one
+// of its ticket's that bd fails to read while the worker is idle, which neither settles it nor tells it
+// to continue. A worker going on too long stops the run, or is reported (see overTime). Each status
+// read goes to report (nil: none), for the dashboard; what its hooks reported is read once a poll
+// (hooksOf), for every decision the poll makes. A worker whose turn ends with its ticket still in
+// progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
+// whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
+// Stop hook (see endOfTurn).
 func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
-	id, agent, tab, wt := w.id, w.agent, w.tab, w.wt
 	var idle idleWait
 	var blocked, unknown streak
 	failed := 0
@@ -35,46 +34,35 @@ func (o *Loop) waitSettled(
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
 			return time.Time{}, errInterrupted
 		}
-		st, err := o.agents.Status(ctx, agent)
+		st, err := o.agents.Status(ctx, w.agent)
 		if report != nil {
 			report(ctx, st, err)
 		}
 		if err != nil {
-			if failed++; failed == 1 {
-				o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", id, err))
-			}
-			if failed >= maxFailedReads {
-				return time.Time{}, halt(ExitTool, stopTerminalFailed,
-					": the status of %s's worker (tab %s) could not be read %d times in a row: %v",
-					id, tab, failed, err).causedBy(err)
+			failed++
+			if stop := o.unreadStatus(w, failed, err); stop != nil {
+				return time.Time{}, stop
 			}
 			continue
 		}
 		failed = 0
 		if st == StateGone {
-			o.info("  %s settled: its worker is gone", id)
+			o.info("  %s settled: its worker is gone", w.id)
 			if idle.since.IsZero() {
 				return time.Now(), nil
 			}
 			return idle.since, nil
 		}
+		h := o.hooksOf(w)
 		// A permission prompt the terminal shows as idle waits for the maintainer as a blocked worker does.
-		asks := o.asksPermission(w, st)
-		if blocked.track(st == StateBlocked || asks) > blockedLimit {
-			if asks {
-				return time.Time{}, halt(ExitStuck, stopBlocked,
-					" >4min: tab %s (%s) needs attention: its worker waits on a permission prompt", tab, id)
-			}
-			return time.Time{}, halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", tab, id)
-		}
-		if unknown.track(st == StateUnknown) > unknownLimit {
-			return time.Time{}, halt(ExitStuck, stopUnknown,
-				" >5min: the terminal can't tell what the worker in tab %s (%s) is doing; it needs attention", tab, id)
+		asks := asksPermission(h, st)
+		if stop := stuck(w, st, asks, &blocked, &unknown); stop != nil {
+			return time.Time{}, stop
 		}
 		isIdle := (st == StateIdle || st == StateDone) && !asks
 		idle.track(isIdle)
 		if isIdle {
-			idleAt, stop, nudged := o.idlePoll(ctx, w, begun, &idle)
+			idleAt, stop, nudged := o.idlePoll(ctx, w, h, begun, &idle)
 			if stop != nil || !idleAt.IsZero() {
 				return idleAt, stop
 			}
@@ -82,34 +70,98 @@ func (o *Loop) waitSettled(
 				continue // the checks below wait for its next poll
 			}
 		}
-		if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
-			o.appendNotes(context.WithoutCancel(ctx), id, fmt.Sprintf(
-				"Orchestra: worker in tab %s was still %s after the %s ticket limit (worktree %s).",
-				tab, st, command.ShortDuration(limit), wt))
-			return time.Time{}, halt(ExitStuck, stopTicketLimit,
-				": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
-				id, st, command.ShortDuration(limit), tab, wt)
-		}
-		if o.cfg.TicketLimit == 0 && !warned && time.Since(w.started) > longRunning {
-			warned = true
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
-				id, st, command.ShortDuration(longRunning), tab)})
+		if stop := o.overTime(ctx, w, st, &warned); stop != nil {
+			return time.Time{}, stop
 		}
 	}
 }
 
-// asksPermission says whether the worker w, in state st as the terminal shows it, waits on a permission
-// prompt, as its hooks reported since it was started or adopted.
-func (o *Loop) asksPermission(w worker, st AgentState) bool {
+// unreadStatus is waitSettled's turn on the worker w's status that the terminal failed to read, the
+// failed-th time in a row, with err: the first is logged, and maxFailedReads of them stop the wait.
+func (o *Loop) unreadStatus(w worker, failed int, err error) *stopReason {
+	if failed == 1 {
+		o.log.Raw("", fmt.Errorf("cannot read the status of %s's worker; still waiting on it: %w", w.id, err))
+	}
+	if failed < maxFailedReads {
+		return nil
+	}
+	return halt(ExitTool, stopTerminalFailed,
+		": the status of %s's worker (tab %s) could not be read %d times in a row: %v",
+		w.id, w.tab, failed, err).causedBy(err)
+}
+
+// stuck says why the wait on the worker w, in state st, stops for the maintainer: blocked, or waiting
+// on a permission prompt (asks), for longer than blockedLimit, or in a status the terminal can't tell
+// for longer than unknownLimit; nil while neither. blocked and unknown are those streaks, kept from one
+// poll to the next.
+func stuck(w worker, st AgentState, asks bool, blocked, unknown *streak) *stopReason {
+	if blocked.track(st == StateBlocked || asks) > blockedLimit {
+		if asks {
+			return halt(ExitStuck, stopBlocked,
+				" >4min: tab %s (%s) needs attention: its worker waits on a permission prompt", w.tab, w.id)
+		}
+		return halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", w.tab, w.id)
+	}
+	if unknown.track(st == StateUnknown) > unknownLimit {
+		return halt(ExitStuck, stopUnknown,
+			" >5min: the terminal can't tell what the worker in tab %s (%s) is doing; it needs attention", w.tab, w.id)
+	}
+	return nil
+}
+
+// overTime says why the wait on the worker w, in state st, stops for how long it has gone on: past
+// Config.TicketLimit since it started (dispatch), noted on its ticket. Without a limit, one still going
+// after longRunning is reported once, warned noting it was; nil while it may go on.
+func (o *Loop) overTime(ctx context.Context, w worker, st AgentState, warned *bool) *stopReason {
+	if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
+		o.appendNotes(context.WithoutCancel(ctx), w.id, fmt.Sprintf(
+			"Orchestra: worker in tab %s was still %s after the %s ticket limit (worktree %s).",
+			w.tab, st, command.ShortDuration(limit), w.wt))
+		return halt(ExitStuck, stopTicketLimit,
+			": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
+			w.id, st, command.ShortDuration(limit), w.tab, w.wt)
+	}
+	if o.cfg.TicketLimit == 0 && !*warned && time.Since(w.started) > longRunning {
+		*warned = true
+		o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf(
+			"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",
+			w.id, st, command.ShortDuration(longRunning), w.tab)})
+	}
+	return nil
+}
+
+// hooksSeen is what a worker's hooks reported, as read once at a poll: use, the last tool use, if ok
+// (it reported one, since it was started or adopted), and rec, the rest of their record. use is kept
+// when it is of a turn before the worker was adopted, for its time only. The zero hooksSeen is a
+// worker that doesn't report through hooks.
+type hooksSeen struct {
+	use ToolUse
+	ok  bool
+	rec HookRecord
+}
+
+// hooksOf reads what the hooks of the worker w reported; nothing for a worker without them.
+func (o *Loop) hooksOf(w worker) hooksSeen {
 	if !w.hooks || o.reporter == nil {
-		return false
+		return hooksSeen{}
 	}
 	u, ok := o.reporter.LastToolUse(w.wt)
 	if ok && !w.since.IsZero() && (u.At.IsZero() || u.At.Before(w.since)) {
 		ok = false // of a turn before it was adopted
 	}
-	return waitsOnPermission(st, u, ok)
+	return hooksSeen{use: u, ok: ok, rec: o.reporter.HookRecord(w.wt)}
+}
+
+// subagentRunning says whether the hooks tell a subagent still running at now: one started and not
+// stopped, while hooks keep reporting (HookRecord.SubagentsRunning).
+func (h hooksSeen) subagentRunning(now time.Time) bool {
+	return h.rec.SubagentsRunning(h.use.At, now)
+}
+
+// asksPermission says whether a worker in state st as the terminal shows it, whose hooks reported h,
+// waits on a permission prompt.
+func asksPermission(h hooksSeen, st AgentState) bool {
+	return waitsOnPermission(st, h.use, h.ok)
 }
 
 // streak is how long a condition has held without a break, from one poll to the next.
@@ -138,13 +190,14 @@ type idleWait struct {
 	nudges int       // times it was told to continue
 }
 
-// idlePoll is a poll of waitSettled's that finds the worker w idle, as it has been since idle.since;
-// begun is when it was confirmed started on its prompt. It reads w's ticket and returns when w went
-// idle once it has settled: at a Stop hook with its ticket waiting on a question (endOfTurn), or as
-// idleSettled says. A worker whose turn ended with its ticket still in progress is told to continue
-// first, up to maxNudges times; one that takes the message up (nudged) starts its idle time afresh.
+// idlePoll is a poll of waitSettled's that finds the worker w idle, as it has been since idle.since,
+// its hooks having reported h; begun is when it was confirmed started on its prompt. It reads w's
+// ticket and returns when w went idle once it has settled: at a Stop hook with its ticket waiting on a
+// question (endOfTurn), or as idleSettled says. A worker whose turn ended with its ticket still in
+// progress is told to continue first, up to maxNudges times; one that takes the message up (nudged)
+// starts its idle time afresh.
 // stop is why the wait stops on it; a zero idleAt and a nil stop say it goes on.
-func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *idleWait) (
+func (o *Loop) idlePoll(ctx context.Context, w worker, h hooksSeen, begun time.Time, idle *idleWait) (
 	idleAt time.Time, stop *stopReason, nudged bool) {
 	ts, err := o.tickets.Status(ctx, w.id)
 	if ctx.Err() != nil {
@@ -165,7 +218,7 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 	idle.unread = 0
 	var turn turnEnd
 	if ts == StatusInProgress {
-		turn = o.endOfTurn(ctx, w.id, w.wt, w.hooks, later(w.since, idle.readTo))
+		turn = o.endOfTurn(ctx, w.id, h, later(w.since, idle.readTo))
 	}
 	if turn.asked != nil { // conclude reopens the ticket left in progress
 		o.info("  %s settled: Stop hook at %s, waiting on %s", w.id, turn.at.Format("15:04:05"), turn.asked.ID)
@@ -184,7 +237,8 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 			return time.Time{}, errInterrupted, false
 		}
 	}
-	settled, why := o.idleSettled(ts, w.wt, w.hooks, w.since, o.quietFor(w, idle.since), time.Since(begun))
+	now := time.Now()
+	settled, why := idleSettled(ts, h, w.since, now, quietFor(h, idle.since, now), time.Since(begun))
 	if !settled {
 		return time.Time{}, nil, false
 	}
@@ -192,28 +246,17 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 	return idle.since, nil, false
 }
 
-// quietFor is how long the worker w, which the terminal has shown idle since since, has done nothing. A
-// subagent in the background works on after its worker's turn has ended, and its tool uses are
-// reported as the worker's: while one runs, the last of them ends the quiet. A note of its hooks
-// ends it too: a subagent's stop, say, whose answer starts the worker's next turn, which the
-// terminal may not show yet.
-func (o *Loop) quietFor(w worker, since time.Time) time.Duration {
-	if !w.hooks || o.reporter == nil {
-		return time.Since(since)
+// quietFor is how long a worker whose hooks reported h, which the terminal has shown idle since since,
+// has done nothing, at now. A subagent in the background works on after its worker's turn has ended,
+// and its tool uses are reported as the worker's: while one runs, the last of them ends the quiet. A
+// note of its hooks ends it too: a subagent's stop, say, whose answer starts the worker's next turn,
+// which the terminal may not show yet.
+func quietFor(h hooksSeen, since, now time.Time) time.Duration {
+	since = later(since, h.rec.Noted)
+	if h.ok && h.subagentRunning(now) {
+		since = later(since, h.use.At)
 	}
-	rec := o.reporter.HookRecord(w.wt)
-	since = later(since, rec.Noted)
-	if u, ok := o.reporter.LastToolUse(w.wt); ok && rec.SubagentsRunning(u.At, time.Now()) {
-		since = later(since, u.At)
-	}
-	return time.Since(since)
-}
-
-// subagentRunning says whether the hooks of the worker in wt tell a subagent still running: one
-// started and not stopped, while hooks keep reporting (HookRecord.SubagentsRunning).
-func (o *Loop) subagentRunning(wt string) bool {
-	u, _ := o.reporter.LastToolUse(wt) // none: no tool use to count
-	return o.reporter.HookRecord(wt).SubagentsRunning(u.At, time.Now())
+	return now.Sub(since)
 }
 
 // blockedLimit is how long a worker may stay blocked before the run stops for it.
@@ -265,18 +308,11 @@ type turnEnd struct {
 	asked *Ticket   // the open question the ticket waits on, whatever its status
 }
 
-// endOfTurn reads ticket id as its worker, reporting through hooks, left it at the end of a turn,
-// after after (zero: any). Without hooks, before that turn's Stop, or when bd fails to show the
-// ticket, it says nothing: the worker neither settles nor is told to continue on it.
-func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after time.Time) turnEnd {
-	if !hooks || o.reporter == nil {
-		return turnEnd{}
-	}
-	u, ok := o.reporter.LastToolUse(wt)
-	if !ok {
-		return turnEnd{}
-	}
-	at, ended, _ := o.turnEnded(wt, u)
+// endOfTurn reads ticket id as its worker, whose hooks reported h, left it at the end of a turn, after
+// after (zero: any). Without hooks, before that turn's Stop, or when bd fails to show the ticket, it
+// says nothing: the worker neither settles nor is told to continue on it.
+func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time.Time) turnEnd {
+	at, ended, _ := turnEnded(h, time.Now())
 	if !ended || !after.IsZero() && (at.IsZero() || at.Before(after)) {
 		return turnEnd{}
 	}
@@ -288,17 +324,18 @@ func (o *Loop) endOfTurn(ctx context.Context, id, wt string, hooks bool, after t
 	return turnEnd{at: at, owes: t.Status == StatusInProgress && q == nil, asked: q}
 }
 
-// turnEnded says whether the turn of the worker in wt, whose hooks last reported u, has ended, and
-// when: at its Stop hook, which u is or which a PreToolUse record written after it replaced
-// (replaced). Claude Code forks agents at the end of a turn (a prompt suggestion, say) that run the
-// worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt that
-// starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on, Stop
-// or not: one in the background (as every subagent is in fork mode) outlives the turn that started
-// it, and its answer starts the next, and one still running after the Stop may be the one using
-// the tool. One that stopped after the Stop (see answerPending) has an answer on its way, which
-// starts the next turn before the terminal may show it.
-func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bool) {
-	if u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
+// turnEnded says whether the turn of a worker whose hooks reported h has ended, at now, and when: at
+// its Stop hook, which the last tool use is or which a PreToolUse record written after it replaced
+// (replaced). Without a tool use reported, it hasn't. Claude Code forks agents at the end of a turn (a
+// prompt suggestion, say) that run the worker's PreToolUse hook and are then refused the tool, so no
+// PostToolUse follows; a prompt that starts a turn (a nudge, an answer) clears the Stop. While a
+// subagent runs the turn goes on, Stop or not: one in the background (as every subagent is in fork
+// mode) outlives the turn that started it, and its answer starts the next, and one still running after
+// the Stop may be the one using the tool. One that stopped after the Stop (see answerPending) has an
+// answer on its way, which starts the next turn before the terminal may show it.
+func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) {
+	u := h.use
+	if !h.ok || u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
 		u.At.Before(u.Stopped)) {
 		return time.Time{}, false, false
 	}
@@ -306,7 +343,7 @@ func (o *Loop) turnEnded(wt string, u ToolUse) (at time.Time, ended, replaced bo
 	if u.Event != "Stop" {
 		at, replaced = u.Stopped, true
 	}
-	if o.subagentRunning(wt) || answerPending(o.reporter.HookRecord(wt), at) {
+	if h.subagentRunning(now) || answerPending(h.rec, at) {
 		return time.Time{}, false, false
 	}
 	return at, true, replaced
@@ -345,61 +382,63 @@ func later(a, b time.Time) time.Time {
 	return a
 }
 
-// idleSettled decides whether a worker the terminal shows idle has settled, from its ticket's status,
-// how long it has been idle (idleFor) and how long since it started on its prompt (running); why
-// names what decided it. Case by case, as it returns:
+// idleSettled decides whether a worker the terminal shows idle has settled, at now, from its ticket's
+// status, what its hooks reported (h), how long it has been idle (idleFor) and how long since it started
+// on its prompt (running); why names what decided it. since is when it was adopted (zero: it wasn't).
+// Case by case, as it returns:
 //   - A ticket in progress: settled after idleGrace, as its worker may wait on a background command.
 //   - With hooks, a report before since, or of unknown time with since set, is of a turn before the
-//     worker was adopted, and doesn't count.
+//     worker was adopted, and doesn't count (hooksOf).
+//   - The rest as hooksSettled says.
+//   - No report, or no hooks, and an open ticket: settled startGrace after the worker started.
+//   - Any other status: settled, as the worker is done with its ticket.
+func idleSettled(ticket TicketStatus, h hooksSeen, since, now time.Time,
+	idleFor, running time.Duration) (settled bool, why string) {
+	switch {
+	case ticket == StatusInProgress:
+		return idleFor >= idleGrace,
+			fmt.Sprintf("idle for %s with the ticket still in progress", command.ShortDuration(idleGrace))
+	case h.ok:
+		return hooksSettled(h, since, now, idleFor)
+	case ticket == StatusOpen:
+		return running >= startGrace, fmt.Sprintf("idle %s after it started, with the ticket still open",
+			command.ShortDuration(startGrace))
+	}
+	return true, "idle with the ticket " + string(ticket)
+}
+
+// hooksSettled is idleSettled for a worker whose ticket isn't in progress and whose hooks reported a
+// tool use (h.ok). Case by case, as it returns:
 //   - A Stop hook, or a PreToolUse record of no turn that replaced one (see turnEnded), not before
 //     since: settled, as the record is removed before a worker starts, so any Stop came after its prompt.
 //   - A subagent still running: the turn goes on; settled after idleGrace.
 //   - A subagent that stopped past the Stop, with no turn on its answer yet: settled after idleGrace.
 //   - Any other last report, a tool use: mid-turn, whatever the terminal says; settled after
 //     idleGrace, as a turn that fails ends without a Stop.
-//   - No report, or no hooks, and an open ticket: settled startGrace after the worker started.
-//   - Any other status: settled, as the worker is done with its ticket.
-func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since time.Time,
-	idleFor, running time.Duration) (settled bool, why string) {
-	if ticket == StatusInProgress {
-		return idleFor >= idleGrace,
-			fmt.Sprintf("idle for %s with the ticket still in progress", command.ShortDuration(idleGrace))
-	}
-	if hooks && o.reporter != nil {
-		u, ok := o.reporter.LastToolUse(wt)
-		if ok && !since.IsZero() && (u.At.IsZero() || u.At.Before(since)) {
-			ok = false // of a turn before it was adopted
+func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (settled bool, why string) {
+	u := h.use
+	if at, ended, replaced := turnEnded(h, now); ended && (since.IsZero() || !at.Before(since)) {
+		why := "Stop hook at " + at.Format("15:04:05")
+		if replaced {
+			why += "; then a PreToolUse record with no turn of its own, " + u.Reporter()
 		}
-		if ok {
-			if at, ended, replaced := o.turnEnded(wt, u); ended && (since.IsZero() || !at.Before(since)) {
-				why := "Stop hook at " + at.Format("15:04:05")
-				if replaced {
-					why += "; then a PreToolUse record with no turn of its own, " + u.Reporter()
-				}
-				return true, why
-			}
-			if o.subagentRunning(wt) {
-				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
-					command.ShortDuration(idleGrace), u.Event)
-			}
-			rec, stop := o.reporter.HookRecord(wt), u.Stopped
-			if u.Event == "Stop" {
-				stop = u.At
-			}
-			if answerPending(rec, stop) {
-				return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a subagent stopped at %s, past the "+
-					"turn's Stop hook, with no turn on its answer", command.ShortDuration(idleGrace),
-					rec.SubagentStopped.Format("15:04:05"))
-			}
-			return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
-				command.ShortDuration(idleGrace), u.Event, u.Reporter())
-		}
+		return true, why
 	}
-	if ticket == StatusOpen {
-		return running >= startGrace, fmt.Sprintf("idle %s after it started, with the ticket still open",
-			command.ShortDuration(startGrace))
+	if h.subagentRunning(now) {
+		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
+			command.ShortDuration(idleGrace), u.Event)
 	}
-	return true, "idle with the ticket " + string(ticket)
+	stop := u.Stopped
+	if u.Event == "Stop" {
+		stop = u.At
+	}
+	if answerPending(h.rec, stop) {
+		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a subagent stopped at %s, past the "+
+			"turn's Stop hook, with no turn on its answer", command.ShortDuration(idleGrace),
+			h.rec.SubagentStopped.Format("15:04:05"))
+	}
+	return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
+		command.ShortDuration(idleGrace), u.Event, u.Reporter())
 }
 
 // watcher shows a worker's status and latest action on the dashboard, and logs what its hooks

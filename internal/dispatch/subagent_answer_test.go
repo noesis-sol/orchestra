@@ -57,16 +57,16 @@ func TestQuietForCountsFromTheHooksLastNote(t *testing.T) {
 	w := worker{wt: "wt", hooks: true}
 	hooks := &recordReporter{records: map[string]HookRecord{"wt": {Noted: now.Add(-time.Minute)}}}
 	o := &Loop{reporter: hooks}
-	if got := o.quietFor(w, since); got > 2*time.Minute {
+	if got := quietFor(o.hooksOf(w), since, time.Now()); got > 2*time.Minute {
 		t.Errorf("quiet for %s a minute after a subagent stopped, want about a minute", got)
 	}
 	hooks.records["wt"] = HookRecord{Noted: now.Add(-3 * idleGrace)}
-	if got := o.quietFor(w, since); got < 2*idleGrace {
+	if got := quietFor(o.hooksOf(w), since, time.Now()); got < 2*idleGrace {
 		t.Errorf("quiet for %s, noted before it went idle %s ago", got, 2*idleGrace)
 	}
 	w.hooks = false
 	hooks.records["wt"] = HookRecord{Noted: now}
-	if got := o.quietFor(w, since); got < 2*idleGrace {
+	if got := quietFor(o.hooksOf(w), since, time.Now()); got < 2*idleGrace {
 		t.Errorf("quiet for %s without hooks, idle %s", got, 2*idleGrace)
 	}
 }

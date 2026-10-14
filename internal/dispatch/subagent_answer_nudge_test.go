@@ -57,20 +57,21 @@ func TestWorkerIdleAsItsSubagentStopsIsNotNudged(t *testing.T) {
 func TestSubagentStoppedAfterTheStopIsMidTurn(t *testing.T) {
 	stop := time.Now().Add(-time.Minute)
 	hooks := &recordReporter{records: map[string]HookRecord{"wt": {SubagentStopped: stop.Add(time.Second)}}}
+	w := worker{wt: "wt", hooks: true}
 	o := &Loop{reporter: hooks}
 	for _, u := range []ToolUse{
 		{Event: "Stop", At: stop, Stopped: stop},
 		{Event: "PreToolUse", Tool: "Read", At: stop.Add(time.Second), Stopped: stop},
 	} {
 		hooks.last = map[string]ToolUse{"wt": u}
-		if _, ended, _ := o.turnEnded("wt", u); ended {
+		if _, ended, _ := turnEnded(o.hooksOf(w), time.Now()); ended {
 			t.Errorf("%s: turn ended with a subagent stopped after the Stop", u.Event)
 		}
-		settled, why := o.idleSettled("closed", "wt", true, time.Time{}, time.Minute, time.Minute)
+		settled, why := idleSettled("closed", o.hooksOf(w), time.Time{}, time.Now(), time.Minute, time.Minute)
 		if settled {
 			t.Errorf("%s: settled (%s) a minute after a subagent stopped past the Stop", u.Event, why)
 		}
-		settled, why = o.idleSettled("closed", "wt", true, time.Time{}, idleGrace, time.Minute)
+		settled, why = idleSettled("closed", o.hooksOf(w), time.Time{}, time.Now(), idleGrace, time.Minute)
 		if !settled || !strings.Contains(why, "after a subagent stopped") {
 			t.Errorf("%s: after the idle grace: settled = %v (%s), want true, naming the subagent", u.Event, settled, why)
 		}
@@ -79,7 +80,7 @@ func TestSubagentStoppedAfterTheStopIsMidTurn(t *testing.T) {
 	hooks.last = map[string]ToolUse{"wt": u}
 	for _, rec := range []HookRecord{{SubagentStopped: stop.Add(-time.Second)}, {Noted: stop.Add(time.Second)}} {
 		hooks.records["wt"] = rec
-		if at, ended, _ := o.turnEnded("wt", u); !ended || !at.Equal(stop) {
+		if at, ended, _ := turnEnded(o.hooksOf(w), time.Now()); !ended || !at.Equal(stop) {
 			t.Errorf("hooks' record %+v: turnEnded = %v, %v, want the Stop's time", rec, at, ended)
 		}
 	}

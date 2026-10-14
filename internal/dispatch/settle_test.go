@@ -21,9 +21,8 @@ func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
 		{"in_progress", idleGrace + time.Second, false}, // long enough: it needs someone
 		{"closed", 0, false}, {"deferred", 0, false}, {"open", 0, false},
 	}
-	o := &Loop{}
 	for _, c := range cases {
-		if settled, _ := o.idleSettled(c.status, "wt", false, time.Time{}, c.idle, startGrace); settled == c.wait {
+		if settled, _ := idleSettled(c.status, hooksSeen{}, time.Time{}, time.Now(), c.idle, startGrace); settled == c.wait {
 			t.Errorf("idleSettled(%s, idle %s) = %v, want %v", c.status, c.idle, settled, !c.wait)
 		}
 	}
