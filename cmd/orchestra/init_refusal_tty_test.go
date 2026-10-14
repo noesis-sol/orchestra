@@ -38,7 +38,8 @@ func TestInitIsRefusedByARunStartedDuringTheForm(t *testing.T) {
 	done := make(chan int, 1)
 	var errOut strings.Builder
 	args := []string{"--check", "make check", "--check-timeout", "5m", "--check-full-timeout", "5m", "--mcp", "",
-		"--setup", "", "--changelog-union=false", "--install-beads=false", "--verifier=false"} // all but -c
+		"--setup", "", "--changelog-union=false", "--install-beads=false", "--verifier=false",
+		"--prefix", project.DefaultPrefix(repo)} // all but -c
 	go func() {
 		done <- runInit(ctx, repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()

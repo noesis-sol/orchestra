@@ -72,6 +72,7 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 		{"┃ check-full time limit", keyEnter},
 		{"It is told the stack: Go 1.26, Postgres 16.", ""},
 		{"┃ Add a verification step for workers", keyEnter}, // offered as yes
+		{"┃ Ticket prefix", keyEnter},                       // the folder's name, kept
 	} {
 		term.waitFor(t, step.on)
 		term.typeKeys(t, step.keys, false)

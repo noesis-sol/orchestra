@@ -189,6 +189,15 @@ type Choice struct {
 	// bd is missing, and InstallUnasked is set when init could neither ask nor take --install-beads.
 	Install                      BeadsInstall
 	InstallBeads, InstallUnasked bool
+	// Prefix is the Beads ticket prefix init sets, IDs reading <prefix>-<hash>, and PrefixWas the one
+	// there; for a repository without Beads (PrefixNew), the one bd init would give it (DefaultPrefix),
+	// bd init then taking Prefix. Both are "" where init neither asked nor took --prefix. For a change,
+	// PrefixTickets are the tickets bd rename-prefix renames, PrefixExample one of their IDs,
+	// RenamePrefix that the rename is confirmed, and PrefixRefusal why the tickets can't be renamed now
+	// (see ApplyPrefix).
+	Prefix, PrefixWas, PrefixExample, PrefixRefusal string
+	PrefixNew, RenamePrefix                         bool
+	PrefixTickets                                   int
 	// Tests is stage 2's choice of how the project's tests are set up, and FileUntested its "Also
 	// file tickets for untested areas" with TestsFound. Where they file test work (FilesTestWork),
 	// init installs the create-check-suite skill for Agent, the workers' agent kind, writing it over

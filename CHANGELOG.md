@@ -159,6 +159,14 @@ All notable changes to orchestra are documented here. The format follows
   uncommitted changes and gives `git -C <worktree> status` to see them.
 ### Added
 
+- `orchestra init` asks for the Beads ticket prefix in its last stage,
+  prefilled with the current one (or, for a new Beads, the folder's name
+  bd init would use), and `--prefix <name>` sets it without a terminal: a
+  new Beads gets it from `bd init --prefix`, and an existing one's tickets
+  are renamed with `bd rename-prefix` once confirmed. The rename is refused
+  while a ticket not closed has a `wt/<id>` branch, the last run left
+  workers in `.orchestra/run/state.json`, or tickets are labelled
+  `unmerged`, as those would name IDs that no longer exist.
 - The dashboard shows a finished ticket's merge: `◷ to merge`, in blue,
   while it waits for its turn behind another ticket's merge (`to merge
   (2nd)` in Current, its place in line), and `◆ merging`, in pink, while

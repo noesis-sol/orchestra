@@ -56,6 +56,9 @@ func runInit(
 	verifier := fs.Bool("verifier", false, "write "+project.VerifierPath+", a subagent that checks each ticket's "+
 		"change against the ticket in a fresh context, and have the worker prompt run it before a worker closes "+
 		"its ticket (asked when omitted; =false declines)")
+	prefix := fs.String("prefix", "", "the Beads ticket prefix, IDs reading <prefix>-<hash>: lowercase letters, "+
+		"digits and hyphens, starting with a letter; for a new Beads bd init takes it, and an existing one's "+
+		"tickets are all renamed to it with bd rename-prefix (asked when omitted; kept when not given)")
 	agent := fs.String("agent", envOr(getenv, "AGENT_KIND", "claude"), "the workers' agent kind, "+
 		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
 		"[AGENT_KIND]")
@@ -66,7 +69,7 @@ func runInit(
 		fmt.Fprintf(fs.Output(), "Usage: orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] "+
 			"[--check-fast-timeout D] [--check-full-timeout D]\n"+
 			"                      [--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n"+
-			"                      [--install-beads] [--verifier] [--force]\n\n"+
+			"                      [--install-beads] [--verifier] [--prefix name] [--force]\n\n"+
 			"Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n"+
 			"(with Homebrew, or the Beads install script); where Beads isn't set up, it runs bd init. Then\n"+
 			"the worker prompt (from the built-in template, or moved from .claude/worker-prompt.md), the\n"+
@@ -77,7 +80,8 @@ func runInit(
 			"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n"+
 			"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n"+
 			"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n"+
-			"each ticket's change in a fresh context, which the worker prompt then has workers run. In a\n"+
+			"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n"+
+			"ticket prefix, renaming every ticket when it changes. In a\n"+
 			"terminal it asks for anything the flags don't give. Run it from the main checkout, between\n"+
 			"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n\n")
 		fs.PrintDefaults()
@@ -98,7 +102,7 @@ func runInit(
 	timeoutGiven, fullTimeoutGiven := given["check-fast-timeout"] || given["check-timeout"], given["check-full-timeout"]
 	unionGiven, setupGiven := given["changelog-union"], given["setup"]
 	concurrentGiven, mcpGiven, installGiven := given["concurrent"] || given["c"], given["mcp"], given["install-beads"]
-	verifierGiven := given["verifier"]
+	verifierGiven, prefixGiven := given["verifier"], given["prefix"]
 	for _, t := range []struct {
 		name  string
 		given bool
@@ -170,21 +174,41 @@ func runInit(
 	askUnion := !unionGiven && project.OffersUnion(ctx, repo)
 	choice.Union = *union || askUnion // offered as yes
 	choice.Install = project.FindBeadsInstall(runtime.GOOS)
-	bd, _ := project.LocateBd(getenv)
+	bd, onPath := project.LocateBd(getenv)
 	askInstall := !installGiven && bd == "" && choice.Install.Command != ""
 	choice.InstallBeads = *installBeads || askInstall // offered as yes
 	choice.Agent = *agent
 	askVerifier := !verifierGiven && project.OffersVerifier(repo, choice.Agent)
 	choice.Verifier = *verifier || askVerifier // offered as yes
 
+	// The ticket prefix, asked where bd is there or init offers to install it, and read only then: it
+	// takes a few bd calls.
+	interactive := isTerminal(stdin) && isTerminal(stdout)
+	askPrefix := interactive && !prefixGiven && (onPath || askInstall || *installBeads)
+	if askPrefix || prefixGiven {
+		if err := readPrefix(ctx, repo, &choice); err != nil {
+			if prefixGiven {
+				fmt.Fprintln(stderr, "orchestra init: --prefix: can't read the ticket prefix Beads has:", err)
+				return dispatch.ExitSetup
+			}
+			askPrefix = false // init can't tell what it would change
+			choice.Prefix, choice.PrefixWas = "", ""
+		}
+	}
+	if prefixGiven {
+		if code := takePrefix(*prefix, &choice, stderr); code != dispatch.ExitOK {
+			return code
+		}
+	}
+
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
 	// Stage 2's choice of checks, unless a flag gives one of them.
 	ask := tui.Ask{Check: !fastGiven && !fullGiven, Timeout: !timeoutGiven, FullTimeout: !fullTimeoutGiven,
 		Concurrent: !concurrentGiven, Union: askUnion, MCP: !mcpGiven, Install: askInstall, Setup: askSetup,
-		Verifier: askVerifier}
+		Verifier: askVerifier, Prefix: askPrefix}
 	var scoutSpent []organ.Spend // by the scout's goroutine, which AskInit waits for before it returns
-	if isTerminal(stdin) && isTerminal(stdout) && ask.Any() {
+	if interactive && ask.Any() {
 		if ask.Check {
 			scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"),
 				Effort: scoutEffort(getenv, existing.OrganEffort),
@@ -229,6 +253,15 @@ func runInit(
 	// run in their own process groups, and init with it.
 	beadsCtx, stopBeads := signal.NotifyContext(ctx, stopSignals...)
 	steps := append(scoutSteps(scoutSpent), project.SetUpBeads(beadsCtx, repo, choice, getenv, ui.Working)...)
+	if beadsCtx.Err() == nil {
+		refusal := ""
+		if !choice.PrefixNew && choice.PrefixWas != "" && choice.Prefix != choice.PrefixWas {
+			refusal = prefixRefusal(beadsCtx, repo, choice.PrefixWas) // read again: the form can take a while
+		}
+		if s, ok := project.ApplyPrefix(beadsCtx, repo, choice, refusal); ok {
+			steps = append(steps, s)
+		}
+	}
 	stopped := beadsCtx.Err() != nil
 	stopBeads()
 	if stopped {
@@ -289,6 +322,27 @@ func runInit(
 		ready = ready && p.Kind != project.StepMissing
 	}
 	ui.SignOff(ready)
+	return dispatch.ExitOK
+}
+
+// takePrefix takes --prefix's value into the choice, and returns ExitOK, or the exit code once it has
+// said why it refuses it: not a prefix bd takes, or a rename of the tickets they can't have now. The
+// flag consents to the rename.
+func takePrefix(value string, c *project.Choice, stderr io.Writer) int {
+	p := project.NormalPrefix(value)
+	if p == c.PrefixWas {
+		return dispatch.ExitOK
+	}
+	if problem := project.PrefixProblem(p); problem != "" {
+		fmt.Fprintln(stderr, "orchestra init: --prefix "+problem)
+		return dispatch.ExitSetup
+	}
+	if !c.PrefixNew && c.PrefixRefusal != "" {
+		fmt.Fprintf(stderr, "orchestra init: --prefix: the tickets can't be renamed from %s to %s while %s. "+
+			"Nothing was changed.\n", c.PrefixWas, p, c.PrefixRefusal)
+		return dispatch.ExitSetup
+	}
+	c.Prefix, c.RenamePrefix = p, true
 	return dispatch.ExitOK
 }
 

@@ -95,6 +95,7 @@ func TestInitSaysWhatTheScoutCost(t *testing.T) {
 		{"┃ Also file tickets for untested areas", keyEnter},
 		{"┃ check-fast time limit", keyEnter},
 		{"┃ check-full time limit", keyEnter},
+		{"┃ Ticket prefix", keyEnter},
 	} {
 		term.waitFor(t, step.on)
 		term.typeKeys(t, step.keys, false)

@@ -117,8 +117,13 @@ func SetUpBeads(
 	if s, staged := stagedStep(ctx, repo); staged {
 		return append(steps, s)
 	}
-	working("setting Beads up here: bd " + strings.Join(bdInit, " "))
-	return append(steps, runBdInit(ctx, repo))
+	args := bdInitArgs(c)
+	working("setting Beads up here: bd " + strings.Join(args, " "))
+	s := runBdInit(ctx, repo, args)
+	if steps = append(steps, s); s.Kind == StepDone && c.PrefixWas != "" {
+		steps = append(steps, Step{Kind: StepDone, Label: prefixLabel, Detail: newPrefix(c) + ", for the new Beads"})
+	}
+	return steps
 }
 
 // installBd installs bd, which is nowhere, as the choice says, and returns the step and whether bd
@@ -195,11 +200,11 @@ func stagedStep(ctx context.Context, repo string) (Step, bool) {
 	return Step{}, false
 }
 
-// runBdInit runs bd init in repo and returns the step, listing what bd added: what it committed,
-// and what is left to commit with .orchestra/.
-func runBdInit(ctx context.Context, repo string) Step {
+// runBdInit runs bd init in repo with args and returns the step, listing what bd added: what it
+// committed, and what is left to commit with .orchestra/.
+func runBdInit(ctx context.Context, repo string, args []string) Step {
 	before := readWorktree(ctx, repo)
-	if _, err := command.Output(ctx, command.WriteLimit, repo, "bd", bdInit...); err != nil {
+	if _, err := command.Output(ctx, command.WriteLimit, repo, "bd", args...); err != nil {
 		why, stderr := err, ""
 		if e, ok := errors.AsType[*command.Error](err); ok {
 			why, stderr = e.Err, e.Stderr

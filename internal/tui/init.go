@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -199,6 +201,7 @@ type formField struct {
 	header    string      // printed above the field in huh's accessible mode, which drops groups' titles
 	own       *huh.Theme  // the field's own copy of the form's theme, in which Blur ticks a select's answer
 	hidden    func() bool // nil: always shown
+	refresh   func()      // nil, or sets the field's title from the answers above it before it is drawn
 	top       bool        // drawn with no gap above: shown only while the fields above it are hidden
 	wasHidden bool        // whether it was hidden when last updated
 }
@@ -221,6 +224,9 @@ func (f *formField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (f *formField) View() string {
 	if f.isHidden() {
 		return ""
+	}
+	if f.refresh != nil {
+		f.refresh()
 	}
 	return f.gap + f.Field.View()
 }
@@ -264,6 +270,9 @@ func (f *formField) WithAccessible(accessible bool) huh.Field {
 func (f *formField) RunAccessible(w io.Writer, r io.Reader) error {
 	if f.isHidden() {
 		return nil
+	}
+	if f.refresh != nil {
+		f.refresh()
 	}
 	if f.header != "" {
 		if _, err := fmt.Fprintf(w, "%s\n\n", f.header); err != nil {
@@ -361,6 +370,66 @@ func verifierField(c *project.Choice) *huh.Confirm {
 		Value(&c.Verifier)
 }
 
+// prefixDescription explains the ticket prefix, saying what changing it does, or why it can't change.
+func prefixDescription(c project.Choice) string {
+	d := "Ticket IDs read <prefix>-<hash>, e.g. " + c.PrefixWas + "-a1b2: in branches (wt/<id>), worktrees, " +
+		"tabs, the dashboard and the log. Lowercase letters, digits and hyphens, starting with a letter."
+	switch {
+	case c.PrefixNew:
+		d += "\nbd init gives the new Beads this one; the folder's name, unless changed."
+	case c.PrefixRefusal != "":
+		d += "\nIt stays " + c.PrefixWas + " for now: the tickets can't be renamed while " + c.PrefixRefusal + "."
+	default:
+		d += "\nChanging it renames every ticket, and every mention of one in the tickets, with bd rename-prefix."
+	}
+	return Printable(d) // bd's and git's words
+}
+
+// typedPrefix is the ticket prefix typed: the current one when cleared.
+func typedPrefix(c project.Choice) string {
+	return cmp.Or(project.NormalPrefix(c.Prefix), c.PrefixWas)
+}
+
+// prefixField asks for the ticket prefix, starting from the current one, which it always takes back
+// (cleared, it keeps it too).
+func prefixField(c *project.Choice) *huh.Input {
+	return huh.NewInput().
+		Title("Ticket prefix").
+		Description(prefixDescription(*c)).
+		Placeholder(c.PrefixWas).
+		Validate(func(v string) error {
+			p := cmp.Or(project.NormalPrefix(v), c.PrefixWas)
+			switch {
+			case p == c.PrefixWas:
+				return nil
+			case project.PrefixProblem(p) != "":
+				return errors.New("the prefix " + project.PrefixProblem(p))
+			case !c.PrefixNew && c.PrefixRefusal != "":
+				return errors.New("the tickets can't be renamed now; keep " + c.PrefixWas)
+			}
+			return nil
+		}).
+		Value(&c.Prefix)
+}
+
+// renameField asks to confirm renaming the tickets to the prefix typed above it, as RenameQuestion
+// says: no unless answered yes.
+func renameField(c *project.Choice) *formField {
+	confirm := huh.NewConfirm().
+		Description("bd rename-prefix rewrites every ticket's ID, and every mention of one in the tickets.").
+		Affirmative("Rename them").
+		Negative("No").
+		Value(&c.RenamePrefix)
+	f := &formField{Field: confirm}
+	f.refresh = func() {
+		typed := *c
+		typed.Prefix = typedPrefix(*c)
+		confirm.Title(Printable(project.RenameQuestion(typed)))
+	}
+	f.refresh()
+	return f
+}
+
 // Ask names the questions AskInit asks: those the flags didn't answer.
 type Ask struct {
 	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
@@ -372,6 +441,7 @@ type Ask struct {
 	Install     bool // whether to install bd as the choice's Install says
 	Setup       bool // the setup command, starting from the one offered for the lockfiles found
 	Verifier    bool // whether to add the verifier subagent and have the worker prompt run it
+	Prefix      bool // the Beads ticket prefix, and whether to rename the tickets where it changes
 	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
 	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
 	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
@@ -383,7 +453,7 @@ type Ask struct {
 // Any reports whether a has a question to ask.
 func (a Ask) Any() bool {
 	return a.Check || a.Timeout || a.FullTimeout || a.Concurrent || a.Union || a.MCP || a.Install || a.Setup ||
-		a.Verifier
+		a.Verifier || a.Prefix
 }
 
 // initStage is a stage of the init form: a header, then its questions. The form shows one stage at
@@ -539,6 +609,17 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 		}
 		hide(checks.add(field), func() bool { return !settled() })
 	}
+	if ask.Prefix {
+		// Last: its rename asks to confirm what it changes everywhere.
+		hide(checks.add(prefixField(c)), func() bool { return !settled() })
+		rename := renameField(c)
+		checks.fields = append(checks.fields, rename)
+		hide(rename, func() bool {
+			p := typedPrefix(*c)
+			return !settled() || c.PrefixNew || c.PrefixTickets == 0 || p == c.PrefixWas ||
+				project.PrefixProblem(p) != ""
+		})
+	}
 	var stages []*initStage
 	for _, s := range []*initStage{workers, checks} {
 		if len(s.fields) > 0 {
@@ -604,6 +685,9 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
 	c.CheckFullTimeout = strings.TrimSpace(c.CheckFullTimeout)
 	c.Setup = strings.TrimSpace(c.Setup)
+	if ask.Prefix {
+		c.Prefix = typedPrefix(*c)
+	}
 	if stage2 != nil {
 		stage2.apply()
 	}

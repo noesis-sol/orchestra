@@ -155,6 +155,23 @@ func (Git) HasBranch(ctx context.Context, repo, branch string) bool {
 	return err == nil
 }
 
+// BranchesStartingWith returns repo's local branches whose names start with prefix, which holds no
+// glob characters and no slash after its last one (e.g. wt/orchestra-).
+func (Git) BranchesStartingWith(ctx context.Context, repo, prefix string) ([]string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "for-each-ref", "--format=%(refname)",
+		"refs/heads/"+prefix+"*")
+	if err != nil {
+		return nil, err
+	}
+	var branches []string
+	for l := range strings.SplitSeq(out, "\n") {
+		if b, ok := strings.CutPrefix(strings.TrimSpace(l), "refs/heads/"); ok {
+			branches = append(branches, b)
+		}
+	}
+	return branches, nil
+}
+
 // CommitNaming returns the latest commit on branch (not on base) whose message names the ticket,
 // as "<hash> <subject>" cut to 70 characters, or "".
 func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
