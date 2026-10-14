@@ -167,15 +167,16 @@ func pendingWhy(s mergeState, id string, closed bool) string {
 
 // unmergedBlockers returns the tickets blocking ticket info, as bd show gives it, that have not
 // merged: those not closed (running, asked, open or deferred), and those closed but not merged yet,
-// as one merging, waiting on a question or left unmerged is. A closed blocker none of those is on
-// Base.
+// as one merging, waiting on a question or left unmerged is (see pendingWhy). A closed blocker none
+// of those is on Base, though bd may still label it UnmergedLabel: the run, not a label it couldn't
+// remove, says what has merged.
 func (o *Loop) unmergedBlockers(info Ticket) []string {
 	var ids []string
 	for _, d := range info.Dependencies {
 		if d.DependencyType != "blocks" {
 			continue
 		}
-		if pendingWhy(o, d.ID, d.Status == StatusClosed) != "" || HasLabel(d, UnmergedLabel) {
+		if pendingWhy(o, d.ID, d.Status == StatusClosed) != "" {
 			ids = append(ids, d.ID)
 		}
 	}

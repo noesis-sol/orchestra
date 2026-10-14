@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -64,5 +65,40 @@ func TestPendingWhyStates(t *testing.T) {
 				t.Errorf("%s: pendingWhy(%s) = %q, want %q", tc.name, id, got, want)
 			}
 		}
+	}
+}
+
+// TestUnmergedBlockersStaleLabel pins the maintainer's rule (orchestra-kt3s): a worker stopped with
+// nothing done waits only for the blockers the run knows have not merged. One whose UnmergedLabel bd
+// couldn't remove once it merged has merged, as the holds and DEFERRED_FREE find it.
+func TestUnmergedBlockersStaleLabel(t *testing.T) {
+	o := &Loop{
+		active:   map[string]Status{"k-run": {Ticket: "k-run"}},
+		askedIDs: map[string]askedWorker{"k-ask": {}},
+		unmerged: map[string]string{"k-left": earlierRun},
+	}
+	blocks := func(id string, status TicketStatus, labels ...string) Ticket {
+		return Ticket{ID: id, Status: status, DependencyType: "blocks", Labels: labels}
+	}
+	for _, tc := range []struct {
+		name    string
+		blocker Ticket
+		want    []string
+	}{
+		{"running", blocks("k-run", StatusInProgress), []string{"k-run"}},
+		{"asked, closed in its tab", blocks("k-ask", StatusClosed), []string{"k-ask"}},
+		{"open", blocks("k-open", StatusOpen), []string{"k-open"}},
+		{"closed, left unmerged", blocks("k-left", StatusClosed, UnmergedLabel), []string{"k-left"}},
+		{"closed and merged", blocks("k-done", StatusClosed), nil},
+		{"closed and merged, its label stale", blocks("k-stale", StatusClosed, UnmergedLabel), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := Ticket{ID: "k-b", Status: StatusOpen, Dependencies: []Ticket{
+				tc.blocker, {ID: "k-x", Status: StatusOpen, DependencyType: "related"},
+			}}
+			if got := o.unmergedBlockers(info); !slices.Equal(got, tc.want) {
+				t.Errorf("unmergedBlockers = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

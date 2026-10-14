@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker that stops with nothing done no longer goes back in the queue
+  (`WAITS_FOR_MERGE`) for a blocker that has merged but kept its `unmerged`
+  label, as when `bd` couldn't remove it (`LABEL_FAILED`): the holds then
+  released it at once. It is deferred for review, as with every blocker
+  merged. What git and the run know, not the label, says whether a blocker
+  has merged, alike for the holds, `WAITS_FOR_MERGE` and `DEFERRED_FREE`.
 - A deferred ticket whose blockers have merged is no longer listed as
   `DEFERRED_FREE` in the `START` block, or under `Deferred:` in the box of a
   run with nothing to run, while it is deferred until a later date
