@@ -20,6 +20,15 @@ All notable changes to orchestra are documented here. The format follows
   worker the last run left behind is in the other terminal.
 - Ctrl+C as a finished run leaves its workers behind no longer turns its
   `READY_EMPTY` (exit 0) into `INTERRUPTED` (exit 130).
+- In cmux, with no socket named in the environment (`CMUX_SOCKET_PATH`,
+  `CMUX_SOCKET`), a failed call no longer reads as cmux not running, which had
+  every worker's workspace read as closed and every worker as gone: cmux's CLI
+  then finds the socket of whichever cmux runs, not only
+  `~/.local/state/cmux/cmux.sock`.
+- In cmux, two workspaces orchestra closes at once no longer each report that
+  cmux closed the other too, and leave both in `.orchestra/run/cmux.json`:
+  orchestra closes one at a time, and drops a closed workspace from its book
+  even when the check finds another gone.
 - In tmux, a worker whose `claude` is a wrapper script that runs Claude Code
   as its child, rather than through `exec`, is no longer taken for gone, and
   concluded on, as soon as its first hook runs: only a pane orchestra didn't

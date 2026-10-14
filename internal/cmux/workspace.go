@@ -138,6 +138,22 @@ func (t Terminal) CloseTab(ctx context.Context, tab string) error {
 	return nil // gone
 }
 
+// closing serializes orchestra's closes (closeWorkspace, ClosePane), which the run loop makes from
+// several goroutines: each compares cmux's list from before its close with the list after, and
+// another close in between would read as one cmux made unasked. A close holds it while it is in it.
+var closing = make(chan struct{}, 1)
+
+// awaitClosing waits for the other closes to finish, and returns the function that lets the next
+// one in; an error if ctx ends first.
+func awaitClosing(ctx context.Context) (func(), error) {
+	select {
+	case closing <- struct{}{}:
+		return func() { <-closing }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // closeWorkspace closes workspace tab, as long as it is still named label, and checks with cmux's
 // list that it went, and that every other workspace stayed. It drops the workspace from the book
 // once it is gone.
@@ -145,6 +161,11 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 	if t.Own != "" && sameID(tab, t.Own) {
 		return &Error{Op: "close-workspace", Target: tab, Err: errors.New("it is orchestra's own workspace")}
 	}
+	done, err := awaitClosing(ctx)
+	if err != nil {
+		return err
+	}
+	defer done()
 	before, err := t.layout(ctx)
 	if err != nil {
 		return err
@@ -174,12 +195,17 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 			lost = append(lost, fmt.Sprintf("%s (%s)", id, other))
 		}
 	}
+	_, still := after.titles[key(tab)]
 	if len(lost) > 0 {
 		slices.Sort(lost)
-		return &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("cmux closed other workspaces too: %s",
+		err = &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("cmux closed other workspaces too: %s",
 			strings.Join(lost, ", "))}
+		if !still {
+			err = errors.Join(err, t.forget(tab)) // the workspace is gone all the same
+		}
+		return err
 	}
-	if _, still := after.titles[key(tab)]; still {
+	if still {
 		if err != nil {
 			return err
 		}
@@ -309,6 +335,11 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 		return &Error{Op: "close-surface", Target: pane, Err: errors.New("orchestra didn't split that terminal off, " +
 			"so it leaves it open")}
 	}
+	done, err := awaitClosing(ctx)
+	if err != nil {
+		return err
+	}
+	defer done()
 	before, err := t.layout(ctx)
 	if err != nil {
 		return err
@@ -334,12 +365,17 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 			lost = append(lost, id)
 		}
 	}
+	_, still := after.workspaces[key(pane)]
 	if len(lost) > 0 {
 		slices.Sort(lost)
-		return &Error{Op: "close-surface", Target: pane, Err: fmt.Errorf("cmux closed other terminals too: %s",
+		err = &Error{Op: "close-surface", Target: pane, Err: fmt.Errorf("cmux closed other terminals too: %s",
 			strings.Join(lost, ", "))}
+		if !still {
+			err = errors.Join(err, t.forgetSurface(pane)) // the terminal is gone all the same
+		}
+		return err
 	}
-	if _, still := after.workspaces[key(pane)]; still {
+	if still {
 		if err != nil {
 			return err
 		}

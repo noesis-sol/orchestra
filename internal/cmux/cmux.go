@@ -24,7 +24,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -70,7 +69,7 @@ var pasteSettle = 300 * time.Millisecond
 type Error struct {
 	Op       string // the cmux command, such as new-workspace
 	Target   string // the workspace, surface or agent it was for
-	NoServer bool   // cmux isn't running: its socket isn't there, or refuses connections
+	NoServer bool   // cmux isn't running: the socket the environment names isn't there, or refuses connections
 	Missing  bool   // cmux has no such workspace or surface, or no such agent was launched
 	Err      error  // the failed command (a *command.Error), or what was wrong with its answer
 }
@@ -162,18 +161,18 @@ func (t Terminal) Ping(ctx context.Context) error {
 	return err
 }
 
-// socketPath is the path of cmux's socket, found as its CLI finds it.
+// socketPath is the path of cmux's socket as the environment names it, which cmux sets in its
+// terminals; "" when it names none. Without one the CLI looks in ~/.local/state/cmux/cmux.sock, and
+// then for the sockets of cmux's other builds (tagged, debug, nightly, staging), so a socket missing
+// from one place doesn't say that no cmux runs: a failed call is then an error, not NoServer, and
+// cmux's workspaces don't all read as closed.
 func socketPath() string {
 	for _, env := range []string{"CMUX_SOCKET_PATH", "CMUX_SOCKET"} {
 		if path := os.Getenv(env); path != "" {
 			return path
 		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".local", "state", "cmux", "cmux.sock")
+	return ""
 }
 
 // noServer reports whether nothing listens on the socket at path: there is no socket, or it refuses
