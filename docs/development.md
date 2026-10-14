@@ -98,7 +98,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution |
 | `checkoutput.go` | what is kept of the output of the check, the setup and the full check as they print it: the whole in a temporary file, saved when they fail, and in memory its end, what failed, its `FLAKY:` lines and suite, each bounded |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
-| `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets |
+| `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets; `pendingWhy`, the one rule for whether a ticket has merged |
 | `unmerged.go` | tickets closed but not merged: the `unmerged` label, those earlier runs left, whether one has merged since by hand |
 | `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
 | `deferred_free.go` | deferred tickets whose blockers have all merged, listed in the `START` block and the nothing-to-run box (`DEFERRED_FREE`) |

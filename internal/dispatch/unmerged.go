@@ -225,6 +225,12 @@ func (o *Loop) setLabelled(id string, labelled bool) {
 	o.labelled[id] = labelled
 }
 
+// busy reports whether ticket id's worker runs, its work merges, or it waits on a question (see
+// mergeState).
+func (o *Loop) busy(id string) bool {
+	return o.isActive(id) || o.isAsked(id)
+}
+
 func (o *Loop) unmergedWhy(id string) string {
 	o.mu.Lock()
 	defer o.mu.Unlock()

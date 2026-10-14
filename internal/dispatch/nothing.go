@@ -120,7 +120,8 @@ func CheckNothingToRun(
 			return nil, err
 		}
 	}
-	h := startHolds(tickets, unclosed, unmerged)
+	st := newStartState(s.Workers, unmerged)
+	h := startHolds(tickets, unclosed, unmerged, st)
 	held := map[string]holdKind{}
 	for _, t := range ready {
 		hd, err := h.why(ctx, t)
@@ -141,14 +142,10 @@ func CheckNothingToRun(
 		unclosed, n.FreeErr = tickets.Unclosed(ctx)
 	}
 	if n.FreeErr == nil {
-		carried := map[string]bool{}
-		for _, w := range s.Workers {
-			carried[w.Ticket] = true
-		}
 		f := freeing{cfg: c, tickets: tickets, worktrees: worktrees, merger: merger, checkout: worktrees,
 			now:     time.Now(),
 			inScope: func(id string) bool { return c.Ticket == "" || in[id] },
-			busy:    func(id string) bool { return carried[id] }, unmerged: h.unmerged}
+			state:   st}
 		n.DeferredFree, n.FreeErr = f.list(ctx, unclosed)
 	}
 	if n.FreeErr != nil {
@@ -157,23 +154,48 @@ func CheckNothingToRun(
 	return n, nil
 }
 
+// startState is what a run knows of the tickets not merged yet as it starts, before any Loop (see
+// mergeState): the workers the last run left (carried), which close their tickets before they merge,
+// and the tickets closed but not merged (unmerged), each left so by an earlier run.
+type startState struct {
+	carried  map[string]bool
+	unmerged map[string]bool
+}
+
+// newStartState is what a run starts from, given the workers the last run left and the tickets
+// closed but not merged.
+func newStartState(workers []project.LeftWorker, unmerged []Ticket) startState {
+	st := startState{carried: map[string]bool{}, unmerged: map[string]bool{}}
+	for _, w := range workers {
+		st.carried[w.Ticket] = true
+	}
+	for _, t := range unmerged {
+		st.unmerged[t.ID] = true
+	}
+	return st
+}
+
+func (st startState) busy(id string) bool { return st.carried[id] }
+
+func (st startState) unmergedWhy(id string) string {
+	if st.unmerged[id] {
+		return earlierRun // as loadUnmerged holds it
+	}
+	return ""
+}
+
 // startHolds is what keeps a ready ticket waiting as a run starts, before any Loop (see holds):
 // nothing is running, and the tickets bd lists as not closed (unclosed) and those closed but not
-// merged (unmerged) say what is held.
-func startHolds(tickets Tickets, unclosed, unmerged []Ticket) holds {
+// merged (unmerged), as st knows them, say what is held.
+func startHolds(tickets Tickets, unclosed, unmerged []Ticket, st startState) holds {
 	pending := map[string]string{}
 	for _, t := range unmerged {
 		pending[t.ID] = t.Parent
 	}
 	return holds{
-		parents: parentsOf(unclosed, pending),
-		unmerged: func(id string) string {
-			if _, ok := pending[id]; ok {
-				return earlierRun // as loadUnmerged holds it
-			}
-			return ""
-		},
-		pending: len(unmerged) > 0,
+		parents:  parentsOf(unclosed, pending),
+		unmerged: st.unmergedWhy,
+		pending:  len(unmerged) > 0,
 		links: func(ctx context.Context, t Ticket) (links, error) {
 			return showLinks(ctx, tickets, t.ID)
 		},

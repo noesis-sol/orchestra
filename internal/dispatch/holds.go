@@ -107,24 +107,62 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 	if err != nil {
 		return hold{"its dependencies could not be read", heldBlocked}, err
 	}
+	// bd ready lists t once its blockers are closed. A source open or deferred, and not running, holds
+	// nothing: it may never run. Either way, what the run knows of the ticket says whether it merged.
 	for _, id := range l.blockers {
-		if h.running[id] || h.asked[id] {
+		switch why := pendingWhy(h, id, true); why {
+		case "":
+		case pendingBusy:
 			return hold{fmt.Sprintf("waiting for %s to merge", id), heldBlocked}, nil
-		}
-		if why := h.unmerged(id); why != "" {
+		default:
 			return hold{fmt.Sprintf("%s closed but not merged (%s)", id, why), heldBlocked}, nil
 		}
 	}
-	// A source open or deferred, and not running, holds nothing: it may never run.
 	for _, id := range l.sources {
-		if h.running[id] || h.asked[id] {
+		switch why := pendingWhy(h, id, true); why {
+		case "":
+		case pendingBusy:
 			return hold{fmt.Sprintf("filed by %s's worker; waiting for it to merge", id), heldFollowUp}, nil
-		}
-		if why := h.unmerged(id); why != "" {
+		default:
 			return hold{fmt.Sprintf("filed by %s's worker; %s closed but not merged (%s)", id, id, why), heldFollowUp}, nil
 		}
 	}
 	return hold{}, nil
+}
+
+func (h holds) busy(id string) bool          { return h.running[id] || h.asked[id] }
+func (h holds) unmergedWhy(id string) string { return h.unmerged(id) }
+
+// mergeState is what a run knows of the tickets not merged yet: the loop's (Loop), what it holds a
+// ready ticket on (holds), or, before any Loop, what the run starts from (startState).
+type mergeState interface {
+	// busy reports whether the ticket's worker runs, or waits on a question: it closes the ticket
+	// before it merges
+	busy(id string) bool
+	// unmergedWhy is why the ticket is closed but not merged, as one merging or left unmerged is, or ""
+	unmergedWhy(id string) string
+}
+
+// Why a ticket has not merged, besides why it is closed but not merged (see pendingWhy).
+const (
+	pendingBusy = "its worker runs or waits on a question"
+	pendingOpen = "not closed"
+)
+
+// pendingWhy returns why ticket id, blocking another ticket or the one it was discovered from, has
+// not merged, as s knows it, and closed is whether bd shows it closed; "" once it has merged, and its
+// code is on Base. A ticket whose worker runs or waits on a question has not (pendingBusy), closed
+// or not; nor has one not closed (pendingOpen), or one closed but merging or left unmerged, whose
+// reason is s's. The holds, a worker stopped with nothing done (unmergedBlockers) and the deferred
+// tickets freed (freeing) all ask it, so that they agree on what has merged.
+func pendingWhy(s mergeState, id string, closed bool) string {
+	switch {
+	case s.busy(id):
+		return pendingBusy
+	case !closed:
+		return pendingOpen
+	}
+	return s.unmergedWhy(id)
 }
 
 // unmergedBlockers returns the tickets blocking ticket info, as bd show gives it, that have not
@@ -137,8 +175,7 @@ func (o *Loop) unmergedBlockers(info Ticket) []string {
 		if d.DependencyType != "blocks" {
 			continue
 		}
-		if d.Status != StatusClosed || o.isActive(d.ID) || o.isAsked(d.ID) || o.unmergedWhy(d.ID) != "" ||
-			HasLabel(d, UnmergedLabel) {
+		if pendingWhy(o, d.ID, d.Status == StatusClosed) != "" || HasLabel(d, UnmergedLabel) {
 			ids = append(ids, d.ID)
 		}
 	}

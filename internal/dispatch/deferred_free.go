@@ -76,8 +76,7 @@ type freeing struct {
 	checkout  Checkout
 	now       time.Time // the run's clock, against which a ticket's DeferUntil is due
 	inScope   func(id string) bool
-	busy      func(id string) bool   // its worker runs, or waits on a question: it closes before it merges
-	unmerged  func(id string) string // why the closed ticket is not merged, or ""
+	state     mergeState // what the run knows of the tickets not merged yet
 }
 
 // list returns the deferred tickets among unclosed, the tickets bd lists as not closed, that are in
@@ -110,14 +109,14 @@ func (f freeing) list(ctx context.Context, unclosed []Ticket) ([]DeferredFree, e
 }
 
 // blockers returns the tickets blocking ticket info, as bd show gives it, and whether each is
-// closed and merged: not running or asked, and not closed but merging or left unmerged.
+// closed and merged (see pendingWhy).
 func (f freeing) blockers(info Ticket) ([]string, bool) {
 	var ids []string
 	for _, d := range info.Dependencies {
 		if d.DependencyType != "blocks" {
 			continue
 		}
-		if d.Status != StatusClosed || f.busy(d.ID) || f.unmerged(d.ID) != "" {
+		if pendingWhy(f.state, d.ID, d.Status == StatusClosed) != "" {
 			return nil, false
 		}
 		ids = append(ids, d.ID)
@@ -155,10 +154,9 @@ func (o *Loop) sayDeferredFree(ctx context.Context) {
 	if err == nil {
 		free, err = freeing{
 			cfg: o.cfg, tickets: o.tickets, worktrees: o.worktrees, merger: o.merger, checkout: o.checkout,
-			now:      time.Now(),
-			inScope:  o.scoped(ctx),
-			busy:     func(id string) bool { return o.isActive(id) || o.isAsked(id) },
-			unmerged: o.unmergedWhy,
+			now:     time.Now(),
+			inScope: o.scoped(ctx),
+			state:   o,
 		}.list(ctx, open)
 	}
 	if err != nil {
