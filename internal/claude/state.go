@@ -81,6 +81,19 @@ func StateAsked(records string) (dispatch.AgentState, bool) {
 		readSessions(b))
 }
 
+// TurnRecorded reports whether the records (see Records) tell a turn of the session: a prompt or a
+// turn's end. Claude Code asks its dialogs that run no hook (trust this folder, the project's MCP
+// servers) before a session's first turn, so a terminal looks for them on its screen only until then:
+// a session's output may well show their words. A new session's records have no turn (ReportArgs).
+func TurnRecorded(records string) bool {
+	root, err := os.OpenRoot(records)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }() // read-only: nothing to lose
+	return !readRecord(root, turnName).at.IsZero()
+}
+
 // ShowsPermission reports whether the bottom of screen, a Claude session's visible screen, shows its
 // permission dialog: the question "Do you want to proceed?" (or to make an edit, create a file, …)
 // or the first of its answers, "1. Yes".

@@ -533,8 +533,9 @@ var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh"
 
 // state is the state of the agent in the pane p: gone once its process exited (the pane dead), its
 // session ended or the pane is back at a shell; otherwise what its hooks tell (claude.State), and
-// blocked while its screen shows a dialog that runs no hook. A permission prompt its hooks tell asked
-// is blocked only while its screen still shows it: once allowed, which runs no hook, its tool runs.
+// blocked while its screen shows a dialog that runs no hook, which only comes before its first turn
+// (claude.TurnRecorded). A permission prompt its hooks tell asked is blocked only while its screen
+// still shows it: once allowed, which runs no hook, its tool runs.
 // A shell counts only once a hook ran: as the agent starts, the shell that runs it shows for a moment.
 func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if p.dead || p.kind == "" {
@@ -550,7 +551,7 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 		return st
 	case st != dispatch.StateUnknown && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
 		return dispatch.StateGone
-	case st == dispatch.StateUnknown || st == dispatch.StateIdle:
+	case st == dispatch.StateUnknown || (st == dispatch.StateIdle && !claude.TurnRecorded(records)):
 		if screen, err := t.capture(ctx, p.id, false); err == nil && showsDialog(screen) {
 			return dispatch.StateBlocked
 		}

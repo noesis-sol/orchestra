@@ -12,6 +12,10 @@ All notable changes to orchestra are documented here. The format follows
   holds the database, no longer stops the run with `READY_UNREADABLE`: the
   queue is read again a poll later, up to three times, and each failure is
   logged.
+- In tmux and cmux, an idle worker whose screen shows the words of Claude
+  Code's trust or MCP-servers dialog in its output, as a diff of orchestra's
+  own terminal code does, reads idle rather than blocked: the screen is
+  looked at for those dialogs only before the session's first turn.
 - The dashboard's totals and the run's closing "N set aside" leave out
   tickets a hold for the environment reopened: back in the queue, they show
   `◷ waiting`, and one that merges later counts only as completed. The
