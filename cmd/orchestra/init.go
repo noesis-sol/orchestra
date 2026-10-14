@@ -245,10 +245,11 @@ func runInit(
 	}
 	if err == nil {
 		var s project.Step
-		s, err = project.ApplySettings(repo, choice)
-		steps = append(steps, s, project.MCPStep(choice))
-		if s, ok := project.SetupStep(choice); ok {
-			steps = append(steps, s)
+		if s, err = project.ApplySettings(repo, choice); err == nil {
+			steps = append(steps, s, project.MCPStep(choice))
+			if s, ok := project.SetupStep(choice); ok {
+				steps = append(steps, s)
+			}
 		}
 	}
 	if err == nil {

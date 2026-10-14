@@ -317,9 +317,14 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 
 // ApplySettings saves the choice to .orchestra/settings.json: the runners as check_fast and
 // check_full, under their new names whatever the settings called them, and the setup command where
-// the choice changes it.
+// the choice changes it. It fails, leaving the file as it was, when it can't read the settings.
 func ApplySettings(repo string, c Choice) (Step, error) {
-	s, _, _ := LoadSettings(repo) // keep the settings init doesn't ask about; init has read them already
+	s, _, err := LoadSettings(repo) // keep the settings init doesn't ask about
+	if err != nil {
+		// Read wrong (changed since init read it), they would save as nothing: SaveSettings writes only
+		// what s holds over the keys it knows.
+		return Step{}, err
+	}
 	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
 	s.CheckFastTimeout, s.CheckFullTimeout = c.CheckFastTimeout, c.CheckFullTimeout
 	if c.Setup != c.SetupWas {

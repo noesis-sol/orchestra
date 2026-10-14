@@ -4,6 +4,15 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `orchestra init` no longer saves over a `.orchestra/settings.json` it
+  can't read, such as one edited while its form was open to hold a value of
+  the wrong type: it stops with the error and leaves the file as it was,
+  where it wrote back only its own choices and lost every other setting.
+
 ## [0.7.1] - 2026-10-14
 
 ### Changed
