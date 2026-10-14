@@ -82,22 +82,27 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `work.go` | one ticket from start to outcome: asked, deferred, paused or closed |
-| `asked.go` | tickets waiting on a question that don't come back through `bd ready`: adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |
+| `asked.go` | tickets waiting on a question that don't come back through `bd ready`: where each left its worker, adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |
 | `carry.go` | the workers a run leaves behind (asked, left running), saved to `.orchestra/run/state.json` as it ends and checked and carried over by the next run |
 | `settle.go` | waiting for a worker to settle (the terminal's status, its Stop hook or the start-up grace), telling one that stopped with its ticket in progress to continue, reading its status, the dashboard watcher |
 | `resume.go` | resuming a Claude worker gone from its tab with its ticket in progress, or back from its answered question: its session, recorded by its hooks, in a new tab, once per ticket in a run |
-| `merge.go` | merging a closed ticket: rebase, check command, fast-forward, cleanup (the worker's tab only while the terminal still has it labelled with the ticket's ID) |
+| `merge.go` | merging a closed ticket: rebase, check, fast-forward, cleanup (the worker's tab only while the terminal still has it labelled with the ticket's ID) |
+| `check.go` | running the check command (`check`) on a rebased branch within its time limit, saving its whole output when it fails, what it said for the reviewer, its `FLAKY:` lines |
 | `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
 | `checkoutput.go` | what is kept of the output of the check, the setup and the full check as they print it: the whole in a temporary file, saved when they fail, and in memory its end, what failed, its `FLAKY:` lines and suite, each bounded |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
-| `holds.go` | tickets held for an unmerged blocker, the `unmerged` label, tickets set aside, deferred or waiting on a question |
+| `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets |
+| `unmerged.go` | tickets closed but not merged: the `unmerged` label, those earlier runs left, whether one has merged since by hand |
+| `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
 | `deferred_free.go` | deferred tickets whose blockers have all merged, listed in the `START` block and the nothing-to-run box (`DEFERRED_FREE`) |
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |
-| `events.go` | the log file, notifications, the event stream (`events.jsonl`), events and status sent to the dashboard |
+| `events.go` | events and status sent to the dashboard, and what the run counts of them |
+| `log.go` | the log file and notifications |
+| `eventstream.go` | the event stream (`events.jsonl`), and what a notification says of an event (`Notice`) |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
 | `advice.go` | triage and the run review |
