@@ -20,6 +20,13 @@ All notable changes to orchestra are documented here. The format follows
   answer: its idle time counts from the hooks' last note, not from the
   Stop of the turn before.
 
+- A check, setup or full check that prints without end, until its time
+  limit, no longer holds its whole output in orchestra's memory: the output
+  goes to a temporary file as it is printed, which a failure keeps in
+  `.orchestra/run/`, and only its last lines, the lines that say what
+  failed, its `FLAKY:` lines and its suite are kept, each bounded. Reading
+  it is faster too, so a check that prints hundreds of MB isn't slowed down
+  waiting for orchestra.
 - `orchestra update` on a read-only filesystem gives the advice to run it
   as the folder's owner (exit 2), where it said only that the update failed.
   A busy line on a terminal that reports no width, as a fresh pseudo-terminal

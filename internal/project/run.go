@@ -3,6 +3,7 @@ package project
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -73,6 +74,26 @@ func WriteRun(root *os.Root, dir, rel string, b []byte, perm fs.FileMode) error 
 		return err
 	}
 	if err := root.WriteFile(rel, b, perm); err != nil {
+		return RunError(dir, rel, err)
+	}
+	return nil
+}
+
+// WriteRunFrom writes what r reads to the file rel in root, as WriteRun writes b: for a file too long
+// to hold in memory first, such as a check's whole output.
+func WriteRunFrom(root *os.Root, dir, rel string, r io.Reader, perm fs.FileMode) error {
+	if err := RemoveRun(root, dir, rel); err != nil {
+		return err
+	}
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return RunError(dir, rel, err)
+	}
+	_, err = io.Copy(f, r)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return RunError(dir, rel, err)
 	}
 	return nil

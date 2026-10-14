@@ -106,14 +106,16 @@ func (o *Loop) FullCheck(ctx context.Context) {
 		what, c.Base, short(f.at), wt, command.ShortDuration(limit))
 	began := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, limit)
-	var out []byte
+	var out *checkOutput
+	defer func() { out.close() }()
 	if c.Setup != "" { // always: nothing is installed in a new worktree
-		if out, err = command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", c.Setup); err != nil {
+		if out, err = runOutput(checkCtx, wt, c.Setup); err != nil {
 			f.setup = c.Setup
 		}
 	}
 	if err == nil {
-		out, err = command.GroupOutput(checkCtx, 5*time.Second, wt, "sh", "-c", c.CheckFull)
+		out.close()
+		out, err = runOutput(checkCtx, wt, c.CheckFull)
 	}
 	timedOut := ctx.Err() == nil && errors.Is(checkCtx.Err(), context.DeadlineExceeded)
 	cancel()
@@ -179,7 +181,7 @@ func (o *Loop) removeFullCheckWorktree(ctx context.Context, wt string) {
 // fullCheckFailed says that the full check failed with err (timedOut: it ran out of time), printing
 // out: it keeps the output, files a ticket for the suite it failed in, and records it all in f. A
 // setup that failed (f.setup) files no ticket.
-func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, err error, timedOut bool) {
+func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out *checkOutput, err error, timedOut bool) {
 	c := o.cfg
 	how := "fails"
 	f.outcome = FullCheckFailed
@@ -187,7 +189,7 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, er
 		how = "did not finish within " + command.ShortDuration(o.fullCheckTimeout())
 		f.outcome = FullCheckTimedOut
 	}
-	f.end = lastLines(string(out), fullCheckEnd)
+	f.end = out.lastLines(fullCheckEnd)
 	if f.setup != "" {
 		o.log.Raw(f.end, fmt.Errorf("the full check's setup '%s': %w", f.setup, err))
 		f.output = o.saveFullCheckOutput(out)
@@ -198,8 +200,7 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, er
 		return
 	}
 	o.log.Raw(f.end, fmt.Errorf("full check '%s': %w", c.CheckFull, err))
-	f.suite = failingSuite(out)
-	if f.suite == "" {
+	if f.suite = out.suite; f.suite == "" {
 		f.suite = c.CheckFull
 	}
 	f.output = o.saveFullCheckOutput(out)
@@ -210,28 +211,24 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, out []byte, er
 }
 
 // failingSuite is the suite a failed full check's output says it was running as it stopped: the
-// last line that starts with project.SuiteMarker; "" when none does.
+// last line that starts with project.SuiteMarker; "" when none does. A full check's output is read
+// as it is printed (see checkOutput.suite).
 func failingSuite(out []byte) string {
-	suite := ""
-	for line := range strings.Lines(string(out)) {
-		if name, ok := strings.CutPrefix(strings.TrimSpace(line), project.SuiteMarker); ok {
-			if name = strings.Join(strings.Fields(name), " "); name != "" {
-				suite = name
-			}
-		}
-	}
-	return suite
+	var c checkOutput
+	_, _ = c.Write(out) // it never fails
+	c.end()
+	return c.suite
 }
 
 // saveFullCheckOutput writes a failed full check's whole output to the main checkout's
 // .orchestra/run/check-full.log and returns the file's path; the log's when it can't be written,
 // as the log has the end of the output.
-func (o *Loop) saveFullCheckOutput(out []byte) string {
+func (o *Loop) saveFullCheckOutput(out *checkOutput) string {
 	c := o.cfg
 	rel := project.RunPath(fullCheckLogName)
 	root, err := project.OpenRun(c.Repo)
 	if err == nil {
-		err = project.WriteRun(root, c.Repo, rel, out, 0o644)
+		err = out.save(root, c.Repo, rel)
 		_ = root.Close() // nothing written is lost: WriteRun closed its file
 	}
 	if err != nil {
@@ -257,7 +254,7 @@ func fullCheckTitle(suite string) string {
 // fileFullCheck files a P2 ticket for f's suite, which the full check failed in (how: "fails"), with
 // the lines of its output, out, that say what failed, unless one is open for that suite already,
 // which is noted instead. It returns the ticket's ID, if any, and what became of it, for a line.
-func (o *Loop) fileFullCheck(ctx context.Context, f fullCheck, how string, out []byte) (string, string) {
+func (o *Loop) fileFullCheck(ctx context.Context, f fullCheck, how string, out *checkOutput) (string, string) {
 	c := o.cfg
 	title := fullCheckTitle(f.suite)
 	open, err := o.tickets.Unclosed(ctx)
@@ -272,9 +269,9 @@ func (o *Loop) fileFullCheck(ctx context.Context, f fullCheck, how string, out [
 			return t.ID, t.ID + " is open for it already"
 		}
 	}
-	said := failureLines(string(out))
+	said := out.failures()
 	if len(said) == 0 {
-		said = boundLines(strings.Split(lastLines(string(out), maxSaid), "\n"), maxSaid)
+		said = boundLines(strings.Split(out.lastLines(maxSaid), "\n"), maxSaid)
 	}
 	desc := fmt.Sprintf("orchestra's full check, '%s' (check_full in .orchestra/settings.json), %s on %s at %s, "+
 		"in the suite %s, at the end of the run of %s. Its whole output is in %s, until the next full check "+

@@ -461,17 +461,19 @@ func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, err
 // runIn runs the command line cmd, the check or the setup, in w's worktree and returns its output. It
 // gives up after checkTimeout, stopping everything cmd started, and returns errCheckTimedOut then.
 // When cmd fails, the end of its output goes in the log and the whole of it in the worktree's file
-// logName (see saveCheckOutput), whose path it returns as output.
-func (o *Loop) runIn(ctx context.Context, w worker, cmd, logName string) (out []byte, output string, err error) {
+// logName (see saveCheckOutput), whose path it returns as output. Only what is said of the output is
+// kept in memory (see checkOutput).
+func (o *Loop) runIn(ctx context.Context, w worker, cmd, logName string) (out *checkOutput, output string, err error) {
 	limit := o.checkTimeout()
 	runCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	out, err = command.GroupOutput(runCtx, 5*time.Second, w.wt, "sh", "-c", cmd)
+	out, err = runOutput(runCtx, w.wt, cmd)
+	defer out.close()
 	if err != nil && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		err = fmt.Errorf("%w: stopped after %s (%v)", errCheckTimedOut, command.ShortDuration(limit), err)
 	}
 	if err != nil {
-		o.log.Raw(lastLines(string(out), 40), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, err))
+		o.log.Raw(out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, err))
 		return out, o.saveCheckOutput(w.wt, logName, out), err
 	}
 	return out, "", nil
@@ -490,16 +492,16 @@ func (o *Loop) checkHow(err error) string {
 // the name of the test that failed.
 const checkLogName = "check.log"
 
-// saveCheckOutput writes a failed check's whole output to logName (checkLogName, or setupLogName for
+// saveCheckOutput writes a failed check's whole output, out, to logName (checkLogName, or setupLogName for
 // the setup) in the worktree wt's .orchestra/run/, left for review with it, and returns the file's
 // path. The worker can change .orchestra/run/, so the file
 // is reached through an os.Root, as every run file is (see project.OpenRun). A file that can't be
 // written is logged, and the log's path returned: it has the end of the output.
-func (o *Loop) saveCheckOutput(wt, logName string, out []byte) string {
+func (o *Loop) saveCheckOutput(wt, logName string, out *checkOutput) string {
 	rel := project.RunPath(logName)
 	root, err := project.OpenRun(wt)
 	if err == nil {
-		err = project.WriteRun(root, wt, rel, out, 0o644)
+		err = out.save(root, wt, rel)
 		_ = root.Close() // nothing written is lost: WriteRun closed its file
 	}
 	if err != nil {
@@ -524,12 +526,12 @@ type checkFail struct {
 // noteCheckFailed keeps for the reviewer what w's check said as it failed with err, or its setup when
 // setup is the setup command: the lines of its output, out, that say what failed, where out is kept
 // (output), and the directories that the ticket's commits on top of onto change.
-func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out []byte, err error,
+func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, out *checkOutput, err error,
 	setup string) {
 	f := checkFail{br: w.br, onto: onto, how: o.checkHow(err), output: output, setup: setup}
-	if f.said = failureLines(string(out)); len(f.said) == 0 {
+	if f.said = out.failures(); len(f.said) == 0 {
 		f.saidEnd = true
-		if end := lastLines(string(out), maxSaid); strings.TrimSpace(end) != "" {
+		if end := out.lastLines(maxSaid); strings.TrimSpace(end) != "" {
 			f.said = boundLines(strings.Split(end, "\n"), maxSaid)
 		}
 	}
@@ -588,29 +590,12 @@ var (
 // failureLines picks the lines of a failed check's output that say what failed, as failedAnywhere and
 // failedAtStart match them, with the tests still running when go test timed out, which the lines
 // after its "running tests:" name. Each is kept once, and at most maxSaid of them, the last saying
-// how many more there are.
+// how many more there are. A check's output is read as it is printed (see checkOutput.failures).
 func failureLines(out string) []string {
-	var said []string
-	seen := map[string]bool{}
-	running := false // in the tests named after "running tests:", until a blank line
-	for line := range strings.Lines(out) {
-		line = strings.TrimRight(line, "\r\n")
-		t := strings.TrimSpace(line)
-		switch {
-		case t == "":
-			running = false
-			continue
-		case t == "running tests:":
-			running = true
-		case !running && !failedAnywhere.MatchString(t) && !failedAtStart.MatchString(line):
-			continue
-		}
-		if !seen[t] {
-			seen[t] = true
-			said = append(said, t)
-		}
-	}
-	return boundLines(said, maxSaid)
+	var c checkOutput
+	_, _ = c.Write([]byte(out)) // it never fails
+	c.end()
+	return c.failures()
 }
 
 // boundLines cuts each line to saidWidth runes and keeps at most n of them, the first; the last kept
@@ -635,21 +620,21 @@ const flakyPrefix = "FLAKY:"
 // reportFlaky warns of each FLAKY: line in the output of a passing check, which was ticket id's when
 // id is set, else what what says ("the full check 'scripts/check-full.sh'"): the check passed, so the
 // ticket merges, but a test that passes only on a rerun is a bug to fix, and nobody would see it
-// otherwise.
-func (o *Loop) reportFlaky(id, what string, out []byte) {
+// otherwise. Past maxFlaky of them, one more warning counts the rest.
+func (o *Loop) reportFlaky(id, what string, out *checkOutput) {
 	if id != "" {
 		what = fmt.Sprintf("%s's check '%s'", id, o.cfg.Check)
 	}
-	for line := range strings.Lines(string(out)) {
-		test, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), flakyPrefix)
-		if !ok {
-			continue
-		}
-		if test = strings.TrimSpace(test); test == "" {
+	for _, test := range out.flaky {
+		if test == "" {
 			test = "it doesn't say which"
 		}
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 			"  FLAKY: %s passed, but a test failed and then passed on a rerun: %s", what, test)})
+	}
+	if more := out.flakyN - len(out.flaky); more > 0 {
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  FLAKY: %s passed, but %d more tests failed and then passed on a rerun", what, more)})
 	}
 }
 

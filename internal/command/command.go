@@ -146,15 +146,23 @@ func ShortDuration(d time.Duration) string {
 // SIGKILL after grace. Anything the command left running in its group is killed as soon as it
 // exits, and Wait gives up on output pipes still held open after twice grace.
 func GroupOutput(ctx context.Context, grace time.Duration, dir, name string, args ...string) ([]byte, error) {
+	var out bytes.Buffer
+	err := GroupRun(ctx, grace, dir, &out, name, args...)
+	return out.Bytes(), err
+}
+
+// GroupRun runs a command as GroupOutput does, writing its combined stdout and stderr to out as it
+// prints them, from one goroutine, instead of holding them: for a command whose output may have no
+// end, such as a project's check. out has had all of it once GroupRun returns.
+func GroupRun(ctx context.Context, grace time.Duration, dir string, out io.Writer, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	cmd.Stdout = out
+	cmd.Stderr = out // the same writer: exec copies both through one pipe
 	g := inGroup(cmd, grace)
 	cmd.WaitDelay = 2 * grace
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return err
 	}
 	g.wait()
 	err := cmd.Wait()
@@ -162,7 +170,7 @@ func GroupOutput(ctx context.Context, grace time.Duration, dir, name string, arg
 	if err == nil || errors.Is(err, exec.ErrWaitDelay) { // exited 0, though maybe leaving a process behind
 		err = ctx.Err()
 	}
-	return out.Bytes(), err
+	return err
 }
 
 // interactiveGrace is how long a command on the terminal (Interactive) has between SIGTERM and
