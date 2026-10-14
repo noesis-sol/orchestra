@@ -192,68 +192,20 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 		}
 	}
 
-	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
-	// every server on the machine, so a file it can't have stops the run rather than the worker.
-	mcpArgs, err := o.mcpArgs(wt)
-	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, t, wt, e)
+	ws, done, stop := o.setup(ctx, keep, t, wt, false)
+	if done {
+		return stop
 	}
-	if err != nil {
-		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
-	}
-
-	// A Claude worker's standing rules go in its system prompt, which survives compaction (see rules.go).
-	rules, err := o.rulesArgs(wt, id)
-	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, t, wt, e)
-	}
-	if err != nil {
-		o.log.Raw("", fmt.Errorf("%s's worker gets its whole prompt as its first message: %w", id, err))
-		rules = nil
-	}
-	left := o.earlierNote(ctx, br, wt)
-	full := o.fullPrompt(id, left)
-	prompt := full
-	if rules != nil {
-		prompt = ticketPrompt(id, left)
-	}
-
-	// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
-	// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-	launch := ""
-	if c.LaunchPrompt && c.ClaudeWorkers() {
-		launch, err = project.WriteLaunchPrompt(wt, id, prompt)
-		if e := escapeOf(err); e != nil {
-			return o.setAsideEscaped(keep, t, wt, e)
-		}
-		if err != nil {
-			o.log.Raw("", fmt.Errorf("cannot write the launch prompt for %s, pasting it instead: %w", id, err))
-			launch = ""
-		}
-	}
-
-	// A Claude worker reports each tool it uses, through hooks loaded for it alone.
-	var report []string
-	if o.reporter != nil && c.ClaudeWorkers() {
-		o.newWorkerHooks(id, wt)
-		report, err = o.reporter.ReportArgs(wt)
-		if e := escapeOf(err); e != nil {
-			return o.setAsideEscaped(keep, t, wt, e)
-		}
-		if err != nil {
-			o.log.Raw("", fmt.Errorf("cannot set up %s's worker to report what it does: %w", id, err))
-			report = nil
-		}
-	}
+	prompt := ws.prompt
 
 	head := o.checkout.Head(ctx, c.Repo, br) // a worker that commits moves it
 
-	launched, stop := o.startWorker(ctx, t, agent, wt, workerArgs{mcp: mcpArgs, rules: rules, report: report}, launch, "")
+	launched, stop := o.startWorker(ctx, t, agent, wt, ws.args, ws.launch, "")
 	if stop != nil {
 		return stop
 	}
 	if !launched.rules {
-		prompt = full // started without its rules, as Herdr refused them: they are pasted with the rest
+		prompt = ws.full // started without its rules, as Herdr refused them: they are pasted with the rest
 	}
 	defer o.status(Status{Ticket: id, Gone: true})
 	tab, started := launched.tab, launched.started
@@ -283,6 +235,106 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
 	return o.conclude(ctx, t, worker{id: id, br: br, wt: wt, tab: tab, agent: agent, started: started,
 		hooks: launched.hooks}, head, w.report, how)
+}
+
+// workerSetup is what a worker is started with: its arguments and, for a new worker (not resumed),
+// its first prompt.
+type workerSetup struct {
+	args   workerArgs
+	launch string // a new worker's prompt file, to start it from; "" to paste its prompt
+	prompt string // a new worker's first prompt: without its standing rules when it has them
+	full   string // a new worker's whole prompt, pasted if it starts without its rules
+}
+
+// setup prepares the files ticket t's worker, new or resumed, starts with in worktree wt (see
+// workerFiles). It reports whether the worker is not to start, and why the run must stop then, if
+// it must: a run file leading out of the worktree sets the ticket aside (see setAsideEscaped), on
+// keep, and the MCP servers failing otherwise stop the run.
+func (o *Loop) setup(ctx, keep context.Context, t Ticket, wt string, resumed bool) (workerSetup, bool, *stopReason) {
+	ws, err := o.workerFiles(ctx, t, wt, resumed)
+	if e := escapeOf(err); e != nil {
+		return ws, true, o.setAsideEscaped(keep, t, wt, e)
+	}
+	if err != nil {
+		return ws, true, halt(ExitTool, stopStartFailed, " for %s: %v", t.ID, err).causedBy(err)
+	}
+	return ws, false, nil
+}
+
+// workerFiles prepares ticket t's worker's files in worktree wt: its MCP servers, its standing
+// rules, a new worker's prompt file and a Claude worker's hooks. It returns the first error that
+// stops the worker from starting: an escape (see escapeOf), or the MCP servers failing. The others
+// the worker does without are logged, and left out.
+func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed bool) (workerSetup, error) {
+	c := o.cfg
+	id := t.ID
+	var ws workerSetup
+	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
+	// every server on the machine, so a file it can't have stops the run rather than the worker.
+	mcp, err := o.mcpArgs(wt)
+	if err != nil {
+		return ws, err
+	}
+	ws.args.mcp = mcp
+
+	// A Claude worker's standing rules go in its system prompt, which survives compaction (see
+	// rules.go). Claude Code keeps no system prompt with a session: a resumed worker is given them again.
+	without := id + "'s worker gets its whole prompt as its first message"
+	if resumed {
+		without = id + "'s resumed worker goes without its standing rules in its system prompt"
+	}
+	rules, err := o.rulesArgs(wt, id)
+	if ws.args.rules, err = optional(o.log, rules, err, without); err != nil {
+		return ws, err
+	}
+
+	if !resumed {
+		left := o.earlierNote(ctx, branchOf(id), wt)
+		ws.full = o.fullPrompt(id, left)
+		ws.prompt = ws.full
+		if ws.args.rules != nil {
+			ws.prompt = ticketPrompt(id, left)
+		}
+		// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
+		// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
+		if c.LaunchPrompt && c.ClaudeWorkers() {
+			launch, err := project.WriteLaunchPrompt(wt, id, ws.prompt)
+			ws.launch, err = optional(o.log, launch, err, "cannot write the launch prompt for "+id+", pasting it instead")
+			if err != nil {
+				return ws, err
+			}
+		}
+	}
+
+	// A Claude worker reports each tool it uses, through hooks loaded for it alone. A resumed one
+	// keeps the files the worker before it edited in the footprint (sessionOf found a reporter).
+	var report []string
+	switch {
+	case resumed:
+		o.newWorkerHooks(id, wt)
+		report, err = o.reporter.ResumeArgs(wt)
+		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s resumed worker to report what it does")
+	case o.reporter != nil && c.ClaudeWorkers():
+		o.newWorkerHooks(id, wt)
+		report, err = o.reporter.ReportArgs(wt)
+		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s worker to report what it does")
+	}
+	return ws, err
+}
+
+// optional is v, which a worker can start without, or, when err says it couldn't be had, its zero
+// value, the failure logged with what the worker does without it (what). An escape (see escapeOf)
+// it returns instead: it sets the ticket aside.
+func optional[T any](log *Log, v T, err error, what string) (T, error) {
+	var zero T
+	if err == nil {
+		return v, nil
+	}
+	if escapeOf(err) != nil {
+		return zero, err
+	}
+	log.Raw("", fmt.Errorf("%s: %w", what, err))
+	return zero, nil
 }
 
 // adopt takes on the worker an asked ticket left in its tab, which carries on with the ticket now

@@ -102,32 +102,9 @@ func (o *Loop) resumeSession(ctx context.Context, t Ticket, wt, tab, question st
 	o.appendNotes(keep, id, note)
 	o.emit(Event{Kind: EvWarn, Ticket: id, Title: t.Title, Detail: "its worker gone, its session resumed", Text: text})
 
-	mcpArgs, err := o.mcpArgs(wt)
-	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, t, wt, e)
-	}
-	if err != nil {
-		return halt(ExitTool, stopStartFailed, " for %s: %v", id, err).causedBy(err)
-	}
-	// The files the worker before it edited stay in the footprint (sessionOf found a reporter).
-	o.newWorkerHooks(id, wt)
-	report, err := o.reporter.ResumeArgs(wt)
-	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, t, wt, e)
-	}
-	if err != nil {
-		o.log.Raw("", fmt.Errorf("cannot set up %s's resumed worker to report what it does: %w", id, err))
-		report = nil
-	}
-
-	// Claude Code keeps no system prompt with the session: the standing rules are given again.
-	rules, err := o.rulesArgs(wt, id)
-	if e := escapeOf(err); e != nil {
-		return o.setAsideEscaped(keep, t, wt, e)
-	}
-	if err != nil {
-		o.log.Raw("", fmt.Errorf("%s's resumed worker goes without its standing rules in its system prompt: %w", id, err))
-		rules = nil
+	ws, done, stop := o.setup(ctx, keep, t, wt, true)
+	if done {
+		return stop
 	}
 
 	msg := fmt.Sprintf("Orchestra: your worker stopped, its tab gone, with %s still in progress, "+
@@ -150,8 +127,7 @@ func (o *Loop) resumeSession(ctx context.Context, t Ticket, wt, tab, question st
 	}
 	agent := o.agentName(id)
 	begun := time.Now() // its hooks report from its start: the earlier worker's last tool use is removed
-	args := workerArgs{mcp: mcpArgs, rules: rules, report: report}
-	launched, stop := o.startWorker(ctx, t, agent, wt, args, launch, s.ID)
+	launched, stop := o.startWorker(ctx, t, agent, wt, ws.args, launch, s.ID)
 	if stop != nil {
 		return stop
 	}
