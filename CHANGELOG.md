@@ -4,6 +4,16 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A deferred ticket whose blockers have merged is no longer listed as
+  `DEFERRED_FREE` in the `START` block, or under `Deferred:` in the box of a
+  run with nothing to run, while it is deferred until a later date
+  (`bd defer --until`): it was deferred on purpose, with a time to look again.
+  Once that date has passed it is listed as before.
+
 ## [0.7.2] - 2026-10-14
 
 ### Added

@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -145,6 +146,7 @@ func CheckNothingToRun(
 			carried[w.Ticket] = true
 		}
 		f := freeing{cfg: c, tickets: tickets, worktrees: worktrees, merger: merger, checkout: worktrees,
+			now:     time.Now(),
 			inScope: func(id string) bool { return c.Ticket == "" || in[id] },
 			busy:    func(id string) bool { return carried[id] }, unmerged: h.unmerged}
 		n.DeferredFree, n.FreeErr = f.list(ctx, unclosed)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"time"
 )
 
 // Ticket is a Beads issue as the loop sees it: status, priority, labels and what it depends on.
@@ -25,6 +26,9 @@ type Ticket struct {
 	DependencyCount *int `json:"dependency_count"`
 	// Parent is the ticket this one is a subticket of (a parent-child link), or "".
 	Parent string `json:"parent"`
+	// DeferUntil is when a ticket deferred until a date (bd defer --until) is due again, RFC 3339;
+	// "" when it has none. See DeferredUntilLater.
+	DeferUntil string `json:"defer_until"`
 
 	// The ticket's text and custom metadata, which say where it works (its Footprint).
 	Description        string          `json:"description"`
@@ -33,6 +37,17 @@ type Ticket struct {
 	Notes              string          `json:"notes"`
 	CloseReason        string          `json:"close_reason"` // what the worker said as it closed the ticket
 	Metadata           json.RawMessage `json:"metadata"`     // an object, or one encoded as a string
+}
+
+// DeferredUntilLater reports whether the ticket was deferred until a date after now: deferred on
+// purpose, with a time to look at it again. A date already past, or one that can't be read, counts
+// as none.
+func (t Ticket) DeferredUntilLater(now time.Time) bool {
+	if t.DeferUntil == "" {
+		return false
+	}
+	until, err := time.Parse(time.RFC3339, t.DeferUntil)
+	return err == nil && until.After(now)
 }
 
 // TicketStatus is a ticket's status as Beads stores it, or StatusUnknown when bd can't say.

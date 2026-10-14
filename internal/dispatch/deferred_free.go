@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -12,7 +13,8 @@ import (
 // a ticket that started too early went back in the queue) stays deferred once the blocker merges:
 // nothing brings it back. The run's START block, and the box of a run with nothing to run, list
 // each such ticket with the command that reopens it. Only list: a deferral can have other reasons,
-// so the maintainer decides.
+// so the maintainer decides. One deferred until a later date (bd defer --until) was deferred on
+// purpose, with a time to look again, and isn't listed until that time has come.
 
 // DeferredFree is a deferred ticket in the run's scope whose blockers have all merged.
 type DeferredFree struct {
@@ -72,19 +74,21 @@ type freeing struct {
 	worktrees Worktrees
 	merger    Merger
 	checkout  Checkout
+	now       time.Time // the run's clock, against which a ticket's DeferUntil is due
 	inScope   func(id string) bool
 	busy      func(id string) bool   // its worker runs, or waits on a question: it closes before it merges
 	unmerged  func(id string) string // why the closed ticket is not merged, or ""
 }
 
 // list returns the deferred tickets among unclosed, the tickets bd lists as not closed, that are in
-// the run's scope and have at least one blocker, each closed and merged. bd show is read for those
+// the run's scope, not deferred until a later date, and have at least one blocker, each closed and
+// merged. bd show is read for those
 // with blockers; its error is bd's, and drops the list.
 func (f freeing) list(ctx context.Context, unclosed []Ticket) ([]DeferredFree, error) {
 	var free []DeferredFree
 	for _, t := range unclosed {
 		if t.Status != StatusDeferred || !f.inScope(t.ID) || f.cfg.excludes(t) || HasLabel(t, HumanLabel) ||
-			t.DependencyCount != nil && *t.DependencyCount == 0 {
+			t.DependencyCount != nil && *t.DependencyCount == 0 || t.DeferredUntilLater(f.now) {
 			continue
 		}
 		info, err := f.tickets.Show(ctx, t.ID)
@@ -151,6 +155,7 @@ func (o *Loop) sayDeferredFree(ctx context.Context) {
 	if err == nil {
 		free, err = freeing{
 			cfg: o.cfg, tickets: o.tickets, worktrees: o.worktrees, merger: o.merger, checkout: o.checkout,
+			now:      time.Now(),
 			inScope:  o.scoped(ctx),
 			busy:     func(id string) bool { return o.isActive(id) || o.isAsked(id) },
 			unmerged: o.unmergedWhy,
