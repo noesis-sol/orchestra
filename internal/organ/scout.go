@@ -330,11 +330,15 @@ func checkScriptFirst(suites []Suite, exists bool) []Suite {
 	return append([]Suite{check}, suites...)
 }
 
-// runsCheckScript tells whether command runs scripts/check.sh: "scripts/check.sh", "./scripts/check.sh",
-// "sh scripts/check.sh" and the like.
+// runsCheckScript tells whether command runs scripts/check.sh: a word of it, split as runsRunner splits
+// them, is the script's path from the repository's root ("scripts/check.sh", "./scripts/check.sh",
+// "bash -c 'scripts/check.sh && make lint'"), or the path from a variable or the root of the file
+// system ("$PWD/scripts/check.sh", "$(pwd)/scripts/check.sh"), not another directory's script.
 func runsCheckScript(command string) bool {
-	return slices.ContainsFunc(strings.Fields(command), func(w string) bool {
-		return strings.TrimPrefix(w, "./") == checkScript
+	return slices.ContainsFunc(commandWords(command), func(w string) bool {
+		w = strings.TrimPrefix(w, "./")
+		return w == checkScript ||
+			strings.HasSuffix(w, "/"+checkScript) && (strings.HasPrefix(w, "$") || strings.HasPrefix(w, "/"))
 	})
 }
 
@@ -347,13 +351,18 @@ func withoutRunners(suites []Suite) []Suite {
 // and the shell's operators, is the runner's path or ends in it ("bash scripts/check-fast.sh",
 // "$PWD/scripts/check-full.sh"), as project.RunsRunner has it.
 func runsRunner(command string) bool {
-	words := strings.FieldsFunc(command, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune(";&|()<>'\"`", r)
-	})
-	return slices.ContainsFunc(words, func(w string) bool {
+	return slices.ContainsFunc(commandWords(command), func(w string) bool {
 		return slices.ContainsFunc(runnerScripts, func(path string) bool {
 			return w == path || strings.HasSuffix(w, "/"+path)
 		})
+	})
+}
+
+// commandWords are a command's words, split at spaces, quotes and the shell's operators, as
+// project.commandWords has them.
+func commandWords(command string) []string {
+	return strings.FieldsFunc(command, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune(";&|()<>'\"`", r)
 	})
 }
 

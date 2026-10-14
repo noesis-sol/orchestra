@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
+  off at its output token limit, where it was shown blank or half-written.
+  Organ answers from an older claude CLI, without a schema, are read when
+  the JSON comes in a ```` ```json ```` fence or amid prose. `orchestra init`
+  no longer adds a second check suite when the scout's runs
+  `scripts/check.sh` as `$PWD/scripts/check.sh`, through `bash -c`, or
+  before `&&`.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.

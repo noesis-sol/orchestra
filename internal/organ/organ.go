@@ -188,9 +188,33 @@ func (s Spend) Cost() string {
 func (r Result) decode(v any) error {
 	raw := r.Structured
 	if len(raw) == 0 || string(raw) == "null" {
-		raw = json.RawMessage(r.Result)
+		raw = jsonIn(r.Result)
 	}
 	return json.Unmarshal(raw, v)
+}
+
+// jsonIn is the JSON object in an answer given without a schema: the answer itself, the inside of a
+// ``` or ```json fence, or the first whole object in it when prose surrounds it. An answer
+// with none of these is returned as it is, for json.Unmarshal to say what is wrong with it.
+func jsonIn(answer string) json.RawMessage {
+	text := strings.TrimSpace(answer)
+	if json.Valid([]byte(text)) {
+		return json.RawMessage(text)
+	}
+	if _, fenced, ok := strings.Cut(text, "```"); ok {
+		if _, body, ok := strings.Cut(fenced, "\n"); ok { // past the fence's language tag
+			if body, _, ok := strings.Cut(body, "```"); ok && json.Valid([]byte(body)) {
+				return json.RawMessage(body)
+			}
+		}
+	}
+	for i := range text {
+		var object json.RawMessage
+		if text[i] == '{' && json.NewDecoder(strings.NewReader(text[i:])).Decode(&object) == nil {
+			return object
+		}
+	}
+	return json.RawMessage(text)
 }
 
 // args keeps an organ read-only and small: no built-in tools but the read-only ones in tools ("" for
@@ -450,11 +474,19 @@ func (g Client) Triage(ctx context.Context, d Deferral) (Verdict, error) {
 	return parseTriage(r)
 }
 
-// Review writes the end-of-run report from the evidence, whose sections Section makes.
+// Review writes the end-of-run report from the evidence, whose sections Section makes. An empty
+// report, or one cut off at the model's token limit, is an error: the maintainer would read nothing,
+// or half of it, as though it were all.
 func (g Client) Review(ctx context.Context, evidence string) (string, error) {
 	r, err := g.Ask(ctx, "review", 5*time.Minute, g.effort(ReviewEffort), reviewSystem, evidence, "")
 	if err != nil {
 		return "", err
+	}
+	switch {
+	case r.StopReason == StopMaxTokens:
+		return "", fmt.Errorf("%s cut the report off at its output token limit", g.Bin)
+	case strings.TrimSpace(r.Result) == "":
+		return "", fmt.Errorf("%s wrote an empty report", g.Bin)
 	}
 	return r.Result, nil
 }
