@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// cliOutput reads the claude CLI's JSON output as Ask does.
+// cliOutput reads the claude CLI's JSON output as ask does.
 func cliOutput(t *testing.T, out string) Result {
 	t.Helper()
 	var r Result

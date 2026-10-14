@@ -43,7 +43,9 @@ const scoutFound = `{"type":"result","is_error":false,"structured_output":{"suit
 	`{"name":"check","kind":"other","command":"./scripts/check.sh","found_in":"Makefile:2","tier":"full",` +
 	`"parallel_safe":true,"needs":[]}],"note":""}}`
 
-func TestScoutFindsSuitesWithTheCheckScriptFirst(t *testing.T) {
+// The scout's suites come back as it gave them, tidied: init puts scripts/check.sh first
+// (TestOfferedSuites in internal/tui).
+func TestScoutFindsSuites(t *testing.T) {
 	bin, record := fakeClaude(t, scoutFound)
 	root := scoutRepo(t, true)
 	s, err := Client{Bin: bin}.Scout(context.Background(), root)
@@ -53,16 +55,16 @@ func TestScoutFindsSuitesWithTheCheckScriptFirst(t *testing.T) {
 	if len(s.Suites) != 3 {
 		t.Fatalf("got %d suites, want 3: %+v", len(s.Suites), s.Suites)
 	}
-	if c := s.Suites[0]; c.Command != "./scripts/check.sh" || c.Tier != TierFast || c.FoundIn != "Makefile:2" {
-		t.Errorf("first suite %+v, want scripts/check.sh as a fast suite", c)
-	}
-	if u := s.Suites[1]; u.Name != "unit tests" || u.Kind != SuiteUnit || u.Command != "npm test" ||
+	if u := s.Suites[0]; u.Name != "unit tests" || u.Kind != SuiteUnit || u.Command != "npm test" ||
 		u.FoundIn != "package.json:7" || u.Tier != TierFast || !u.ParallelSafe || u.Needs == nil || len(u.Needs) != 0 {
 		t.Errorf("unit suite %+v", u)
 	}
-	if e := s.Suites[2]; e.Kind != SuiteE2E || e.Tier != TierFull || e.ParallelSafe ||
+	if e := s.Suites[1]; e.Kind != SuiteE2E || e.Tier != TierFull || e.ParallelSafe ||
 		strings.Join(e.Needs, ",") != "a browser,postgres" {
 		t.Errorf("e2e suite %+v", e)
+	}
+	if c := s.Suites[2]; c.Command != "./scripts/check.sh" || c.Tier != TierFull || c.FoundIn != "Makefile:2" {
+		t.Errorf("last suite %+v, want scripts/check.sh as the scout gave it", c)
 	}
 	b, _ := os.ReadFile(record)
 	got := string(b)
@@ -116,37 +118,6 @@ func TestScoutFindsNoSuites(t *testing.T) {
 	if s, err := parseScouting(Result{Result: `{"suites":null,"note":"Nothing."}`}); err != nil ||
 		s.Suites == nil || len(s.Suites) != 0 {
 		t.Errorf("result fallback: %+v, %v", s, err)
-	}
-}
-
-// An existing scripts/check.sh the scout left out is added, first and fast; without one, nothing is.
-func TestScoutAddsTheCheckScriptItLeftOut(t *testing.T) {
-	out := `{"is_error":false,"structured_output":{"suites":[{"name":"vet","kind":"lint","command":"go vet ./...",` +
-		`"found_in":"Makefile:4","tier":"fast","parallel_safe":true,"needs":[]}],"note":""}}`
-	bin, _ := fakeClaude(t, out)
-	s, err := Client{Bin: bin}.Scout(context.Background(), scoutRepo(t, true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(s.Suites) != 2 || s.Suites[0].Command != "scripts/check.sh" || s.Suites[0].Tier != TierFast ||
-		s.Suites[0].FoundIn != "scripts/check.sh:1" || s.Suites[1].Command != "go vet ./..." {
-		t.Errorf("got %+v, want scripts/check.sh first, then vet", s.Suites)
-	}
-	s, err = Client{Bin: bin}.Scout(context.Background(), scoutRepo(t, false))
-	if err != nil || len(s.Suites) != 1 {
-		t.Errorf("without scripts/check.sh: %+v, %v", s.Suites, err)
-	}
-}
-
-func TestRunsCheckScript(t *testing.T) {
-	for command, want := range map[string]bool{
-		"scripts/check.sh": true, "./scripts/check.sh": true, "sh scripts/check.sh": true,
-		"bash ./scripts/check.sh -v": true, "scripts/check.sh.bak": false, "other/scripts/check.sh": false,
-		"npm test": false,
-	} {
-		if got := runsCheckScript(command); got != want {
-			t.Errorf("runsCheckScript(%q) = %v, want %v", command, got, want)
-		}
 	}
 }
 

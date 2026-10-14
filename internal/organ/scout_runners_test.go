@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// The scout is told to leave out init's runners, and a suite that runs one is dropped all the same:
-// init would write it into the runner it runs.
-func TestScoutLeavesOutTheRunners(t *testing.T) {
-	if !strings.Contains(scoutSystem, "Never list scripts/check-fast.sh or scripts/check-full.sh") {
+// The scout is told to leave out init's runners. A suite that runs one is returned as the scout gave it,
+// with the others in their order: init drops it (TestOfferedSuites in internal/tui), as it would
+// write it into the runner it runs.
+func TestScoutIsToldToLeaveOutTheRunners(t *testing.T) {
+	if !strings.Contains(scout.system, "Never list scripts/check-fast.sh or scripts/check-full.sh") {
 		t.Error("the scout's prompt doesn't leave out the runners")
 	}
 	out := `{"is_error":false,"structured_output":{"suites":[` +
@@ -25,23 +26,10 @@ func TestScoutLeavesOutTheRunners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Suites) != 2 || s.Suites[0].Command != checkScript || s.Suites[1].Command != "go vet ./..." {
-		t.Errorf("got %+v, want scripts/check.sh, then vet", s.Suites)
+	if len(s.Suites) != 3 || s.Suites[0].Command != "scripts/check-fast.sh" || s.Suites[2].Command != "go vet ./..." {
+		t.Errorf("got %+v, want the scout's three suites as it gave them", s.Suites)
 	}
 	if b, _ := os.ReadFile(record); !strings.Contains(string(b), "scripts/check-full.sh") {
 		t.Errorf("claude's system prompt doesn't name the runners:\n%s", b)
-	}
-}
-
-func TestRunsRunner(t *testing.T) {
-	for command, want := range map[string]bool{
-		"scripts/check-fast.sh": true, "./scripts/check-full.sh": true, "bash scripts/check-fast.sh": true,
-		"$PWD/scripts/check-fast.sh": true, "/home/me/repo/scripts/check-full.sh": true,
-		"make lint && scripts/check-fast.sh": true, "sh -c 'scripts/check-full.sh'": true,
-		"scripts/check.sh": false, "scripts/check-fast.sh.bak": false, "npm test": false,
-	} {
-		if got := runsRunner(command); got != want {
-			t.Errorf("runsRunner(%q) = %v, want %v", command, got, want)
-		}
 	}
 }

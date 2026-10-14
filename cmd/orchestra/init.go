@@ -214,6 +214,7 @@ func runInit(
 				Effort: scoutEffort(getenv, existing.OrganEffort),
 				Spent:  func(s organ.Spend) { scoutSpent = append(scoutSpent, s) }}
 			ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
+			ask.CheckScript = regularFile(filepath.Join(repo, project.CheckScript))
 			if ask.Runners, err = project.PlanRunners(repo, project.Choice{}); err == nil { // as they are
 				ask.Skill, err = project.PlanSkill(repo, choice.Agent)
 			}

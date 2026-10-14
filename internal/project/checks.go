@@ -131,6 +131,18 @@ func RunsRunner(command string) bool {
 	return namesPathIn(command, FastRunner) || namesPathIn(command, FullRunner)
 }
 
+// RunsCheckScript reports whether a suite's command runs CheckScript: a word of it (commandWords) is
+// the script's path from the repository's root ("scripts/check.sh", "./scripts/check.sh",
+// "bash -c 'scripts/check.sh && make lint'"), or the path from a variable or the root of the file
+// system ("$PWD/scripts/check.sh", "$(pwd)/scripts/check.sh"), not another directory's script.
+func RunsCheckScript(command string) bool {
+	return slices.ContainsFunc(commandWords(command), func(w string) bool {
+		w = strings.TrimPrefix(w, "./")
+		return w == CheckScript ||
+			strings.HasSuffix(w, "/"+CheckScript) && (strings.HasPrefix(w, "$") || strings.HasPrefix(w, "/"))
+	})
+}
+
 // commandWords are a command's words, split at spaces, quotes and the shell's operators, so that
 // "sh -c 'scripts/check-fast.sh'" and "$(pwd)/scripts/check-fast.sh" show the runner's path.
 func commandWords(command string) []string {

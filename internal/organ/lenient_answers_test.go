@@ -52,31 +52,3 @@ func TestOrganAnswersReadJSONWrappedInText(t *testing.T) {
 		}
 	}
 }
-
-// scripts/check.sh is found however the scout's command runs it, so it isn't added a second time.
-func TestRunsCheckScriptInEveryForm(t *testing.T) {
-	for command, want := range map[string]bool{
-		"$PWD/scripts/check.sh":                  true,
-		"${PWD}/scripts/check.sh":                true,
-		"$(pwd)/scripts/check.sh":                true,
-		`bash -c "scripts/check.sh"`:             true,
-		"sh -c 'scripts/check.sh'":               true,
-		"scripts/check.sh && make lint":          true,
-		"make build;scripts/check.sh":            true,
-		"(cd . && ./scripts/check.sh)":           true,
-		"/repo/scripts/check.sh":                 true,
-		"other/scripts/check.sh":                 false,
-		"./other/scripts/check.sh":               false,
-		`bash -c "scripts/check.sh.bak && lint"`: false,
-		"scripts/check-fast.sh":                  false,
-	} {
-		if got := runsCheckScript(command); got != want {
-			t.Errorf("runsCheckScript(%q) = %v, want %v", command, got, want)
-		}
-	}
-	suites := checkScriptFirst([]Suite{{Name: "vet", Command: "go vet ./..."},
-		{Name: "check", Command: "scripts/check.sh && make lint"}}, true)
-	if len(suites) != 2 || suites[0].Command != "scripts/check.sh && make lint" || suites[0].Tier != TierFast {
-		t.Errorf("got %+v, want the scout's check suite first and no second one", suites)
-	}
-}

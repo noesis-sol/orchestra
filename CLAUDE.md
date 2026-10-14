@@ -100,8 +100,8 @@ tools and no MCP servers. The README defines both terms; use them consistently.
   external command: context, time limit, process group), `internal/claude` (workers' hooks, the state they give,
   and what their screen adds to it), `internal/mcp` (discovering MCP servers for workers).
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
-- `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
-  `internal/tui`: the Bubble Tea dashboard and init's screen.
+- `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`
+  (settings, worker prompt, init, per-ticket files). `internal/tui`: the Bubble Tea dashboard and init's screen.
 
 ## Conventions & Patterns
 

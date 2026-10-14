@@ -21,9 +21,9 @@ func fakeScript(t *testing.T, body string) (bin, dir string) {
 	return bin, dir
 }
 
-// hung is how long a test lets Ask run before taking it for stuck on a process it should have stopped or
-// left behind: far longer than Ask takes under the race detector on a machine loaded by other workers'
-// tests, and far shorter than the fakes' processes sleep, so a slow Ask passes and only one that waits
+// hung is how long a test lets ask run before taking it for stuck on a process it should have stopped or
+// left behind: far longer than ask takes under the race detector on a machine loaded by other workers'
+// tests, and far shorter than the fakes' processes sleep, so a slow ask passes and only one that waits
 // for such a process reaches it.
 const hung = time.Minute
 
@@ -47,7 +47,7 @@ func askUnhung(t *testing.T, dir, want string, ask func() (Result, error)) (Resu
 	case <-time.After(hung):
 		killFake(dir)
 		a = <-done
-		t.Fatalf("Ask was still running after %s, want it back %s", hung, want)
+		t.Fatalf("ask was still running after %s, want it back %s", hung, want)
 	}
 	return a.r, a.err
 }
@@ -75,7 +75,7 @@ echo '{"type":"result","is_error":false,"result":"ok"}'
 `)
 	t.Cleanup(func() { killFake(dir) }) // the leftover would sleep on past the test
 	r, err := askUnhung(t, dir, "once claude exited, with its leftover still running", func() (Result, error) {
-		return Client{Bin: bin}.Ask(context.Background(), "test", time.Minute, "low", "s", "i", "")
+		return Client{Bin: bin}.ask(context.Background(), spec{name: "test", limit: time.Minute, effort: "low", system: "s"}, "i")
 	})
 	if err != nil || r.Result != "ok" {
 		t.Fatalf("got %+v, %v; want the answer", r, err)
@@ -84,10 +84,10 @@ echo '{"type":"result","is_error":false,"result":"ok"}'
 
 // A claude stopped at its time limit fails with an error that says so.
 func TestAskSaysItTimedOut(t *testing.T) {
-	// The PID is claude's own, which nothing can take before Ask reaps it: a kill can't reach a stranger.
+	// The PID is claude's own, which nothing can take before ask reaps it: a kill can't reach a stranger.
 	bin, dir := fakeScript(t, "echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600\n")
 	_, err := askUnhung(t, dir, "at its 200ms time limit", func() (Result, error) {
-		return Client{Bin: bin}.Ask(context.Background(), "test", 200*time.Millisecond, "low", "s", "i", "")
+		return Client{Bin: bin}.ask(context.Background(), spec{name: "test", limit: 200 * time.Millisecond, effort: "low", system: "s"}, "i")
 	})
 	if err == nil || err.Error() != bin+": timed out after 200ms" {
 		t.Errorf("error %v, want it to name the time limit", err)
@@ -102,7 +102,7 @@ func TestAskSaysWhyItWasStopped(t *testing.T) {
 	bin, _ := fakeScript(t, "exec sleep 20\n")
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(errors.New("stopped with Ctrl+C")) })
-	if _, err := (Client{Bin: bin}).Ask(ctx, "test", time.Minute, "low", "s", "i", ""); err == nil ||
+	if _, err := (Client{Bin: bin}).ask(ctx, spec{name: "test", limit: time.Minute, effort: "low", system: "s"}, "i"); err == nil ||
 		err.Error() != bin+": stopped with Ctrl+C" {
 		t.Errorf("error %v, want the cause", err)
 	}
@@ -111,7 +111,7 @@ func TestAskSaysWhyItWasStopped(t *testing.T) {
 // A claude that fails says why on stderr, which the error keeps; the long arguments are left out.
 func TestAskReportsAFailureWithItsStderr(t *testing.T) {
 	bin, _ := fakeScript(t, "echo 'not logged in' >&2\nexit 1\n")
-	_, err := Client{Bin: bin}.Ask(context.Background(), "test", time.Minute, "low", "SYSTEM", "i", `{"type":"object"}`)
+	_, err := Client{Bin: bin}.ask(context.Background(), spec{name: "test", limit: time.Minute, effort: "low", system: "SYSTEM", schema: `{"type":"object"}`}, "i")
 	if err == nil || err.Error() != bin+": exit status 1: not logged in" {
 		t.Errorf("error %v, want claude's exit status and stderr alone", err)
 	}

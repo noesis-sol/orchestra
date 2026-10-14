@@ -31,7 +31,7 @@ func TestResultReadsTheCallsAccounting(t *testing.T) {
 		`"modelUsage":{"claude-haiku-4-5":{"costUSD":0.0125}}}`, 0)
 	var r Result
 	spent, err := spendOf(t, bin, func(g Client) (err error) {
-		r, err = g.Ask(context.Background(), "triage", time.Minute, "low", "s", "i", "")
+		r, err = g.ask(context.Background(), spec{name: "triage", limit: time.Minute, effort: "low", system: "s"}, "i")
 		return err
 	})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestResultFromAnOlderCLI(t *testing.T) {
 	bin := answers(t, `{"type":"result","is_error":false,"result":"ok"}`, 0)
 	var r Result
 	spent, err := spendOf(t, bin, func(g Client) (err error) {
-		r, err = g.Ask(context.Background(), "review", time.Minute, "low", "s", "i", "")
+		r, err = g.ask(context.Background(), spec{name: "review", limit: time.Minute, effort: "low", system: "s"}, "i")
 		return err
 	})
 	if err != nil || r.Result != "ok" || r.Subtype != "" || r.CostUSD != 0 || r.Turns != 0 {
@@ -90,7 +90,7 @@ func TestErrorSubtypesAreTypedErrors(t *testing.T) {
 				`"stop_reason":"end_turn","total_cost_usd":0.0008,"num_turns":1,"session_id":"s-2",`+
 				`"errors":`+c.errors+`}`, code)
 			spent, err := spendOf(t, bin, func(g Client) error {
-				_, err := g.Ask(context.Background(), "screen", time.Minute, "low", "s", "i", "")
+				_, err := g.ask(context.Background(), spec{name: "screen", limit: time.Minute, effort: "low", system: "s"}, "i")
 				return err
 			})
 			e, ok := errors.AsType[*CallError](err)
@@ -129,12 +129,12 @@ func TestARefusalIsATypedError(t *testing.T) {
 // An error result claude gives no subtype or errors for says what its result says, as before.
 func TestAnErrorWithoutASubtypeSaysItsResult(t *testing.T) {
 	bin := answers(t, `{"type":"result","is_error":true,"result":"usage limit reached"}`, 1)
-	_, err := Client{Bin: bin}.Ask(context.Background(), "plan", time.Minute, "low", "s", "i", "")
+	_, err := Client{Bin: bin}.ask(context.Background(), spec{name: "plan", limit: time.Minute, effort: "low", system: "s"}, "i")
 	if _, ok := errors.AsType[*CallError](err); !ok || err.Error() != bin+" reported an error: usage limit reached" {
 		t.Errorf("error %v (%T)", err, err)
 	}
 	bin = answers(t, `{"type":"result","is_error":true}`, 1)
-	_, err = Client{Bin: bin}.Ask(context.Background(), "plan", time.Minute, "low", "s", "i", "")
+	_, err = Client{Bin: bin}.ask(context.Background(), spec{name: "plan", limit: time.Minute, effort: "low", system: "s"}, "i")
 	if err == nil || err.Error() != bin+" reported an error" {
 		t.Errorf("error %v, want no empty tail", err)
 	}
@@ -144,7 +144,7 @@ func TestAnErrorWithoutASubtypeSaysItsResult(t *testing.T) {
 func TestAFailureWithoutAResultIsTheCommands(t *testing.T) {
 	bin, _ := fakeScript(t, "cat > /dev/null\necho '{\"type\":\"assistant\"}'\necho 'boom' >&2\nexit 1\n")
 	spent, err := spendOf(t, bin, func(g Client) error {
-		_, err := g.Ask(context.Background(), "plan", time.Minute, "low", "s", "i", "")
+		_, err := g.ask(context.Background(), spec{name: "plan", limit: time.Minute, effort: "low", system: "s"}, "i")
 		return err
 	})
 	if _, ok := errors.AsType[*CallError](err); ok || err == nil || err.Error() != bin+": exit status 1: boom" {

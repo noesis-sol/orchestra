@@ -445,9 +445,11 @@ type Ask struct {
 	// For Check: Scout looks for the project's suites once stage 2 is reached (with none, the choice
 	// starts on Manual); Runners are the runners as they are (PlanRunners of a choice that keeps them)
 	// and Skill the create-check-suite skill as it is, for keep or replace where they differ.
-	Scout   func(context.Context) (organ.Scouting, error)
-	Runners []project.Runner
-	Skill   project.SkillPlan
+	// CheckScript is set when the project has scripts/check.sh: the suites offered start with it.
+	Scout       func(context.Context) (organ.Scouting, error)
+	Runners     []project.Runner
+	Skill       project.SkillPlan
+	CheckScript bool
 }
 
 // Any reports whether a has a question to ask.

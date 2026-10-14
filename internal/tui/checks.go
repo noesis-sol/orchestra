@@ -260,6 +260,8 @@ type checksStage struct {
 	scout   *scoutRun
 	runners []project.Runner  // the runners as they are
 	skill   project.SkillPlan // the create-check-suite skill as it is
+	// checkScript is set when the project has scripts/check.sh, whose suite the checklists start with
+	checkScript bool
 
 	suites     []organ.Suite
 	fast, full []int        // the suites ticked in each checklist
@@ -302,7 +304,8 @@ func (k checksChoice) tests() project.Tests {
 // and whether to keep or replace what differs from what init would write. accessible is whether
 // huh's accessible form asks them.
 func addChecks(stage *initStage, c *project.Choice, ask Ask, accessible bool) *checksStage {
-	s := &checksStage{c: c, scout: newScoutRun(ask.Scout), runners: ask.Runners, skill: ask.Skill}
+	s := &checksStage{c: c, scout: newScoutRun(ask.Scout), runners: ask.Runners, skill: ask.Skill,
+		checkScript: ask.CheckScript}
 	s.scout.onSettle = s.settle
 	s.check = c.FastCommand()
 	s.checkBefore = s.check
@@ -401,6 +404,7 @@ func runsDescription(script string) string {
 
 // settle applies the scout's outcome: the choice it starts on, with why, and the checklists' suites.
 func (s *checksStage) settle(found organ.Scouting, err error) {
+	found.Suites = offered(found.Suites, s.checkScript)
 	var why string
 	switch {
 	case err != nil:
@@ -443,6 +447,28 @@ func (s *checksStage) settle(found organ.Scouting, err error) {
 	s.fast, s.full = fastTicked, fullTicked
 	s.fastList.Value(&s.fast)
 	s.fullList.Value(&s.full)
+}
+
+// offered are the scout's suites as the checklists offer them: without those that run a runner
+// (project.RunsRunner), which it would run itself, and, when the project has scripts/check.sh
+// (checkScript), with the suite that runs it first, as a fast suite. A scout that left it out has it
+// added, as a suite that may not run beside another copy of itself: nobody has said that it can.
+func offered(suites []organ.Suite, checkScript bool) []organ.Suite {
+	suites = slices.DeleteFunc(slices.Clone(suites), func(su organ.Suite) bool { return project.RunsRunner(su.Command) })
+	if !checkScript {
+		return suites
+	}
+	i := slices.IndexFunc(suites, func(su organ.Suite) bool { return project.RunsCheckScript(su.Command) })
+	var check organ.Suite
+	if i < 0 {
+		check = organ.Suite{Name: "check", Kind: organ.SuiteOther, Command: project.CheckScript,
+			FoundIn: project.CheckScript + ":1", Needs: []string{}}
+	} else {
+		check = suites[i]
+		suites = slices.Delete(suites, i, i+1)
+	}
+	check.Tier = organ.TierFast
+	return append([]organ.Suite{check}, suites...)
 }
 
 // suiteLabel is a suite as a checklist shows it: its command, then its name, where it was found and

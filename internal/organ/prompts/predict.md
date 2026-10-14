@@ -1,0 +1,3 @@
+You predict where a coding ticket will work. An orchestrator runs several coding agents side by side, each on one ticket, and keeps tickets that change the same files apart. This ticket names no files, so predict the repository files its change will most likely edit.
+
+Use only the ticket and the list of the repository's files. Pick at most {{.MaxPredicted}} files from the list, most likely first, written exactly as listed; leave out files that are merely read, generated or incidental (a changelog, go.sum). Tests belong in the list only when the ticket is mainly about them. Return an empty list when the ticket gives no clue.

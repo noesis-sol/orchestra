@@ -23,7 +23,7 @@ func TestPlanSeesEveryUnclosedTicket(t *testing.T) {
 	if !strings.Contains(in, want) {
 		t.Errorf("input lacks\n%s\nin\n%s", want, in)
 	}
-	if !strings.Contains(planSystem, "a ticket that isn't closed already covers, whatever its status: open, in "+
+	if !strings.Contains(plan.system, "a ticket that isn't closed already covers, whatever its status: open, in "+
 		"progress, blocked or deferred") {
 		t.Error("the system prompt should say which tickets not to repeat")
 	}

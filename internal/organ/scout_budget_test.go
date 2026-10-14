@@ -44,7 +44,7 @@ func TestScoutHasABudgetWhereClaudeListsIt(t *testing.T) {
 // The other organs make no tool calls to spend on and get no budget.
 func TestOtherOrgansHaveNoBudget(t *testing.T) {
 	bin, record := fakeHelpClaude(t, budgetHelp, 0)
-	if _, err := (Client{Bin: bin}).Ask(context.Background(), "test", hung, "low", "S", "E", ""); err != nil {
+	if _, err := (Client{Bin: bin}).ask(context.Background(), spec{name: "test", limit: hung, effort: "low", system: "S"}, "E"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(record)
