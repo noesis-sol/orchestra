@@ -160,8 +160,10 @@ func (m Dashboard) tickets(w, lines int) string {
 func (m Dashboard) ticketsTable(w, lines int) string {
 	idWidth := 7
 	for _, r := range m.rows {
-		idWidth = max(idWidth, len(r.id))
+		idWidth = max(idWidth, ansi.StringWidth(r.id))
 	}
+	// IDs longer than a third of the table are cut, so the titles keep their room
+	idWidth = min(idWidth, max(w/3, 7))
 	aboutWidth := w - 2 - 13 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
 	rows := m.rows
 	hidden := 0
@@ -180,6 +182,7 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 		if st, ok := m.active[r.id]; ok {
 			doing = doingLabel(st)
 		}
+		r.id = ansi.Truncate(r.id, idWidth, "…")
 		c := r.cells(aboutWidth, doing)
 		data = append(data, c[:])
 	}

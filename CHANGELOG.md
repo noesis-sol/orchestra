@@ -34,6 +34,9 @@ All notable changes to orchestra are documented here. The format follows
   naming the files, when its branch needs rebasing; a rebase git refuses to
   start for another reason is `REBASE_FAILED`. Both were reported as a
   `MERGE_CONFLICT` left mid-rebase, which they weren't.
+- The dashboard's tickets table cuts ticket IDs longer than a third of its
+  width with `…`, so long IDs no longer squeeze titles and notes out of
+  sight; IDs are measured in screen cells rather than bytes.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.
