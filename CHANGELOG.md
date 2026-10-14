@@ -17,6 +17,10 @@ All notable changes to orchestra are documented here. The format follows
   setup problem: `TRIAGE=false` or `NOTIFY=off` left the feature on, and
   `ORCHESTRA_TICKETS=true` was taken for off.
 
+- Two runs on one tmux server, in two clones sharing a Beads database, no
+  longer take each other's workers for their own when their tickets' IDs
+  match: a worker's pane is marked with its run's repository, and a run
+  finds, names and prompts only its own repository's workers.
 - `orchestra init` no longer saves over a `.orchestra/settings.json` it
   can't read, such as one edited while its form was open to hold a value of
   the wrong type: it stops with the error and leaves the file as it was,

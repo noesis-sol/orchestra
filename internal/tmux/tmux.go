@@ -33,6 +33,10 @@ type Terminal struct {
 	// Socket names the tmux server (tmux -L); "" is the one tmux picks: the server orchestra runs in
 	// ($TMUX), or else the default one.
 	Socket string
+	// Repo is the repository whose workers these are. An agent's name is its own only among the panes
+	// of one repository's runs, as two runs on one tmux server, in two clones sharing a Beads database
+	// say, can have workers of the same name; each pane it names is marked with it.
+	Repo string
 }
 
 // The pane options a worker's pane carries. tmux has no agents: a pane holds one once orchestra
@@ -41,6 +45,7 @@ const (
 	agentOption   = "@orchestra-agent"   // the agent's name, the ticket's ID
 	kindOption    = "@orchestra-kind"    // the kind launched there, such as claude
 	recordsOption = "@orchestra-records" // the folder its hooks write their records to (claude.Records)
+	repoOption    = "@orchestra-repo"    // the repository of the run that named it (Terminal.Repo)
 )
 
 // poll is how often a wait reads the worker's state again.
@@ -322,12 +327,13 @@ type paneInfo struct {
 	dead         bool   // its process exited (remain-on-exit keeps it open)
 	agent, kind  string // the agent's name and kind; kind "" if no agent was launched there
 	records      string // where its hooks write their records; "" if it was launched without them
+	repo         string // the repository of the run that named its agent; "" if none, or an older orchestra did
 	command, dir string // its foreground process's name, and that process's working directory
 }
 
 // paneFormat lists a pane for panes, its fields in the order panes reads them.
 const paneFormat = "#{pane_id}\t#{window_id}\t#{pane_dead}\t#{" + agentOption + "}\t#{" + kindOption + "}\t#{" +
-	recordsOption + "}\t#{pane_current_command}\t#{pane_current_path}"
+	recordsOption + "}\t#{" + repoOption + "}\t#{pane_current_command}\t#{pane_current_path}"
 
 // panes lists every pane tmux has, in every session: none when no tmux server runs.
 func (t Terminal) panes(ctx context.Context) ([]paneInfo, error) {
@@ -340,12 +346,12 @@ func (t Terminal) panes(ctx context.Context) ([]paneInfo, error) {
 	}
 	var ps []paneInfo
 	for line := range lines(out) {
-		f := strings.SplitN(line, "\t", 8)
-		if len(f) != 8 || !isID(f[0], '%') || !isID(f[1], '@') || f[2] != "0" && f[2] != "1" {
+		f := strings.SplitN(line, "\t", 9)
+		if len(f) != 9 || !isID(f[0], '%') || !isID(f[1], '@') || f[2] != "0" && f[2] != "1" {
 			return nil, odd("list-panes", "", out)
 		}
 		ps = append(ps, paneInfo{id: f[0], window: f[1], dead: f[2] == "1", agent: f[3], kind: f[4], records: f[5],
-			command: f[6], dir: f[7]})
+			repo: f[6], command: f[7], dir: f[8]})
 	}
 	return ps, nil
 }
@@ -366,13 +372,27 @@ func find(ps []paneInfo, match func(paneInfo) bool) (paneInfo, bool) {
 	return paneInfo{}, false
 }
 
-// agentPane returns the pane of the agent named name, and false if no pane holds an agent so named.
+// ours reports whether the pane's agent name is one of t's repository's: the pane was named for it,
+// or by an older orchestra, which marked none, as a run it was stopped in left it.
+func (t Terminal) ours(p paneInfo) bool { return p.repo == t.Repo || p.repo == "" }
+
+// named returns the pane of ps whose agent is named name in t's repository, and false if none is: one
+// named for the repository before one an orchestra that marked none named.
+func (t Terminal) named(ps []paneInfo, name string) (paneInfo, bool) {
+	if p, ok := find(ps, func(p paneInfo) bool { return p.kind != "" && p.agent == name && p.repo == t.Repo }); ok {
+		return p, true
+	}
+	return find(ps, func(p paneInfo) bool { return p.kind != "" && p.agent == name && t.ours(p) })
+}
+
+// agentPane returns the pane of the agent named name, and false if no pane of t's repository holds an
+// agent so named.
 func (t Terminal) agentPane(ctx context.Context, name string) (paneInfo, bool, error) {
 	ps, err := t.panes(ctx)
 	if err != nil {
 		return paneInfo{}, false, err
 	}
-	p, ok := find(ps, func(p paneInfo) bool { return p.kind != "" && p.agent == name })
+	p, ok := t.named(ps, name)
 	return p, ok, nil
 }
 
@@ -408,8 +428,9 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 	return err
 }
 
-// setName names the agent in the pane name, taking the name from any other pane that holds it, as
-// Herdr's agent names are unique.
+// setName names the agent in the pane name, for t's repository, taking the name from any other pane
+// of the repository's that holds it, as Herdr's agent names are unique. Another repository's panes
+// keep theirs.
 func (t Terminal) setName(ctx context.Context, pane, name string) error {
 	ps, err := t.panes(ctx)
 	if err != nil {
@@ -417,11 +438,14 @@ func (t Terminal) setName(ctx context.Context, pane, name string) error {
 	}
 	var args []string
 	for _, p := range ps {
-		if p.agent == name && p.id != pane {
+		if p.agent == name && p.id != pane && t.ours(p) {
 			args = append(args, "-p", "-u", "-t", p.id, agentOption, ";", "set-option")
 		}
 	}
 	args = append(args, "-p", "-t", pane, agentOption, name)
+	if t.Repo != "" {
+		args = append(args, ";", "set-option", "-p", "-t", pane, repoOption, t.Repo)
+	}
 	_, err = t.run(ctx, command.ReadLimit, "set-option", pane, args...)
 	return err
 }
@@ -486,21 +510,24 @@ func (t Terminal) PaneAgent(
 	return p.agent, p.kind, t.state(ctx, p), nil
 }
 
-// RenameAgent gives the agent, by name or by its pane's ID, a new name.
+// RenameAgent gives the agent, by name in t's repository or by its pane's ID, a new name.
 func (t Terminal) RenameAgent(ctx context.Context, name, to string) error {
 	ps, err := t.panes(ctx)
 	if err != nil {
 		return err
 	}
-	p, ok := find(ps, func(p paneInfo) bool { return p.kind != "" && (p.agent == name || p.id == name) })
+	p, ok := t.named(ps, name)
+	if !ok {
+		p, ok = find(ps, func(p paneInfo) bool { return p.kind != "" && p.id == name })
+	}
 	if !ok {
 		return missing("rename", name, "agent")
 	}
 	return t.setName(ctx, p.id, to)
 }
 
-// FreeName returns an unused agent name for an earlier worker that holds name: name-1, name-2, …,
-// or "" if none of the first 20 is free or tmux can't say.
+// FreeName returns an agent name unused in t's repository for an earlier worker that holds name:
+// name-1, name-2, …, or "" if none of the first 20 is free or tmux can't say.
 func (t Terminal) FreeName(ctx context.Context, name string) string {
 	ps, err := t.panes(ctx)
 	if err != nil {
@@ -508,7 +535,7 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 	}
 	for n := 1; n <= 20; n++ {
 		free := fmt.Sprintf("%s-%d", name, n)
-		if _, taken := find(ps, func(p paneInfo) bool { return p.agent == free }); !taken {
+		if _, taken := find(ps, func(p paneInfo) bool { return p.agent == free && t.ours(p) }); !taken {
 			return free
 		}
 	}

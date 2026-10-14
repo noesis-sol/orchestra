@@ -232,7 +232,7 @@ type workerTerminal interface {
 func terminalOf(c options) workerTerminal {
 	switch c.Terminal {
 	case project.TerminalTmux:
-		return tmuxSession{repo: c.Repo}
+		return tmuxSession{tmux.Terminal{Repo: c.Repo}}
 	case project.TerminalCmux:
 		return cmux.Terminal{Book: filepath.Join(c.Repo, project.RunPath(cmux.BookName)), Own: c.cmuxWorkspace}
 	}
@@ -240,15 +240,14 @@ func terminalOf(c options) workerTerminal {
 }
 
 // tmuxSession is tmux for a run's workers: the session their windows open in is started, detached,
-// if tmux doesn't have it, as when orchestra runs outside tmux.
+// if tmux doesn't have it, as when orchestra runs outside tmux, its first window in the repository.
 type tmuxSession struct {
 	tmux.Terminal
-	repo string // where the session's first window starts
 }
 
 // CreateTab opens a window as tmux.Terminal does, in session, which it starts first if need be.
 func (t tmuxSession) CreateTab(ctx context.Context, session, cwd, label string) (tab, pane string, err error) {
-	id, err := t.NewSession(ctx, session, t.repo)
+	id, err := t.NewSession(ctx, session, t.Repo)
 	if err != nil {
 		return "", "", err
 	}

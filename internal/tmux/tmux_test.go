@@ -147,8 +147,8 @@ func (f *fakeTmux) call(op string) []string {
 
 // paneLine is one pane as list-panes lists it with paneFormat.
 type paneLine struct {
-	id, window, agent, kind, records, command, dir string
-	dead                                           bool
+	id, window, agent, kind, records, repo, command, dir string
+	dead                                                 bool
 }
 
 func (p paneLine) String() string {
@@ -160,7 +160,7 @@ func (p paneLine) String() string {
 	if window == "" {
 		window = "@1"
 	}
-	return strings.Join([]string{p.id, window, dead, p.agent, p.kind, p.records, p.command, p.dir}, "\t")
+	return strings.Join([]string{p.id, window, dead, p.agent, p.kind, p.records, p.repo, p.command, p.dir}, "\t")
 }
 
 // listPanes has tmux list these panes.
@@ -397,7 +397,7 @@ func TestPaneOpen(t *testing.T) {
 			t.Errorf("PaneOpen(%s) = %v %v", p, open, err)
 		}
 	}
-	f.answer("list-panes", "%1\t@1\tmaybe\t\t\t\tzsh\t/\n")
+	f.answer("list-panes", "%1\t@1\tmaybe\t\t\t\t\tzsh\t/\n")
 	if _, err := (Terminal{}).PaneOpen(bg, "%1"); err == nil {
 		t.Error("odd output should be an error")
 	}
