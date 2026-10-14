@@ -194,11 +194,18 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, begun time.Time, idle *id
 
 // quietFor is how long the worker w, which Herdr has shown idle since since, has done nothing. A
 // subagent in the background works on after its worker's turn has ended, and its tool uses are
-// reported as the worker's: while one runs, the last of them ends the quiet.
+// reported as the worker's: while one runs, the last of them ends the quiet. A note of its hooks
+// ends it too: a subagent's stop, say, whose answer starts the worker's next turn, which Herdr may
+// not show yet.
 func (o *Loop) quietFor(w worker, since time.Time) time.Duration {
-	if w.hooks && o.reporter != nil && o.reporter.HookRecord(w.wt).Subagents > 0 {
-		if u, ok := o.reporter.LastToolUse(w.wt); ok && u.At.After(since) {
-			return time.Since(u.At)
+	if !w.hooks || o.reporter == nil {
+		return time.Since(since)
+	}
+	rec := o.reporter.HookRecord(w.wt)
+	since = later(since, rec.Noted)
+	if rec.Subagents > 0 {
+		if u, ok := o.reporter.LastToolUse(w.wt); ok {
+			since = later(since, u.At)
 		}
 	}
 	return time.Since(since)

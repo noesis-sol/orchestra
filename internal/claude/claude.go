@@ -272,13 +272,16 @@ func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 }
 
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the
-// permission prompts it waited on, its compactions and the subagents it is running.
+// permission prompts it waited on, its compactions and the subagents it is running. The time of the
+// last note is the events file's last write: its lines carry none.
 func (Reporter) HookRecord(worktree string) dispatch.HookRecord {
-	b, _, err := readRun(worktree, eventsName)
+	b, fi, err := readRun(worktree, eventsName)
 	if err != nil {
 		return dispatch.HookRecord{}
 	}
-	return parseEvents(b)
+	r := parseEvents(b)
+	r.Noted = fi.ModTime()
+	return r
 }
 
 // parseEvents reads the hooks' notes, one JSON line each, skipping a line it can't read. A subagent

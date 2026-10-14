@@ -32,6 +32,7 @@ func (r *recordReporter) note(wt string, f func(*HookRecord)) {
 	}
 	rec := r.records[wt]
 	f(&rec)
+	rec.Noted = time.Now()
 	r.records[wt] = rec
 }
 

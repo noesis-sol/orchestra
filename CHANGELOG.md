@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   dropped (`<id>, carried over from the last run, is dropped: bd has no such
   ticket`), rather than kept in `.orchestra/run/state.json` and reported
   `kept for the next run: bd can't show it` on every run.
+- A worker waiting on a background subagent is no longer paused in the
+  moment between the subagent's stop and Herdr showing the worker on its
+  answer: its idle time counts from the hooks' last note, not from the
+  Stop of the turn before.
+
 - `orchestra update` on a read-only filesystem gives the advice to run it
   as the folder's owner (exit 2), where it said only that the update failed.
   A busy line on a terminal that reports no width, as a fresh pseudo-terminal
