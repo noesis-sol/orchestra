@@ -15,11 +15,10 @@ import (
 )
 
 // A terminal that can't read a Claude session's screen, as Herdr does, tells what it is doing from
-// its hooks' records instead (see hookSettings): the last report (activity), the start or end of its
-// last turn (turn), the last notification (notice), the permission prompts its agents asked and are
-// not done with (asked) and the log of its sessions and subagents (events). Each record is replaced
-// as it comes, so the ones written later, by their files' times, tell the latest. Whether the
-// session's process is still there is the terminal's to say.
+// its hooks' records instead: activity, turn, notice, asked and events (activityName and the other
+// record names say what each holds). Each record is replaced as it comes, so the ones written later,
+// by their files' times, tell the latest. Whether the session's process is still there is the
+// terminal's to say.
 
 // Records is the folder the hooks loaded with ReportArgsIn(dir, folder) write their records to;
 // folder "" is the one of ReportArgs(dir), dir's .orchestra/run/.
@@ -254,7 +253,7 @@ func readRecord(root *os.Root, name string) record {
 }
 
 // readAsked returns the latest of the permission prompts' records in root, an os.Root at the records'
-// folder (see hookSettings): a permission prompt asked, dated, and a zero record when there is none.
+// folder (see askedPrefix): a permission prompt asked, dated, and a zero record when there is none.
 // One asked earlier tells no more: a turn or a notification that answers the latest came after it too.
 func readAsked(root *os.Root) record {
 	names, _ := askedRecords(root, ".") // none to read: none asked

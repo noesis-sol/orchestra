@@ -37,7 +37,7 @@ type Loop struct {
 	cfg    Config
 	log    *Log
 	sink   Sink
-	sinkMu sync.Mutex // triage reports from its own goroutine
+	sinkMu sync.Mutex // sink, final and the counts below: workers and triage emit from goroutines of their own
 	prompt string     // worker prompt with the TICKET_ID placeholder
 
 	// Tickets labelled SoloLabel, Run's own: the one running, the one next in line waiting for the

@@ -100,7 +100,7 @@ type checkFail struct {
 	br, onto string   // the branch checked, rebased onto Base at onto
 	how      string   // as checkHow says
 	output   string   // where the whole output is, as saveCheckOutput returned it
-	said     []string // the lines of the output that say what failed (see failureLines)
+	said     []string // the lines of the output that say what failed (see checkOutput.failures)
 	saidEnd  bool     // no line said: said is the output's last lines, if it printed any
 	dirs     []string // the directories the ticket's own commits change, sorted (see ownDirs)
 	setup    string   // the setup command, when it failed before the check could run (see setUp)
@@ -152,7 +152,7 @@ func (f checkFail) evidence(id, check, base string) string {
 }
 
 var (
-	// failedPackage matches a line that says what failed (see failureLines) naming a package that
+	// failedPackage matches a line that says what failed (see checkOutput.failures) naming a package that
 	// failed: go test's FAIL line, or gotestsum's === FAIL:.
 	failedPackage = regexp.MustCompile(`^(?:FAIL|=== FAIL:)\s+(\S+)`)
 	// failedFile matches one naming the file of a lint, vet or build error, at its position.

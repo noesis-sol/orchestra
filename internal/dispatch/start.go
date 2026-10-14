@@ -152,8 +152,9 @@ type workerArgs struct {
 }
 
 // startWorker opens a tab in worktree wt for ticket t's worker and starts it there, named agent:
-// from its prompt file launch if it has one and that works, or else with herdr agent start, its
-// prompt then to be pasted. It does without its rules and hooks if Herdr refuses them. With a
+// from its prompt file launch if it has one and that works, or else through the terminal's
+// StartAgent, its prompt then to be pasted. It does without its rules and hooks if the terminal
+// refuses them. With a
 // session (a Claude Code session ID), it resumes that session rather than starting a new one. It
 // shows the ticket as starting in that tab, and clears that again unless it returns the worker
 // started, which leaves clearing it to the caller. It places the worker as soon as the tab is open,
@@ -197,7 +198,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 	s.place()
 	launched, stop := s.fromPromptFile(ctx)
 	if !launched && stop == nil {
-		stop = s.throughHerdr(ctx)
+		stop = s.startPlainly(ctx)
 	}
 	if stop != nil {
 		return startedWorker{}, stop
@@ -208,16 +209,16 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 }
 
 // workerStart is one start of ticket id's worker, named agent, in pane of tab, which startWorker
-// takes step by step. A step goes on without the worker's rules and hooks once Herdr refuses them,
+// takes step by step. A step goes on without the worker's rules and hooks once the terminal refuses them,
 // and without its prompt file launch once starting from it fails.
 type workerStart struct {
 	o                        *Loop
 	id, tab, pane, wt, agent string
 	mcpArgs                  []string // the arguments giving it its MCP servers
 	fixed                    []string // the arguments it always gets: mcpArgs, the run's for every Claude worker, --resume
-	rules                    []string // the arguments giving it its standing rules; nil once Herdr refused them
-	report                   []string // the arguments for its hooks; nil once Herdr refused them
-	launch                   string   // its prompt file launch; "" once it is to be started with herdr agent start
+	rules                    []string // the arguments giving it its standing rules; nil once the terminal refused them
+	report                   []string // the arguments for its hooks; nil once the terminal refused them
+	launch                   string   // its prompt file launch; "" once it is to be started with StartAgent
 }
 
 // place places the worker where it is being started, with or without its hooks.
@@ -237,13 +238,13 @@ func (s *workerStart) args() []string {
 }
 
 // interrupted ends a start cut short once a worker may have been launched: it names the worker if
-// Herdr has it in the pane, so the next run, which looks for it by name, finds it.
+// the terminal has it in the pane, so the next run, which looks for it by name, finds it.
 func (s *workerStart) interrupted(ctx context.Context) *stopReason {
 	s.o.nameLeft(context.WithoutCancel(ctx), s.id, s.tab, s.pane, s.agent)
 	return errInterrupted
 }
 
-// nameRefused ends the start if err is Herdr refusing the agent name, which it would refuse on
+// nameRefused ends the start if err is the terminal refusing the agent name, which it would refuse on
 // every retry; for any other error, or none, it is nil.
 func (s *workerStart) nameRefused(err error) *stopReason {
 	if !s.o.starter.IsNameRefused(err) {
@@ -256,7 +257,7 @@ func (s *workerStart) nameRefused(err error) *stopReason {
 // fromPromptFile starts the worker, if it has a prompt file launch, by typing the command into the
 // tab, and names it once Herdr recognises it. Herdr's own start waits for the agent to look ready
 // for input, which a worker that goes straight to work never does, so it could only time out.
-// launched is false, with no stop, when the worker is to be started with herdr agent start instead.
+// launched is false, with no stop, when the worker is to be started with StartAgent instead.
 func (s *workerStart) fromPromptFile(ctx context.Context) (launched bool, stop *stopReason) {
 	if s.launch == "" {
 		return false, nil
@@ -315,12 +316,12 @@ func (s *workerStart) waitLaunched(ctx context.Context, why error) (launched boo
 	return false, nil
 }
 
-// throughHerdr starts the worker with herdr agent start, its prompt then to be pasted, in up to 10
-// attempts; arguments the terminal refuses are dropped where they can be, and stop the start where
-// they can't. 'agent start' can report failure while the agent is still coming up (agent_not_ready
-// keeps the name), and a retry then finds the pane occupied, so after each failure it checks
-// whether the agent is there before trying again.
-func (s *workerStart) throughHerdr(ctx context.Context) *stopReason {
+// startPlainly starts the worker with the terminal's StartAgent, its prompt then to be pasted, in
+// up to 10 attempts; arguments the terminal refuses are dropped where they can be, and stop the
+// start where they can't. A start can report failure while the agent is still coming up (Herdr's
+// agent_not_ready keeps the name), and a retry then finds the pane occupied, so after each failure
+// it checks whether the agent is there before trying again.
+func (s *workerStart) startPlainly(ctx context.Context) *stopReason {
 	o := s.o
 	for range 10 {
 		args := s.args()
@@ -407,7 +408,7 @@ func (s *workerStart) adoptUnnamed(ctx context.Context) (AgentState, *stopReason
 	return StateGone, nil
 }
 
-// agentName is the Herdr name of ticket id's worker; without a Namer (in tests), the ID itself.
+// agentName is the agent name of ticket id's worker; without a Namer (in tests), the ID itself.
 func (o *Loop) agentName(id string) string {
 	if o.namer == nil {
 		return id

@@ -31,11 +31,11 @@ type Notes interface {
 	FileBug(ctx context.Context, title, description, label string) (string, error) // files a P2 bug; its ID
 }
 
-// Tabs opens and closes the terminal tabs workers run in (Herdr).
+// Tabs opens and closes the terminal tabs workers run in (Herdr's tabs, tmux windows or cmux workspaces).
 type Tabs interface {
 	CreateTab(ctx context.Context, workspace, cwd, label string) (tab, pane string, err error)
 	CloseTab(ctx context.Context, tab string) error
-	// the tab's label, as CreateTab gave it unless renamed since; open is false when Herdr has no such tab
+	// the tab's label, as CreateTab gave it unless renamed since; open is false when the terminal has no such tab
 	TabLabel(ctx context.Context, tab string) (label string, open bool, err error)
 }
 
@@ -46,7 +46,7 @@ type Starter interface {
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error     // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
 	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
-	IsNameRefused(err error) bool                                                 // Herdr won't take this agent name
+	IsNameRefused(err error) bool                                                 // the terminal refuses this name
 	WaitReady(ctx context.Context, name string) bool
 }
 
@@ -64,7 +64,7 @@ type Namer interface {
 	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
 }
 
-// AgentState is a worker's status as Herdr reports it, or StateGone when Herdr has no such agent.
+// AgentState is a worker's status as the terminal reports it, or StateGone when it has no such agent.
 type AgentState string
 
 // The states an agent can be in.
@@ -73,8 +73,8 @@ const (
 	StateWorking AgentState = "working"
 	StateBlocked AgentState = "blocked"
 	StateDone    AgentState = "done"
-	StateUnknown AgentState = "unknown" // Herdr can't tell what the agent is doing
-	StateGone    AgentState = "gone"    // Herdr has no such agent
+	StateUnknown AgentState = "unknown" // the terminal can't tell what the agent is doing
+	StateGone    AgentState = "gone"    // the terminal has no such agent
 )
 
 // Agents watches and nudges a running worker by name.

@@ -18,7 +18,7 @@ import (
 // Claude Code keeps each session's transcript as JSON lines in
 // <config>/projects/<the working directory, encoded>/<session ID>.jsonl, and resumes the session
 // with claude --resume <session ID> from that directory. The worker's SessionStart hook writes
-// both to .orchestra/run/session.json (see hookSettings), so orchestra needn't encode the path
+// both to .orchestra/run/session.json (see sessionName), so orchestra needn't encode the path
 // itself, nor give the worker a session ID of its own: one /clear starts another, which the hook
 // records too.
 

@@ -38,7 +38,7 @@ const (
 
 // checkOutput takes a check's output as it is printed (it is the command's io.Writer) and keeps the
 // whole of it in a temporary file and in memory its last lines, the lines that say what failed (see
-// failureLines), its FLAKY: lines (see reportFlaky) and the suite it was in (see failingSuite). The
+// failures), its FLAKY: lines (see reportFlaky) and the suite it was in (see suite). The
 // zero value keeps no file. Call end once the command has exited, and close when done with it.
 type checkOutput struct {
 	file    *os.File // the whole output, removed from its folder already; nil without one
@@ -60,7 +60,7 @@ type checkOutput struct {
 	flaky  []string // the FLAKY: lines' tests, the first maxFlaky
 	flakyN int      // how many FLAKY: lines there were
 
-	suite string // the suite named last (see failingSuite)
+	suite string // the suite named last, on a line that starts with project.SuiteMarker
 }
 
 // newCheckOutput is a checkOutput with a temporary file for the whole output. A file that can't be
@@ -165,7 +165,8 @@ func (c *checkOutput) push(line []byte) {
 	c.n = min(c.n+1, keptLines)
 }
 
-// scanFailure keeps line, trimmed, if it says what failed, as failureLines picks them.
+// scanFailure keeps line, trimmed, if it says what failed: saysFailed matches it, or it is "running
+// tests:" (a test binary timing out) or one of the tests named under it, up to a blank line.
 func (c *checkOutput) scanFailure(line []byte) {
 	t := bytes.TrimSpace(line)
 	switch {

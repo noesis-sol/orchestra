@@ -226,7 +226,10 @@ type runState struct {
 	ctx  context.Context // the run's: Ctrl+C cancels it
 	keep context.Context // for reopening tickets as the run holds
 
-	results  chan result     // buffered: a worker finishing after settle never blocks
+	// results: workers' results, buffered to Concurrency so a worker hands its result in without
+	// waiting on Run's other steps; any beyond it (adoptions, rechecks) wait for Run or settle, which
+	// takes every one in flight
+	results  chan result
 	inflight map[string]bool // the tickets whose workers haven't returned
 	count    int             // the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar)
 	stops    stops           // the reasons the run stops for, first to last

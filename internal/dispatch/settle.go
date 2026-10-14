@@ -58,8 +58,8 @@ func (o *Loop) waitSettled(
 			}
 			return idle.since, nil
 		}
-		// A permission prompt Herdr shows as idle waits for the maintainer as a blocked worker does.
-		asks := err == nil && o.asksPermission(w, st)
+		// A permission prompt the terminal shows as idle waits for the maintainer as a blocked worker does.
+		asks := o.asksPermission(w, st)
 		if blocked.track(st == StateBlocked || asks) > blockedLimit {
 			if asks {
 				return time.Time{}, halt(ExitStuck, stopBlocked,
@@ -345,18 +345,20 @@ func later(a, b time.Time) time.Time {
 	return a
 }
 
-// idleSettled decides whether a worker Herdr shows idle has settled, from its ticket's status, how
-// long it has been idle (idleFor) and how long since it started on its prompt (running); why names
-// what decided it. A ticket in progress gets idleGrace, as its worker may be waiting on its own
-// background command. Otherwise a worker that reports through hooks has settled at its Stop hook,
-// the end of its turn, even where a PreToolUse record of no turn replaced it (see turnEnded): the
-// record is removed before it starts, so any Stop came after its prompt. While a subagent runs, the turn goes on,
-// as it does after one that stopped past the Stop, until the turn on its answer ends.
-// An adopted worker's record is not, so a report before since (or of unknown time, with since set)
-// is of an earlier turn, and doesn't count. While its last report is a tool use it is mid-turn,
-// whatever Herdr says, for up to idleGrace (a turn that fails ends without a Stop). Before its first
-// report, or without hooks, an open ticket gets startGrace; any other status means the worker is
-// done with it.
+// idleSettled decides whether a worker the terminal shows idle has settled, from its ticket's status,
+// how long it has been idle (idleFor) and how long since it started on its prompt (running); why
+// names what decided it. Case by case, as it returns:
+//   - A ticket in progress: settled after idleGrace, as its worker may wait on a background command.
+//   - With hooks, a report before since, or of unknown time with since set, is of a turn before the
+//     worker was adopted, and doesn't count.
+//   - A Stop hook, or a PreToolUse record of no turn that replaced one (see turnEnded), not before
+//     since: settled, as the record is removed before a worker starts, so any Stop came after its prompt.
+//   - A subagent still running: the turn goes on; settled after idleGrace.
+//   - A subagent that stopped past the Stop, with no turn on its answer yet: settled after idleGrace.
+//   - Any other last report, a tool use: mid-turn, whatever the terminal says; settled after
+//     idleGrace, as a turn that fails ends without a Stop.
+//   - No report, or no hooks, and an open ticket: settled startGrace after the worker started.
+//   - Any other status: settled, as the worker is done with its ticket.
 func (o *Loop) idleSettled(ticket TicketStatus, wt string, hooks bool, since time.Time,
 	idleFor, running time.Duration) (settled bool, why string) {
 	if ticket == StatusInProgress {

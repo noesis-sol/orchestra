@@ -141,8 +141,9 @@ func (b Tracker) bd(ctx context.Context, limit time.Duration, args ...string) (s
 // maintainer and tickets of the excluded types are left out. bd filters them and parseReady filters
 // again, and the query has no limit, so work behind more than bd's default 100 ready entries is
 // still seen. With a scope, only that ticket and its descendants (bd ready --parent) are returned.
-// Like the bash version it judges by the output; when that can't be read, the error carries bd's
-// stderr.
+// The output decides, not bd's exit status: a list that parses is bd's answer, even should bd exit
+// non-zero over something beside the read. Only output that can't be read is an error, which then
+// carries bd's stderr.
 func (b Tracker) Ready(ctx context.Context, scope string) ([]dispatch.Ticket, error) {
 	all, err := b.ready(ctx)
 	if err != nil || scope == "" {

@@ -21,15 +21,47 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// The files the hooks write, in the worktree's .orchestra/run/ or the folder ReportArgsIn names: what
+// each one holds, which hooks write it, and who reads it.
 const (
-	settingsName = "hooks.json"    // in the worktree's .orchestra/run/
-	activityName = "activity.json" // written by the hooks, read by orchestra
-	turnName     = "turn.json"     // the last turn's end (Stop) or start (UserPromptSubmit), written by the hooks
-	editsName    = "edits"         // the paths the worker edits, one per line, appended by the hooks
-	sessionName  = "session.json"  // the worker's Claude Code session, written by its SessionStart hook
-	eventsName   = "events"        // permission prompts, compactions, subagents and sessions, one per line, appended
-	noticeName   = "notice.json"   // the last notification (a dialog shown, waiting on input), written by the hooks
-	askedPrefix  = "asked-"        // + an agent's ID ("main" for the session's own): the tool it asked to use
+	// settingsName is the hooks' settings themselves, written by reportArgs and loaded with --settings.
+	settingsName = "hooks.json"
+	// activityName is the last report of any agent of the session, replaced by PreToolUse and
+	// PermissionRequest (the hook's input: the tool and its arguments) and by PostToolUse,
+	// PostToolUseFailure and Stop (the event alone: a finished tool's input carries its whole output).
+	// A permission prompt is recorded like a tool use: the worker waits on it until it is answered,
+	// and the tool runs once it is allowed. Read by LastToolUse and ReadHooks.
+	activityName = "activity.json"
+	// turnName is the last turn's end (Stop) or prompt's start (UserPromptSubmit), replaced by those
+	// hooks only, so a tool use reported after a Stop, from no turn of the worker's, can't hide that
+	// the turn ended: Claude Code forks agents at the end of a turn (a prompt suggestion, say) that run
+	// the worker's PreToolUse hook and are then refused the tool. Read by LastToolUse and ReadHooks.
+	turnName = "turn.json"
+	// editsName is the path of each file the worker is about to edit, one per line, appended by
+	// PreToolUse for Edit, MultiEdit, Write and NotebookEdit: activity keeps only the last tool use,
+	// and the scheduler needs every file the worker touches. Read by EditedFiles.
+	editsName = "edits"
+	// sessionName is the session's input (session_id, transcript_path), replaced by SessionStart as
+	// the session starts or is resumed, cleared or compacted: what to resume, and where the transcript
+	// is. Read by Session and TranscriptTail.
+	sessionName = "session.json"
+	// eventsName is a log of one JSON line each, appended by PermissionRequest (its tool), PreCompact
+	// (its trigger), SubagentStart and SubagentStop (its ID and type), SessionStart (its source:
+	// startup, resume, clear, compact) and SessionEnd (its reason: exit, clear, logout, …), which the
+	// tool uses of subagents, replacing activity, can't hide. A line is short and appended in one
+	// write, so lines of hooks that run at once (subagents side by side) don't mix; a value with a
+	// quote or a backslash is noted empty. Read by HookRecord and ReadHooks.
+	eventsName = "events"
+	// noticeName is the last notification Claude Code showed (a permission prompt, a dialog asking for
+	// input, the session idle at its prompt for a while), replaced by Notification: what the session
+	// waits on where no other hook says, as an interrupted turn has no Stop. Read by ReadHooks.
+	noticeName = "notice.json"
+	// askedPrefix, followed by an agent's ID ("main" for the session's own), is the tool that agent
+	// asked to use, replaced by its PermissionRequest and removed by its tool's end (PostToolUse or
+	// PostToolUseFailure of the same agent and tool) or its stop (SubagentStop). Other agents' tool
+	// uses, which replace activity, leave it, so a prompt one subagent waits on still shows while
+	// another works; a prompt refused ends the turn, which turn tells. Read by ReadHooks.
+	askedPrefix = "asked-"
 )
 
 // Reporter sets workers up to report what they are doing and reads what they reported.
@@ -125,44 +157,18 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 	return slices.DeleteFunc(names, func(n string) bool { return !strings.HasPrefix(n, askedPrefix) }), nil
 }
 
-// hookSettings records the hook's input before each tool use (the tool and its arguments), and
-// only the event after a tool use (failed or not) and at the end of a turn: a finished tool's input
-// carries its whole output. Each write goes through a temporary file, so a reader never sees half
-// of one. Before each edit, the file's path is also appended to edits: the record of the last tool
-// use is replaced by the next one, and the scheduler needs every file the worker touches. As the
-// session starts, or is resumed, cleared or compacted, its input (session_id, transcript_path) is
-// written to session, which says what to resume and where the transcript is.
-//
-// The end of each turn (Stop) and the start of each prompt's (UserPromptSubmit) also replace turn,
-// which no tool use does: a record of a tool use that comes after a Stop, from no turn of the
-// worker's, can't hide that the turn ended. Claude Code forks agents at the end of a turn (a
-// prompt suggestion, say) that run the worker's PreToolUse hook and are then refused the tool.
-//
-// A permission prompt's input (the tool and its arguments) is recorded like a tool use's: the
-// worker waits on it until it is answered, and the tool runs once it is allowed. It is also noted in
-// events, with each compaction (its trigger), each subagent's start and stop (its ID and type) and
-// each session's start (its source: startup, resume, clear, compact) and end (its reason: exit,
-// clear, logout, …), one JSON line each: those don't replace the record of the last tool use, which
-// a subagent's own tool uses keep replacing. A line is short and appended in one write, so lines of hooks that run
-// at once (subagents side by side) don't mix. A value with a quote or a backslash is noted empty.
-//
-// Each agent's permission prompt also writes the tool it asks to use to a record of that agent's
-// own (asked, then its ID, "main" for the session's): another agent's tool uses, which replace
-// activity, leave it, so a prompt one subagent waits on still shows while another works. The tool's
-// end (PostToolUse or PostToolUseFailure of the same agent and tool) removes it, as does the
-// subagent's stop; a prompt refused, which ends the turn, is told by the turn's records.
-//
-// A reporting hook must never change what the worker does, and Claude Code takes a hook's exit
-// status 2 as "block": the tool call is refused, or the turn may not end. dash, /bin/sh on Debian
-// and Ubuntu, exits 2 when a redirection fails, as every write here does once the worker has
-// removed .orchestra/run/. So each hook ignores its errors, reads all its input (a hook that
-// stops early would leave Claude Code writing to a closed pipe) and exits 0. It doesn't make the
-// folder again: a git stash pop of the worker's own git stash --all would then fail on the file.
-// Each notification Claude Code shows (a permission prompt, a dialog asking for input, the session
-// idle at its prompt for a while) replaces notice, which says what the session waits on where no
-// other hook does: an interrupted turn has no Stop.
-//
-// The settings also carry workerEnv.
+// hookSettings is the settings that have the worker's hooks write the records r (activityName and
+// the other names say what each holds), and that carry workerEnv. Every hook keeps to these rules:
+//   - A record replaced is written to a temporary file and moved over it, so a reader never sees
+//     half of one.
+//   - It exits 0, ignoring its errors: a reporting hook must never change what the worker does, and
+//     Claude Code takes a hook's exit status 2 as "block" (the tool call is refused, or the turn may
+//     not end). dash, /bin/sh on Debian and Ubuntu, exits 2 when a redirection fails, as every write
+//     here does once the worker has removed .orchestra/run/.
+//   - It reads all its input: a hook that stops early would leave Claude Code writing to a closed
+//     pipe.
+//   - It doesn't make the folder again: a git stash pop of the worker's own git stash --all would
+//     then fail on the file.
 func hookSettings(r records) map[string]any {
 	activity, turn, edits, session, events := r.activity, r.turn, r.edits, r.session, r.events
 	writeTo := func(path, from string) string {

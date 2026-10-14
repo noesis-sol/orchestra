@@ -78,9 +78,13 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | File | What's in it |
 | --- | --- |
 | `loop.go` | the `Loop` type, `Config`, exit codes, timings and shared helpers |
+| `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts (tests in `run_test.go` and `schedule_test.go`) |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
+| `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
+| `mcp.go` | the MCP servers a Claude worker starts with, and the warning the run gives once about them |
+| `screen.go` | reading a worker's screen: its prompt still unsent in the input box, its latest action |
 | `work.go` | one ticket from start to outcome: asked, deferred, paused or closed |
 | `asked.go` | tickets waiting on a question that don't come back through `bd ready`: where each left its worker, adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |
 | `carry.go` | the workers a run leaves behind (asked, left running), saved to `.orchestra/run/state.json` as it ends and checked and carried over by the next run |
@@ -91,6 +95,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
+| `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution |
 | `checkoutput.go` | what is kept of the output of the check, the setup and the full check as they print it: the whole in a temporary file, saved when they fail, and in memory its end, what failed, its `FLAKY:` lines and suite, each bounded |
 | `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
 | `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets |
@@ -98,6 +103,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
 | `deferred_free.go` | deferred tickets whose blockers have all merged, listed in the `START` block and the nothing-to-run box (`DEFERRED_FREE`) |
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
+| `nothing.go` | why a run has nothing to run (`NothingToRun`, `CheckNothingToRun`): everything done, or nothing ready and what holds it |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |
 | `events.go` | events and status sent to the dashboard, and what the run counts of them |
@@ -106,9 +112,13 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
 | `advice.go` | triage and the run review |
+| `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
+| `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
 | `predict.go` | predicting the files of ready tickets that name none, in the background |
 | `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports |
+| `ticket.go` | `Ticket`, a Beads issue as the loop sees it: its status, labels, deferral and the question it waits on |
+| `activity.go` | what a worker's hooks report (`ToolUse`, `HookRecord`) and what the dashboard says it is doing (`Doing`) |
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.
 
