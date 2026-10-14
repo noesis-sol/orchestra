@@ -1,0 +1,218 @@
+package dispatch
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+// earlierRun is why a ticket left unmerged by an earlier run is still unmerged.
+const earlierRun = "left unmerged by an earlier run"
+
+// loadUnmerged reads the tickets earlier runs left unmerged (closed, labelled UnmergedLabel), so the
+// tickets they block wait in this run too. One that has merged since, by hand (see mergedSince),
+// loses its label. It returns a reason to stop when bd can't say which they are.
+func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
+	c := o.cfg
+	closed, err := o.tickets.Closed(ctx, UnmergedLabel)
+	if err != nil {
+		return halt(ExitTool, stopReadyUnreadable, ": could not list the tickets labelled '%s'%s",
+			UnmergedLabel, because(err)).causedBy(err)
+	}
+	for _, t := range closed {
+		id := t.ID
+		if commit := mergedSince(ctx, c, o.worktrees, o.merger, t); commit != "" {
+			o.info("  %s, left unmerged by an earlier run, is on %s now (%s); its '%s' label is removed",
+				id, c.Base, commit, UnmergedLabel)
+			o.unlabel(ctx, id)
+			continue
+		}
+		o.info("  %s was left unmerged by an earlier run; "+
+			"tickets it blocks wait until wt/%s is merged into %s or its '%s' label is removed",
+			id, id, c.Base, UnmergedLabel)
+		o.setParent(id, t.Parent)
+		o.mu.Lock()
+		if o.unmerged == nil {
+			o.unmerged = map[string]string{}
+		}
+		o.unmerged[id] = earlierRun
+		o.mu.Unlock()
+		o.setLabelled(id, true)
+	}
+	return nil
+}
+
+// mergedSince returns the commit on Base naming ticket t, which an earlier run left unmerged, when
+// it has merged since, by hand: its branch (wt/<id>) is on Base with a commit of its own naming it,
+// or squash-merged (see branchMerged), or its branch is gone and a commit on Base since the branch
+// was cut (ForkKey) names it. It
+// returns "" when it hasn't, or git can't tell. loadUnmerged and CheckNothingToRun both ask it, so
+// that a run and its check agree on what is merged.
+func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, t Ticket) string {
+	if worktrees.HasBranch(ctx, c.Repo, branchOf(t.ID)) {
+		return branchMerged(ctx, c, merger, t, "")
+	}
+	rev := c.Base // labelled before ForkKey was noted: any commit on Base
+	if fork := forkOf(t); fork != "" {
+		rev = fork + ".." + c.Base
+	}
+	return merger.CommitNamingOn(ctx, c.Repo, rev, t.ID)
+}
+
+// branchMerged returns the commit naming ticket t that its branch added, when the branch is on Base
+// (see ownCommits), or "". A branch with no commits of its own is always on Base: an older commit
+// naming the ticket there, such as another ticket's mentioning it or an earlier attempt at it, is
+// not its merge. fork is where the branch was cut, as the run that left its worker behind found it
+// (see saveCarried), for a ticket with no ForkKey; "" if not known. A branch squash-merged by hand
+// and kept is not on Base, but Base holds its changes: then a commit on Base that the branch doesn't
+// have names the ticket, and is returned.
+func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket, fork string) string {
+	br := branchOf(t.ID)
+	if merger.IsAncestor(ctx, c.Repo, br, c.Base) {
+		return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
+	}
+	if !merger.Holds(ctx, c.Repo, c.Base, br) {
+		return ""
+	}
+	return merger.CommitNamingOn(ctx, c.Repo, br+".."+c.Base, t.ID)
+}
+
+// ForkKey is the metadata key holding the commit on Base that a ticket's branch was cut from (their
+// merge-base), as the run that labelled it UnmergedLabel found it: the commits after it are the
+// branch's own.
+const ForkKey = "unmerged_fork"
+
+// ownCommits is the revisions holding ticket t's own commits up to rev: those since its branch was
+// cut, when its ForkKey says where, or else fork (a commit hash, or ""), or else rev alone.
+func ownCommits(t Ticket, fork, rev string) string {
+	if f := forkOf(t); f != "" {
+		fork = f
+	}
+	if isHash(fork) {
+		return fork + ".." + rev
+	}
+	return rev + "^!"
+}
+
+// forkOf returns the commit ticket t's ForkKey holds, or "" when it holds none, or something other
+// than a commit hash: the metadata is anyone's to change, and git takes a revision beginning with a
+// dash for an option.
+func forkOf(t Ticket) string {
+	var s string
+	if json.Unmarshal(t.Metadata, &s) == nil {
+		t.Metadata = json.RawMessage(s) // an object encoded as a string
+	}
+	var meta map[string]json.RawMessage
+	var fork string
+	if json.Unmarshal(t.Metadata, &meta) != nil || json.Unmarshal(meta[ForkKey], &fork) != nil || !isHash(fork) {
+		return ""
+	}
+	return fork
+}
+
+// isHash reports whether s is a commit hash, abbreviated or whole, and so a revision git can't take
+// for an option or a range.
+func isHash(s string) bool {
+	return len(s) >= 7 && len(s) <= 64 && strings.Trim(s, "0123456789abcdef") == ""
+}
+
+// leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
+// this run and, through its UnmergedLabel, in later ones. It reports whether bd labelled it.
+func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) bool {
+	o.markAside(id)
+	o.mu.Lock()
+	if o.unmerged == nil {
+		o.unmerged = map[string]string{}
+	}
+	o.unmerged[id] = why
+	o.mu.Unlock()
+	return o.label(ctx, id)
+}
+
+// leaveRunning labels UnmergedLabel each ticket whose worker is left running as the run ends, after
+// a stop or an interrupt. Its worker may still commit and close it once orchestra has gone, and
+// nothing merges it then: bd ready would count it done, and a later run would start the tickets it
+// blocks on a Base without its code. The label holds them (see loadUnmerged) until it merges, by
+// hand or when the ticket, still open, is dispatched again; while the ticket isn't closed it holds
+// nothing.
+func (o *Loop) leaveRunning(ctx context.Context) {
+	for _, st := range o.activeList() {
+		id := st.Ticket
+		o.mu.Lock()
+		labelled := o.labelled[id]
+		o.mu.Unlock()
+		if labelled || !o.label(ctx, id) {
+			continue
+		}
+		o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
+			"  %s is left running in tab %s and labelled '%s': tickets it blocks wait until wt/%s is merged into %s, "+
+				"in later runs too", id, st.Tab, UnmergedLabel, id, o.cfg.Base)})
+	}
+}
+
+// label adds UnmergedLabel to the ticket, warning when bd can't, and reports whether it did. It
+// first notes where the ticket's branch left Base (ForkKey), so that a later run takes only the
+// branch's own commits for its merge (see mergedSince).
+func (o *Loop) label(ctx context.Context, id string) bool {
+	if fork := o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id)); fork != "" {
+		if err := o.notes.SetMetadata(ctx, id, ForkKey, fork); err != nil {
+			o.log.Raw("", err) // a later run then takes the branch's tip alone for its own
+		}
+	}
+	if err := o.notes.AddLabel(ctx, id, UnmergedLabel); err != nil {
+		o.log.Raw("", err)
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  LABEL_FAILED: bd could not label %s '%s'%s; "+
+				"later runs may start the tickets it blocks before it merges (bd label add %s %s)",
+			id, UnmergedLabel, because(err), id, UnmergedLabel)})
+		return false
+	}
+	o.setLabelled(id, true)
+	return true
+}
+
+// merged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
+func (o *Loop) merged(ctx context.Context, id string) {
+	o.mu.Lock()
+	delete(o.unmerged, id)
+	labelled := o.labelled[id]
+	o.mu.Unlock()
+	if labelled {
+		o.unlabel(ctx, id)
+	}
+}
+
+// unlabel removes the ticket's UnmergedLabel, warning when bd can't.
+func (o *Loop) unlabel(ctx context.Context, id string) {
+	if err := o.notes.RemoveLabel(ctx, id, UnmergedLabel); err != nil {
+		o.log.Raw("", err)
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  LABEL_FAILED: bd could not remove %s's '%s' label%s; "+
+				"later runs hold the tickets it blocks until it is removed (bd label remove %s %s)",
+			id, UnmergedLabel, because(err), id, UnmergedLabel)})
+		return
+	}
+	o.setLabelled(id, false)
+}
+
+func (o *Loop) setLabelled(id string, labelled bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.labelled == nil {
+		o.labelled = map[string]bool{}
+	}
+	o.labelled[id] = labelled
+}
+
+func (o *Loop) unmergedWhy(id string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.unmerged[id]
+}
+
+func (o *Loop) anyUnmerged() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.unmerged) > 0
+}

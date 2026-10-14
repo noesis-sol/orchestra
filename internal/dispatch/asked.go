@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -211,4 +212,70 @@ func (o *Loop) askedList() []string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return slices.Sorted(maps.Keys(o.askedIDs))
+}
+
+// askedWorker is where a ticket set aside to wait on a question left its worker, which may carry
+// on once the question is answered, and the question. Carried over from the last run (see
+// loadCarried), it may instead be a worker that run left running when it stopped, with no question.
+type askedWorker struct {
+	tab, wt  string
+	pane     string // the pane it was started in, where it is looked for unnamed (see earlierState); "" if not known
+	fork     string // the commit on Base its branch was cut from, as a run that left it behind found it; "" if not known
+	question string // its ID
+	title    string
+	hooks    bool     // it reports through hooks
+	left     stopKind // why the last run left it running; "" for a question
+}
+
+// after is what the worker was left after, for a line about it: "its question Q", or "the last run
+// left it running (PAUSED)".
+func (w askedWorker) after() string {
+	if w.question != "" {
+		return "its question " + w.question
+	}
+	return "the last run left it running (" + w.leftWhy() + ")"
+}
+
+// leftWhy is why the last run left the worker running, as its final line began.
+func (w askedWorker) leftWhy() string {
+	return cmp.Or(string(w.left), "stopped")
+}
+
+// setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
+// longer.
+func (o *Loop) setAsked(id string, w *askedWorker) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if w == nil {
+		delete(o.askedIDs, id)
+		return
+	}
+	if o.askedIDs == nil {
+		o.askedIDs = map[string]askedWorker{}
+	}
+	o.askedIDs[id] = *w
+}
+
+// asked returns where ticket id, set aside waiting on a question, left its worker.
+func (o *Loop) asked(id string) (askedWorker, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	w, ok := o.askedIDs[id]
+	return w, ok
+}
+
+func (o *Loop) isAsked(id string) bool {
+	_, ok := o.asked(id)
+	return ok
+}
+
+// askedSet is the tickets waiting on a question, or carried over from the last run.
+func (o *Loop) askedSet() map[string]bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	set := make(map[string]bool, len(o.askedIDs))
+	for id := range o.askedIDs {
+		set[id] = true
+	}
+	return set
 }
