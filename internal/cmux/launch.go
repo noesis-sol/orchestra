@@ -82,7 +82,7 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 		return err
 	}
 	// A leading space keeps the line out of the shell's history, where the shell is set to.
-	return t.typeLine(ctx, entry.Workspace, surface, " /bin/sh "+command.ShellQuote(path))
+	return t.typeLine(ctx, entry.Workspace, surface, " /bin/sh "+typedQuote(path))
 }
 
 // launched returns the process ID the surface's last launch wrote, and false when it wrote none:
@@ -139,6 +139,11 @@ func (t Terminal) paste(ctx context.Context, workspace, surface, text string) er
 // typeable reports whether cmux types text as it is: one line, without a backslash, which cmux would
 // read \n, \r and \t after.
 func typeable(text string) bool { return !strings.ContainsAny(text, "\\\n\r") }
+
+// typedQuote quotes s for the shell as typeable text: in single quotes, with each single quote in it
+// written as '"'"', since command.ShellQuote writes it with a backslash, which can't be typed. A
+// repository whose path holds a quote, ~/Bob's app say, needs it.
+func typedQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
 
 // pressKey presses one key, by cmux's name for it, in the surface of workspace.
 func (t Terminal) pressKey(ctx context.Context, workspace, surface, k string) error {
