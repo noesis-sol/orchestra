@@ -17,7 +17,8 @@ import (
 
 // orchestra init sets Beads up before anything else: it installs bd where it is missing, with the
 // user's consent, and runs bd init in a repository without .beads/. bd init commits what it adds,
-// together with whatever was staged, so it runs before init stages anything of its own.
+// together with whatever was staged, so it runs before init stages anything of its own, and not
+// while the user has anything staged.
 const (
 	// InstallLimit is how long installing bd may take: Homebrew can spend minutes updating itself.
 	InstallLimit = 15 * time.Minute
@@ -113,6 +114,9 @@ func SetUpBeads(
 	if !onPath || fileExists(filepath.Join(repo, ".beads")) {
 		return steps
 	}
+	if s, staged := stagedStep(ctx, repo); staged {
+		return append(steps, s)
+	}
 	working("setting Beads up here: bd " + strings.Join(bdInit, " "))
 	return append(steps, runBdInit(ctx, repo))
 }
@@ -169,6 +173,26 @@ func runInstall(ctx context.Context, repo string, in BeadsInstall) string {
 		err = errInstallTimedOut
 	}
 	return failure(in.Command, err, string(out))
+}
+
+// stagedStep reports whether anything is staged in repo, which bd init would commit under its own
+// commit, and returns the step saying what to do then. A git that can't tell counts as staged.
+func stagedStep(ctx context.Context, repo string) (Step, bool) {
+	staged, err := git.Git{}.StagedFiles(ctx, repo)
+	switch {
+	case err != nil:
+		why, stderr := err, ""
+		if e, ok := errors.AsType[*command.Error](err); ok {
+			why, stderr = e.Err, e.Stderr
+		}
+		return Step{Kind: StepMissing, Label: "Beads", Detail: "bd init didn't run: " +
+			failure("git diff --cached", why, stderr) + ", so orchestra can't tell what bd init would commit"}, true
+	case len(staged) > 0:
+		return Step{Kind: StepMissing, Label: "Beads", Detail: "bd init didn't run: it would commit what you have " +
+			"staged (" + joinAnd(topLevel(staged)) + ") with its own files; commit it, or unstage it with git reset, " +
+			"then run orchestra init again"}, true
+	}
+	return Step{}, false
 }
 
 // runBdInit runs bd init in repo and returns the step, listing what bd added: what it committed,

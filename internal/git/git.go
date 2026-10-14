@@ -284,6 +284,16 @@ func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {
 	return splitNUL(out)
 }
 
+// StagedFiles lists the files staged in repo: those whose index entry differs from HEAD's, or every
+// staged file before the first commit. It returns git's error when git can't tell.
+func (Git) StagedFiles(ctx context.Context, repo string) ([]string, error) {
+	out, err := command.Output(ctx, command.ReadLimit, repo, "git", "diff", "--cached", "--name-only", "-z", "--")
+	if err != nil {
+		return nil, err
+	}
+	return splitNUL(out), nil
+}
+
 // Attribute returns the value .gitattributes gives attr for path, relative to repo: "unspecified",
 // "set", "unset" or the value it is set to, as 'git check-attr' says.
 func (Git) Attribute(ctx context.Context, repo, attr, path string) (string, error) {

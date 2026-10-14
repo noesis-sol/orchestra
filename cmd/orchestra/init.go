@@ -224,8 +224,9 @@ func runInit(
 		return dispatch.ExitSetup
 	}
 
-	// Beads first: bd init commits what was staged, and init stages a moved worker prompt. Ctrl+C
-	// stops an install or bd init under way, which run in their own process groups, and init with it.
+	// Beads first: bd init commits what was staged, and init stages a moved worker prompt; with the
+	// user's own changes staged, it doesn't run. Ctrl+C stops an install or bd init under way, which
+	// run in their own process groups, and init with it.
 	beadsCtx, stopBeads := signal.NotifyContext(ctx, stopSignals...)
 	steps := append(scoutSteps(scoutSpent), project.SetUpBeads(beadsCtx, repo, choice, getenv, ui.Working)...)
 	stopped := beadsCtx.Err() != nil
