@@ -103,7 +103,10 @@ func (t Terminal) closeUnread(ctx context.Context, err error, workspace, label, 
 		}
 		tab = opened[0]
 	}
-	if cerr := t.CloseTab(ctx, tab); cerr != nil {
+	switch cerr := closeTab(ctx, tab); {
+	case HasCode(cerr, TabNotFound):
+		return fmt.Errorf("%w; Herdr has no tab %s", err, tab)
+	case cerr != nil:
 		return fmt.Errorf("%w; tab %s, which Herdr opened, could not be closed (%v)", err, tab, cerr)
 	}
 	return fmt.Errorf("%w; tab %s, which Herdr opened, is closed again", err, tab)
@@ -143,8 +146,17 @@ func labelledTabs(ctx context.Context, workspace, label string) ([]string, error
 	return ids, nil
 }
 
-// CloseTab closes a Herdr tab.
+// CloseTab closes a Herdr tab. A tab that is already gone (tab_not_found), closed by the user say,
+// is no error, as with ClosePane.
 func (t Terminal) CloseTab(ctx context.Context, tab string) error {
+	if err := closeTab(ctx, tab); !HasCode(err, TabNotFound) {
+		return err
+	}
+	return nil
+}
+
+// closeTab closes a Herdr tab; one Herdr doesn't have is its error tab_not_found.
+func closeTab(ctx context.Context, tab string) error {
 	_, err := run(ctx, command.ReadLimit, "tab", "close", tab)
 	return err
 }

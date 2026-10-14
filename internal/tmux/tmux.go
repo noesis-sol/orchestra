@@ -669,8 +669,8 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 
 // keyNames are Herdr's names of the keys SendKeys presses, and tmux's for them.
 var keyNames = map[string]string{
-	"enter": "Enter", "esc": "Escape", "escape": "Escape", "tab": "Tab", "shift+tab": "BTab", "space": "Space",
-	"backspace": "BSpace", "delete": "DC", "up": "Up", "down": "Down", "left": "Left", "right": "Right",
+	"enter": "Enter", "return": "Enter", "esc": "Escape", "escape": "Escape", "tab": "Tab", "shift+tab": "BTab",
+	"space": "Space", "backspace": "BSpace", "delete": "DC", "up": "Up", "down": "Down", "left": "Left", "right": "Right",
 	"home": "Home", "end": "End", "pageup": "PPage", "pagedown": "NPage",
 }
 
@@ -698,19 +698,28 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 	case !ok:
 		return missing("send-keys", name, "agent")
 	}
-	var args []string
-	for i, k := range keys {
-		if i > 0 {
-			args = append(args, ";", "send-keys")
-		}
+	var cmds [][]string
+	for _, k := range keys {
 		if key, ok := tmuxKey(k); ok {
-			args = append(args, "-t", p.id, key)
-		} else {
-			args = append(args, "-t", p.id, "-l", k)
+			cmds = append(cmds, []string{"-t", p.id, key})
+			continue
+		}
+		// "--" keeps text that starts with '-' from reading as options. tmux takes an argument ending
+		// in ';' for the end of a command, so the text's last semicolons go as their code.
+		text := strings.TrimRight(k, ";")
+		if text != "" {
+			cmds = append(cmds, []string{"-t", p.id, "-l", "--", text})
+		}
+		if n := len(k) - len(text); n > 0 {
+			cmds = append(cmds, append([]string{"-t", p.id, "-H"}, slices.Repeat([]string{"3b"}, n)...))
 		}
 	}
-	if len(args) == 0 {
+	if len(cmds) == 0 {
 		return nil
+	}
+	args := cmds[0]
+	for _, c := range cmds[1:] {
+		args = append(append(args, ";", "send-keys"), c...)
 	}
 	_, err = t.run(ctx, command.ReadLimit, "send-keys", name, args...)
 	return err

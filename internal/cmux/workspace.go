@@ -126,7 +126,12 @@ func (t Terminal) CloseTab(ctx context.Context, tab string) error {
 	if ok {
 		return t.closeWorkspace(ctx, tab, entry.Label)
 	}
-	if label, open, err := t.TabLabel(ctx, tab); err != nil || open {
+	label, open, err := t.TabLabel(ctx, tab)
+	switch {
+	case err != nil:
+		return fmt.Errorf("orchestra didn't open workspace %s, which is left open as cmux can't say "+
+			"whether it still is: %w", tab, err)
+	case open:
 		return &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("orchestra didn't open workspace %q, "+
 			"so it leaves it open", label)}
 	}

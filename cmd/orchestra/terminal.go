@@ -131,6 +131,9 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 	if !installed("tmux") {
 		problems = append(problems, "Required command not found: tmux (the workers' terminal). "+
 			"Install it (brew install tmux, apt install tmux), or run orchestra from a Herdr pane with --terminal herdr.")
+	} else if v := tmux.TooOld(ctx); v != "" {
+		problems = append(problems, v+" is too old: orchestra needs tmux "+tmux.MinVersion+" or later. "+
+			"Upgrade it (brew upgrade tmux, apt install tmux), or run orchestra from a Herdr pane with --terminal herdr.")
 	}
 	if !c.ClaudeWorkers() {
 		problems = append(problems, "Workers in tmux must be Claude Code (got -agent "+c.AgentKind+", or AGENT_KIND): "+

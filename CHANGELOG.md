@@ -40,6 +40,22 @@ All notable changes to orchestra are documented here. The format follows
 - Under tmux and cmux, a worker whose subagent waits on a permission prompt
   reads blocked while another subagent works, where that one's tool uses hid
   the prompt and the worker read working until the ticket's time limit.
+- An older tmux than 3.0, which lacks what orchestra uses (`set-option -p`,
+  `respawn-pane -e`), is a setup problem naming its version, rather than
+  failing once workers start.
+- A tmux server orchestra started no longer gives `BD_JSON_ENVELOPE=0` to
+  every pane opened in it, the user's included: only orchestra's own bd
+  commands get it.
+- Under tmux, keys typed into a worker's pane that start with `-` or end in
+  `;` arrive as given, where tmux took them for options or the end of a
+  command; `return` is Enter, as under cmux.
+- Under Herdr, a worker's tab the user closed already is no error when
+  orchestra closes it, as under tmux and cmux; a `herdr tab create` answer
+  naming a tab Herdr doesn't have says so, where it said the tab could not
+  be closed.
+- Under cmux, closing a workspace orchestra didn't open, when cmux can't
+  list its workspaces, says so with cmux's error, where it said orchestra
+  didn't open workspace "".
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.

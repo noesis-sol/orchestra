@@ -41,6 +41,13 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 	return run(ctx, limit, dir, nil, nil, name, args)
 }
 
+// OutputWithEnv runs a command as Output does, with env (NAME=value each) added to its
+// environment, where it overrides a variable of the same name.
+func OutputWithEnv(ctx context.Context, limit time.Duration, dir string, env []string, name string,
+	args ...string) (string, error) {
+	return run(ctx, limit, dir, env, nil, name, args)
+}
+
 // OutputWithInput runs a command as Output does, with input on its stdin and env (NAME=value each)
 // added to its environment, where it overrides a variable of the same name.
 func OutputWithInput(ctx context.Context, limit time.Duration, dir string, env []string, input, name string,
@@ -48,7 +55,7 @@ func OutputWithInput(ctx context.Context, limit time.Duration, dir string, env [
 	return run(ctx, limit, dir, env, strings.NewReader(input), name, args)
 }
 
-// run runs a command for Output and OutputWithInput, with env added to its environment and its
+// run runs a command for the Output functions, with env added to its environment and its
 // stdin read from stdin (nil for none).
 func run(ctx context.Context, limit time.Duration, dir string, env []string, stdin io.Reader, name string,
 	args []string) (string, error) {
@@ -59,8 +66,7 @@ func run(ctx context.Context, limit time.Duration, dir string, env []string, std
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	// BD_JSON_ENVELOPE pins the bd --json shape. Of two entries with one name, the last wins.
-	cmd.Env = append(append(os.Environ(), "BD_JSON_ENVELOPE=0"), env...)
+	cmd.Env = append(os.Environ(), env...) // of two entries with one name, the last wins
 	g := inGroup(cmd, stopGrace)
 	cmd.WaitDelay = stopGrace
 	var stdout, stderr bytes.Buffer

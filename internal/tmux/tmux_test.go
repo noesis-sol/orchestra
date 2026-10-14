@@ -734,7 +734,7 @@ func TestSendKeysByHerdrsNames(t *testing.T) {
 	}
 	want := []string{"send-keys", "-t", "%5", "Enter", ";", "send-keys", "-t", "%5", "Escape", ";",
 		"send-keys", "-t", "%5", "C-c", ";", "send-keys", "-t", "%5", "Up", ";", "send-keys", "-t", "%5", "BTab", ";",
-		"send-keys", "-t", "%5", "-l", "y", ";", "send-keys", "-t", "%5", "-l", "yes"}
+		"send-keys", "-t", "%5", "-l", "--", "y", ";", "send-keys", "-t", "%5", "-l", "--", "yes"}
 	if got := f.call("send-keys"); !slices.Equal(got, want) {
 		t.Errorf("send-keys got:\n%q\nwant:\n%q", got, want)
 	}

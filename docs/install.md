@@ -52,4 +52,4 @@ A release build checks GitHub at most once a day, in the background, and says wh
 
 `herdr`, `tmux` or `cmux`, `git`, `claude` and `bd`; `orchestra init` can install `bd` ([docs/setup.md](setup.md)).
 
-Workers run in [Herdr](https://herdr.dev) tabs when `orchestra` runs in a Herdr pane, in [cmux](https://cmux.com) workspaces when it runs in a cmux terminal (macOS: `brew install --cask cmux`), and otherwise in tmux windows ([Herdr, tmux or cmux](running.md#herdr-tmux-or-cmux)). Without Herdr or cmux, install tmux: `brew install tmux` on macOS, `sudo apt install tmux` on Debian and Ubuntu, or your system's package manager.
+Workers run in [Herdr](https://herdr.dev) tabs when `orchestra` runs in a Herdr pane, in [cmux](https://cmux.com) workspaces when it runs in a cmux terminal (macOS: `brew install --cask cmux`), and otherwise in tmux windows ([Herdr, tmux or cmux](running.md#herdr-tmux-or-cmux)). Without Herdr or cmux, install tmux, 3.0 or later: `brew install tmux` on macOS, `sudo apt install tmux` on Debian and Ubuntu, or your system's package manager. An older tmux is a setup problem.

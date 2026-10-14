@@ -57,6 +57,10 @@ case "$1 $2" in
 	sed "s/@ID@/$id/g" "$d/answer"
 	;;
 "tab close")
+	if [ -e "$d/closefail" ]; then
+		echo '{"error":{"code":"server_busy","message":"try again"}}' >&2
+		exit 1
+	fi
 	if ! grep -q "^$3 " "$d/tabs"; then
 		echo '{"error":{"code":"tab_not_found","message":"tab not found"},"id":"cli:tab:close"}' >&2
 		exit 1
@@ -178,10 +182,23 @@ func TestCreateTabSaysWhatItCannotClose(t *testing.T) {
 // A tab CreateTab can't close is left, and the error says why, wrapping only the answer's error.
 func TestCreateTabSaysATabCouldNotBeClosed(t *testing.T) {
 	dir := tabsHerdr(t)
-	// An answer naming a tab Herdr doesn't have, and no pane.
-	writeFile(t, dir, "answer", `{"result":{"tab":{"tab_id":"w1:t99"}}}`)
+	writeFile(t, dir, "answer", `{"result":{"tab":{"tab_id":"@ID@"}}}`) // no pane
+	writeFile(t, dir, "closefail", "")
 	_, _, err := (Terminal{}).CreateTab(context.Background(), "w1", "/tmp", "t-1")
-	if err == nil || !strings.Contains(err.Error(), "; tab w1:t99, which Herdr opened, could not be closed (") {
+	if err == nil || !strings.Contains(err.Error(), "; tab w1:t10, which Herdr opened, could not be closed (") {
+		t.Errorf("error %v", err)
+	}
+	if HasCode(err, "server_busy") {
+		t.Errorf("the close's error is told, not wrapped: %v", err)
+	}
+}
+
+// An answer naming a tab Herdr doesn't have leaves none open, and the error says so.
+func TestCreateTabAnswerNamingNoTab(t *testing.T) {
+	dir := tabsHerdr(t)
+	writeFile(t, dir, "answer", `{"result":{"tab":{"tab_id":"w1:t99"}}}`) // no pane
+	_, _, err := (Terminal{}).CreateTab(context.Background(), "w1", "/tmp", "t-1")
+	if err == nil || !strings.HasSuffix(err.Error(), "; Herdr has no tab w1:t99") {
 		t.Errorf("error %v", err)
 	}
 	if HasCode(err, TabNotFound) {
