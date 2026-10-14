@@ -14,6 +14,7 @@ var (
 	green  = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#4ADE80"}
 	yellow = lipgloss.AdaptiveColor{Light: "#A16207", Dark: "#FACC15"}
 	red    = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"}
+	amber  = lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#FB923C"} // the run winding down, as asked
 	grey   = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
 	purple = lipgloss.AdaptiveColor{Light: "#6D28D9", Dark: "#A78BFA"}
 	lilac  = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#C4B5FD"} // a lighter purple, for text
@@ -30,6 +31,7 @@ var (
 	closedStyle   = lipgloss.NewStyle().Foreground(green).Bold(true) // completed
 	deferredStyle = lipgloss.NewStyle().Foreground(yellow)           // set aside
 	stopStyle     = lipgloss.NewStyle().Foreground(red).Bold(true)   // needs you
+	windDownStyle = lipgloss.NewStyle().Foreground(amber)            // winding down: the maintainer's choice, not a need
 	doneStyle     = lipgloss.NewStyle().Foreground(green)
 	organStyle    = lipgloss.NewStyle().Foreground(purple).Bold(true) // an organ's output
 	sayStyle      = lipgloss.NewStyle().Foreground(lilac)             // the organ phase's progress

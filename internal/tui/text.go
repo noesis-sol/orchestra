@@ -15,62 +15,6 @@ func stack(parts ...string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, slices.DeleteFunc(parts, func(p string) bool { return p == "" })...)
 }
 
-// wrapAround word-wraps lead + list + tail to width, continuation lines starting with indent,
-// and shortens list, kept on one line with the punctuation touching it, where it doesn't fit.
-func wrapAround(lead, list, tail string, width int, indent string) []string {
-	var lines []string
-	line, fresh := "", true // fresh: nothing on the line but its indent
-	add := func(word string) {
-		switch {
-		case fresh:
-			line += word
-		case ansi.StringWidth(line)+1+ansi.StringWidth(word) <= width:
-			line += " " + word
-		default:
-			lines, line = append(lines, line), indent+word
-		}
-		fresh = false
-	}
-	if strings.HasPrefix(lead, " ") { // keep a leading margin, which Fields drops
-		line = lead[:len(lead)-len(strings.TrimLeft(lead, " "))]
-	}
-	before, after := strings.Fields(lead), strings.Fields(tail)
-	left, right := "", ""
-	if list != "" && len(before) > 0 && !strings.HasSuffix(lead, " ") {
-		left, before = before[len(before)-1], before[:len(before)-1]
-	}
-	if list != "" && len(after) > 0 && !strings.HasPrefix(tail, " ") {
-		right, after = after[0], after[1:]
-	}
-	for _, word := range before {
-		add(word)
-	}
-	if list != "" {
-		unit := left + list + right
-		room := width - ansi.StringWidth(line) - 1
-		if fresh {
-			room++
-		}
-		const least = 6 // fewer columns of IDs say nothing
-		if ansi.StringWidth(unit) > room && room-ansi.StringWidth(left+right) < min(least, ansi.StringWidth(list)) {
-			lines, line, fresh = append(lines, line), indent, true
-			room = width - ansi.StringWidth(indent)
-		}
-		if ansi.StringWidth(unit) > room {
-			unit = left + ansi.Truncate(list, max(room-ansi.StringWidth(left+right), 1), "…") + right
-		}
-		add(unit)
-	}
-	for _, word := range after {
-		add(word)
-	}
-	lines = append(lines, line)
-	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], width, "…") // a word wider than the pane
-	}
-	return lines
-}
-
 // capitalize is s with its first letter, which may take more than a byte, in upper case.
 func capitalize(s string) string {
 	r, size := utf8.DecodeRuneInString(s)

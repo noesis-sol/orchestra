@@ -65,9 +65,8 @@ func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 		t.Fatalf("drain calls %v, want [true]", calls)
 	}
 	v = ansi.Strip(m.View())
-	joined := strings.Join(strings.Fields(v), " ") // the line wraps at 80 columns
-	for _, want := range []string{"■ Stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start", "s to keep taking tickets"} {
-		if !strings.Contains(joined, want) {
+	for _, want := range []string{" ■ ■  Winding down · 2 running, no new tickets", "s to keep taking tickets"} {
+		if !strings.Contains(v, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
 		}
 	}
@@ -84,7 +83,7 @@ func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 	if len(calls) != 2 || calls[1] {
 		t.Fatalf("drain calls %v, want [true false]", calls)
 	}
-	if v := ansi.Strip(m.View()); strings.Contains(v, "Stopping after") || strings.Contains(v, "held") || !strings.Contains(v, "s to stop after the current tickets") {
+	if v := ansi.Strip(m.View()); strings.Contains(v, "Winding down") || strings.Contains(v, "held") || !strings.Contains(v, "s to stop after the current tickets") {
 		t.Errorf("still winding down after going on:\n%s", v)
 	}
 	if cancelled {
@@ -148,11 +147,11 @@ func TestDrainEventsShowOnTheDashboard(t *testing.T) {
 	var calls []bool
 	cancelled := false
 	m := runEvents(drainDashboard(&calls, &cancelled), dispatch.Event{Kind: dispatch.EvDrain, Text: "DRAIN: stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start, asked by SIGUSR1"})
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Stopping after the 2 running tickets finish") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "■ ■  Winding down · 2 running, no new tickets") {
 		t.Errorf("drain not shown:\n%s", v)
 	}
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvResume, Text: "DRAIN cancelled"})
-	if v := ansi.Strip(m.View()); strings.Contains(v, "Stopping after") {
+	if v := ansi.Strip(m.View()); strings.Contains(v, "Winding down") {
 		t.Errorf("resume not shown:\n%s", v)
 	}
 	if len(calls) != 0 {
@@ -160,22 +159,22 @@ func TestDrainEventsShowOnTheDashboard(t *testing.T) {
 	}
 }
 
-// Once confirmed, the dashboard says on a line of its own that the run winds down and after which
-// tickets, whatever the pane: the IDs may be shortened, the words never. The hint says s keeps taking
-// tickets and the queue is marked as held, until the stop is cancelled.
+// Once confirmed, the dashboard says on a line of its own that the run winds down, whatever the pane:
+// a narrow one drops words rather than wrap. The hint says s keeps taking tickets and the queue is
+// marked as held, until the stop is cancelled.
 func TestWindingDownIsShownInAnyPane(t *testing.T) {
-	// ids is how much of the running tickets' IDs shows: all of them, or the first and a cut.
+	// line is the winding-down line as much of it as fits.
 	sizes := []struct {
-		w, h      int
-		hint, ids string
-		held      bool
+		w, h       int
+		hint, line string
+		held       bool
 	}{
-		{70, 40, "1–2 to go to a worker's tab · s to keep taking tickets", "orchestra-20w, orch", true},
-		{40, 40, "1–2 worker tab · s keep going", "orchestra-20w, orchestra-a", true},
-		{70, 8, "1–2 to go to a worker's tab · s to keep taking tickets", "orchestra-20w, orch", true},
-		{40, 9, "1–2 worker tab · s keep going", "orchestra-20w, orchestra-a", true},
-		{30, 12, "1–2 worker tab · s keep going", "orchestra-20w, orchestr", false}, // the totals line is cut at 30
-		{30, 7, "1–2 worker tab · s keep going", "orchestra-20w, orchestr", false},
+		{70, 40, "1–2 to go to a worker's tab · s to keep taking tickets", " ■ ■  Winding down · 2 running, no new tickets", true},
+		{40, 40, "1–2 worker tab · s keep going", " ■ ■  Winding down · 2 running", true},
+		{70, 8, "1–2 to go to a worker's tab · s to keep taking tickets", " ■ ■  Winding down · 2 running, no new tickets", true},
+		{40, 9, "1–2 worker tab · s keep going", " ■ ■  Winding down · 2 running", true},
+		{30, 12, "1–2 worker tab · s keep going", " ■ ■  Winding down · 2 running", false}, // the totals line is cut at 30
+		{30, 7, "1–2 worker tab · s keep going", " ■ ■  Winding down · 2 running", false},
 	}
 	for _, size := range sizes {
 		var calls []bool
@@ -206,11 +205,10 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 			}
 		}
 		plain := ansi.Strip(view)
-		// The message may be wrapped: compare it with the lines joined.
-		joined := strings.Join(strings.Fields(plain), " ")
-		message := "■ Stopping after the 2 running tickets finish (" + size.ids
-		if !strings.Contains(joined, message) || !strings.Contains(joined, "): no new tickets will start") {
-			t.Errorf("%dx%d: the winding-down line lacks %q … %q:\n%s", size.w, size.h, message, "): no new tickets will start", plain)
+		full := strings.HasSuffix(size.line, "no new tickets")
+		if !strings.Contains(plain, size.line) || !full && strings.Contains(plain, "no new tickets") ||
+			strings.Contains(plain, "orchestra-20w,") {
+			t.Errorf("%dx%d: the winding-down line is not %q:\n%s", size.w, size.h, size.line, plain)
 		}
 		if !strings.Contains(plain, size.hint) {
 			t.Errorf("%dx%d: the hint lacks %q:\n%s", size.w, size.h, size.hint, plain)
@@ -222,7 +220,7 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 
 		m = press(m, "s", "y")
 		plain = ansi.Strip(m.View())
-		if strings.Contains(plain, "Stopping after") || strings.Contains(plain, "held") || strings.Contains(plain, "keep taking") || strings.Contains(plain, "keep going") {
+		if strings.Contains(plain, "Winding down") || strings.Contains(plain, "held") || strings.Contains(plain, "keep taking") || strings.Contains(plain, "keep going") {
 			t.Errorf("%dx%d: still winding down after cancelling:\n%s", size.w, size.h, plain)
 		}
 		if size.w == 70 && !strings.Contains(plain, "s to stop after the current tickets") {
@@ -231,7 +229,7 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 	}
 }
 
-// As tickets finish, the line names those left; with none left it replaces the box saying the
+// As tickets finish, the line counts those left; with none left it replaces the box saying the
 // next ticket is being picked.
 func TestWindingDownFollowsTheRunningTickets(t *testing.T) {
 	var calls []bool
@@ -239,25 +237,13 @@ func TestWindingDownFollowsTheRunningTickets(t *testing.T) {
 	m := press(drainDashboard(&calls, &cancelled), "s", "y")
 	next, _ := m.Update(statusMsg(dispatch.Status{Ticket: "k-1", Gone: true}))
 	m = next.(Dashboard)
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "■ Stopping after k-2 finishes: no new tickets will start") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, " ■ ■  Winding down · 1 running, no new tickets") {
 		t.Errorf("one ticket left:\n%s", v)
 	}
 	next, _ = m.Update(statusMsg(dispatch.Status{Ticket: "k-2", Gone: true}))
 	m = next.(Dashboard)
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "■ Stopping now, as nothing is running") || strings.Contains(v, "picking the next ticket") {
+	if !strings.Contains(v, " ■ ■  Winding down · nothing running, ending now") || strings.Contains(v, "picking the next ticket") {
 		t.Errorf("none left:\n%s", v)
-	}
-}
-
-func TestWrapAroundShortensOnlyTheIDs(t *testing.T) {
-	got := wrapAround(" ■ Stopping after the 3 running tickets finish (", "orchestra-aaa, orchestra-bbb, orchestra-ccc", "): no new tickets will start", 40, "   ")
-	want := []string{
-		" ■ Stopping after the 3 running tickets",
-		"   finish (orchestra-aaa, orchestra-b…):",
-		"   no new tickets will start",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

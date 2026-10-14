@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -8,16 +9,52 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// windDownLine says, while the run winds down, after which tickets it ends, in the DRAIN line's
-// words and as tickets finish. A narrow pane wraps it rather than lose words: only the ticket IDs
-// are shortened.
+// windDownLine says, while the run winds down, how far it has come: a ■ per ticket running when it
+// began, amber while it runs, green once merged or red once set aside or waiting on the maintainer,
+// then how many still run. It names no tickets: Current and the tickets table do. It never wraps: a
+// narrow pane drops the words, then all but the squares.
 func (m Dashboard) windDownLine(w int) string {
-	lead, list, tail := dispatch.DrainWords(m.runningIDs())
-	lines := wrapAround(" ■ "+capitalize(lead), list, tail, w, "   ")
-	for i := range lines {
-		lines[i] = stopStyle.Render(lines[i])
+	squares := make([]string, 0, max(len(m.drainFrom), 1))
+	for _, id := range m.drainFrom {
+		squares = append(squares, m.windDownSquare(id))
 	}
-	return strings.Join(lines, "\n")
+	if len(squares) == 0 { // nothing was running: the run ends at once
+		squares = append(squares, windDownStyle.Render("■"))
+	}
+	lead := " " + strings.Join(squares, " ") + "  "
+	words := windDownStyle.Bold(true).Render("Winding down")
+	rests := []string{"nothing running, ending now"}
+	if n := len(m.active); n > 0 {
+		rests = []string{fmt.Sprintf("%d running, no new tickets", n), fmt.Sprintf("%d running", n)}
+	}
+	for _, rest := range rests {
+		if line := lead + words + dimStyle.Render(" · "+rest); ansi.StringWidth(line) <= w {
+			return line
+		}
+	}
+	if line := lead + words; ansi.StringWidth(line) <= w {
+		return line
+	}
+	return " " + strings.Join(squares[:min(w/2, len(squares))], " ") // as many squares as fit
+}
+
+// windDownSquare is ticket id's ■ on the winding-down line, in the colour of where it is.
+func (m Dashboard) windDownSquare(id string) string {
+	style := windDownStyle // still running, or gone from Current but not yet merged or set aside
+	if _, running := m.active[id]; !running {
+		if i := m.rowIndex(id); i >= 0 {
+			switch m.rows[i].state {
+			case rowDone:
+				style = doneStyle
+			case rowWaiting: // back in the queue, which the wind-down holds
+				style = dimStyle
+			case rowWorking: // not merged or set aside yet
+			default: // set aside, stopped, or waiting on the maintainer
+				style = stopStyle.UnsetBold()
+			}
+		}
+	}
+	return style.Render("■")
 }
 
 // runningIDs names the running tickets, oldest first.

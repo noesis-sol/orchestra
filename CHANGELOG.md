@@ -108,6 +108,14 @@ All notable changes to orchestra are documented here. The format follows
   them twice.
 ### Changed
 
+- While the run winds down, the dashboard's line above the hint is one
+  short amber line, `■ ■ ■ ■  Winding down · 3 running, no new tickets`:
+  a `■` for each ticket running when it began, amber while it runs, green
+  once merged, red once set aside. It was bold red, the colour for what
+  needs you, and listed the running tickets, wrapping in most panes; a
+  narrow pane now drops words and never wraps. The totals' `· held` marker
+  is amber too. The `DRAIN` log line and the **s** question still name the
+  tickets.
 - `orchestra update` no longer refuses while a run holds the repository's
   lock: nothing runs the binary during a run, so the reason it gave
   (workers' hooks call orchestra) wasn't true. The new binary is renamed

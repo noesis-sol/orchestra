@@ -225,7 +225,7 @@ func (m Dashboard) statsTable(w int) string {
 		queued = fmt.Sprint(m.queued) + dimStyle.Render(m.ofUnclosed())
 	}
 	if m.draining {
-		queued += deferredStyle.Render(" · held") // not taken while the run winds down
+		queued += windDownStyle.Render(" · held") // not taken while the run winds down
 	}
 	labels := []string{"Completed", "Set aside", "Needs you", "Workers", "In queue"}
 	values := []string{
@@ -275,8 +275,9 @@ func (m Dashboard) statsLine(w int) string {
 	if m.queued >= 0 {
 		queued = fmt.Sprint(m.queued) + m.ofUnclosed()
 	}
+	queue := dimStyle.Render("queue " + queued)
 	if m.draining {
-		queued += " held" // not taken while the run winds down
+		queue += windDownStyle.Render(" held") // not taken while the run winds down
 	}
 	parts := []string{
 		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
@@ -284,7 +285,7 @@ func (m Dashboard) statsLine(w int) string {
 		stopStyle.Render(fmt.Sprintf("? %d", m.needsYou())),
 		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
 			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
-		dimStyle.Render("queue " + queued),
+		queue,
 	}
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }

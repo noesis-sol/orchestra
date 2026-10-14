@@ -28,6 +28,7 @@ type Dashboard struct {
 	active      map[string]dispatch.Status // running workers, by ticket
 	stopping    bool                       // something stopped the run; the running ones are finishing
 	draining    bool                       // the maintainer asked to stop after the running tickets
+	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
 	asking      bool                       // the question whether to stop after them, or to go on, is open
 	closed      int
 	triaged     int
@@ -74,7 +75,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case m.asking && key == "y":
-			m.asking, m.draining = false, !m.draining
+			m.asking = false
+			m.setDraining(!m.draining)
 			m.drain(m.draining)
 		case m.asking && (key == "n" || key == "esc"):
 			m.asking = false
@@ -95,6 +97,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if st.Gone {
 			delete(m.active, st.Ticket)
 		} else {
+			if m.draining && !slices.Contains(m.drainFrom, st.Ticket) { // its status late, or one taken back
+				m.drainFrom = append(m.drainFrom, st.Ticket)
+			}
 			m.active[st.Ticket] = st
 		}
 	case eventMsg:
@@ -144,7 +149,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.rows[i].triage = ev.Detail + " · " + ev.Title
 			}
 		case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
-			m.draining = ev.Kind == dispatch.EvDrain
+			m.setDraining(ev.Kind == dispatch.EvDrain)
 		case dispatch.EvProbed: // the machine works again after an environment hold
 			m.stopping = false
 		case dispatch.EvHold:
@@ -172,6 +177,19 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// setDraining turns the wind-down on or off. Turned on, it remembers the tickets running then, whose
+// squares the winding-down line fills in as they finish; asked again, as y and then the loop's event
+// do, it keeps them.
+func (m *Dashboard) setDraining(on bool) {
+	switch {
+	case !on:
+		m.drainFrom = nil
+	case !m.draining:
+		m.drainFrom = m.runningIDs()
+	}
+	m.draining = on
 }
 
 // View is the whole display: title, totals, the tickets of this run, and the current tickets. It is
@@ -240,11 +258,10 @@ func lineCount(s string) int {
 	return lipgloss.Height(s)
 }
 
-// footLines is how many lines the foot takes below the workers with a winding-down line drain lines
-// tall, there or not: the MCP warning and the way to see the workers' tabs, if any, that line and
-// the hint.
-func (m Dashboard) footLines(drain int) int {
-	n := drain + 1
+// footLines is how many lines the foot takes below the workers, the winding-down line there or not:
+// the MCP warning and the way to see the workers' tabs, if any, that line and the hint.
+func (m Dashboard) footLines() int {
+	n := 2
 	if m.cfg.MCPWarning() != "" {
 		n++
 	}
@@ -269,13 +286,13 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	}
 	// The room the workers' form is chosen for, the winding-down line there or not; its height changes
 	// only as workers start and finish.
-	steady := m.height - max(len(foot), m.footLines(lineCount(m.windDownLine(w))))
+	steady := m.height - max(len(foot), m.footLines())
 	fits := func(room int, parts ...string) bool { return lineCount(stack(parts...)) <= room }
 	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
 	stats := m.statsTable(w)
 	panels, list := current(m.workerPanels(w)), current(m.workerList(w))
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
-	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines(1)
+	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines()
 	if lines := tableLines(m.height); need+lines <= m.height {
 		top := stack(title, stats, m.tickets(w, lines))
 		for _, workers := range []string{panels, list} {
@@ -283,8 +300,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 				return with(top, workers)
 			}
 		}
-		// More workers than the run may have, or a winding-down line that wraps: the labels go, then
-		// the workers give way.
+		// More workers than the run may have: the labels go, then the workers give way.
 		return m.cut(stack(title, stats, m.ticketsTable(w, lines-1), m.workerList(w)), foot)
 	}
 	for _, workers := range []string{panels, list} {

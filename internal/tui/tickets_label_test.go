@@ -68,12 +68,14 @@ func TestTheTicketsLabelSavesTheWorkersALine(t *testing.T) {
 }
 
 // Where the pane leaves the Current label out under the table, the Tickets label goes with it; a
-// pane a line shorter has no table. The workers' one box is their list, a line each.
+// pane a line shorter has no table. The workers' one box is their list, a line each: three of them,
+// in a run that may have two, as after its concurrency was lowered.
 func TestTheTicketsLabelGoesWithCurrent(t *testing.T) {
 	var focused []string
 	m := numberedDashboard(3, &focused)
+	m.cfg.Concurrency = 2
 	m.width = 66
-	for h, want := range map[int]string{20: "label false, 1 boxes; table 5 lines", 19: "label true, 1 boxes; table 0 lines"} {
+	for h, want := range map[int]string{19: "label false, 1 boxes; table 5 lines", 18: "label true, 1 boxes; table 0 lines"} {
 		m.height = h
 		view := m.View()
 		checkWithinPane(t, view, 66, h)
