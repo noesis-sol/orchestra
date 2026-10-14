@@ -66,18 +66,36 @@ func RecordsOf(args []string) (string, bool) {
 //   - unknown before any hook ran, as while claude starts or shows a dialog that runs no hook (trust
 //     this folder): the terminal's screen may say more.
 func State(records string) dispatch.AgentState {
-	st, _ := StateAsked(records)
-	return st
+	return ReadHooks(records, "").State
 }
 
-// StateAsked is State, and whether it is blocked on a permission prompt the records tell asked and
-// not answered. Claude Code runs no hook as a permission is allowed (PreToolUse runs before it asks,
-// PostToolUse once the tool is done), so one allowed reads asked until its tool is done, however long
-// that takes: the terminal's screen says whether its dialog still shows (ShowsPermission).
-func StateAsked(records string) (dispatch.AgentState, bool) {
+// Hooks is what a Claude session's hooks tell of it (see State), and what a terminal reads its screen
+// for where they can't tell (see Settle).
+type Hooks struct {
+	// State is what the session is doing, as its hooks tell it (see State).
+	State dispatch.AgentState
+	// Asked is whether it is blocked on a permission prompt the records tell asked and not answered.
+	// Claude Code runs no hook as a permission is allowed (PreToolUse runs before it asks, PostToolUse
+	// once the tool is done), so one allowed reads asked until its tool is done, however long that
+	// takes: the terminal's screen says whether its dialog still shows (ShowsPermission).
+	Asked bool
+	// Turned is whether the records tell a turn of the session: a prompt or a turn's end. Claude Code
+	// asks its dialogs that run no hook (trust this folder, the project's MCP servers) before a
+	// session's first turn, so a terminal looks for them on its screen only until then: a session's
+	// output may well show their words. A new session's records have no turn (ReportArgs).
+	Turned bool
+}
+
+// ReadHooks reads what the hooks writing to the folder records (see Records) tell of their session;
+// records "" is the folder of a session launched without hooks in dir, a ticket's worktree, which has
+// them in its .orchestra/run/. Unknown when they can't be read.
+func ReadHooks(records, dir string) Hooks {
+	if records == "" {
+		records = Records(dir, "")
+	}
 	root, err := os.OpenRoot(records)
 	if err != nil {
-		return dispatch.StateUnknown, false
+		return Hooks{State: dispatch.StateUnknown}
 	}
 	defer func() { _ = root.Close() }()    // read-only: nothing to lose
 	b, fi, err := readIn(root, eventsName) // none yet: no session started
@@ -85,36 +103,46 @@ func StateAsked(records string) (dispatch.AgentState, bool) {
 	if err == nil {
 		noted = fi.ModTime()
 	}
-	activity := readRecord(root, activityName)
-	return state(activity, readRecord(root, turnName), readRecord(root, noticeName), readAsked(root),
+	activity, turn := readRecord(root, activityName), readRecord(root, turnName)
+	st, asked := state(activity, turn, readRecord(root, noticeName), readAsked(root),
 		readSessions(b, noted, activity.at, time.Now()))
+	return Hooks{State: st, Asked: asked, Turned: !turn.at.IsZero()}
 }
 
-// TurnRecorded reports whether the records (see Records) tell a turn of the session: a prompt or a
-// turn's end. Claude Code asks its dialogs that run no hook (trust this folder, the project's MCP
-// servers) before a session's first turn, so a terminal looks for them on its screen only until then:
-// a session's output may well show their words. A new session's records have no turn (ReportArgs).
-func TurnRecorded(records string) bool {
-	root, err := os.OpenRoot(records)
-	if err != nil {
-		return false
+// Settle is the session's state, given screen, which reads its terminal's visible screen, once its
+// process is known to be there: what its hooks tell, but blocked while its screen shows a dialog that
+// runs no hook, which only comes before its first turn, and working once a permission prompt they
+// tell asked no longer shows, as allowed, which runs no hook: its tool runs. A screen that can't be
+// read, or reads empty, says nothing. It reads the screen only where the hooks can't tell.
+func (h Hooks) Settle(screen func() (string, error)) dispatch.AgentState {
+	if !h.firstTurnNotDone() && !h.Asked {
+		return h.State // the hooks tell
 	}
-	defer func() { _ = root.Close() }() // read-only: nothing to lose
-	return !readRecord(root, turnName).at.IsZero()
+	s, err := screen()
+	return settle(h, s, err == nil)
 }
 
-// ShowsPermission reports whether the bottom of screen, a Claude session's visible screen, shows its
-// permission dialog: the question "Do you want to proceed?" (or to make an edit, create a file, …)
-// or the first of its answers, "1. Yes".
-func ShowsPermission(screen string) bool {
-	lines := strings.Split(strings.ToLower(screen), "\n")
-	for _, l := range lines[max(0, len(lines)-25):] {
-		l = strings.TrimLeft(l, " \t│|❯>") // its frame, and the cursor on the answer chosen
-		if strings.HasPrefix(l, "do you want to ") || strings.HasPrefix(l, "1. yes") {
-			return true
+// firstTurnNotDone reports whether the hooks tell the session is yet to take its first turn, when it
+// may show a dialog that runs no hook: no hook ran yet, as while claude starts or shows one, or it is
+// idle with no turn recorded.
+func (h Hooks) firstTurnNotDone() bool {
+	return h.State == dispatch.StateUnknown || (h.State == dispatch.StateIdle && !h.Turned)
+}
+
+// settle is Settle's decision, given the screen as read, and whether it could be read.
+func settle(h Hooks, screen string, read bool) dispatch.AgentState {
+	switch {
+	case !read:
+	case h.firstTurnNotDone():
+		if ShowsDialog(screen) {
+			return dispatch.StateBlocked
+		}
+	case h.Asked:
+		if screen != "" && !ShowsPermission(screen) {
+			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
 		}
 	}
-	return false
+	return h.State
 }
 
 // record is one of the hooks' replaced records: the event, a notification's type, and when it was
@@ -154,7 +182,7 @@ type sessions struct {
 }
 
 // state is State's reading of the records, and whether it is blocked on a permission prompt asked
-// (see StateAsked); asked is the latest prompt an agent asked and is not done with.
+// (see Hooks.Asked); asked is the latest prompt an agent asked and is not done with.
 func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentState, bool) {
 	if s.ended {
 		return dispatch.StateGone, false

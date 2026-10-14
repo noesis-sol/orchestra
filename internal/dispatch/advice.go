@@ -13,11 +13,7 @@ import (
 
 // lastLines keeps the end of a long text, where a worker's conclusion is.
 func lastLines(s string, n int) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
+	return strings.TrimSuffix(LastLines(s, n), "\n")
 }
 
 // gatherDeferral collects the evidence for one deferred ticket.
@@ -33,7 +29,7 @@ func (o *Loop) gatherDeferral(ctx context.Context, id, how, wt string) organ.Def
 		hooks = o.reporter.HookRecord(wt).Evidence()
 	}
 	return organ.Deferral{ID: id, How: how, Ticket: show,
-		Screen:     lastLines(o.agents.Screen(ctx, o.agentName(id), ""), 80),
+		Screen:     lastLines(o.agents.Screen(ctx, o.agentName(id), ""), ScreenLines),
 		Transcript: transcript,
 		Hooks:      hooks,
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +

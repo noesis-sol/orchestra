@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,9 +101,7 @@ var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh"
 
 // state is the state of the agent in the pane p: gone once its process exited (the pane dead), its
 // session ended or a pane orchestra's launch no longer runs is back at a shell; otherwise what its
-// hooks tell (claude.State), and blocked while its screen shows a dialog that runs no hook, which only
-// comes before its first turn (claude.TurnRecorded). A permission prompt its hooks tell asked is
-// blocked only while its screen still shows it: once allowed, which runs no hook, its tool runs.
+// hooks tell, read with its visible screen (claude.Hooks.Settle).
 // A shell counts only once a hook ran: as the agent starts, the shell that runs it shows for a moment.
 // Nor does it count in a pane whose process is the one orchestra launched: that runs the agent through
 // exec, and ends dead; a shell there is a wrapper script that runs the agent as its child, which tmux
@@ -111,67 +110,33 @@ func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
 	if p.dead || p.kind == "" {
 		return dispatch.StateGone
 	}
-	records := p.records
-	if records == "" {
-		records = claude.Records(p.dir, "") // launched without hooks: a ticket's worktree has them there
-	}
-	st, asked := claude.StateAsked(records)
+	h := claude.ReadHooks(p.records, p.dir)
 	switch {
-	case st == dispatch.StateGone:
-		return st
-	case st != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
+	case h.State == dispatch.StateGone:
+		return h.State
+	case h.State != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
 		return dispatch.StateGone
-	case st == dispatch.StateUnknown || (st == dispatch.StateIdle && !claude.TurnRecorded(records)):
-		if screen, err := t.capture(ctx, p.id, false); err == nil && showsDialog(screen) {
-			return dispatch.StateBlocked
-		}
-	case asked:
-		if screen, err := t.capture(ctx, p.id, true); err == nil && screen != "" && !claude.ShowsPermission(screen) {
-			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
-		}
 	}
-	return st
+	return h.Settle(func() (string, error) { return t.capture(ctx, p.id, true) })
 }
 
-// dialogs are what Claude Code shows of the dialogs it asks before a session starts, which run no
-// hook: whether to trust the folder, and whether to use the project's MCP servers.
-var dialogs = []string{"trust this folder", "mcp server found in this project", "mcp servers found in this project"}
-
-// showsDialog reports whether the bottom of screen shows one of Claude Code's dialogs.
-func showsDialog(screen string) bool {
-	lines := strings.Split(strings.ToLower(screen), "\n")
-	lines = lines[max(0, len(lines)-25):]
-	for _, l := range lines {
-		for _, d := range dialogs {
-			if strings.Contains(l, d) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// capture reads the pane's screen: the visible screen, and the 60 lines above it unless visible,
-// with wrapped lines joined and the empty lines below its last one left out.
+// capture reads the pane's screen: its last dispatch.ScreenLines lines, or only those of the visible
+// screen if visible, with wrapped lines joined and the empty lines below its last one left out.
 func (t Terminal) capture(ctx context.Context, pane string, visible bool) (string, error) {
 	args := []string{"-p", "-J", "-t", pane}
 	if !visible {
-		args = append(args, "-S", "-60")
+		args = append(args, "-S", strconv.Itoa(-dispatch.ScreenLines))
 	}
 	out, err := t.run(ctx, command.ReadLimit, "capture-pane", pane, args...)
 	if err != nil {
 		return "", err
 	}
-	out = strings.TrimRight(out, "\n")
-	if out == "" {
-		return "", nil
-	}
-	return out + "\n", nil
+	return dispatch.LastLines(out, dispatch.ScreenLines), nil
 }
 
-// Screen returns the end of the agent's terminal, given its state as just read ("" if not known):
-// the visible screen while it works or is blocked, as Herdr gives it, and otherwise with the 60
-// lines above it. "" when tmux can't read it.
+// Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
+// dispatch.Agents gives it: the last dispatch.ScreenLines lines, only of the visible screen while it
+// works or is blocked. "" when tmux can't read it.
 func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
 	p, ok, err := t.agentPane(ctx, name)
 	if err != nil || !ok {

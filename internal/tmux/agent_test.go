@@ -180,8 +180,8 @@ func TestScreen(t *testing.T) {
 	for st, want := range map[dispatch.AgentState][]string{
 		dispatch.StateWorking: {"capture-pane", "-p", "-J", "-t", "%5"},
 		dispatch.StateBlocked: {"capture-pane", "-p", "-J", "-t", "%5"},
-		dispatch.StateIdle:    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-60"},
-		"":                    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-60"},
+		dispatch.StateIdle:    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
+		"":                    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
 	} {
 		if err := os.Remove(filepath.Join(f.dir, "calls")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			t.Fatal(err)

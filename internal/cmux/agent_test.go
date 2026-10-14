@@ -215,7 +215,7 @@ func TestSendKeysMapsHerdrsNames(t *testing.T) {
 	}
 }
 
-// The screen of a worker at work is its visible screen; otherwise the last 60 lines.
+// The screen of a worker at work is its visible screen; otherwise the last 80 lines.
 func TestScreen(t *testing.T) {
 	f := newFakeCmux(t)
 	term, _ := promptTerminal(t, f)
@@ -229,7 +229,7 @@ func TestScreen(t *testing.T) {
 	}
 	_ = term.Screen(bg, "x-1", dispatch.StateIdle)
 	last := cmdOf(f.calls()[len(f.calls())-1])
-	if !slices.Equal(last[len(last)-3:], []string{"--scrollback", "--lines", "60"}) {
+	if !slices.Equal(last[len(last)-3:], []string{"--scrollback", "--lines", "80"}) {
 		t.Errorf("read-screen got %q", last)
 	}
 	f.fail("read-screen", "Error: not_found: Workspace not found")

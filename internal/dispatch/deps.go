@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
@@ -81,14 +82,30 @@ type Agents interface {
 	// Status is the worker's state. An error means the terminal could not be asked, and says
 	// nothing about the agent: the state is then "".
 	Status(ctx context.Context, name string) (AgentState, error)
-	// Screen is the end of the worker's terminal, given its state as just read ("" if not known):
-	// a working or blocked worker's visible screen is read at once, as its scrollback can't be.
+	// Screen is the end of the worker's terminal, given its state as just read ("" if not known): its
+	// last ScreenLines lines (LastLines), with wrapped lines joined, or only those of its visible
+	// screen while it works or is blocked, as its scrollback can't be read then. "" when the terminal
+	// can't read it.
 	Screen(ctx context.Context, name string, state AgentState) string
 	// Prompt submits a prompt and returns once the worker has started on it (working or blocked),
 	// not when its turn ends; an error means it was not seen to start.
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(ctx context.Context, name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
+}
+
+// ScreenLines is how many lines of a worker's terminal Agents.Screen gives, at most, in every terminal.
+const ScreenLines = 80
+
+// LastLines is the last n lines of s, a terminal's screen, with the empty lines below its last one
+// left out, ending in "\n"; "" when it has none.
+func LastLines(s string, n int) string {
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	return strings.Join(lines[max(0, len(lines)-n):], "\n") + "\n"
 }
 
 // PromptTyper is Agents whose Prompt can put other text than the prompt in the worker's input box:

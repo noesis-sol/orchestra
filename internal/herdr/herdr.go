@@ -506,19 +506,20 @@ func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState,
 	return st, err
 }
 
-// Screen returns the end of the agent's terminal, given its state as just read ("" if not known).
-// Herdr can capture scrollback only while the agent is idle, so for a working or blocked agent this
-// reads the visible screen at once, and otherwise falls back to it when scrollback fails.
+// Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
+// dispatch.Agents gives it: the last dispatch.ScreenLines lines. Herdr can capture scrollback only
+// while the agent is idle, so for a working or blocked agent this reads the visible screen at once,
+// and otherwise falls back to it when scrollback fails.
 func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
 	if state != dispatch.StateWorking && state != dispatch.StateBlocked {
 		out, err := run(ctx, command.ReadLimit,
-			"agent", "read", name, "--source", "recent-unwrapped", "--lines", "60")
+			"agent", "read", name, "--source", "recent-unwrapped", "--lines", strconv.Itoa(dispatch.ScreenLines))
 		if err == nil {
-			return out
+			return dispatch.LastLines(out, dispatch.ScreenLines)
 		}
 	}
 	out, _ := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "visible") // "" when Herdr can't read it
-	return out
+	return dispatch.LastLines(out, dispatch.ScreenLines)
 }
 
 // CurrentWorkspace returns the Herdr workspace orchestra runs in: from HERDR_WORKSPACE_ID, which

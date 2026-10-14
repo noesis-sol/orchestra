@@ -54,8 +54,8 @@ func TestPermissionAskedBesideAnotherSubagent(t *testing.T) {
 			t.Parallel()
 			wt := t.TempDir()
 			playHooks(t, wt, c.steps)
-			if st, asked := StateAsked(Records(wt, "")); st != c.want || asked != c.asked {
-				t.Errorf("StateAsked = %s %v, want %s %v", st, asked, c.want, c.asked)
+			if h := ReadHooks(Records(wt, ""), ""); h.State != c.want || h.Asked != c.asked {
+				t.Errorf("ReadHooks = %s %v, want %s %v", h.State, h.Asked, c.want, c.asked)
 			}
 		})
 	}
@@ -68,8 +68,8 @@ func TestPermissionAskedByAnAgentNamedAsAPath(t *testing.T) {
 	wt := t.TempDir()
 	playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt,
 		stepAt("PermissionRequest", `{"hook_event_name":"PermissionRequest","agent_id":"../../x y","tool_name":"Bash"}`)})
-	if st, asked := StateAsked(Records(wt, "")); st != dispatch.StateBlocked || !asked {
-		t.Errorf("StateAsked = %s %v, want blocked, asked", st, asked)
+	if h := ReadHooks(Records(wt, ""), ""); h.State != dispatch.StateBlocked || !h.Asked {
+		t.Errorf("ReadHooks = %s %v, want blocked, asked", h.State, h.Asked)
 	}
 	if _, err := os.Stat(filepath.Join(Records(wt, ""), askedPrefix+"xy")); err != nil {
 		t.Errorf("the agent's record: %v", err)

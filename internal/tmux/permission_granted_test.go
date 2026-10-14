@@ -3,47 +3,10 @@ package tmux
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
-
-// A worker whose hooks tell a permission prompt asked is blocked while its screen shows the dialog,
-// or can't be read; once it is allowed, which runs no hook until the tool is done, its screen shows
-// none and it works, however long the tool runs.
-func TestStatusOfAPermissionPromptAllowed(t *testing.T) {
-	asked := func() string {
-		return records(t, "events", `{"hook_event_name":"SessionStart"}`+"\n",
-			"turn.json", `{"hook_event_name":"UserPromptSubmit"}`,
-			"activity.json", `{"hook_event_name":"PermissionRequest","tool_name":"Bash"}`,
-			"notice.json", `{"hook_event_name":"Notification","notification_type":"permission_prompt"}`)
-	}
-	dialog := "● Bash(go test ./...)\nBash command\n  go test ./...\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n"
-	for _, c := range []struct {
-		name, screen string
-		fails        bool
-		want         dispatch.AgentState
-	}{
-		{"at the dialog", dialog, false, dispatch.StateBlocked},
-		{"allowed, its tool running", "● Bash(go test ./...)\n  Running…\n\n> \n", false, dispatch.StateWorking},
-		{"screen not read", "", true, dispatch.StateBlocked},
-		{"screen empty", "", false, dispatch.StateBlocked},
-	} {
-		f := newFakeTmux(t)
-		f.listPanes(paneLine{id: "%5", agent: "x-1", kind: "claude", records: asked(), command: "2.1.0"})
-		f.answer("capture-pane", c.screen)
-		if c.fails {
-			f.fail("capture-pane", "can't find pane: %5")
-		}
-		if st, err := (Terminal{}).Status(bg, "x-1"); st != c.want || err != nil {
-			t.Errorf("%s: %q %v, want %q", c.name, st, err, c.want)
-		}
-		if got := f.call("capture-pane"); !slices.Equal(got, []string{"capture-pane", "-p", "-J", "-t", "%5"}) {
-			t.Errorf("%s: read the screen with %q, want the visible screen", c.name, got)
-		}
-	}
-}
 
 // A worker allowed to run a command that takes long works while it runs, though no hook ran since
 // it asked: the fake Claude Code runs its hooks in Claude Code's order (PreToolUse, PermissionRequest,

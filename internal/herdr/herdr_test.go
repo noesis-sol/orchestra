@@ -177,8 +177,8 @@ func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
 	for status, want := range map[dispatch.AgentState]string{
 		"working": "agent read a --source visible\n",
 		"blocked": "agent read a --source visible\n",
-		"idle":    "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
-		"":        "agent read a --source recent-unwrapped --lines 60\nagent read a --source visible\n",
+		"idle":    "agent read a --source recent-unwrapped --lines 80\nagent read a --source visible\n",
+		"":        "agent read a --source recent-unwrapped --lines 80\nagent read a --source visible\n",
 	} {
 		calls := fakeHerdr(t)
 		if got := (Terminal{}).Screen(context.Background(), "a", status); got != "screen\n" {

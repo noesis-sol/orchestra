@@ -10,7 +10,7 @@ import (
 // A permission prompt the records tell asked and not answered is asked, as Claude Code runs no hook
 // as it is allowed: from its PreToolUse and PermissionRequest until the tool's PostToolUse, the
 // terminal's screen must say whether its dialog still shows. A dialog of another kind is not.
-func TestStateAskedTellsAPermissionPrompt(t *testing.T) {
+func TestReadHooksTellsAPermissionPrompt(t *testing.T) {
 	t.Parallel()
 	then := func(steps ...hookStep) []hookStep {
 		return slices.Concat([]hookStep{stepSessionStart("startup"), stepPrompt}, steps)
@@ -35,13 +35,13 @@ func TestStateAskedTellsAPermissionPrompt(t *testing.T) {
 			t.Parallel()
 			wt := t.TempDir()
 			playHooks(t, wt, c.steps)
-			if st, asked := StateAsked(Records(wt, "")); st != c.want || asked != c.asked {
-				t.Errorf("StateAsked = %s %v, want %s %v", st, asked, c.want, c.asked)
+			if h := ReadHooks(Records(wt, ""), ""); h.State != c.want || h.Asked != c.asked {
+				t.Errorf("ReadHooks = %s %v, want %s %v", h.State, h.Asked, c.want, c.asked)
 			}
 		})
 	}
-	if st, asked := StateAsked(t.TempDir() + "/none"); st != dispatch.StateUnknown || asked {
-		t.Errorf("no records: %s %v", st, asked)
+	if h := ReadHooks(t.TempDir()+"/none", ""); h.State != dispatch.StateUnknown || h.Asked {
+		t.Errorf("no records: %s %v", h.State, h.Asked)
 	}
 }
 

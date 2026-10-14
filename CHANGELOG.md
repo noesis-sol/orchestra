@@ -13,6 +13,11 @@ All notable changes to orchestra are documented here. The format follows
   run with nothing to run, while it is deferred until a later date
   (`bd defer --until`): it was deferred on purpose, with a time to look again.
   Once that date has passed it is listed as before.
+- A worker's terminal reads the same in tmux, cmux and Herdr: its last 80
+  lines, or those of its visible screen while it works or is blocked.
+  Triage, which asks for 80, got 60 in cmux and Herdr and up to 110 in tmux.
+  tmux also looks for Claude Code's start-up dialogs on the visible screen
+  only, as cmux does, not in the scrollback above it.
 
 ## [0.7.2] - 2026-10-14
 

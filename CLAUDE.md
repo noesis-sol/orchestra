@@ -96,8 +96,8 @@ tools and no MCP servers. The README defines both terms; use them consistently.
 - Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state
   from their hooks), `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their
   state from their hooks), `internal/git` (git), `internal/command` (every external command: context, time limit,
-  process group), `internal/claude` (workers' hooks, and the state they give), `internal/mcp` (discovering MCP servers
-  for workers).
+  process group), `internal/claude` (workers' hooks, the state they give, and what their screen adds to it),
+  `internal/mcp` (discovering MCP servers for workers).
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs. `internal/project`: `.orchestra/` (settings, worker prompt, init, per-ticket files).
   `internal/tui`: the Bubble Tea dashboard and init's screen.

@@ -34,39 +34,23 @@ func (t Terminal) agentSurface(name string) (string, surfaceEntry, bool, error) 
 // state is the state of the agent the book has in surface id: gone once cmux has no such surface,
 // once nothing was launched there, once its session ended, or once the process the launch started
 // is no longer in its workspace (killed, crashed, or ended by cmux quitting, none of which runs a
-// hook); otherwise what its hooks tell (claude.State), and blocked while its screen shows a dialog
-// that runs no hook, which only comes before its first turn (claude.TurnRecorded). A permission
-// prompt its hooks tell asked is blocked only while its screen still shows it: once allowed, which
-// runs no hook, its tool runs. A process cmux can't list, or hasn't yet, is taken to be there.
+// hook); otherwise what its hooks tell, read with its visible screen (claude.Hooks.Settle). A process
+// cmux can't list, or hasn't yet, is taken to be there.
 func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) dispatch.AgentState {
 	ws, open := l.workspaces[key(id)]
 	if !open || e.Kind == "" {
 		return dispatch.StateGone
 	}
-	records := e.Records
-	if records == "" {
-		records = claude.Records(e.Dir, "") // launched without hooks: a ticket's worktree has them there
-	}
-	st, asked := claude.StateAsked(records)
-	if st == dispatch.StateGone {
-		return st
+	h := claude.ReadHooks(e.Records, e.Dir)
+	if h.State == dispatch.StateGone {
+		return h.State
 	}
 	if pid, at, ok := t.launched(id); ok {
 		if alive, err := t.running(ctx, ws, pid, at); err == nil && !alive {
 			return dispatch.StateGone
 		}
 	}
-	switch {
-	case st == dispatch.StateUnknown || (st == dispatch.StateIdle && !claude.TurnRecorded(records)):
-		if screen, err := t.readScreen(ctx, ws, id, true); err == nil && showsDialog(screen) {
-			return dispatch.StateBlocked
-		}
-	case asked:
-		if screen, err := t.readScreen(ctx, ws, id, true); err == nil && screen != "" && !claude.ShowsPermission(screen) {
-			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
-		}
-	}
-	return st
+	return h.Settle(func() (string, error) { return t.readScreen(ctx, ws, id, true) })
 }
 
 // running reports whether process pid, launched at since, runs in the workspace, as cmux's top lists
@@ -139,24 +123,6 @@ func hasPID(v any, pid int) bool {
 	case []any:
 		if slices.ContainsFunc(v, func(c any) bool { return hasPID(c, pid) }) {
 			return true
-		}
-	}
-	return false
-}
-
-// dialogs are what Claude Code shows of the dialogs it asks before a session starts, which run no
-// hook: whether to trust the folder, and whether to use the project's MCP servers.
-var dialogs = []string{"trust this folder", "mcp server found in this project", "mcp servers found in this project"}
-
-// showsDialog reports whether the bottom of screen shows one of Claude Code's dialogs.
-func showsDialog(screen string) bool {
-	lines := strings.Split(strings.ToLower(screen), "\n")
-	lines = lines[max(0, len(lines)-25):]
-	for _, l := range lines {
-		for _, d := range dialogs {
-			if strings.Contains(l, d) {
-				return true
-			}
 		}
 	}
 	return false
@@ -262,9 +228,9 @@ func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState,
 	return t.state(ctx, id, e, l), nil
 }
 
-// Screen returns the end of the agent's terminal, given its state as just read ("" if not known):
-// the visible screen while it works or is blocked, as Herdr gives it, and otherwise the last 60
-// lines. "" when cmux can't read it.
+// Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
+// dispatch.Agents gives it: the last dispatch.ScreenLines lines, only of the visible screen while
+// it works or is blocked. "" when cmux can't read it.
 func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
 	id, e, ok, err := t.agentSurface(name)
 	if err != nil || !ok {

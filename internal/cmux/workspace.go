@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // layout is what cmux has, in every window, as tree --all lists it: each workspace's title, and the
@@ -424,20 +427,16 @@ func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
 	return ok, nil
 }
 
-// readScreen reads the surface's screen: the visible screen, or else the last 60 lines with the
-// scrollback, with the empty lines below its last one left out.
+// readScreen reads the surface's screen: its last dispatch.ScreenLines lines with the scrollback, or
+// only those of the visible screen if visible, with the empty lines below its last one left out.
 func (t Terminal) readScreen(ctx context.Context, workspace, surface string, visible bool) (string, error) {
 	args := []string{"--workspace", workspace, "--surface", surface}
 	if !visible {
-		args = append(args, "--scrollback", "--lines", "60")
+		args = append(args, "--scrollback", "--lines", strconv.Itoa(dispatch.ScreenLines))
 	}
 	out, err := t.run(ctx, "read-screen", surface, false, args...)
 	if err != nil {
 		return "", err
 	}
-	out = strings.TrimRight(out, "\n")
-	if out == "" {
-		return "", nil
-	}
-	return out + "\n", nil
+	return dispatch.LastLines(out, dispatch.ScreenLines), nil
 }
