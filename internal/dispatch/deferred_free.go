@@ -16,9 +16,12 @@ import (
 type DeferredFree struct {
 	ID       string
 	Blockers []string // the tickets blocking it, each closed and merged
-	// Worktree is the ticket's worktree (wt/<id>), left with no commits beyond Base and so safe to
-	// remove; "" when there is none, or it has commits.
+	// Worktree is the ticket's worktree (wt/<id>), left with no commits beyond Base and no
+	// uncommitted changes, and so safe to remove; "" when there is none, or it holds work.
 	Worktree string
+	// Uncommitted is the ticket's worktree when it has no commits beyond Base but uncommitted
+	// changes, which removing it with --force would lose; "" otherwise.
+	Uncommitted string
 }
 
 // Reopen is the command that puts the ticket back in bd ready.
@@ -34,16 +37,28 @@ func (d DeferredFree) Cleanup() string {
 	return fmt.Sprintf("git worktree remove %s && git branch -d %s", d.Worktree, branchOf(d.ID))
 }
 
+// Changes is the command that shows the uncommitted changes in the ticket's worktree; "" without them.
+func (d DeferredFree) Changes() string {
+	if d.Uncommitted == "" {
+		return ""
+	}
+	return "git -C " + d.Uncommitted + " status"
+}
+
 // Why is what frees the ticket: "its blockers have merged (A, B)".
 func (d DeferredFree) Why() string {
 	return fmt.Sprintf("its blockers have merged (%s)", strings.Join(d.Blockers, ", "))
 }
 
-// Line is the DEFERRED_FREE line the START block gives the ticket, naming its empty worktree too.
+// Line is the DEFERRED_FREE line the START block gives the ticket, naming its empty worktree too,
+// or the uncommitted changes that keep it.
 func (d DeferredFree) Line(base string) string {
 	l := fmt.Sprintf("DEFERRED_FREE: %s: %s; to run it: %s", d.ID, d.Why(), d.Reopen())
-	if d.Worktree != "" {
+	switch {
+	case d.Worktree != "":
 		l += fmt.Sprintf("; its worktree has no commits beyond %s, safe to remove: %s", base, d.Cleanup())
+	case d.Uncommitted != "":
+		l += "; its worktree holds uncommitted changes, not safe to remove: " + d.Changes()
 	}
 	return l
 }
@@ -54,6 +69,7 @@ type freeing struct {
 	tickets   Tickets
 	worktrees Worktrees
 	merger    Merger
+	checkout  Checkout
 	inScope   func(id string) bool
 	busy      func(id string) bool   // its worker runs, or waits on a question: it closes before it merges
 	unmerged  func(id string) string // why the closed ticket is not merged, or ""
@@ -80,7 +96,9 @@ func (f freeing) list(ctx context.Context, unclosed []Ticket) ([]DeferredFree, e
 		if !merged || len(blockers) == 0 {
 			continue
 		}
-		free = append(free, DeferredFree{ID: t.ID, Blockers: blockers, Worktree: f.emptyWorktree(ctx, t.ID)})
+		d := DeferredFree{ID: t.ID, Blockers: blockers}
+		d.Worktree, d.Uncommitted = f.worktree(ctx, t.ID)
+		free = append(free, d)
 	}
 	return free, nil
 }
@@ -101,15 +119,20 @@ func (f freeing) blockers(info Ticket) ([]string, bool) {
 	return ids, true
 }
 
-// emptyWorktree returns the worktree a worker left for ticket id when its branch has no commits
-// beyond Base, or "": none, or git can't list the worktrees or count the commits.
-func (f freeing) emptyWorktree(ctx context.Context, id string) string {
+// worktree returns the worktree a worker left for ticket id when its branch has no commits beyond
+// Base: as empty when it has no uncommitted changes either, else as dirty. Both are "" when there
+// is none, it has commits, or git can't list the worktrees or count the commits; a failed git
+// status counts as uncommitted changes.
+func (f freeing) worktree(ctx context.Context, id string) (empty, dirty string) {
 	br := branchOf(id)
 	wt, err := f.worktrees.WorktreeOf(ctx, f.cfg.Repo, br)
-	if err != nil || wt == "" || f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br) != 0 {
-		return ""
+	switch {
+	case err != nil || wt == "" || f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br) != 0:
+		return "", ""
+	case f.checkout.DirtyWorktree(ctx, wt) != "":
+		return "", wt
 	}
-	return wt
+	return wt, ""
 }
 
 // freeUnreadable is the log's line when bd can't say which deferred tickets are free to run.
@@ -125,7 +148,8 @@ func (o *Loop) sayDeferredFree(ctx context.Context) {
 	var free []DeferredFree
 	if err == nil {
 		free, err = freeing{
-			cfg: o.cfg, tickets: o.tickets, worktrees: o.worktrees, merger: o.merger, inScope: o.scoped(ctx),
+			cfg: o.cfg, tickets: o.tickets, worktrees: o.worktrees, merger: o.merger, checkout: o.checkout,
+			inScope:  o.scoped(ctx),
 			busy:     func(id string) bool { return o.isActive(id) || o.isAsked(id) },
 			unmerged: o.unmergedWhy,
 		}.list(ctx, open)

@@ -18,6 +18,11 @@ All notable changes to orchestra are documented here. The format follows
   lock: nothing runs the binary during a run, so the reason it gave
   (workers' hooks call orchestra) wasn't true. The new binary is renamed
   into place, so a run going keeps the build it started with.
+- A deferred ticket whose blockers have merged, and whose worktree has no
+  commits of its own but uncommitted changes, is no longer said to have a
+  worktree safe to remove, in the START block's `DEFERRED_FREE` line or the
+  box of a run with nothing to run: the line says the worktree holds
+  uncommitted changes and gives `git -C <worktree> status` to see them.
 
 ## [0.7.1] - 2026-10-14
 

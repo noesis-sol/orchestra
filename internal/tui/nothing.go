@@ -95,7 +95,8 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 }
 
 // freeLines are the message's lines for the deferred tickets whose blockers have merged: each with
-// the command that reopens it, and the one that removes the empty worktree it was left.
+// the command that reopens it, and the one that removes the empty worktree it was left, or the one
+// that shows the uncommitted changes that keep it.
 func freeLines(
 	n dispatch.NothingToRun, style func(lipgloss.Style, string) string, command func(string) string,
 ) []string {
@@ -104,6 +105,8 @@ func freeLines(
 		lines = append(lines, "Deferred: "+style(pickedStyle, d.ID)+": "+d.Why()+"; to run it: "+command(d.Reopen()))
 		if c := d.Cleanup(); c != "" {
 			lines = append(lines, "  its worktree has no commits of its own, safe to remove: "+command(c))
+		} else if c := d.Changes(); c != "" {
+			lines = append(lines, "  its worktree holds uncommitted changes, not safe to remove: "+command(c))
 		}
 	}
 	return lines

@@ -62,6 +62,12 @@ func (n NothingToRun) Open() int {
 		n.Other
 }
 
+// WorktreeCheckout is the worktrees CheckNothingToRun reads, and what they hold.
+type WorktreeCheckout interface {
+	Worktrees
+	Checkout
+}
+
 // CheckNothingToRun returns why a run as c sets it has nothing to run, or nil when it has
 // something: bd ready, in the run's scope and as the loop reads it, lists a ticket the loop would
 // start, or the last run left a worker (on a ticket in the scope) for this one to carry on with. A
@@ -73,7 +79,7 @@ func (n NothingToRun) Open() int {
 // before any Loop exists. Its error is bd's, or the state file's, when it can't tell: the run then
 // goes ahead, and the loop reports it.
 func CheckNothingToRun(
-	ctx context.Context, c Config, tickets Tickets, worktrees Worktrees, merger Merger,
+	ctx context.Context, c Config, tickets Tickets, worktrees WorktreeCheckout, merger Merger,
 ) (*NothingToRun, error) {
 	ready, err := tickets.Ready(ctx, c.Ticket)
 	if err != nil {
@@ -136,7 +142,7 @@ func CheckNothingToRun(
 		for _, w := range s.Workers {
 			carried[w.Ticket] = true
 		}
-		f := freeing{cfg: c, tickets: tickets, worktrees: worktrees, merger: merger,
+		f := freeing{cfg: c, tickets: tickets, worktrees: worktrees, merger: merger, checkout: worktrees,
 			inScope: func(id string) bool { return c.Ticket == "" || in[id] },
 			busy:    func(id string) bool { return carried[id] }, unmerged: h.unmerged}
 		n.DeferredFree, n.FreeErr = f.list(ctx, unclosed)
