@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 func TestAdoptAgent(t *testing.T) {
@@ -204,9 +205,9 @@ func TestScreen(t *testing.T) {
 
 // noPasteSettle has Prompt press Enter at once, for the test.
 func noPasteSettle(t *testing.T) {
-	was := pasteSettle
-	pasteSettle = 0
-	t.Cleanup(func() { pasteSettle = was })
+	was := hookterm.PasteSettle
+	hookterm.PasteSettle = 0
+	t.Cleanup(func() { hookterm.PasteSettle = was })
 }
 
 func TestPromptPastesItAndWaitsForTheAgentToStart(t *testing.T) {
@@ -289,7 +290,7 @@ func TestWaits(t *testing.T) {
 	if !term.WaitStarted(bg, "working") || term.WaitStarted(bg, "dead") {
 		t.Error("WaitStarted: working has started, gone hasn't")
 	}
-	ctx, cancel := context.WithTimeout(bg, 3*poll)
+	ctx, cancel := context.WithTimeout(bg, 3*hookterm.Poll)
 	defer cancel()
 	if term.WaitStarted(ctx, "idle") {
 		t.Error("an idle agent hasn't started")

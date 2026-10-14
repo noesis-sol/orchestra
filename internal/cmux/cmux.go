@@ -20,7 +20,6 @@ package cmux
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -30,6 +29,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // Terminal is cmux as orchestra uses it: workspaces for workers, launching Claude Code in their
@@ -41,6 +41,10 @@ type Terminal struct {
 	Book string
 	// Own is orchestra's own workspace (CMUX_WORKSPACE_ID), which is never closed; "" for none.
 	Own string
+
+	// Names takes any agent name and argument: an agent's name is kept in the book, and the launch
+	// script passes any argument.
+	hookterm.Names
 }
 
 // appBin is where the cmux app keeps its CLI, which is on the PATH only in cmux's own terminals.
@@ -57,57 +61,26 @@ func Bin() string {
 	return ""
 }
 
-// poll is how often a wait reads the worker's state again.
-const poll = 250 * time.Millisecond
-
-// pasteSettle is how long Prompt leaves Claude Code to take a paste in before pressing Enter, which
-// it could otherwise take as part of the paste.
-var pasteSettle = 300 * time.Millisecond
+// tool names cmux in its errors.
+const tool = "cmux"
 
 // Error is a cmux call that failed, or found no workspace, surface or agent to act on. Callers read
 // its fields, never its text.
-type Error struct {
-	Op       string // the cmux command, such as new-workspace
-	Target   string // the workspace, surface or agent it was for
-	NoServer bool   // cmux isn't running: the socket the environment names isn't there, or refuses connections
-	Missing  bool   // cmux has no such workspace or surface, or no such agent was launched
-	Err      error  // the failed command (a *command.Error), or what was wrong with its answer
-}
+type Error = hookterm.Error
 
-// Error is the command's own error, which names it with its arguments, or else what went wrong.
-func (e *Error) Error() string {
-	if _, ok := errors.AsType[*command.Error](e.Err); ok {
-		return e.Err.Error()
-	}
-	if e.Target == "" {
-		return fmt.Sprintf("cmux %s: %v", e.Op, e.Err)
-	}
-	return fmt.Sprintf("cmux %s %s: %v", e.Op, e.Target, e.Err)
-}
+// NoServer reports whether err is a cmux call that failed because cmux isn't running: the socket the
+// environment names isn't there, or refuses connections.
+func NoServer(err error) bool { return hookterm.NoServer(err) }
 
-func (e *Error) Unwrap() error { return e.Err }
-
-// NoServer reports whether err is a cmux call that failed because cmux isn't running.
-func NoServer(err error) bool {
-	var ce *Error
-	return errors.As(err, &ce) && ce.NoServer
-}
-
-// Missing reports whether err says cmux has no such workspace, surface or agent.
-func Missing(err error) bool {
-	var ce *Error
-	return errors.As(err, &ce) && ce.Missing
-}
+// Missing reports whether err says cmux has no such workspace or surface, or no such agent was
+// launched.
+func Missing(err error) bool { return hookterm.Missing(err) }
 
 // missing is the error for a workspace, surface or agent that cmux doesn't have.
-func missing(op, target, what string) error {
-	return &Error{Op: op, Target: target, Missing: true, Err: errors.New("no such " + what)}
-}
+func missing(op, target, what string) error { return hookterm.NoSuch(tool, op, target, what) }
 
 // odd is the error for an answer of cmux's that can't be read.
-func odd(op, target, out string) error {
-	return &Error{Op: op, Target: target, Err: fmt.Errorf("unexpected output: %q", strings.TrimSpace(out))}
-}
+func odd(op, target, out string) error { return hookterm.Odd(tool, op, target, out) }
 
 // uuidPattern is a UUID as cmux prints one.
 var uuidPattern = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
@@ -132,7 +105,7 @@ func (t Terminal) runWithInput(ctx context.Context, op, target string, json bool
 	args ...string) (string, error) {
 	bin := Bin()
 	if bin == "" {
-		return "", &Error{Op: op, Target: target, Err: errors.New("cmux is not installed")}
+		return "", &Error{Tool: tool, Op: op, Target: target, Err: errors.New("cmux is not installed")}
 	}
 	argv := []string{"--id-format", "uuids"}
 	if json {
@@ -145,7 +118,7 @@ func (t Terminal) runWithInput(ctx context.Context, op, target string, json bool
 	if err == nil {
 		return out, nil
 	}
-	e := &Error{Op: op, Target: target, Err: err}
+	e := &Error{Tool: tool, Op: op, Target: target, Err: err}
 	var ce *command.Error
 	var ee *exec.ExitError
 	if errors.As(err, &ce) && !ce.Stopped && errors.As(ce.Err, &ee) {

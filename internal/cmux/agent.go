@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -193,13 +193,9 @@ func (t Terminal) FreeName(_ context.Context, name string) string {
 	if err != nil {
 		return ""
 	}
-	for n := 1; n <= 20; n++ {
-		free := fmt.Sprintf("%s-%d", name, n)
-		if !slices.ContainsFunc(entries(b), func(e surfaceEntry) bool { return e.Agent == free }) {
-			return free
-		}
-	}
-	return ""
+	return hookterm.FreeName(name, func(free string) bool {
+		return slices.ContainsFunc(entries(b), func(e surfaceEntry) bool { return e.Agent == free })
+	})
 }
 
 // entries are the book's surfaces.
@@ -259,18 +255,8 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 	case !ok:
 		return missing("prompt", name, "agent")
 	}
-	if err := t.givePrompt(ctx, name, id, e, prompt); err != nil {
-		return err
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(pasteSettle):
-	}
-	if err := t.pressKey(ctx, e.Workspace, id, "enter"); err != nil {
-		return err
-	}
-	return t.waitFor(ctx, "prompt", name, 30*time.Second, dispatch.StateWorking, dispatch.StateBlocked)
+	return t.agents().Prompt(ctx, name, func() error { return t.givePrompt(ctx, name, id, e, prompt) },
+		func() error { return t.pressKey(ctx, e.Workspace, id, "enter") })
 }
 
 // givePrompt puts the prompt in the input box of the agent name in surface id, as Prompt says, without
@@ -335,7 +321,7 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 		return missing("send-key", name, "agent")
 	}
 	for _, k := range keys {
-		if name, isKey := cmuxKey(k); isKey {
+		if name, isKey := keyNames.Name(k); isKey {
 			err = t.pressKey(ctx, e.Workspace, id, name)
 		} else {
 			err = t.typeText(ctx, e.Workspace, id, k)
@@ -347,48 +333,15 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 	return nil
 }
 
+// agents are t's agents as hookterm waits for them.
+func (t Terminal) agents() hookterm.Agents { return hookterm.Agents{Tool: tool, Status: t.Status} }
+
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
-	return t.waitFor(ctx, "wait", name, time.Minute, dispatch.StateIdle, dispatch.StateDone) == nil
+	return t.agents().WaitReady(ctx, name)
 }
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
-	return t.waitFor(ctx, "wait", name, 20*time.Second, dispatch.StateWorking, dispatch.StateBlocked) == nil
-}
-
-// waitFor reads the agent's state until it is one of want, for up to limit; the error says it went
-// away, or what it was when the time ran out. A state cmux can't give is read again.
-func (t Terminal) waitFor(ctx context.Context, op, name string, limit time.Duration,
-	want ...dispatch.AgentState) error {
-	deadline := time.Now().Add(limit)
-	for {
-		st, err := t.Status(ctx, name)
-		switch {
-		case err == nil && slices.Contains(want, st):
-			return nil
-		case err == nil && st == dispatch.StateGone:
-			return &Error{Op: op, Target: name, Missing: true, Err: errors.New("the agent is gone")}
-		case time.Now().After(deadline) && err != nil:
-			return fmt.Errorf("agent %s was not %s within %s: %w", name, states(want),
-				command.ShortDuration(limit), err)
-		case time.Now().After(deadline):
-			return &Error{Op: op, Target: name, Err: fmt.Errorf("the agent was not %s within %s, but %s",
-				states(want), command.ShortDuration(limit), st)}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(poll):
-		}
-	}
-}
-
-// states is "idle or done", for a list of states.
-func states(sts []dispatch.AgentState) string {
-	s := make([]string, len(sts))
-	for i, st := range sts {
-		s[i] = string(st)
-	}
-	return strings.Join(s, " or ")
+	return t.agents().WaitStarted(ctx, name)
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // layout is what cmux has, in every window, as tree --all lists it: each workspace's title, and the
@@ -135,8 +136,8 @@ func (t Terminal) CloseTab(ctx context.Context, tab string) error {
 		return fmt.Errorf("orchestra didn't open workspace %s, which is left open as cmux can't say "+
 			"whether it still is: %w", tab, err)
 	case open:
-		return &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("orchestra didn't open workspace %q, "+
-			"so it leaves it open", label)}
+		return &Error{Tool: tool, Op: "close-workspace", Target: tab, Err: fmt.Errorf("orchestra didn't open "+
+			"workspace %q, so it leaves it open", label)}
 	}
 	return nil // gone
 }
@@ -162,9 +163,45 @@ func awaitClosing(ctx context.Context) (func(), error) {
 // lostBy). It drops the workspace from the book once it is gone.
 func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 	if t.Own != "" && sameID(tab, t.Own) {
-		return &Error{Op: "close-workspace", Target: tab, Err: errors.New("it is orchestra's own workspace")}
+		return &Error{Tool: tool, Op: "close-workspace", Target: tab,
+			Err: errors.New("it is orchestra's own workspace")}
 	}
-	args := t.closeArgs(ctx, "--workspace", tab)
+	return t.closeChecked(ctx, checkedClose{
+		op: "close-workspace", what: "workspace", target: tab, args: t.closeArgs(ctx, "--workspace", tab),
+		listed: func(l layout) map[string]string { return l.titles },
+		keep: func(title string) error {
+			if title == label {
+				return nil
+			}
+			return &Error{Tool: tool, Op: "close-workspace", Target: tab, Err: fmt.Errorf("it is named %q now, "+
+				"not %s, so orchestra leaves it open", title, label)}
+		},
+		lost:   func(id, title string) (string, bool) { return fmt.Sprintf("%s (%s)", id, title), id != key(tab) },
+		forget: func() error { return t.forget(tab) },
+	})
+}
+
+// checkedClose is one of orchestra's closes (closeWorkspace, ClosePane), which closeChecked makes.
+type checkedClose struct {
+	op, what string   // cmux's command, and what it closes: close-workspace and workspace, say
+	target   string   // the UUID of what it closes
+	args     []string // its arguments after op
+	// listed is what of layout the close is checked against: each listed by its UUID (key), with a
+	// value to keep or lose by.
+	listed func(layout) map[string]string
+	// keep, unless nil, returns an error that leaves the target open, given its value listed.
+	keep func(string) error
+	// lost is how the error names a lost one, given its UUID and value; false for one that doesn't
+	// count.
+	lost func(id, v string) (string, bool)
+	// forget drops the target from the book once it is gone.
+	forget func() error
+}
+
+// closeChecked makes the close c, as long as cmux lists its target (and c.keep lets it), and checks
+// with cmux's list that it went, and that every other one c.lost counts stayed until cmux answered
+// the close (see lostBy). It drops the target from the book once it is gone.
+func (t Terminal) closeChecked(ctx context.Context, c checkedClose) error {
 	done, err := awaitClosing(ctx)
 	if err != nil {
 		return err
@@ -174,38 +211,39 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 	if err != nil {
 		return err
 	}
-	title, open := before.titles[key(tab)]
-	switch {
-	case !open:
-		return t.forget(tab)
-	case title != label:
-		return &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("it is named %q now, not %s, so "+
-			"orchestra leaves it open", title, label)}
+	v, open := c.listed(before)[key(c.target)]
+	if !open {
+		return c.forget()
 	}
-	_, err = t.run(ctx, "close-workspace", tab, false, args...)
+	if c.keep != nil {
+		if err := c.keep(v); err != nil {
+			return err
+		}
+	}
+	_, err = t.run(ctx, c.op, c.target, false, c.args...)
 	answered, after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
-		_, still := l.titles[key(tab)]
+		_, still := c.listed(l)[key(c.target)]
 		return !still
 	})
 	if lerr != nil {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("cmux closed workspace %s, but could not say what is left open: %w", tab, lerr)
+		return fmt.Errorf("cmux closed %s %s, but could not say what is left open: %w", c.what, c.target, lerr)
 	}
 	var lost []string
-	for id, other := range lostBy(before.titles, answered.titles, after.titles) {
-		if id != key(tab) {
-			lost = append(lost, fmt.Sprintf("%s (%s)", id, other))
+	for id, v := range lostBy(c.listed(before), c.listed(answered), c.listed(after)) {
+		if s, ok := c.lost(id, v); ok {
+			lost = append(lost, s)
 		}
 	}
-	_, still := after.titles[key(tab)]
+	_, still := c.listed(after)[key(c.target)]
 	if len(lost) > 0 {
 		slices.Sort(lost)
-		err = &Error{Op: "close-workspace", Target: tab, Err: fmt.Errorf("cmux closed other workspaces too: %s",
-			strings.Join(lost, ", "))}
+		err = &Error{Tool: tool, Op: c.op, Target: c.target, Err: fmt.Errorf("cmux closed other %ss too: %s",
+			c.what, strings.Join(lost, ", "))}
 		if !still {
-			err = errors.Join(err, t.forget(tab)) // the workspace is gone all the same
+			err = errors.Join(err, c.forget()) // it is gone all the same
 		}
 		return err
 	}
@@ -213,9 +251,9 @@ func (t Terminal) closeWorkspace(ctx context.Context, tab, label string) error {
 		if err != nil {
 			return err
 		}
-		return &Error{Op: "close-workspace", Target: tab, Err: errors.New("cmux still has the workspace")}
+		return &Error{Tool: tool, Op: c.op, Target: c.target, Err: errors.New("cmux still has the " + c.what)}
 	}
-	return t.forget(tab) // gone, whatever cmux answered
+	return c.forget() // gone, whatever cmux answered
 }
 
 // closeArgs are the arguments of a close (close-workspace, close-surface), with --force where cmux
@@ -267,7 +305,7 @@ func (t Terminal) awaitLayout(ctx context.Context, once bool, done func(layout) 
 		select {
 		case <-ctx.Done():
 			return first, l, nil // what is left open is as the list says
-		case <-time.After(poll / 2):
+		case <-time.After(hookterm.Poll / 2):
 		}
 	}
 }
@@ -357,56 +395,16 @@ func (t Terminal) ClosePane(ctx context.Context, pane string) error {
 	}
 	entry, ok := b.Surfaces[key(pane)]
 	if !isUUID(pane) || !ok || !entry.Split {
-		return &Error{Op: "close-surface", Target: pane, Err: errors.New("orchestra didn't split that terminal off, " +
-			"so it leaves it open")}
+		return &Error{Tool: tool, Op: "close-surface", Target: pane, Err: errors.New("orchestra didn't split that " +
+			"terminal off, so it leaves it open")}
 	}
-	args := t.closeArgs(ctx, "--workspace", entry.Workspace, "--surface", pane)
-	done, err := awaitClosing(ctx)
-	if err != nil {
-		return err
-	}
-	defer done()
-	before, err := t.layout(ctx)
-	if err != nil {
-		return err
-	}
-	if _, open := before.workspaces[key(pane)]; !open {
-		return t.forgetSurface(pane)
-	}
-	_, err = t.run(ctx, "close-surface", pane, false, args...)
-	answered, after, lerr := t.awaitLayout(ctx, err != nil, func(l layout) bool {
-		_, still := l.workspaces[key(pane)]
-		return !still
+	return t.closeChecked(ctx, checkedClose{
+		op: "close-surface", what: "terminal", target: pane,
+		args:   t.closeArgs(ctx, "--workspace", entry.Workspace, "--surface", pane),
+		listed: func(l layout) map[string]string { return l.workspaces },
+		lost:   func(id, ws string) (string, bool) { return id, id != key(pane) && ws == key(entry.Workspace) },
+		forget: func() error { return t.forgetSurface(pane) },
 	})
-	if lerr != nil {
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("cmux closed terminal %s, but could not say what is left open: %w", pane, lerr)
-	}
-	var lost []string
-	for id, ws := range lostBy(before.workspaces, answered.workspaces, after.workspaces) {
-		if id != key(pane) && ws == key(entry.Workspace) {
-			lost = append(lost, id)
-		}
-	}
-	_, still := after.workspaces[key(pane)]
-	if len(lost) > 0 {
-		slices.Sort(lost)
-		err = &Error{Op: "close-surface", Target: pane, Err: fmt.Errorf("cmux closed other terminals too: %s",
-			strings.Join(lost, ", "))}
-		if !still {
-			err = errors.Join(err, t.forgetSurface(pane)) // the terminal is gone all the same
-		}
-		return err
-	}
-	if still {
-		if err != nil {
-			return err
-		}
-		return &Error{Op: "close-surface", Target: pane, Err: errors.New("cmux still has the terminal")}
-	}
-	return t.forgetSurface(pane)
 }
 
 // forgetSurface drops the surface from the book.

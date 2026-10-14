@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // Terminal is tmux as orchestra uses it: windows for workers, launching Claude Code in their panes,
@@ -33,6 +34,10 @@ type Terminal struct {
 	// of one repository's runs, as two runs on one tmux server, in two clones sharing a Beads database
 	// say, can have workers of the same name; each pane it names is marked with it.
 	Repo string
+
+	// Names takes any agent name and argument: an agent's name is a pane option, and tmux passes any
+	// argument.
+	hookterm.Names
 }
 
 // The pane options a worker's pane carries. tmux has no agents: a pane holds one once orchestra
@@ -45,57 +50,25 @@ const (
 	pidOption     = "@orchestra-pid"     // the process ID of what orchestra launched there, its pane_pid then
 )
 
-// poll is how often a wait reads the worker's state again.
-const poll = 250 * time.Millisecond
-
-// pasteSettle is how long Prompt leaves Claude Code to take a paste in before pressing Enter, which
-// it could otherwise take as part of the paste.
-var pasteSettle = 300 * time.Millisecond
+// tool names tmux in its errors.
+const tool = "tmux"
 
 // Error is a tmux call that failed, or found no window, pane or agent to act on. Callers read its
 // fields, never its text.
-type Error struct {
-	Op       string // the tmux command, such as new-window
-	Target   string // the session, window, pane or agent it was for
-	NoServer bool   // no tmux server runs on the socket, so there are no windows or panes at all
-	Missing  bool   // tmux has no such window, pane or agent
-	Err      error  // the failed command (a *command.Error), or what was wrong with its answer
-}
+type Error = hookterm.Error
 
-// Error is the command's own error, which names it with its arguments, or else what went wrong.
-func (e *Error) Error() string {
-	if _, ok := errors.AsType[*command.Error](e.Err); ok {
-		return e.Err.Error()
-	}
-	if e.Target == "" {
-		return fmt.Sprintf("tmux %s: %v", e.Op, e.Err)
-	}
-	return fmt.Sprintf("tmux %s %s: %v", e.Op, e.Target, e.Err)
-}
-
-func (e *Error) Unwrap() error { return e.Err }
-
-// NoServer reports whether err is a tmux call that failed because no tmux server runs.
-func NoServer(err error) bool {
-	var te *Error
-	return errors.As(err, &te) && te.NoServer
-}
+// NoServer reports whether err is a tmux call that failed because no tmux server runs, so there are
+// no windows or panes at all.
+func NoServer(err error) bool { return hookterm.NoServer(err) }
 
 // Missing reports whether err says tmux has no such window, pane or agent.
-func Missing(err error) bool {
-	var te *Error
-	return errors.As(err, &te) && te.Missing
-}
+func Missing(err error) bool { return hookterm.Missing(err) }
 
 // missing is the error for a window, pane or agent that tmux doesn't have.
-func missing(op, target, what string) error {
-	return &Error{Op: op, Target: target, Missing: true, Err: errors.New("no such " + what)}
-}
+func missing(op, target, what string) error { return hookterm.NoSuch(tool, op, target, what) }
 
 // odd is the error for an answer of tmux's that can't be read.
-func odd(op, target, out string) error {
-	return &Error{Op: op, Target: target, Err: fmt.Errorf("unexpected output: %q", strings.TrimSpace(out))}
-}
+func odd(op, target, out string) error { return hookterm.Odd(tool, op, target, out) }
 
 // run runs the tmux command op for target, with args after op, and returns its stdout.
 func (t Terminal) run(ctx context.Context, limit time.Duration, op, target string, args ...string) (string, error) {
@@ -111,7 +84,7 @@ func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, tar
 		// tmux takes an argument ending in ';' for the end of a command, and unescapes one ending in
 		// '\;' in its own way: none of the arguments orchestra gives it should end so.
 		if a != ";" && strings.HasSuffix(a, ";") {
-			return "", &Error{Op: op, Target: target, Err: fmt.Errorf("an argument ends in ';', which tmux "+
+			return "", &Error{Tool: tool, Op: op, Target: target, Err: fmt.Errorf("an argument ends in ';', which tmux "+
 				"takes for the end of a command: %q", a)}
 		}
 		argv = append(argv, a)
@@ -129,7 +102,7 @@ func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, tar
 	if err == nil {
 		return out, nil
 	}
-	e := &Error{Op: op, Target: target, Err: err}
+	e := &Error{Tool: tool, Op: op, Target: target, Err: err}
 	var ce *command.Error
 	var ee *exec.ExitError
 	if errors.As(err, &ce) && !ce.Stopped && errors.As(ce.Err, &ee) {

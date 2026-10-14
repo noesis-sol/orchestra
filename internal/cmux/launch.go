@@ -13,7 +13,6 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // launchDir is the folder beside the book where a surface's launch script, and the process ID of
@@ -103,7 +102,7 @@ func (t Terminal) stillRuns(ctx context.Context, workspace, surface string) erro
 	case err != nil:
 		return fmt.Errorf("cannot tell whether the last launch in cmux surface %s still runs: %w", surface, err)
 	case alive:
-		return &Error{Op: "send", Target: surface, Err: fmt.Errorf("process %d, launched there before, "+
+		return &Error{Tool: tool, Op: "send", Target: surface, Err: fmt.Errorf("process %d, launched there before, "+
 			"still runs; nothing is typed into it", pid)}
 	}
 	return nil
@@ -137,8 +136,8 @@ func (t Terminal) typeLine(ctx context.Context, workspace, surface, line string)
 // for Enter and Tab, so text holding a backslash or a line break is refused.
 func (t Terminal) typeText(ctx context.Context, workspace, surface, text string) error {
 	if !typeable(text) {
-		return &Error{Op: "send", Target: surface, Err: errors.New("text with a line break or a backslash can't " +
-			"be typed as it is")}
+		return &Error{Tool: tool, Op: "send", Target: surface, Err: errors.New("text with a line break or a " +
+			"backslash can't be typed as it is")}
 	}
 	_, err := t.run(ctx, "send", surface, false, t.writeArgs(ctx, workspace, surface, "--", text)...)
 	return err
@@ -202,17 +201,5 @@ func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []st
 // StartAgent runs kind with args in the surface, names the agent name and waits up to a minute for it
 // to be ready for a prompt (idle). An error says it went away or never got ready.
 func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
-	if err := t.launch(ctx, pane, kind, name, args); err != nil {
-		return err
-	}
-	return t.waitFor(ctx, "start", name, time.Minute, dispatch.StateIdle, dispatch.StateDone)
+	return t.agents().StartAgent(ctx, name, func() error { return t.launch(ctx, pane, kind, name, args) })
 }
-
-// IsArgumentRefused is always false: the script passes any argument.
-func (t Terminal) IsArgumentRefused(error) bool { return false }
-
-// IsNameRefused is always false: an agent's name is kept in the book, which takes any name.
-func (t Terminal) IsNameRefused(error) bool { return false }
-
-// AgentName returns ticket id's worker's agent name: the ID itself, as cmux has no rule for names.
-func (t Terminal) AgentName(id string) string { return id }

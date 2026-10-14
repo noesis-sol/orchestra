@@ -57,7 +57,7 @@ func TestErrorText(t *testing.T) {
 	if err.Error() != "tmux rename x-1: no such agent" {
 		t.Errorf("got %q", err)
 	}
-	if got := (&Error{Op: "list-panes", Err: errors.New("boom")}).Error(); got != "tmux list-panes: boom" {
+	if got := (&Error{Tool: tool, Op: "list-panes", Err: errors.New("boom")}).Error(); got != "tmux list-panes: boom" {
 		t.Errorf("got %q", got)
 	}
 }

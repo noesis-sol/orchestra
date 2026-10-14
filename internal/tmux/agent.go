@@ -2,16 +2,14 @@ package tmux
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // AdoptAgent names name the agent of kind launched in the pane (LaunchInPane), and returns its state.
@@ -74,13 +72,10 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 	if err != nil {
 		return ""
 	}
-	for n := 1; n <= 20; n++ {
-		free := fmt.Sprintf("%s-%d", name, n)
-		if _, taken := find(ps, func(p paneInfo) bool { return p.agent == free && t.ours(p) }); !taken {
-			return free
-		}
-	}
-	return ""
+	return hookterm.FreeName(name, func(free string) bool {
+		_, taken := find(ps, func(p paneInfo) bool { return p.agent == free && t.ours(p) })
+		return taken
+	})
 }
 
 // Status returns the agent's state, StateGone if no pane holds it. If tmux cannot be asked it returns
@@ -157,22 +152,19 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 	case !ok:
 		return missing("prompt", name, "agent")
 	}
-	buf := "orchestra-" + strings.TrimPrefix(p.id, "%")
-	if _, err := t.runWithInput(ctx, command.ReadLimit, "load-buffer", name, &prompt, "-b", buf, "-"); err != nil {
+	paste := func() error {
+		buf := "orchestra-" + strings.TrimPrefix(p.id, "%")
+		if _, err := t.runWithInput(ctx, command.ReadLimit, "load-buffer", name, &prompt, "-b", buf, "-"); err != nil {
+			return err
+		}
+		_, err := t.run(ctx, command.ReadLimit, "paste-buffer", name, "-d", "-p", "-b", buf, "-t", p.id)
 		return err
 	}
-	if _, err := t.run(ctx, command.ReadLimit, "paste-buffer", name, "-d", "-p", "-b", buf, "-t", p.id); err != nil {
+	enter := func() error {
+		_, err := t.run(ctx, command.ReadLimit, "send-keys", name, "-t", p.id, "Enter")
 		return err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(pasteSettle):
-	}
-	if _, err := t.run(ctx, command.ReadLimit, "send-keys", name, "-t", p.id, "Enter"); err != nil {
-		return err
-	}
-	return t.waitFor(ctx, "prompt", name, 30*time.Second, dispatch.StateWorking, dispatch.StateBlocked)
+	return t.agents().Prompt(ctx, name, paste, enter)
 }
 
 // SendKeys presses keys in the agent's pane, by Herdr's names (enter, esc, ctrl+c, up…); anything
@@ -187,7 +179,7 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 	}
 	var cmds [][]string
 	for _, k := range keys {
-		if key, ok := tmuxKey(k); ok {
+		if key, ok := keyNames.Name(k); ok {
 			cmds = append(cmds, []string{"-t", p.id, key})
 			continue
 		}
@@ -212,48 +204,15 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 	return err
 }
 
+// agents are t's agents as hookterm waits for them.
+func (t Terminal) agents() hookterm.Agents { return hookterm.Agents{Tool: tool, Status: t.Status} }
+
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
-	return t.waitFor(ctx, "wait", name, time.Minute, dispatch.StateIdle, dispatch.StateDone) == nil
+	return t.agents().WaitReady(ctx, name)
 }
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
-	return t.waitFor(ctx, "wait", name, 20*time.Second, dispatch.StateWorking, dispatch.StateBlocked) == nil
-}
-
-// waitFor reads the agent's state until it is one of want, for up to limit; the error says it went
-// away, or what it was when the time ran out. A state tmux can't give is read again.
-func (t Terminal) waitFor(ctx context.Context, op, name string, limit time.Duration,
-	want ...dispatch.AgentState) error {
-	deadline := time.Now().Add(limit)
-	for {
-		st, err := t.Status(ctx, name)
-		switch {
-		case err == nil && slices.Contains(want, st):
-			return nil
-		case err == nil && st == dispatch.StateGone:
-			return &Error{Op: op, Target: name, Missing: true, Err: errors.New("the agent is gone")}
-		case time.Now().After(deadline) && err != nil:
-			return fmt.Errorf("agent %s was not %s within %s: %w", name, states(want),
-				command.ShortDuration(limit), err)
-		case time.Now().After(deadline):
-			return &Error{Op: op, Target: name, Err: fmt.Errorf("the agent was not %s within %s, but %s",
-				states(want), command.ShortDuration(limit), st)}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(poll):
-		}
-	}
-}
-
-// states is "idle or done", for a list of states.
-func states(sts []dispatch.AgentState) string {
-	s := make([]string, len(sts))
-	for i, st := range sts {
-		s[i] = string(st)
-	}
-	return strings.Join(s, " or ")
+	return t.agents().WaitStarted(ctx, name)
 }

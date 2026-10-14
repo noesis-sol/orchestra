@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // A launch runs the agent in the terminal's shell through a script, which goes to the terminal's
@@ -144,8 +145,9 @@ func TestStatus(t *testing.T) {
 // promptTerminal is a terminal whose book has agent x-1, working once prompted, in its worktree.
 func promptTerminal(t *testing.T, f *fakeCmux) (Terminal, string) {
 	t.Helper()
-	pasteSettle = 0
-	t.Cleanup(func() { pasteSettle = 300e6 })
+	was := hookterm.PasteSettle
+	hookterm.PasteSettle = 0
+	t.Cleanup(func() { hookterm.PasteSettle = was })
 	term := terminal(t)
 	wt := t.TempDir()
 	keep(t, term, book{Surfaces: map[string]surfaceEntry{workSF: {Workspace: workWS, Dir: wt, Agent: "x-1",

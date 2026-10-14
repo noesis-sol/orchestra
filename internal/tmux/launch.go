@@ -4,11 +4,9 @@ import (
 	"context"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // launch runs kind with args in the pane, in place of what ran there, and returns at once. The
@@ -54,17 +52,5 @@ func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []st
 // StartAgent runs kind with args in the pane, names the agent name and waits up to a minute for it to
 // be ready for a prompt (idle). An error says it went away or never got ready.
 func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
-	if err := t.launch(ctx, pane, kind, name, args); err != nil {
-		return err
-	}
-	return t.waitFor(ctx, "start", name, time.Minute, dispatch.StateIdle, dispatch.StateDone)
+	return t.agents().StartAgent(ctx, name, func() error { return t.launch(ctx, pane, kind, name, args) })
 }
-
-// IsArgumentRefused is always false: tmux passes any argument.
-func (t Terminal) IsArgumentRefused(error) bool { return false }
-
-// IsNameRefused is always false: an agent's name is a pane option, which takes any name.
-func (t Terminal) IsNameRefused(error) bool { return false }
-
-// AgentName returns ticket id's worker's agent name: the ID itself, as tmux has no rule for names.
-func (t Terminal) AgentName(id string) string { return id }
