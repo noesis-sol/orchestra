@@ -112,11 +112,22 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 			return nil
 		}
 
-		// Base moved on while the ticket ran: rebase it, still under the lock.
+		// Base moved on while the ticket ran: rebase it, still under the lock. git won't rebase a
+		// worktree with uncommitted changes, as a check that rewrites the files it tracks leaves.
+		if files := o.uncommitted(keep, wt); len(files) > 0 {
+			repo.unlock()
+			o.leaveDirtyWorktree(keep, w, files)
+			return nil
+		}
 		r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, br)}
 		r.own = o.merger.CountCommits(keep, c.Repo, r.onto+".."+br)
 		out, err := o.merger.Rebase(keep, wt, c.Base)
 		o.log.Raw(out, err)
+		if err != nil && !o.merger.RebaseInProgress(keep, wt) { // it didn't start, or stopped on nothing to resolve
+			repo.unlock()
+			o.leaveRebaseFailed(keep, w, err)
+			return nil
+		}
 		if err != nil {
 			r.files = o.merger.ConflictedFiles(keep, wt)
 			if why := o.whyNotHandBack(keep, r, handedBack); why != "" {
@@ -235,6 +246,42 @@ func (o *Loop) inTheWay(ctx context.Context, br string) []string {
 	}
 	slices.Sort(files)
 	return files
+}
+
+// uncommitted lists, sorted, the tracked files that worktree wt has uncommitted changes to, staged
+// or not, outside .orchestra/run/: git won't rebase it then. Untracked files don't count, as they
+// don't stop a rebase. It lists none when git can't say.
+func (o *Loop) uncommitted(ctx context.Context, wt string) []string {
+	var files []string
+	for f, code := range o.checkout.Changes(ctx, wt) {
+		if code != "??" && code != "!!" && !strings.HasPrefix(f, ".orchestra/run/") {
+			files = append(files, f)
+		}
+	}
+	slices.Sort(files)
+	return files
+}
+
+// leaveDirtyWorktree sets aside w's ticket, not rebased onto Base, which moved on while it ran, as
+// its worktree has uncommitted changes to files.
+func (o *Loop) leaveDirtyWorktree(ctx context.Context, w worker, files []string) {
+	c := o.cfg
+	o.leaveUnmerged(ctx, w.id, "DIRTY_WORKTREE")
+	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "uncommitted changes in its worktree", Text: fmt.Sprintf(
+		"  DIRTY_WORKTREE: %s closed, but %s has uncommitted changes to %s, so %s can't be rebased onto %s, "+
+			"which moved on while it ran; worktree %s and tab %s left for review (commit or undo them, rebase onto %s, "+
+			"check, merge)", w.id, w.wt, strings.Join(files, ", "), w.br, c.Base, w.wt, w.tab, c.Base)})
+}
+
+// leaveRebaseFailed sets aside w's ticket, as git could not rebase its branch onto Base, saying
+// why in err, without stopping on conflicts: no rebase is left in progress to resolve or abort.
+func (o *Loop) leaveRebaseFailed(ctx context.Context, w worker, err error) {
+	c := o.cfg
+	o.leaveUnmerged(ctx, w.id, "REBASE_FAILED")
+	o.emit(Event{Kind: EvWarn, Ticket: w.id, Aside: true, Detail: "rebase failed", Text: fmt.Sprintf(
+		"  REBASE_FAILED: %s closed, but git could not rebase %s onto %s, which moved on while it ran%s; "+
+			"worktree %s and tab %s left for review (git output is in %s)",
+		w.id, w.br, c.Base, because(err), w.wt, w.tab, c.LogPath)})
 }
 
 // failedResolved says why the branch of r's ticket, its rebase resolved by its worker, is set aside, as

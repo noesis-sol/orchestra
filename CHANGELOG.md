@@ -29,6 +29,11 @@ All notable changes to orchestra are documented here. The format follows
   only the log had it.
 - A run on a `TERM=dumb` terminal, or with a stdin that isn't a terminal,
   prints plain lines, as it does for a pipe, where it drew the dashboard.
+- A finished ticket whose worktree has uncommitted changes to tracked files,
+  as a check that rewrites them leaves, is set aside with `DIRTY_WORKTREE`,
+  naming the files, when its branch needs rebasing; a rebase git refuses to
+  start for another reason is `REBASE_FAILED`. Both were reported as a
+  `MERGE_CONFLICT` left mid-rebase, which they weren't.
 - `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
   as any number outside 1 to 16 is, where they were taken for unset and the
   run went on with `settings.json`'s number, or 1.
