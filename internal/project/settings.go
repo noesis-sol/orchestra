@@ -208,13 +208,18 @@ func settingsKeys() []string {
 	return keys
 }
 
-// ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT), else the
-// project's setting, else 1.
-func ResolveConcurrency(flagValue int, s Settings) (int, error) {
-	n := flagValue
-	if n == 0 {
-		n = s.Concurrency
+// ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT) when given,
+// else the project's setting, else 1. A given 0 is out of range, as any other value outside 1 to
+// MaxConcurrency.
+func ResolveConcurrency(flagValue int, given bool, s Settings) (int, error) {
+	if given {
+		if flagValue < 1 || flagValue > MaxConcurrency {
+			return 0, fmt.Errorf("--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and %d (got %d)",
+				MaxConcurrency, flagValue)
+		}
+		return flagValue, nil
 	}
+	n := s.Concurrency
 	if n == 0 {
 		n = 1
 	}

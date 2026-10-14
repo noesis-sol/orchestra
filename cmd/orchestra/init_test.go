@@ -35,7 +35,7 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 		t.Errorf("%s:\n%s", project.FastRunner, runner)
 	}
 	s, _, _ := project.LoadSettings(repo)
-	if _, err := project.ResolveConcurrency(0, s); err != nil {
+	if _, err := project.ResolveConcurrency(0, false, s); err != nil {
 		t.Errorf("a run after init: %v", err)
 	}
 }

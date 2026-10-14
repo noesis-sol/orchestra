@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `--concurrent 0`, `-c 0` and `ORCHESTRA_CONCURRENT=0` are a setup problem,
+  as any number outside 1 to 16 is, where they were taken for unset and the
+  run went on with `settings.json`'s number, or 1.
+- The on-or-off variables (`NOTIFY`, `TRIAGE`, `REVIEW`, `PROMPT_AT_LAUNCH`,
+  `ORCHESTRA_TICKETS`, `ORCHESTRA_NO_UPDATE_CHECK`) all take `1`/`0`,
+  `true`/`false`, `yes`/`no` and `on`/`off`, and report anything else as a
+  setup problem: `TRIAGE=false` or `NOTIFY=off` left the feature on, and
+  `ORCHESTRA_TICKETS=true` was taken for off.
+
 - `orchestra init` no longer saves over a `.orchestra/settings.json` it
   can't read, such as one edited while its form was open to hold a value of
   the wrong type: it stops with the error and leaves the file as it was,

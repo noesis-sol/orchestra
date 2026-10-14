@@ -162,15 +162,19 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 
 func TestConcurrencyPrecedence(t *testing.T) {
 	cases := []struct {
-		flag, setting, want int
-		fails               bool
+		flag          int
+		given         bool
+		setting, want int
+		fails         bool
 	}{
-		{0, 0, 1, false}, {0, 3, 3, false}, {2, 3, 2, false}, {17, 0, 0, true}, {-1, 0, 0, true},
+		{0, false, 0, 1, false}, {0, false, 3, 3, false}, {2, true, 3, 2, false},
+		{17, true, 0, 0, true}, {-1, true, 0, 0, true}, {0, false, 17, 0, true},
+		{0, true, 3, 0, true}, // --concurrent 0 is out of range, not unset
 	}
 	for _, c := range cases {
-		got, err := ResolveConcurrency(c.flag, Settings{Concurrency: c.setting})
+		got, err := ResolveConcurrency(c.flag, c.given, Settings{Concurrency: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
-			t.Errorf("resolveConcurrency(%d, %d) = %d, %v", c.flag, c.setting, got, err)
+			t.Errorf("ResolveConcurrency(%d, %v, %d) = %d, %v", c.flag, c.given, c.setting, got, err)
 		}
 	}
 }

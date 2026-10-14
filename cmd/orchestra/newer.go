@@ -13,8 +13,9 @@ import (
 // started as the run starts asks GitHub, at most once a day (internal/update's Checker). The event
 // stream and the log don't have it.
 
-// noUpdateCheck is the environment variable that, set to anything but 0, turns the check off: no
-// request, no cache.
+// noUpdateCheck is the environment variable that, set on (1, true, yes or on, as envBool reads it),
+// turns the check off: no request, no cache. A value envBool doesn't take is a setup problem
+// (readFlags), and turns the check off too.
 const noUpdateCheck = "ORCHESTRA_NO_UPDATE_CHECK"
 
 // releases is where a run looks for the latest release: GitHub; tests serve their own.
@@ -24,7 +25,7 @@ var releases = update.Updater{}
 // asks nothing, when ORCHESTRA_NO_UPDATE_CHECK turns it off or there is no cache folder to keep its
 // answer in, as GitHub would then be asked on every run.
 func startUpdateCheck(ctx context.Context, getenv func(string) string) *update.Check {
-	if v := getenv(noUpdateCheck); v != "" && v != "0" {
+	if off, problem := envBool(getenv, noUpdateCheck, false); off || problem != "" {
 		return nil
 	}
 	dir, err := update.CacheDir()

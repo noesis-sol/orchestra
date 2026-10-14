@@ -35,6 +35,21 @@ func envInt(getenv func(string) string, name string, def int) (int, string) {
 	return n, ""
 }
 
+// envBool reads an on-or-off variable: 1, true, yes or on for on, 0, false, no or off for off, in any
+// case, or def when it is unset. Like envInt, anything else is returned as a problem.
+func envBool(getenv func(string) string, name string, def bool) (bool, string) {
+	v := getenv(name)
+	switch strings.ToLower(v) {
+	case "":
+		return def, ""
+	case "1", "true", "yes", "on":
+		return true, ""
+	case "0", "false", "no", "off":
+		return false, ""
+	}
+	return def, fmt.Sprintf("%s must be 1 or 0, true or false, yes or no, or on or off (got '%s').", name, v)
+}
+
 // envDuration reads a duration variable such as 2h, which may be 0 unless positive is set; given is
 // false when it is unset. Like envInt, anything else is returned as a problem.
 func envDuration(getenv func(string) string, name string, positive bool) (d time.Duration, given bool, problem string) {
@@ -105,9 +120,9 @@ func loadConfig(
 }
 
 // overrides says which of the project's settings a flag or variable overrides where its value
-// can't tell: a duration of 0, -resolve-conflicts=true.
+// can't tell: a concurrency or duration of 0, -resolve-conflicts=true.
 type overrides struct {
-	ticketLimit, checkTimeout, checkFullTimeout, resolveConflicts bool
+	concurrency, ticketLimit, checkTimeout, checkFullTimeout, resolveConflicts bool
 }
 
 // readFlags parses the flags in args, each defaulting to its environment variable, and reconciles
@@ -135,14 +150,17 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"),
 		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
 			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
-	fs.BoolVar(&c.Notify, "notify", getenv("NOTIFY") != "0",
+	notify, notifyProblem := envBool(getenv, "NOTIFY", true)
+	fs.BoolVar(&c.Notify, "notify", notify,
 		"macOS notifications for tickets closed, set aside or waiting on you, and the run's end [NOTIFY=0 turns off]")
 	fs.StringVar(&c.WTRoot, "worktrees", getenv("WT_ROOT"),
 		"folder for the per-ticket worktrees, outside the repository "+
 			"(default: <repo>-worktrees next to it) [WT_ROOT]")
-	fs.BoolVar(&c.Triage, "triage", getenv("TRIAGE") != "0",
+	triage, triageProblem := envBool(getenv, "TRIAGE", true)
+	fs.BoolVar(&c.Triage, "triage", triage,
 		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
-	fs.BoolVar(&c.Review, "review", getenv("REVIEW") != "0",
+	review, reviewProblem := envBool(getenv, "REVIEW", true)
+	fs.BoolVar(&c.Review, "review", review,
 		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
 	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"),
 		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
@@ -153,6 +171,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"effort Claude workers start at: low, medium, high, xhigh or max "+
 			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
 	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
+	concurrentGiven := getenv("ORCHESTRA_CONCURRENT") != "" && concurrentProblem == ""
 	fs.IntVar(&c.Concurrency, "concurrent", concurrent,
 		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
 	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
@@ -176,14 +195,16 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
 			"confirm, and run the epic as --ticket would")
 	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
-	fs.BoolVar(&c.Tickets, "tickets", getenv("ORCHESTRA_TICKETS") == "1",
+	tickets, ticketsProblem := envBool(getenv, "ORCHESTRA_TICKETS", false)
+	fs.BoolVar(&c.Tickets, "tickets", tickets,
 		"run the current tickets without first asking, in a terminal, whether to plan a new feature instead "+
 			"[ORCHESTRA_TICKETS=1]")
 	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true,
 		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
 			"ask its worker to resolve them before setting it aside; needs a check command "+
 			"(default: .orchestra/settings.json, else on)")
-	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", getenv("PROMPT_AT_LAUNCH") != "0",
+	launchPrompt, launchPromptProblem := envBool(getenv, "PROMPT_AT_LAUNCH", true)
+	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", launchPrompt,
 		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
@@ -229,7 +250,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 
 	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule,
 	// its value checked here when nothing else does (0 for the others: ResolveConcurrency checks
-	// -concurrent and -c, ResolveTicketLimit, ResolveCheckTimeout and ResolveCheckFullTimeout their flags).
+	// -concurrent and -c, ResolveTicketLimit, ResolveCheckTimeout and ResolveCheckFullTimeout their flags,
+	// and a boolean flag has no value to check).
+	_, updateCheckProblem := envBool(getenv, noUpdateCheck, false)
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	for _, v := range []struct {
@@ -244,6 +267,12 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		{"ticket-limit", set["ticket-limit"], 0, ticketLimitProblem},
 		{"check-timeout", set["check-timeout"], 0, checkTimeoutProblem},
 		{"check-full-timeout", set["check-full-timeout"], 0, checkFullTimeoutProblem},
+		{"notify", set["notify"], 0, notifyProblem},
+		{"triage", set["triage"], 0, triageProblem},
+		{"review", set["review"], 0, reviewProblem},
+		{"tickets", set["tickets"], 0, ticketsProblem},
+		{"prompt-at-launch", set["prompt-at-launch"], 0, launchPromptProblem},
+		{"", false, 0, updateCheckProblem}, // no flag: the variable alone turns the check off
 	} {
 		if !v.isSet && v.problem != "" {
 			problems = append(problems, v.problem)
@@ -270,6 +299,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			c.DoneSoFar, c.Limit))
 	}
 	return c, overrides{
+		concurrency:      set["concurrent"] || set["c"] || concurrentGiven,
 		ticketLimit:      set["ticket-limit"] || ticketLimitGiven,
 		checkTimeout:     set["check-timeout"] || checkTimeoutGiven,
 		checkFullTimeout: set["check-full-timeout"] || checkFullTimeoutGiven,
@@ -320,7 +350,7 @@ func resolveProject(ctx context.Context, c *options, given overrides, getenv fun
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
 	}
 	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
-	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(c.Concurrency, settings))
+	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(c.Concurrency, given.concurrency, settings))
 	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(c.TicketLimit, given.ticketLimit, settings))
 	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(c.CheckTimeout, given.checkTimeout, settings))
 	keep(&problems, &c.CheckFullTimeout)(
