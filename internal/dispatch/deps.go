@@ -38,7 +38,9 @@ type Tabs interface {
 	TabLabel(ctx context.Context, tab string) (label string, open bool, err error)
 }
 
-// Starter starts a worker agent in a tab's pane.
+// Starter starts a worker agent in a tab's pane. In a pane that still runs what was started there
+// before, Herdr's StartAgent and cmux's StartAgent and LaunchInPane refuse, rather than type into it;
+// tmux's replace it.
 type Starter interface {
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error     // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
@@ -86,6 +88,13 @@ type Agents interface {
 	Prompt(ctx context.Context, name, prompt string) error
 	SendKeys(ctx context.Context, name string, keys ...string) error
 	WaitStarted(ctx context.Context, name string) bool
+}
+
+// PromptTyper is Agents whose Prompt can put other text than the prompt in the worker's input box:
+// cmux before 0.65 types a line attaching a file that holds a prompt of several lines.
+type PromptTyper interface {
+	// TypedPrompt is what Prompt puts in the worker's input box for prompt
+	TypedPrompt(ctx context.Context, name, prompt string) string
 }
 
 // Reporter has a worker report each tool it uses (Claude Code hooks), so the dashboard can say

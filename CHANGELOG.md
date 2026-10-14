@@ -20,6 +20,12 @@ All notable changes to orchestra are documented here. The format follows
   after a repository folder holding `#` is made under that name, not one
   tmux expanded from it, and `--workspace foo.bar` works with tmux 3.0 to
   3.7 as well, in the session `foo_bar`.
+- cmux no longer types a worker's launch line into a Claude Code still
+  running in its workspace, where a retried start could answer its trust
+  or MCP dialog or send the line as a prompt: a launch is refused while the
+  last one runs. And under cmux before 0.65, a worker whose Enter was lost
+  after the `@` line pointing at its prompt file is given Enter, rather
+  than the line again.
 - cmux starts workers in a repository whose path holds a quote, such as
   `~/Projects/Bob's app`: the line orchestra types to launch them no longer
   holds a backslash, which cmux refused to type.

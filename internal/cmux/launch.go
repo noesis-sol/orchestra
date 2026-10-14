@@ -26,7 +26,8 @@ func (t Terminal) launchPath(surface, ext string) string {
 	return filepath.Join(filepath.Dir(t.Book), launchDir, key(surface)+ext)
 }
 
-// launch runs kind with args in the surface and returns at once. cmux types into a surface's
+// launch runs kind with args in the surface and returns at once, refusing while what the surface's
+// last launch started still runs there (stillRuns). cmux types into a surface's
 // shell, which takes no argument with line breaks, so the command goes in a script beside the book,
 // and the shell is given a line that runs it. The script goes to the folder the surface started in,
 // sets orchestra's PATH, as orchestra would run the command, writes its process ID, which the
@@ -44,6 +45,9 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	entry, ok := b.Surfaces[key(surface)]
 	if !isUUID(surface) || !ok {
 		return missing("send", surface, "terminal orchestra opened")
+	}
+	if err := t.stillRuns(ctx, entry.Workspace, surface); err != nil {
+		return err
 	}
 	var script strings.Builder
 	script.WriteString("# orchestra's launch of " + kind + " in cmux surface " + key(surface) + "\n")
@@ -83,6 +87,26 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	}
 	// A leading space keeps the line out of the shell's history, where the shell is set to.
 	return t.typeLine(ctx, entry.Workspace, surface, " /bin/sh "+typedQuote(path))
+}
+
+// stillRuns refuses a launch into the surface while what its last launch started still runs there:
+// the line would be typed into it, a Claude Code on its trust dialog, say, which would take it for
+// an answer or a prompt. Unlike tmux's, a launch in cmux types into what runs rather than replacing
+// it. A process cmux can't list is taken to be there.
+func (t Terminal) stillRuns(ctx context.Context, workspace, surface string) error {
+	pid, ok := t.launched(surface)
+	if !ok {
+		return nil
+	}
+	alive, err := t.running(ctx, workspace, pid)
+	switch {
+	case err != nil:
+		return fmt.Errorf("cannot tell whether the last launch in cmux surface %s still runs: %w", surface, err)
+	case alive:
+		return &Error{Op: "send", Target: surface, Err: fmt.Errorf("process %d, launched there before, "+
+			"still runs; nothing is typed into it", pid)}
+	}
+	return nil
 }
 
 // launched returns the process ID the surface's last launch wrote, and false when it wrote none:

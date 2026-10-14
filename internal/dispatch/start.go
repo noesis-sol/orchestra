@@ -441,9 +441,9 @@ func (o *Loop) claimed(ctx context.Context, id string) bool {
 // has (or plainly has not): it does not wait for the turn to end, so the caller watches the worker
 // through it. 'herdr agent prompt' can paste the text without the Enter registering, leaving the
 // worker idle with the prompt in its input box; the worker then looks settled and its ticket would
-// be deferred untouched. Enter is pressed only when the box visibly holds the prompt (never on a
-// dialog, where it would pick an option), and the prompt is sent again only when the box is empty,
-// so never twice.
+// be deferred untouched. Enter is pressed only when the box visibly holds the prompt, or what the
+// terminal typed for it (typedPrompt), never on a dialog, where it would pick an option; the prompt
+// is sent again only when the box is empty, so never twice.
 func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 	for attempt := 1; attempt <= 2; attempt++ {
 		err := o.agents.Prompt(ctx, agent, prompt)
@@ -463,7 +463,7 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		case StateWorking, StateBlocked:
 			return true // it started; a block is handled by the settle loop
 		case StateIdle, StateDone:
-			if inputHolds(o.agents.Screen(ctx, agent, st), prompt) {
+			if inputHolds(o.agents.Screen(ctx, agent, st), o.typedPrompt(ctx, agent, prompt)) {
 				if err := o.agents.SendKeys(ctx, agent, "enter"); err != nil {
 					o.log.Raw("", fmt.Errorf("cannot press Enter for %s: %w", agent, err))
 				}
@@ -475,4 +475,13 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		}
 	}
 	return false
+}
+
+// typedPrompt is what the terminal's Prompt puts in the agent's input box for prompt (PromptTyper),
+// which deliverPrompt looks for there: by default, the prompt itself.
+func (o *Loop) typedPrompt(ctx context.Context, agent, prompt string) string {
+	if t, ok := o.agents.(PromptTyper); ok {
+		return t.TypedPrompt(ctx, agent, prompt)
+	}
+	return prompt
 }

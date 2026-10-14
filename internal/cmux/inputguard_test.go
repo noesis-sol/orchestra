@@ -64,6 +64,7 @@ func TestCmux064TypesNoForce(t *testing.T) {
 	if err := term.SendKeys(bg, "x-1", "1", "enter"); err != nil {
 		t.Fatal(err)
 	}
+	f.answer("top", topJSON(workSF, 1)) // the agent launched before has ended, for another to launch
 	if err := term.LaunchInPane(bg, workSF, "claude", nil); err != nil {
 		t.Fatal(err)
 	}

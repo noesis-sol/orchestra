@@ -270,36 +270,52 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 // givePrompt puts the prompt in the input box of the agent name in surface id, as Prompt says, without
 // pressing Enter.
 func (t Terminal) givePrompt(ctx context.Context, name, id string, e surfaceEntry, prompt string) error {
-	if t.features(ctx).paste {
+	switch {
+	case t.features(ctx).paste:
 		return t.paste(ctx, e.Workspace, id, prompt)
+	case !throughFile(prompt):
+		return t.typeText(ctx, e.Workspace, id, prompt)
 	}
-	line := prompt
-	if !typeable(prompt) || len(prompt) > longestTyped {
-		rel, err := writePrompt(e.Dir, id, prompt)
-		if err != nil {
-			return fmt.Errorf("cannot give agent %s its prompt: %w", name, err)
-		}
-		line = "My message to you is in @" + rel + " : read it, and take it as if I had typed it here."
+	if err := writePrompt(e.Dir, id, prompt); err != nil {
+		return fmt.Errorf("cannot give agent %s its prompt: %w", name, err)
 	}
-	return t.typeText(ctx, e.Workspace, id, line)
+	return t.typeText(ctx, e.Workspace, id, fileLine(id))
 }
 
-// writePrompt writes prompt to the run file of surface id in the checkout dir, and returns its path
-// relative to dir.
-func writePrompt(dir, id, prompt string) (string, error) {
+// TypedPrompt is what Prompt puts in the agent's input box for prompt: the line it types to attach
+// the file it writes the prompt to, where it writes one, and otherwise the prompt itself.
+func (t Terminal) TypedPrompt(ctx context.Context, name, prompt string) string {
+	id, _, ok, err := t.agentSurface(name)
+	if err != nil || !ok || t.features(ctx).paste || !throughFile(prompt) {
+		return prompt
+	}
+	return fileLine(id)
+}
+
+// throughFile reports whether a cmux that doesn't paste gives the prompt through a file: one it
+// can't type as it is, or too long to.
+func throughFile(prompt string) bool { return !typeable(prompt) || len(prompt) > longestTyped }
+
+// promptFile is the path, relative to its checkout, of the file a prompt for surface id is written
+// to.
+func promptFile(id string) string { return project.RunPath("cmux-prompt-" + key(id) + ".md") }
+
+// fileLine is the line typed into surface id's input box to attach the file its prompt is in.
+func fileLine(id string) string {
+	return "My message to you is in @" + promptFile(id) + " : read it, and take it as if I had typed it here."
+}
+
+// writePrompt writes prompt to the run file of surface id in the checkout dir (promptFile).
+func writePrompt(dir, id, prompt string) error {
 	if dir == "" {
-		return "", errors.New("no folder to write it in")
+		return errors.New("no folder to write it in")
 	}
 	root, err := project.OpenRun(dir)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
-	rel := project.RunPath("cmux-prompt-" + key(id) + ".md")
-	if err := project.WriteRun(root, dir, rel, []byte(prompt), 0o644); err != nil {
-		return "", err
-	}
-	return rel, nil
+	return project.WriteRun(root, dir, promptFile(id), []byte(prompt), 0o644)
 }
 
 // SendKeys presses keys in the agent's surface, by Herdr's names (enter, esc, ctrl+c, up…); anything
