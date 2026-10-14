@@ -12,6 +12,12 @@ All notable changes to orchestra are documented here. The format follows
   can't read, such as one edited while its form was open to hold a value of
   the wrong type: it stops with the error and leaves the file as it was,
   where it wrote back only its own choices and lost every other setting.
+### Changed
+
+- `orchestra update` no longer refuses while a run holds the repository's
+  lock: nothing runs the binary during a run, so the reason it gave
+  (workers' hooks call orchestra) wasn't true. The new binary is renamed
+  into place, so a run going keeps the build it started with.
 
 ## [0.7.1] - 2026-10-14
 

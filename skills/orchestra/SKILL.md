@@ -520,8 +520,9 @@ A build from a clone names its commit: `v0.4.1-0.20261005062236-d70b642867ad` is
 `d70b642867ad` (`git rev-parse --short=12 HEAD` in the clone), and `+dirty` at the end means the tree
 had uncommitted changes. Installing goes over the path `command -v orchestra` printed, so the old
 build doesn't shadow the new one on `PATH`. Where that folder belongs to root (`/usr/local/bin`
-usually does), the install needs `sudo`, which is the user's (below). Give them the line to run
-between runs, with `!` in front in Claude Code so it runs in the session:
+usually does), the install needs `sudo`, which is the user's (below). Give them the line to run,
+with `!` in front in Claude Code so it runs in the session; a run going keeps the build it started
+with, and the next run starts the new one:
 
 ```
 sudo install -m 755 /tmp/orchestra "$(command -v orchestra)" && orchestra --version

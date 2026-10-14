@@ -91,7 +91,7 @@ func run(
 			fmt.Fprintln(stderr, "orchestra update: cannot find this binary:", err)
 			return exitStatus(dispatch.ExitSetup)
 		}
-		return status(runUpdate(ctx, ".", args[2:], buildVersion(), exe, update.Updater{}, stdout, stderr))
+		return status(runUpdate(ctx, args[2:], buildVersion(), exe, update.Updater{}, stdout, stderr))
 	}
 	cfg, problems, err := loadConfig(ctx, args[1:], getenv, stderr)
 	switch {

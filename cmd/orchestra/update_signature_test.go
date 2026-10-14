@@ -16,7 +16,7 @@ func TestUpdateRefusesAnUntrustedSignature(t *testing.T) {
 	u.Keys = []ed25519.PublicKey{other}
 	exe := oldBinary(t)
 
-	code, _, errOut := updateIn(t, t.TempDir(), "v0.5.1", exe, u)
+	code, _, errOut := updateIn(t, "v0.5.1", exe, u)
 	resolved, _ := filepath.EvalSymlinks(exe)
 	want := "orchestra update: checksums.txt.sig doesn't verify checksums.txt: it isn't signed by a release key\n" +
 		resolved + " is unchanged.\n"

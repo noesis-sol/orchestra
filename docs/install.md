@@ -28,7 +28,7 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 sudo install -m 755 /tmp/orchestra "$(command -v orchestra)"
 ```
 
-The build runs as you; only the install needs `sudo`, and only where the folder belongs to root, as `/usr/local/bin` usually does. For a first install, name the folder: `/usr/local/bin/orchestra`. Install between runs.
+The build runs as you; only the install needs `sudo`, and only where the folder belongs to root, as `/usr/local/bin` usually does. For a first install, name the folder: `/usr/local/bin/orchestra`. `install` replaces the file rather than writing over it, so a run going keeps the build it started with and the next run starts the new one.
 
 `go install` and a build from a clone need Go 1.26.
 
@@ -42,7 +42,7 @@ The build runs as you; only the install needs `sudo`, and only where the folder 
 
 `orchestra update --check` only says whether a newer release is out, and changes nothing: it exits 1 when there is one, 0 when not. A build from a clone (`dev`, or a version naming a commit, [below](#which-version-you-have)) is replaced only with `--force`.
 
-Where the binary's folder belongs to root, run `sudo orchestra update`; orchestra never calls `sudo` itself. It refuses while a run holds the repository's lock, as workers' hooks call the binary mid-run; runs in other repositories aren't checked, so update between runs.
+Where the binary's folder belongs to root, run `sudo orchestra update`; orchestra never calls `sudo` itself. It works during a run: nothing runs the binary while a run goes (workers' hooks are shell commands, the organs are `claude`), and the new binary is renamed into place, so the run keeps the build it started with and the next run starts the new one.
 
 ## Build provenance
 

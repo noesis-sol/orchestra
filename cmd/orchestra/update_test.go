@@ -94,11 +94,11 @@ func oldBinary(t *testing.T) string {
 	return exe
 }
 
-// updateIn runs orchestra update with args in dir, as orchestra current at exe.
-func updateIn(t *testing.T, dir, current, exe string, u update.Updater, args ...string) (code int, stdout, stderr string) {
+// updateIn runs orchestra update with args, as orchestra current at exe.
+func updateIn(t *testing.T, current, exe string, u update.Updater, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut strings.Builder
-	code = runUpdate(t.Context(), dir, args, current, exe, u, &out, &errOut)
+	code = runUpdate(t.Context(), args, current, exe, u, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
 
@@ -106,7 +106,7 @@ func TestUpdateInstallsANewerRelease(t *testing.T) {
 	u, _ := releaseServer(t, "v0.6.0", false)
 	exe := oldBinary(t)
 
-	code, out, errOut := updateIn(t, t.TempDir(), "v0.5.1", exe, u)
+	code, out, errOut := updateIn(t, "v0.5.1", exe, u)
 	resolved, _ := filepath.EvalSymlinks(exe)
 	want := "Updated orchestra v0.5.1 -> v0.6.0 (" + resolved + ")\nRelease notes: https://example.com/releases/v0.6.0\n"
 	if code != 0 || !strings.HasSuffix(out, want) {
@@ -126,7 +126,7 @@ func TestUpdateLeavesTheLatestOrANewerOne(t *testing.T) {
 		t.Run(current, func(t *testing.T) {
 			u, requested := releaseServer(t, "v0.6.0", false)
 			exe := oldBinary(t)
-			if code, out, errOut := updateIn(t, t.TempDir(), current, exe, u); code != 0 || out != want {
+			if code, out, errOut := updateIn(t, current, exe, u); code != 0 || out != want {
 				t.Errorf("exit %d, stdout %q, stderr %q, want %q", code, out, errOut, want)
 			}
 			if got := read(t, exe); got != "the old one\n" {
@@ -143,7 +143,7 @@ func TestUpdateLeavesTheLatestOrANewerOne(t *testing.T) {
 func TestUpdateForceInstallsOverANewerOne(t *testing.T) {
 	u, _ := releaseServer(t, "v0.6.0", false)
 	exe := oldBinary(t)
-	if code, out, errOut := updateIn(t, t.TempDir(), "v0.7.0", exe, u, "--force"); code != 0 ||
+	if code, out, errOut := updateIn(t, "v0.7.0", exe, u, "--force"); code != 0 ||
 		!strings.Contains(out, "Updated orchestra v0.7.0 -> v0.6.0") {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -159,7 +159,7 @@ func TestUpdateReplacesACloneBuildOnlyWithForce(t *testing.T) {
 		t.Run(current, func(t *testing.T) {
 			u, requested := releaseServer(t, "v0.6.0", false)
 			exe := oldBinary(t)
-			code, out, errOut := updateIn(t, t.TempDir(), current, exe, u)
+			code, out, errOut := updateIn(t, current, exe, u)
 			want := "orchestra update: orchestra " + current + " at " + exe + " is a build from a clone, not a release. " +
 				"orchestra update --force replaces it with v0.6.0.\n"
 			if code != 2 || errOut != want || out != "" {
@@ -169,7 +169,7 @@ func TestUpdateReplacesACloneBuildOnlyWithForce(t *testing.T) {
 				t.Errorf("requested %q, binary %q: want it left alone", got, read(t, exe))
 			}
 
-			if code, out, errOut := updateIn(t, t.TempDir(), current, exe, u, "--force"); code != 0 ||
+			if code, out, errOut := updateIn(t, current, exe, u, "--force"); code != 0 ||
 				!strings.Contains(out, "Updated orchestra "+current+" -> v0.6.0") {
 				t.Errorf("--force: exit %d, stdout %q, stderr %q", code, out, errOut)
 			}
@@ -196,7 +196,7 @@ func TestUpdateCheckChangesNothing(t *testing.T) {
 		t.Run(c.current, func(t *testing.T) {
 			u, requested := releaseServer(t, "v0.6.0", false)
 			exe := oldBinary(t)
-			if code, out, errOut := updateIn(t, t.TempDir(), c.current, exe, u, "--check"); code != c.code || out != c.want {
+			if code, out, errOut := updateIn(t, c.current, exe, u, "--check"); code != c.code || out != c.want {
 				t.Errorf("exit %d, stdout %q, stderr %q, want %d, %q", code, out, errOut, c.code, c.want)
 			}
 			if got := requested(); !slices.Equal(got, []string{"/releases/latest"}) || read(t, exe) != "the old one\n" {
@@ -210,7 +210,7 @@ func TestUpdateCheckChangesNothing(t *testing.T) {
 func TestUpdateChecksumMismatchLeavesTheBinary(t *testing.T) {
 	u, _ := releaseServer(t, "v0.6.0", true)
 	exe := oldBinary(t)
-	code, _, errOut := updateIn(t, t.TempDir(), "v0.5.1", exe, u)
+	code, _, errOut := updateIn(t, "v0.5.1", exe, u)
 	if resolved, _ := filepath.EvalSymlinks(exe); code != 4 || !strings.Contains(errOut, "checksums.txt says") ||
 		!strings.HasSuffix(errOut, "\n"+resolved+" is unchanged.\n") {
 		t.Errorf("exit %d, stderr:\n%s", code, errOut)
@@ -233,7 +233,7 @@ func TestUpdateInAFolderItCannotWriteSaysSudo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(exe), 0o755) })
 
-	code, _, errOut := updateIn(t, t.TempDir(), "v0.5.1", exe, u)
+	code, _, errOut := updateIn(t, "v0.5.1", exe, u)
 	if code != 2 || !strings.Contains(errOut, "permission denied") ||
 		!strings.HasSuffix(errOut, "Run it as the folder's owner instead: sudo orchestra update\n") {
 		t.Errorf("exit %d, stderr:\n%s", code, errOut)
@@ -245,7 +245,7 @@ func TestUpdateInAFolderItCannotWriteSaysSudo(t *testing.T) {
 
 func TestUpdateRejectsAnArgument(t *testing.T) {
 	u, requested := releaseServer(t, "v0.6.0", false)
-	if code, _, errOut := updateIn(t, t.TempDir(), "v0.5.1", oldBinary(t), u, "now"); code != 2 ||
+	if code, _, errOut := updateIn(t, "v0.5.1", oldBinary(t), u, "now"); code != 2 ||
 		errOut != "orchestra update: unexpected argument \"now\" (see orchestra update -h)\n" || len(requested()) > 0 {
 		t.Errorf("exit %d, stderr %q, requested %q", code, errOut, requested())
 	}

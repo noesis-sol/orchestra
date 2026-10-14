@@ -8,8 +8,6 @@ import (
 	"io"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/git"
-	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/update"
 )
 
@@ -18,9 +16,12 @@ import (
 const exitUpdateAvailable = 1
 
 // runUpdate replaces the binary at exe, orchestra of version current, with the latest release's, which
-// u reads and installs, unless a run holds the lock of the repository around dir. It returns the exit
-// code.
-func runUpdate(ctx context.Context, dir string, args []string, current, exe string, u update.Updater,
+// u reads and installs. It returns the exit code.
+//
+// A run going doesn't hold it off: nothing runs the binary during a run (workers' hooks are shell, the
+// organs are claude), and Install renames the new one over exe, so a run keeps the build it started
+// with and the next starts the new one.
+func runUpdate(ctx context.Context, args []string, current, exe string, u update.Updater,
 	stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -29,11 +30,11 @@ func runUpdate(ctx context.Context, dir string, args []string, current, exe stri
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra update [--check] [--force]\n\n"+
 			"Replace this orchestra with the latest GitHub Release's binary, its SHA-256 checked against the\n"+
-			"release's checksums.txt. A build from a clone is replaced only with --force. Not during a run:\n"+
-			"workers' hooks call orchestra, so it refuses while a run holds this repository's lock.\n\n")
+			"release's checksums.txt. A build from a clone is replaced only with --force. A run going\n"+
+			"keeps the build it started with; the next run starts the new one.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 updated or nothing to do (--check: none newer), "+
-			"1 --check: a newer release is out,\n2 refused (flags, a run going, a build from a clone, "+
+			"1 --check: a newer release is out,\n2 refused (flags, a build from a clone, "+
 			"a folder it can't write in), 4 the update failed.\n")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -45,24 +46,6 @@ func runUpdate(ctx context.Context, dir string, args []string, current, exe stri
 	if rest := fs.Args(); len(rest) > 0 {
 		fmt.Fprintf(stderr, "orchestra update: unexpected argument %q (see orchestra update -h)\n", rest[0])
 		return dispatch.ExitSetup
-	}
-
-	// Workers' hooks call the binary mid-run, so it isn't replaced under a run. Only the lock of the
-	// repository around dir can be checked: runs elsewhere hold their own.
-	if !*check {
-		if repo, err := (git.Git{}).TopLevel(ctx, dir); err == nil {
-			holder, held, err := project.RunHolder(ctx, repo)
-			if err != nil {
-				fmt.Fprintln(stderr, "orchestra update: cannot tell whether a run is going:", err)
-				return dispatch.ExitSetup
-			}
-			if held {
-				fmt.Fprintf(stderr, "orchestra update: %v. Workers' hooks call orchestra while a run goes: "+
-					"update between runs. Runs in other repositories aren't checked.\n",
-					&project.HeldError{Repo: repo, Holder: holder})
-				return dispatch.ExitSetup
-			}
-		}
 	}
 
 	rel, err := u.Latest(ctx)
