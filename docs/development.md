@@ -114,6 +114,7 @@ cmux is a macOS app whose socket only answers processes started in its own termi
 3. **Ctrl+C and carry-over.** Ctrl+C in orchestra's terminal while a worker works leaves its workspace running; the next run carries it over by its workspace's UUID and merges its ticket. Quit cmux with a worker running, start it again and run orchestra: cmux restores the workspace but not claude, and the worker is resumed from its session in a new workspace.
 4. **The interview.** A new feature typed at the first question opens claude in a split to the right of orchestra's terminal; once the feature is filed the split closes, and orchestra's terminal has the focus back.
 5. **The 1–9 keys.** A worker's number on the dashboard selects its workspace.
+6. **cmux 0.65.0 or later.** A worker's prompt of several lines (a ticket's first prompt, or the nudge after a failed merge check) arrives in its input box as one paste and is submitted once, with no `cmux-prompt-*.md` written; a worker started in a folder Claude Code hasn't trusted yet gets past the trust dialog, the key orchestra presses going through cmux's input guard.
 
 ## Releasing
 

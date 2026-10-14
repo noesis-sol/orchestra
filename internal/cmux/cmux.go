@@ -12,6 +12,9 @@
 // in cmux 0.64.22 (manaflow-ai/cmux#12524), so orchestra closes only workspaces it opened, still
 // under their labels, and the terminal it split off its own for the interview, and checks each
 // close against cmux's list of what is left.
+//
+// What cmux 0.65.0 added, its input guard and cmux paste, orchestra uses where the CLI has it, by its
+// version (version.go); an older cmux is used as 0.64.22 was.
 package cmux
 
 import (
@@ -122,6 +125,12 @@ func key(id string) string { return strings.ToUpper(id) }
 // run runs the cmux command op for target, with args after op, and returns its stdout. Handles in
 // its answers are UUIDs, and with json its answer is JSON.
 func (t Terminal) run(ctx context.Context, op, target string, json bool, args ...string) (string, error) {
+	return t.runWithInput(ctx, op, target, json, "", args...)
+}
+
+// runWithInput runs the cmux command op as run does, with input on its stdin.
+func (t Terminal) runWithInput(ctx context.Context, op, target string, json bool, input string,
+	args ...string) (string, error) {
 	bin := Bin()
 	if bin == "" {
 		return "", &Error{Op: op, Target: target, Err: errors.New("cmux is not installed")}
@@ -133,7 +142,7 @@ func (t Terminal) run(ctx context.Context, op, target string, json bool, args ..
 	argv = append(append(argv, op), args...)
 	// CMUX_QUIET keeps the legacy verbs (close-workspace, select-workspace) from noting on stderr,
 	// on every call, that they are aliases now.
-	out, err := command.OutputWithInput(ctx, command.ReadLimit, "", []string{"CMUX_QUIET=1"}, "", bin, argv...)
+	out, err := command.OutputWithInput(ctx, command.ReadLimit, "", []string{"CMUX_QUIET=1"}, input, bin, argv...)
 	if err == nil {
 		return out, nil
 	}

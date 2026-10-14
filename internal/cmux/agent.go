@@ -227,15 +227,17 @@ func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentS
 	return screen // "" when cmux can't read it
 }
 
-// longestTyped is the longest prompt typed into the agent's input box as it is.
+// longestTyped is the longest prompt typed into the agent's input box as it is, by a cmux that
+// doesn't paste.
 const longestTyped = 2000
 
 // Prompt gives the agent the prompt, presses Enter, and returns once the agent starts on it:
 // working, or blocked (on a permission prompt, say). It does not wait for the turn to end. It fails
-// if neither shows within 30 seconds. cmux types what it is given, with no bracketed paste, and
-// would press Enter at each line break: a prompt of one line is typed into the input box, and any
-// other is written to a file in the agent's folder's .orchestra/run/, which a line typed there
-// attaches (@), as Claude Code attaches a file named after @.
+// if neither shows within 30 seconds. A cmux that pastes (cmux paste, from 0.65.0) pastes the prompt
+// into the input box, bracketed, so its lines don't submit it one by one. An older one types what it
+// is given and would press Enter at each line break: a prompt of one line is typed into the input
+// box, and any other is written to a file in the agent's folder's .orchestra/run/, which a line typed
+// there attaches (@), as Claude Code attaches a file named after @.
 func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 	id, e, ok, err := t.agentSurface(name)
 	switch {
@@ -244,15 +246,7 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 	case !ok:
 		return missing("prompt", name, "agent")
 	}
-	line := prompt
-	if !typeable(prompt) || len(prompt) > longestTyped {
-		rel, err := writePrompt(e.Dir, id, prompt)
-		if err != nil {
-			return fmt.Errorf("cannot give agent %s its prompt: %w", name, err)
-		}
-		line = "My message to you is in @" + rel + " : read it, and take it as if I had typed it here."
-	}
-	if err := t.typeText(ctx, e.Workspace, id, line); err != nil {
+	if err := t.givePrompt(ctx, name, id, e, prompt); err != nil {
 		return err
 	}
 	select {
@@ -264,6 +258,23 @@ func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
 		return err
 	}
 	return t.waitFor(ctx, "prompt", name, 30*time.Second, dispatch.StateWorking, dispatch.StateBlocked)
+}
+
+// givePrompt puts the prompt in the input box of the agent name in surface id, as Prompt says, without
+// pressing Enter.
+func (t Terminal) givePrompt(ctx context.Context, name, id string, e surfaceEntry, prompt string) error {
+	if t.features(ctx).paste {
+		return t.paste(ctx, e.Workspace, id, prompt)
+	}
+	line := prompt
+	if !typeable(prompt) || len(prompt) > longestTyped {
+		rel, err := writePrompt(e.Dir, id, prompt)
+		if err != nil {
+			return fmt.Errorf("cannot give agent %s its prompt: %w", name, err)
+		}
+		line = "My message to you is in @" + rel + " : read it, and take it as if I had typed it here."
+	}
+	return t.typeText(ctx, e.Workspace, id, line)
 }
 
 // writePrompt writes prompt to the run file of surface id in the checkout dir, and returns its path

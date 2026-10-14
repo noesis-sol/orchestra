@@ -28,11 +28,7 @@ func TestLaunchInPaneRunsTheAgentThroughAScript(t *testing.T) {
 		{"send", "--workspace", workWS, "--surface", strings.ToLower(workSF), "--", " /bin/sh '" + script + "'"},
 		{"send-key", "--workspace", workWS, "--surface", strings.ToLower(workSF), "--", "enter"},
 	}
-	var got [][]string
-	for _, c := range f.calls() {
-		got = append(got, cmdOf(c))
-	}
-	if !slices.EqualFunc(got, want, slices.Equal) {
+	if got := f.writes(); !slices.EqualFunc(got, want, slices.Equal) {
 		t.Errorf("cmux got:\n%q\nwant:\n%q", got, want)
 	}
 	b, _ := term.view()
@@ -167,12 +163,7 @@ func TestPromptTypesALine(t *testing.T) {
 	if err := term.Prompt(bg, "x-1", "Continue with your ticket."); err != nil {
 		t.Fatal(err)
 	}
-	var sent [][]string
-	for _, c := range f.calls() {
-		if c := cmdOf(c); c[0] == "send" || c[0] == "send-key" {
-			sent = append(sent, c)
-		}
-	}
+	sent := f.writes()
 	want := [][]string{
 		{"send", "--workspace", workWS, "--surface", workSF, "--", "Continue with your ticket."},
 		{"send-key", "--workspace", workWS, "--surface", workSF, "--", "enter"},
@@ -211,8 +202,7 @@ func TestSendKeysMapsHerdrsNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, c := range f.calls() {
-		c := cmdOf(c)
+	for _, c := range f.writes() {
 		got = append(got, c[0]+" "+c[len(c)-1])
 	}
 	want := []string{"send-key escape", "send-key ctrl+c", "send-key shift+tab", "send-key down", "send y",

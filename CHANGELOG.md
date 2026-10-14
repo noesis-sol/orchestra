@@ -4,6 +4,19 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Under cmux 0.65.0 or later, a worker's prompt is pasted into its input
+  box with `cmux paste`, bracketed, so a prompt of several lines arrives
+  whole, rather than going through `.orchestra/run/cmux-prompt-*.md`; and
+  what orchestra types or presses in its workers' terminals goes with
+  `--force`, which cmux 0.65.0's input guard needs before letting a key into
+  a Claude Code dialog, such as the trust-this-folder one. orchestra reads
+  cmux's version with `cmux version`, again whenever the app updates its
+  CLI, and an older cmux is used as before.
+
 ## [0.7.0] - 2026-10-13
 
 ### Added

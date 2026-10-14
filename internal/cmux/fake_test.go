@@ -49,7 +49,7 @@ const (
 // and a NUL) and answers from files in dir, by command (the first argument after the global
 // options; workspace create is "workspace"): out-<command>-<n> on stdout for its n-th call, or else
 // out-<command>, fail-<command> on stderr with exit status 1, and after-<command> run as a script
-// once it answered.
+// once it answered. What paste reads on its stdin is kept in stdin-paste-<n>.
 type fakeCmux struct {
 	t   *testing.T
 	dir string
@@ -74,6 +74,7 @@ while :; do
 done
 n=$(( $(cat "$d/count-$1" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$d/count-$1"
+[ "$1" = paste ] && cat > "$d/stdin-paste-$n"
 if [ -f "$d/fail-$1" ]; then cat "$d/fail-$1" >&2; exit 1; fi
 if [ -f "$d/out-$1-$n" ]; then cat "$d/out-$1-$n"; elif [ -f "$d/out-$1" ]; then cat "$d/out-$1"; fi
 [ -f "$d/after-$1" ] && . "$d/after-$1"
@@ -166,6 +167,28 @@ func (f *fakeCmux) ops() []string {
 		ops = append(ops, cmdOf(c)[0])
 	}
 	return ops
+}
+
+// writes are the commands that wrote into a terminal (send, send-key, paste), with their arguments,
+// in order.
+func (f *fakeCmux) writes() [][]string {
+	var writes [][]string
+	for _, c := range f.calls() {
+		if c := cmdOf(c); c[0] == "send" || c[0] == "send-key" || c[0] == "paste" {
+			writes = append(writes, c)
+		}
+	}
+	return writes
+}
+
+// pasted is what the n-th call of paste read on its stdin.
+func (f *fakeCmux) pasted(n int) string {
+	f.t.Helper()
+	b, err := os.ReadFile(filepath.Join(f.dir, fmt.Sprintf("stdin-paste-%d", n)))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return string(b)
 }
 
 // call returns the first call of command op, with its global options, failing the test if there was

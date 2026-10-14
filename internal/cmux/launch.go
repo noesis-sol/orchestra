@@ -111,7 +111,28 @@ func (t Terminal) typeText(ctx context.Context, workspace, surface, text string)
 		return &Error{Op: "send", Target: surface, Err: errors.New("text with a line break or a backslash can't " +
 			"be typed as it is")}
 	}
-	_, err := t.run(ctx, "send", surface, false, "--workspace", workspace, "--surface", surface, "--", text)
+	_, err := t.run(ctx, "send", surface, false, t.writeArgs(ctx, workspace, surface, "--", text)...)
+	return err
+}
+
+// writeArgs are the arguments of a write into the surface of workspace (send, send-key, paste),
+// followed by rest: with --force where cmux has its input guard (features), which would refuse to
+// write over a draft in the agent's prompt or into a dialog it has open. The surfaces are
+// orchestra's, and what it writes there, a worker's prompt or the key that answers a dialog, has to
+// go through, as it does in Herdr and tmux.
+func (t Terminal) writeArgs(ctx context.Context, workspace, surface string, rest ...string) []string {
+	args := []string{"--workspace", workspace, "--surface", surface}
+	if t.features(ctx).force {
+		args = append(args, "--force")
+	}
+	return append(args, rest...)
+}
+
+// paste pastes text into the surface of workspace as Cmd+V does (cmux paste, from its stdin), which
+// a program that asked for bracketed paste, as Claude Code does, takes in as one paste, its lines
+// together. cmux puts a space for each control character that could act on the terminal, ESC say.
+func (t Terminal) paste(ctx context.Context, workspace, surface, text string) error {
+	_, err := t.runWithInput(ctx, "paste", surface, false, text, t.writeArgs(ctx, workspace, surface, "-")...)
 	return err
 }
 
@@ -121,7 +142,7 @@ func typeable(text string) bool { return !strings.ContainsAny(text, "\\\n\r") }
 
 // pressKey presses one key, by cmux's name for it, in the surface of workspace.
 func (t Terminal) pressKey(ctx context.Context, workspace, surface, k string) error {
-	_, err := t.run(ctx, "send-key", surface, false, "--workspace", workspace, "--surface", surface, "--", k)
+	_, err := t.run(ctx, "send-key", surface, false, t.writeArgs(ctx, workspace, surface, "--", k)...)
 	return err
 }
 
