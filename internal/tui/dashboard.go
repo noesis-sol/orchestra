@@ -192,6 +192,10 @@ func (m *Dashboard) setDraining(on bool) {
 	m.draining = on
 }
 
+// minFrameWidth is the narrowest the dashboard is drawn: a narrower pane shows the left edge of a
+// frame this wide, and the run's summary is printed at least this wide.
+const minFrameWidth = 30
+
 // View is the whole display: title, totals, the tickets of this run, and the current tickets. It is
 // drawn on the alternate screen, which closes with the program; main then prints the run's summary
 // on the normal screen (Printer.Summary).
@@ -199,8 +203,8 @@ func (m Dashboard) View() string {
 	if m.height == 0 {
 		return "" // not sized yet: a frame drawn for a guessed size can outgrow the pane and leave scraps
 	}
-	v := m.frame(max(m.width, 30))
-	if m.width >= 30 {
+	v := m.frame(max(m.width, minFrameWidth))
+	if m.width >= minFrameWidth {
 		return v
 	}
 	// A pane narrower than the frame can be drawn in shows its left edge.
@@ -230,7 +234,7 @@ func (m Dashboard) frame(w int) string {
 	// The question goes in a box over the middle of the dashboard, or, where the pane is too
 	// small for one, on a line above the hint.
 	modal := m.modal(w)
-	if v := m.layout(w, title, hint); w >= 36 && lipgloss.Height(v) >= lipgloss.Height(modal)+2 {
+	if v := m.layout(w, title, hint); w >= modalMinWidth && lipgloss.Height(v) >= lipgloss.Height(modal)+modalRoom {
 		return overlay(v, modal, w)
 	}
 	return m.layout(w, title, stack(m.promptLine(w), hint))
@@ -242,13 +246,30 @@ func (m Dashboard) summary(w int) string {
 	if len(m.rows) == 0 {
 		return stack(m.titleLine(w), m.statsTable(w))
 	}
-	// Every row: the Tickets label and the table's borders take 3 lines.
-	return stack(m.titleLine(w), m.statsTable(w), m.tickets(w, len(m.rows)+3))
+	// Every row, and the Tickets label and the table's borders.
+	return stack(m.titleLine(w), m.statsTable(w), m.tickets(w, len(m.rows)+sectionChrome))
 }
 
+// The lines a section of the dashboard, Tickets or Current, takes besides its rows: its label, and
+// its box's top and bottom borders.
+const (
+	labelLines    = 1
+	borderLines   = 2
+	sectionChrome = labelLines + borderLines
+)
+
+// How many tickets the tickets table has rows for, in a pane short or tall.
+const (
+	tableMinRows = 3
+	tableMaxRows = 10
+)
+
 // tableLines is how many lines the tickets table takes in a pane h lines tall: about a third of
-// it, for 3 to 10 tickets besides its Tickets label and borders. It changes only on a resize.
-func tableLines(h int) int { return min(max(h/3-4, 3), 10) + 3 }
+// it, less a line, its Tickets label and borders included, for tableMinRows to tableMaxRows
+// tickets. It changes only on a resize.
+func tableLines(h int) int {
+	return min(max(h/3-1-sectionChrome, tableMinRows), tableMaxRows) + sectionChrome
+}
 
 // lineCount is how many lines s takes on screen: none when it is empty.
 func lineCount(s string) int {
@@ -258,10 +279,14 @@ func lineCount(s string) int {
 	return lipgloss.Height(s)
 }
 
+// footFixedLines is the lines the foot always has room for: the winding-down line, there or not,
+// and the hint.
+const footFixedLines = 2
+
 // footLines is how many lines the foot takes below the workers, the winding-down line there or not:
 // the MCP warning and the way to see the workers' tabs, if any, that line and the hint.
 func (m Dashboard) footLines() int {
-	n := 2
+	n := footFixedLines
 	if m.cfg.MCPWarning() != "" {
 		n++
 	}
@@ -270,6 +295,9 @@ func (m Dashboard) footLines() int {
 	}
 	return n
 }
+
+// slots is how many workers the run may have at once: its concurrency, one at the least.
+func (m Dashboard) slots() int { return max(m.cfg.Concurrency, 1) }
 
 // layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
 // can't redraw a view taller than the terminal. The tickets table's height, its Tickets label
@@ -292,7 +320,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	stats := m.statsTable(w)
 	panels, list := withCurrentLabel(m.workerPanels(w)), withCurrentLabel(m.workerList(w))
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
-	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines()
+	need := lineCount(title) + lineCount(stats) + m.slots() + sectionChrome + m.footLines()
 	if lines := tableLines(m.height); need+lines <= m.height {
 		top := stack(title, stats, m.tickets(w, lines))
 		for _, workers := range []string{panels, list} {
@@ -301,7 +329,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 			}
 		}
 		// More workers than the run may have: the labels go, then the workers give way.
-		return m.cut(stack(title, stats, m.ticketsTable(w, lines-1), m.workerList(w)), foot)
+		return m.cut(stack(title, stats, m.ticketsTable(w, lines-labelLines), m.workerList(w)), foot)
 	}
 	for _, workers := range []string{panels, list} {
 		if fits(steady, title, stats, workers) {
@@ -309,6 +337,8 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		}
 	}
 	top := stack(title, m.statsLine(w))
+	// A pane too short for a steady form: the workers get every line the foot leaves as it is now,
+	// the winding-down line's included while there is none.
 	if fits(m.height-len(foot), top, list) {
 		return with(top, list)
 	}

@@ -39,12 +39,19 @@ func NewInitScreen(out io.Writer) InitScreen {
 	return InitScreen{out: out, width: w}
 }
 
+// stepLabelWidth is the width of a step's label; stepIndent is where its detail starts, past two
+// spaces, its mark and a space, and the label.
+const (
+	stepLabelWidth = 15
+	stepIndent     = 2 + 2 + stepLabelWidth
+)
+
 var (
-	initLabel    = lipgloss.NewStyle().Bold(true).Width(15)
+	initLabel    = lipgloss.NewStyle().Bold(true).Width(stepLabelWidth)
 	nextTitle    = lipgloss.NewStyle().Bold(true).Foreground(purple)
 	commandStyle = lipgloss.NewStyle().Bold(true).Foreground(cyan)
 	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7D56F4")).Padding(0, 1)
+			BorderForeground(charmPurple).Padding(0, 1)
 )
 
 // Header prints the title and the repository being set up.
@@ -74,15 +81,9 @@ func (u InitScreen) Steps(steps []project.Step) {
 			project.StepMissing: stopStyle.Render("✗"),
 			project.StepCaution: deferredStyle.Render("!"),
 		}[s.Kind]
-		detail := s.Detail
-		if s.Kind == project.StepCaution {
-			detail = deferredStyle.Render(detail)
-		} else {
-			detail = dimStyle.Render(detail)
-		}
-		// Wrap the detail under itself, past the mark and label.
-		indent := 2 + 2 + 15
-		lines := wrapLines(ansi.Strip(detail), max(u.width-indent, 20), 6)
+		// Wrap the detail under itself, past the mark and label, then colour each line. Stripped, as
+		// it may quote a command's output.
+		lines := wrapLines(ansi.Strip(s.Detail), max(u.width-stepIndent, 20), 6)
 		for i, l := range lines {
 			if s.Kind == project.StepCaution {
 				lines[i] = deferredStyle.Render(l)
@@ -96,7 +97,7 @@ func (u InitScreen) Steps(steps []project.Step) {
 		}
 		fmt.Fprintf(u.out, "  %s %s%s\n", mark, initLabel.Render(s.Label), first)
 		for _, l := range lines[min(1, len(lines)):] {
-			fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", indent), l)
+			fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", stepIndent), l)
 		}
 	}
 }
@@ -117,7 +118,7 @@ func (u InitScreen) Prerequisites(pre []project.Step) {
 	}
 	fmt.Fprintf(u.out, "  %s %s%s\n", lead, initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
 	for _, p := range missing {
-		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", 19), stopStyle.Render(p.Label+": "+p.Detail))
+		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", stepIndent), stopStyle.Render(p.Label+": "+p.Detail))
 	}
 }
 

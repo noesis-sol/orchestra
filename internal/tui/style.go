@@ -21,6 +21,8 @@ var (
 	blue   = lipgloss.AdaptiveColor{Light: "#1D4ED8", Dark: "#60A5FA"}
 	pink   = lipgloss.AdaptiveColor{Light: "#BE185D", Dark: "#F472B6"}
 	chalk  = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#E5E7EB"} // nearer the text's own colour than faint
+	// The Charm purple from the Bubble Tea and Lip Gloss examples, the same on any background.
+	charmPurple = lipgloss.Color("#7D56F4")
 )
 
 var (
@@ -40,7 +42,7 @@ var (
 	mergingStyle  = lipgloss.NewStyle().Foreground(pink).Bold(true)   // its merge under way
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).Padding(0, 1).MarginTop(1)
+			Background(charmPurple).Padding(0, 1).MarginTop(1)
 	home, _ = os.UserHomeDir() // none known: paths are shown in full
 )
 

@@ -120,15 +120,19 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-// nothingBox is the message in a rounded box, green when all is done, at most width wide (20 at
-// the least) and no wider than its lines: a line too long for it wraps, indented under its own.
+// nothingMinWidth is the narrowest the box of nothingBox is drawn.
+const nothingMinWidth = 20
+
+// nothingBox is the message in a rounded box, green when all is done, at most width wide
+// (nothingMinWidth at the least) and no wider than its lines: a line too long for it wraps, indented
+// under its own.
 func nothingBox(n dispatch.NothingToRun, width int) string {
 	head, rest := nothingLines(n, true)
 	inner := ansi.StringWidth(head)
 	for _, l := range rest {
 		inner = max(inner, 2+ansi.StringWidth(l))
 	}
-	inner = min(inner, max(width, 20)-4) // the border and a space of padding on each side
+	inner = min(inner, boxInner(max(width, nothingMinWidth)))
 	lines := hang(head, "", inner)
 	for _, l := range rest {
 		lines = append(lines, hang(l, "  ", inner)...)
@@ -137,8 +141,7 @@ func nothingBox(n dispatch.NothingToRun, width int) string {
 	if n.AllDone {
 		border = green
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
-		Padding(0, 1).Width(inner + 2).Render(strings.Join(lines, "\n"))
+	return box(inner+boxChrome, 0, border, strings.Join(lines, "\n"))
 }
 
 // hang is line after indent, wrapped to width: the lines it wraps onto are indented two spaces

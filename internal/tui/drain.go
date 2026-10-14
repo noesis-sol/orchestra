@@ -100,12 +100,21 @@ func (m Dashboard) drainQuestion() drainQuestion {
 	return q
 }
 
-// modal is the drain question in a box, its keys named as the hint names its own.
+// The drain question's box: the narrowest pane it is drawn over, the widest it gets, and how many
+// lines of the dashboard it leaves showing, above and below it, or it goes on a line of its own.
+const (
+	modalMinWidth = 36
+	modalMaxWidth = 64
+	modalRoom     = 2
+)
+
+// modal is the drain question in a box, its keys named as the hint names its own. It is no wider than
+// what a box as wide as the pane holds, so the dashboard's borders show either side.
 func (m Dashboard) modal(w int) string {
 	q := m.drainQuestion()
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		deferredStyle.Bold(true).Render(q.ask), "", q.about, "", keyWords(q.keys, true))
-	return box(min(w-4, 64), 0, yellow, body)
+	return box(min(boxInner(w), modalMaxWidth), 0, yellow, body)
 }
 
 // promptLine is the drain question on one line, for a pane too small for the box; the question and

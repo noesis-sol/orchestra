@@ -100,7 +100,7 @@ func (p Printer) Summary(d Dashboard) {
 	if d.began.IsZero() {
 		return
 	}
-	p.print(d.summary(max(p.Width, 30)) + "\n")
+	p.print(d.summary(max(p.Width, minFrameWidth)) + "\n")
 }
 
 // End prints the event the run ended with, if any, below the run's summary from the final dashboard

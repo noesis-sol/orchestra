@@ -52,6 +52,13 @@ func rightOf(b string, end int) string {
 	return strings.Repeat(" ", want-ansi.StringWidth(tail)) + tail
 }
 
+// boxChrome is the columns a box takes besides its content: its rounded border and a space of
+// padding on each side.
+const boxChrome = 4
+
+// boxInner is the room for the content of a box w wide.
+func boxInner(w int) int { return w - boxChrome }
+
 // box frames content in a rounded border, w columns wide and h lines tall, borders included; h 0 is
 // as tall as the content.
 func box(w, h int, border lipgloss.TerminalColor, content string) string {

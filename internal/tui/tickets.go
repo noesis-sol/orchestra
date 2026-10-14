@@ -107,7 +107,7 @@ func (m *Dashboard) pickUp(id, title string) {
 // its work is in the merge queue; a completed one only
 // its merged commit; a set-aside one why, with triage's verdict; a blocked one why it can't merge.
 func (r ticketRow) cells(width int, doing string) [3]string {
-	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, 8), "…") }
+	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, minAboutWidth), "…") }
 	switch r.state {
 	case rowDone:
 		return [3]string{closedStyle.Render("✓ done"), closedStyle.Render(r.id), dimStyle.Render(fit(r.note))}
@@ -152,29 +152,45 @@ func (r ticketRow) cells(width int, doing string) [3]string {
 
 // tickets is the tickets table headed by its Tickets label, lines lines in all.
 func (m Dashboard) tickets(w, lines int) string {
-	return stack(sectionLabel("Tickets", ticketsStyle), m.ticketsTable(w, lines-1))
+	return stack(sectionLabel("Tickets", ticketsStyle), m.ticketsTable(w, lines-labelLines))
+}
+
+// The tickets table's columns: the state column's width, the narrowest its ID column and the text in
+// its last column get, and the padding each column has, a space either side.
+const (
+	stateColWidth = 13
+	minIDWidth    = 7
+	minAboutWidth = 8
+	cellPadding   = 2
+)
+
+// aboutWidth is the room for the text in the last column of a tickets table w wide whose IDs take
+// idWidth: what the table's four vertical lines (its borders and the two between its columns), the
+// state and ID columns and the last column's padding leave.
+func aboutWidth(w, idWidth int) int {
+	return w - 4 - stateColWidth - (idWidth + cellPadding) - cellPadding
 }
 
 // ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
 // the tickets leave, and when there are more the oldest give way to a count of them.
 func (m Dashboard) ticketsTable(w, lines int) string {
-	idWidth := 7
+	idWidth := minIDWidth
 	for _, r := range m.rows {
 		idWidth = max(idWidth, ansi.StringWidth(r.id))
 	}
 	// IDs longer than a third of the table are cut, so the titles keep their room
-	idWidth = min(idWidth, max(w/3, 7))
-	aboutWidth := w - 2 - 13 - (idWidth + 2) - 2 - 2 // borders, state and ID columns, separators, padding
+	idWidth = min(idWidth, max(w/3, minIDWidth))
+	about := aboutWidth(w, idWidth)
 	rows := m.rows
 	hidden := 0
-	limit := max(lines-2, 1) // the borders take 2 lines
+	limit := max(lines-borderLines, 1)
 	if len(rows) > limit {
 		hidden = len(rows) - (limit - 1)
 		rows = rows[hidden:]
 	}
 	var data [][]string
 	if hidden > 0 {
-		more := ansi.Truncate("earlier tickets, see the log", max(aboutWidth, 8), "…")
+		more := ansi.Truncate("earlier tickets, see the log", max(about, minAboutWidth), "…")
 		data = append(data, []string{"", dimStyle.Render(fmt.Sprintf("+%d", hidden)), dimStyle.Render(more)})
 	}
 	for _, r := range rows {
@@ -183,7 +199,7 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 			doing = doingLabel(st)
 		}
 		r.id = ansi.Truncate(r.id, idWidth, "…")
-		c := r.cells(aboutWidth, doing)
+		c := r.cells(about, doing)
 		data = append(data, c[:])
 	}
 	for len(data) < limit {
@@ -196,9 +212,9 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 			s := lipgloss.NewStyle().Padding(0, 1)
 			switch col {
 			case 0:
-				return s.Width(13)
+				return s.Width(stateColWidth)
 			case 1:
-				return s.Width(idWidth + 2)
+				return s.Width(idWidth + cellPadding)
 			}
 			return s
 		}).
@@ -207,37 +223,82 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 		Render()
 }
 
+// total is one of the run's counted totals, which the strip and the one-line form show.
+type total struct {
+	label string         // its heading in the strip
+	mark  string         // what goes before its count
+	n     int            // the count
+	style lipgloss.Style // the count's colour
+	of    int            // what it counts out of (the workers' slots), or 0 for nothing
+	extra string         // what follows it in the strip, styled: triage's verdicts
+}
+
+// totals are the run's counted totals: the tickets completed, set aside and waiting on the
+// maintainer, and the running workers.
+func (m Dashboard) totals() []total {
+	var verdicts string
+	if m.triaged > 0 {
+		verdicts = organStyle.Render(fmt.Sprintf(" ◆ %d", m.triaged))
+	}
+	return []total{
+		{label: "Completed", mark: "✓", n: m.closed, style: closedStyle},
+		{label: "Set aside", mark: "↷", n: m.setAside(), style: deferredStyle, extra: verdicts},
+		{label: "Needs you", mark: "?", n: m.needsYou(), style: stopStyle},
+		{label: "Workers", mark: "▶", n: len(m.active), style: pickedStyle, of: m.slots()},
+	}
+}
+
+// cell is t in the strip: a count out of something in full, a zero faint, the others with their mark.
+func (t total) cell() string {
+	switch {
+	case t.of > 0:
+		return t.style.Render(fmt.Sprint(t.n)) + dimStyle.Render(fmt.Sprintf(" of %d", t.of))
+	case t.n == 0:
+		return dimStyle.Render("0") + t.extra
+	}
+	return t.style.Render(fmt.Sprintf("%s %d", t.mark, t.n)) + t.extra
+}
+
+// part is t on the one-line form: its mark and count, and what it counts out of.
+func (t total) part() string {
+	p := t.style.Render(fmt.Sprintf("%s %d", t.mark, t.n))
+	if t.of > 0 {
+		p += dimStyle.Render(fmt.Sprintf("/%d", t.of))
+	}
+	return p
+}
+
+// queueCount is the queue's total: how many ready tickets wait for a slot, "—" until the loop has
+// said, and what follows that: " of " the tickets not closed, once the loop has said how many.
+func (m Dashboard) queueCount() (n, of string) {
+	if m.queued < 0 {
+		return "—", ""
+	}
+	if m.unclosed >= 0 {
+		of = fmt.Sprintf(" of %d", m.unclosed)
+	}
+	return fmt.Sprint(m.queued), of
+}
+
 // statsTable is the run's totals as one strip: a column per total, label over value, in the
 // events' colours. Too narrow a pane gets the one-line form instead.
 func (m Dashboard) statsTable(w int) string {
-	count := func(n int, mark string, style lipgloss.Style) string {
-		if n == 0 {
-			return dimStyle.Render("0")
-		}
-		return style.Render(fmt.Sprintf("%s %d", mark, n))
+	var labels, values []string
+	for _, t := range m.totals() {
+		labels, values = append(labels, t.label), append(values, t.cell())
 	}
-	aside := count(m.setAside(), "↷", deferredStyle)
-	if m.triaged > 0 {
-		aside += organStyle.Render(fmt.Sprintf(" ◆ %d", m.triaged))
-	}
-	queued := dimStyle.Render("—")
-	if m.queued >= 0 {
-		queued = fmt.Sprint(m.queued) + dimStyle.Render(m.ofUnclosed())
+	n, of := m.queueCount()
+	queued := n + dimStyle.Render(of)
+	if m.queued < 0 {
+		queued = dimStyle.Render(n)
 	}
 	if m.draining {
 		queued += windDownStyle.Render(" · held") // not taken while the run winds down
 	}
-	labels := []string{"Completed", "Set aside", "Needs you", "Workers", "In queue"}
-	values := []string{
-		count(m.closed, "✓", closedStyle),
-		aside,
-		count(m.needsYou(), "?", stopStyle),
-		pickedStyle.Render(fmt.Sprint(len(m.active))) + dimStyle.Render(fmt.Sprintf(" of %d", max(m.cfg.Concurrency, 1))),
-		queued,
-	}
+	labels, values = append(labels, "In queue"), append(values, queued)
 	need := len(labels) + 1 // borders
 	for i := range labels {
-		need += max(ansi.StringWidth(labels[i]), ansi.StringWidth(values[i])) + 2
+		need += max(ansi.StringWidth(labels[i]), ansi.StringWidth(values[i])) + cellPadding
 	}
 	if w < need {
 		return m.statsLine(w)
@@ -259,33 +320,18 @@ func (m Dashboard) statsTable(w int) string {
 		Render()
 }
 
-// ofUnclosed is what follows the queue count: " of " the tickets not closed, once the loop has
-// said how many.
-func (m Dashboard) ofUnclosed() string {
-	if m.unclosed < 0 {
-		return ""
-	}
-	return fmt.Sprintf(" of %d", m.unclosed)
-}
-
 // statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
 // branch, running time and stopping state are on the title line, the winding down above the hint.
 func (m Dashboard) statsLine(w int) string {
-	queued := "—"
-	if m.queued >= 0 {
-		queued = fmt.Sprint(m.queued) + m.ofUnclosed()
+	var parts []string
+	for _, t := range m.totals() {
+		parts = append(parts, t.part())
 	}
-	queue := dimStyle.Render("queue " + queued)
+	n, of := m.queueCount()
+	queue := dimStyle.Render("queue " + n + of)
 	if m.draining {
 		queue += windDownStyle.Render(" held") // not taken while the run winds down
 	}
-	parts := []string{
-		closedStyle.Render(fmt.Sprintf("✓ %d", m.closed)),
-		deferredStyle.Render(fmt.Sprintf("↷ %d", m.setAside())),
-		stopStyle.Render(fmt.Sprintf("? %d", m.needsYou())),
-		pickedStyle.Render(fmt.Sprintf("▶ %d", len(m.active))) +
-			dimStyle.Render(fmt.Sprintf("/%d", max(m.cfg.Concurrency, 1))),
-		queue,
-	}
+	parts = append(parts, queue)
 	return ansi.Truncate(" "+strings.Join(parts, dimStyle.Render(" · ")), w, "…")
 }

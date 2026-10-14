@@ -32,7 +32,7 @@ func (m Dashboard) workerList(w int) string {
 	}
 	var lines []string
 	for i, st := range running {
-		lines = append(lines, ansi.Truncate(m.workerHead(i+1, st)+"  "+oneLine(st.Title), w-4, "…"))
+		lines = append(lines, ansi.Truncate(m.workerHead(i+1, st)+"  "+oneLine(st.Title), boxInner(w), "…"))
 	}
 	return box(w, 0, workerBorder(running...), strings.Join(lines, "\n"))
 }
@@ -143,9 +143,9 @@ func (m Dashboard) workerPanels(w int) string {
 		}
 		return box(w, 0, grey, m.spin.View()+" "+dimStyle.Render(msg))
 	}
-	lines := titleLines
+	titleMax := titleLines
 	if len(running) > 1 {
-		lines = 2 // keep several boxes within the pane
+		titleMax = titleLinesShared
 	}
 	left := (w - 1) / 2 // box(w) is w wide: two boxes and a one-column gap make the pane's width
 	width := func(i int) int {
@@ -159,11 +159,11 @@ func (m Dashboard) workerPanels(w int) string {
 	}
 	h := 0
 	for i, st := range running {
-		h = max(h, lipgloss.Height(m.workerPanel(width(i), 0, i+1, st, lines)))
+		h = max(h, lipgloss.Height(m.workerPanel(width(i), 0, i+1, st, titleMax)))
 	}
 	var boxes []string
 	for i, st := range running {
-		boxes = append(boxes, m.workerPanel(width(i), h, i+1, st, lines))
+		boxes = append(boxes, m.workerPanel(width(i), h, i+1, st, titleMax))
 	}
 	if w < gridWidth {
 		return lipgloss.JoinVertical(lipgloss.Left, boxes...)
@@ -182,7 +182,7 @@ func (m Dashboard) workerPanels(w int) string {
 // workerPanel boxes the nth running ticket, w wide and h tall (0: as tall as it needs): its number,
 // ID, worker status and time, title, latest action, its line blank until the worker first reports.
 func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) string {
-	inner := w - 4 // rounded border and one space of padding on each side
+	inner := boxInner(w)
 	fit := func(s string) string { return ansi.Truncate(s, inner, "…") }
 	lines := []string{fit(m.workerHead(n, st))}
 	for _, l := range wrapLines(st.Title, inner-2, titleMax) {
@@ -192,8 +192,12 @@ func (m Dashboard) workerPanel(w, h, n int, st dispatch.Status, titleMax int) st
 	return box(w, h, workerBorder(st), strings.Join(lines, "\n"))
 }
 
-// titleLines is how many lines the active ticket's title may take before it is cut short.
-const titleLines = 3
+// How many lines the active ticket's title may take before it is cut short: in the only box, and in
+// one of several, which keeps them within the pane.
+const (
+	titleLines       = 3
+	titleLinesShared = 2
+)
 
 // doingLabel is the worker's status, made precise by what it reported doing when it is working,
 // or by the permission prompt it reported waiting on, whatever Herdr shows.
