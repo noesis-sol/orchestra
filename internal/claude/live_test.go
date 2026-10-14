@@ -45,7 +45,7 @@ func TestLiveReports(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 		}
 		if u, ok := r.LastToolUse(wt); ok {
-			label := u.Event + " " + dispatch.Doing(u, "sleep 3")
+			label := u.Event + " " + string(dispatch.DoingOf(u, "sleep 3"))
 			if len(seen) == 0 || seen[len(seen)-1] != label {
 				seen = append(seen, label)
 			}

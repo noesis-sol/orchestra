@@ -26,6 +26,50 @@ const (
 	rowWaiting // started before a ticket blocking it merged: back in the queue until it does
 )
 
+// rowLook is how the dashboard shows a row state, and what the row counts as.
+type rowLook struct {
+	glyph, word string         // its state in the tickets table, as in "✓ done"; the glyph heads its events' lines
+	style       lipgloss.Style // the state's and the ID's colour, and its events'
+	title       bool           // its last column has the ticket's title, not the row's note
+	dim         bool           // its last column is faint
+	triage      bool           // triage's verdict, once there is one, replaces the note
+	tally       tally          // the total it counts under, if any
+	square      lipgloss.Style // its ■ on the winding-down line, once its ticket has left Current
+	live        bool           // its worker is still at it: its state is its worker's, and a stop stops it
+}
+
+// tally is a total of the run that counts rows: those set aside, and those waiting on the maintainer.
+type tally int
+
+const (
+	tallyNone tally = iota
+	tallySetAside
+	tallyNeedsYou
+)
+
+// setAsideSquare is the winding-down line's ■ for a ticket set aside, stopped or waiting on the maintainer.
+var setAsideSquare = stopStyle.UnsetBold()
+
+// rowLooks are the row states' looks. A row state's events, if it has any, are in rowEvents.
+var rowLooks = [...]rowLook{
+	// Not merged or set aside yet: amber on the winding-down line, as while it runs.
+	rowWorking: {glyph: "▶", word: "working", style: pickedStyle, title: true, square: windDownStyle, live: true},
+	rowDone:    {glyph: "✓", word: "done", style: closedStyle, dim: true, square: doneStyle},
+	rowDeferred: {glyph: "↷", word: "deferred", style: deferredStyle, dim: true, triage: true,
+		tally: tallySetAside, square: setAsideSquare},
+	rowReview: {glyph: "!", word: "review", style: deferredStyle, dim: true, triage: true,
+		tally: tallySetAside, square: setAsideSquare},
+	rowStopped: {glyph: "■", word: "stopped", style: stopStyle, title: true, square: setAsideSquare},
+	// Red and "blocked", as a worker's box says of an agent waiting for the maintainer.
+	rowBlocked: {glyph: "■", word: "blocked", style: stopStyle, tally: tallyNeedsYou, square: setAsideSquare},
+	rowAsked:   {glyph: "?", word: "for you", style: stopStyle, tally: tallyNeedsYou, square: setAsideSquare},
+	// Back in the queue, which the wind-down holds.
+	rowWaiting: {glyph: "◷", word: "waiting", style: dimStyle, dim: true, square: dimStyle},
+}
+
+// label is the state as the tickets table shows it.
+func (l rowLook) label() string { return l.style.Render(l.glyph + " " + l.word) }
+
 type ticketRow struct {
 	id, title string
 	state     rowState
@@ -65,23 +109,18 @@ func (m *Dashboard) markBlocked(ev dispatch.Event) bool {
 // needsYou is how many tickets wait on the maintainer: a question to answer, or a finished ticket
 // to merge. A row that leaves either state (its worker deferred the ticket in its tab, say) no
 // longer counts.
-func (m Dashboard) needsYou() int {
-	n := 0
-	for _, r := range m.rows {
-		if r.state == rowAsked || r.state == rowBlocked {
-			n++
-		}
-	}
-	return n
-}
+func (m Dashboard) needsYou() int { return m.count(tallyNeedsYou) }
 
 // setAside is how many tickets the run has set aside: deferred, or left for review. One that
 // leaves either state (back in the queue after an environment hold, merged after a check run
 // again, dispatched again) no longer counts. One blocked from merging counts under needsYou.
-func (m Dashboard) setAside() int {
+func (m Dashboard) setAside() int { return m.count(tallySetAside) }
+
+// count is how many rows count under t.
+func (m Dashboard) count(t tally) int {
 	n := 0
 	for _, r := range m.rows {
-		if r.state == rowDeferred || r.state == rowReview {
+		if rowLooks[r.state].tally == t {
 			n++
 		}
 	}
@@ -102,52 +141,29 @@ func (m *Dashboard) pickUp(id, title string) {
 	}
 }
 
-// cells renders one row: state, ticket ID, and what to say about it. A picked-up ticket shows
-// its title, and in its state what its worker is doing (doingLabel, or ""), or once it is done, where
-// its work is in the merge queue; a completed one only
-// its merged commit; a set-aside one why, with triage's verdict; a blocked one why it can't merge.
-func (r ticketRow) cells(width int, doing string) [3]string {
+// cells renders one row: state, ticket ID, and what to say about it, as its state's look has it. A
+// picked-up ticket shows its title, and in its state what its worker is doing (worker, its look, or
+// nil), or once it is done, where its work is in the merge queue; a completed one only its merged
+// commit; a set-aside one why, with triage's verdict; a blocked one why it can't merge.
+func (r ticketRow) cells(width int, worker *look) [3]string {
 	fit := func(s string) string { return ansi.Truncate(oneLine(s), max(width, minAboutWidth), "…") }
-	switch r.state {
-	case rowDone:
-		return [3]string{closedStyle.Render("✓ done"), closedStyle.Render(r.id), dimStyle.Render(fit(r.note))}
-	case rowDeferred, rowReview:
-		label := "↷ deferred"
-		if r.state == rowReview {
-			label = "! review"
-		}
-		about := dimStyle.Render(fit(r.note))
-		if r.triage != "" {
-			about = organStyle.Render(fit("◆ " + r.triage))
-		}
-		return [3]string{deferredStyle.Render(label), deferredStyle.Render(r.id), about}
-	case rowStopped:
-		return [3]string{stopStyle.Render("■ stopped"), stopStyle.Render(r.id), fit(r.title)}
-	case rowBlocked: // red and "blocked", as a worker's box says of an agent waiting for the maintainer
-		return [3]string{stopStyle.Render("■ blocked"), stopStyle.Render(r.id), fit(r.note)}
-	case rowAsked:
-		return [3]string{stopStyle.Render("? for you"), stopStyle.Render(r.id), fit(r.note)}
-	case rowWaiting:
-		return [3]string{dimStyle.Render("◷ waiting"), dimStyle.Render(r.id), dimStyle.Render(fit(r.note))}
+	l := rowLooks[r.state]
+	state := l.label()
+	if l.live && worker != nil && worker.row.text != "" {
+		state = worker.row.render()
 	}
-	state := pickedStyle.Render("▶ working")
-	switch doing {
-	case "resolving":
-		state = deferredStyle.Render("⟳ resolving")
-	case "fixing check":
-		state = deferredStyle.Render("⟳ fixing")
-	case "testing":
-		state = testingStyle.Render("▶ testing")
-	case toMergeLabel:
-		state = toMergeStyle.Render("◷ " + toMergeLabel)
-	case mergingLabel:
-		state = mergingStyle.Render("◆ " + mergingLabel)
-	case "editing", "reading", dispatch.DoingSubagent:
-		state = pickedStyle.Render("▶ " + doing)
-	case permissionLabel: // red, as a blocked worker's box reads; "permission" is too wide for the column
-		state = stopStyle.Render("■ allow?")
+	about := r.note
+	if l.title {
+		about = r.title
 	}
-	return [3]string{state, pickedStyle.Render(r.id), fit(r.title)}
+	about = fit(about)
+	switch {
+	case l.triage && r.triage != "":
+		about = organStyle.Render(fit("◆ " + r.triage))
+	case l.dim:
+		about = dimStyle.Render(about)
+	}
+	return [3]string{state, l.style.Render(r.id), about}
 }
 
 // tickets is the tickets table headed by its Tickets label, lines lines in all.
@@ -194,12 +210,13 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 		data = append(data, []string{"", dimStyle.Render(fmt.Sprintf("+%d", hidden)), dimStyle.Render(more)})
 	}
 	for _, r := range rows {
-		doing := ""
+		var worker *look
 		if st, ok := m.active[r.id]; ok {
-			doing = doingLabel(st)
+			l := workerLook(st)
+			worker = &l
 		}
 		r.id = ansi.Truncate(r.id, idWidth, "…")
-		c := r.cells(about, doing)
+		c := r.cells(about, worker)
 		data = append(data, c[:])
 	}
 	for len(data) < limit {

@@ -101,11 +101,23 @@ var testRunner = regexp.MustCompile(`(^|[\s;&|(])(` +
 	`(npm|pnpm|yarn|bun)( run)? test|make (test|check)|gradlew? test|mvnw? test|xcodebuild\b.*\btest` +
 	`)\b`)
 
-// Doing names what a working worker is doing from what it reported: testing (the project's check
+// Doing is what a working worker is doing, from what it reported: more precise than the terminal's
+// "working". "" means nothing more precise.
+type Doing string
+
+// What a working worker can be doing.
+const (
+	DoingTesting  Doing = "testing" // running the project's check command or a test runner
+	DoingEditing  Doing = "editing"
+	DoingReading  Doing = "reading"
+	DoingSubagent Doing = "subagent" // its Agent tool, or a subagent started and not stopped
+)
+
+// DoingOf names what a working worker is doing from what it reported: testing (the project's check
 // command or a test runner), editing, reading or running a subagent. A tool it asked permission
 // for is running once the terminal shows it working. "" means nothing more precise than the
 // terminal's "working": thinking between tools, another command, or no report.
-func Doing(u ToolUse, check string) string {
+func DoingOf(u ToolUse, check string) Doing {
 	if u.Event != "PreToolUse" && u.Event != EventPermission {
 		return ""
 	}
@@ -115,19 +127,15 @@ func Doing(u ToolUse, check string) string {
 	case "Bash":
 		cmd := strings.TrimSpace(u.Command)
 		if check != "" && strings.Contains(cmd, check) || testRunner.MatchString(cmd) {
-			return "testing"
+			return DoingTesting
 		}
 	case "Edit", "MultiEdit", "Write", "NotebookEdit":
-		return "editing"
+		return DoingEditing
 	case "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch":
-		return "reading"
+		return DoingReading
 	}
 	return ""
 }
-
-// DoingSubagent is Doing for a worker running a subagent: its Agent tool, or the hooks' record of
-// a subagent started and not stopped while it thinks between the subagent's tools.
-const DoingSubagent = "subagent"
 
 // waitsOnPermission says whether a worker the terminal shows in state st, whose hooks last reported
 // u (ok: they did), is waiting on a permission prompt: asked, and the terminal shows it at rest

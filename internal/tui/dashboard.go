@@ -43,6 +43,7 @@ type Dashboard struct {
 	unclosed    int             // the tickets not closed the run draws from; -1 until the loop says
 	solo        dispatch.SoloState
 	began       time.Time
+	now         func() time.Time // the clock the times shown are read from
 	cancel      func()
 	drain       func(on bool)    // asks the loop to stop after the running tickets, or with false to go on
 	focus       func(tab string) // switches the terminal to a worker's tab; it must not block; nil for none
@@ -53,8 +54,8 @@ type Dashboard struct {
 // of orchestra's sight.
 func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus func(tab string)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, unclosed: -1, began: time.Now(), cancel: cancel,
-		drain: drain, focus: focus}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, unclosed: -1, began: time.Now(), now: time.Now,
+		cancel: cancel, drain: drain, focus: focus}
 }
 
 // Init starts the spinner.
@@ -69,107 +70,23 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the top.
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
-		switch key := msg.String(); {
-		case key == "ctrl+c": // at any time, the question open or not
-			m.interrupted, m.quitting = true, true
+		switch a := m.press(msg.String()); {
+		case a.quit:
 			m.cancel()
 			return m, tea.Quit
-		case m.asking && key == "y":
-			m.asking = false
-			m.setDraining(!m.draining)
-			m.drain(m.draining)
-		case m.asking && (key == "n" || key == "esc"):
-			m.asking = false
-		case !m.asking && len(key) == 1 && key >= "1" && key <= "9":
-			m.goTo(int(key[0] - '0'))
-		case key == "s" && (m.draining || !m.stopping): // a run already stopping has nothing to drain
-			m.asking = true
+		case a.drain != nil:
+			m.drain(*a.drain)
+		case a.focusTab != "":
+			m.focus(a.focusTab) // the callback runs the terminal in the background
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case statusMsg:
-		st := dispatch.Status(msg)
-		if m.active == nil {
-			m.active = map[string]dispatch.Status{}
-		}
-		if st.Gone {
-			delete(m.active, st.Ticket)
-		} else {
-			if m.draining && !slices.Contains(m.drainFrom, st.Ticket) { // its status late, or one taken back
-				m.drainFrom = append(m.drainFrom, st.Ticket)
-			}
-			m.active[st.Ticket] = st
-		}
+		m.applyStatus(dispatch.Status(msg))
 	case eventMsg:
-		// Events update the dashboard in place; nothing is printed above it. The full lines are
-		// in the log file. Those in after it has asked to quit, before the program exits (an organ's
-		// verdict, a warning), would go with the alternate screen: uncounted, Handoff prints them.
-		if m.quitting {
-			return m, nil
-		}
-		ev := dispatch.Event(msg)
-		m.received++
-		switch ev.Kind {
-		case dispatch.EvDispatch:
-			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
-			m.pickUp(ev.Ticket, ev.Title)
-		case dispatch.EvQueue:
-			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
-		case dispatch.EvClosed:
-			m.closed++
-			m.setRow(ev.Ticket, rowDone, ev.Detail)
-		case dispatch.EvDeferred:
-			m.setRow(ev.Ticket, rowDeferred, ev.Detail)
-		case dispatch.EvWarn:
-			// Only a ticket the warning sets aside is for review, its row saying why as a deferred
-			// one does, or blocked, when only its merge needs the maintainer (MERGE_CONFLICT). The
-			// rest are about a ticket still running (LONG_RUNNING) or already deferred
-			// (TRIAGE_FAILED), whose row stays as it is.
-			if ev.Ticket != "" && ev.Aside && !m.markBlocked(ev) {
-				why := ev.Detail
-				if why == "" {
-					why = "left for review, see the log"
-				}
-				m.setRow(ev.Ticket, rowReview, why)
-			}
-		case dispatch.EvAsked:
-			m.setRow(ev.Ticket, rowAsked, "answer "+ev.Detail)
-		case dispatch.EvWaits: // back in the queue: its row shows it working again once it is dispatched
-			m.setRow(ev.Ticket, rowWaiting, "for "+ev.Detail+" to merge")
-		case dispatch.EvReopened: // set aside, now back in the queue: no longer counted set aside
-			m.setRow(ev.Ticket, rowWaiting, "back in the queue: "+ev.Detail)
-		case dispatch.EvAnswered: // its title for a ticket carried over from the last run, with no row yet
-			m.pickUp(ev.Ticket, ev.Title)
-		case dispatch.EvTriage:
-			m.triaged++
-			// A verdict on an earlier deferral, in after the ticket came back, would outlast the next.
-			if i := m.rowIndex(ev.Ticket); i >= 0 && m.rows[i].state == rowDeferred {
-				m.rows[i].triage = ev.Detail + " · " + ev.Title
-			}
-		case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
-			m.setDraining(ev.Kind == dispatch.EvDrain)
-		case dispatch.EvProbed: // the machine works again after an environment hold
-			m.stopping = false
-		case dispatch.EvHold:
-			m.stopping = true
-			// A stop found before dispatching belongs to no ticket; one met as a finished ticket
-			// merged (DIRTY_TREE, say) blocks it.
-			if ev.Ticket != "" && !m.markBlocked(ev) {
-				m.setRow(ev.Ticket, rowStopped, "")
-			}
-		case dispatch.EvStop, dispatch.EvDone:
-			if ev.Kind == dispatch.EvStop {
-				m.markBlocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
-				for i := range m.rows {
-					if m.rows[i].state == rowWorking {
-						m.rows[i].state = rowStopped
-					}
-				}
-			}
-			// main prints the last line after the program exits, below the run's summary.
-			m.final, m.solo, m.quitting = &ev, dispatch.SoloState{}, true
+		if m.apply(dispatch.Event(msg)) {
 			return m, tea.Quit
 		}
 	case Finished:
@@ -395,8 +312,17 @@ func (m Dashboard) titleLine(w int) string {
 		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
 	}
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
-		m.cfg.Base, dispatch.ScopeLabel(m.cfg), time.Since(m.began).Truncate(time.Second)))
+		m.cfg.Base, dispatch.ScopeLabel(m.cfg), m.since(m.began).Truncate(time.Second)))
 	return ansi.Truncate(line, w, "…")
+}
+
+// since is how long ago t was by the dashboard's clock; a dashboard made without NewDashboard reads
+// the time.
+func (m Dashboard) since(t time.Time) time.Duration {
+	if m.now == nil {
+		return time.Since(t)
+	}
+	return m.now().Sub(t)
 }
 
 // Interrupted reports whether the run was stopped with Ctrl+C.

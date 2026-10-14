@@ -172,6 +172,11 @@ func (p Printer) Report(md string) {
 // renderEvent formats one event as a permanent line above the live status area.
 func renderEvent(ev dispatch.Event) string {
 	ts := dimStyle.Render(ev.Time.Format("15:04:05"))
+	if re, ok := rowEvents[ev.Kind]; ok { // in its row state's glyph and colour
+		l := rowLooks[re.state]
+		return fmt.Sprintf("%s %s  %s", ts, l.style.Render(l.glyph+" "+ev.Ticket+" "+re.says),
+			dimStyle.Render(re.line(ev.Detail)))
+	}
 	switch ev.Kind {
 	case dispatch.EvDispatch:
 		solo := ""
@@ -180,21 +185,9 @@ func renderEvent(ev dispatch.Event) string {
 		}
 		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
 			pickedStyle.Render(ev.Ticket), solo, ev.Title)
-	case dispatch.EvClosed:
-		return fmt.Sprintf("%s %s  %s", ts, closedStyle.Render("✓ "+ev.Ticket+" completed"), dimStyle.Render(ev.Detail))
-	case dispatch.EvDeferred:
-		return fmt.Sprintf("%s %s  %s", ts, deferredStyle.Render("↷ "+ev.Ticket+" deferred"), dimStyle.Render(ev.Detail))
 	case dispatch.EvTriage:
 		return fmt.Sprintf("%s %s  %s",
 			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
-	case dispatch.EvAsked:
-		return fmt.Sprintf("%s %s  %s", ts, stopStyle.Render("? "+ev.Ticket+" needs your answer"), dimStyle.Render(ev.Detail))
-	case dispatch.EvWaits:
-		return fmt.Sprintf("%s %s  %s", ts, dimStyle.Render("◷ "+ev.Ticket+" waits"),
-			dimStyle.Render("for "+ev.Detail+" to merge"))
-	case dispatch.EvReopened:
-		return fmt.Sprintf("%s %s  %s", ts, dimStyle.Render("◷ "+ev.Ticket+" reopened"),
-			dimStyle.Render("back in the queue: "+ev.Detail))
 	case dispatch.EvAnswered:
 		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
 	case dispatch.EvHold:

@@ -43,15 +43,20 @@ func (p InterviewProgress) Line(width int) string {
 		width, "…")
 }
 
-// interviewState is claude's state in words, coloured as the dashboard colours a worker's.
+// interviewStates are claude's states in words, coloured as the dashboard colours a worker's.
+var interviewStates = map[dispatch.AgentState]styledText{
+	dispatch.StateWorking: {"claude is working", pickedStyle},
+	// A permission prompt, or the dialog asking whether to trust the folder.
+	dispatch.StateBlocked: {"claude is waiting for a permission answer", stopStyle},
+	dispatch.StateIdle:    {"claude is waiting for you", deferredStyle},
+	// Done is the end of a turn, until the pane is looked at.
+	dispatch.StateDone: {"claude is waiting for you", deferredStyle},
+}
+
+// interviewState is claude's state in words, from interviewStates.
 func interviewState(st dispatch.AgentState) string {
-	switch st {
-	case dispatch.StateWorking:
-		return pickedStyle.Render("claude is working")
-	case dispatch.StateBlocked: // a permission prompt, or the dialog asking whether to trust the folder
-		return stopStyle.Render("claude is waiting for a permission answer")
-	case dispatch.StateIdle, dispatch.StateDone: // done is the end of a turn, until the pane is looked at
-		return deferredStyle.Render("claude is waiting for you")
+	if s, ok := interviewStates[st]; ok {
+		return s.render()
 	}
 	return "claude is running" // Herdr can't tell what claude does, or hasn't said yet
 }

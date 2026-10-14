@@ -47,8 +47,8 @@ func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 	if n <= numbered {
 		num = keyStyle.Render(fmt.Sprint(n)) + " "
 	}
-	elapsed := time.Since(st.Started).Truncate(time.Second)
-	label := agentStyle(doingLabel(st))
+	elapsed := m.since(st.Started).Truncate(time.Second)
+	label := workerLook(st).status.render()
 	if st.Merge == dispatch.MergeQueued && st.Place > 0 {
 		label = toMergeStyle.Render(fmt.Sprintf("%s (%s)", toMergeLabel, ordinal(st.Place)))
 	}
@@ -57,17 +57,11 @@ func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 }
 
 // mark is what heads a worker's line: the spinner while its worker is at work, a hand-back included,
-// and once it has finished, a static mark, so that motion means a worker at work: its merge stage's,
-// or a dot. It is as wide as the spinner.
+// and once it has finished, its look's static mark, so that motion means a worker at work. It is as
+// wide as the spinner.
 func (m Dashboard) mark(st dispatch.Status) string {
-	switch {
-	case st.Resolving || st.Fixing:
-	case st.Merge == dispatch.MergeQueued:
-		return toMergeStyle.Render("◷") + " "
-	case st.Merge == dispatch.MergeRunning:
-		return mergingStyle.Render("◆") + " "
-	case st.Agent == dispatch.StateDone:
-		return doneStyle.Render("•") + " "
+	if l := workerLook(st); l.mark.text != "" {
+		return l.mark.render() + " "
 	}
 	return m.spin.View()
 }
@@ -87,13 +81,13 @@ func ordinal(n int) string {
 	return fmt.Sprint(n) + suffix
 }
 
-// goTo switches the terminal to the tab of the worker numbered n in Current, as the list stands now:
-// nothing if there is none, it has no tab yet, or the tabs are out of sight (no focus callback). The
-// callback runs the terminal in the background.
-func (m Dashboard) goTo(n int) {
-	if running := m.Running(); m.focus != nil && n <= min(len(running), numbered) && running[n-1].Tab != "" {
-		m.focus(running[n-1].Tab)
+// tab is the tab of the worker numbered n in Current, as the list stands now, for its number key to
+// switch to: "" if there is none, it has no tab yet, or the tabs are out of sight (no focus callback).
+func (m Dashboard) tab(n int) string {
+	if running := m.Running(); m.focus != nil && n <= min(len(running), numbered) {
+		return running[n-1].Tab
 	}
+	return ""
 }
 
 // workerBorder colours a box of running workers red if any waits for the maintainer.
@@ -199,54 +193,107 @@ const (
 	titleLinesShared = 2
 )
 
-// doingLabel is the worker's status, made precise by what it reported doing when it is working,
+// styledText is text in its style; no text renders as nothing.
+type styledText struct {
+	text  string
+	style lipgloss.Style
+}
+
+func (s styledText) render() string {
+	if s.text == "" {
+		return ""
+	}
+	return s.style.Render(s.text)
+}
+
+// look is how the dashboard shows a worker's status (workerStatus).
+type look struct {
+	status styledText // the status in the worker's line in Current
+	row    styledText // its ticket's state in the tickets table; "" for working's (rowLooks)
+	mark   styledText // what heads its line once its worker has finished; "" for the spinner
+	spins  bool       // its worker is at work even when its agent's turn is done: a hand-back
+}
+
+// The statuses a worker has beyond its agent's state and what it is doing.
+const (
+	resolvingLabel  = "resolving"    // its rebase stopped on conflicts, handed back to it
+	fixingLabel     = "fixing check" // its check failed on its rebased branch, handed back to it
+	unreadableLabel = "unreadable"   // the last read of its agent's state failed
+	permissionLabel = "permission"   // its hooks say it waits on a permission prompt
+	// Its worker done with it, in the merge queue: waiting for its turn, and its merge under way.
+	toMergeLabel = string(dispatch.MergeQueued)
+	mergingLabel = string(dispatch.MergeRunning)
+)
+
+// waitingForYou is what follows the status of a worker waiting for the maintainer.
+const waitingForYou = " — waiting for you"
+
+// workerLooks are the worker statuses' looks, by status. A status with none is in the warning colour.
+var workerLooks = map[string]look{
+	resolvingLabel: {status: styledText{resolvingLabel, deferredStyle},
+		row: styledText{"⟳ resolving", deferredStyle}, spins: true},
+	fixingLabel: {status: styledText{fixingLabel, deferredStyle},
+		row: styledText{"⟳ fixing", deferredStyle}, spins: true},
+	toMergeLabel: {status: styledText{toMergeLabel, toMergeStyle},
+		row: styledText{"◷ " + toMergeLabel, toMergeStyle}, mark: styledText{"◷", toMergeStyle}},
+	mergingLabel: {status: styledText{mergingLabel, mergingStyle},
+		row: styledText{"◆ " + mergingLabel, mergingStyle}, mark: styledText{"◆", mergingStyle}},
+	unreadableLabel: {status: styledText{unreadableLabel, deferredStyle}},
+	// Red, as a blocked worker's box reads; "permission" is too wide for the tickets table's column.
+	permissionLabel: {status: styledText{permissionLabel + waitingForYou, stopStyle},
+		row: styledText{"■ allow?", stopStyle}},
+	string(dispatch.DoingTesting):  doingLook(dispatch.DoingTesting, testingStyle),
+	string(dispatch.DoingEditing):  doingLook(dispatch.DoingEditing, pickedStyle),
+	string(dispatch.DoingReading):  doingLook(dispatch.DoingReading, pickedStyle),
+	string(dispatch.DoingSubagent): doingLook(dispatch.DoingSubagent, pickedStyle),
+	string(dispatch.StateWorking):  {status: styledText{string(dispatch.StateWorking), pickedStyle}},
+	string(dispatch.StateIdle):     {status: styledText{string(dispatch.StateIdle), deferredStyle}},
+	// Red, as a ticket blocked from merging reads in the tickets table.
+	string(dispatch.StateBlocked): {status: styledText{string(dispatch.StateBlocked) + waitingForYou, stopStyle}},
+	// Finished its turn: green, not bold, as its ticket isn't merged yet.
+	string(dispatch.StateDone): {status: styledText{string(dispatch.StateDone), doneStyle},
+		mark: styledText{"•", doneStyle}},
+	string(dispatch.StateUnknown): {status: styledText{string(dispatch.StateUnknown), deferredStyle}},
+	"":                            {}, // Herdr hasn't said yet
+}
+
+// doingLook is the look of a working worker doing d: d in style, in Current and the tickets table.
+func doingLook(d dispatch.Doing, style lipgloss.Style) look {
+	return look{status: styledText{string(d), style}, row: styledText{"▶ " + string(d), style}}
+}
+
+// workerStatus is the worker's status, made precise by what it reported doing when it is working,
 // or by the permission prompt it reported waiting on, whatever Herdr shows.
-func doingLabel(st dispatch.Status) string {
+func workerStatus(st dispatch.Status) string {
 	switch {
 	case st.Resolving:
-		return "resolving"
+		return resolvingLabel
 	case st.Fixing:
-		return "fixing check"
+		return fixingLabel
 	case st.Merge == dispatch.MergeQueued:
 		return toMergeLabel
 	case st.Merge == dispatch.MergeRunning:
 		return mergingLabel
 	case st.Unreadable:
-		return "unreadable"
+		return unreadableLabel
 	case st.Permission:
 		return permissionLabel
 	case st.Agent == dispatch.StateWorking && st.Doing != "":
-		return st.Doing
+		return string(st.Doing)
 	}
 	return string(st.Agent)
 }
 
-// permissionLabel is the status of a worker waiting on a permission prompt.
-const permissionLabel = "permission"
-
-// The status of a ticket whose worker is done with it, in the merge queue: waiting for its turn, and
-// its merge under way.
-const (
-	toMergeLabel = string(dispatch.MergeQueued)
-	mergingLabel = string(dispatch.MergeRunning)
-)
-
-func agentStyle(s string) string {
-	switch s {
-	case string(dispatch.StateWorking), "editing", "reading", dispatch.DoingSubagent:
-		return pickedStyle.Render(s)
-	case "testing":
-		return testingStyle.Render(s)
-	case string(dispatch.StateBlocked), permissionLabel: // red, as a ticket blocked from merging reads in the table
-		return stopStyle.Render(s + " — waiting for you")
-	case string(dispatch.StateDone): // finished its turn: green, not bold, as its ticket isn't merged yet
-		return doneStyle.Render(s)
-	case toMergeLabel:
-		return toMergeStyle.Render(s)
-	case mergingLabel:
-		return mergingStyle.Render(s)
-	case "":
-		return ""
+// workerLook is how the dashboard shows the worker's status. A worker whose agent's turn is done
+// has the done mark, whatever more precise status it has, unless it is at work on a hand-back.
+func workerLook(st dispatch.Status) look {
+	status := workerStatus(st)
+	l, ok := workerLooks[status]
+	if !ok {
+		l = look{status: styledText{status, deferredStyle}}
 	}
-	return deferredStyle.Render(s)
+	if l.mark.text == "" && !l.spins && st.Agent == dispatch.StateDone {
+		l.mark = workerLooks[string(dispatch.StateDone)].mark
+	}
+	return l
 }

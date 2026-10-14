@@ -38,20 +38,13 @@ func (m Dashboard) windDownLine(w int) string {
 	return " " + strings.Join(squares[:min(w/2, len(squares))], " ") // as many squares as fit
 }
 
-// windDownSquare is ticket id's ■ on the winding-down line, in the colour of where it is.
+// windDownSquare is ticket id's ■ on the winding-down line, in the colour of where it is: amber while
+// it runs, then its row state's (rowLooks).
 func (m Dashboard) windDownSquare(id string) string {
-	style := windDownStyle // still running, or gone from Current but not yet merged or set aside
+	style := windDownStyle // still running, or gone from Current with no row
 	if _, running := m.active[id]; !running {
 		if i := m.rowIndex(id); i >= 0 {
-			switch m.rows[i].state {
-			case rowDone:
-				style = doneStyle
-			case rowWaiting: // back in the queue, which the wind-down holds
-				style = dimStyle
-			case rowWorking: // not merged or set aside yet
-			default: // set aside, stopped, or waiting on the maintainer
-				style = stopStyle.UnsetBold()
-			}
+			style = rowLooks[m.rows[i].state].square
 		}
 	}
 	return style.Render("■")

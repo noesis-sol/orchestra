@@ -472,7 +472,7 @@ func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 		switch {
 		case st == StateWorking:
 			if ok {
-				s.Doing = Doing(u, o.cfg.Check)
+				s.Doing = DoingOf(u, o.cfg.Check)
 			}
 			if s.Doing == "" && rec.SubagentsRunning(u.At, time.Now()) {
 				s.Doing = DoingSubagent
