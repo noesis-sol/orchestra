@@ -60,7 +60,7 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 		if on {
 			r.orch.Drain("from the dashboard")
 		} else {
-			r.orch.Resume("from the dashboard")
+			r.orch.Undrain("from the dashboard")
 		}
 	}
 	// The dashboard draws on the alternate screen, which leaves the earlier output as it was and has

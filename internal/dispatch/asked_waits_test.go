@@ -34,7 +34,7 @@ func TestAnsweredTicketThatWaitsForMergeRunsAgain(t *testing.T) {
 		if got := h.sink.of(EvWaits); len(got) != 1 || !strings.HasPrefix(got[0], "B   WAITS_FOR_MERGE: B waits for A to merge") {
 			t.Errorf("waits %q, want B waiting for A", got)
 		}
-		if aside := o.setAside(); len(aside) != 0 {
+		if aside := o.asideList(); len(aside) != 0 {
 			t.Errorf("set aside: %v", aside)
 		}
 	})

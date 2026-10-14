@@ -61,7 +61,7 @@ func TestCtrlCDuringARecheckLeavesTheTicketSetAside(t *testing.T) {
 		if strings.Contains(ev, "A is left running") {
 			t.Errorf("A has no worker running:\n%s", ev)
 		}
-		if aside := o.setAside(); !equal(aside, []string{"A"}) {
+		if aside := o.asideList(); !equal(aside, []string{"A"}) {
 			t.Errorf("set aside %v, want A", aside)
 		}
 		if !unmergedLabel(t, h, "A") {

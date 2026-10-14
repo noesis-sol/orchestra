@@ -50,10 +50,10 @@ const (
 	requeued                    // back in the queue, to wait for a ticket to merge: as unsettled
 )
 
-// settled counts a settled worker toward the hold: one that failed at once adds to the tickets
+// countSettling counts a settled worker toward the hold: one that failed at once adds to the tickets
 // failing in a row, and any other ends the row. A ticket failing this way once the run holds is
 // reopened too. Run calls it with each result.
-func (o *Loop) settled(ctx context.Context, id string, how settling) {
+func (o *Loop) countSettling(ctx context.Context, id string, how settling) {
 	n := o.cfg.EnvHoldCount
 	if n == 0 || how == unsettled || how == requeued {
 		return

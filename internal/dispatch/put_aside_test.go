@@ -37,7 +37,7 @@ func TestPutAsideDefersAndReportsIt(t *testing.T) {
 	if len(sink.events) != 1 || !sameEvent(sink.events[0], want) {
 		t.Errorf("events %+v, want only %+v", sink.events, want)
 	}
-	if got := o.setAside(); !equal(got, []string{"A"}) {
+	if got := o.asideList(); !equal(got, []string{"A"}) {
 		t.Errorf("set aside: %v", got)
 	}
 }
@@ -60,7 +60,7 @@ func TestPutAsideWarnsWhenBdCannotDefer(t *testing.T) {
 	if len(sink.events) != 1 || !sameEvent(sink.events[0], want) {
 		t.Errorf("events %+v, want only %+v", sink.events, want)
 	}
-	if got := o.setAside(); !equal(got, []string{"A"}) {
+	if got := o.asideList(); !equal(got, []string{"A"}) {
 		t.Errorf("set aside: %v", got)
 	}
 }

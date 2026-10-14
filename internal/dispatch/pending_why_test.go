@@ -74,7 +74,7 @@ func TestPendingWhyStates(t *testing.T) {
 func TestUnmergedBlockersStaleLabel(t *testing.T) {
 	o := &Loop{
 		active:   map[string]Status{"k-run": {Ticket: "k-run"}},
-		askedIDs: map[string]askedWorker{"k-ask": {}},
+		askedIDs: map[string]workerSpot{"k-ask": {}},
 		unmerged: map[string]string{"k-left": earlierRun},
 	}
 	blocks := func(id string, status TicketStatus, labels ...string) Ticket {

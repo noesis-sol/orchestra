@@ -88,7 +88,7 @@ func TestTicketStartedBeforeItsBlockerMergedWaitsForIt(t *testing.T) {
 						t.Errorf("events say %s:\n%s", not, ev)
 					}
 				}
-				if aside := o.setAside(); len(aside) != 0 {
+				if aside := o.asideList(); len(aside) != 0 {
 					t.Errorf("set aside: %v", aside)
 				}
 			})

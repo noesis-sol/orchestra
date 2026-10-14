@@ -81,7 +81,7 @@ func TestRunGoesOnPastATicketItsWorkerDefers(t *testing.T) {
 	if !exists(h.worktree("A")) || !equal(h.herdr.tabsClosed(), []string{"tab2"}) {
 		t.Error("the deferred ticket's worktree and tab should be left open")
 	}
-	if got := o.setAside(); !equal(got, []string{"A"}) {
+	if got := o.asideList(); !equal(got, []string{"A"}) {
 		t.Errorf("set aside: %v", got)
 	}
 }

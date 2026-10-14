@@ -13,8 +13,8 @@ import (
 // when it next looks.
 func (o *Loop) Drain(how string) { o.setDrain(true, how) }
 
-// Resume takes back a Drain: the run takes new tickets again.
-func (o *Loop) Resume(how string) { o.setDrain(false, how) }
+// Undrain takes back a Drain: the run takes new tickets again.
+func (o *Loop) Undrain(how string) { o.setDrain(false, how) }
 
 // drainRequest is the maintainer asking the run to wind down (on) or to take tickets again, and how
 // they asked.

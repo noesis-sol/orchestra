@@ -17,7 +17,7 @@ import (
 // that worker is.
 type adoption struct {
 	t      Ticket
-	w      askedWorker
+	w      workerSpot
 	resume *Session // the session to resume, its worker gone from its tab; nil: its worker is there
 }
 
@@ -29,7 +29,7 @@ type adoption struct {
 // the question open waits on, as does one Herdr can't tell about, and one the last run left running
 // whose worker is idle: it waits for the maintainer, as it did when that run stopped. One its
 // worker deferred is set aside as deferred. One in progress whose worker is gone is adopted to have
-// its session resumed, once in a run (see resumeGone), whatever taking: an adoption counts toward
+// its session resumed, once in a run (see resumeSession), whatever taking: an adoption counts toward
 // no limit. Without a session to resume, it stops the run, as a paused ticket does: the reason is
 // returned with the tickets adopted before it was found, and said at once; with taking false it is
 // dropped instead (askedDropped), as the run would only stop for it again and again. running is the
@@ -63,7 +63,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 			case err != nil:
 				o.log.Raw("", err)
 			case st == StateGone:
-				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.firstResume(id) {
+				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.claimSessionResume(id) {
 					adopt = append(adopt, o.resumedInTab(t, w, s))
 					break
 				}
@@ -86,7 +86,7 @@ func (o *Loop) followAsked(ctx context.Context, running map[string]bool, taking 
 // answeredInTab says asked ticket t comes back, its worker w having claimed it again or closed it
 // in its tab, and records its footprint; the caller counts it running. One the last run left
 // running, with no question, comes back the same way.
-func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
+func (o *Loop) answeredInTab(t Ticket, w workerSpot) adoption {
 	id := t.ID
 	o.setAsked(id, nil) // back from a question: set aside again, it stays out
 	o.setParent(id, t.Parent)
@@ -111,7 +111,7 @@ func (o *Loop) answeredInTab(t Ticket, w askedWorker) adoption {
 // askedDeferred sets aside asked ticket t, which its worker deferred in its tab, and hands it to
 // triage as triageDeferred does. ctx is the run's, so that after Ctrl+C no evidence is gathered
 // (triageTaking). Run calls it on its own goroutine, so the deferral is offered (offerTriage).
-func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
+func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w workerSpot) {
 	id := t.ID
 	o.setAsked(id, nil)
 	o.markAside(id)
@@ -125,7 +125,7 @@ func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w askedWorker) {
 // askedGone notes an asked ticket left in progress by a worker no longer in its tab, and returns
 // the reason the run stops for it, as for a paused ticket, holding it at once with n running. The
 // ticket stays asked, so leaveAsked labels it.
-func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *stopReason {
+func (o *Loop) askedGone(ctx context.Context, id string, w workerSpot, n int) *stopReason {
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, w.after())
 	s := halt(ExitStuck, stopPaused, ": %s still in_progress after %s, its worker gone from tab %s "+
 		"(worktree %s); stopping so it can be looked at", id, w.after(), w.tab, w.wt).over(id)
@@ -137,14 +137,14 @@ func (o *Loop) askedGone(ctx context.Context, id string, w askedWorker, n int) *
 // tab, which can't be resumed while the run takes no more tickets, and stops following it, as
 // carriedStands drops one carried over without a session: stopping the run for it (askedGone) would
 // save it for the next run, which stops for it again if it too takes no more tickets.
-func (o *Loop) askedDropped(ctx context.Context, id string, w askedWorker) {
+func (o *Loop) askedDropped(ctx context.Context, id string, w workerSpot) {
 	o.setAsked(id, nil)
 	o.warnWorkerGone(ctx, id, w, "so it is no longer followed")
 }
 
 // warnWorkerGone warns about and notes ticket id, in progress with its worker w gone from its tab and
 // dropped, as what says.
-func (o *Loop) warnWorkerGone(ctx context.Context, id string, w askedWorker, what string) {
+func (o *Loop) warnWorkerGone(ctx context.Context, id string, w workerSpot, what string) {
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, w.after())
 	o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: "in progress, its worker gone", Text: fmt.Sprintf(
 		"  WORKER_GONE: %s is in progress after %s, but its worker is gone from tab %s (worktree %s), "+
@@ -227,10 +227,10 @@ func (o *Loop) askedList() []string {
 	return slices.Sorted(maps.Keys(o.askedIDs))
 }
 
-// askedWorker is where a ticket set aside to wait on a question left its worker, which may carry
+// workerSpot is where a ticket set aside to wait on a question left its worker, which may carry
 // on once the question is answered, and the question. Carried over from the last run (see
 // loadCarried), it may instead be a worker that run left running when it stopped, with no question.
-type askedWorker struct {
+type workerSpot struct {
 	tab, wt  string
 	pane     string // the pane it was started in, where it is looked for unnamed (see earlierState); "" if not known
 	fork     string // the commit on Base its branch was cut from, as a run that left it behind found it; "" if not known
@@ -242,7 +242,7 @@ type askedWorker struct {
 
 // after is what the worker was left after, for a line about it: "its question Q", or "the last run
 // left it running (PAUSED)".
-func (w askedWorker) after() string {
+func (w workerSpot) after() string {
 	if w.question != "" {
 		return "its question " + w.question
 	}
@@ -250,13 +250,13 @@ func (w askedWorker) after() string {
 }
 
 // leftWhy is why the last run left the worker running, as its final line began.
-func (w askedWorker) leftWhy() string {
+func (w workerSpot) leftWhy() string {
 	return cmp.Or(string(w.left), "stopped")
 }
 
 // setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
 // longer.
-func (o *Loop) setAsked(id string, w *askedWorker) {
+func (o *Loop) setAsked(id string, w *workerSpot) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if w == nil {
@@ -264,13 +264,13 @@ func (o *Loop) setAsked(id string, w *askedWorker) {
 		return
 	}
 	if o.askedIDs == nil {
-		o.askedIDs = map[string]askedWorker{}
+		o.askedIDs = map[string]workerSpot{}
 	}
 	o.askedIDs[id] = *w
 }
 
 // asked returns where ticket id, set aside waiting on a question, left its worker.
-func (o *Loop) asked(id string) (askedWorker, bool) {
+func (o *Loop) asked(id string) (workerSpot, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	w, ok := o.askedIDs[id]

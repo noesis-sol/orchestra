@@ -106,7 +106,7 @@ func TestATicketSetAsideForAFailedCheckMergesOnceAnotherFixesIt(t *testing.T) {
 				t.Errorf("events lack %q:\n%s", want, ev)
 			}
 		}
-		if aside := o.setAside(); len(aside) != 0 {
+		if aside := o.asideList(); len(aside) != 0 {
 			t.Errorf("set aside %v, want none: A merged", aside)
 		}
 		if done := eventsOf(h, EvDone); len(done) != 1 || done[0].Closed != 3 || done[0].SetAside != 0 {
@@ -160,7 +160,7 @@ func TestATicketWhoseCheckFailsAgainStaysSetAside(t *testing.T) {
 		if _, line, _ := strings.Cut(ev[max(failed, 0):], "; "); strings.Contains(strings.SplitN(line, "\n", 2)[0], "once more") {
 			t.Errorf("the second CHECKS_FAILED promises another check: %s", line)
 		}
-		if aside := o.setAside(); !equal(aside, []string{"A"}) {
+		if aside := o.asideList(); !equal(aside, []string{"A"}) {
 			t.Errorf("set aside %v, want A", aside)
 		}
 		if done := eventsOf(h, EvDone); len(done) != 1 || done[0].Closed != 2 || done[0].SetAside != 1 {

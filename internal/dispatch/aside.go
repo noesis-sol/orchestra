@@ -40,8 +40,8 @@ func (o *Loop) putAside(ctx context.Context, t Ticket, a asideTexts) bool {
 	return true
 }
 
-// setAside lists tickets deferred or left unmerged in this run, in order, without repeats.
-func (o *Loop) setAside() []string {
+// asideList lists tickets deferred or left unmerged in this run, in order, without repeats.
+func (o *Loop) asideList() []string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return append([]string(nil), o.asideIDs...)

@@ -31,7 +31,7 @@ func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
 	if !rebaseInProgress(t, wt) {
 		t.Error("the fake abort should leave the rebase in progress")
 	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
 }

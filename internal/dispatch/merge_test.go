@@ -114,7 +114,7 @@ func TestMergeLeavesAConflictForReview(t *testing.T) {
 	if st := f.git(wt, "status", "--porcelain"); st != "" {
 		t.Errorf("the worktree should be left clean, not mid-rebase: %q", st)
 	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
 }
@@ -155,7 +155,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 	if !strings.Contains(ev, "CHECKS_FAILED: k-1 closed, but 'if test -f a.txt; then sleep 60; fi' did not finish within 300ms on wt/k-1") {
 		t.Errorf("events:\n%s", ev)
 	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
 	if s := f.orch.merge(context.Background(), worker{id: "k-2", br: "wt/k-2", wt: next, tab: "tab"}); s != nil {

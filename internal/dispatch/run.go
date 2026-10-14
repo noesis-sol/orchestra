@@ -163,13 +163,13 @@ func (o *Loop) Run(ctx context.Context) int {
 	defer poll.Stop()
 	r.follow() // the workers carried over from the last run that closed their tickets, or work on them again
 	for {
-		r.winding()
+		r.takeDrainRequest()
 		r.heedEnvironment()
 		r.sayNoMore()
 		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
 		if len(r.inflight) == 0 {
-			if r.idle() {
+			if r.goOnWhenEmpty() {
 				continue
 			}
 			return r.end()
@@ -223,7 +223,7 @@ type runState struct {
 	keep context.Context // for reopening tickets as the run holds
 
 	// results: workers' results, buffered to Concurrency so a worker hands its result in without
-	// waiting on Run's other steps; any beyond it (adoptions, rechecks) wait for Run or settle, which
+	// waiting on Run's other steps; any beyond it (adoptions, rechecks) wait for Run or awaitInflight, which
 	// takes every one in flight
 	results  chan result
 	inflight map[string]bool // the tickets whose workers haven't returned
@@ -301,9 +301,9 @@ func (r *runState) hear(req drainRequest) bool {
 	return r.drained
 }
 
-// winding hears a request waiting, if any; asked just before a ticket would start, it keeps
+// takeDrainRequest hears a request waiting, if any; asked just before a ticket would start, it keeps
 // that ticket from starting.
-func (r *runState) winding() bool {
+func (r *runState) takeDrainRequest() bool {
 	select {
 	case req := <-r.o.drainReqs:
 		return r.hear(req)
@@ -353,7 +353,7 @@ func (r *runState) startTickets() {
 			r.reportQueue(queued)
 			return // nothing ready that isn't already running, or it waits for a solo ticket
 		}
-		if r.winding() {
+		if r.takeDrainRequest() {
 			return
 		}
 		r.start(*t, queued)
@@ -427,9 +427,9 @@ func (r *runState) follow() bool {
 	return len(adopt) > 0
 }
 
-// idle is Run's step once nothing runs, and reports whether the run goes on: asked tickets were
+// goOnWhenEmpty is Run's step once nothing runs, and reports whether the run goes on: asked tickets were
 // adopted, or the run held for the environment and a probe found that commands run again.
-func (r *runState) idle() bool {
+func (r *runState) goOnWhenEmpty() bool {
 	// Before the run ends, the asked tickets are read once more.
 	if r.follow() {
 		return true
@@ -439,7 +439,7 @@ func (r *runState) idle() bool {
 	if s == nil || len(r.stops.others) > 0 {
 		return false
 	}
-	if r.stops.first = r.o.probeEnvironment(r.ctx, s, r.winding, r.hear); r.stops.first != nil {
+	if r.stops.first = r.o.probeEnvironment(r.ctx, s, r.takeDrainRequest, r.hear); r.stops.first != nil {
 		return false
 	}
 	r.envSaid = false
@@ -453,7 +453,7 @@ func (r *runState) returned(res result) {
 	delete(r.inflight, res.id)
 	o.stoppedBy(res.id, res.stop)
 	o.endFootprint(res.id)
-	o.settled(r.keep, res.id, res.how)
+	o.countSettling(r.keep, res.id, res.how)
 	if res.counted && res.how == requeued {
 		r.count-- // it started too early, and counts once it starts again
 	}
@@ -511,7 +511,7 @@ func (r *runState) reportQueue(n int) {
 func (r *runState) end() int {
 	o, c := r.o, r.o.cfg
 	interrupted := r.ctx.Err() != nil
-	o.settle(r.keep, r.results, r.inflight) // after Ctrl+C: otherwise none is in flight
+	o.awaitInflight(r.keep, r.results, r.inflight) // after Ctrl+C: otherwise none is in flight
 	o.leaveBehind(r.ctx)
 	var end string
 	switch {
@@ -530,13 +530,13 @@ func (r *runState) end() int {
 	return ExitOK
 }
 
-// settle waits after Ctrl+C for the workers in flight to return, so what follows (triage, the run
+// awaitInflight waits after Ctrl+C for the workers in flight to return, so what follows (triage, the run
 // report) reads a loop that has stopped changing and no worker is left behind. Each command a
 // worker runs stops with the run or at its time limit, and only what must finish once begun (a
 // merge under way, the notes after it) goes on, so they return within seconds, or within a
 // command's time limit when one hangs. Those not back within settleSay are named, so the terminal
 // doesn't sit silent meanwhile. A worker that settled still counts toward the hold.
-func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[string]bool) {
+func (o *Loop) awaitInflight(ctx context.Context, results <-chan result, inflight map[string]bool) {
 	slow := time.NewTimer(settleSay)
 	defer slow.Stop()
 	for len(inflight) > 0 {
@@ -544,7 +544,7 @@ func (o *Loop) settle(ctx context.Context, results <-chan result, inflight map[s
 		case r := <-results:
 			delete(inflight, r.id)
 			o.stoppedBy(r.id, r.stop)
-			o.settled(ctx, r.id, r.how)
+			o.countSettling(ctx, r.id, r.how)
 		case <-slow.C:
 			o.sayWaiting(inflight)
 		}
@@ -642,7 +642,7 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 	// ticket waiting on a question is the exception: bd keeps it out of ready until the question is
 	// answered, and then it comes back.
 	skip := map[string]bool{}
-	for _, id := range o.setAside() {
+	for _, id := range o.asideList() {
 		skip[id] = !o.isAsked(id)
 	}
 	for id := range running {
@@ -699,12 +699,12 @@ func (o *Loop) pick(ctx context.Context, running map[string]bool) (*Ticket, int,
 
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
 // not on Base, or nil. A fast-forward there moves whichever branch is checked out, so it must be
-// Base. held, when set, says what is left for review: a finished ticket, which the reason then
+// Base. leftForReview, when set, says what is left for review: a finished ticket, which the reason then
 // blocks from merging. lock is held for each read of the checkout (see readCheckout).
-func (o *Loop) checkoutUnready(ctx context.Context, held string, lock sync.Locker) *stopReason {
+func (o *Loop) checkoutUnready(ctx context.Context, leftForReview string, lock sync.Locker) *stopReason {
 	c := o.cfg
 	stop := func(s *stopReason, why string) *stopReason {
-		if held == "" {
+		if leftForReview == "" {
 			return s
 		}
 		return s.blocks(why)
@@ -712,16 +712,16 @@ func (o *Loop) checkoutUnready(ctx context.Context, held string, lock sync.Locke
 	dirty, branch, err := o.readCheckout(ctx, lock)
 	if err != nil {
 		return stop(halt(ExitTool, stopGitFailed,
-			": could not read the state of %s%s; stopping%s", c.Repo, because(err), held).causedBy(err), "git failed")
+			": could not read the state of %s%s; stopping%s", c.Repo, because(err), leftForReview).causedBy(err), "git failed")
 	}
 	if dirty != "" {
 		return stop(halt(ExitDirty, stopDirtyTree,
-			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, held),
+			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, leftForReview),
 			"main checkout has uncommitted changes")
 	}
 	if branch != c.Base {
 		return stop(halt(ExitDirty, stopDirtyTree,
-			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, held),
+			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, leftForReview),
 			"main checkout is not on "+c.Base)
 	}
 	return nil
@@ -733,7 +733,7 @@ const gitTries = 3
 
 // readCheckout returns the main checkout's uncommitted changes and its branch, or git's error. It
 // holds lock for each try and lets go of it while it waits to try again: repoMu for a caller that
-// doesn't hold it, heldAlready for one that does.
+// doesn't hold it, alreadyLocked for one that does.
 func (o *Loop) readCheckout(ctx context.Context, lock sync.Locker) (dirty, branch string, err error) {
 	c := o.cfg
 	for try := 1; ; try++ {
@@ -752,11 +752,11 @@ func (o *Loop) readCheckout(ctx context.Context, lock sync.Locker) (dirty, branc
 	}
 }
 
-// heldAlready is the lock readCheckout takes for a caller that holds repoMu already.
-type heldAlready struct{}
+// alreadyLocked is the lock readCheckout takes for a caller that holds repoMu already.
+type alreadyLocked struct{}
 
-func (heldAlready) Lock()   {}
-func (heldAlready) Unlock() {}
+func (alreadyLocked) Lock()   {}
+func (alreadyLocked) Unlock() {}
 
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
 // how many other ready tickets aren't either. A ticket labelled SoloLabel runs alone: while solo

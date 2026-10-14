@@ -11,9 +11,9 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// current heads the worker boxes with a Current label in the working colour, where the eye should
+// withCurrentLabel heads the worker boxes with a Current label in the working colour, where the eye should
 // land; nothing when there are no boxes.
-func current(panels string) string {
+func withCurrentLabel(panels string) string {
 	if panels == "" {
 		return ""
 	}

@@ -34,7 +34,7 @@ type checked struct {
 // in the ticket's merge; resolved says its worker resolved the rebase. The caller holds the merge queue,
 // which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
 // is rejected. It returns errInterrupted after Ctrl+C, the worker's work left as it is.
-func (o *Loop) checkRebased(ctx context.Context, repo, queue *held, r rebaseStop, fixes *int,
+func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fixes *int,
 	resolved bool) (checked, *stopReason) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failure

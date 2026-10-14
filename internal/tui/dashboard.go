@@ -114,7 +114,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch ev.Kind {
 		case dispatch.EvDispatch:
 			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
-			m.working(ev.Ticket, ev.Title)
+			m.pickUp(ev.Ticket, ev.Title)
 		case dispatch.EvQueue:
 			m.queued, m.unclosed, m.solo = ev.Queued, ev.Unclosed, ev.Solo
 		case dispatch.EvClosed:
@@ -127,7 +127,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// one does, or blocked, when only its merge needs the maintainer (MERGE_CONFLICT). The
 			// rest are about a ticket still running (LONG_RUNNING) or already deferred
 			// (TRIAGE_FAILED), whose row stays as it is.
-			if ev.Ticket != "" && ev.Aside && !m.blocked(ev) {
+			if ev.Ticket != "" && ev.Aside && !m.markBlocked(ev) {
 				why := ev.Detail
 				if why == "" {
 					why = "left for review, see the log"
@@ -141,7 +141,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case dispatch.EvReopened: // set aside, now back in the queue: no longer counted set aside
 			m.setRow(ev.Ticket, rowWaiting, "back in the queue: "+ev.Detail)
 		case dispatch.EvAnswered: // its title for a ticket carried over from the last run, with no row yet
-			m.working(ev.Ticket, ev.Title)
+			m.pickUp(ev.Ticket, ev.Title)
 		case dispatch.EvTriage:
 			m.triaged++
 			// A verdict on an earlier deferral, in after the ticket came back, would outlast the next.
@@ -156,12 +156,12 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stopping = true
 			// A stop found before dispatching belongs to no ticket; one met as a finished ticket
 			// merged (DIRTY_TREE, say) blocks it.
-			if ev.Ticket != "" && !m.blocked(ev) {
+			if ev.Ticket != "" && !m.markBlocked(ev) {
 				m.setRow(ev.Ticket, rowStopped, "")
 			}
 		case dispatch.EvStop, dispatch.EvDone:
 			if ev.Kind == dispatch.EvStop {
-				m.blocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
+				m.markBlocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
 				for i := range m.rows {
 					if m.rows[i].state == rowWorking {
 						m.rows[i].state = rowStopped
@@ -290,7 +290,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	fits := func(room int, parts ...string) bool { return lineCount(stack(parts...)) <= room }
 	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
 	stats := m.statsTable(w)
-	panels, list := current(m.workerPanels(w)), current(m.workerList(w))
+	panels, list := withCurrentLabel(m.workerPanels(w)), withCurrentLabel(m.workerList(w))
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
 	need := lineCount(title) + lineCount(stats) + max(m.cfg.Concurrency, 1) + 3 + m.footLines()
 	if lines := tableLines(m.height); need+lines <= m.height {

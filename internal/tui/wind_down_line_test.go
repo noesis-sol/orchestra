@@ -30,7 +30,7 @@ func windingDown(t *testing.T) Dashboard {
 	for i, id := range []string{"orchestra-evsp", "orchestra-74b2.18", "orchestra-6i2h", "orchestra-a1b"} {
 		m.active[id] = dispatch.Status{Ticket: id, Title: "Ticket " + id, Agent: "working",
 			Started: now.Add(-time.Duration(4-i) * time.Minute)}
-		m.working(id, "Ticket "+id)
+		m.pickUp(id, "Ticket "+id)
 	}
 	return press(m, "s", "y")
 }

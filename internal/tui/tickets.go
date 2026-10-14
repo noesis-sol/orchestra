@@ -52,9 +52,9 @@ func (m *Dashboard) setRow(id string, state rowState, note string) {
 	m.rows[i].state, m.rows[i].note = state, note
 }
 
-// blocked shows ev's ticket as blocked, its work done but its merge waiting on the maintainer, with
+// markBlocked shows ev's ticket as blocked, its work done but its merge waiting on the maintainer, with
 // why, and reports whether ev says so (Event.Blocked).
-func (m *Dashboard) blocked(ev dispatch.Event) bool {
+func (m *Dashboard) markBlocked(ev dispatch.Event) bool {
 	if ev.Ticket == "" || ev.Blocked == "" {
 		return false
 	}
@@ -88,9 +88,9 @@ func (m Dashboard) setAside() int {
 	return n
 }
 
-// working shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
+// pickUp shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
 // run, keeps its row, which drops the old verdict; title "" keeps the row's.
-func (m *Dashboard) working(id, title string) {
+func (m *Dashboard) pickUp(id, title string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id, title: title, state: rowWorking})

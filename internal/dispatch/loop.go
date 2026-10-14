@@ -100,13 +100,13 @@ type Loop struct {
 	picks     int                   // how many times pick has read bd ready
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
-	askedIDs map[string]askedWorker
+	askedIDs map[string]workerSpot
 	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
 	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
-	placed map[string]askedWorker
-	// resumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
-	// resumeGone), which happens once for each.
-	resumed map[string]bool
+	placed map[string]workerSpot
+	// sessionResumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
+	// resumeSession), which happens once for each.
+	sessionResumed map[string]bool
 	// keptOut: the workers the last run left behind that this run doesn't carry over but doesn't
 	// drop either, on tickets outside its scope or that it couldn't check, saved again for a later
 	// run as they were.

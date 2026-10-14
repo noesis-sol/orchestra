@@ -55,7 +55,7 @@ func TestATicketWhoseWorktreeLeftItsBranchIsSetAside(t *testing.T) {
 				if n := checkRuns(t, dir, "A"); n != 0 {
 					t.Errorf("A's check ran %d times, want none", n)
 				}
-				if got := o.setAside(); !equal(got, []string{"A"}) {
+				if got := o.asideList(); !equal(got, []string{"A"}) {
 					t.Errorf("set aside %v, want A", got)
 				}
 				if !unmergedLabel(t, h, "A") {
@@ -103,7 +103,7 @@ func TestMergeOfAWorktreeOffItsBranchRebasesNothing(t *testing.T) {
 	if h.mem.log("fix") != fix || h.mem.log("main") != before {
 		t.Errorf("nothing should be rebased or merged; fix:\n%s\nmain:\n%s", h.mem.log("fix"), h.mem.log("main"))
 	}
-	if got := o.setAside(); !equal(got, []string{"A"}) {
+	if got := o.asideList(); !equal(got, []string{"A"}) {
 		t.Errorf("set aside %v, want A", got)
 	}
 }

@@ -192,8 +192,8 @@ func (o *Loop) label(ctx context.Context, id string) bool {
 	return true
 }
 
-// merged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
-func (o *Loop) merged(ctx context.Context, id string) {
+// clearUnmerged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
+func (o *Loop) clearUnmerged(ctx context.Context, id string) {
 	o.mu.Lock()
 	delete(o.unmerged, id)
 	labelled := o.labelled[id]

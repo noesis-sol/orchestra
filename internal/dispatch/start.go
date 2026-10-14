@@ -224,7 +224,7 @@ type workerStart struct {
 
 // place places the worker where it is being started, with or without its hooks.
 func (s *workerStart) place() {
-	s.o.place(s.id, askedWorker{tab: s.tab, pane: s.pane, wt: s.wt, hooks: s.report != nil})
+	s.o.place(s.id, workerSpot{tab: s.tab, pane: s.pane, wt: s.wt, hooks: s.report != nil})
 }
 
 // args are the worker's arguments: its MCP servers, the run's arguments for every Claude worker

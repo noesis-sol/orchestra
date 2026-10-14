@@ -51,12 +51,12 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		for _, id := range []string{"A", "B", "C"} {
 			o.setActive(Status{Ticket: id, Title: "Ticket " + id, Tab: "tab-" + id, Started: time.Now()})
 		}
-		turns := map[string]*held{}
+		turns := map[string]*lockGuard{}
 		var order []string
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		take := func(id string) {
-			h := &held{mu: mergeTurn{o: o, id: id}}
+			h := &lockGuard{mu: mergeTurn{o: o, id: id}}
 			turns[id] = h
 			wg.Go(func() {
 				h.lock()
@@ -117,7 +117,7 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 func TestMergeQueueShowsNoTicketNotWorkedOn(t *testing.T) {
 	sink := &stageSink{}
 	o := &Loop{cfg: Config{Base: "main"}, sink: sink}
-	q := &held{mu: mergeTurn{o: o, id: "gone"}}
+	q := &lockGuard{mu: mergeTurn{o: o, id: "gone"}}
 	q.lock()
 	q.release()
 	if got := sink.shown(); len(got) != 0 {

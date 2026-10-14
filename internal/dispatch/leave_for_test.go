@@ -33,7 +33,7 @@ func TestLeaveForLabelsAndWarnsWithTheKind(t *testing.T) {
 	if a, _ := b.Show(context.Background(), "A"); !slices.Contains(a.Labels, UnmergedLabel) {
 		t.Errorf("A's labels %v, without %s", a.Labels, UnmergedLabel)
 	}
-	if got := o.setAside(); !equal(got, []string{"A"}) {
+	if got := o.asideList(); !equal(got, []string{"A"}) {
 		t.Errorf("set aside: %v", got)
 	}
 }

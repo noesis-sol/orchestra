@@ -24,7 +24,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	own := o.merger.CountCommits(keep, c.Repo, c.Base+".."+br)
 	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoChange:
-		repo := &held{mu: &o.repoMu}
+		repo := &lockGuard{mu: &o.repoMu}
 		defer repo.release() // let go of even if the cleanup panics
 		o.closedUnchanged(keep, w, fmt.Sprintf("%s has no commits beyond %s and its worktree is clean", br, c.Base),
 			repo)
@@ -58,7 +58,8 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 		// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 		keep: context.WithoutCancel(ctx),
-		repo: &held{mu: &o.repoMu}, queue: &held{mu: mergeTurn{o: o, id: w.id}}, // let go of even if the merge panics
+		// let go of even if the merge panics
+		repo: &lockGuard{mu: &o.repoMu}, queue: &lockGuard{mu: mergeTurn{o: o, id: w.id}},
 	}
 	defer m.repo.release()
 	m.queue.lock()
@@ -118,7 +119,7 @@ type mergeRun struct {
 	o           *Loop
 	w           worker
 	keep        context.Context
-	repo, queue *held
+	repo, queue *lockGuard
 	handedBack  int // its rebase's conflicts handed back to its worker to resolve
 	fixes       int // its failing check handed back to its worker to fix
 }
@@ -170,7 +171,7 @@ func (m *mergeRun) fastForward() *stopReason {
 	o, c, keep := m.o, m.o.cfg, m.keep
 	id, br, wt, tab := m.w.id, m.w.br, m.w.wt, m.w.tab
 	left := fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)
-	if s := o.checkoutUnready(keep, left, heldAlready{}); s != nil {
+	if s := o.checkoutUnready(keep, left, alreadyLocked{}); s != nil {
 		m.repo.unlock()
 		o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or GIT_FAILED
 		return s
@@ -184,7 +185,7 @@ func (m *mergeRun) fastForward() *stopReason {
 		o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or MERGE_FAILED
 		return s
 	}
-	o.merged(keep, id)
+	o.clearUnmerged(keep, id)
 	o.countMerge()
 	cleaned := o.removeWorktree(keep, id, wt, br)
 	m.repo.unlock()
@@ -467,10 +468,10 @@ func checksFailedDetail(setup, timedOut bool) string {
 // and its worktree is clean; why says which. Nothing is left to merge or to review, so its worktree,
 // branch and tab are removed as after a merge, and the tickets it blocks needn't wait for it. repo,
 // repoMu's guard, is not held by the caller: it is taken for the removal.
-func (o *Loop) closedUnchanged(ctx context.Context, w worker, why string, repo *held) {
+func (o *Loop) closedUnchanged(ctx context.Context, w worker, why string, repo *lockGuard) {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
-	o.merged(ctx, id) // an unmerged label from an earlier run holds nothing now
+	o.clearUnmerged(ctx, id) // an unmerged label from an earlier run holds nothing now
 	repo.lock()
 	cleaned := o.removeWorktree(ctx, id, wt, br)
 	repo.unlock()

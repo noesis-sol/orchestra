@@ -43,7 +43,7 @@ func TestMergeOfADirtyWorktreeSaysItIsDirty(t *testing.T) {
 	if got := read(t, filepath.Join(wt, "a.txt")); got != "a, formatted\n" {
 		t.Errorf("the uncommitted change should be left as it was, got %q", got)
 	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
 }
@@ -91,7 +91,7 @@ func TestMergeWhoseRebaseDoesNotStartSaysSo(t *testing.T) {
 			t.Errorf("events say %q:\n%s", wrong, ev)
 		}
 	}
-	if got := f.orch.setAside(); len(got) != 1 || got[0] != "k-1" {
+	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
 	}
 }

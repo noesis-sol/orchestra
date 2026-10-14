@@ -44,7 +44,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			o.log.Raw("", fmt.Errorf("not carrying over %q from the last run: %s", e.Ticket, why))
 			continue
 		}
-		w := askedWorker{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
+		w := workerSpot{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
 			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left)}
 		if !project.SameTerminal(e.Terminal, o.cfg.Terminal) {
 			o.keptOut = append(o.keptOut, e)
@@ -80,7 +80,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 
 // state is what the worker was left waiting on, for a list of them: "asked Q", or "left running:
 // PAUSED".
-func (w askedWorker) state() string {
+func (w workerSpot) state() string {
 	if w.question != "" {
 		return "asked " + w.question
 	}
@@ -119,14 +119,14 @@ const (
 // with its branch's own commits already on Base, since its ForkKey or else w's fork, was merged by
 // hand (see branchMerged). A worker
 // left unnamed in its pane is named (see earlierState). A ticket in progress whose worker is gone is
-// carried over if its session can be resumed (see resumeGone); without one, it has nothing to carry
+// carried over if its session can be resumed (see resumeSession); without one, it has nothing to carry
 // on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker.
 // One it can't check, as bd can't show its ticket or git can't list the worktrees, isn't gone for
 // that: it is kept, saying why, as is one whose check Ctrl+C cut short, without a word; one whose
 // ticket bd has no trace of (ErrNoTicket), as one deleted, is gone, and dropped. The question
 // the ticket now waits on, if any, replaces the one in w, and a ticket labelled UnmergedLabel loses
 // the label when it merges.
-func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) carryCheck {
+func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carryCheck {
 	c := o.cfg
 	br := branchOf(id)
 	unchecked := func(why string, err error) carryCheck {
@@ -188,7 +188,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) car
 // panes afresh when it restarts, so the pane is looked in only while Herdr has w's tab labelled
 // with the ticket's ID, as merging checks before closing it. The error is Herdr not saying what is
 // there, or not taking the name.
-func (o *Loop) earlierState(ctx context.Context, id string, w askedWorker, tries int) (AgentState, error) {
+func (o *Loop) earlierState(ctx context.Context, id string, w workerSpot, tries int) (AgentState, error) {
 	agent := o.agentName(id)
 	st, err := o.readStatus(ctx, agent, tries)
 	if err != nil || st != StateGone || w.pane == "" {
@@ -222,7 +222,7 @@ const unknownRereads = 5
 // earlierKnownState reads the state of ticket id's earlier worker as earlierState does, reading it
 // again while Herdr can't tell what it is doing, as for a moment while it redraws: StateUnknown is
 // one that stays so.
-func (o *Loop) earlierKnownState(ctx context.Context, id string, w askedWorker) (AgentState, error) {
+func (o *Loop) earlierKnownState(ctx context.Context, id string, w workerSpot) (AgentState, error) {
 	st, err := o.earlierState(ctx, id, w, 5)
 	for range unknownRereads {
 		if err != nil || st != StateUnknown || !sleep(ctx, o.pollEvery()) {
@@ -294,7 +294,7 @@ func (o *Loop) SaveLeft() {
 func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 	var left []project.LeftWorker
 	var said []string
-	add := func(id string, w askedWorker) {
+	add := func(id string, w workerSpot) {
 		if w.fork == "" {
 			w.fork = o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
 		}
@@ -347,11 +347,11 @@ func ticketsOf(left []project.LeftWorker) []string {
 
 // place records where ticket id's worker is, as it was adopted in this run, or from when its tab was
 // opened (see startWorker).
-func (o *Loop) place(id string, w askedWorker) {
+func (o *Loop) place(id string, w workerSpot) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.placed == nil {
-		o.placed = map[string]askedWorker{}
+		o.placed = map[string]workerSpot{}
 	}
 	o.placed[id] = w
 }

@@ -68,7 +68,7 @@ func TestWorkersFailingAtOnceHoldTheRun(t *testing.T) {
 				t.Errorf("%s's notes:\n%s", id, n)
 			}
 		}
-		if aside := o.setAside(); len(aside) != 0 {
+		if aside := o.asideList(); len(aside) != 0 {
 			t.Errorf("set aside: %v", aside)
 		}
 	})

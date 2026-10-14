@@ -31,18 +31,18 @@ func (o *Loop) sessionOf(wt string, hooks bool) (Session, bool) {
 	return o.reporter.Session(wt)
 }
 
-// firstResume reports whether ticket id's worker has not had its session resumed in this run yet,
+// claimSessionResume reports whether ticket id's worker has not had its session resumed in this run yet,
 // and notes that it has from now on.
-func (o *Loop) firstResume(id string) bool {
+func (o *Loop) claimSessionResume(id string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.resumed[id] {
+	if o.sessionResumed[id] {
 		return false
 	}
-	if o.resumed == nil {
-		o.resumed = map[string]bool{}
+	if o.sessionResumed == nil {
+		o.sessionResumed = map[string]bool{}
 	}
-	o.resumed[id] = true
+	o.sessionResumed[id] = true
 	return true
 }
 
@@ -57,8 +57,8 @@ func (o *Loop) workerGone(ctx context.Context, agent string) bool {
 func (o *Loop) pausedGone(ctx context.Context, t Ticket, w worker, how *settling) *stopReason {
 	id := t.ID
 	s, ok := o.sessionOf(w.wt, w.hooks)
-	if ok && o.firstResume(id) {
-		return o.resumeGone(ctx, t, w.wt, w.tab, "", false, s, how)
+	if ok && o.claimSessionResume(id) {
+		return o.resumeSession(ctx, t, w.wt, w.tab, "", false, s, how)
 	}
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, "")
 	again := ""
@@ -73,19 +73,19 @@ func (o *Loop) pausedGone(ctx context.Context, t Ticket, w worker, how *settling
 // resumedInTab says asked ticket t, whose worker w is gone from its tab with the ticket in progress,
 // comes back to have its session s resumed (see adoptAsked), and records its footprint; the caller
 // counts it running.
-func (o *Loop) resumedInTab(t Ticket, w askedWorker, s Session) adoption {
+func (o *Loop) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
 	o.setAsked(t.ID, nil)
 	o.setParent(t.ID, t.Parent)
 	o.startFootprint(t)
 	return adoption{t: t, w: w, resume: &s}
 }
 
-// resumeGone starts ticket t's worker again, gone from tab with the ticket in progress, or back
+// resumeSession starts ticket t's worker again, gone from tab with the ticket in progress, or back
 // through bd ready, open, for it to claim again, in a new tab in its worktree wt, resuming its
 // session s, and tells it to carry on; question is the one it was left waiting on, if any, answered
 // since. The worker is then adopted, as one back from a question is (see adopt), its ticket limit
 // counted afresh. It returns and sets how as work does.
-func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question string, back bool, s Session,
+func (o *Loop) resumeSession(ctx context.Context, t Ticket, wt, tab, question string, back bool, s Session,
 	how *settling) *stopReason {
 	c := o.cfg
 	id := t.ID
@@ -166,6 +166,6 @@ func (o *Loop) resumeGone(ctx context.Context, t Ticket, wt, tab, question strin
 			"(worktree %s); stopping so it can be looked at", id, launched.tab, wt)
 	}
 	o.info("  %s's worker carries on in tab %s, its session resumed; adopting it", id, launched.tab)
-	w := askedWorker{tab: launched.tab, pane: launched.pane, wt: wt, hooks: launched.hooks}
+	w := workerSpot{tab: launched.tab, pane: launched.pane, wt: wt, hooks: launched.hooks}
 	return o.adopt(ctx, t, agent, w, StateWorking, begun, how)
 }

@@ -107,7 +107,7 @@ func TestResumeAfterDrainDispatchesAgain(t *testing.T) {
 			if got := h.sink.dispatched(); !equal(got, []string{"A"}) || !strings.Contains(h.sink.text(), drainLine) {
 				t.Errorf("dispatched %v while winding down:\n%s", got, h.sink.text())
 			}
-			o.Resume("from the dashboard")
+			o.Undrain("from the dashboard")
 			time.Sleep(time.Second)
 			if got := h.sink.dispatched(); !equal(got, []string{"A", "B"}) {
 				t.Errorf("dispatched %v after the resume, want B too, beside A", got)

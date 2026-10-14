@@ -180,7 +180,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	tag := organ.EvidenceID()
 	commits := o.history.Subjects(ctx, c.Repo, o.startHead+".."+c.Base)
 	var setAside, checks strings.Builder
-	for _, id := range o.setAside() {
+	for _, id := range o.asideList() {
 		show := o.tickets.Describe(ctx, id)
 		setAside.WriteString(show + "\n")
 		if f, ok := o.checkSaidOf(id); ok {

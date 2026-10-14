@@ -104,7 +104,7 @@ func TestAMergeWhileBaseKeepsMoving(t *testing.T) {
 				if log := h.logged(); !strings.Contains(log, want) {
 					t.Errorf("log lacks %q:\n%s", want, log)
 				}
-				if got := o.setAside(); !equal(got, []string{"A"}) {
+				if got := o.asideList(); !equal(got, []string{"A"}) {
 					t.Errorf("set aside %v, want A", got)
 				}
 				if !unmergedLabel(t, h, "A") {

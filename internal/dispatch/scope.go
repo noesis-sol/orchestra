@@ -196,7 +196,7 @@ type scopeView struct {
 // scopeView is where the run's scope stands, as the run knows it.
 func (o *Loop) scopeView() scopeView {
 	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
-		aside: func(id string) bool { return slices.Contains(o.setAside(), id) }}
+		aside: func(id string) bool { return slices.Contains(o.asideList(), id) }}
 }
 
 // end is scopeEnd's line.

@@ -38,19 +38,19 @@ func (o *Loop) panicStop(id string, p any) *stopReason {
 	return s
 }
 
-// held is a mutex taken and let go of along the way, as merging does, released by a deferred
+// lockGuard is a mutex taken and let go of along the way, as merging does, released by a deferred
 // release however the function ends: a worker that panics while holding it must not leave the
 // other workers waiting for it forever, nor unlock it twice, which Go can't recover from.
-type held struct {
+type lockGuard struct {
 	mu sync.Locker
 	on bool
 }
 
-func (h *held) lock()   { h.mu.Lock(); h.on = true }
-func (h *held) unlock() { h.on = false; h.mu.Unlock() }
+func (h *lockGuard) lock()   { h.mu.Lock(); h.on = true }
+func (h *lockGuard) unlock() { h.on = false; h.mu.Unlock() }
 
 // release lets go of the mutex if it is held.
-func (h *held) release() {
+func (h *lockGuard) release() {
 	if h.on {
 		h.unlock()
 	}

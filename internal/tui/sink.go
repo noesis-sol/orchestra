@@ -224,7 +224,7 @@ func renderEvent(ev dispatch.Event) string {
 // own line: in the done colour when the scope is finished, else in the deferred colour, as work left.
 func closing(ev dispatch.Event, took time.Duration) string {
 	text, scope, scoped := strings.Cut(ev.Text, "; SCOPE_")
-	facts := tickets(ev.N)
+	facts := ticketCount(ev.N)
 	if took >= time.Second {
 		facts += " · " + runTime(took)
 	}
@@ -254,8 +254,8 @@ func headline(text string, limit int) string {
 	return text
 }
 
-// tickets is "no tickets", "1 ticket" or "n tickets".
-func tickets(n int) string {
+// ticketCount is "no tickets", "1 ticket" or "n tickets".
+func ticketCount(n int) string {
 	switch n {
 	case 0:
 		return "no tickets"

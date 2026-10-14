@@ -90,7 +90,7 @@ func (r *runState) recheckTickets() {
 	o := r.o
 	for r.stops.first == nil && r.ctx.Err() == nil && o.solo == "" && o.soloFirst == "" &&
 		len(r.inflight) < o.cfg.Concurrency {
-		if r.winding() {
+		if r.takeDrainRequest() {
 			return
 		}
 		rc, ok := o.dueRecheck(r.ctx)

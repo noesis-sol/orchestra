@@ -19,7 +19,7 @@ func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
 	for _, id := range []string{"a", "b", "a", "c"} {
 		o.markAside(id)
 	}
-	if got := o.setAside(); !slices.Equal(got, []string{"a", "b", "c"}) {
+	if got := o.asideList(); !slices.Equal(got, []string{"a", "b", "c"}) {
 		t.Errorf("got %v", got)
 	}
 }

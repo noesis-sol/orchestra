@@ -74,7 +74,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 			// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
 			// ticket from now on, as one adopted does.
 			o.takeOn(t, earlier)
-			if o.resume(ctx, id, agent, earlier) {
+			if o.tellToCarryOn(ctx, id, agent, earlier) {
 				o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
 					id, earlier.tab, earlier.told())
 				return o.adopt(ctx, t, agent, earlier, StateWorking, adopted, how)
@@ -148,8 +148,8 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 	// Back from a question with its earlier worker gone from its tab, the ticket has that worker's
 	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
 	if asked && st == StateGone {
-		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.firstResume(id) {
-			return o.resumeGone(ctx, t, wt, earlier.tab, earlier.question, true, s, how)
+		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.claimSessionResume(id) {
+			return o.resumeSession(ctx, t, wt, earlier.tab, earlier.question, true, s, how)
 		}
 	}
 
@@ -250,7 +250,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) *stopReason {
 // its question is answered, as if it had just been started on it: it waits for it to settle and
 // merges or sets aside its work as usual. st is its status, as just read, at adopted; how is set as
 // in work.
-func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker, st AgentState, adopted time.Time,
+func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w workerSpot, st AgentState, adopted time.Time,
 	how *settling) *stopReason {
 	id := t.ID
 	base := o.takeOn(t, w)
@@ -271,9 +271,9 @@ func (o *Loop) adopt(ctx context.Context, t Ticket, agent string, w askedWorker,
 // then on leaves the ticket running, labelled (see leaveRunning) and carried over to the next run
 // (see saveCarried), as its worker may close it once orchestra has gone. It returns the ticket's
 // Status.
-func (o *Loop) takeOn(t Ticket, w askedWorker) Status {
+func (o *Loop) takeOn(t Ticket, w workerSpot) Status {
 	id := t.ID
-	o.place(id, askedWorker{tab: w.tab, pane: w.pane, wt: w.wt, fork: w.fork, hooks: w.hooks})
+	o.place(id, workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, fork: w.fork, hooks: w.hooks})
 	st := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()}
 	o.setActive(st)
 	o.setAsked(id, nil) // back from a question: set aside again once it settles, it stays out
@@ -296,7 +296,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopR
 	}
 	agent := o.agentName(id)
 	if a.resume != nil {
-		return o.resumeGone(ctx, t, w.wt, w.tab, w.question, false, *a.resume, how)
+		return o.resumeSession(ctx, t, w.wt, w.tab, w.question, false, *a.resume, how)
 	}
 	st, err := o.readStatus(ctx, agent, 5)
 	adopted := time.Now() // its hooks reported anything older in its earlier turns
@@ -308,7 +308,7 @@ func (o *Loop) adoptAsked(ctx context.Context, a adoption, how *settling) *stopR
 			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
 	}
 	switch {
-	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.resume(ctx, id, agent, w):
+	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.tellToCarryOn(ctx, id, agent, w):
 		o.info("  %s's worker in tab %s was told %s and carries on; adopting it", id, w.tab, w.told())
 		st = StateWorking
 	case ctx.Err() != nil:
@@ -330,10 +330,10 @@ func (o *Loop) budgetNote() string {
 		"so pace yourself to it.\n", command.ShortDuration(limit))
 }
 
-// resume tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
+// tellToCarryOn tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
 // to carry on, so it keeps what it already knows of the ticket; one the last run left running, with
 // no question, is told its ticket is back. It reports whether it took that up.
-func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool {
+func (o *Loop) tellToCarryOn(ctx context.Context, id, agent string, w workerSpot) bool {
 	msg := fmt.Sprintf("Orchestra: your question %s is answered. Read the answer with bd show %s, "+
 		"claim %s again with bd update %s --claim, and carry on with it where you left off, as your instructions say.",
 		w.question, w.question, id, id)
@@ -352,7 +352,7 @@ func (o *Loop) resume(ctx context.Context, id, agent string, w askedWorker) bool
 }
 
 // told is what resume tells the worker: "Q is answered", or, with no question, "to carry on".
-func (w askedWorker) told() string {
+func (w workerSpot) told() string {
 	if w.question == "" {
 		return "to carry on"
 	}
@@ -389,7 +389,7 @@ func (o *Loop) conclude(ctx context.Context, t Ticket, w worker, head string,
 	*how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
 		o.markAside(id)
-		o.setAsked(id, &askedWorker{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
+		o.setAsked(id, &workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
 		if info.Status != StatusOpen { // back in the queue once answered
 			if err := o.notes.Reopen(keep, id); err != nil {
 				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
