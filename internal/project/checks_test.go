@@ -305,7 +305,7 @@ func TestOldCheckSettingsAreReadAsCheckFast(t *testing.T) {
 	if err != nil || s.CheckFast != "make check" || s.CheckFastTimeout != "5m" {
 		t.Fatalf("%+v, %v", s, err)
 	}
-	if d, err := ResolveCheckTimeout(0, false, s); err != nil || d != 5*time.Minute {
+	if d, err := ResolveCheckTimeout(Given[time.Duration]{}, s); err != nil || d != 5*time.Minute {
 		t.Errorf("a run's check time limit: %s, %v", d, err)
 	}
 	c := DefaultChoice(s, "")
@@ -322,7 +322,7 @@ func TestOldCheckSettingsAreReadAsCheckFast(t *testing.T) {
 		t.Errorf("settings.json:\n%s", raw)
 	}
 	// An invalid old time limit is named as the settings name it.
-	if _, err := ResolveCheckTimeout(0, false, Settings{CheckTimeout: "soon", CheckFastTimeout: "soon"}); err == nil ||
+	if _, err := ResolveCheckTimeout(Given[time.Duration]{}, Settings{CheckTimeout: "soon", CheckFastTimeout: "soon"}); err == nil ||
 		!strings.Contains(err.Error(), "check_timeout must be") {
 		t.Errorf("the old name: %v", err)
 	}
@@ -337,13 +337,13 @@ func TestOldCheckSettingsAreReadAsCheckFast(t *testing.T) {
 	if c := DefaultChoice(s, ""); c.Fast != nil {
 		t.Errorf("check_fast naming the runner leaves it as it is: %+v", c.Fast)
 	}
-	if d, err := ResolveCheckFullTimeout(0, false, Settings{}); err != nil || d != DefaultCheckFullTimeout {
+	if d, err := ResolveCheckFullTimeout(Given[time.Duration]{}, Settings{}); err != nil || d != DefaultCheckFullTimeout {
 		t.Errorf("check-full's default: %s, %v", d, err)
 	}
-	if d, err := ResolveCheckFullTimeout(0, false, Settings{CheckFullTimeout: "90m"}); err != nil || d != 90*time.Minute {
+	if d, err := ResolveCheckFullTimeout(Given[time.Duration]{}, Settings{CheckFullTimeout: "90m"}); err != nil || d != 90*time.Minute {
 		t.Errorf("check_full_timeout: %s, %v", d, err)
 	}
-	if _, err := ResolveCheckFullTimeout(0, true, Settings{}); err == nil ||
+	if _, err := ResolveCheckFullTimeout(Given[time.Duration]{Given: true}, Settings{}); err == nil ||
 		!strings.Contains(err.Error(), "--check-full-timeout must be") {
 		t.Errorf("--check-full-timeout 0: %v", err)
 	}

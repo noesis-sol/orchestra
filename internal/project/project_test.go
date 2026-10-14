@@ -172,7 +172,7 @@ func TestConcurrencyPrecedence(t *testing.T) {
 		{0, true, 3, 0, true}, // --concurrent 0 is out of range, not unset
 	}
 	for _, c := range cases {
-		got, err := ResolveConcurrency(c.flag, c.given, Settings{Concurrency: c.setting})
+		got, err := ResolveConcurrency(Given[int]{Value: c.flag, Given: c.given}, Settings{Concurrency: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
 			t.Errorf("ResolveConcurrency(%d, %v, %d) = %d, %v", c.flag, c.given, c.setting, got, err)
 		}
@@ -192,7 +192,7 @@ func TestTicketLimitPrecedence(t *testing.T) {
 		{-time.Hour, true, "", 0, true}, {0, false, "two hours", 0, true}, {0, false, "-1h", 0, true},
 	}
 	for _, c := range cases {
-		got, err := ResolveTicketLimit(c.flag, c.given, Settings{TicketLimit: c.setting})
+		got, err := ResolveTicketLimit(Given[time.Duration]{Value: c.flag, Given: c.given}, Settings{TicketLimit: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
 			t.Errorf("ResolveTicketLimit(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
 		}
@@ -213,7 +213,7 @@ func TestCheckTimeoutPrecedence(t *testing.T) {
 		{0, false, "0", 0, true}, {0, false, "-5m", 0, true}, {0, false, "five minutes", 0, true},
 	}
 	for _, c := range cases {
-		got, err := ResolveCheckTimeout(c.flag, c.given, Settings{CheckFastTimeout: c.setting})
+		got, err := ResolveCheckTimeout(Given[time.Duration]{Value: c.flag, Given: c.given}, Settings{CheckFastTimeout: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
 			t.Errorf("ResolveCheckTimeout(%s, %v, %q) = %s, %v", c.flag, c.given, c.setting, got, err)
 		}

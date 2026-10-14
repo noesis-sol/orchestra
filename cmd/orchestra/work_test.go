@@ -270,18 +270,18 @@ func TestTicketsFlagSkipsTheQuestion(t *testing.T) {
 		{"ORCHESTRA_TICKETS=0", nil, map[string]string{"ORCHESTRA_TICKETS": "0"}, false},
 		{"--tickets=false over the variable", []string{"--tickets=false"}, map[string]string{"ORCHESTRA_TICKETS": "1"}, false},
 	} {
-		c, _, problems, err := readFlags(tc.args, env(tc.env), io.Discard)
+		c, problems, err := readFlags(tc.args, env(tc.env), io.Discard)
 		if err != nil || len(problems) > 0 || c.Tickets != tc.want {
 			t.Errorf("%s: tickets = %v, want %v (%v, %v)", tc.name, c.Tickets, tc.want, err, problems)
 		}
 	}
 
-	_, _, problems, err := readFlags([]string{"--feature", "Add a flag", "--tickets"}, env(nil), io.Discard)
+	_, problems, err := readFlags([]string{"--feature", "Add a flag", "--tickets"}, env(nil), io.Discard)
 	if err != nil || len(problems) != 1 || !strings.Contains(problems[0], "--feature can't be combined with --tickets") {
 		t.Errorf("--feature with --tickets: %v, %q", err, problems)
 	}
 	// The variable is a default, which --feature overrides.
-	c, _, problems, err := readFlags([]string{"--feature", "Add a flag"}, env(map[string]string{"ORCHESTRA_TICKETS": "1"}),
+	c, problems, err := readFlags([]string{"--feature", "Add a flag"}, env(map[string]string{"ORCHESTRA_TICKETS": "1"}),
 		io.Discard)
 	if err != nil || len(problems) > 0 || c.Feature != "Add a flag" {
 		t.Errorf("--feature with ORCHESTRA_TICKETS=1: %v, %q", err, problems)

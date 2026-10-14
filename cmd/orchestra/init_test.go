@@ -35,7 +35,7 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 		t.Errorf("%s:\n%s", project.FastRunner, runner)
 	}
 	s, _, _ := project.LoadSettings(repo)
-	if _, err := project.ResolveConcurrency(0, false, s); err != nil {
+	if _, err := project.ResolveConcurrency(project.Given[int]{}, s); err != nil {
 		t.Errorf("a run after init: %v", err)
 	}
 }
@@ -47,7 +47,7 @@ func TestInitSavesTheCheckTimeout(t *testing.T) {
 		t.Fatalf("init: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
 	s, _, _ := project.LoadSettings(repo)
-	if d, err := project.ResolveCheckTimeout(0, false, s); s.CheckFastTimeout != "1m30s" || err != nil || d != 90*time.Second {
+	if d, err := project.ResolveCheckTimeout(project.Given[time.Duration]{}, s); s.CheckFastTimeout != "1m30s" || err != nil || d != 90*time.Second {
 		t.Errorf("settings = %+v, a run gets %s, %v", s, d, err)
 	}
 	_, stderr, err = runIn(t, repo, nil, "init", "--check-timeout", "0")

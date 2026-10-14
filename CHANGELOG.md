@@ -29,6 +29,10 @@ All notable changes to orchestra are documented here. The format follows
   input: the launch waits up to 5 seconds for the pane's shell to be back at
   its prompt, and otherwise is refused and the worker started with
   `herdr agent start`, as tmux and cmux already kept to.
+- A `concurrent` in `.orchestra/settings.json` out of range is reported as
+  `.orchestra/settings.json: concurrent must be between 1 and 16 (got …)`,
+  naming the file and key as every other setting's problem does, where it
+  read `--concurrent must be between …`, as if the flag were wrong.
 
 ## [0.7.2] - 2026-10-14
 

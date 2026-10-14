@@ -208,107 +208,200 @@ func settingsKeys() []string {
 	return keys
 }
 
+// Given is a run setting as a flag or its environment variable gives it: Value, and whether either
+// gave it. Where neither did, the project's settings.json decides.
+type Given[T any] struct {
+	Value T
+	Given bool
+}
+
+// setting reads a run setting from the project's settings.json; ok is false where it doesn't set it.
+type setting[T any] func() (v T, ok bool, err error)
+
+// resolve picks a run setting: flag's value when given, which checkFlag (nil for any) must take,
+// else the project's, as read reads it, else def.
+func resolve[T any](flag Given[T], checkFlag func(T) error, read setting[T], def T) (T, error) {
+	var zero T
+	if flag.Given {
+		if checkFlag != nil {
+			if err := checkFlag(flag.Value); err != nil {
+				return zero, err
+			}
+		}
+		return flag.Value, nil
+	}
+	v, ok, err := read()
+	switch {
+	case err != nil:
+		return zero, err
+	case !ok:
+		return def, nil
+	}
+	return v, nil
+}
+
+// fromSettings picks a run setting no flag gives: the project's, as read reads it, else def.
+func fromSettings[T any](read setting[T], def T) (T, error) {
+	return resolve(Given[T]{}, nil, read, def)
+}
+
+// settingErr is err, what is wrong with the value of settings.json's key, as a run's problem names it.
+func settingErr(key string, err error) error {
+	return fmt.Errorf("%s: %s %w", SettingsPath("."), key, err)
+}
+
+// ParseDuration reads a duration such as "5m", which must be positive unless zeroOK, where 0 is
+// none. Its error, which follows the name of what gave text, says so with example.
+func ParseDuration(text, example string, zeroOK bool) (time.Duration, error) {
+	d, err := time.ParseDuration(text)
+	switch {
+	case zeroOK && (err != nil || d < 0):
+		return 0, fmt.Errorf("must be a duration such as %s, or 0 for none (got '%s')", example, text)
+	case !zeroOK && (err != nil || d <= 0):
+		return 0, fmt.Errorf("must be a positive duration such as %s (got '%s')", example, text)
+	}
+	return d, nil
+}
+
+// durationSetting reads the duration settings.json gives key as text ("" where it gives none), as
+// ParseDuration does.
+func durationSetting(key, text, example string, zeroOK bool) setting[time.Duration] {
+	return func() (time.Duration, bool, error) {
+		if text == "" {
+			return 0, false, nil
+		}
+		d, err := ParseDuration(text, example, zeroOK)
+		if err != nil {
+			return 0, false, settingErr(key, err)
+		}
+		return d, true, nil
+	}
+}
+
+// countSetting reads the count settings.json gives key (nil where it gives none), 0 for zero (such
+// as never) or more.
+func countSetting(key, zero string, n *int) setting[int] {
+	return func() (int, bool, error) {
+		switch {
+		case n == nil:
+			return 0, false, nil
+		case *n < 0:
+			return 0, false, settingErr(key, fmt.Errorf("must be 0 (%s) or more (got %d)", zero, *n))
+		}
+		return *n, true, nil
+	}
+}
+
+// choiceSetting reads the choice settings.json gives key as text ("" where it gives none), one of
+// choices.
+func choiceSetting(key, text string, choices []string) setting[string] {
+	return func() (string, bool, error) {
+		switch {
+		case text == "":
+			return "", false, nil
+		case !slices.Contains(choices, text):
+			return "", false, settingErr(key, fmt.Errorf("must be one of %s (got '%s')", strings.Join(choices, ", "), text))
+		}
+		return text, true, nil
+	}
+}
+
+// givenText is a flag's text as a Given: one gives none where it is empty.
+func givenText(v string) Given[string] { return Given[string]{Value: v, Given: v != ""} }
+
+// oneOfFlag checks that the value the flag named flag gives is one of choices.
+func oneOfFlag(flag string, choices []string) func(string) error {
+	return func(v string) error {
+		if !slices.Contains(choices, v) {
+			return fmt.Errorf("%s must be one of %s (got '%s')", flag, strings.Join(choices, ", "), v)
+		}
+		return nil
+	}
+}
+
+// concurrencyRange checks a concurrency is between 1 and MaxConcurrency.
+func concurrencyRange(n int) error {
+	if n < 1 || n > MaxConcurrency {
+		return fmt.Errorf("must be between 1 and %d (got %d)", MaxConcurrency, n)
+	}
+	return nil
+}
+
 // ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT) when given,
 // else the project's setting, else 1. A given 0 is out of range, as any other value outside 1 to
 // MaxConcurrency.
-func ResolveConcurrency(flagValue int, given bool, s Settings) (int, error) {
-	if given {
-		if flagValue < 1 || flagValue > MaxConcurrency {
-			return 0, fmt.Errorf("--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and %d (got %d)",
-				MaxConcurrency, flagValue)
+func ResolveConcurrency(flag Given[int], s Settings) (int, error) {
+	return resolve(flag, func(n int) error {
+		if err := concurrencyRange(n); err != nil {
+			return fmt.Errorf("--concurrent (or ORCHESTRA_CONCURRENT) %w", err)
 		}
-		return flagValue, nil
-	}
-	n := s.Concurrency
-	if n == 0 {
-		n = 1
-	}
-	if n < 1 || n > MaxConcurrency {
-		return 0, fmt.Errorf("--concurrent must be between 1 and %d (got %d)", MaxConcurrency, n)
-	}
-	return n, nil
+		return nil
+	}, func() (int, bool, error) {
+		if s.Concurrency == 0 {
+			return 0, false, nil
+		}
+		if err := concurrencyRange(s.Concurrency); err != nil {
+			return 0, false, settingErr("concurrent", err)
+		}
+		return s.Concurrency, true, nil
+	}, 1)
 }
 
 // ResolveTicketLimit picks a run's ticket limit: --ticket-limit (or TICKET_LIMIT) when given, else
 // the project's setting, else none (0).
-func ResolveTicketLimit(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
-	if given {
-		if flagValue < 0 {
-			return 0, fmt.Errorf("--ticket-limit must not be negative (got %s)", flagValue)
+func ResolveTicketLimit(flag Given[time.Duration], s Settings) (time.Duration, error) {
+	return resolve(flag, func(d time.Duration) error {
+		if d < 0 {
+			return fmt.Errorf("--ticket-limit must not be negative (got %s)", d)
 		}
-		return flagValue, nil
-	}
-	if s.TicketLimit == "" {
-		return 0, nil
-	}
-	d, err := time.ParseDuration(s.TicketLimit)
-	if err != nil || d < 0 {
-		return 0, fmt.Errorf("%s: ticket_limit must be a duration such as 2h, or 0 for none (got '%s')",
-			SettingsPath("."), s.TicketLimit)
-	}
-	return d, nil
+		return nil
+	}, durationSetting("ticket_limit", s.TicketLimit, "2h", true), 0)
 }
 
 // ResolveCheckTimeout picks how long a run's fast check may run: --check-timeout (or
 // ORCHESTRA_CHECK_TIMEOUT) when given, else the project's setting, else DefaultCheckTimeout.
-func ResolveCheckTimeout(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
+func ResolveCheckTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
 	key := "check_fast_timeout"
 	if s.CheckTimeout != "" && s.CheckFastTimeout == s.CheckTimeout {
 		key = "check_timeout" // the settings' old name for it
 	}
-	return resolveTimeout(flagValue, given, "check-timeout", key, s.CheckFastTimeout, DefaultCheckTimeout)
+	return resolve(flag, positiveFlag("check-timeout"), durationSetting(key, s.CheckFastTimeout, "5m", false),
+		DefaultCheckTimeout)
 }
 
 // ResolveCheckFullTimeout picks how long a run's full check may run: --check-full-timeout (or
 // ORCHESTRA_CHECK_FULL_TIMEOUT) when given, else the project's setting, else DefaultCheckFullTimeout.
-func ResolveCheckFullTimeout(flagValue time.Duration, given bool, s Settings) (time.Duration, error) {
-	return resolveTimeout(flagValue, given, "check-full-timeout", "check_full_timeout", s.CheckFullTimeout,
-		DefaultCheckFullTimeout)
+func ResolveCheckFullTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
+	return resolve(flag, positiveFlag("check-full-timeout"),
+		durationSetting("check_full_timeout", s.CheckFullTimeout, "5m", false), DefaultCheckFullTimeout)
 }
 
-// resolveTimeout picks a check's time limit: the flag's when given, else the setting key's, else def.
-func resolveTimeout(
-	flagValue time.Duration, given bool, flagName, key, setting string, def time.Duration,
-) (time.Duration, error) {
-	if given {
-		if flagValue <= 0 {
-			return 0, fmt.Errorf("--%s must be a positive duration such as 5m (got %s)", flagName, flagValue)
+// positiveFlag checks that the duration the flag called name gives is positive.
+func positiveFlag(name string) func(time.Duration) error {
+	return func(d time.Duration) error {
+		if d <= 0 {
+			return fmt.Errorf("--%s must be a positive duration such as 5m (got %s)", name, d)
 		}
-		return flagValue, nil
+		return nil
 	}
-	if setting == "" {
-		return def, nil
-	}
-	d, err := ParseCheckTimeout(setting)
-	if err != nil {
-		return 0, fmt.Errorf("%s: %s %w", SettingsPath("."), key, err)
-	}
-	return d, nil
 }
 
 // ParseCheckTimeout reads a check time limit such as "5m", which must be positive.
-func ParseCheckTimeout(v string) (time.Duration, error) {
-	d, err := time.ParseDuration(v)
-	if err != nil || d <= 0 {
-		return 0, fmt.Errorf("must be a positive duration such as 5m (got '%s')", v)
-	}
-	return d, nil
-}
+func ParseCheckTimeout(v string) (time.Duration, error) { return ParseDuration(v, "5m", false) }
 
 // ResolveConflictResolution picks whether a run hands a finished ticket's rebase conflicts back to
 // its worker, and for how long: --resolve-conflicts when given, else the project's setting, else on;
 // the time limit is the project's, else DefaultResolveTimeout.
-func ResolveConflictResolution(flagValue, given bool, s Settings) (on bool, limit time.Duration, err error) {
-	on = flagValue
-	if !given {
-		on = s.ResolveConflicts == nil || *s.ResolveConflicts
+func ResolveConflictResolution(flag Given[bool], s Settings) (on bool, limit time.Duration, err error) {
+	on, err = resolve(flag, nil, func() (bool, bool, error) {
+		return s.ResolveConflicts != nil && *s.ResolveConflicts, s.ResolveConflicts != nil, nil
+	}, true)
+	if err == nil {
+		limit, err = fromSettings(durationSetting("resolve_timeout", s.ResolveTimeout, "20m", false),
+			DefaultResolveTimeout)
 	}
-	if s.ResolveTimeout == "" {
-		return on, DefaultResolveTimeout, nil
-	}
-	if limit, err = time.ParseDuration(s.ResolveTimeout); err != nil || limit <= 0 {
-		return false, 0, fmt.Errorf("%s: resolve_timeout must be a positive duration such as 20m (got '%s')",
-			SettingsPath("."), s.ResolveTimeout)
+	if err != nil {
+		return false, 0, err
 	}
 	return on, limit, nil
 }
@@ -316,13 +409,7 @@ func ResolveConflictResolution(flagValue, given bool, s Settings) (on bool, limi
 // ResolveCheckHandBacks picks how many times a run hands a failed check on a finished ticket's
 // rebased branch back to its worker: the project's setting, else DefaultCheckHandBacks; 0 for never.
 func ResolveCheckHandBacks(s Settings) (int, error) {
-	if s.CheckHandBacks == nil {
-		return DefaultCheckHandBacks, nil
-	}
-	if n := *s.CheckHandBacks; n >= 0 {
-		return n, nil
-	}
-	return 0, fmt.Errorf("%s: check_hand_backs must be 0 (never) or more (got %d)", SettingsPath("."), *s.CheckHandBacks)
+	return fromSettings(countSetting("check_hand_backs", "never", s.CheckHandBacks), DefaultCheckHandBacks)
 }
 
 // ResolveExcludeTypes picks the issue types a run leaves out of bd ready: the project's setting,
@@ -334,8 +421,7 @@ func ResolveExcludeTypes(s Settings) ([]string, error) {
 	types := []string{}
 	for _, t := range *s.ExcludeTypes {
 		if t == "" || strings.ContainsAny(t, ", \t\n") {
-			return nil, fmt.Errorf("%s: exclude_types must be a list of issue types such as [\"epic\"] (got %q)",
-				SettingsPath("."), t)
+			return nil, settingErr("exclude_types", fmt.Errorf("must be a list of issue types such as [\"epic\"] (got %q)", t))
 		}
 		types = append(types, t)
 	}
@@ -351,8 +437,8 @@ func ResolveSetupFiles(s Settings) ([]string, error) {
 	globs := []string{}
 	for _, g := range *s.SetupFiles {
 		if _, err := path.Match(g, ""); err != nil || strings.TrimSpace(g) == "" {
-			return nil, fmt.Errorf("%s: setup_files must be a list of file names or globs such as [\"package-lock.json\"] "+
-				"(got %q)", SettingsPath("."), g)
+			return nil, settingErr("setup_files", fmt.Errorf(
+				"must be a list of file names or globs such as [\"package-lock.json\"] (got %q)", g))
 		}
 		globs = append(globs, g)
 	}
@@ -365,18 +451,8 @@ var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 // ResolveEffort picks an effort: the flag's (or its variable's) when given, else the project's
 // setting called key, else "" (the default). Either must be one of Efforts.
 func ResolveEffort(flagValue, key, setting string) (string, error) {
-	switch {
-	case flagValue != "":
-		if !slices.Contains(Efforts, flagValue) {
-			return "", fmt.Errorf("--%s must be one of %s (got '%s')",
-				strings.ReplaceAll(key, "_", "-"), strings.Join(Efforts, ", "), flagValue)
-		}
-		return flagValue, nil
-	case setting != "" && !slices.Contains(Efforts, setting):
-		return "", fmt.Errorf("%s: %s must be one of %s (got '%s')",
-			SettingsPath("."), key, strings.Join(Efforts, ", "), setting)
-	}
-	return setting, nil
+	return resolve(givenText(flagValue), oneOfFlag("--"+strings.ReplaceAll(key, "_", "-"), Efforts),
+		choiceSetting(key, setting, Efforts), "")
 }
 
 // The terminals workers run in, as settings.json's "terminal", --terminal and the run's state file
@@ -394,20 +470,8 @@ var Terminals = []string{TerminalHerdr, TerminalTmux, TerminalCmux, TerminalAuto
 // ResolveTerminal picks a run's terminal: flagValue (from --terminal or ORCHESTRA_TERMINAL) unless
 // it is empty, else the project's setting, else TerminalAuto, for the run to choose where it runs.
 func ResolveTerminal(flagValue string, s Settings) (string, error) {
-	switch {
-	case flagValue != "":
-		if !slices.Contains(Terminals, flagValue) {
-			return "", fmt.Errorf("--terminal (or ORCHESTRA_TERMINAL) must be one of %s (got '%s')",
-				strings.Join(Terminals, ", "), flagValue)
-		}
-		return flagValue, nil
-	case s.Terminal == "":
-		return TerminalAuto, nil
-	case !slices.Contains(Terminals, s.Terminal):
-		return "", fmt.Errorf("%s: terminal must be one of %s (got '%s')",
-			SettingsPath("."), strings.Join(Terminals, ", "), s.Terminal)
-	}
-	return s.Terminal, nil
+	return resolve(givenText(flagValue), oneOfFlag("--terminal (or ORCHESTRA_TERMINAL)", Terminals),
+		choiceSetting("terminal", s.Terminal, Terminals), TerminalAuto)
 }
 
 // SameTerminal reports whether a and b name the same terminal; "" is Herdr, where every worker ran
@@ -425,21 +489,17 @@ func SameTerminal(a, b string) bool {
 // ResolveEnvironmentHold picks a run's environment hold from the project's settings: how many
 // tickets in a row (0: off) and how soon after dispatch a worker failing counts as failing at once.
 func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err error) {
-	count, window = DefaultEnvironmentHoldCount, DefaultEnvironmentHoldWindow
 	h := s.EnvironmentHold
 	if h == nil {
-		return count, window, nil
+		h = &EnvironmentHold{}
 	}
-	if h.Count != nil {
-		if count = *h.Count; count < 0 {
-			return 0, 0, fmt.Errorf("%s: environment_hold count must be 0 (off) or more (got %d)", SettingsPath("."), count)
-		}
+	count, err = fromSettings(countSetting("environment_hold count", "off", h.Count), DefaultEnvironmentHoldCount)
+	if err == nil {
+		window, err = fromSettings(durationSetting("environment_hold window", h.Window, "2m", false),
+			DefaultEnvironmentHoldWindow)
 	}
-	if h.Window != "" {
-		if window, err = time.ParseDuration(h.Window); err != nil || window <= 0 {
-			return 0, 0, fmt.Errorf("%s: environment_hold window must be a positive duration such as 2m (got '%s')",
-				SettingsPath("."), h.Window)
-		}
+	if err != nil {
+		return 0, 0, err
 	}
 	return count, window, nil
 }
@@ -448,16 +508,8 @@ func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err er
 // probes the machine with one worker without a ticket; 0 for no probe.
 func ResolveEnvironmentProbe(s Settings) (time.Duration, error) {
 	h := s.EnvironmentHold
-	if h == nil || h.Probe == "" {
-		return DefaultEnvironmentProbe, nil
+	if h == nil {
+		h = &EnvironmentHold{}
 	}
-	d, err := time.ParseDuration(h.Probe)
-	if h.Probe == "0" {
-		d, err = 0, nil
-	}
-	if err != nil || d < 0 {
-		return 0, fmt.Errorf("%s: environment_hold probe must be a duration such as 10m, or 0 for none (got '%s')",
-			SettingsPath("."), h.Probe)
-	}
-	return d, nil
+	return fromSettings(durationSetting("environment_hold probe", h.Probe, "10m", true), DefaultEnvironmentProbe)
 }

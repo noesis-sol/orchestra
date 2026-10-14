@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -67,132 +66,6 @@ func loadWith(t *testing.T, args ...string) (options, []string) {
 		t.Fatal(err)
 	}
 	return c, problems
-}
-
-func TestConfigConcurrencyPrecedence(t *testing.T) {
-	configFixture(t, `{"concurrent": 2}`)
-	if c, p := loadWith(t); len(p) > 0 || c.Concurrency != 2 {
-		t.Errorf("settings: %d %v", c.Concurrency, p)
-	}
-	t.Setenv("ORCHESTRA_CONCURRENT", "3")
-	if c, _ := loadWith(t); c.Concurrency != 3 {
-		t.Errorf("the environment overrides settings: %d", c.Concurrency)
-	}
-	if c, _ := loadWith(t, "-c", "4"); c.Concurrency != 4 {
-		t.Errorf("-c overrides the environment: %d", c.Concurrency)
-	}
-	if c, _ := loadWith(t, "--concurrent", "5"); c.Concurrency != 5 {
-		t.Errorf("--concurrent: %d", c.Concurrency)
-	}
-	if _, p := loadWith(t, "-c", "20"); len(p) != 1 || !strings.Contains(p[0], "between 1 and 16") {
-		t.Errorf("out of range: %v", p)
-	}
-	t.Setenv("ORCHESTRA_CONCURRENT", "")
-	if err := os.Remove(".orchestra/settings.json"); err != nil {
-		t.Fatal(err)
-	}
-	if c, _ := loadWith(t); c.Concurrency != 1 {
-		t.Errorf("no settings: %d", c.Concurrency)
-	}
-}
-
-func TestConfigTicketLimitPrecedence(t *testing.T) {
-	configFixture(t, `{"concurrent": 1, "ticket_limit": "2h"}`)
-	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 2*time.Hour {
-		t.Errorf("settings: %s %v", c.TicketLimit, p)
-	}
-	t.Setenv("TICKET_LIMIT", "90m")
-	if c, _ := loadWith(t); c.TicketLimit != 90*time.Minute {
-		t.Errorf("the environment overrides settings: %s", c.TicketLimit)
-	}
-	if c, _ := loadWith(t, "--ticket-limit", "0"); c.TicketLimit != 0 {
-		t.Errorf("--ticket-limit 0 turns it off: %s", c.TicketLimit)
-	}
-	if _, p := loadWith(t, "--ticket-limit", "-1h"); len(p) != 1 || !strings.Contains(p[0], "--ticket-limit must not be negative") {
-		t.Errorf("negative: %v", p)
-	}
-	t.Setenv("TICKET_LIMIT", "soon")
-	if c, p := loadWith(t, "--ticket-limit", "3h"); len(p) > 0 || c.TicketLimit != 3*time.Hour {
-		t.Errorf("the flag over an invalid variable: %s %v", c.TicketLimit, p)
-	}
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "TICKET_LIMIT must be a duration") {
-		t.Errorf("invalid variable: %v", p)
-	}
-	t.Setenv("TICKET_LIMIT", "")
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"ticket_limit": "2 hours"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ticket_limit must be a duration") {
-		t.Errorf("invalid setting: %v", p)
-	}
-	if err := os.Remove(".orchestra/settings.json"); err != nil {
-		t.Fatal(err)
-	}
-	if c, p := loadWith(t); len(p) > 0 || c.TicketLimit != 0 {
-		t.Errorf("no settings: %s %v", c.TicketLimit, p)
-	}
-}
-
-func TestConfigCheckTimeoutPrecedence(t *testing.T) {
-	configFixture(t, `{"concurrent": 1, "check_timeout": "5m"}`)
-	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 5*time.Minute {
-		t.Errorf("settings: %s %v", c.CheckTimeout, p)
-	}
-	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "10m")
-	if c, _ := loadWith(t); c.CheckTimeout != 10*time.Minute {
-		t.Errorf("the environment overrides settings: %s", c.CheckTimeout)
-	}
-	if c, _ := loadWith(t, "--check-timeout", "45m"); c.CheckTimeout != 45*time.Minute {
-		t.Errorf("--check-timeout overrides the environment: %s", c.CheckTimeout)
-	}
-	if _, p := loadWith(t, "--check-timeout", "0"); len(p) != 1 || !strings.Contains(p[0], "--check-timeout must be a positive duration") {
-		t.Errorf("zero: %v", p)
-	}
-	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "0")
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ORCHESTRA_CHECK_TIMEOUT must be a positive duration") {
-		t.Errorf("zero variable: %v", p)
-	}
-	if c, p := loadWith(t, "--check-timeout", "2m"); len(p) > 0 || c.CheckTimeout != 2*time.Minute {
-		t.Errorf("the flag over an invalid variable: %s %v", c.CheckTimeout, p)
-	}
-	t.Setenv("ORCHESTRA_CHECK_TIMEOUT", "")
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"check_timeout": "5 minutes"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "check_timeout must be a positive duration") {
-		t.Errorf("invalid setting: %v", p)
-	}
-	if err := os.Remove(".orchestra/settings.json"); err != nil {
-		t.Fatal(err)
-	}
-	if c, p := loadWith(t); len(p) > 0 || c.CheckTimeout != 30*time.Minute {
-		t.Errorf("no settings: %s %v", c.CheckTimeout, p)
-	}
-}
-
-func TestConfigExcludeTypes(t *testing.T) {
-	configFixture(t, `{"concurrent": 1}`)
-	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic" {
-		t.Errorf("default: %v %v", c.ExcludeTypes, p)
-	}
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic", "decision"]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if c, p := loadWith(t); len(p) > 0 || strings.Join(c.ExcludeTypes, " ") != "epic decision" {
-		t.Errorf("settings: %v %v", c.ExcludeTypes, p)
-	}
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": []}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if c, p := loadWith(t); len(p) > 0 || len(c.ExcludeTypes) != 0 {
-		t.Errorf("none: %v %v", c.ExcludeTypes, p)
-	}
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"exclude_types": ["epic,decision"]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "exclude_types must be a list") {
-		t.Errorf("invalid setting: %v", p)
-	}
 }
 
 // Claude Code turns Chrome on by itself, so workers are started with --no-chrome once the project
@@ -310,31 +183,6 @@ func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
 	git(repo, "checkout", "-q", "--detach")
 	if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "detached HEAD") {
 		t.Errorf("detached: %v", p)
-	}
-}
-
-// A flag replaces its variable, so an invalid variable under a flag is no problem; the flags are
-// held to the variables' rules.
-func TestConfigFlagsOverrideAndAreValidated(t *testing.T) {
-	configFixture(t, "")
-	t.Setenv("LIMIT", "abc")
-	t.Setenv("DONE_SO_FAR", "-2")
-	t.Setenv("ORCHESTRA_CONCURRENT", "x")
-	if c, p := loadWith(t, "-limit", "5", "-done-so-far", "1", "-c", "2"); len(p) > 0 || c.Limit != 5 || c.DoneSoFar != 1 || c.Concurrency != 2 {
-		t.Errorf("flags over invalid variables: %+v %v", c.Config, p)
-	}
-	if _, p := loadWith(t, "--concurrent", "2"); len(p) != 2 || !strings.Contains(p[0], "LIMIT") || !strings.Contains(p[1], "DONE_SO_FAR") {
-		t.Errorf("variables without flags: %v", p)
-	}
-	t.Setenv("LIMIT", "")
-	t.Setenv("DONE_SO_FAR", "")
-	t.Setenv("ORCHESTRA_CONCURRENT", "")
-	_, p := loadWith(t, "-limit", "-1", "-done-so-far", "-3", "-c", "-1")
-	joined := strings.Join(p, "\n")
-	for _, want := range []string{"-limit must be a whole number (got -1)", "-done-so-far must be a whole number (got -3)", "between 1 and"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("problems lack %q:\n%s", want, joined)
-		}
 	}
 }
 

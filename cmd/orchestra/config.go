@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -21,57 +22,141 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// envInt reads a whole-number variable, or def when it is unset. For anything else it returns def
-// and the problem, which only matters when no flag overrides the variable.
-func envInt(getenv func(string) string, name string, def int) (int, string) {
-	v := getenv(name)
-	if v == "" {
-		return def, ""
+// readEnv reads the variable called name ("" for none) as parse does: def where it is unset, and
+// def and the problem where it holds a value parse doesn't take, which only matters when no flag
+// overrides the variable. given says it held one parse takes.
+func readEnv[T any](
+	getenv func(string) string, name string, def T, parse func(string) (T, error),
+) (v T, given bool, problem string) {
+	if name == "" || getenv(name) == "" {
+		return def, false, ""
 	}
+	v, err := parse(getenv(name))
+	if err != nil {
+		return def, false, name + " " + err.Error() + "."
+	}
+	return v, true, ""
+}
+
+// envBool reads an on-or-off variable (see parseOnOff), or def when it is unset. Like readEnv,
+// anything else is returned as a problem.
+func envBool(getenv func(string) string, name string, def bool) (bool, string) {
+	v, _, problem := readEnv(getenv, name, def, parseOnOff)
+	return v, problem
+}
+
+// parseOnOff reads 1, true, yes or on as on, and 0, false, no or off as off, in any case.
+func parseOnOff(v string) (bool, error) {
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("must be 1 or 0, true or false, yes or no, or on or off (got '%s')", v)
+}
+
+// parseWhole reads a whole number: 0 or more.
+func parseWhole(v string) (int, error) {
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
-		return def, fmt.Sprintf("%s must be a whole number (got '%s').", name, v)
+		return 0, fmt.Errorf("must be a whole number (got '%s')", v)
 	}
-	return n, ""
+	return n, nil
 }
 
-// envBool reads an on-or-off variable: 1, true, yes or on for on, 0, false, no or off for off, in any
-// case, or def when it is unset. Like envInt, anything else is returned as a problem.
-func envBool(getenv func(string) string, name string, def bool) (bool, string) {
-	v := getenv(name)
-	switch strings.ToLower(v) {
-	case "":
-		return def, ""
-	case "1", "true", "yes", "on":
-		return true, ""
-	case "0", "false", "no", "off":
-		return false, ""
-	}
-	return def, fmt.Sprintf("%s must be 1 or 0, true or false, yes or no, or on or off (got '%s').", name, v)
-}
+// parseLimit reads a duration such as 2h, or 0 for none.
+func parseLimit(v string) (time.Duration, error) { return project.ParseDuration(v, "2h", true) }
 
-// envDuration reads a duration variable such as 2h, which may be 0 unless positive is set; given is
-// false when it is unset. Like envInt, anything else is returned as a problem.
-func envDuration(getenv func(string) string, name string, positive bool) (d time.Duration, given bool, problem string) {
-	v := getenv(name)
-	if v == "" {
-		return 0, false, ""
-	}
-	d, err := time.ParseDuration(v)
-	switch {
-	case positive && (err != nil || d <= 0):
-		return 0, false, fmt.Sprintf("%s must be a positive duration such as 5m (got '%s').", name, v)
-	case err != nil || d < 0:
-		return 0, false, fmt.Sprintf("%s must be a duration such as 2h, or 0 for none (got '%s').", name, v)
-	}
-	return d, true, ""
-}
+// parseText takes any text.
+func parseText(v string) (string, error) { return v, nil }
 
+// envOr reads a variable that takes any text, or def when it is unset.
 func envOr(getenv func(string) string, name, def string) string {
-	if v := getenv(name); v != "" {
-		return v
+	v, _, _ := readEnv(getenv, name, def, parseText)
+	return v
+}
+
+// envFlags are a FlagSet's flags that default to environment variables, bound by bindEnv and
+// settled with them once the flags are parsed.
+type envFlags struct {
+	fs       *flag.FlagSet
+	getenv   func(string) string
+	bindings []*envBinding
+}
+
+// envBinding is a flag bound to the variable that gives its default.
+type envBinding struct {
+	fs       *flag.FlagSet
+	names    []string      // the flag's, then its shorthands'
+	envGiven bool          // the variable gave the flag's default
+	problem  string        // the variable's value the flag doesn't take: a problem unless the flag is set
+	given    *bool         // set to whether the flag or the variable gave the value; nil where nothing asks
+	check    func() string // the problem with the value the flag is set to; nil for none
+}
+
+// bindEnv defines the flag name for dst with define, the FlagSet's method for T such as IntVar. Its
+// default is the value of the variable env ("" for none), as parse reads it, else def.
+func bindEnv[T any](
+	e *envFlags, define func(*T, string, T, string), dst *T, name, env string, def T,
+	parse func(string) (T, error), usage string,
+) *envBinding {
+	v, given, problem := readEnv(e.getenv, env, def, parse)
+	define(dst, name, v, usage)
+	b := &envBinding{fs: e.fs, names: []string{name}, envGiven: given, problem: problem}
+	e.bindings = append(e.bindings, b)
+	return b
+}
+
+// bindGiven is bindEnv for a setting the project's settings.json also has: the flag gives g.Value,
+// and g.Given says whether it or its variable did.
+func bindGiven[T any](
+	e *envFlags, define func(*T, string, T, string), g *project.Given[T], name, env string, def T,
+	parse func(string) (T, error), usage string,
+) *envBinding {
+	b := bindEnv(e, define, &g.Value, name, env, def, parse, usage)
+	b.given = &g.Given
+	return b
+}
+
+// bindWhole is bindEnv for a whole number, which the flag's value must be as the variable's must.
+func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) {
+	b := bindEnv(e, e.fs.IntVar, dst, name, env, def, parseWhole, usage)
+	b.check = func() string {
+		if *dst < 0 {
+			return fmt.Sprintf("-%s must be a whole number (got %d).", name, *dst)
+		}
+		return ""
 	}
-	return def
+}
+
+// short defines short as the flag's shorthand.
+func (b *envBinding) short(short string) {
+	b.fs.Var(b.fs.Lookup(b.names[0]).Value, short, "shorthand for --"+b.names[0])
+	b.names = append(b.names, short)
+}
+
+// settle reconciles each flag with its variable once the flags are parsed: a variable's problem
+// counts only when no flag overrides it, and a flag set is held to its check. set is the flags the
+// command line sets.
+func (e *envFlags) settle() (set map[string]bool, problems []string) {
+	set = map[string]bool{}
+	e.fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for _, b := range e.bindings {
+		flagSet := slices.ContainsFunc(b.names, func(n string) bool { return set[n] })
+		switch {
+		case !flagSet && b.problem != "":
+			problems = append(problems, b.problem)
+		case flagSet && b.check != nil:
+			if p := b.check(); p != "" {
+				problems = append(problems, p)
+			}
+		}
+		if b.given != nil {
+			*b.given = flagSet || b.envGiven
+		}
+	}
+	return set, problems
 }
 
 // options is a run's configuration: the loop's, and what only the command uses.
@@ -117,7 +202,8 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 func loadConfig(
 	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
 ) (options, []string, error) {
-	c, given, problems, err := readFlags(args, getenv, output)
+	f, problems, err := readFlags(args, getenv, output)
+	c := f.options
 	if err != nil || c.showVersion {
 		return c, nil, err
 	}
@@ -127,103 +213,29 @@ func loadConfig(
 	problems = append(problems, checkTools()...)
 	if c.Repo != "" {
 		problems = append(problems, unreadable...)
-		problems = append(problems, resolveProject(ctx, &c, given, settings, getenv)...)
+		problems = append(problems, resolveProject(ctx, &c, f, settings, getenv)...)
 		problems = append(problems, checkCheckout(ctx, &c)...)
 	}
 	return c, problems, nil
 }
 
-// overrides says which of the project's settings a flag or variable overrides where its value
-// can't tell: a concurrency or duration of 0, -resolve-conflicts=true.
-type overrides struct {
-	concurrency, ticketLimit, checkTimeout, checkFullTimeout, resolveConflicts bool
+// runFlags are a run's flags, each defaulting to its environment variable: the options they give,
+// and the settings the project's settings.json also has, which resolveSettings resolves into them.
+type runFlags struct {
+	options
+	concurrency                                 project.Given[int]
+	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
+	resolveConflicts                            project.Given[bool]
+	set                                         map[string]bool // the flags the command line sets
+	env                                         envFlags
 }
 
 // readFlags parses the flags in args, each defaulting to its environment variable, and reconciles
 // the two: a variable's problem counts only when no flag overrides it. Its error is loadConfig's.
-func readFlags(args []string, getenv func(string) string, output io.Writer) (options, overrides, []string, error) {
-	var c options
-	var problems []string
+func readFlags(args []string, getenv func(string) string, output io.Writer) (*runFlags, []string, error) {
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
 	fs.SetOutput(output)
-
-	fs.StringVar(&c.Workspace, "workspace", "",
-		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
-			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list); "+
-			"none under cmux, where each worker has a workspace of its own")
-	fs.StringVar(&c.terminalAsked, "terminal", getenv("ORCHESTRA_TERMINAL"),
-		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
-			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
-	limit, limitProblem := envInt(getenv, "LIMIT", 40)
-	fs.IntVar(&c.Limit, "limit", limit, "stop after this many tickets in total [LIMIT]")
-	doneSoFar, doneSoFarProblem := envInt(getenv, "DONE_SO_FAR", 0)
-	fs.IntVar(&c.DoneSoFar, "done-so-far", doneSoFar,
-		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
-	fs.StringVar(&c.AgentKind, "agent", envOr(getenv, "AGENT_KIND", "claude"),
-		"agent kind for the workers: claude, or another Herdr agent kind (Herdr only) [AGENT_KIND]")
-	fs.StringVar(&c.WorkerPrompt, "prompt", getenv("WORKER_PROMPT"),
-		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
-			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
-	notify, notifyProblem := envBool(getenv, "NOTIFY", true)
-	fs.BoolVar(&c.Notify, "notify", notify,
-		"macOS notifications for tickets closed, set aside or waiting on you, and the run's end [NOTIFY=0 turns off]")
-	fs.StringVar(&c.WTRoot, "worktrees", getenv("WT_ROOT"),
-		"folder for the per-ticket worktrees, outside the repository "+
-			"(default: <repo>-worktrees next to it) [WT_ROOT]")
-	triage, triageProblem := envBool(getenv, "TRIAGE", true)
-	fs.BoolVar(&c.Triage, "triage", triage,
-		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
-	review, reviewProblem := envBool(getenv, "REVIEW", true)
-	fs.BoolVar(&c.Review, "review", review,
-		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
-	fs.StringVar(&c.OrganModel, "organ-model", getenv("ORGAN_MODEL"),
-		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
-	fs.StringVar(&c.OrganEffort, "organ-effort", getenv("ORGAN_EFFORT"),
-		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
-			"else low for triage, the predictor and screening, medium for the run report, high for planning) [ORGAN_EFFORT]")
-	fs.StringVar(&c.WorkerEffort, "worker-effort", getenv("WORKER_EFFORT"),
-		"effort Claude workers start at: low, medium, high, xhigh or max "+
-			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
-	concurrent, concurrentProblem := envInt(getenv, "ORCHESTRA_CONCURRENT", 0)
-	concurrentGiven := getenv("ORCHESTRA_CONCURRENT") != "" && concurrentProblem == ""
-	fs.IntVar(&c.Concurrency, "concurrent", concurrent,
-		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]")
-	fs.IntVar(&c.Concurrency, "c", concurrent, "shorthand for --concurrent")
-	ticketLimit, ticketLimitGiven, ticketLimitProblem := envDuration(getenv, "TICKET_LIMIT", false)
-	fs.DurationVar(&c.TicketLimit, "ticket-limit", ticketLimit,
-		"stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none "+
-			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
-	checkTimeout, checkTimeoutGiven, checkTimeoutProblem := envDuration(getenv, "ORCHESTRA_CHECK_TIMEOUT", true)
-	fs.DurationVar(&c.CheckTimeout, "check-timeout", checkTimeout,
-		"stop the merge check (check-fast) on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
-			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
-	checkFullTimeout, checkFullTimeoutGiven, checkFullTimeoutProblem := envDuration(getenv,
-		"ORCHESTRA_CHECK_FULL_TIMEOUT", true)
-	fs.DurationVar(&c.CheckFullTimeout, "check-full-timeout", checkFullTimeout,
-		"stop the full check (check-full), run once at the end of a run, after this long, e.g. 90m "+
-			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_CHECK_FULL_TIMEOUT]")
-	fs.StringVar(&c.Ticket, "ticket", getenv("ORCHESTRA_TICKET"),
-		"work on this ticket and its subtickets only, each parent after its children; "+
-			"nothing else is started [ORCHESTRA_TICKET]")
-	fs.StringVar(&c.Feature, "feature", "",
-		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
-			"confirm, and run the epic as --ticket would")
-	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
-	tickets, ticketsProblem := envBool(getenv, "ORCHESTRA_TICKETS", false)
-	fs.BoolVar(&c.Tickets, "tickets", tickets,
-		"run the current tickets without first asking, in a terminal, whether to plan a new feature instead "+
-			"[ORCHESTRA_TICKETS=1]")
-	fs.BoolVar(&c.ResolveConflicts, "resolve-conflicts", true,
-		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
-			"ask its worker to resolve them before setting it aside; needs a check command "+
-			"(default: .orchestra/settings.json, else on)")
-	launchPrompt, launchPromptProblem := envBool(getenv, "PROMPT_AT_LAUNCH", true)
-	fs.BoolVar(&c.LaunchPrompt, "prompt-at-launch", launchPrompt,
-		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
-	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
-	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
-	fs.BoolVar(&c.Plain, "plain", false,
-		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
+	f := defineRunFlags(fs, getenv)
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: orchestra [flags]\n"+
 			"       orchestra init [--check-fast \"<command>\"] [--check-full \"<command>\"] [--concurrent N] "+
@@ -242,7 +254,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 			"7 environment failing workers, 130 Ctrl+C.\n")
 	}
 	if err := fs.Parse(args); err != nil {
-		return c, overrides{}, nil, err
+		return f, nil, err
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		switch rest[0] {
@@ -256,69 +268,116 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (opt
 		default:
 			fmt.Fprintf(fs.Output(), "orchestra: unexpected argument %q (see orchestra -h)\n", rest[0])
 		}
-		return c, overrides{}, nil, errUnexpectedArgs
+		return f, nil, errUnexpectedArgs
 	}
-	if c.showVersion {
-		return c, overrides{}, nil, nil
+	if f.showVersion {
+		return f, nil, nil
 	}
+	var problems []string
+	f.set, problems = f.env.settle()
+	if _, problem := envBool(getenv, noUpdateCheck, false); problem != "" {
+		problems = append(problems, problem) // no flag: the variable alone turns the check off
+	}
+	f.Feature = strings.TrimSpace(f.Feature)
+	return f, append(problems, checkFlagCombos(f)...), nil
+}
 
-	// A variable's problem counts only when no flag overrides it; a flag is held to the same rule,
-	// its value checked here when nothing else does (0 for the others: ResolveConcurrency checks
-	// -concurrent and -c, ResolveTicketLimit, ResolveCheckTimeout and ResolveCheckFullTimeout their flags,
-	// and a boolean flag has no value to check).
-	_, updateCheckProblem := envBool(getenv, noUpdateCheck, false)
-	set := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
-	for _, v := range []struct {
-		flag    string
-		isSet   bool
-		value   int
-		problem string
-	}{
-		{"limit", set["limit"], c.Limit, limitProblem},
-		{"done-so-far", set["done-so-far"], c.DoneSoFar, doneSoFarProblem},
-		{"concurrent", set["concurrent"] || set["c"], 0, concurrentProblem},
-		{"ticket-limit", set["ticket-limit"], 0, ticketLimitProblem},
-		{"check-timeout", set["check-timeout"], 0, checkTimeoutProblem},
-		{"check-full-timeout", set["check-full-timeout"], 0, checkFullTimeoutProblem},
-		{"notify", set["notify"], 0, notifyProblem},
-		{"triage", set["triage"], 0, triageProblem},
-		{"review", set["review"], 0, reviewProblem},
-		{"tickets", set["tickets"], 0, ticketsProblem},
-		{"prompt-at-launch", set["prompt-at-launch"], 0, launchPromptProblem},
-		{"", false, 0, updateCheckProblem}, // no flag: the variable alone turns the check off
-	} {
-		if !v.isSet && v.problem != "" {
-			problems = append(problems, v.problem)
-		} else if v.isSet && v.value < 0 {
-			problems = append(problems, fmt.Sprintf("-%s must be a whole number (got %d).", v.flag, v.value))
-		}
-	}
-	c.Feature = strings.TrimSpace(c.Feature)
+// defineRunFlags defines a run's flags in fs, each bound to the environment variable it defaults
+// to, if any. A variable's problems are reported in the order they are bound.
+func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
+	f := &runFlags{env: envFlags{fs: fs, getenv: getenv}}
+	e, c := &f.env, &f.options
+	fs.StringVar(&c.Workspace, "workspace", "",
+		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
+			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list); "+
+			"none under cmux, where each worker has a workspace of its own")
+	bindEnv(e, fs.StringVar, &c.terminalAsked, "terminal", "ORCHESTRA_TERMINAL", "", parseText,
+		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
+			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
+	bindWhole(e, &c.Limit, "limit", "LIMIT", 40, "stop after this many tickets in total [LIMIT]")
+	bindWhole(e, &c.DoneSoFar, "done-so-far", "DONE_SO_FAR", 0,
+		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
+	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", "claude", parseText,
+		"agent kind for the workers: claude, or another Herdr agent kind (Herdr only) [AGENT_KIND]")
+	bindEnv(e, fs.StringVar, &c.WorkerPrompt, "prompt", "WORKER_PROMPT", "", parseText,
+		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
+			"or .claude/worker-prompt.md in a project set up before 'orchestra init') [WORKER_PROMPT]")
+	bindEnv(e, fs.StringVar, &c.WTRoot, "worktrees", "WT_ROOT", "", parseText,
+		"folder for the per-ticket worktrees, outside the repository "+
+			"(default: <repo>-worktrees next to it) [WT_ROOT]")
+	bindEnv(e, fs.StringVar, &c.OrganModel, "organ-model", "ORGAN_MODEL", "", parseText,
+		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
+	bindEnv(e, fs.StringVar, &c.OrganEffort, "organ-effort", "ORGAN_EFFORT", "", parseText,
+		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
+			"else low for triage, the predictor and screening, medium for the run report, high for planning) [ORGAN_EFFORT]")
+	bindEnv(e, fs.StringVar, &c.WorkerEffort, "worker-effort", "WORKER_EFFORT", "", parseText,
+		"effort Claude workers start at: low, medium, high, xhigh or max "+
+			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
+	bindEnv(e, fs.StringVar, &c.Ticket, "ticket", "ORCHESTRA_TICKET", "", parseText,
+		"work on this ticket and its subtickets only, each parent after its children; "+
+			"nothing else is started [ORCHESTRA_TICKET]")
+	bindGiven(e, fs.IntVar, &f.concurrency, "concurrent", "ORCHESTRA_CONCURRENT", 0, parseWhole,
+		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]").
+		short("c")
+	bindGiven(e, fs.DurationVar, &f.ticketLimit, "ticket-limit", "TICKET_LIMIT", 0, parseLimit,
+		"stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none "+
+			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
+	bindGiven(e, fs.DurationVar, &f.checkTimeout, "check-timeout", "ORCHESTRA_CHECK_TIMEOUT", 0,
+		project.ParseCheckTimeout,
+		"stop the merge check (check-fast) on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
+			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+	bindGiven(e, fs.DurationVar, &f.checkFullTimeout, "check-full-timeout", "ORCHESTRA_CHECK_FULL_TIMEOUT", 0,
+		project.ParseCheckTimeout,
+		"stop the full check (check-full), run once at the end of a run, after this long, e.g. 90m "+
+			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_CHECK_FULL_TIMEOUT]")
+	bindGiven(e, fs.BoolVar, &f.resolveConflicts, "resolve-conflicts", "", true, parseOnOff,
+		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
+			"ask its worker to resolve them before setting it aside; needs a check command "+
+			"(default: .orchestra/settings.json, else on)")
+	bindEnv(e, fs.BoolVar, &c.Notify, "notify", "NOTIFY", true, parseOnOff,
+		"macOS notifications for tickets closed, set aside or waiting on you, and the run's end [NOTIFY=0 turns off]")
+	bindEnv(e, fs.BoolVar, &c.Triage, "triage", "TRIAGE", true, parseOnOff,
+		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
+	bindEnv(e, fs.BoolVar, &c.Review, "review", "REVIEW", true, parseOnOff,
+		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
+	bindEnv(e, fs.BoolVar, &c.Tickets, "tickets", "ORCHESTRA_TICKETS", false, parseOnOff,
+		"run the current tickets without first asking, in a terminal, whether to plan a new feature instead "+
+			"[ORCHESTRA_TICKETS=1]")
+	bindEnv(e, fs.BoolVar, &c.LaunchPrompt, "prompt-at-launch", "PROMPT_AT_LAUNCH", true, parseOnOff,
+		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
+	fs.StringVar(&c.Feature, "feature", "",
+		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
+			"confirm, and run the epic as --ticket would")
+	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
+	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
+	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
+	fs.BoolVar(&c.Plain, "plain", false,
+		"print plain log lines instead of the interactive view (automatic when not on a terminal)")
+	return f
+}
+
+// checkFlagCombos checks how a run's flags go together: --feature with what it needs and against
+// what it can't be combined with.
+func checkFlagCombos(f *runFlags) []string {
+	feature := f.set["feature"]
 	switch {
-	case set["feature"] && c.Feature == "":
-		problems = append(problems, "--feature needs the request: orchestra --feature \"<what to build>\"")
-	case set["feature"] && c.Ticket != "":
-		problems = append(problems, "--feature can't be combined with --ticket (or ORCHESTRA_TICKET): "+
-			"a feature run is scoped to the epic it files.")
-	case set["feature"] && set["tickets"] && c.Tickets:
-		problems = append(problems, "--feature can't be combined with --tickets: "+
-			"one runs a new feature, the other the current tickets.")
-	case !set["feature"] && c.Yes:
-		problems = append(problems, "--yes only applies with --feature.")
-	case set["feature"] && c.Limit >= 0 && c.DoneSoFar >= c.Limit:
+	case feature && f.Feature == "":
+		return []string{"--feature needs the request: orchestra --feature \"<what to build>\""}
+	case feature && f.Ticket != "":
+		return []string{"--feature can't be combined with --ticket (or ORCHESTRA_TICKET): " +
+			"a feature run is scoped to the epic it files."}
+	case feature && f.set["tickets"] && f.Tickets:
+		return []string{"--feature can't be combined with --tickets: " +
+			"one runs a new feature, the other the current tickets."}
+	case !feature && f.Yes:
+		return []string{"--yes only applies with --feature."}
+	case feature && f.Limit >= 0 && f.DoneSoFar >= f.Limit:
 		// The loop would end at once, the plan filed and none of it started.
-		problems = append(problems, fmt.Sprintf("--feature would file a plan and run none of it: "+
+		return []string{fmt.Sprintf("--feature would file a plan and run none of it: "+
 			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT] or lower -done-so-far [DONE_SO_FAR].",
-			c.DoneSoFar, c.Limit))
+			f.DoneSoFar, f.Limit)}
 	}
-	return c, overrides{
-		concurrency:      set["concurrent"] || set["c"] || concurrentGiven,
-		ticketLimit:      set["ticket-limit"] || ticketLimitGiven,
-		checkTimeout:     set["check-timeout"] || checkTimeoutGiven,
-		checkFullTimeout: set["check-full-timeout"] || checkFullTimeoutGiven,
-		resolveConflicts: set["resolve-conflicts"],
-	}, problems, nil
+	return nil
 }
 
 // findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory.
@@ -355,12 +414,11 @@ func checkTools() []string {
 	return problems
 }
 
-// resolveProject reads what the project in c.Repo decides, under the flags and variables in c
+// resolveProject reads what the project in c.Repo decides, under the flags and variables in f
 // that override it: its layout under .orchestra/ and its settings.
 func resolveProject(
-	ctx context.Context, c *options, given overrides, settings project.Settings, getenv func(string) string,
+	ctx context.Context, c *options, f *runFlags, settings project.Settings, getenv func(string) string,
 ) []string {
-	var problems []string
 	lay := project.Locate(c.Repo)
 	if c.ownPrompt = c.WorkerPrompt != ""; !c.ownPrompt {
 		c.WorkerPrompt = lay.Prompt
@@ -368,27 +426,7 @@ func resolveProject(
 		c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 	}
 	c.LogPath, c.ReportsDir = lay.Log, lay.Reports
-	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
-	c.Setup = settings.Setup
-	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
-	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
-	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
-	if ok && c.WorkerEffort != "" {
-		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
-	}
-	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
-	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(c.Concurrency, given.concurrency, settings))
-	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(c.TicketLimit, given.ticketLimit, settings))
-	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(c.CheckTimeout, given.checkTimeout, settings))
-	keep(&problems, &c.CheckFullTimeout)(
-		project.ResolveCheckFullTimeout(c.CheckFullTimeout, given.checkFullTimeout, settings))
-	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
-		project.ResolveConflictResolution(c.ResolveConflicts, given.resolveConflicts, settings))
-	keep(&problems, &c.CheckHandBacks)(project.ResolveCheckHandBacks(settings))
-	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
-	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
-	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
-	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
+	problems := resolveSettings(c, f, settings)
 	// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
 	// config; one this machine can't give them is for the maintainer to fix before they start.
 	switch {
@@ -408,6 +446,33 @@ func resolveProject(
 			c.MCP = &chosen
 		}
 	}
+	return problems
+}
+
+// resolveSettings resolves the project's settings into c, under the flags and variables in f that
+// override them; it reads nothing else, so the precedence of each can be tested on its own.
+func resolveSettings(c *options, f *runFlags, settings project.Settings) []string {
+	var problems []string
+	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
+	c.Setup = settings.Setup
+	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
+	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
+	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
+	if ok && c.WorkerEffort != "" {
+		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
+	}
+	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
+	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(f.concurrency, settings))
+	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(f.ticketLimit, settings))
+	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(f.checkTimeout, settings))
+	keep(&problems, &c.CheckFullTimeout)(project.ResolveCheckFullTimeout(f.checkFullTimeout, settings))
+	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
+		project.ResolveConflictResolution(f.resolveConflicts, settings))
+	keep(&problems, &c.CheckHandBacks)(project.ResolveCheckHandBacks(settings))
+	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
+	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
+	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
+	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
 	return problems
 }
 

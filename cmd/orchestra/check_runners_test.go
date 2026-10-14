@@ -170,34 +170,3 @@ func TestInitMovesTheOldCheckSettingsToTheNewNames(t *testing.T) {
 		t.Errorf("check-fast.sh:\n%s", runner)
 	}
 }
-
-func TestConfigReadsTheChecksOldAndNew(t *testing.T) {
-	configFixture(t, `{"concurrent": 1, "check": "make check", "check_timeout": "5m"}`)
-	if c, p := loadWith(t); len(p) > 0 || c.Check != "make check" || c.CheckTimeout != 5*time.Minute ||
-		c.CheckFull != "" || c.CheckFullTimeout != project.DefaultCheckFullTimeout {
-		t.Errorf("old: %q %s %q %s %v", c.Check, c.CheckTimeout, c.CheckFull, c.CheckFullTimeout, p)
-	}
-	if err := os.WriteFile(".orchestra/settings.json", []byte(`{"check_fast": "scripts/check-fast.sh", `+
-		`"check_full": "scripts/check-full.sh", "check_fast_timeout": "7m", "check_full_timeout": "2h"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if c, p := loadWith(t); len(p) > 0 || c.Check != project.FastRunner || c.CheckTimeout != 7*time.Minute ||
-		c.CheckFull != project.FullRunner || c.CheckFullTimeout != 2*time.Hour {
-		t.Errorf("new: %q %s %q %s %v", c.Check, c.CheckTimeout, c.CheckFull, c.CheckFullTimeout, p)
-	}
-	t.Setenv("ORCHESTRA_CHECK_FULL_TIMEOUT", "3h")
-	if c, _ := loadWith(t); c.CheckFullTimeout != 3*time.Hour {
-		t.Errorf("the environment overrides settings: %s", c.CheckFullTimeout)
-	}
-	if c, _ := loadWith(t, "--check-full-timeout", "45m"); c.CheckFullTimeout != 45*time.Minute {
-		t.Errorf("--check-full-timeout overrides the environment: %s", c.CheckFullTimeout)
-	}
-	if _, p := loadWith(t, "--check-full-timeout", "0"); len(p) != 1 ||
-		!strings.Contains(p[0], "--check-full-timeout must be a positive duration") {
-		t.Errorf("zero: %v", p)
-	}
-	t.Setenv("ORCHESTRA_CHECK_FULL_TIMEOUT", "never")
-	if _, p := loadWith(t); len(p) != 1 || !strings.Contains(p[0], "ORCHESTRA_CHECK_FULL_TIMEOUT must be a positive duration") {
-		t.Errorf("invalid variable: %v", p)
-	}
-}
