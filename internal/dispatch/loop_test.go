@@ -170,8 +170,6 @@ func (okStarter) LaunchInPane(ctx context.Context, pane, kind string, args []str
 func (okStarter) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
 	return nil
 }
-func (okStarter) IsArgumentRefused(err error) bool                { return false }
-func (okStarter) IsNameRefused(err error) bool                    { return false }
 func (okStarter) WaitReady(ctx context.Context, name string) bool { return true }
 
 type quietHistory struct{}

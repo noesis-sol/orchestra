@@ -116,7 +116,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
 | `predict.go` | predicting the files of ready tickets that name none, in the background |
-| `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports |
+| `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports; what every terminal keeps to: the launch contract, its refusals (`ErrNameRefused`, `ErrArgumentRefused`) and how long it waits for an agent |
 | `ticket.go` | `Ticket`, a Beads issue as the loop sees it: its status, labels, deferral and the question it waits on |
 | `activity.go` | what a worker's hooks report (`ToolUse`, `HookRecord`) and what the dashboard says it is doing (`Doing`) |
 

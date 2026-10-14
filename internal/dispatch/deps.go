@@ -2,7 +2,9 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
@@ -39,16 +41,38 @@ type Tabs interface {
 	TabLabel(ctx context.Context, tab string) (label string, open bool, err error)
 }
 
-// Starter starts a worker agent in a tab's pane. In a pane that still runs what was started there
-// before, Herdr's StartAgent and cmux's StartAgent and LaunchInPane refuse, rather than type into it;
-// tmux's replace it.
+// Starter starts a worker agent in a tab's pane.
+//
+// Neither LaunchInPane nor StartAgent types into a program still running in the pane, which would
+// take the command for its input (a Claude Code on its trust dialog, say, for an answer or a
+// prompt): each either refuses while one runs there or replaces it. Herdr and cmux refuse; tmux
+// replaces it.
+//
+// What the terminal refuses for good, a name (here or in Namer's AdoptAgent and RenameAgent) or
+// StartAgent's arguments, it says with ErrNameRefused or ErrArgumentRefused (errors.Is): a retry with
+// them can't succeed.
 type Starter interface {
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error     // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
-	IsArgumentRefused(err error) bool                                             // StartAgent can't pass these arguments
-	IsNameRefused(err error) bool                                                 // the terminal refuses this name
 	WaitReady(ctx context.Context, name string) bool
 }
+
+// ErrNameRefused is the terminal refusing an agent name (errors.Is): it would refuse it on every
+// try. Only Herdr has a rule for names; tmux and cmux take any.
+var ErrNameRefused = errors.New("the terminal refuses the agent name")
+
+// ErrArgumentRefused is the terminal refusing the agent's arguments (errors.Is), as Herdr does those
+// it can't type into a shell: it would refuse them on every try. tmux and cmux pass any.
+var ErrArgumentRefused = errors.New("the terminal refuses the agent's arguments")
+
+// How long every terminal waits for an agent: to be ready for a prompt (Starter.StartAgent,
+// Starter.WaitReady), to start on a prompt it submits (Agents.Prompt), and to start working on one
+// it was given at launch or by a key (Agents.WaitStarted).
+const (
+	ReadyWithin   = time.Minute
+	PromptWithin  = 30 * time.Second
+	StartedWithin = 20 * time.Second
+)
 
 // Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
 // its ticket).

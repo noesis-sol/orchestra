@@ -118,12 +118,12 @@ func states(sts []dispatch.AgentState) string {
 
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (a Agents) WaitReady(ctx context.Context, name string) bool {
-	return a.Wait(ctx, "wait", name, time.Minute, dispatch.StateIdle, dispatch.StateDone) == nil
+	return a.Wait(ctx, "wait", name, dispatch.ReadyWithin, dispatch.StateIdle, dispatch.StateDone) == nil
 }
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (a Agents) WaitStarted(ctx context.Context, name string) bool {
-	return a.Wait(ctx, "wait", name, 20*time.Second, dispatch.StateWorking, dispatch.StateBlocked) == nil
+	return a.Wait(ctx, "wait", name, dispatch.StartedWithin, dispatch.StateWorking, dispatch.StateBlocked) == nil
 }
 
 // StartAgent launches the agent name with launch and waits up to a minute for it to be ready for a
@@ -132,7 +132,7 @@ func (a Agents) StartAgent(ctx context.Context, name string, launch func() error
 	if err := launch(); err != nil {
 		return err
 	}
-	return a.Wait(ctx, "start", name, time.Minute, dispatch.StateIdle, dispatch.StateDone)
+	return a.Wait(ctx, "start", name, dispatch.ReadyWithin, dispatch.StateIdle, dispatch.StateDone)
 }
 
 // Prompt puts a prompt in the agent's input box with put, leaves it PasteSettle to take it in,
@@ -151,7 +151,7 @@ func (a Agents) Prompt(ctx context.Context, name string, put, enter func() error
 	if err := enter(); err != nil {
 		return err
 	}
-	return a.Wait(ctx, "prompt", name, 30*time.Second, dispatch.StateWorking, dispatch.StateBlocked)
+	return a.Wait(ctx, "prompt", name, dispatch.PromptWithin, dispatch.StateWorking, dispatch.StateBlocked)
 }
 
 // FreeName returns an agent name for an earlier worker that holds name: name-1, name-2, …, the first
@@ -165,15 +165,10 @@ func FreeName(name string, taken func(string) bool) string {
 	return ""
 }
 
-// Names is what a hook-driven terminal says of agents' names and arguments, for an adapter to embed:
-// it keeps an agent's name itself, so it takes any, and passes arguments as they are.
+// Names is what a hook-driven terminal says of agents' names, for an adapter to embed: it keeps an
+// agent's name itself, so it takes any, and never refuses one (dispatch.ErrNameRefused), nor an
+// argument (dispatch.ErrArgumentRefused), which it passes as it is.
 type Names struct{}
-
-// IsArgumentRefused is always false: the terminal passes any argument.
-func (Names) IsArgumentRefused(error) bool { return false }
-
-// IsNameRefused is always false: the terminal keeps an agent's name itself, and takes any name.
-func (Names) IsNameRefused(error) bool { return false }
 
 // AgentName returns ticket id's worker's agent name: the ID itself, as the terminal has no rule for
 // names.

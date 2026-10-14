@@ -17,7 +17,8 @@ type refusingHerdr struct {
 	starts, adopts []string // names asked for
 }
 
-var errNameRefused = errors.New(`herdr agent start: exit status 1: {"error":{"code":"invalid_agent_name","message":"agent names must be lowercase"}}`)
+var errNameRefused error = refusal{`herdr agent start: exit status 1: {"error":{"code":"invalid_agent_name",` +
+	`"message":"agent names must be lowercase"}}`, ErrNameRefused}
 
 func (h *refusingHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	return nil
@@ -25,10 +26,6 @@ func (h *refusingHerdr) LaunchInPane(ctx context.Context, pane, kind string, arg
 func (h *refusingHerdr) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
 	h.starts = append(h.starts, name)
 	return errNameRefused
-}
-func (h *refusingHerdr) IsArgumentRefused(err error) bool { return false }
-func (h *refusingHerdr) IsNameRefused(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "invalid_agent_name")
 }
 func (h *refusingHerdr) WaitReady(ctx context.Context, name string) bool { return false }
 func (h *refusingHerdr) AgentName(id string) string                      { return "agent-for-" + id }

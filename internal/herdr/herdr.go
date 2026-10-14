@@ -250,7 +250,7 @@ func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
 // prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
 // with line breaks, so each must be one line.
 func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
-	const wait = time.Minute
+	const wait = dispatch.ReadyWithin
 	a := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", millis(wait)}
 	if len(args) > 0 {
 		a = append(append(a, "--"), args...)
@@ -279,6 +279,18 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Err.Error() }
 func (e *Error) Unwrap() error { return e.Err }
+
+// Is reports Herdr refusing an agent name as dispatch.ErrNameRefused, and agent arguments it can't
+// pass through the shell as dispatch.ErrArgumentRefused: a retry with them can't succeed.
+func (e *Error) Is(target error) bool {
+	switch target {
+	case dispatch.ErrNameRefused:
+		return e.Code == InvalidAgentName
+	case dispatch.ErrArgumentRefused:
+		return e.Code == InvalidAgentArgument
+	}
+	return false
+}
 
 // HasCode reports whether err is Herdr refusing a call with code.
 func HasCode(err error, code string) bool {
@@ -316,13 +328,6 @@ func decode(err error) error {
 // command.ReadLimit to spare before the call to it is stopped.
 func millis(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }
 
-// IsArgumentRefused reports Herdr refusing agent arguments it cannot pass through the shell; a
-// retry cannot succeed.
-func (t Terminal) IsArgumentRefused(err error) bool { return HasCode(err, InvalidAgentArgument) }
-
-// IsNameRefused reports Herdr refusing an agent name; a retry under the same name cannot succeed.
-func (t Terminal) IsNameRefused(err error) bool { return HasCode(err, InvalidAgentName) }
-
 // maxName is the longest agent name Herdr accepts.
 const maxName = 32
 
@@ -356,8 +361,12 @@ func AgentName(id string) string {
 func (t Terminal) AgentName(id string) string { return AgentName(id) }
 
 // LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
-// returns at once. Each argument must be one line.
+// returns at once. Each argument must be one line. It refuses while a program other than the shell
+// runs in the pane (shellWaits).
 func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
+	if err := shellWaits(ctx, pane); err != nil {
+		return err
+	}
 	var line strings.Builder
 	line.WriteString(kind)
 	for _, a := range args {
@@ -465,7 +474,7 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
-	const wait = time.Minute
+	const wait = dispatch.ReadyWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
 		"--until", string(dispatch.StateIdle), "--until", string(dispatch.StateDone),
 		"--timeout", millis(wait))
@@ -478,7 +487,7 @@ func (t Terminal) WaitReady(ctx context.Context, name string) bool {
 // of submitting, as when the paste is lost or Enter doesn't register; the 30 seconds are a limit
 // on Herdr itself.
 func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
-	const wait = 30 * time.Second
+	const wait = dispatch.PromptWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "prompt", name, prompt, "--wait",
 		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked), "--timeout", millis(wait))
 	return err
@@ -492,7 +501,7 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
-	const wait = 20 * time.Second
+	const wait = dispatch.StartedWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
 		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked),
 		"--timeout", millis(wait))
@@ -552,25 +561,76 @@ func CurrentWorkspace(ctx context.Context, getenv func(string) string) string {
 // its processes: those of a program run in the pane itself, or of the terminal (a tmux client, say)
 // that runs in it.
 func PaneForeground(ctx context.Context, pane string) (group int, pids []int, err error) {
-	out, err := run(ctx, command.ReadLimit, "pane", "process-info", "--pane", pane)
+	info, err := paneProcesses(ctx, pane)
 	if err != nil {
 		return 0, nil, err
 	}
+	for _, p := range info.Processes {
+		pids = append(pids, p.PID)
+	}
+	return info.Group, pids, nil
+}
+
+// processInfo is what 'herdr pane process-info' says of a pane's terminal.
+type processInfo struct {
+	Group     int `json:"foreground_process_group_id"` // the process group in its foreground
+	Shell     int `json:"shell_pid"`                   // the shell Herdr started in it; 0 if it names none
+	Processes []struct {
+		PID  int    `json:"pid"`
+		Name string `json:"name"`
+	} `json:"foreground_processes"`
+}
+
+// paneProcesses reads 'herdr pane process-info' for the pane; an answer without a foreground process
+// group can't be read.
+func paneProcesses(ctx context.Context, pane string) (processInfo, error) {
+	out, err := run(ctx, command.ReadLimit, "pane", "process-info", "--pane", pane)
+	if err != nil {
+		return processInfo{}, err
+	}
 	var r struct {
 		Result struct {
-			Info struct {
-				Group     int `json:"foreground_process_group_id"`
-				Processes []struct {
-					PID int `json:"pid"`
-				} `json:"foreground_processes"`
-			} `json:"process_info"`
+			Info processInfo `json:"process_info"`
 		} `json:"result"`
 	}
 	if json.Unmarshal([]byte(out), &r) != nil || r.Result.Info.Group == 0 {
-		return 0, nil, fmt.Errorf("unexpected 'herdr pane process-info' output: %s", out)
+		return processInfo{}, fmt.Errorf("unexpected 'herdr pane process-info' output: %s", out)
 	}
-	for _, p := range r.Result.Info.Processes {
-		pids = append(pids, p.PID)
+	return r.Result.Info, nil
+}
+
+// shellSettle is how long shellWaits gives the pane's shell to come back to its prompt: a shell
+// that has just started may still run its startup files.
+var shellSettle = 5 * time.Second
+
+// shellWaits refuses a launch into the pane unless its shell waits at its prompt, in the foreground
+// of its terminal, within shellSettle: 'herdr pane run' types into whatever runs there, which would
+// take the line for its input (a Claude Code on its trust dialog, say, for an answer or a prompt).
+// A pane whose processes Herdr can't list, or whose shell it doesn't name, is taken to run one.
+func shellWaits(ctx context.Context, pane string) error {
+	deadline := time.Now().Add(shellSettle)
+	for {
+		info, err := paneProcesses(ctx, pane)
+		switch {
+		case err != nil:
+			return fmt.Errorf("cannot tell whether a program runs in Herdr pane %s, to type into its shell: %w",
+				pane, err)
+		case info.Shell == 0:
+			return fmt.Errorf("cannot tell whether a program runs in Herdr pane %s, to type into its shell: "+
+				"Herdr names no shell in it", pane)
+		case info.Group == info.Shell:
+			return nil
+		case time.Now().After(deadline):
+			what := "a program"
+			if len(info.Processes) > 0 {
+				what = info.Processes[0].Name
+			}
+			return fmt.Errorf("herdr pane run %s: %s still runs there; nothing is typed into it", pane, what)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
-	return r.Result.Info.Group, pids, nil
 }

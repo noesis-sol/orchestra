@@ -252,7 +252,7 @@ func (o *Loop) probe(ctx context.Context) (tab string, err error) {
 	}
 	deadline := time.Now().Add(probeLimit)
 	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
-	if err != nil && len(args) > 0 && o.starter.IsArgumentRefused(err) {
+	if err != nil && len(args) > 0 && errors.Is(err, ErrArgumentRefused) {
 		o.log.Raw("", err)
 		err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil)
 	}

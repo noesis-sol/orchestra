@@ -24,7 +24,17 @@ type fakeAgent struct {
 	late             bool // Herdr doesn't see it yet: adoption gives up, and the next pane read misses it
 }
 
-var errRefused = errors.New("herdr: unknown argument")
+// refusal is the fake's error for what Herdr refuses for good, the name or the arguments: is says
+// which (errors.Is), as herdr.Error does.
+type refusal struct {
+	text string
+	is   error
+}
+
+func (r refusal) Error() string        { return r.text }
+func (r refusal) Is(target error) bool { return target == r.is }
+
+var errRefused error = refusal{"herdr: unknown argument", ErrArgumentRefused}
 
 // fakeHerdr is the terminal: tabs, the agents in their panes, and the workers they run. An agent
 // runs the next behaviour given for its ticket once it has its prompt.
@@ -48,6 +58,7 @@ type fakeHerdr struct {
 
 	labelFails   bool                   // TabLabel fails, as when Herdr is busy
 	launchFails  map[string]bool        // LaunchInPane fails for these tickets
+	paneBusy     map[string]int         // these tickets' panes run a program, not an agent, for this many more launches and starts
 	promptFails  map[string]bool        // pasting the prompt never submits it
 	enterLate    map[string]bool        // a pasted prompt stays in the box; Enter starts it just after WaitStarted gives up
 	startUnnamed map[string]bool        // the first StartAgent times out, leaving the agent unnamed in its pane
@@ -206,6 +217,9 @@ func (h *fakeHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []
 	if h.launchFails[h.panes[pane].ticket] {
 		return errors.New("herdr pane run: failed")
 	}
+	if err := h.stillRuns(pane); err != nil {
+		return err
+	}
 	if h.launchLost[h.panes[pane].ticket] {
 		return nil
 	}
@@ -227,6 +241,9 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	if err := errLongName(name); err != nil {
 		return err
 	}
+	if err := h.stillRuns(pane); err != nil {
+		return err
+	}
 	if h.refuseArgs && len(args) > 0 ||
 		h.refusePaths && slices.ContainsFunc(args, func(a string) bool { return !plainFlag.MatchString(a) }) {
 		return errRefused
@@ -243,11 +260,23 @@ func (h *fakeHerdr) StartAgent(ctx context.Context, name, kind, pane string, arg
 	return nil
 }
 
+// stillRuns is the launch contract (Starter): Herdr refuses to start an agent in a pane that still
+// runs a program, an agent or another (paneBusy), rather than type into it. The caller holds mu.
+func (h *fakeHerdr) stillRuns(pane string) error {
+	ticket := h.panes[pane].ticket
+	if h.paneBusy[ticket] > 0 {
+		h.paneBusy[ticket]--
+		return fmt.Errorf("herdr pane run %s: make still runs there; nothing is typed into it", pane)
+	}
+	if a := h.inPane(pane); a != nil && a.status != StateGone {
+		return fmt.Errorf("herdr pane run %s: %s still runs there; nothing is typed into it", pane, a.kind)
+	}
+	return nil
+}
+
 // plainFlag is an argument Herdr passes through the shell as it is.
 var plainFlag = regexp.MustCompile(`^--[a-z-]+$`)
 
-func (h *fakeHerdr) IsArgumentRefused(err error) bool                { return errors.Is(err, errRefused) }
-func (h *fakeHerdr) IsNameRefused(err error) bool                    { return false }
 func (h *fakeHerdr) WaitReady(ctx context.Context, name string) bool { return true }
 
 // Namer

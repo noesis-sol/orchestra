@@ -125,17 +125,29 @@ func TestLongAgentNamesDoNotCollide(t *testing.T) {
 	}
 }
 
-func TestIsNameRefused(t *testing.T) {
-	var term Terminal
-	failingHerdr(t, badNameStderr)
-	err := term.StartAgent(context.Background(), "X.1", "claude", "p1", nil)
-	if !term.IsNameRefused(err) || term.IsArgumentRefused(err) {
-		t.Errorf("invalid_agent_name should count as a refused name: %v", err)
+// Herdr refusing an agent name or its arguments is dispatch's ErrNameRefused or ErrArgumentRefused,
+// through the call's error; nothing else is either.
+func TestRefusalsAreDispatchErrors(t *testing.T) {
+	badArgStderr := `{"error":{"code":"invalid_agent_argument","message":"argument contains a line break"},` +
+		`"id":"cli:agent:start"}`
+	for _, c := range []struct {
+		stderr     string
+		name, args bool
+	}{
+		{badNameStderr, true, false},
+		{badArgStderr, false, true},
+		{notFoundStderr, false, false},
+		{`not json`, false, false},
+	} {
+		failingHerdr(t, c.stderr)
+		err := (Terminal{}).StartAgent(context.Background(), "X.1", "claude", "p1", nil)
+		if errors.Is(err, dispatch.ErrNameRefused) != c.name || errors.Is(err, dispatch.ErrArgumentRefused) != c.args {
+			t.Errorf("stderr %s: name refused %v, arguments refused %v, want %v and %v (%v)", c.stderr,
+				errors.Is(err, dispatch.ErrNameRefused), errors.Is(err, dispatch.ErrArgumentRefused), c.name, c.args, err)
+		}
 	}
-	failingHerdr(t, notFoundStderr)
-	err = term.StartAgent(context.Background(), "x", "claude", "p1", nil)
-	if term.IsNameRefused(err) || term.IsNameRefused(errors.New("invalid_agent_name")) || term.IsNameRefused(nil) {
-		t.Error("only Herdr's invalid_agent_name counts as refused")
+	if errors.Is(errors.New("invalid_agent_name"), dispatch.ErrNameRefused) {
+		t.Error("only Herdr's own error counts as a refused name, never its text")
 	}
 }
 

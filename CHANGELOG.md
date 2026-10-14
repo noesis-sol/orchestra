@@ -24,6 +24,11 @@ All notable changes to orchestra are documented here. The format follows
   Triage, which asks for 80, got 60 in cmux and Herdr and up to 110 in tmux.
   tmux also looks for Claude Code's start-up dialogs on the visible screen
   only, as cmux does, not in the scrollback above it.
+- In Herdr, a worker launched with its prompt is no longer typed into a
+  program still running in its pane, which would take the command for its
+  input: the launch waits up to 5 seconds for the pane's shell to be back at
+  its prompt, and otherwise is refused and the worker started with
+  `herdr agent start`, as tmux and cmux already kept to.
 
 ## [0.7.2] - 2026-10-14
 

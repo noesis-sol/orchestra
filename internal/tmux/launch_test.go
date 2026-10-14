@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+// The launch contract (dispatch.Starter): tmux replaces what runs in the pane (respawn-pane -k) rather
+// than type into it.
 func TestLaunchInPaneRunsTheAgentInPlaceOfTheShell(t *testing.T) {
 	f := newFakeTmux(t)
 	t.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+"/opt/claude/bin")

@@ -249,7 +249,7 @@ func TestPrompt(t *testing.T) {
 
 func TestNames(t *testing.T) {
 	var n Names
-	if n.IsArgumentRefused(errors.New("x")) || n.IsNameRefused(errors.New("x")) || n.AgentName("ab-1") != "ab-1" {
-		t.Error("a hook-driven terminal takes any name and argument, and names an agent by its ticket")
+	if n.AgentName("ab-1") != "ab-1" {
+		t.Error("a hook-driven terminal names an agent by its ticket")
 	}
 }
