@@ -20,6 +20,12 @@ All notable changes to orchestra are documented here. The format follows
   file that is a symlink to no file yet is written where the link leads, as
   before it was replaced by a regular file.
 
+- The commands orchestra gives to paste quote a path holding a space or a
+  character a shell would read: `DEFERRED_FREE`'s `git worktree remove` and
+  `git -C … status`, the full check's `CLEANUP_FAILED`, the notes on a
+  ticket set aside to rebase by hand or for a run-files link, and
+  `orchestra init`'s `export PATH=…` for bd. With such a repository or
+  `WT_ROOT`, the pasted command broke or acted on another path.
 - The run report is `REVIEW_FAILED` when claude writes it empty or cuts it
   off at its output token limit, where it was shown blank or half-written.
   Organ answers from an older claude CLI, without a schema, are read when

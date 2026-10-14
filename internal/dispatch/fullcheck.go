@@ -172,7 +172,7 @@ func (o *Loop) removeFullCheckWorktree(ctx context.Context, wt string) {
 	if err != nil {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
 			"  CLEANUP_FAILED: the full check's worktree %s is left%s (git worktree remove --force %s removes it)",
-			wt, because(err), wt)})
+			wt, because(err), command.ShellWord(wt))})
 	}
 }
 

@@ -90,7 +90,7 @@ func LocateBd(getenv func(string) string) (path string, onPath bool) {
 func offPath(path string) string {
 	dir := filepath.Dir(path)
 	return "it is in " + dir + ", which isn't on your PATH: add it in your shell's profile " +
-		"(export PATH=\"$PATH:" + dir + "\") and open a new terminal"
+		"(export PATH=\"$PATH\":" + command.ShellWord(dir) + ") and open a new terminal"
 }
 
 // SetUpBeads installs bd where it is missing and the choice consents, then runs bd init in repo when

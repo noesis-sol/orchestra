@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/noesis-sol/orchestra/internal/command"
 )
 
 // A ticket deferred because it started before its blocker merged (as workers' tickets were before
@@ -34,7 +36,7 @@ func (d DeferredFree) Cleanup() string {
 	if d.Worktree == "" {
 		return ""
 	}
-	return fmt.Sprintf("git worktree remove %s && git branch -d %s", d.Worktree, branchOf(d.ID))
+	return fmt.Sprintf("git worktree remove %s && git branch -d %s", command.ShellWord(d.Worktree), branchOf(d.ID))
 }
 
 // Changes is the command that shows the uncommitted changes in the ticket's worktree; "" without them.
@@ -42,7 +44,7 @@ func (d DeferredFree) Changes() string {
 	if d.Uncommitted == "" {
 		return ""
 	}
-	return "git -C " + d.Uncommitted + " status"
+	return "git -C " + command.ShellWord(d.Uncommitted) + " status"
 }
 
 // Why is what frees the ticket: "its blockers have merged (A, B)".

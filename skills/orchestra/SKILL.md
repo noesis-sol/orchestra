@@ -490,7 +490,8 @@ A worker that finishes after the run has stopped is merged by the next run, whic
 (`.orchestra/run/state.json`). Finish a ticket by hand only when no run will: after a quit at once,
 a `STATE_UNSAVED` line, or a carried-over worker dropped or `WORKER_GONE`, or when the user wants it
 merged before the next run. The ticket is closed but nothing merged it; if the run labelled it
-`unmerged` as it ended, the tickets it blocks wait until it is merged:
+`unmerged` as it ended, the tickets it blocks wait until it is merged (quote `<worktree>` when its
+path holds a space, as orchestra's own commands do):
 
 1. Check it: `bd show <id>` is closed, `git log --oneline <base>..wt/<id>` has a commit naming it,
    and `git -C <worktree> status --porcelain` is empty.

@@ -212,7 +212,7 @@ func TestSetUpBeadsSaysWhereTheInstallScriptPutBd(t *testing.T) {
 		t.Errorf("calls:\n%s", got)
 	}
 	want := "installed with the Beads install script, but it is in " + bin + ", which isn't on your PATH: " +
-		`add it in your shell's profile (export PATH="$PATH:` + bin + `") and open a new terminal`
+		`add it in your shell's profile (export PATH="$PATH":` + bin + `) and open a new terminal`
 	if len(steps) != 1 || !same(steps[0], Step{Kind: StepMissing, Label: "bd", Detail: want}) {
 		t.Errorf("steps = %+v", steps)
 	}

@@ -141,7 +141,7 @@ func (o *Loop) work(ctx context.Context, t Ticket, how *settling) (stop *stopRea
 			note: fmt.Sprintf("Orchestra: %s conflicts with %s, so no worker was started on it. "+
 				"Rebase it by hand (cd %s && git rebase %s, resolve, git rebase --continue), "+
 				"then bring it back with: bd undefer %s",
-				br, c.Base, wt, c.Base, id),
+				br, c.Base, command.ShellWord(wt), c.Base, id),
 			reason: fmt.Sprintf("%s conflicts with %s; rebase it in %s", br, c.Base, wt),
 			detail: "its branch conflicts with " + c.Base,
 			deferred: fmt.Sprintf("  REBASE_FAILED: %s conflicts with %s -> %s deferred without starting a worker; "+
@@ -595,7 +595,7 @@ func (o *Loop) setAsideEscaped(ctx context.Context, t Ticket, wt string, e *proj
 		note: fmt.Sprintf("Orchestra: %s (%s), so no worker was started on it: "+
 			"orchestra writes a worker's run files only in its worktree's own .orchestra/run folder, which git ignores. "+
 			"Look at what it points to, remove the link (rm %s), then bring it back with: bd undefer %s",
-			why, link, link, id),
+			why, link, command.ShellWord(link), id),
 		reason: why,
 		detail: why,
 		deferred: fmt.Sprintf("  RUN_FILES_OUTSIDE: %s -> %s deferred without starting a worker; "+

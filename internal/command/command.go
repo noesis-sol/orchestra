@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -215,4 +216,16 @@ func shortArgs(args []string) string {
 // ShellQuote quotes s as one word for a POSIX shell.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// plainWord is a word a shell takes as it is.
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_.,:/@%+=-]+$`)
+
+// ShellWord is s as a command line given to the user to paste gives it: as it is when it is a plain
+// word, else quoted (see ShellQuote), as a path holding a space must be.
+func ShellWord(s string) string {
+	if plainWord.MatchString(s) {
+		return s
+	}
+	return ShellQuote(s)
 }

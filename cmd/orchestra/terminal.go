@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -170,7 +169,7 @@ func checkTmux(ctx context.Context, c *options, getenv func(string) string) []st
 		if strings.Contains(target, ".") {
 			target += ":" // the session, where tmux would read "my.sess" as window "my", pane "sess"
 		}
-		c.Watch = how + shellWord(target)
+		c.Watch = how + command.ShellWord(target)
 	}
 	return problems
 }
@@ -207,17 +206,6 @@ func checkCmux(ctx context.Context, c *options, getenv func(string) string) []st
 		}
 	}
 	return problems
-}
-
-// plainWord is a word a shell takes as it is.
-var plainWord = regexp.MustCompile(`^[A-Za-z0-9_.,:/@%+=-]+$`)
-
-// shellWord is s as a shell command line gives it: quoted unless it is a plain word.
-func shellWord(s string) string {
-	if plainWord.MatchString(s) {
-		return s
-	}
-	return command.ShellQuote(s)
 }
 
 // workerTerminal is the terminal as a run uses it: the run loop's tabs and agents, the dashboard's
