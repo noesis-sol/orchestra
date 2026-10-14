@@ -148,7 +148,7 @@ func (b *fakeBeads) Show(ctx context.Context, id string) (Ticket, error) {
 	defer b.mu.Unlock()
 	t, ok := b.tickets[id]
 	if !ok {
-		return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: no such issue", id)
+		return Ticket{ID: id, Status: "unknown"}, fmt.Errorf("bd show %s: %w", id, ErrNoTicket)
 	}
 	show := *t
 	for _, l := range b.links[id] {

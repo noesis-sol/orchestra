@@ -11,6 +11,10 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra init` no longer runs `bd init` while you have changes staged,
   which bd committed along with its own files: it says what is staged and to
   commit or unstage it, then run init again.
+- A worker the last run left behind on a ticket deleted from `bd` since is
+  dropped (`<id>, carried over from the last run, is dropped: bd has no such
+  ticket`), rather than kept in `.orchestra/run/state.json` and reported
+  `kept for the next run: bd can't show it` on every run.
 - `orchestra update` on a read-only filesystem gives the advice to run it
   as the folder's owner (exit 2), where it said only that the update failed.
   A busy line on a terminal that reports no width, as a fresh pseudo-terminal

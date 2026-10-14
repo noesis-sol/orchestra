@@ -283,10 +283,40 @@ func parseTicket(raw []byte) (dispatch.Ticket, bool) {
 func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
 	out, err := b.bd(ctx, command.ReadLimit, "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
-	if !ok {
+	switch {
+	case !ok && err != nil && noSuchTicket([]byte(out)):
+		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, &NotFoundError{ID: id, Err: err}
+	case !ok:
 		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, unreadable(id, out, err)
 	}
 	return t, nil
+}
+
+// NotFoundError is 'bd show' failing because bd has no trace of the ticket, as one deleted from it,
+// rather than failing to say: errors.Is takes it for dispatch.ErrNoTicket. Err is bd's failure,
+// carrying its stderr.
+type NotFoundError struct {
+	ID  string
+	Err error
+}
+
+func (e *NotFoundError) Error() string { return e.Err.Error() }
+
+func (e *NotFoundError) Unwrap() error { return e.Err }
+
+// Is reports whether target is dispatch.ErrNoTicket.
+func (e *NotFoundError) Is(target error) bool { return target == dispatch.ErrNoTicket }
+
+// bdNoSuchTicket is the error 'bd show --json' gives, on stdout as it exits 1, for an ID it has no
+// ticket for (bd 1.3: "Issue <id> not found" on stderr).
+const bdNoSuchTicket = "no issues found matching the provided IDs"
+
+// noSuchTicket reports whether 'bd show --json' said it has no ticket by the ID it was given.
+func noSuchTicket(raw []byte) bool {
+	var e struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(bytes.TrimSpace(raw), &e) == nil && e.Error == bdNoSuchTicket
 }
 
 // Status returns the ticket's status. If it cannot be read, it is StatusUnknown and the error says why.

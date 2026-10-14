@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 )
 
@@ -46,6 +47,10 @@ const (
 	StatusClosed     TicketStatus = "closed"
 	StatusUnknown    TicketStatus = "unknown" // bd could not show the ticket; not a status Beads has
 )
+
+// ErrNoTicket is, through errors.Is, the error of a Tickets read of a ticket the tracker has no
+// trace of, as one deleted from it, rather than of the tracker failing to say.
+var ErrNoTicket = errors.New("no such ticket")
 
 // HumanLabel marks a question for the maintainer (bd human list / respond). Workers ask one as
 // its own ticket that blocks theirs; the orchestrator never dispatches it.

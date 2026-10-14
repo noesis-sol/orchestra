@@ -3,6 +3,7 @@ package dispatch
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -130,7 +131,8 @@ const (
 // carried over if its session can be resumed (see resumeGone); without one, it has nothing to carry
 // on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker.
 // One it can't check, as bd can't show its ticket or git can't list the worktrees, isn't gone for
-// that: it is kept, saying why, as is one whose check Ctrl+C cut short, without a word. The question
+// that: it is kept, saying why, as is one whose check Ctrl+C cut short, without a word; one whose
+// ticket bd has no trace of (ErrNoTicket), as one deleted, is gone, and dropped. The question
 // the ticket now waits on, if any, replaces the one in w, and a ticket labelled UnmergedLabel loses
 // the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) carryCheck {
@@ -143,7 +145,11 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *askedWorker) car
 		return carryKeep
 	}
 	t, err := o.showTries(ctx, id)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrNoTicket):
+		o.info("  %s, carried over from the last run, is dropped: bd has no such ticket", id)
+		return carryDrop
+	case err != nil:
 		return unchecked("bd can't show it", err)
 	}
 	wt, err := o.worktrees.WorktreeOf(ctx, c.Repo, br)
@@ -237,11 +243,12 @@ func (o *Loop) earlierKnownState(ctx context.Context, id string, w askedWorker) 
 }
 
 // showTries reads ticket id, trying up to three times while bd fails, as when another bd holds the
-// database: a ticket bd can't show isn't carried over, but kept for the next run.
+// database: a ticket bd can't show isn't carried over, but kept for the next run. One bd has no
+// trace of (ErrNoTicket) isn't tried again: it is gone.
 func (o *Loop) showTries(ctx context.Context, id string) (Ticket, error) {
 	for try := 1; ; try++ {
 		t, err := o.tickets.Show(ctx, id)
-		if err == nil || try == 3 || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
+		if err == nil || errors.Is(err, ErrNoTicket) || try == 3 || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return t, err
 		}
 		o.log.Raw("", err)
