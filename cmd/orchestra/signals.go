@@ -24,19 +24,40 @@ var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 // One that comes while a phase it stopped winds down ends orchestra instead, once quitWith has
 // said how, so that a shutdown that hangs can be left: see further. Before that (the feature
 // request, and the loop while the dashboard is open) it too goes to the next phase.
+//
+// What a stop signal does follows from the watch's phase:
+//
+//	between                                    → it pends (the first is kept)
+//	listening                                  → onStop gets it → winding
+//	winding, no quitter                        → it pends
+//	winding, quitter set, something finishing  → a warning, it pends → warned
+//	winding, quitter set, nothing finishing    → orchestra quits, exit code 130
+//	warned                                     → orchestra quits, exit code 130
+//
+// on(f) starts the next phase: listening with an f, between without one (or winding at once, when
+// f takes a signal that pends). windDown goes to winding without a signal.
 type stopWatch struct {
-	sigs chan os.Signal
-	done chan struct{}
+	stop func() // stops the relay: see release
 
 	mu      sync.Mutex
-	onStop  func(os.Signal) // the current phase's, for the next signal; nil while none listens
+	phase   stopPhase
+	onStop  func(os.Signal) // the listening phase's, for the next signal
 	pending os.Signal       // a signal no phase has taken yet
 	dropInt bool            // SIGINT is the terminal program's: see dropInterrupts
 	leave   bool            // SIGTERM or SIGHUP has come: see leaving
 	quit    *quitter        // how a further signal ends orchestra; nil until quitWith
-	winding bool            // the phase listening last has taken its signal and winds down
-	warned  bool            // a further signal has said what is under way: the next one quits
 }
+
+// stopPhase is where a stopWatch is in a run, which decides what the next stop signal does: see
+// stopWatch.
+type stopPhase int
+
+const (
+	between   stopPhase = iota // no phase listens: a signal waits for the next
+	listening                  // the current phase's onStop takes the next signal
+	winding                    // the phase listening last has taken its signal and winds down
+	warned                     // a further signal has said what is under way: the next one quits
+)
 
 // quitter is what a further stop signal needs to end orchestra: the loop, to say which of its
 // workers are left running and what is under way that a stop doesn't cut short, and to save the
@@ -54,18 +75,8 @@ type quitter struct {
 
 // catchStops starts catching stopSignals. Call release once the run is over.
 func catchStops() *stopWatch {
-	w := &stopWatch{sigs: make(chan os.Signal, len(stopSignals)), done: make(chan struct{})}
-	signal.Notify(w.sigs, stopSignals...)
-	go func() {
-		for {
-			select {
-			case s := <-w.sigs:
-				w.deliver(s)
-			case <-w.done:
-				return
-			}
-		}
-	}()
+	w := &stopWatch{}
+	w.stop = relay(stopSignals, w.deliver)
 	return w
 }
 
@@ -76,14 +87,25 @@ func (w *stopWatch) deliver(s os.Signal) {
 		return
 	}
 	w.leave = w.leave || leaves(s)
-	switch {
-	case w.onStop != nil:
+	switch w.phase {
+	case listening:
 		f := w.onStop
-		w.onStop, w.winding = nil, true
+		w.onStop, w.phase = nil, winding
 		f(s)
-	case w.winding && w.quit != nil:
-		w.further(s)
-	case w.pending == nil:
+	case winding, warned:
+		if w.quit != nil {
+			w.further(s)
+			return
+		}
+		w.pend(s)
+	case between:
+		w.pend(s)
+	}
+}
+
+// pend keeps s for the next phase, unless a signal already waits. The caller holds w.mu.
+func (w *stopWatch) pend(s os.Signal) {
+	if w.pending == nil {
 		w.pending = s
 	}
 }
@@ -95,14 +117,16 @@ func (w *stopWatch) deliver(s os.Signal) {
 func (w *stopWatch) on(f func(os.Signal)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.winding, w.warned = false, false
 	if f != nil && w.pending != nil {
 		s := w.pending
-		w.pending, w.onStop, w.winding = nil, nil, true
+		w.pending, w.onStop, w.phase = nil, nil, winding
 		f(s)
 		return
 	}
-	w.onStop = f
+	w.onStop, w.phase = f, between
+	if f != nil {
+		w.phase = listening
+	}
 }
 
 // dropInterrupts drops SIGINT until the function it returns is called: it neither stops the
@@ -136,7 +160,10 @@ func (w *stopWatch) quitWith(q quitter) {
 func (w *stopWatch) windDown() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.onStop, w.winding = nil, true
+	w.onStop = nil
+	if w.phase != warned {
+		w.phase = winding
+	}
 	if s := w.pending; s != nil && w.quit != nil {
 		w.pending = nil
 		w.further(s)
@@ -155,11 +182,9 @@ func (w *stopWatch) windDown() {
 func (w *stopWatch) further(s os.Signal) {
 	q := w.quit
 	under := q.loop.Finishing()
-	if len(under) > 0 && !w.warned {
-		w.warned = true
-		if w.pending == nil {
-			w.pending = s
-		}
+	if len(under) > 0 && w.phase != warned {
+		w.phase = warned
+		w.pend(s)
 		again := "send " + signalName(s) + " again"
 		if s == os.Interrupt {
 			again = "press Ctrl+C again"
@@ -201,10 +226,7 @@ func (w *stopWatch) leaving() bool {
 }
 
 // release stops catching stopSignals: from then on they have their default effect again.
-func (w *stopWatch) release() {
-	signal.Stop(w.sigs)
-	close(w.done)
-}
+func (w *stopWatch) release() { w.stop() }
 
 // stoppedHow says how signal s stopped the run, for its INTERRUPTED line: "with Ctrl+C", "by SIGTERM".
 func stoppedHow(s os.Signal) string {
@@ -221,24 +243,31 @@ func leaves(sig os.Signal) bool { return sig == syscall.SIGTERM || sig == syscal
 // watchDrain calls onDrain, from another goroutine, each time orchestra receives one of
 // drainSignals. The function it returns stops watching.
 func watchDrain(onDrain func()) (stop func()) {
-	if len(drainSignals) == 0 {
+	return relay(drainSignals, func(os.Signal) { onDrain() })
+}
+
+// relay catches sigs and calls fn with each, in turn, from another goroutine. The function it
+// returns stops catching them: from then on they have their default effect. With no sigs it
+// catches none.
+func relay(sigs []os.Signal, fn func(os.Signal)) (stop func()) {
+	if len(sigs) == 0 {
 		return func() {} // signal.Notify with no signals would catch them all
 	}
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, drainSignals...)
+	ch := make(chan os.Signal, len(sigs))
+	signal.Notify(ch, sigs...)
 	done := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-sigs:
-				onDrain()
+			case s := <-ch:
+				fn(s)
 			case <-done:
 				return
 			}
 		}
 	}()
 	return func() {
-		signal.Stop(sigs)
+		signal.Stop(ch)
 		close(done)
 	}
 }
