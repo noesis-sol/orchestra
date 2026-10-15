@@ -316,8 +316,8 @@ func (m Dashboard) statsTable(w int) string {
 	}
 	n, of := m.queueCount()
 	queued := n + dimStyle.Render(of)
-	if m.queued < 0 {
-		queued = dimStyle.Render(n)
+	if m.queued <= 0 { // "—" or an empty queue: faint, like the strip's other zeros
+		queued = dimStyle.Render(n + of)
 	}
 	queued += m.heldBack()
 	if m.draining {

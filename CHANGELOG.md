@@ -4,6 +4,14 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The dashboard's **In queue** shows an empty queue's `0 of N` all in the
+  faint grey, like the strip's other zeros, instead of a bright 0 that drew
+  the eye to a queue with nothing in it.
+
 ## [0.7.4] - 2026-10-15
 
 ### Added
