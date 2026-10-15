@@ -6,12 +6,7 @@
 
 Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own tab, in [Herdr](https://herdr.dev), [tmux](https://github.com/tmux/tmux) or [cmux](https://cmux.com), and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
 
-## Workers and organs
-
-Two kinds of model calls do orchestra's work, and these docs keep their names apart:
-
-- **Workers** are the coding agents that do the tickets: one per ticket, each in its own tab (Herdr's, tmux's or cmux's) and git worktree, a full Claude Code session (by default) with its tools and the [MCP servers the project chose](docs/workers.md#mcp-servers-for-workers). They edit, test, commit and close their ticket.
-- **[Organs](docs/organs.md)** are orchestra's own one-shot advisers: triage of set-aside tickets, the predictor of a ticket's files, the reviewer that writes the run report, the screen and plan that turn a feature request into tickets, and the scout that finds a project's test suites for `orchestra init`. Each is a single `claude -p` call with no tools, except the scout, which has read-only ones (Read, Glob and Grep) to read the repository; they advise and change nothing.
+<img width="3126" height="1950" alt="Screenshot 2026-10-15 at 12 57 51 PM" src="https://github.com/user-attachments/assets/5ad67440-3f80-42d6-a8fa-34dbd91d905b" />
 
 ## Install
 
@@ -82,34 +77,6 @@ How a run goes:
 | `LIMIT=40`, `NOTIFY=0`, `TRIAGE=0`, `REVIEW=0` | tickets per run, macOS notifications, the triage and report organs |
 
 `orchestra -h` lists every flag. Run `orchestra plan` after filing a batch of tickets: it proposes blocks links between tickets that touch the same code, and `--apply` adds them. The details, from footprints and merges to conflict hand-back and carrying workers over, are in [docs/running.md](docs/running.md).
-
-## The dashboard
-
-<img width="3126" height="1950" alt="Screenshot 2026-10-15 at 12 57 51 PM" src="https://github.com/user-attachments/assets/5ad67440-3f80-42d6-a8fa-34dbd91d905b" />
-
-A finished ticket that can't merge until you act reads `■ blocked`, with why (`main checkout has uncommitted changes`, `merge conflict in <files>`), and counts under **Needs you** with the questions waiting for your answer; `■ stopped` is a worker still running when the run stopped.
-
-The dashboard's keys:
-- **1**–**9** switch to that worker's tab (its workspace in cmux; in tmux, while its windows are in orchestra's session).
-- **s** asks whether to stop after the running tickets.
-- **Ctrl+C** stops at once and leaves the workers running; press it again to quit without waiting.
-
-Everything is also logged to `.orchestra/orchestra.log`. Scripts and agents should read the [event stream](docs/events.md) instead. See [docs/dashboard.md](docs/dashboard.md) for the rest, including the notifications.
-
-## Exit codes
-
-| Code | Meaning |
-|---|---|
-| 0 | done: nothing left to start, nothing to run from the start (`✓ All done` or `Nothing ready to run`), the limit reached, or stopped after the running tickets as asked |
-| 2 | a setup problem (all are listed), or another run going in the repository |
-| 3 | a worker needs you: blocked, idle with its ticket in progress, or past the ticket limit |
-| 4 | a terminal (Herdr, tmux or cmux), Beads or git failure |
-| 5 | uncommitted changes in the main checkout, or it left its branch |
-| 6 | a finished branch didn't fast-forward |
-| 7 | workers kept failing at once: the machine, not the tickets |
-| 130 | stopped with Ctrl+C, SIGTERM or SIGHUP |
-
-Each code in full, and what to do after one, is in [docs/running.md](docs/running.md#exit-codes).
 
 ## Running orchestra through an agent
 
