@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- orchestra closes an epic itself once a run merges the last of its
+  subtickets (none left open, running, or closed but not merged), with
+  `bd close <id>` and a reason naming the last ticket, and logs
+  `closed epic <id>: all N subtickets are merged`; an epic closed so that was
+  the last open subticket of another closes that one too. It only said how
+  to close it before, so a finished epic stayed in `bd ready` and the queue's
+  count. A scoped run's `SCOPE_DONE` says `orchestra closed <id>`. Should
+  `bd close` fail, the log keeps the hint and the run goes on.
+
 - The dashboard's **In queue** shows an empty queue's `0 of N` all in the
   faint grey, like the strip's other zeros, instead of a bright 0 that drew
   the eye to a queue with nothing in it.

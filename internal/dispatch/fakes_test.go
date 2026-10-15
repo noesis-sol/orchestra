@@ -186,6 +186,12 @@ func (b *fakeBeads) Reopen(ctx context.Context, id string) error {
 	return nil
 }
 
+// Close closes the ticket, as bd close does, keeping the reason with its notes.
+func (b *fakeBeads) Close(ctx context.Context, id, reason string) error {
+	b.set(id, "closed")
+	return b.AppendNotes(ctx, id, "closed: "+reason)
+}
+
 func (b *fakeBeads) Closed(ctx context.Context, label string) ([]Ticket, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

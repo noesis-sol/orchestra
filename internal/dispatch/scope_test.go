@@ -101,7 +101,7 @@ func TestScopedRunTakesOnlyTheTicketAndItsSubtickets(t *testing.T) {
 }
 
 // Outside a scoped run too, a parent waits for its subtickets; an epic is never dispatched, and
-// once its last subticket merges the log says it can be closed.
+// once its last subticket merges orchestra closes it.
 func TestParentsRunLastInEveryRun(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -125,11 +125,11 @@ func TestParentsRunLastInEveryRun(t *testing.T) {
 	if !equal(order, []string{"C", "P", "F"}) {
 		t.Errorf("dispatched %v, want C P F", order)
 	}
-	if ev, want := h.sink.text(), "all of E's subtickets are merged; close it with: bd close E (or bd epic close-eligible)"; !strings.Contains(ev, want) {
+	if ev, want := h.sink.text(), "closed epic E: its 1 subticket is merged"; !strings.Contains(ev, want) {
 		t.Errorf("events lack %q:\n%s", want, ev)
 	}
-	if strings.Contains(h.sink.text(), "all of P's subtickets") {
-		t.Error("P isn't an epic: it runs rather than waiting to be closed")
+	if strings.Contains(h.sink.text(), "closed epic P") {
+		t.Error("P isn't an epic: it runs rather than being closed")
 	}
 }
 
@@ -204,8 +204,8 @@ func TestScopeOpenSaysWhyEachSubticketIsNotDone(t *testing.T) {
 	})
 }
 
-// An epic's scope ends done once its subtickets merge, leaving the epic for the maintainer to close.
-func TestScopedEpicIsLeftToClose(t *testing.T) {
+// An epic's scope ends done once its subtickets merge, the run closing the epic.
+func TestScopedEpicIsClosedByTheRun(t *testing.T) {
 	t.Parallel()
 	h := scopedHarness(t, "E")
 	h.beads.add("E", "epic", 1)
@@ -213,12 +213,12 @@ func TestScopedEpicIsLeftToClose(t *testing.T) {
 	h.beads.sub("E.1", "E", "only child", 1)
 	h.worker("E.1", finishes("e1.txt"))
 	o, code := h.run()
-	want := "READY_EMPTY after 1 tickets; SCOPE_DONE: E's 1 subticket is merged; close it with: bd close E"
+	want := "READY_EMPTY after 1 tickets; SCOPE_DONE: E's 1 subticket is merged; orchestra closed E"
 	if code != ExitOK || o.Final() != want {
 		t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
 	}
-	if st, _ := h.beads.Status(context.Background(), "E"); st != "open" {
-		t.Errorf("E is %s; orchestra doesn't close an epic itself", st)
+	if st, _ := h.beads.Status(context.Background(), "E"); st != "closed" {
+		t.Errorf("E is %s, want closed", st)
 	}
 }
 

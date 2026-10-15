@@ -102,31 +102,70 @@ func (c Config) excludes(t Ticket) bool {
 	return slices.Contains(c.ExcludeTypes, t.IssueType)
 }
 
-// parentDone says, once, when the ticket that just finished was the last of an epic's subtickets
-// to merge. An epic is never dispatched, and orchestra leaves closing it to the maintainer.
+// parentDone closes the epic whose subtickets the ticket that just finished was the last to merge,
+// once: an epic is never dispatched, so nothing else would. An epic so closed that was itself the
+// last open subticket of an epic closes that one too, up the chain.
 func (o *Loop) parentDone(ctx context.Context, id string, running map[string]bool) {
 	o.mu.Lock()
 	p := o.parentOf[id]
 	o.mu.Unlock()
-	if p == "" || o.doneSaid.last(p) != "" || o.unmergedWhy(id) != "" {
+	if o.unmergedWhy(id) != "" {
 		return
+	}
+	for p != "" {
+		p = o.epicDone(ctx, p, id, running)
+	}
+}
+
+// epicClosed is doneSaid's record of an epic orchestra closed in the run.
+const epicClosed = "closed"
+
+// epicDone closes epic p if all of its subtickets are closed and merged, last the one that merged
+// last, and returns p's own parent to look at next; "" when p stays open or has no parent. Should
+// bd fail to close it, the log says so and how to close it, and the run goes on.
+func (o *Loop) epicDone(ctx context.Context, p, last string, running map[string]bool) string {
+	if o.doneSaid.last(p) != "" {
+		return ""
 	}
 	parent, err := o.tickets.Show(ctx, p)
 	if err != nil || parent.Status == StatusClosed || !o.excluded(parent) {
-		return
+		return ""
 	}
 	parents, err := o.openParents(ctx, running)
 	if err != nil {
 		o.log.Raw("", err)
-		return
+		return ""
 	}
-	if parents[p] {
-		return
+	if parents[p] || !o.doneSaid.changed(p, "ready to close") {
+		return ""
 	}
-	if !o.doneSaid.changed(p, "ready to close") {
-		return
+	n := -1 // its subtickets, should bd fail to list them
+	if subs, err := o.tickets.Descendants(ctx, p); err == nil {
+		n = len(subs)
+	} else {
+		o.log.Raw("", err)
 	}
-	o.info("  all of %s's subtickets are merged; close it with: bd close %s (or bd epic close-eligible)", p, p)
+	reason := fmt.Sprintf("%s; closed by orchestra after %s", allMerged(n), last)
+	if err := o.notes.Close(ctx, p, strings.ToUpper(reason[:1])+reason[1:]); err != nil {
+		o.log.Raw("", err)
+		o.info("  %s, but bd could not close %s%s; close it with: bd close %s", allMerged(n), p, because(err), p)
+		return ""
+	}
+	o.doneSaid.changed(p, epicClosed)
+	o.emit(Event{Kind: EvInfo, Ticket: p, Text: fmt.Sprintf("  closed epic %s: %s", p, allMerged(n))})
+	return parent.Parent
+}
+
+// allMerged says an epic's n subtickets are merged: "all 3 subtickets are merged", "its 1
+// subticket is merged", or with n -1, not known, "all its subtickets are merged".
+func allMerged(n int) string {
+	switch {
+	case n < 0:
+		return "all its subtickets are merged"
+	case n == 1:
+		return "its 1 subticket is merged"
+	}
+	return fmt.Sprintf("all %s are merged", subtickets(n))
 }
 
 // scopeNote is what a scoped run adds to a worker's prompt, so the follow-ups that belong to the
@@ -174,27 +213,29 @@ func subtickets(n int) string {
 
 // scopeEnd is what a scoped run adds to its last line, given the scope's descendants as listed
 // (err if they couldn't be): SCOPE_DONE when the ticket and all of them are closed and merged (an
-// epic, never dispatched, is left for the maintainer to close), else SCOPE_OPEN naming each one
-// not done and why. It is "" for a run of all of bd ready.
+// epic, never dispatched, closed by the run as its last subticket merged, or else left for the
+// maintainer to close), else SCOPE_OPEN naming each one not done and why. It is "" for a run of all of bd ready.
 func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 	return o.scopeView().end(ctx, subs, err)
 }
 
 // scopeView is what is read to say where a scope stands: the tracker, the run's settings, and why
-// a ticket is closed but not merged and whether it was set aside in the run. A Loop has them from
-// its run (scopeView); the nothing-to-run check, before any Loop, has the tickets labelled
-// UnmergedLabel and none set aside.
+// a ticket is closed but not merged, whether it was set aside in the run and whether the run closed
+// it. A Loop has them from its run (scopeView); the nothing-to-run check, before any Loop, has the
+// tickets labelled UnmergedLabel and none set aside or closed.
 type scopeView struct {
 	tickets  Tickets
 	cfg      Config
 	unmerged func(id string) string // why the ticket is closed but not merged, or ""
 	aside    func(id string) bool   // whether the ticket was set aside in this run; nil for none
+	closed   func(id string) bool   // whether the run closed the epic, its subtickets merged; nil for none
 }
 
 // scopeView is where the run's scope stands, as the run knows it.
 func (o *Loop) scopeView() scopeView {
 	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
-		aside: func(id string) bool { return slices.Contains(o.asideList(), id) }}
+		aside:  func(id string) bool { return slices.Contains(o.asideList(), id) },
+		closed: func(id string) bool { return o.doneSaid.last(id) == epicClosed }}
 }
 
 // end is scopeEnd's line.
@@ -256,6 +297,10 @@ func (v scopeView) left(ctx context.Context, subs []Ticket) (scopeLeft, error) {
 		}
 	}
 	n := len(subs)
+	verb := "are"
+	if n == 1 {
+		verb = "is"
+	}
 	switch {
 	case len(l.notDone) > 0:
 		open := make([]string, len(l.notDone))
@@ -264,14 +309,13 @@ func (v scopeView) left(ctx context.Context, subs []Ticket) (scopeLeft, error) {
 		}
 		l.line = fmt.Sprintf("; SCOPE_OPEN: %s: %d of its %s not done: %s",
 			root, len(open), subtickets(n), strings.Join(open, ", "))
+	case done(top) && v.closed != nil && v.closed(root):
+		l.done = true
+		l.line = fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; orchestra closed %s", root, subtickets(n), verb, root)
 	case done(top):
 		l.done = true
 		l.line = fmt.Sprintf("; SCOPE_DONE: %s and its %s are merged", root, subtickets(n))
 	case v.cfg.excludes(top):
-		verb := "are"
-		if n == 1 {
-			verb = "is"
-		}
 		l.done, l.closeIt = true, true
 		l.line = fmt.Sprintf("; SCOPE_DONE: %s's %s %s merged; close it with: bd close %s", root, subtickets(n), verb, root)
 	default:

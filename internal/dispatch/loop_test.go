@@ -140,6 +140,7 @@ func (brokenBd) Describe(ctx context.Context, id string) string               { 
 func (brokenBd) AppendNotes(ctx context.Context, id, note string) error       { return errBd }
 func (brokenBd) Defer(ctx context.Context, id, reason string) error           { return errBd }
 func (brokenBd) Reopen(ctx context.Context, id string) error                  { return errBd }
+func (brokenBd) Close(ctx context.Context, id, reason string) error           { return errBd }
 func (brokenBd) AddLabel(ctx context.Context, id, label string) error         { return errBd }
 func (brokenBd) RemoveLabel(ctx context.Context, id, label string) error      { return errBd }
 func (brokenBd) SetMetadata(ctx context.Context, id, key, value string) error { return errBd }

@@ -372,6 +372,12 @@ func (b Tracker) Reopen(ctx context.Context, id string) error {
 	return err
 }
 
+// Close closes the ticket, with the reason.
+func (b Tracker) Close(ctx context.Context, id, reason string) error {
+	_, err := b.bd(ctx, command.WriteLimit, "close", id, "--reason="+reason)
+	return err
+}
+
 // AddLabel adds the label to the ticket.
 func (b Tracker) AddLabel(ctx context.Context, id, label string) error {
 	_, err := b.bd(ctx, command.WriteLimit, "label", "add", id, label)

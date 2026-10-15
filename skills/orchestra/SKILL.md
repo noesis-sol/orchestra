@@ -199,7 +199,7 @@ When the user wants one piece of work finished (an epic and its children, a tick
 subtickets) rather than the whole backlog, run `orchestra --ticket <id>` (or `ORCHESTRA_TICKET`):
 only that ticket and its descendants are dispatched, each parent after its children, and follow-ups
 join only when filed as its children (`bd create --parent <id>`). An epic is never dispatched;
-orchestra says when it can be closed (`bd close <id>`) but doesn't close it. In every run, a ticket
+orchestra closes it once a run merges its last subticket (`closed epic <id>` in the log). In every run, a ticket
 with subtickets not yet closed and merged waits for them (`<id> waits: its subtickets are not all
 closed and merged`).
 
