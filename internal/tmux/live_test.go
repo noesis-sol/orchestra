@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -349,9 +351,27 @@ func TestLiveAgentGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.eventually("never gone once it exited", func() bool { return l.status("x-1") == dispatch.StateGone })
-	// tmux marks the pane dead as its terminal closes, and has its exit status once it has reaped it.
+	// tmux marks the pane dead as its terminal closes, and has its exit status once it has reaped it,
+	// which it does on SIGCHLD. Before 3.6 a tmux built with utempter, as Ubuntu's 3.4 is, can lose that
+	// signal: when the terminal's close comes first, removing the pane's utmp record runs a helper with
+	// SIGCHLD at its default, which discards the one the pane's process sends meanwhile, and the process
+	// stays a zombie, the pane dead with no status, until another child of tmux exits (tmux's commit
+	// fa5f3cef3d, GitHub issue 4559, sends itself SIGCHLD after it). So a dead pane without a status has
+	// the server sent SIGCHLD, as tmux 3.6 does.
+	server, err := strconv.Atoi(l.tmux("display-message", "-p", "#{pid}"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	l.eventually("the pane never showed it dead with exit status 3", func() bool {
-		return l.tmux("display-message", "-p", "-t", pane, "#{pane_dead} #{pane_dead_status}") == "1 3"
+		switch l.tmux("display-message", "-p", "-t", pane, "#{pane_dead} #{pane_dead_status}") {
+		case "1 3":
+			return true
+		case "1":
+			if err := syscall.Kill(server, syscall.SIGCHLD); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return false
 	})
 	if open, err := l.term.PaneOpen(bg, pane); !open || err != nil {
 		t.Errorf("PaneOpen = %v %v", open, err)
