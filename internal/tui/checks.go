@@ -595,10 +595,22 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.leaveScout()
 		}
 	}
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		msg = formSize(size)
+	}
 	leave := m.leaveScout()
 	f, cmd := m.form.Update(msg)
 	m.form = f.(*huh.Form)
 	return m, tea.Batch(leave, cmd, m.leaveScout())
+}
+
+// formSize is the terminal's size as the form is told it: a line shorter. On a window size message
+// huh v1.0.0 makes each stage as tall as the tallest one, at most the terminal's height, but draws a
+// blank line above the help that it doesn't count; a stage as tall as the terminal would be drawn a
+// line taller, and Bubble Tea would drop its top line, the stepper.
+func formSize(size tea.WindowSizeMsg) tea.WindowSizeMsg {
+	size.Height = max(size.Height-1, 1)
+	return size
 }
 
 // leaveScout moves the focus from the scout's field to the next once the scout is settled, at once

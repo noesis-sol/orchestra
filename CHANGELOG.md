@@ -12,6 +12,12 @@ All notable changes to orchestra are documented here. The format follows
   instead of below whatever the terminal showed: the form gets the terminal's
   full height. Written to a pipe or a file, or with `TERM=dumb`, it clears
   nothing, and what init prints after the form stays on the screen.
+### Fixed
+
+- `orchestra init`'s stepper stays at the top of the form on a terminal
+  shorter than a stage, such as the Checks stage with the suites the scout
+  found listed: huh drew the stage a line taller than the terminal, which
+  scrolled the stepper out of sight.
 
 ## [0.7.5] - 2026-10-15
 
