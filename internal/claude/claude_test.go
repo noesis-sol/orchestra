@@ -67,8 +67,8 @@ func TestHooksRecordWhatTheWorkerDoes(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wt, ".orchestra", "run")); err != nil {
 		t.Fatal(err)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(wt, ".orchestra", "run")); len(entries) != 2 {
-		t.Errorf("temporary files left behind: %v", entries)
+	if left := temporaryFiles(t, filepath.Join(wt, ".orchestra", "run")); len(left) > 0 {
+		t.Errorf("temporary files left behind: %v", left)
 	}
 }
 

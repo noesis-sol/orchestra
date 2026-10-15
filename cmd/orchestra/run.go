@@ -147,6 +147,9 @@ func run(
 ) (err error) {
 	e := cmdEnv{getenv: getenv, stdin: stdin, stdout: stdout, stderr: stderr}
 	if len(args) > 1 {
+		if args[1] == "hook" { // hidden: Claude Code runs it as a worker's hook, which package claude serves itself
+			return status(claude.Hook(args[2:], getenv, stdin, stderr))
+		}
 		if c, ok := findSubcommand(args[1]); ok {
 			return status(c.run(ctx, args[2:], e))
 		}

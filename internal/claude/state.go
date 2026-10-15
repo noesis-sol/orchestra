@@ -255,11 +255,7 @@ func readRecord(root *os.Root, name string) record {
 	if err != nil {
 		return record{}
 	}
-	var in struct {
-		V            int    `json:"v"`
-		Event        string `json:"hook_event_name"`
-		Notification string `json:"notification_type"`
-	}
+	var in hookInput
 	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return record{}
 	}
@@ -288,11 +284,7 @@ func readSessions(b []byte, noted, used, now time.Time) sessions {
 	var s sessions
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
-		var e struct {
-			V      int    `json:"v"`
-			Event  string `json:"hook_event_name"`
-			Reason string `json:"reason"`
-		}
+		var e hookInput
 		if json.Unmarshal(sc.Bytes(), &e) != nil || !readable(e.V) {
 			continue
 		}

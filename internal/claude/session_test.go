@@ -62,8 +62,8 @@ func TestSessionStartHookRecordsTheSession(t *testing.T) {
 	if got := r.TranscriptTail(wt); got != "user: Work on A." {
 		t.Errorf("TranscriptTail = %q", got)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(wt, ".orchestra", "run")); len(entries) != 2 {
-		t.Errorf("temporary files left behind: %v", entries)
+	if left := temporaryFiles(t, filepath.Join(wt, ".orchestra", "run")); len(left) > 0 {
+		t.Errorf("temporary files left behind: %v", left)
 	}
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)

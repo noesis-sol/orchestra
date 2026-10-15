@@ -99,8 +99,8 @@ tools and no MCP servers. The README defines both terms; use them consistently.
   state from their hooks), `internal/hookterm` (what tmux and cmux share: their errors, the agents whose hooks they read
   (`AgentUI`), waiting for a worker's state, the end of a prompt, key names, free agent names, probing a socket),
   `internal/git` (git), `internal/command` (every external command: context, time limit, process group),
-  `internal/claude` (workers' hooks, the state they give, and what their screen adds to it), `internal/mcp` (discovering
-  MCP servers for workers).
+  `internal/claude` (workers' hooks, which are orchestra's own binary run as the hidden `orchestra hook <event>`,
+  the state they give, and what their screen adds to it), `internal/mcp` (discovering MCP servers for workers).
 - Test helpers: `internal/faketool` (fake commands), `internal/claudetest` (a fake Claude Code that runs its hooks,
   for the tests on a real tmux or cmux), `internal/tmuxtest` and `internal/cmuxtest` (a tmux server or cmux app of
   the test's own), `internal/gittest`.

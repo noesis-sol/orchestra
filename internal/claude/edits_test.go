@@ -3,32 +3,15 @@ package claude
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 )
 
-// runEditHook runs the hook that records edited paths, as Claude Code would before a tool use.
+// runEditHook runs the hooks Claude Code runs before the tool, which record the path it edits.
 func runEditHook(t *testing.T, settings map[string]any, tool, input string) {
 	t.Helper()
-	for _, e := range settings["hooks"].(map[string]any)["PreToolUse"].([]any) {
-		entry := e.(map[string]any)
-		if !slices.Contains(strings.Split(entry["matcher"].(string), "|"), tool) {
-			continue
-		}
-		command := entry["hooks"].([]any)[0].(map[string]any)["command"].(string)
-		if strings.Contains(command, editsName) {
-			cmd := exec.Command("sh", "-c", command)
-			cmd.Stdin = strings.NewReader(input)
-			if out, err := cmd.CombinedOutput(); err != nil || len(out) > 0 {
-				t.Fatalf("%s hook: %v %q", tool, err, out)
-			}
-			return
-		}
-	}
-	t.Fatalf("no edit hook for %s", tool)
+	runHooks(t, settings, "PreToolUse", input)
 }
 
 func TestHooksRecordEveryFileTheWorkerEdits(t *testing.T) {
@@ -65,6 +48,8 @@ func TestHooksRecordEveryFileTheWorkerEdits(t *testing.T) {
 	runEditHook(t, settings, "Write", in("Write", map[string]any{"file_path": "/tmp/scratch.txt", "content": "x"}))
 	runEditHook(t, settings, "Write", in("Write", map[string]any{"file_path": filepath.Join(wt, ".orchestra/run/prompt.md"), "content": "x"}))
 	runEditHook(t, settings, "Edit", in("Edit", map[string]any{"old_string": "no path"}))
+	runEditHook(t, settings, "Read", in("Read", map[string]any{"file_path": filepath.Join(wt, "README.md")}))
+	runEditHook(t, settings, "Write", in("Write", map[string]any{"file_path": filepath.Join(wt, "two\nlines.go"), "content": "x"}))
 
 	want := []string{"internal/dispatch/run.go", "internal/dispatch/footprint.go", "notes/a b.ipynb"}
 	if got := r.EditedFiles(wt); !slices.Equal(got, want) {

@@ -48,27 +48,23 @@ func (r Reporter) Session(worktree string) (dispatch.Session, bool) {
 	if err != nil {
 		return dispatch.Session{}, false
 	}
-	var in struct {
-		V          int    `json:"v"`
-		ID         string `json:"session_id"`
-		Transcript string `json:"transcript_path"`
-	}
+	var in hookInput
 	if json.Unmarshal(b, &in) != nil || !readable(in.V) {
 		r.sayNewer(worktree, sessionName, b)
 		return dispatch.Session{}, false
 	}
-	if !sessionID.MatchString(in.ID) {
+	if !sessionID.MatchString(in.Session) {
 		return dispatch.Session{}, false
 	}
 	p := in.Transcript
-	if !filepath.IsAbs(p) || filepath.Base(p) != in.ID+".jsonl" ||
+	if !filepath.IsAbs(p) || filepath.Base(p) != in.Session+".jsonl" ||
 		filepath.Base(filepath.Dir(filepath.Dir(p))) != "projects" {
 		return dispatch.Session{}, false
 	}
 	if fi, err := os.Lstat(p); err != nil || !fi.Mode().IsRegular() {
 		return dispatch.Session{}, false
 	}
-	return dispatch.Session{ID: in.ID, Transcript: p}, true
+	return dispatch.Session{ID: in.Session, Transcript: p}, true
 }
 
 // TranscriptTail returns the end of the transcript of the worker's session in worktree, as text: its

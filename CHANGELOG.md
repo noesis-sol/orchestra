@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker's hooks are orchestra's own binary, the one that launched it, run
+  by its absolute path as `orchestra hook <event>` (hidden, and inert unless
+  the hook's command sets `ORCHESTRA_HOOK=1`), instead of shell one-liners
+  that pulled fields out of the hook's input with `grep` and `sed`. The
+  records read and write the same Go types, a note's value with a quote or a
+  backslash is kept rather than noted empty, and each event runs one hook
+  process instead of up to three. A hook takes about 13 ms on Linux and 26 ms
+  on macOS.
+
 - Each JSON record a worker's hooks write in `.orchestra/run/` starts with
   its format, `"v":1`. orchestra reads records in that format and those
   with none (written before) alike, and leaves a record in a newer format

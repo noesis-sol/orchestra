@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,8 +51,8 @@ const (
 	// (its trigger), SubagentStart and SubagentStop (its ID and type), SessionStart (its source:
 	// startup, resume, clear, compact) and SessionEnd (its reason: exit, clear, logout, …), which the
 	// tool uses of subagents, replacing activity, can't hide. A line is short and appended in one
-	// write, so lines of hooks that run at once (subagents side by side) don't mix; a value with a
-	// quote or a backslash is noted empty. Read by HookRecord and ReadHooks.
+	// write, so lines of hooks that run at once (subagents side by side) don't mix. Read by HookRecord
+	// and ReadHooks.
 	eventsName = "events"
 	// noticeName is the last notification Claude Code showed (a permission prompt, a dialog asking for
 	// input, the session idle at its prompt for a while), replaced by Notification: what the session
@@ -200,10 +199,12 @@ func reportArgs(dir, folder string, stale ...string) ([]string, error) {
 			return nil, err
 		}
 	}
+	bin, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("finding orchestra's binary for the worker's hooks: %w", err)
+	}
 	at := func(name string) string { return filepath.Join(dir, rel(name)) }
-	settings := hookSettings(records{activity: at(activityName), turn: at(turnName), edits: at(editsName),
-		session: at(sessionName), events: at(eventsName), notice: at(noticeName), asked: at(askedPrefix)})
-	b, err := json.MarshalIndent(settings, "", "  ")
+	b, err := json.MarshalIndent(hookSettings(bin, at("")), "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +213,6 @@ func reportArgs(dir, folder string, stale ...string) ([]string, error) {
 	}
 	return []string{"--settings", at(settingsName)}, nil
 }
-
-// records are the paths of the files the hooks write; asked is the start of the paths of the
-// permission prompts asked, one per agent.
-type records struct{ activity, turn, edits, session, events, notice, asked string }
 
 // askedRecords returns the names of the permission prompts' records (askedPrefix) in folder, relative
 // to root, as the hooks left them; none when the folder isn't there.
@@ -235,103 +232,40 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 	return slices.DeleteFunc(names, func(n string) bool { return !strings.HasPrefix(n, askedPrefix) }), nil
 }
 
-// hookSettings is the settings that have the worker's hooks write the records r (activityName and
-// the other names say what each holds), each JSON one in recordFormat, and that carry workerEnv.
-// Every hook keeps to these rules:
+// hookSettings is the settings that have the worker's hooks write their records to the folder records
+// (activityName and the other names say what each holds), each JSON one in recordFormat, and that
+// carry workerEnv. Each event's hook is bin, orchestra's binary that launches the worker, run as 'bin
+// hook <event> <records>' (Hook), and keeps to these rules:
 //   - A record replaced is written to a temporary file and moved over it, so a reader never sees
 //     half of one.
 //   - It exits 0, ignoring its errors: a reporting hook must never change what the worker does, and
 //     Claude Code takes a hook's exit status 2 as "block" (the tool call is refused, or the turn may
-//     not end). dash, /bin/sh on Debian and Ubuntu, exits 2 when a redirection fails, as every write
-//     here does once the worker has removed .orchestra/run/.
+//     not end). The command around bin exits 0 whatever bin does, as when it is gone.
 //   - It reads all its input: a hook that stops early would leave Claude Code writing to a closed
-//     pipe.
+//     pipe. The command reads what bin left, as when it is gone.
 //   - It doesn't make the folder again: a git stash pop of the worker's own git stash --all would
 //     then fail on the file.
-func hookSettings(r records) map[string]any {
-	activity, turn, edits, session, events := r.activity, r.turn, r.edits, r.session, r.events
-	writeTo := func(path, from string) string {
-		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
-	}
-	write := func(from string) string { return writeTo(activity, from) }
-	// v starts each JSON record with its format; input is the hook's input, a JSON object, so
-	// started: the object's opening brace is replaced by the record's start.
-	v := `{"v":` + strconv.Itoa(recordFormat)
-	input := `sed '1s/^[[:space:]]*{/` + v + `,/'`
-	event := func(name string) string {
-		return write(`printf '` + v + `,"hook_event_name":"` + name + `"}'`)
-	}
-	turnAt := func(name string) string {
-		return writeTo(turn, `printf '`+v+`,"hook_event_name":"`+name+`"}'`)
-	}
-	hook := func(line string) []any {
-		line = "{ " + line + "; cat >/dev/null; } 2>/dev/null; exit 0"
+func hookSettings(bin, records string) map[string]any {
+	hook := func(event string) []any {
+		line := "{ " + hookCookie + "=1 " + command.ShellQuote(bin) + " " + hookCommand + " " + event + " " +
+			command.ShellQuote(records) + "; cat >/dev/null; } 2>/dev/null; exit 0"
 		return []any{map[string]any{"type": "command", "command": line}}
 	}
-	// The path is the first file_path (notebook_path for NotebookEdit) in the tool's input; a
-	// quote inside the input's strings is escaped, so one in a Write's content can't match.
-	// note appends the event to events, with the named string fields of its input: names, IDs and
-	// words, each found as the first such key, which a quote escaped inside a string can't fake.
-	field := func(f string) string {
-		return f + `=$(printf '%s' "$in" | grep -oE '"` + f + `" *: *"[^"\\]*"' | head -n 1 | ` +
-			`sed -E 's/^[^:]*: *"//; s/"$//')`
-	}
-	note := func(name string, fields ...string) string {
-		line, format, args := `in=$(cat)`, v+`,"hook_event_name":"`+name+`"`, ""
-		for _, f := range fields {
-			line += `; ` + field(f)
-			format += `,"` + f + `":"%s"`
-			args += ` "$` + f + `"`
-		}
-		return line + `; printf '` + format + `}\n'` + args + ` >> ` + command.ShellQuote(events)
-	}
-	// askedBy sets f to the asking agent's record, its ID kept to the characters of a file's name, and
-	// then runs then.
-	askedBy := func(then string) string {
-		return `in=$(cat); ` + field("agent_id") + `; ` + field("tool_name") +
-			`; a=$(printf '%s' "$agent_id" | tr -cd 'A-Za-z0-9_-'); f=` + command.ShellQuote(r.asked) +
-			`"${a:-main}"; ` + then
-	}
-	asked := askedBy(`printf '%s' "$tool_name" > "$f.$$" && mv -f "$f.$$" "$f"`)
-	answered := askedBy(`[ "$(cat "$f")" = "$tool_name" ] && rm -f "$f"`)
-	edited := `grep -oE '"(file_path|notebook_path)" *: *"[^"]*"' | head -n 1 | sed -E 's/^[^:]*: *"//; s/"$//' >> ` +
-		command.ShellQuote(edits)
+	tool := func(event string) []any { return []any{map[string]any{"matcher": "*", "hooks": hook(event)}} }
+	other := func(event string) []any { return []any{map[string]any{"hooks": hook(event)}} }
 	return map[string]any{"hooks": map[string]any{
-		"PreToolUse": []any{
-			map[string]any{"matcher": "*", "hooks": hook(write(input))},
-			map[string]any{"matcher": "Edit|MultiEdit|Write|NotebookEdit", "hooks": hook(edited)},
-		},
-		"PostToolUse": []any{
-			map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))},
-			map[string]any{"matcher": "*", "hooks": hook(answered)},
-		},
-		// Claude Code runs PostToolUse after a tool that succeeded only; this is the other case.
-		"PostToolUseFailure": []any{
-			map[string]any{"matcher": "*", "hooks": hook(event("PostToolUse"))},
-			map[string]any{"matcher": "*", "hooks": hook(answered)},
-		},
-		"PermissionRequest": []any{
-			map[string]any{"matcher": "*", "hooks": hook(write(input))},
-			map[string]any{"matcher": "*", "hooks": hook(note("PermissionRequest", "tool_name"))},
-			map[string]any{"matcher": "*", "hooks": hook(asked)},
-		},
-		"PreCompact":    []any{map[string]any{"hooks": hook(note("PreCompact", "trigger"))}},
-		"SubagentStart": []any{map[string]any{"hooks": hook(note("SubagentStart", "agent_id", "agent_type"))}},
-		"SubagentStop": []any{
-			map[string]any{"hooks": hook(note("SubagentStop", "agent_id", "agent_type"))},
-			map[string]any{"hooks": hook(askedBy(`rm -f "$f"`))},
-		},
-		"Stop": []any{
-			map[string]any{"hooks": hook(event("Stop"))},
-			map[string]any{"hooks": hook(turnAt("Stop"))},
-		},
-		"UserPromptSubmit": []any{map[string]any{"hooks": hook(turnAt("UserPromptSubmit"))}},
-		"SessionStart": []any{
-			map[string]any{"hooks": hook(writeTo(session, input))},
-			map[string]any{"hooks": hook(note("SessionStart", "source"))},
-		},
-		"SessionEnd":   []any{map[string]any{"hooks": hook(note("SessionEnd", "reason"))}},
-		"Notification": []any{map[string]any{"hooks": hook(writeTo(r.notice, input))}},
+		"PreToolUse":         tool("PreToolUse"),
+		"PostToolUse":        tool("PostToolUse"),
+		"PostToolUseFailure": tool("PostToolUseFailure"),
+		"PermissionRequest":  tool("PermissionRequest"),
+		"PreCompact":         other("PreCompact"),
+		"SubagentStart":      other("SubagentStart"),
+		"SubagentStop":       other("SubagentStop"),
+		"Stop":               other("Stop"),
+		"UserPromptSubmit":   other("UserPromptSubmit"),
+		"SessionStart":       other("SessionStart"),
+		"SessionEnd":         other("SessionEnd"),
+		"Notification":       other("Notification"),
 	}, "env": workerEnv}
 }
 
@@ -386,13 +320,7 @@ func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
 	stoppedLast := false // the last note read is a running subagent's stop
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
-		var e struct {
-			V       int    `json:"v"`
-			Event   string `json:"hook_event_name"`
-			Tool    string `json:"tool_name"`
-			Trigger string `json:"trigger"`
-			Agent   string `json:"agent_id"`
-		}
+		var e hookInput
 		if json.Unmarshal(sc.Bytes(), &e) != nil || !readable(e.V) {
 			continue
 		}
@@ -497,18 +425,7 @@ func relative(root, path string) (string, bool) {
 // the tool and its command, and the session and the subagent (if any) using it; false when it can't
 // be read, as one in a newer format.
 func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
-	var in struct {
-		V          int    `json:"v"`
-		Event      string `json:"hook_event_name"`
-		Tool       string `json:"tool_name"`
-		Session    string `json:"session_id"`
-		Transcript string `json:"transcript_path"`
-		Agent      string `json:"agent_id"`
-		AgentType  string `json:"agent_type"`
-		Input      struct {
-			Command string `json:"command"`
-		} `json:"tool_input"`
-	}
+	var in hookInput
 	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return dispatch.ToolUse{}, false
 	}
