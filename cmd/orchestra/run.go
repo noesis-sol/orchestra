@@ -411,7 +411,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 		Starter:   terminal,
 		Namer:     terminal,
 		Agents:    terminal,
-		Reporter:  claude.Reporter{},
+		Reporter:  claude.NewReporter(func(text string) { log.Line(time.Now(), text) }),
 		Checkout:  repo,
 		Worktrees: repo,
 		Merger:    repo,

@@ -249,17 +249,18 @@ func unasked(activity, turn record, s sessions) dispatch.AgentState {
 }
 
 // readRecord reads the record name in root, an os.Root at the records' folder; a zero record when
-// there is none, or it can't be read.
+// there is none, or it can't be read, as one in a newer format.
 func readRecord(root *os.Root, name string) record {
 	b, fi, err := readIn(root, name)
 	if err != nil {
 		return record{}
 	}
 	var in struct {
+		V            int    `json:"v"`
 		Event        string `json:"hook_event_name"`
 		Notification string `json:"notification_type"`
 	}
-	if json.Unmarshal(b, &in) != nil || in.Event == "" {
+	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return record{}
 	}
 	return record{event: in.Event, notification: in.Notification, at: fi.ModTime()}
@@ -280,18 +281,19 @@ func readAsked(root *os.Root) record {
 }
 
 // readSessions reads the hooks' notes, one JSON line each, for the sessions' starts and ends and the
-// subagents running at now, skipping a line it can't read; the notes were last written at noted, and
-// the last tool use reported at used. A session ended to be cleared is followed by another, which
-// may not have started yet.
+// subagents running at now, skipping a line it can't read, as one in a newer format; the notes were
+// last written at noted, and the last tool use reported at used. A session ended to be cleared is
+// followed by another, which may not have started yet.
 func readSessions(b []byte, noted, used, now time.Time) sessions {
 	var s sessions
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		var e struct {
+			V      int    `json:"v"`
 			Event  string `json:"hook_event_name"`
 			Reason string `json:"reason"`
 		}
-		if json.Unmarshal(sc.Bytes(), &e) != nil {
+		if json.Unmarshal(sc.Bytes(), &e) != nil || !readable(e.V) {
 			continue
 		}
 		switch e.Event {

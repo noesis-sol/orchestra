@@ -8,11 +8,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -64,8 +67,83 @@ const (
 	askedPrefix = "asked-"
 )
 
-// Reporter sets workers up to report what they are doing and reads what they reported.
-type Reporter struct{}
+// recordFormat is the format of the records the hooks write, which each JSON one carries as "v": bump
+// it whenever a record's fields or what they mean change. A worker keeps the hooks of the orchestra
+// that launched it, so another orchestra (one upgraded since, or adopting the worker) may read its
+// records. One with no "v" was written before records carried it, in what is format 1; one in a newer
+// format than recordFormat is unreadable (readable), and the Reporter says so in the log. An older
+// format, once there is one, is read by its own rules or not at all: nothing on disk is rewritten.
+// edits and the asked records are plain text, a path a line and a tool name: a change to them takes a
+// new file name.
+const recordFormat = 1
+
+// readable reports whether a record in format v, 0 for none given, is one these readers know.
+func readable(v int) bool {
+	return v == 0 || v == recordFormat
+}
+
+// newerFormat returns the newest format of the records in b, one record or a log of them a line each,
+// that is newer than recordFormat, and 0 when none is; it stops at what it can't read.
+func newerFormat(b []byte) int {
+	newest := 0
+	d := json.NewDecoder(bytes.NewReader(b))
+	for {
+		var r struct {
+			V int `json:"v"`
+		}
+		if d.Decode(&r) != nil {
+			return newest
+		}
+		if r.V > recordFormat && r.V > newest {
+			newest = r.V
+		}
+	}
+}
+
+// Reporter sets workers up to report what they are doing and reads what they reported. The zero
+// Reporter logs nothing; NewReporter's says in the log, once a worker, that its records are in a newer
+// format than it reads.
+type Reporter struct{ newer *newerLog }
+
+// NewReporter returns a Reporter that logs with log.
+func NewReporter(log func(text string)) Reporter {
+	return Reporter{newer: &newerLog{log: log, said: map[string]bool{}}}
+}
+
+// newerLog is where a Reporter says that a worker's records are in a newer format, and the worktrees
+// it said it of.
+type newerLog struct {
+	log  func(text string)
+	mu   sync.Mutex
+	said map[string]bool
+}
+
+// sayNewer logs, once for worktree, that its record name, read as b, is in a newer format than
+// recordFormat, if it is: the worker was launched by a newer orchestra.
+func (r Reporter) sayNewer(worktree, name string, b []byte) {
+	if r.newer == nil {
+		return
+	}
+	r.newer.mu.Lock()
+	said := r.newer.said[worktree]
+	r.newer.mu.Unlock()
+	if said {
+		return
+	}
+	v := newerFormat(b)
+	if v == 0 {
+		return
+	}
+	r.newer.mu.Lock()
+	defer r.newer.mu.Unlock()
+	if r.newer.said[worktree] {
+		return
+	}
+	r.newer.said[worktree] = true
+	r.newer.log(fmt.Sprintf("%s is in hook record format %d, newer than this orchestra reads (%d): "+
+		"the worker was launched by a newer orchestra, and its records are left unread",
+		filepath.Join(worktree, project.RunPath(name)), v, recordFormat))
+}
 
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
@@ -158,7 +236,8 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 }
 
 // hookSettings is the settings that have the worker's hooks write the records r (activityName and
-// the other names say what each holds), and that carry workerEnv. Every hook keeps to these rules:
+// the other names say what each holds), each JSON one in recordFormat, and that carry workerEnv.
+// Every hook keeps to these rules:
 //   - A record replaced is written to a temporary file and moved over it, so a reader never sees
 //     half of one.
 //   - It exits 0, ignoring its errors: a reporting hook must never change what the worker does, and
@@ -175,11 +254,15 @@ func hookSettings(r records) map[string]any {
 		return "f=" + command.ShellQuote(path) + `; ` + from + ` > "$f.$$" && mv -f "$f.$$" "$f"`
 	}
 	write := func(from string) string { return writeTo(activity, from) }
+	// v starts each JSON record with its format; input is the hook's input, a JSON object, so
+	// started: the object's opening brace is replaced by the record's start.
+	v := `{"v":` + strconv.Itoa(recordFormat)
+	input := `sed '1s/^[[:space:]]*{/` + v + `,/'`
 	event := func(name string) string {
-		return write(`printf '{"hook_event_name":"` + name + `"}'`)
+		return write(`printf '` + v + `,"hook_event_name":"` + name + `"}'`)
 	}
 	turnAt := func(name string) string {
-		return writeTo(turn, `printf '{"hook_event_name":"`+name+`"}'`)
+		return writeTo(turn, `printf '`+v+`,"hook_event_name":"`+name+`"}'`)
 	}
 	hook := func(line string) []any {
 		line = "{ " + line + "; cat >/dev/null; } 2>/dev/null; exit 0"
@@ -194,7 +277,7 @@ func hookSettings(r records) map[string]any {
 			`sed -E 's/^[^:]*: *"//; s/"$//')`
 	}
 	note := func(name string, fields ...string) string {
-		line, format, args := `in=$(cat)`, `{"hook_event_name":"`+name+`"`, ""
+		line, format, args := `in=$(cat)`, v+`,"hook_event_name":"`+name+`"`, ""
 		for _, f := range fields {
 			line += `; ` + field(f)
 			format += `,"` + f + `":"%s"`
@@ -215,7 +298,7 @@ func hookSettings(r records) map[string]any {
 		command.ShellQuote(edits)
 	return map[string]any{"hooks": map[string]any{
 		"PreToolUse": []any{
-			map[string]any{"matcher": "*", "hooks": hook(write("cat"))},
+			map[string]any{"matcher": "*", "hooks": hook(write(input))},
 			map[string]any{"matcher": "Edit|MultiEdit|Write|NotebookEdit", "hooks": hook(edited)},
 		},
 		"PostToolUse": []any{
@@ -228,7 +311,7 @@ func hookSettings(r records) map[string]any {
 			map[string]any{"matcher": "*", "hooks": hook(answered)},
 		},
 		"PermissionRequest": []any{
-			map[string]any{"matcher": "*", "hooks": hook(write("cat"))},
+			map[string]any{"matcher": "*", "hooks": hook(write(input))},
 			map[string]any{"matcher": "*", "hooks": hook(note("PermissionRequest", "tool_name"))},
 			map[string]any{"matcher": "*", "hooks": hook(asked)},
 		},
@@ -244,11 +327,11 @@ func hookSettings(r records) map[string]any {
 		},
 		"UserPromptSubmit": []any{map[string]any{"hooks": hook(turnAt("UserPromptSubmit"))}},
 		"SessionStart": []any{
-			map[string]any{"hooks": hook(writeTo(session, "cat"))},
+			map[string]any{"hooks": hook(writeTo(session, input))},
 			map[string]any{"hooks": hook(note("SessionStart", "source"))},
 		},
 		"SessionEnd":   []any{map[string]any{"hooks": hook(note("SessionEnd", "reason"))}},
-		"Notification": []any{map[string]any{"hooks": hook(writeTo(r.notice, "cat"))}},
+		"Notification": []any{map[string]any{"hooks": hook(writeTo(r.notice, input))}},
 	}, "env": workerEnv}
 }
 
@@ -260,19 +343,22 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
 // reported nothing readable; with it, when its last turn ended, if no prompt has started another.
-func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
+func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
 		return dispatch.ToolUse{}, false
 	}
 	u, ok := parseToolUse(b)
 	if !ok {
+		r.sayNewer(worktree, activityName, b)
 		return u, false
 	}
 	u.At = fi.ModTime() // each report replaces the file, so it was written then
 	if b, fi, err := readRun(worktree, turnName); err == nil {
 		if t, ok := parseToolUse(b); ok && t.Event == "Stop" {
 			u.Stopped = fi.ModTime()
+		} else if !ok {
+			r.sayNewer(worktree, turnName, b)
 		}
 	}
 	return u, true
@@ -281,17 +367,19 @@ func (Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the
 // permission prompts it waited on, its compactions and the subagents it is running. The time of the
 // last note is the events file's last write: its lines carry none.
-func (Reporter) HookRecord(worktree string) dispatch.HookRecord {
+func (r Reporter) HookRecord(worktree string) dispatch.HookRecord {
 	b, fi, err := readRun(worktree, eventsName)
 	if err != nil {
 		return dispatch.HookRecord{}
 	}
+	r.sayNewer(worktree, eventsName, b)
 	return parseEvents(b, fi.ModTime())
 }
 
 // parseEvents reads the hooks' notes, one JSON line each, the last of them noted at noted, skipping a
-// line it can't read. A subagent is running from its start to its stop, matched by its ID; a stop
-// with no start is of none of the worker's (Claude Code's forks at the end of a turn note one).
+// line it can't read, as one in a newer format. A subagent is running from its start to its stop,
+// matched by its ID; a stop with no start is of none of the worker's (Claude Code's forks at the end
+// of a turn note one).
 func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
 	r := dispatch.HookRecord{Noted: noted}
 	running := map[string]bool{}
@@ -299,12 +387,13 @@ func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		var e struct {
+			V       int    `json:"v"`
 			Event   string `json:"hook_event_name"`
 			Tool    string `json:"tool_name"`
 			Trigger string `json:"trigger"`
 			Agent   string `json:"agent_id"`
 		}
-		if json.Unmarshal(sc.Bytes(), &e) != nil {
+		if json.Unmarshal(sc.Bytes(), &e) != nil || !readable(e.V) {
 			continue
 		}
 		stoppedLast = e.Event == "SubagentStop" && running[e.Agent]
@@ -405,9 +494,11 @@ func relative(root, path string) (string, bool) {
 }
 
 // parseToolUse reads one hook input: the event, and before a tool use (or at a permission prompt)
-// the tool and its command, and the session and the subagent (if any) using it.
+// the tool and its command, and the session and the subagent (if any) using it; false when it can't
+// be read, as one in a newer format.
 func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 	var in struct {
+		V          int    `json:"v"`
 		Event      string `json:"hook_event_name"`
 		Tool       string `json:"tool_name"`
 		Session    string `json:"session_id"`
@@ -418,7 +509,7 @@ func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 			Command string `json:"command"`
 		} `json:"tool_input"`
 	}
-	if json.Unmarshal(b, &in) != nil || in.Event == "" {
+	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return dispatch.ToolUse{}, false
 	}
 	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Session: in.Session,

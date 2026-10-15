@@ -39,20 +39,25 @@ const (
 )
 
 // Session returns the Claude Code session the worker in worktree last started, or resumed, as its
-// SessionStart hook recorded it, and false when there is none to resume: no record, an ID that isn't
-// a session's, or a transcript that is gone. The record is the worker's to change, as all of
+// SessionStart hook recorded it, and false when there is none to resume: no record, or one in a newer
+// format, an ID that isn't a session's, or a transcript that is gone. The record is the worker's to change, as all of
 // .orchestra/run/ is, so the transcript must be where Claude Code keeps it, named after the session,
 // and a plain file.
-func (Reporter) Session(worktree string) (dispatch.Session, bool) {
+func (r Reporter) Session(worktree string) (dispatch.Session, bool) {
 	b, _, err := readRun(worktree, sessionName)
 	if err != nil {
 		return dispatch.Session{}, false
 	}
 	var in struct {
+		V          int    `json:"v"`
 		ID         string `json:"session_id"`
 		Transcript string `json:"transcript_path"`
 	}
-	if json.Unmarshal(b, &in) != nil || !sessionID.MatchString(in.ID) {
+	if json.Unmarshal(b, &in) != nil || !readable(in.V) {
+		r.sayNewer(worktree, sessionName, b)
+		return dispatch.Session{}, false
+	}
+	if !sessionID.MatchString(in.ID) {
 		return dispatch.Session{}, false
 	}
 	p := in.Transcript

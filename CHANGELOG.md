@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- Each JSON record a worker's hooks write in `.orchestra/run/` starts with
+  its format, `"v":1`. orchestra reads records in that format and those
+  with none (written before) alike, and leaves a record in a newer format
+  unread, with one log line for the worker, instead of misreading it: a
+  worker keeps the hooks of the orchestra that launched it, which may be
+  newer than the one reading its records.
+
 - orchestra closes an epic itself once a run merges the last of its
   subtickets (none left open, running, or closed but not merged), with
   `bd close <id>` and a reason naming the last ticket, and logs
