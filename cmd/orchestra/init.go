@@ -150,7 +150,7 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 	bindGiven(e, fs.StringVar, &f.checkFull, "check-full", "", "", parseText, "the slower suites' command, which "+
 		project.FullRunner+" runs after check-fast.sh, once at the end of a run; \"\" for none")
 	bindGiven(e, fs.DurationVar, &f.fastTimeout, "check-fast-timeout", "", 0, time.ParseDuration,
-		"how long check-fast may run on a rebased ticket, e.g. 5m (asked when omitted; default "+
+		"how long check-fast may run on a rebased ticket, e.g. 5m (default "+
 			project.DefaultCheckTimeoutText+")").alias("check-timeout").check = positive(&f.fastTimeout.Value)
 	bindGiven(e, fs.DurationVar, &f.fullTimeout, "check-full-timeout", "", 0, time.ParseDuration,
 		"how long check-full may run at the end of a run, e.g. 90m (default "+
@@ -225,15 +225,13 @@ func planInit(
 	bd, onPath := project.LocateBd(getenv)
 	q := project.Questions{
 		// Stage 2's choice of checks, unless a flag gives one of them.
-		Check:       !f.checkFast.Given && !f.checkFull.Given,
-		Timeout:     !f.fastTimeout.Given,
-		FullTimeout: !f.fullTimeout.Given,
-		Concurrent:  !f.concurrent.Given,
-		MCP:         !f.mcp.Given,
-		Setup:       !f.setup.Given && c.Setup == "" && c.SetupOffer != "",
-		Union:       !f.union.Given && project.OffersUnion(ctx, repo),
-		Install:     !f.install.Given && bd == "" && c.Install.Command != "",
-		Verifier:    !f.verifier.Given && project.OffersVerifier(repo, c.Agent),
+		Check:      !f.checkFast.Given && !f.checkFull.Given,
+		Concurrent: !f.concurrent.Given,
+		MCP:        !f.mcp.Given,
+		Setup:      !f.setup.Given && c.Setup == "" && c.SetupOffer != "",
+		Union:      !f.union.Given && project.OffersUnion(ctx, repo),
+		Install:    !f.install.Given && bd == "" && c.Install.Command != "",
+		Verifier:   !f.verifier.Given && project.OffersVerifier(repo, c.Agent),
 	}
 	// Offered as yes.
 	c.Union, c.InstallBeads, c.Verifier = f.union.Value || q.Union, f.install.Value || q.Install,

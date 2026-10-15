@@ -289,8 +289,8 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_fast_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
 		t.Errorf("replaced check timeout: %+v", st)
 	}
-	if s, _, _ := LoadSettings(repo); s.CheckFastTimeout != "" {
-		t.Errorf("the invalid check_timeout was kept: %+v", s)
+	if s, _, _ := LoadSettings(repo); s.CheckFastTimeout != DefaultCheckTimeoutText {
+		t.Errorf("the invalid check_timeout was kept, not the default written: %+v", s)
 	}
 }
 

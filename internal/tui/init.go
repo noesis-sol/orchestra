@@ -514,19 +514,6 @@ func stepper(names []string, n int) string {
 	return b.String()
 }
 
-// timeLimit asks for a check's time limit.
-func timeLimit(title, description, placeholder string, value *string) *huh.Input {
-	return huh.NewInput().
-		Title(title).
-		Description(description).
-		Placeholder(placeholder).
-		Validate(func(v string) error {
-			_, err := project.ParseCheckTimeout(strings.TrimSpace(v))
-			return err
-		}).
-		Value(value)
-}
-
 // AskInit asks the questions ask names, starting from the current choice, reading the answers
 // from in and drawing the form on out. It asks them in stages, each stage under its header; a stage
 // with no question to ask is left out. It changes nothing but c: Esc or Ctrl+C at any stage returns
@@ -630,26 +617,10 @@ func workersStage(c *project.Choice, ask Ask) (*initStage, *workersAnswers) {
 }
 
 // checksStageFields adds to the Checks stage, after stage 2's choice of checks (nil when not asked),
-// the questions ask names that wait for the scout, until settled: the checks' time limits, the setup
-// command, the verifier and the ticket prefix, with its rename.
+// the questions ask names that wait for the scout, until settled: the setup command, the verifier and
+// the ticket prefix, with its rename. It asks no time limit: init writes the defaults, edited in
+// settings.json.
 func checksStageFields(checks *initStage, c *project.Choice, ask Ask, stage2 *checksStage, settled func() bool) {
-	if ask.Timeout {
-		if c.CheckFastTimeout == "" {
-			c.CheckFastTimeout = project.DefaultCheckTimeoutText
-		}
-		untilSettled(checks.add(timeLimit("check-fast time limit", "How long orchestra lets "+project.FastRunner+
-			" run on a rebased ticket before it stops it and sets the ticket aside; other finished tickets "+
-			"wait for it meanwhile. A run can override it with --check-timeout.", "e.g. 5m, 45m",
-			&c.CheckFastTimeout)), settled)
-	}
-	if ask.FullTimeout {
-		if c.CheckFullTimeout == "" {
-			c.CheckFullTimeout = project.DefaultCheckFullTimeoutText
-		}
-		untilSettled(checks.add(timeLimit("check-full time limit", "How long orchestra lets "+project.FullRunner+
-			" run at the end of a run before it stops it. A run can override it with --check-full-timeout.",
-			"e.g. 60m, 2h", &c.CheckFullTimeout)), settled)
-	}
 	if ask.Setup {
 		if c.Setup == "" {
 			c.Setup = c.SetupOffer
@@ -727,8 +698,6 @@ func buildForm(stages []*initStage, in io.Reader, out io.Writer) (*huh.Form, []h
 // applyAnswers sets on the choice the answers the form left elsewhere, once it is submitted: trimmed
 // text, the prefix typed, stage 2's choice of checks (nil when not asked) and the Workers stage's.
 func applyAnswers(c *project.Choice, ask Ask, a *workersAnswers, stage2 *checksStage) error {
-	c.CheckFastTimeout = strings.TrimSpace(c.CheckFastTimeout)
-	c.CheckFullTimeout = strings.TrimSpace(c.CheckFullTimeout)
 	c.Setup = strings.TrimSpace(c.Setup)
 	if ask.Prefix {
 		c.Prefix = typedPrefix(*c)

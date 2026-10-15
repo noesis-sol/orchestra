@@ -56,8 +56,6 @@ func TestInitFromScratchFilesTheTestWorkAndListsIt(t *testing.T) {
 	for _, step := range []struct{ on, keys string }{
 		{"┃ Tickets at the same time", keyEnter},
 		{"> Create from scratch", keyEnter},
-		{"┃ check-fast time limit", keyEnter},
-		{"┃ check-full time limit", keyEnter},
 	} {
 		term.waitFor(t, step.on)
 		term.typeKeys(t, step.keys, false)

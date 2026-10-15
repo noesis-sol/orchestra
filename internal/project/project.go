@@ -212,16 +212,14 @@ type Choice struct {
 // Questions name init's questions: those its form asks (the flags answer the rest), or, as a Choice's
 // Unasked, those it could neither ask nor take a flag's answer for.
 type Questions struct {
-	Check       bool // the checks: the suites the scout finds, tests from scratch, or a command typed
-	Timeout     bool // check-fast's time limit
-	FullTimeout bool // check-full's time limit
-	Concurrent  bool // tickets at the same time
-	Union       bool // whether to merge CHANGELOG.md by union
-	MCP         bool // the MCP servers for workers; with none to offer, it chooses none
-	Install     bool // whether to install bd as the choice's Install says
-	Setup       bool // the setup command, starting from the one offered for the lockfiles found
-	Verifier    bool // whether to add the verifier subagent and have the worker prompt run it
-	Prefix      bool // the Beads ticket prefix, and whether to rename the tickets where it changes
+	Check      bool // the checks: the suites the scout finds, tests from scratch, or a command typed
+	Concurrent bool // tickets at the same time
+	Union      bool // whether to merge CHANGELOG.md by union
+	MCP        bool // the MCP servers for workers; with none to offer, it chooses none
+	Install    bool // whether to install bd as the choice's Install says
+	Setup      bool // the setup command, starting from the one offered for the lockfiles found
+	Verifier   bool // whether to add the verifier subagent and have the worker prompt run it
+	Prefix     bool // the Beads ticket prefix, and whether to rename the tickets where it changes
 }
 
 // Any reports whether q names a question.
@@ -366,8 +364,9 @@ func ApplySettings(_ context.Context, repo string, c Choice) ([]Step, error) {
 }
 
 // settingsStep saves the choice to .orchestra/settings.json: the runners as check_fast and
-// check_full, under their new names whatever the settings called them, and the setup command where
-// the choice changes it. It fails, leaving the file as it was, when it can't read the settings.
+// check_full, under their new names whatever the settings called them, their time limits (the
+// defaults where the choice has none), and the setup command where the choice changes it. It fails,
+// leaving the file as it was, when it can't read the settings.
 func settingsStep(repo string, c Choice) (Step, error) {
 	s, _, err := LoadSettings(repo) // keep the settings init doesn't ask about
 	if err != nil {
@@ -376,7 +375,9 @@ func settingsStep(repo string, c Choice) (Step, error) {
 		return Step{}, err
 	}
 	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
-	s.CheckFastTimeout, s.CheckFullTimeout = c.CheckFastTimeout, c.CheckFullTimeout
+	// The defaults where the choice has none: init asks no time limit, so they are there to edit.
+	s.CheckFastTimeout = orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
+	s.CheckFullTimeout = orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)
 	if c.Setup != c.SetupWas {
 		s.Setup = c.Setup
 	}
@@ -414,9 +415,9 @@ func settingsStep(repo string, c Choice) (Step, error) {
 		}
 	}
 	if !unchecked {
-		detail += ", stopped after " + orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
+		detail += ", stopped after " + s.CheckFastTimeout
 	}
-	detail += " · check-full at the end of a run, stopped after " + orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)
+	detail += " · check-full at the end of a run, stopped after " + s.CheckFullTimeout
 	if c.ReplacedTimeout != "" {
 		detail += fmt.Sprintf(" (settings had check_fast_timeout '%s', not a positive duration)", c.ReplacedTimeout)
 	}

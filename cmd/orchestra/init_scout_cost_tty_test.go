@@ -93,8 +93,6 @@ func TestInitSaysWhatTheScoutCost(t *testing.T) {
 		{"┃ On every merge (check-fast)", keyEnter},
 		{"┃ At the end of a run (check-full)", keyEnter},
 		{"┃ Also file tickets for untested areas", keyEnter},
-		{"┃ check-fast time limit", keyEnter},
-		{"┃ check-full time limit", keyEnter},
 		{"┃ Ticket prefix", keyEnter},
 	} {
 		term.waitFor(t, step.on)

@@ -18,6 +18,11 @@ All notable changes to orchestra are documented here. The format follows
   shorter than a stage, such as the Checks stage with the suites the scout
   found listed: huh drew the stage a line taller than the terminal, which
   scrolled the stepper out of sight.
+- `orchestra init`'s form no longer asks the checks' time limits. A first
+  init writes the defaults to settings.json (`check_fast_timeout` 30m,
+  `check_full_timeout` 60m), where they are changed by editing the file; an
+  existing value is kept, and `--check-fast-timeout` and
+  `--check-full-timeout` still set them.
 
 ## [0.7.5] - 2026-10-15
 

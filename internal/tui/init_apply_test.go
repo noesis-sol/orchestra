@@ -30,7 +30,7 @@ func TestApplyAnswers(t *testing.T) {
 	} {
 		t.Run(tc.about, func(t *testing.T) {
 			c := project.Choice{Concurrent: 2, Unasked: project.Questions{Concurrent: true, MCP: true},
-				CheckFastTimeout: " 5m ", CheckFullTimeout: "1h\n", Setup: "  make deps ", PrefixWas: "app", Prefix: ""}
+				Setup: "  make deps ", PrefixWas: "app", Prefix: ""}
 			a := tc.answers
 			err := applyAnswers(&c, Ask{Questions: tc.ask}, &a, nil)
 			if (err != nil) != tc.err || c.Concurrent != tc.concurrent {
@@ -48,9 +48,8 @@ func TestApplyAnswers(t *testing.T) {
 			if c.MCP != nil && len(*c.MCP) > 0 && &(*c.MCP)[0] == &a.servers[0] {
 				t.Error("the choice shares the form's slice of servers")
 			}
-			if c.CheckFastTimeout != "5m" || c.CheckFullTimeout != "1h" || c.Setup != "make deps" || c.Prefix != "" {
-				t.Errorf("text %q, %q, %q, prefix %q: want it trimmed, the prefix untouched when not asked",
-					c.CheckFastTimeout, c.CheckFullTimeout, c.Setup, c.Prefix)
+			if c.Setup != "make deps" || c.Prefix != "" {
+				t.Errorf("setup %q, prefix %q: want it trimmed, the prefix untouched when not asked", c.Setup, c.Prefix)
 			}
 		})
 	}

@@ -22,7 +22,6 @@ const (
 	onUnion       = "┃ Merge CHANGELOG.md by union"
 	onChoice      = "┃ The project's checks"
 	onCheck       = "┃ Check command"
-	onTimeout     = "┃ check-fast time limit"
 	shiftTab      = "\x1b[Z"
 )
 
@@ -38,7 +37,7 @@ func (s *syncBuffer) reset() {
 func askStages(t *testing.T, c *project.Choice) *formTerminal {
 	t.Helper()
 	return askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(in, out, c, Ask{Questions: project.Questions{Union: true, Check: true, Timeout: true}})
+		return AskInit(in, out, c, Ask{Questions: project.Questions{Union: true, Check: true}})
 	})
 }
 
@@ -52,12 +51,12 @@ func TestInitFormAsksWorkersThenChecksUnderTheirHeaders(t *testing.T) {
 	}
 	term.typeKeys(t, "\r")
 	term.waitFor(t, checksStep)
-	term.typeSteps(t, []keysOn{{onChoice, "\r"}, {onCheck, "make check\r"}, {onTimeout, "\r"}})
+	term.typeSteps(t, []keysOn{{onChoice, "\r"}, {onCheck, "make check\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Union || c.FastCommand() != "make check" || !c.ReplaceFast || c.CheckFastTimeout != project.DefaultCheckTimeoutText {
-		t.Errorf("union %v, check %q, time limit %q", c.Union, c.FastCommand(), c.CheckFastTimeout)
+	if !c.Union || c.FastCommand() != "make check" || !c.ReplaceFast {
+		t.Errorf("union %v, check %q", c.Union, c.FastCommand())
 	}
 }
 
@@ -74,7 +73,7 @@ func TestShiftTabBackToWorkersKeepsTheAnswers(t *testing.T) {
 	// still typed.
 	term.waitFor(t, workersStep)
 	term.typeSteps(t, []keysOn{{onUnion, "\r"}, {checksStep, ""}, {onChoice, "\r"}, {"just verify", ""}})
-	term.typeSteps(t, []keysOn{{onCheck, "\r"}, {onTimeout, "\r"}})
+	term.typeSteps(t, []keysOn{{onCheck, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}

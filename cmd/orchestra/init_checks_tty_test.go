@@ -68,8 +68,6 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 		{"┃ On every merge (check-fast)", keyEnter},
 		{"┃ At the end of a run (check-full)", keyEnter},
 		{"┃ Also file tickets for untested areas", keyEnter},
-		{"┃ check-fast time limit", keyEnter},
-		{"┃ check-full time limit", keyEnter},
 		{"It is told the stack: Go 1.26, Postgres 16.", ""},
 		{"┃ Add a verification step for workers", keyEnter}, // offered as yes
 		{"┃ Ticket prefix", keyEnter},                       // the folder's name, kept
@@ -98,6 +96,9 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("%s doesn't run %q:\n%s", path, want, b)
 		}
+	}
+	if screen := term.screen.String(); strings.Contains(screen, "time limit") {
+		t.Errorf("the form asked a time limit:\n%s", screen)
 	}
 	b, err := os.ReadFile(filepath.Join(repo, ".orchestra", "settings.json"))
 	if err != nil {

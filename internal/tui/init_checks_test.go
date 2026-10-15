@@ -22,7 +22,6 @@ const (
 	onFast     = "┃ On every merge (check-fast)"
 	onFull     = "┃ At the end of a run (check-full)"
 	onUntested = "┃ Also file tickets for untested areas"
-	onFullTime = "┃ check-full time limit"
 	down       = "\x1b[B" // the down arrow: runes typed at once arrive as one key
 	// The choice's options, focused: the stage draws the choice blurred while the scout's field, hidden
 	// once the scout ends, still has the focus, and a key typed then reaches the scout's field.
@@ -186,9 +185,9 @@ func TestUseThemAsTheyAreCanFileTicketsForUntestedAreas(t *testing.T) {
 
 func TestCreateFromScratchWritesRunnersThatCheckNothing(t *testing.T) {
 	c := project.Choice{}
-	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true, Timeout: true, FullTimeout: true},
+	term := askChecks(t, &c, Ask{Questions: project.Questions{Check: true},
 		Scout: finds(organ.Scouting{Suites: []organ.Suite{}}, nil)})
-	term.typeSteps(t, []keysOn{{onScratch, "\r"}, {onTimeout, "\r"}, {onFullTime, "\x7f\x7f\x7f90m\r"}})
+	term.typeSteps(t, []keysOn{{onScratch, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
@@ -201,9 +200,6 @@ func TestCreateFromScratchWritesRunnersThatCheckNothing(t *testing.T) {
 	fast, full := runners(t, c)
 	if !strings.HasSuffix(fast, "\nexit 0\n") || !strings.HasSuffix(full, "\nexit 0\n") {
 		t.Errorf("runners that check something:\n%s\n%s", fast, full)
-	}
-	if c.CheckFastTimeout != project.DefaultCheckTimeoutText || c.CheckFullTimeout != "90m" {
-		t.Errorf("time limits %q, %q; want %q, 90m", c.CheckFastTimeout, c.CheckFullTimeout, project.DefaultCheckTimeoutText)
 	}
 }
 
@@ -312,11 +308,10 @@ func TestARunnerThatIsTheSameIsntAskedAbout(t *testing.T) {
 	same := project.FastScript([]project.Suite{{Name: "check", Command: "scripts/check.sh", FoundIn: "scripts/check.sh:1"},
 		{Name: "unit tests", Command: "npm test", FoundIn: "package.json:7"}})
 	c := project.Choice{}
-	ask := Ask{Questions: project.Questions{Check: true, Timeout: true}, Scout: finds(fourSuites, nil),
+	ask := Ask{Questions: project.Questions{Check: true}, Scout: finds(fourSuites, nil),
 		Runners: []project.Runner{{Path: project.FastRunner, Script: same, Exists: true}}}
 	term := askChecks(t, &c, ask)
-	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"},
-		{onTimeout, "\r"}})
+	term.typeSteps(t, []keysOn{{onFound, "\r"}, {onFast, "\r"}, {onFull, "\r"}, {onUntested, "\r"}})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)
 	}
