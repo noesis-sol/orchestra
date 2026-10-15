@@ -13,6 +13,11 @@ All notable changes to orchestra are documented here. The format follows
   the eye to a queue with nothing in it.
 - The dashboard's **Workers** shows `0 of N` all in the faint grey when no
   worker is running, instead of a bright cyan 0 beside a faint ` of N`.
+- The run report's **Needs you** lists only what the run itself flagged.
+  A step a worker's close reason says is still pending, such as `Awaits CI`,
+  no longer becomes a to-do there (at most the ticket's **Finished** bullet
+  mentions it), so a run that flagged nothing says "Nothing.", matching the
+  dashboard's 0.
 
 ## [0.7.4] - 2026-10-15
 
