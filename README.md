@@ -4,10 +4,6 @@
 <img width="1036" height="380" alt="AI Conductor and Orbital Network (web)" src="https://github.com/user-attachments/assets/3dae50d5-103b-468e-b0c2-44e2b214a5b9" />
 </p>
 
-
-
-
-
 Works through a [Beads](https://github.com/gastownhall/beads) backlog with several workers side by side, as many at once as the project allows. Each ticket goes to a worker in its own tab, in [Herdr](https://herdr.dev), [tmux](https://github.com/tmux/tmux) or [cmux](https://cmux.com), and git worktree, and finished tickets are rebased, checked and merged, one at a time, into the branch you started on. A live dashboard, built with Bubble Tea, shows the run.
 
 ## Workers and organs
@@ -89,33 +85,7 @@ How a run goes:
 
 ## The dashboard
 
-```
- Orchestra  v0.2.0   batch/2026-09-28 · 18m40s
-╭──────────────┬──────────────┬──────────────┬─────────────┬─────────────╮
-│ Completed    │ Set aside    │ Needs you    │ Workers     │ In queue    │
-│ ✓ 2          │ ↷ 1 ◆ 1      │ 0            │ 2 of 3      │ 11 of 16    │
-╰──────────────┴──────────────┴──────────────┴─────────────┴─────────────╯
-  Tickets
-╭────────────┬─────────────┬─────────────────────────────────────────────╮
-│ ✓ done     │ kinieta-dwv │ ffd6ce4 merged into batch/2026-09-28        │
-│ ↷ deferred │ kinieta-vzg │ ◆ environment · high · prompt never submit… │
-│ ▶ working  │ kinieta-kco │ Open the property model: Interpolatable p…  │
-│ ▶ testing  │ kinieta-zq4 │ Add an undo stack for property edits        │
-╰────────────┴─────────────┴─────────────────────────────────────────────╯
-  Current
-╭────────────────────────────────────────────────────────────────────────╮
-│ 1 ⣾  kinieta-kco  working  4m52s                                       │
-│   Open the property model: Interpolatable protocol and custom key-path │
-│   / constraint-constant properties                                     │
-│   ⏺ Bash(scripts/ci-local.sh lint ios)                                 │
-╰────────────────────────────────────────────────────────────────────────╯
-╭────────────────────────────────────────────────────────────────────────╮
-│ 2 ⣾  kinieta-zq4  testing  1m07s                                       │
-│   Add an undo stack for property edits                                 │
-│   ⏺ Bash(scripts/ci-local.sh test core)                                │
-╰────────────────────────────────────────────────────────────────────────╯
-  1–2 to go to a worker's tab · s to stop after the current tickets
-```
+<img width="3126" height="1950" alt="Screenshot 2026-10-15 at 12 57 51 PM" src="https://github.com/user-attachments/assets/5ad67440-3f80-42d6-a8fa-34dbd91d905b" />
 
 A finished ticket that can't merge until you act reads `■ blocked`, with why (`main checkout has uncommitted changes`, `merge conflict in <files>`), and counts under **Needs you** with the questions waiting for your answer; `■ stopped` is a worker still running when the run stopped.
 
