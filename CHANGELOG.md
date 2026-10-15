@@ -11,6 +11,8 @@ All notable changes to orchestra are documented here. The format follows
 - The dashboard's **In queue** shows an empty queue's `0 of N` all in the
   faint grey, like the strip's other zeros, instead of a bright 0 that drew
   the eye to a queue with nothing in it.
+- The dashboard's **Workers** shows `0 of N` all in the faint grey when no
+  worker is running, instead of a bright cyan 0 beside a faint ` of N`.
 
 ## [0.7.4] - 2026-10-15
 

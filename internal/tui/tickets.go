@@ -265,9 +265,12 @@ func (m Dashboard) totals() []total {
 	}
 }
 
-// cell is t in the strip: a count out of something in full, a zero faint, the others with their mark.
+// cell is t in the strip: a count out of something in full, a zero faint (out of something or not),
+// the others with their mark.
 func (t total) cell() string {
 	switch {
+	case t.of > 0 && t.n == 0: // no worker running: faint, like the strip's other zeros
+		return dimStyle.Render(fmt.Sprintf("0 of %d", t.of))
 	case t.of > 0:
 		return t.style.Render(fmt.Sprint(t.n)) + dimStyle.Render(fmt.Sprintf(" of %d", t.of))
 	case t.n == 0:
