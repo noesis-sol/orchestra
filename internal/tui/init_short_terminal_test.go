@@ -55,7 +55,7 @@ func TestTheStepperStaysOnAShortTerminal(t *testing.T) {
 	const width, height = 80, 20
 	c := project.Choice{Union: true}
 	m, stage2 := shortTerminalForm(t, &c, Ask{
-		Questions: project.Questions{Concurrent: true, Union: true, Check: true, Timeout: true, FullTimeout: true},
+		Questions: project.Questions{Concurrent: true, Union: true, Check: true},
 		Scout:     finds(fourSuites, nil),
 	})
 	m = m.sized(width, 12)
