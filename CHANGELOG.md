@@ -4,6 +4,15 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `orchestra init` starts on a cleared screen, its header on the first line,
+  instead of below whatever the terminal showed: the form gets the terminal's
+  full height. Written to a pipe or a file, or with `TERM=dumb`, it clears
+  nothing, and what init prints after the form stays on the screen.
+
 ## [0.7.5] - 2026-10-15
 
 ### Changed

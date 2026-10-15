@@ -26,18 +26,28 @@ import (
 type InitScreen struct {
 	out   io.Writer
 	width int
+	clear bool // whether Header clears the screen first: out is a terminal, and TERM isn't dumb
 }
 
 // NewInitScreen returns the screen for out, as wide as its terminal (at most 100), or 80.
 func NewInitScreen(out io.Writer) InitScreen {
-	w := 80
+	w, onTerminal := 80, false
 	if f, ok := out.(interface{ Fd() uintptr }); ok {
 		if tw, _, err := term.GetSize(int(f.Fd())); err == nil && tw > 0 {
-			w = min(tw, 100)
+			w, onTerminal = min(tw, 100), true
 		}
 	}
-	return InitScreen{out: out, width: w}
+	return InitScreen{out: out, width: w, clear: clearsScreen(onTerminal, os.Getenv("TERM"))}
 }
+
+// clearsScreen says whether init starts on a cleared screen: on a terminal, but not with TERM=dumb,
+// where huh asks with plain lines.
+func clearsScreen(onTerminal bool, termName string) bool {
+	return onTerminal && termName != "dumb"
+}
+
+// clearScreen homes the cursor and clears the screen, leaving the scrollback.
+const clearScreen = "\x1b[H\x1b[2J"
 
 // stepLabelWidth is the width of a step's label; stepIndent is where its detail starts, past two
 // spaces, its mark and a space, and the label.
@@ -54,10 +64,19 @@ var (
 			BorderForeground(charmPurple).Padding(0, 1)
 )
 
-// Header prints the title and the repository being set up.
+// Header prints the title and the repository being set up: on a terminal, on a cleared screen from
+// its first line, which gives the form below it the terminal's full height; otherwise below what is
+// there, past a blank line. Not the alternate screen: what init prints after the form stays once it
+// exits.
 func (u InitScreen) Header(repo string) {
-	fmt.Fprintln(u.out)
-	fmt.Fprintln(u.out, titleStyle.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(Tildify(repo)))
+	title := titleStyle
+	if u.clear {
+		fmt.Fprint(u.out, clearScreen)
+		title = title.UnsetMarginTop()
+	} else {
+		fmt.Fprintln(u.out)
+	}
+	fmt.Fprintln(u.out, title.Render("Orchestra")+" "+organStyle.Render("init")+"  "+dimStyle.Render(Tildify(repo)))
 	fmt.Fprintln(u.out, dimStyle.Render(" Sets this project up for orchestra, in .orchestra/."))
 	fmt.Fprintln(u.out)
 }
