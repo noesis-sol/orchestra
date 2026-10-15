@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker's hook starts in about half the time: orchestra renders the run
+  report's Markdown itself instead of with Glamour, whose syntax highlighting
+  (Chroma's lexers and styles) and HTML and Markdown libraries took about
+  10 ms of package init on every run of the binary, each hook included. A
+  hook now takes about 8 ms on macOS, and the binary is a quarter smaller.
+
 - A worker's hooks are orchestra's own binary, the one that launched it, run
   by its absolute path as `orchestra hook <event>` (hidden, and inert unless
   the hook's command sets `ORCHESTRA_HOOK=1`), instead of shell one-liners

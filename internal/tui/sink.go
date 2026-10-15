@@ -8,7 +8,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -154,17 +153,12 @@ func (p Printer) sayPlain(text string) {
 	p.print(fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), text))
 }
 
-// Report prints the reviewer's Markdown after a blank line, rendered with Glamour on a terminal.
+// Report prints the reviewer's Markdown after a blank line, rendered (renderMarkdown) on a terminal.
 func (p Printer) Report(md string) {
 	md = Printable(md) // the organ's words
 	if p.Styled {
-		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(max(p.Width-4, 40)))
-		if err == nil {
-			if out, err := r.Render(md); err == nil {
-				p.print("\n" + out)
-				return
-			}
-		}
+		p.print("\n" + renderMarkdown(md, p.Width))
+		return
 	}
 	p.print("\n" + md + "\n")
 }
