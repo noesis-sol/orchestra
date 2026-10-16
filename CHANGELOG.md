@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- A worker on a ticket whose metadata names a spec (`spec`, the committed
+  spec's path, which a spec run's breakdown gives every ticket it files) is
+  told in its first message, and again when its session is resumed, that the
+  ticket is part of that spec: to read the sections the ticket cites before
+  it starts, and to treat the spec as settled. Its standing rules are
+  unchanged.
+
 ## [0.7.7] - 2026-10-16
 
 ### Fixed

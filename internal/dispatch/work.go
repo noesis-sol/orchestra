@@ -314,7 +314,7 @@ type workerSetup struct {
 // it must: a run file leading out of the worktree sets the ticket aside (see setAsideEscaped), and
 // the MCP servers failing otherwise stop the run.
 func (r *ticketRun) setup(ctx context.Context, wt string, resumed bool) (workerSetup, bool, *stopReason) {
-	ws, err := r.o.workerFiles(ctx, r.id, wt, resumed)
+	ws, err := r.o.workerFiles(ctx, r.t, wt, resumed)
 	if e := escapeOf(err); e != nil {
 		return ws, true, r.o.setAsideEscaped(r.keep, r.t, wt, e)
 	}
@@ -324,12 +324,12 @@ func (r *ticketRun) setup(ctx context.Context, wt string, resumed bool) (workerS
 	return ws, false, nil
 }
 
-// workerFiles prepares ticket id's worker's files in worktree wt: its MCP servers, its standing
+// workerFiles prepares ticket t's worker's files in worktree wt: its MCP servers, its standing
 // rules, a new worker's prompt file and a Claude worker's hooks. It returns the first error that
 // stops the worker from starting: an escape (see escapeOf), or the MCP servers failing. The others
 // the worker does without are logged, and left out.
-func (o *Loop) workerFiles(ctx context.Context, id, wt string, resumed bool) (workerSetup, error) {
-	c := o.cfg
+func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed bool) (workerSetup, error) {
+	c, id := o.cfg, t.ID
 	var ws workerSetup
 	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
 	// every server on the machine, so a file it can't have stops the run rather than the worker.
@@ -351,11 +351,11 @@ func (o *Loop) workerFiles(ctx context.Context, id, wt string, resumed bool) (wo
 	}
 
 	if !resumed {
-		left := o.earlierNote(ctx, branchOf(id), wt)
-		ws.full = o.fullPrompt(id, left)
+		first := firstNotes(t, o.earlierNote(ctx, branchOf(id), wt))
+		ws.full = o.fullPrompt(id, first)
 		ws.prompt = ws.full
 		if ws.args.rules != nil {
-			ws.prompt = ticketPrompt(id, left)
+			ws.prompt = ticketPrompt(id, first)
 		}
 		// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 		// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.

@@ -137,6 +137,9 @@ func (r *ticketRun) resumeSession(ctx context.Context, wt, tab, question string,
 	}
 
 	msg := said.msg
+	if spec := specNote(t, "carry on"); spec != "" {
+		msg += " " + spec // still one line, for Herdr to pass at launch
+	}
 	launch := ""
 	if c.LaunchPrompt {
 		launch = msg // one line: Herdr passes it as it is
