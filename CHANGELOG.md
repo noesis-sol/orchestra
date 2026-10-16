@@ -112,7 +112,7 @@ All notable changes to orchestra are documented here. The format follows
   (the root epic, issues outside it, tickets without files metadata or
   acceptance criteria, blocks cycles) and runs it; a session that fails,
   runs out of time or names no root epic ends the run with exit 2, listing
-  what it filed. `--refine` still stops once the spec is committed.
+  what it filed.
 ### Changed
 
 - Footprints leave out specs under `.orchestra/specs/`, as they leave out
@@ -213,10 +213,8 @@ All notable changes to orchestra are documented here. The format follows
   file outside the repository as a copy in `.orchestra/specs/`), has it broken
   down into an epic and its tickets, and runs that epic without asking, with
   no ticket limit unless `-limit` or `LIMIT` gives one. `--refine` (or
-  `ORCHESTRA_REFINE`) asks to talk the spec through first. The breakdown
-  itself isn't in this build yet: a spec run stops once the spec is committed.
-  The run lock, the START line and the event stream's start record name the
-  spec.
+  `ORCHESTRA_REFINE`) asks to talk the spec through first. The run lock, the
+  START line and the event stream's start record name the spec.
 - A worker whose turn ends on the account's usage limit (the five-hour
   session limit, the weekly one) now shows as `limited`, rather than idle
   with its ticket in progress, and is no longer told to continue into the
