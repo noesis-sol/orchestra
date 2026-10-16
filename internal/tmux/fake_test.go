@@ -14,7 +14,7 @@ import (
 )
 
 // fakeTmux is a tmux on PATH that logs each call (each argument ending in a NUL, the call in an RS
-// and a NUL) and answers from files in dir: out-<command> on
+// and a NUL) and answers from files in dir: before-<command> run as a script first, out-<command> on
 // stdout, fail-<command> on stderr with exit status 1, and after-<command> run as a script once it
 // answered. load-buffer's input goes to buffer.
 type fakeTmux struct {
@@ -34,6 +34,7 @@ func newFakeTmux(t *testing.T) *fakeTmux {
 { for a; do printf '%s\0' "$a"; done; printf '\036\0'; } >> "$d/calls"
 [ "$1" = -L ] && shift 2
 [ "$1" = load-buffer ] && cat > "$d/buffer"
+[ -f "$d/before-$1" ] && . "$d/before-$1"
 if [ -f "$d/fail-$1" ]; then cat "$d/fail-$1" >&2; exit 1; fi
 [ -f "$d/out-$1" ] && cat "$d/out-$1"
 [ -f "$d/after-$1" ] && . "$d/after-$1"
@@ -62,6 +63,9 @@ func (f *fakeTmux) answer(op, out string) { f.write("out-"+op, out) }
 
 // fail has tmux fail command op, saying stderr.
 func (f *fakeTmux) fail(op, stderr string) { f.write("fail-"+op, stderr+"\n") }
+
+// before has tmux run script before it answers command op, with the command's arguments.
+func (f *fakeTmux) before(op, script string) { f.write("before-"+op, script) }
 
 // after has tmux run script once it answered command op.
 func (f *fakeTmux) after(op, script string) { f.write("after-"+op, script) }

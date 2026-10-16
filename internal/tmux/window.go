@@ -11,30 +11,45 @@ import (
 // CreateTab opens a window named label in session, starting in cwd, without switching to it, and
 // returns the window's ID and its pane's. session is the session's ID (NewSession), or its name,
 // which must hold no ':'. The window keeps its name: neither tmux's automatic renaming nor the title
-// escapes Claude Code writes change it. A window opened whose answer can't be read, or whose name
+// escapes Claude Code writes change it. tmux 3.7 refuses a window name holding '.' or ':', as a child
+// ticket's ID holds '.': there the window is named as SessionName gives, and keeps label in its
+// option labelOption, which TabLabel reads. A window opened whose answer can't be read, or whose name
 // can't be kept, is closed again.
 func (t Terminal) CreateTab(ctx context.Context, session, cwd, label string) (tab, pane string, err error) {
 	target := "=" + session + ":" // the session so named, not one whose name starts so; '.' and all
 	if isID(session, '$') {
 		target = session + ":"
 	}
-	out, err := t.run(ctx, command.ReadLimit, "new-window", session,
-		"-d", "-t", target, "-c", literal(cwd), "-n", literal(label), "-P", "-F", "#{window_id} #{pane_id}")
+	newWindow := func(name string) (string, error) {
+		return t.run(ctx, command.ReadLimit, "new-window", session,
+			"-d", "-t", target, "-c", literal(cwd), "-n", literal(name), "-P", "-F", "#{window_id} #{pane_id}")
+	}
+	name := label
+	out, err := newWindow(name)
+	if err != nil && SessionName(label) != label {
+		if o, rerr := newWindow(SessionName(label)); rerr == nil {
+			name, out, err = SessionName(label), o, nil
+		}
+	}
 	if err != nil {
 		return "", "", err
 	}
 	f := strings.Fields(out)
 	if len(f) == 2 && isID(f[0], '@') && isID(f[1], '%') {
 		tab, pane = f[0], f[1]
-		_, err = t.run(ctx, command.ReadLimit, "set-option", tab,
-			"-w", "-t", tab, "automatic-rename", "off", ";", "set-option", "-w", "-t", tab, "allow-rename", "off")
+		args := []string{"-w", "-t", tab, "automatic-rename", "off",
+			";", "set-option", "-w", "-t", tab, "allow-rename", "off"}
+		if name != label {
+			args = append(args, ";", "set-option", "-w", "-t", tab, labelOption, label)
+		}
+		_, err = t.run(ctx, command.ReadLimit, "set-option", tab, args...)
 		if err == nil {
 			return tab, pane, nil
 		}
 	} else {
 		err = odd("new-window", session, out)
 		if len(f) == 0 || !isID(f[0], '@') {
-			return "", "", fmt.Errorf("%w; a window named %s may be left open", err, label)
+			return "", "", fmt.Errorf("%w; a window named %s may be left open", err, name)
 		}
 		tab = f[0]
 	}
@@ -79,9 +94,14 @@ func (t Terminal) TabLabel(ctx context.Context, tab string) (label string, open 
 	return t.window(ctx, tab)
 }
 
-// window returns the name of the window tab, and false if tmux has no such window.
+// labelOption is the window option holding the label of a window CreateTab couldn't name so.
+const labelOption = "@orchestra_label"
+
+// window returns the label of the window tab, its name unless labelOption holds another, and false
+// if tmux has no such window.
 func (t Terminal) window(ctx context.Context, tab string) (name string, open bool, err error) {
-	out, err := t.run(ctx, command.ReadLimit, "list-windows", "", "-a", "-F", "#{window_id}\t#{window_name}")
+	out, err := t.run(ctx, command.ReadLimit, "list-windows", "", "-a", "-F",
+		"#{window_id}\t#{?"+labelOption+",#{"+labelOption+"},#{window_name}}")
 	if NoServer(err) {
 		return "", false, nil
 	}

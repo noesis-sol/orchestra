@@ -125,7 +125,8 @@ func TestTabLabel(t *testing.T) {
 			t.Errorf("TabLabel(%q) = %q %v %v", tab, label, open, err)
 		}
 	}
-	if got := f.call("list-windows"); !slices.Equal(got, []string{"list-windows", "-a", "-F", "#{window_id}\t#{window_name}"}) {
+	if got := f.call("list-windows"); !slices.Equal(got, []string{"list-windows", "-a", "-F",
+		"#{window_id}\t#{?@orchestra_label,#{@orchestra_label},#{window_name}}"}) {
 		t.Errorf("list-windows got %q", got)
 	}
 
