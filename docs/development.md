@@ -63,6 +63,8 @@ go test -run '^$' -fuzz '^FuzzParsePlan$' -fuzztime 60s ./internal/organ
 
 The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`, where `go test` runs it with the seeds from then on: commit it with the fix, or add it to the target's seeds (`f.Add`). The inputs it found new paths with stay in Go's cache, so the next run goes on from them; `go clean -fuzzcache` empties it.
 
+`TestDocLinksResolve` (`cmd/orchestra`) follows every relative link in the README and `docs/*.md`: the file it names must exist, and its `#anchor`, in a Markdown file, must be one of that file's headings as GitHub makes them (lowercase, punctuation dropped, each space a hyphen, `-1`, `-2` and so on for repeats). Links in code spans and fenced blocks, and to other sites, are left alone. A heading renamed takes the links to it along in the same commit.
+
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
 `TestLiveSpec` (`cmd/orchestra`) breaks a tiny spec down with the real `claude`, in a new repository with Beads, and checks the tree it filed; it takes minutes and costs money, so it runs only with `SPEC_LIVE=1`: `SPEC_LIVE=1 go test -run TestLiveSpec -v -timeout 30m ./cmd/orchestra/`.
