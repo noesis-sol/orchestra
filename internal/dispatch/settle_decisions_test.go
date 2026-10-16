@@ -109,6 +109,12 @@ func TestTurnEnded(t *testing.T) {
 		{"PostToolUse after the Stop", hooksSeen{use: ToolUse{Event: "PostToolUse", At: stop.Add(time.Second),
 			Stopped: stop}, ok: true}, time.Time{}, false, false},
 		{"mid-turn", hooksSeen{use: ToolUse{Event: "PreToolUse", At: stop}, ok: true}, time.Time{}, false, false},
+		{"permission asked", hooksSeen{use: ToolUse{Event: EventPermission, At: stop}, ok: true},
+			time.Time{}, false, false},
+		{"permission refused", hooksSeen{use: ToolUse{Event: EventPermission, At: stop.Add(-time.Minute), Idle: stop},
+			ok: true}, stop, true, false},
+		{"permission refused, subagent running", hooksSeen{use: ToolUse{Event: EventPermission,
+			At: stop.Add(-time.Minute), Idle: stop}, ok: true, rec: HookRecord{Subagents: 1}}, time.Time{}, false, false},
 		{"subagent running", hooksSeen{use: ToolUse{Event: "Stop", At: stop}, ok: true,
 			rec: HookRecord{Subagents: 1}}, time.Time{}, false, false},
 		{"subagent quiet too long", hooksSeen{use: ToolUse{Event: "Stop", At: now.Add(-2 * SubagentQuiet)}, ok: true,
@@ -201,6 +207,9 @@ func TestIdleSettledDecisions(t *testing.T) {
 			"Stop hook at " + stop.Format("15:04:05") + "; then a PreToolUse record with no turn of its own, written at " +
 				stop.Add(time.Second).Format("15:04:05") +
 				" by tool Read, session unnamed, main agent, transcript unnamed"},
+		{"permission refused", StatusClosed, hooksSeen{use: ToolUse{Event: EventPermission, Tool: "Bash",
+			At: stop.Add(-time.Minute), Idle: stop}, ok: true}, time.Time{}, time.Minute, true,
+			"idle at its prompt at " + stop.Format("15:04:05") + " after a permission prompt for Bash refused"},
 		{"replaced Stop before the adoption", StatusClosed, hooksSeen{use: ToolUse{Event: "PreToolUse", Tool: "Read",
 			At: stop, Stopped: adopted.Add(-time.Second)}, ok: true}, adopted, time.Minute, false,
 			"idle for 10m after a PreToolUse hook, with no Stop hook; that record was written at " +

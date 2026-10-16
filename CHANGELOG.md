@@ -37,6 +37,10 @@ All notable changes to orchestra are documented here. The format follows
   solo line and the stop question. A worker files tickets itself, so an ID
   such as `x` followed by an OSC 52 clipboard write reached the terminal on
   every redraw, though the printed log already dropped them.
+- A worker idle at its prompt after you refused a permission prompt, its
+  ticket still in progress, is told to continue, at most twice, as one whose
+  turn ends at its Stop hook is, before the idle grace and `PAUSED` apply.
+  With its ticket waiting on a question it asked, it settles there at once.
 
 ## [0.7.6] - 2026-10-16
 

@@ -21,7 +21,7 @@ import (
 // (hooksOf), for every decision the poll makes. A worker whose turn ends with its ticket still in
 // progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
 // whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
-// Stop hook (see endOfTurn).
+// turn's end (see endOfTurn): its Stop hook, or Claude Code noting it idle after a permission prompt refused.
 func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
@@ -220,7 +220,7 @@ func (o *Loop) idlePoll(ctx context.Context, w worker, h hooksSeen, begun time.T
 		turn = o.endOfTurn(ctx, w.id, h, later(w.since, idle.readTo))
 	}
 	if turn.asked != nil { // conclude reopens the ticket left in progress
-		o.info("  %s settled: Stop hook at %s, waiting on %s", w.id, turn.at.Format("15:04:05"), turn.asked.ID)
+		o.info("  %s settled: %s, waiting on %s", w.id, turnEndName(h, turn.at), turn.asked.ID)
 		return idle.since, nil, false
 	}
 	if turn.owes {
@@ -302,14 +302,14 @@ const maxNudges = 2
 // turnEnd is what a worker's ticket shows at the end of its turn: the work still owed, or a
 // question asked. A zero turnEnd says neither, as when the turn hasn't ended.
 type turnEnd struct {
-	at    time.Time // of its Stop hook
+	at    time.Time // of its end (see turnEnded)
 	owes  bool      // the ticket is in progress, neither waiting on a question nor deferred
 	asked *Ticket   // the open question the ticket waits on, whatever its status
 }
 
 // endOfTurn reads ticket id as its worker, whose hooks reported h, left it at the end of a turn, after
-// after (zero: any). Without hooks, before that turn's Stop, or when bd fails to show the ticket, it
-// says nothing: the worker neither settles nor is told to continue on it.
+// after (zero: any). Without hooks, before that turn's end (turnEnded), or when bd fails to show the
+// ticket, it says nothing: the worker neither settles nor is told to continue on it.
 func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time.Time) turnEnd {
 	at, ended, _ := turnEnded(h, time.Now())
 	if !ended || !after.IsZero() && (at.IsZero() || at.Before(after)) {
@@ -325,27 +325,43 @@ func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time
 
 // turnEnded says whether the turn of a worker whose hooks reported h has ended, at now, and when: at
 // its Stop hook, which the last tool use is or which a PreToolUse record written after it replaced
-// (replaced). Without a tool use reported, it hasn't. Claude Code forks agents at the end of a turn (a
-// prompt suggestion, say) that run the worker's PreToolUse hook and are then refused the tool, so no
-// PostToolUse follows; a prompt that starts a turn (a nudge, an answer) clears the Stop. While a
-// subagent runs the turn goes on, Stop or not: one in the background (as every subagent is in fork
-// mode) outlives the turn that started it, and its answer starts the next, and one still running after
-// the Stop may be the one using the tool. One that stopped after the Stop (see answerPending) has an
-// answer on its way, which starts the next turn before the terminal may show it.
+// (replaced), or, after a permission prompt reported, when Claude Code noted it idle at its prompt
+// (ToolUse.Idle): the prompt was refused, which ends the turn with no Stop hook. Without a tool use
+// reported, it hasn't. Claude Code forks agents at the end of a turn (a prompt suggestion, say) that
+// run the worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt
+// that starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on,
+// Stop or not: one in the background (as every subagent is in fork mode) outlives the turn that
+// started it, and its answer starts the next, and one still running after the Stop may be the one
+// using the tool. One that stopped after the Stop (see answerPending) has an answer on its way, which
+// starts the next turn before the terminal may show it.
 func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) {
 	u := h.use
-	if !h.ok || u.Event != "Stop" && (u.Event != "PreToolUse" || u.Stopped.IsZero() || u.At.IsZero() ||
-		u.At.Before(u.Stopped)) {
+	switch {
+	case !h.ok:
 		return time.Time{}, false, false
-	}
-	at, replaced = u.At, false
-	if u.Event != "Stop" {
+	case u.Event == "Stop":
+		at = u.At
+	case u.Event == "PreToolUse" && !u.Stopped.IsZero() && !u.At.IsZero() && !u.At.Before(u.Stopped):
 		at, replaced = u.Stopped, true
+	case u.Event == EventPermission && !u.Idle.IsZero():
+		at = u.Idle
+	default:
+		return time.Time{}, false, false
 	}
 	if h.subagentRunning(now) || answerPending(h.rec, at) {
 		return time.Time{}, false, false
 	}
 	return at, true, replaced
+}
+
+// turnEndName names, for the log, the end of the turn of a worker whose hooks reported h, which
+// turnEnded found ended at at.
+func turnEndName(h hooksSeen, at time.Time) string {
+	if h.use.Event == EventPermission {
+		return fmt.Sprintf("idle at its prompt at %s after a permission prompt for %s refused",
+			at.Format("15:04:05"), h.use.Tool)
+	}
+	return "Stop hook at " + at.Format("15:04:05")
 }
 
 // answerPending says whether a subagent of the worker whose hooks noted rec stopped after its Stop
@@ -408,8 +424,9 @@ func idleSettled(ticket TicketStatus, h hooksSeen, since, now time.Time,
 
 // hooksSettled is idleSettled for a worker whose ticket isn't in progress and whose hooks reported a
 // tool use (h.ok). Case by case, as it returns:
-//   - A Stop hook, or a PreToolUse record of no turn that replaced one (see turnEnded), not before
-//     since: settled, as the record is removed before a worker starts, so any Stop came after its prompt.
+//   - A Stop hook, or a PreToolUse record of no turn that replaced one, or a permission prompt refused
+//     (see turnEnded), not before since: settled, as the record is removed before a worker starts, so
+//     any Stop came after its prompt.
 //   - A subagent still running: the turn goes on; settled after idleGrace.
 //   - A subagent that stopped past the Stop, with no turn on its answer yet: settled after idleGrace.
 //   - Any other last report, a tool use: mid-turn, whatever the terminal says; settled after
@@ -417,7 +434,7 @@ func idleSettled(ticket TicketStatus, h hooksSeen, since, now time.Time,
 func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (settled bool, why string) {
 	u := h.use
 	if at, ended, replaced := turnEnded(h, now); ended && (since.IsZero() || !at.Before(since)) {
-		why := "Stop hook at " + at.Format("15:04:05")
+		why := turnEndName(h, at)
 		if replaced {
 			why += "; then a PreToolUse record with no turn of its own, " + u.Reporter()
 		}
