@@ -36,6 +36,7 @@ type breakdownRequest struct {
 type breakdownResult struct {
 	Root        string // "" when it filed none
 	Assumptions []string
+	Problem     string // with no root epic, why it filed none, as it says; "" when it doesn't
 }
 
 // specBreakdown breaks a committed spec down into Beads tickets, which it files itself. Stopped (its
@@ -44,18 +45,26 @@ type specBreakdown interface {
 	BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error)
 }
 
-// errNoBreakdown is the breakdown's error in a build that has none.
-var errNoBreakdown = errors.New("the spec breakdown isn't available in this build")
+// errNoBreakdown is the breakdown's error where this build has none: refining the spec with the user
+// (--refine) is still to come.
+var errNoBreakdown = errors.New("refining a spec with you (--refine) isn't available in this build; " +
+	"without --refine, orchestra breaks it down unattended")
 
-// noBreakdown is the breakdown of a build that has none: it files nothing.
+// noBreakdown is the breakdown of a kind this build doesn't have: it files nothing.
 type noBreakdown struct{}
 
 func (noBreakdown) BreakDown(context.Context, breakdownRequest) (breakdownResult, error) {
 	return breakdownResult{}, errNoBreakdown
 }
 
-// breakdownOf is the breakdown the spec run s has its spec broken down by; tests give their own.
-var breakdownOf = func(*session) specBreakdown { return noBreakdown{} }
+// breakdownOf is the breakdown the spec run s has its spec broken down by: the headless one
+// (spec_breakdown.go), as this build has none with the user; tests give their own.
+var breakdownOf = func(s *session) specBreakdown {
+	if s.cfg.Refine {
+		return noBreakdown{}
+	}
+	return newHeadlessBreakdown(s)
+}
 
 // checkSpecFile checks the spec --spec (or ORCHESTRA_SPEC, as from says) gives, c.specFile: a file
 // of text with something in it (see project.ReadSpec). It makes c.specFile absolute, as the working
@@ -110,9 +119,15 @@ func checkSpecPath(ctx context.Context, c *options, from string) []string {
 	return nil
 }
 
-// specTracker is what a spec run reads from Beads: what was filed under the root epic, to count it.
+// specTracker is Beads as a spec run reads it: the root epic its breakdown filed and what is under it,
+// to check and count it; what carries the spec's metadata; the blocks cycles. It sets the root
+// epic's spec metadata where the breakdown left it out.
 type specTracker interface {
+	Show(ctx context.Context, id string) (dispatch.Ticket, error)
 	Descendants(ctx context.Context, id string) ([]dispatch.Ticket, error)
+	WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error)
+	Cycles(ctx context.Context) ([][]string, error)
+	SetMetadata(ctx context.Context, id, key, value string) error
 }
 
 // specRun is a spec run's step before its loop: the spec committed, then broken down.
@@ -153,21 +168,95 @@ func (r specRun) run(ctx context.Context) (string, int) {
 	switch {
 	case ctx.Err() != nil:
 		return "", r.stopped(true, res.Root)
+	case errors.Is(err, errNoBreakdown):
+		fmt.Fprintln(r.err, "orchestra couldn't break the spec down:", err)
+		r.logLine("SPEC: not broken down: " + err.Error())
+		return "", dispatch.ExitSetup
 	case err != nil:
 		detail := tui.Printable(dispatch.FirstLine(err.Error()))
 		fmt.Fprintln(r.err, "orchestra couldn't break the spec down:", detail)
-		if res.Root != "" {
-			fmt.Fprintf(r.err, "It filed %s before it stopped. %s\n", res.Root, r.again())
-		}
 		r.logLine("SPEC: not broken down: " + detail)
-		return "", dispatch.ExitSetup
+		return "", r.unfinished(ctx, spec, res.Root)
 	case res.Root == "":
 		fmt.Fprintln(r.err, "orchestra: the spec's breakdown named no root epic, so there is nothing to run.")
-		r.logLine("SPEC: broken down into no root epic")
-		return "", dispatch.ExitSetup
+		line := "SPEC: broken down into no root epic"
+		if why := planLine(res.Problem); why != "" {
+			fmt.Fprintln(r.err, "It says: "+why)
+			line += ": " + why
+		}
+		r.logLine(line)
+		return "", r.unfinished(ctx, spec, "")
+	}
+	if code := r.check(ctx, spec, res.Root); code != dispatch.ExitOK {
+		return "", code
 	}
 	r.sayFiled(ctx, res)
 	return res.Root, dispatch.ExitOK
+}
+
+// unfinished says what a breakdown that didn't finish filed for the spec, as bd has it by the spec's
+// metadata, under the root epic it filed (root, else the one bd has), and how to carry on. It
+// returns the exit code.
+func (r specRun) unfinished(ctx context.Context, spec project.Spec, root string) int {
+	issues, err := r.tracker.WithMetadata(ctx, dispatch.SpecKey, spec.Path)
+	switch {
+	case err != nil:
+		fmt.Fprintln(r.err, "orchestra can't list what it filed:", dispatch.FirstLine(err.Error()))
+	case len(issues) == 0:
+		fmt.Fprintf(r.err, "It filed nothing for %s.\n", spec.Path)
+		r.logLine("SPEC: nothing filed for " + spec.Path)
+	default:
+		if root == "" {
+			root = rootAmong(issues, spec)
+		}
+		epics := 0
+		for _, t := range issues {
+			if t.IssueType == "epic" {
+				epics++
+			}
+		}
+		filed := plural(epics, "epic") + " and " + plural(len(issues)-epics, "ticket") + " for " + spec.Path
+		if root != "" {
+			filed += ", under " + root
+		}
+		fmt.Fprintf(r.err, "It filed %s:\n", filed)
+		r.logLine("SPEC: filed " + filed)
+		for i, t := range issues {
+			if i == unfinishedShown {
+				fmt.Fprintf(r.err, "  … and %d more: bd list --metadata-field %s --all\n", len(issues)-i,
+					command.ShellWord(dispatch.SpecKey+"="+spec.Path))
+				break
+			}
+			fmt.Fprintf(r.err, "  %s  %s  %s\n", t.ID, t.IssueType, planLine(t.Title))
+		}
+	}
+	fmt.Fprintln(r.err, r.again())
+	return dispatch.ExitSetup
+}
+
+// unfinishedShown is how many of the issues an unfinished breakdown filed it lists.
+const unfinishedShown = 20
+
+// check checks the tree a breakdown filed under root before the run starts on it (checkBreakdown),
+// whichever breakdown it was: a root epic that isn't the spec's ends the run, exit 2, saying what was
+// filed; anything else amiss is a warning, said and logged. It returns the exit code.
+func (r specRun) check(ctx context.Context, spec project.Spec, root string) int {
+	warnings, err := checkBreakdown(ctx, r.tracker, spec, root)
+	for _, w := range warnings {
+		w = planLine(w)
+		fmt.Fprintln(r.err, "warning: "+w)
+		r.logLine("SPEC: warning: " + w)
+	}
+	switch {
+	case ctx.Err() != nil:
+		return r.stopped(true, root)
+	case err != nil:
+		detail := tui.Printable(dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(r.err, "orchestra won't run what the spec's breakdown filed:", detail)
+		r.logLine("SPEC: not run: " + detail)
+		return r.unfinished(ctx, spec, "")
+	}
+	return dispatch.ExitOK
 }
 
 // commit commits the spec, once the main checkout has nothing uncommitted besides it, and says so;

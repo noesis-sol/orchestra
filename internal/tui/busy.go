@@ -65,6 +65,9 @@ type Busy struct {
 	began time.Time
 	stop  chan struct{} // closed by the end of the step
 	spun  chan struct{} // closed once the spinner's goroutine has returned; nil when none runs
+
+	mu     sync.Mutex
+	detail string // how far the step has got, set by Detail; "" for nothing
 }
 
 // Busy shows a step under way until Done or Warn ends it, which the caller must call. On a
@@ -91,6 +94,22 @@ func (p Printer) Busy(plain, styled, hint string) *Busy {
 	return b
 }
 
+// Detail has the busy line show how far the step has got, text such as "3 epics · 41 tickets",
+// after its text and before the time taken, from its next frame on; "" shows nothing there. Only a
+// Terminal printer's busy line shows it.
+func (b *Busy) Detail(text string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.detail = Printable(text)
+}
+
+// detailNow is what Detail last set.
+func (b *Busy) detailNow() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.detail
+}
+
 // spin draws the busy line at each of the spinner's frames until the step ends.
 func (b *Busy) spin(text, hint string) {
 	defer close(b.spun)
@@ -103,8 +122,11 @@ func (b *Busy) spin(text, hint string) {
 		case <-tick.C:
 		}
 		frame := strings.TrimSpace(busySpinner.Frames[i%len(busySpinner.Frames)])
-		line := pickedStyle.Render(frame) + " " + sayStyle.Render(text) +
-			" " + dimStyle.Render(clock(time.Since(b.began)))
+		took := clock(time.Since(b.began))
+		if d := b.detailNow(); d != "" {
+			took = d + " · " + took
+		}
+		line := pickedStyle.Render(frame) + " " + sayStyle.Render(text) + " " + dimStyle.Render(took)
 		if hint != "" {
 			line += " " + sayStyle.Render(hint)
 		}

@@ -106,8 +106,8 @@ func TestListsFlag(t *testing.T) {
 		"--restricted": true, "--permission-prompts": true, "--print": true,
 		"--permission-mode": false, "--host": false,
 	} {
-		if got := listsFlag(newerHelp, flag); got != want {
-			t.Errorf("listsFlag(newerHelp, %q) = %v, want %v", flag, got, want)
+		if got := ListsFlag(newerHelp, flag); got != want {
+			t.Errorf("ListsFlag(newerHelp, %q) = %v, want %v", flag, got, want)
 		}
 	}
 }

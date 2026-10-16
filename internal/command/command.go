@@ -56,10 +56,26 @@ func OutputWithInput(ctx context.Context, limit time.Duration, dir string, env [
 	return run(ctx, limit, dir, env, strings.NewReader(input), name, args)
 }
 
+// Stream runs a command as OutputWithInput does, but writes its stdout to out as the command prints
+// it, from one goroutine, rather than returning it: for a command whose output tells how it gets on,
+// such as claude's stream-json. out has had all of it once Stream returns.
+func Stream(ctx context.Context, limit time.Duration, dir string, env []string, input string, out io.Writer,
+	name string, args ...string) error {
+	return runTo(ctx, limit, dir, env, strings.NewReader(input), out, name, args)
+}
+
 // run runs a command for the Output functions, with env added to its environment and its
 // stdin read from stdin (nil for none).
 func run(ctx context.Context, limit time.Duration, dir string, env []string, stdin io.Reader, name string,
 	args []string) (string, error) {
+	var stdout bytes.Buffer
+	err := runTo(ctx, limit, dir, env, stdin, &stdout, name, args)
+	return stdout.String(), err
+}
+
+// runTo runs a command for run and Stream, writing its stdout to stdout.
+func runTo(ctx context.Context, limit time.Duration, dir string, env []string, stdin io.Reader, stdout io.Writer,
+	name string, args []string) error {
 	if limit > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, limit, timedOut(limit))
@@ -70,9 +86,9 @@ func run(ctx context.Context, limit time.Duration, dir string, env []string, std
 	cmd.Env = append(os.Environ(), env...) // of two entries with one name, the last wins
 	g := inGroup(cmd, stopGrace)
 	cmd.WaitDelay = stopGrace
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	cmd.Stdin = stdin
-	cmd.Stdout = &stdout
+	cmd.Stdout = stdout
 	cmd.Stderr = &stderr
 	err := cmd.Start()
 	if err == nil {
@@ -84,13 +100,13 @@ func run(ctx context.Context, limit time.Duration, dir string, env []string, std
 		err = nil // exited 0, leaving a process behind that holds the output
 	}
 	if err == nil {
-		return stdout.String(), nil
+		return nil
 	}
 	e := &Error{Name: name, Args: args, Err: err, Stderr: strings.TrimSpace(stderr.String())}
 	if cause := context.Cause(ctx); cause != nil {
 		e.Err, e.Stopped = cause, true
 	}
-	return stdout.String(), e
+	return e
 }
 
 // timedOut is why a command was stopped at its time limit: it reads "timed out after 2m", and

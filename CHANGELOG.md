@@ -48,6 +48,23 @@ All notable changes to orchestra are documented here. The format follows
   `usage_limit` (with `reset`) and `usage_limit_lifted`. Triage, the
   predictor and the run report skip a call the limit refuses, with a line
   saying so.
+- A spec run without `--refine` breaks the spec down by itself, with nobody
+  there to ask: `claude -p` in the main checkout, with your own Claude Code
+  setup, reads the spec, the README, CLAUDE.md or AGENTS.md and the code,
+  and files a root epic, child epics and tickets with `bd`, each citing the
+  spec's sections and carrying its `spec` metadata. Where the spec leaves a
+  choice open it takes the most conservative reading, and writes the
+  assumption into the tickets that depend on it and under Assumptions in the
+  root epic's notes. It reads, and runs only `bd` and read-only `git`;
+  anything else is denied without asking. It may take 60 minutes
+  (`spec_timeout`, `--spec-timeout`, `ORCHESTRA_SPEC_TIMEOUT`) at effort high
+  (`spec_effort`, `--spec-effort`, `ORCHESTRA_SPEC_EFFORT`). A terminal shows
+  a spinner counting the epics and tickets filed; plain output has a line
+  for each epic and the counts every minute. orchestra then checks the tree
+  (the root epic, issues outside it, tickets without files metadata or
+  acceptance criteria, blocks cycles) and runs it; a session that fails,
+  runs out of time or names no root epic ends the run with exit 2, listing
+  what it filed. `--refine` still stops once the spec is committed.
 ### Changed
 
 - Footprints leave out specs under `.orchestra/specs/`, as they leave out

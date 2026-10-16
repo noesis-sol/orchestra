@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,6 +26,38 @@ import (
 
 // SpecsDir is the folder under Dir that a spec from outside the repository is copied to.
 const SpecsDir = "specs"
+
+// The metadata keys a spec's root epic carries besides the spec's path (dispatch.SpecKey), which
+// every issue its breakdown files carries: the committed content's SHA-256 and the commit that added
+// or last changed it, as Spec has them.
+const (
+	SpecSHA256Key = "spec_sha256"
+	SpecCommitKey = "spec_commit"
+)
+
+// A spec is broken down in a Claude Code session in the main checkout, its instructions
+// (spec-prompt.md) appended to Claude Code's system prompt from .orchestra/run/.
+//
+//go:embed spec-prompt.md
+var specPrompt string
+
+// specPromptName is the breakdown's instructions' file in .orchestra/run/.
+const specPromptName = "spec-prompt.md"
+
+// WriteSpecPrompt writes the instructions of a spec's breakdown to .orchestra/run/ in the main
+// checkout repo, over an earlier breakdown's, and returns their path.
+func WriteSpecPrompt(repo string) (string, error) {
+	root, err := OpenRun(repo)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := RunPath(specPromptName)
+	if err := WriteRun(root, repo, rel, []byte(specPrompt), 0o644); err != nil {
+		return "", err
+	}
+	return filepath.Join(repo, rel), nil
+}
 
 // ErrSpecEmpty is ReadSpec's error for a spec with nothing but whitespace in it.
 var ErrSpecEmpty = errors.New("the spec is empty")

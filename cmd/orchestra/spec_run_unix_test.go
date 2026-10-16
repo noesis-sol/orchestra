@@ -17,8 +17,9 @@ import (
 )
 
 // specTreeBd answers as bd does once a breakdown has filed s-1, the root epic, with the epic s-1.1
-// (and its ticket s-1.1.1) and the ticket s-1.2 under it, none of them ready. bd create files, in
-// turn, s-1, s-1.1, s-1.1.1 and s-1.2. Each call goes into bd-calls, its arguments followed by |.
+// (and its ticket s-1.1.1) and the ticket s-1.2 under it, none of them ready, and no blocks cycle.
+// bd create files, in turn, s-1, s-1.1, s-1.1.1 and s-1.2. Each call goes into bd-calls, its
+// arguments followed by |.
 const specTreeBd = `#!/bin/sh
 d=$(dirname "$0")
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
@@ -36,7 +37,7 @@ list)
 	s-1.1) echo '[{"id":"s-1.1.1","status":"open","issue_type":"task"}]' ;;
 	*) echo '[]' ;;
 	esac ;;
-ready) echo '[]' ;;
+ready|dep) echo '[]' ;;
 esac
 `
 
@@ -88,8 +89,8 @@ func useBreakdown(t *testing.T, f specBreakdown) {
 }
 
 // specRunFixture is a repository set up for orchestra, inside a Herdr pane, without notifications,
-// triage or the run report, with specTreeBd on PATH and a herdr that fails; a spec outside it, which
-// it returns with the folder of the fake bd.
+// triage or the run report, with specTreeBd on PATH and a herdr and a claude that fail; a spec
+// outside it, which it returns with the folder of the fake bd.
 func specRunFixture(t *testing.T) (repo, spec, tools string) {
 	t.Helper()
 	repo = specFixture(t)
@@ -99,6 +100,7 @@ func specRunFixture(t *testing.T) (repo, spec, tools string) {
 	tools = t.TempDir()
 	faketool.Write(t, tools, "bd", specTreeBd)
 	faketool.Write(t, tools, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
+	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 	spec = writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n\nIt lists things, sorted.\n")
 	return repo, spec, tools
@@ -234,16 +236,18 @@ func TestSpecRunCommitsASpecInsideInPlace(t *testing.T) {
 	}
 }
 
-// Until a build has the breakdown, a spec run stops once the spec is committed, exit 2; a breakdown
-// that names no root epic ends the run the same way. Neither run starts its loop.
+// Until a build has the breakdown with the user, a spec run with --refine stops once the spec is
+// committed, exit 2; a breakdown that names no root epic ends the run the same way. Neither run starts
+// its loop.
 func TestSpecRunWithoutARootEpic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
 	}
 	repo, spec, _ := specRunFixture(t)
-	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
+	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain", "--refine")
 	if code != 2 || !strings.Contains(stderr, "orchestra couldn't break the spec down: "+
-		"the spec breakdown isn't available in this build\n") || strings.Contains(stdout, "START") {
+		"refining a spec with you (--refine) isn't available in this build; "+
+		"without --refine, orchestra breaks it down unattended\n") || strings.Contains(stdout, "START") {
 		t.Errorf("no breakdown: exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}
 	if subject := gitIn(t, repo, "log", "-1", "--format=%s"); subject != "orchestra: add spec app.md" {

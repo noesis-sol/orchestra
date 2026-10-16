@@ -84,6 +84,12 @@ type Settings struct {
 	// OrganEffort is the effort of every organ, unless --organ-effort says otherwise. Empty: each
 	// organ's own, low for triage and the predictor and medium for the run report.
 	OrganEffort string `json:"organ_effort,omitempty"`
+	// SpecTimeout is how long a spec run's breakdown (orchestra --spec) may take before it is stopped,
+	// as a duration such as "90m", unless --spec-timeout says otherwise. Empty: DefaultSpecTimeout.
+	SpecTimeout string `json:"spec_timeout,omitempty"`
+	// SpecEffort is the effort a spec run's breakdown runs at, unless --spec-effort says otherwise.
+	// Empty: DefaultSpecEffort.
+	SpecEffort string `json:"spec_effort,omitempty"`
 	// Terminal is where workers run, TerminalHerdr, TerminalTmux or TerminalCmux, unless --terminal
 	// or ORCHESTRA_TERMINAL says otherwise. Empty or TerminalAuto: Herdr in a Herdr pane, cmux in a
 	// cmux terminal, else tmux.
@@ -120,6 +126,11 @@ const (
 	// DefaultCheckHandBacks is how many times a failed check on a rebased ticket is handed back to its
 	// worker when settings.json doesn't say.
 	DefaultCheckHandBacks = 2
+	// DefaultSpecTimeout is how long a spec's breakdown may take when settings.json sets no limit.
+	DefaultSpecTimeout = 60 * time.Minute
+	// DefaultSpecEffort is the effort of a spec's breakdown when settings.json sets none: made once
+	// per spec, it decides the whole run.
+	DefaultSpecEffort = "high"
 )
 
 // The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
@@ -386,6 +397,23 @@ func ResolveCheckTimeout(flag Given[time.Duration], s Settings) (time.Duration, 
 func ResolveCheckFullTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
 	return resolve(flag, positiveFlag("check-full-timeout"),
 		durationSetting("check_full_timeout", s.CheckFullTimeout, "5m", false), DefaultCheckFullTimeout)
+}
+
+// ResolveSpecTimeout picks how long a spec's breakdown may take: --spec-timeout (or
+// ORCHESTRA_SPEC_TIMEOUT) when given, else the project's setting, else DefaultSpecTimeout.
+func ResolveSpecTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
+	return resolve(flag, positiveFlag("spec-timeout"), durationSetting("spec_timeout", s.SpecTimeout, "90m", false),
+		DefaultSpecTimeout)
+}
+
+// ResolveSpecEffort picks the effort of a spec's breakdown: --spec-effort (or ORCHESTRA_SPEC_EFFORT)
+// when given, else the project's setting, else DefaultSpecEffort.
+func ResolveSpecEffort(flagValue string, s Settings) (string, error) {
+	effort, err := ResolveEffort(flagValue, "spec_effort", s.SpecEffort)
+	if err == nil && effort == "" {
+		effort = DefaultSpecEffort
+	}
+	return effort, err
 }
 
 // positiveFlag checks that the duration the flag called name gives is positive.

@@ -238,6 +238,58 @@ func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []
 	return children, links, nil
 }
 
+// WithMetadata returns every ticket, closed or not, whose metadata gives key the value, with its text,
+// metadata and parent: those a spec's breakdown filed, by the spec's path under SpecKey, say. When
+// bd's output can't be read, the error carries bd's stderr.
+func (b Tracker) WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error) {
+	return b.list(ctx, "", "--all", "--metadata-field", key+"="+value)
+}
+
+// Cycles returns the dependency cycles bd finds among every ticket (bd dep cycles), each as the IDs
+// of its tickets in the order of its links; none when there is none. bd gives each cycle as an
+// object listing its members, or, from an older bd, as the list of its tickets.
+func (b Tracker) Cycles(ctx context.Context) ([][]string, error) {
+	out, runErr := b.bd(ctx, command.ReadLimit, "dep", "cycles", "--json")
+	cycles, err := parseCycles([]byte(out))
+	if err = readFailed("bd dep cycles --json", err, runErr); err != nil {
+		return nil, err
+	}
+	return cycles, nil
+}
+
+// parseCycles reads 'bd dep cycles --json'.
+func parseCycles(raw []byte) ([][]string, error) {
+	var all []json.RawMessage
+	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+		return nil, err
+	}
+	type member struct {
+		ID string `json:"id"`
+	}
+	var cycles [][]string
+	for _, c := range all {
+		var listed struct {
+			Members []member `json:"members"`
+		}
+		var members []member
+		if json.Unmarshal(c, &listed) == nil {
+			members = listed.Members
+		} else if err := json.Unmarshal(c, &members); err != nil {
+			return nil, err
+		}
+		var ids []string
+		for _, m := range members {
+			if m.ID != "" {
+				ids = append(ids, m.ID)
+			}
+		}
+		if len(ids) > 0 {
+			cycles = append(cycles, ids)
+		}
+	}
+	return cycles, nil
+}
+
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
 // ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
 func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ...string) ([]dispatch.Ticket, error) {

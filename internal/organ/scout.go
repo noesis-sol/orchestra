@@ -176,10 +176,10 @@ func (g Client) scoutFlags(ctx context.Context) []string {
 // --permission-prompts none denies whatever would prompt.
 func confinement(help string) []string {
 	var flags []string
-	if listsFlag(help, "--restricted") {
+	if ListsFlag(help, "--restricted") {
 		flags = append(flags, "--restricted")
 	}
-	if listsFlag(help, "--permission-prompts") {
+	if ListsFlag(help, "--permission-prompts") {
 		flags = append(flags, "--permission-prompts", "none")
 	}
 	return flags
@@ -188,15 +188,15 @@ func confinement(help string) []string {
 // budget caps what the scout spends at ScoutBudget, when help lists --max-budget-usd. The time limit
 // stops a scout that runs long; this stops one that spends fast, at a higher effort or a dearer model.
 func budget(help string) []string {
-	if !listsFlag(help, "--max-budget-usd") {
+	if !ListsFlag(help, "--max-budget-usd") {
 		return nil
 	}
 	return []string{"--max-budget-usd", strconv.FormatFloat(ScoutBudget, 'f', 2, 64)}
 }
 
-// listsFlag tells whether help, a command's --help, lists flag: a line that starts with it, or with
+// ListsFlag tells whether help, a command's --help, lists flag: a line that starts with it, or with
 // its short form and then it ("-p, --print").
-func listsFlag(help, flag string) bool {
+func ListsFlag(help, flag string) bool {
 	for line := range strings.Lines(help) {
 		f := strings.Fields(line)
 		if len(f) > 0 && (f[0] == flag || len(f) > 1 && strings.HasSuffix(f[0], ",") && f[1] == flag) {

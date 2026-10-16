@@ -190,6 +190,9 @@ type options struct {
 	showVersion  bool
 	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
 	specSetup *project.Choice
+	// how long the spec's breakdown may take, and the effort it runs at (--spec-timeout, --spec-effort)
+	SpecTimeout time.Duration
+	SpecEffort  string
 	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
 	terminalAsked string
 	where         runsIn // where orchestra itself runs, as checkTerminal finds it
@@ -248,6 +251,7 @@ type runFlags struct {
 	options
 	concurrency                                 project.Given[int]
 	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
+	specTimeout                                 project.Given[time.Duration]
 	resolveConflicts                            project.Given[bool]
 	limitGiven                                  bool            // -limit or LIMIT gave the limit
 	set                                         map[string]bool // the flags the command line sets
@@ -385,6 +389,13 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.BoolVar, &c.Refine, "refine", "ORCHESTRA_REFINE", false, parseOnOff,
 		"with --spec, talk the spec through with you in a Claude Code session before it is broken down "+
 			"[ORCHESTRA_REFINE=1]")
+	bindGiven(e, fs.DurationVar, &f.specTimeout, "spec-timeout", "ORCHESTRA_SPEC_TIMEOUT", 0,
+		project.ParseCheckTimeout,
+		"with --spec, stop the spec's breakdown after this long, e.g. 90m "+
+			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_SPEC_TIMEOUT]")
+	bindEnv(e, fs.StringVar, &c.SpecEffort, "spec-effort", "ORCHESTRA_SPEC_EFFORT", "", parseText,
+		"with --spec, the effort the spec's breakdown runs at: low, medium, high, xhigh or max "+
+			"(default: .orchestra/settings.json, else high) [ORCHESTRA_SPEC_EFFORT]")
 	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
 	fs.BoolVar(&c.Plain, "plain", false,
@@ -540,6 +551,8 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	keep(&problems, &c.WorkerPermissionMode)(
 		project.ResolvePermissionMode(c.WorkerPermissionMode, settings, c.specFile != ""))
 	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
+	keep(&problems, &c.SpecEffort)(project.ResolveSpecEffort(c.SpecEffort, settings))
+	keep(&problems, &c.SpecTimeout)(project.ResolveSpecTimeout(f.specTimeout, settings))
 	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(f.concurrency, settings))
 	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(f.ticketLimit, settings))
 	keep(&problems, &c.CheckTimeout)(project.ResolveCheckTimeout(f.checkTimeout, settings))

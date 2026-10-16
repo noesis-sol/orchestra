@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -63,6 +64,16 @@ func (t Ticket) metadataField(key string) json.RawMessage {
 		return nil
 	}
 	return meta[key]
+}
+
+// MetadataText is the text the ticket's metadata gives key, trimmed: "" when it gives none, or a
+// value that isn't text.
+func (t Ticket) MetadataText(key string) string {
+	var s string
+	if json.Unmarshal(t.metadataField(key), &s) != nil {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 // TicketStatus is a ticket's status as Beads stores it, or StatusUnknown when bd can't say.
