@@ -38,9 +38,19 @@ func writeGit(ctx context.Context, dir string, args ...string) (string, error) {
 // DirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
 // (agent settings, tracker data, and orchestra's own files). It returns git's error when git can't
 // tell, which is not the same as dirty.
-func (Git) DirtyTree(ctx context.Context, dir string) (string, error) {
-	out, err := readGit(ctx, "", "-C", dir, "status", "--porcelain",
-		"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra")
+func (g Git) DirtyTree(ctx context.Context, dir string) (string, error) {
+	return g.DirtyTreeBesides(ctx, dir)
+}
+
+// DirtyTreeBesides is DirtyTree leaving out these paths too, relative to dir and taken literally:
+// a file orchestra is about to commit, such as a spec.
+func (Git) DirtyTreeBesides(ctx context.Context, dir string, paths ...string) (string, error) {
+	args := []string{"-C", dir, "status", "--porcelain",
+		"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra"}
+	for _, p := range paths {
+		args = append(args, ":(exclude,literal)"+p)
+	}
+	out, err := readGit(ctx, "", args...)
 	if err != nil {
 		return "", err
 	}
@@ -307,6 +317,39 @@ func (Git) Tracks(ctx context.Context, repo, path string) bool {
 	return err == nil
 }
 
+// PathChanged reports whether the file at path, relative to repo, differs from what HEAD holds:
+// changed, staged, untracked, or ignored by git. It returns git's error when git can't tell.
+func (Git) PathChanged(ctx context.Context, repo, path string) (bool, error) {
+	out, err := readGit(ctx, repo, "status", "--porcelain", "-z", "--untracked-files=all", "--ignored",
+		"--", ":(literal)"+path)
+	if err != nil {
+		return false, err
+	}
+	return out != "", nil
+}
+
+// Ignored reports whether git ignores the file at path, relative to repo, which need not exist:
+// a .gitignore or the repository's info/exclude matches it, and git doesn't track it. It returns
+// git's error when git can't tell.
+func (Git) Ignored(ctx context.Context, repo, path string) (bool, error) {
+	_, err := readGit(ctx, repo, "check-ignore", "-q", "--", path)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1: // none of the patterns matches
+		return false, nil
+	}
+	return false, err
+}
+
+// LastCommit returns the latest commit, as a full hash, that changed the file at path, relative
+// to repo, on the branch checked out; "" when none has, or git can't tell.
+func (Git) LastCommit(ctx context.Context, repo, path string) string {
+	out, _ := readGit(ctx, repo, "log", "-1", "--no-show-signature", "--format=%H", "--", ":(literal)"+path)
+	return strings.TrimSpace(out) // "" on failure, as documented
+}
+
 // ChangedFiles lists the files that differ between commits from and to in repo, or every file in
 // to when from is "" (to is the first commit). It lists none if git can't.
 func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {
@@ -358,6 +401,24 @@ func splitNUL(out string) []string {
 // Move moves the file at from to to, both relative to repo, with 'git mv', which stages the move.
 func (Git) Move(ctx context.Context, repo, from, to string) (string, error) {
 	return writeGit(ctx, repo, "mv", "--", from, to)
+}
+
+// CommitPath commits the file at path, relative to repo, and nothing else, on the branch checked out,
+// with message msg, and returns the commit as a full hash. What else is staged stays staged and out
+// of the commit. The repository's hooks before a commit don't run: one could add files to it.
+func (g Git) CommitPath(ctx context.Context, repo, path, msg string) (string, error) {
+	if _, err := writeGit(ctx, repo, "add", "--", ":(literal)"+path); err != nil {
+		return "", err
+	}
+	if _, err := writeGit(ctx, repo, "commit", "--quiet", "--no-verify", "--only", "-m", msg,
+		"--", ":(literal)"+path); err != nil {
+		return "", err
+	}
+	head := g.Head(ctx, repo, "HEAD")
+	if head == "" {
+		return "", errors.New("git committed " + path + " but HEAD names no commit")
+	}
+	return head, nil
 }
 
 // Prune forgets worktrees whose folders are gone.

@@ -5,7 +5,9 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -444,7 +446,7 @@ type Config struct {
 	// workers left for a run elsewhere ran in.
 	TerminalLabels map[string]TerminalLabel
 	Watch          string // how to see the workers' tabs from elsewhere (tmux attach -t …); "" if in sight
-	Limit          int
+	Limit          int    // stop after this many tickets, DoneSoFar's included; NoLimit for none
 	DoneSoFar      int
 	AgentKind      string
 	WTRoot         string
@@ -460,7 +462,10 @@ type Config struct {
 	Predict        bool          // have the predictor organ guess the files of ready tickets naming none
 	Ticket         string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
 	Feature        string        // the feature request (--feature) Ticket, its epic, was planned from; "" for none
-	ExcludeTypes   []string      // issue types never dispatched, such as epics, from .orchestra/settings.json
+	// Spec is the spec (--spec) Ticket, its root epic, was broken down from: its path in the
+	// repository; "" for none.
+	Spec         string
+	ExcludeTypes []string // issue types never dispatched, such as epics, from .orchestra/settings.json
 	// CheckFull is every check (check_full), from .orchestra/settings.json, run once at the end of a
 	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.
 	CheckFull        string
@@ -498,6 +503,26 @@ type Config struct {
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.
 	MCP *[]mcp.Server
+}
+
+// NoLimit is Config.Limit for a run with no ticket limit, as a spec run has unless one is given.
+const NoLimit = math.MaxInt
+
+// LimitLabel is the ticket limit, as the log and the dashboard say it: the number, or none.
+func LimitLabel(limit int) string {
+	if limit == NoLimit {
+		return "none"
+	}
+	return strconv.Itoa(limit)
+}
+
+// Progress is how far a run is through its ticket limit after n tickets, as the log and the dashboard
+// say it: n/limit, or n alone when it has none.
+func Progress(n, limit int) string {
+	if limit == NoLimit {
+		return strconv.Itoa(n)
+	}
+	return fmt.Sprintf("%d/%d", n, limit)
 }
 
 // TerminalLabel is how a run's log names a terminal and the place of its workers' tabs.

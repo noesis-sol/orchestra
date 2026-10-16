@@ -177,7 +177,7 @@ func renderEvent(ev dispatch.Event) string {
 		if ev.Solo.Ticket == ev.Ticket && !ev.Solo.Next {
 			solo = dimStyle.Render(" solo")
 		}
-		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render(fmt.Sprintf("▶ [%d/%d]", ev.N, ev.Limit)),
+		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render("▶ ["+dispatch.Progress(ev.N, ev.Limit)+"]"),
 			pickedStyle.Render(ev.Ticket), solo, ev.Title)
 	case dispatch.EvTriage:
 		return fmt.Sprintf("%s %s  %s",

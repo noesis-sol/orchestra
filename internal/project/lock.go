@@ -42,6 +42,7 @@ type Holder struct {
 	Branch  string    `json:"branch,omitempty"`  // the main checkout's, where finished tickets land
 	Ticket  string    `json:"ticket,omitempty"`  // --ticket: the run is scoped to it
 	Feature string    `json:"feature,omitempty"` // --feature: the request
+	Spec    string    `json:"spec,omitempty"`    // --spec: the spec's path in the repository
 	Pane    string    `json:"pane,omitempty"`    // its Herdr or tmux pane, or cmux surface
 }
 
@@ -82,6 +83,8 @@ func (h Holder) describe(now time.Time) string {
 		parts = append(parts, h.Branch)
 	}
 	switch {
+	case h.Spec != "":
+		parts = append(parts, "--spec "+h.Spec)
 	case h.Ticket != "":
 		parts = append(parts, "--ticket "+h.Ticket)
 	case h.Feature != "":

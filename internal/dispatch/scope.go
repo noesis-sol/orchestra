@@ -182,11 +182,13 @@ func (o *Loop) scopeNote(id string) string {
 }
 
 // ScopeLabel is how a run's scope is shown after the branch: " · ticket <id>", " · feature <epic>"
-// for a run planned from a feature request, or "".
+// for a run planned from a feature request, " · spec <path>" for one broken down from a spec, or "".
 func ScopeLabel(c Config) string {
 	switch {
 	case c.Ticket == "":
 		return ""
+	case c.Spec != "":
+		return " · spec " + c.Spec
 	case c.Feature != "":
 		return " · feature " + c.Ticket
 	}

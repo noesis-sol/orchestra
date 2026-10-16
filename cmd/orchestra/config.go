@@ -122,7 +122,7 @@ func bindGiven[T any](
 }
 
 // bindWhole is bindEnv for a whole number, which the flag's value must be as the variable's must.
-func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) {
+func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) *envBinding {
 	b := bindEnv(e, e.fs.IntVar, dst, name, env, def, parseWhole, usage)
 	b.check = func(string) string {
 		if *dst < 0 {
@@ -130,6 +130,7 @@ func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) {
 		}
 		return ""
 	}
+	return b
 }
 
 // short defines short as the flag's shorthand.
@@ -183,6 +184,8 @@ type options struct {
 	OrganEffort  string // effort for every organ; "" gives each its own
 	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
 	Yes          bool   // file a --feature plan without asking
+	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
+	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
@@ -206,9 +209,10 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // package's (flag.ErrHelp after -h, or a malformed flag), or errUnexpectedArgs for a positional
 // argument such as 'init' after a flag; both have been reported to output.
 //
-// Its phases, in the order their problems are reported: the flags; the repository; the terminal,
-// under the project's settings, read once here for it and the project; the commands a run calls;
-// then, in a repository, the project's settings and layout and its checkout.
+// Its phases, in the order their problems are reported: the flags, and the spec file --spec gives;
+// the repository; the terminal, under the project's settings, read once here for it and the project;
+// the commands a run calls; then, in a repository, the project's settings and layout, its checkout,
+// and where the spec is kept there.
 func loadConfig(
 	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
 ) (options, []string, error) {
@@ -217,6 +221,8 @@ func loadConfig(
 	if err != nil || c.showVersion {
 		return c, nil, err
 	}
+	specProblems := checkSpecFile(&c, f.specFrom())
+	problems = append(problems, specProblems...)
 	problems = append(problems, findRepo(ctx, &c)...)
 	settings, unreadable := loadSettings(c.Repo)
 	problems = append(problems, checkTerminal(ctx, &c, settings, getenv)...)
@@ -225,6 +231,9 @@ func loadConfig(
 		problems = append(problems, unreadable...)
 		problems = append(problems, resolveProject(ctx, &c, f, settings, getenv)...)
 		problems = append(problems, checkCheckout(ctx, &c)...)
+		if len(specProblems) == 0 {
+			problems = append(problems, checkSpecPath(ctx, &c, f.specFrom())...)
+		}
 	}
 	return c, problems, nil
 }
@@ -236,6 +245,7 @@ type runFlags struct {
 	concurrency                                 project.Given[int]
 	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
 	resolveConflicts                            project.Given[bool]
+	limitGiven                                  bool            // -limit or LIMIT gave the limit
 	set                                         map[string]bool // the flags the command line sets
 	env                                         envFlags
 }
@@ -248,7 +258,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 	f := defineRunFlags(fs, getenv)
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "Usage: orchestra [flags]\n"+
-			"       orchestra --feature \"<request>\" [--yes] [flags]\n")
+			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
+			"       orchestra --spec <file> [--refine] [flags]\n")
 		for _, c := range subcommands {
 			fmt.Fprint(fs.Output(), usageLines("       ", c.name, c.synopsis))
 		}
@@ -256,7 +267,8 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
 			"as --concurrent allows, one worker (a coding agent) per tab and git worktree.\n"+
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
-			"In a terminal, without --feature, --ticket, --tickets or -plain, it first asks which: "+
+			"With --spec, commit the spec and break it down into an epic and its tickets first, and run those.\n"+
+			"In a terminal, without --feature, --spec, --ticket, --tickets or -plain, it first asks which: "+
 			"the current tickets, or a new feature you describe.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
@@ -283,6 +295,9 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		problems = append(problems, problem) // no flag: the variable alone turns the check off
 	}
 	f.Feature = strings.TrimSpace(f.Feature)
+	if f.specFile != "" && !f.limitGiven {
+		f.Limit = dispatch.NoLimit // a whole app can take far more tickets than a run's default
+	}
 	return f, append(problems, checkFlagCombos(f)...), nil
 }
 
@@ -298,7 +313,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.StringVar, &c.terminalAsked, "terminal", "ORCHESTRA_TERMINAL", "", parseText,
 		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
-	bindWhole(e, &c.Limit, "limit", "LIMIT", 40, "stop after this many tickets in total [LIMIT]")
+	bindWhole(e, &c.Limit, "limit", "LIMIT", 40,
+		"stop after this many tickets in total (default: none for a --spec run) [LIMIT]").given = &f.limitGiven
 	bindWhole(e, &c.DoneSoFar, "done-so-far", "DONE_SO_FAR", 0,
 		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
 	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", "claude", parseText,
@@ -353,6 +369,13 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
 			"confirm, and run the epic as --ticket would")
 	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
+	bindEnv(e, fs.StringVar, &c.specFile, "spec", "ORCHESTRA_SPEC", "", parseText,
+		"commit this spec, a Markdown or plain-text file (one outside the repository as a copy in "+
+			project.Dir+"/"+project.SpecsDir+"/), break it down into an epic and its tickets, "+
+			"and run the epic as --ticket would [ORCHESTRA_SPEC]")
+	bindEnv(e, fs.BoolVar, &c.Refine, "refine", "ORCHESTRA_REFINE", false, parseOnOff,
+		"with --spec, talk the spec through with you in a Claude Code session before it is broken down "+
+			"[ORCHESTRA_REFINE=1]")
 	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
 	fs.BoolVar(&c.Plain, "plain", false,
@@ -360,9 +383,12 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	return f
 }
 
-// checkFlagCombos checks how a run's flags go together: --feature with what it needs and against
-// what it can't be combined with.
+// checkFlagCombos checks how a run's flags go together: --feature and --spec with what they need
+// and against what they can't be combined with.
 func checkFlagCombos(f *runFlags) []string {
+	if p := checkSpecCombos(f); p != "" {
+		return []string{p}
+	}
 	feature := f.set["feature"]
 	switch {
 	case feature && f.Feature == "":
@@ -382,6 +408,40 @@ func checkFlagCombos(f *runFlags) []string {
 			f.DoneSoFar, f.Limit)}
 	}
 	return nil
+}
+
+// checkSpecCombos says how --spec (or ORCHESTRA_SPEC) and --refine don't go with the run's other
+// flags, or returns "". ORCHESTRA_REFINE alone, like ORCHESTRA_TICKETS, is a standing choice that
+// a run without a spec leaves unused.
+func checkSpecCombos(f *runFlags) string {
+	spec, from := f.specFile != "", f.specFrom()
+	switch {
+	case f.set["spec"] && !spec:
+		return "--spec needs the spec's file: orchestra --spec <file>"
+	case spec && f.set["feature"]:
+		return from + " can't be combined with --feature: one runs a spec, the other a feature request."
+	case spec && f.Ticket != "":
+		return from + " can't be combined with --ticket (or ORCHESTRA_TICKET): " +
+			"a spec run is scoped to the epic its breakdown files."
+	case spec && f.set["tickets"] && f.Tickets:
+		return from + " can't be combined with --tickets: one runs a spec, the other the current tickets."
+	case !spec && f.set["refine"] && f.Refine:
+		return "--refine only applies with --spec."
+	case spec && f.DoneSoFar >= f.Limit:
+		// Only with -limit or LIMIT: a spec run has none otherwise.
+		return fmt.Sprintf("%s would break the spec down and run none of it: "+
+			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT], lower -done-so-far [DONE_SO_FAR], "+
+			"or leave both out.", from, f.DoneSoFar, f.Limit)
+	}
+	return ""
+}
+
+// specFrom is what gave the run its spec, for its problems: --spec, or ORCHESTRA_SPEC.
+func (f *runFlags) specFrom() string {
+	if f.set["spec"] {
+		return "--spec"
+	}
+	return "ORCHESTRA_SPEC"
 }
 
 // findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory.

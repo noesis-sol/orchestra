@@ -31,6 +31,7 @@ type RunStart struct {
 	Branch      string // where finished tickets land
 	Scope       string // the ticket the run is scoped to (--ticket, or a feature's epic); "" for all of bd ready
 	Feature     string // the feature request (--feature), if any
+	Spec        string // the spec (--spec), by its path in the repository, if any
 	Concurrency int
 }
 
@@ -49,12 +50,13 @@ type startRecord struct {
 	Branch      string `json:"branch"`
 	Scope       string `json:"scope,omitempty"`
 	Feature     string `json:"feature,omitempty"`
+	Spec        string `json:"spec,omitempty"`
 	Concurrency int    `json:"concurrency"`
 }
 
 // eventRecord is an Event. Queued, Held, Unclosed and Solo are given for EvDispatch and EvQueue, N
 // and Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
-// once read, the tickets held back only when there are some.
+// once read, the tickets held back only when there are some, the limit only when the run has one.
 type eventRecord struct {
 	recordHead
 	Ticket   string      `json:"ticket,omitempty"`
@@ -109,7 +111,7 @@ func (l *Log) Begin(repo string, s RunStart) {
 	}
 	l.events, l.run = f, s.Started
 	l.write(startRecord{recordHead: recordHead{Time: time.Now(), Run: s.Started, Kind: "start"},
-		Version: s.Version, Repo: s.Repo, Branch: s.Branch, Scope: s.Scope, Feature: s.Feature,
+		Version: s.Version, Repo: s.Repo, Branch: s.Branch, Scope: s.Scope, Feature: s.Feature, Spec: s.Spec,
 		Concurrency: s.Concurrency})
 }
 
@@ -139,7 +141,10 @@ func (l *Log) Record(ev Event) {
 		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside, Blocked: ev.Blocked,
 		Suite: ev.Suite, Output: ev.Output}
 	if ev.Kind == EvDispatch {
-		r.N, r.Limit = &ev.N, &ev.Limit
+		r.N = &ev.N
+		if ev.Limit != NoLimit {
+			r.Limit = &ev.Limit
+		}
 	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued

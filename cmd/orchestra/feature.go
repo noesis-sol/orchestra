@@ -253,12 +253,12 @@ func (f featureRun) busy(plain, styled, hint string) *tui.Busy {
 	return f.say.Busy("", styled, hint)
 }
 
-// cleanCheckout checks that the main checkout repo has no uncommitted changes. The loop checks it
-// before each ticket; a feature is checked before it is filed, so that a run that couldn't start
-// files nothing. It returns ExitOK, or the exit code having said why not; ExitInterrupted, saying
-// nothing, when ctx ended first.
-func cleanCheckout(ctx context.Context, repo string, stderr io.Writer) int {
-	dirty, err := (git.Git{}).DirtyTree(ctx, repo)
+// cleanCheckout checks that the main checkout repo has no uncommitted changes, besides those to the
+// paths in besides (a spec about to be committed). The loop checks it before each ticket; a feature
+// is checked before it is filed, so that a run that couldn't start files nothing. It returns ExitOK,
+// or the exit code having said why not; ExitInterrupted, saying nothing, when ctx ended first.
+func cleanCheckout(ctx context.Context, repo string, stderr io.Writer, besides ...string) int {
+	dirty, err := (git.Git{}).DirtyTreeBesides(ctx, repo, besides...)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return dispatch.ExitInterrupted

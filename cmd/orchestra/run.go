@@ -234,7 +234,7 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	// until orchestra exits, after the organ phase.
 	s.holder = project.Holder{
 		PID: os.Getpid(), Started: s.started, Version: buildVersion(), Branch: cfg.Base,
-		Ticket: cfg.Ticket, Feature: cfg.Feature, Pane: cfg.where.pane,
+		Ticket: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Pane: cfg.where.pane,
 	}
 	lock, lockErr := project.LockRun(ctx, cfg.Repo, s.holder)
 	var held *project.HeldError
@@ -293,7 +293,8 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 }
 
 // chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or
-// given with --feature is talked through or planned, and filed, the run then scoped to its epic. It
+// given with --feature is talked through or planned, and filed, the run then scoped to its epic; a
+// spec given with --spec is committed and broken down, the run then scoped to its root epic. It
 // records the run's start. ok is false where the run ends there with code: the question left, or
 // nothing filed to run.
 func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
@@ -313,21 +314,23 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 			}
 		}
 	}
-	featureCode := dispatch.ExitOK
+	filedCode := dispatch.ExitOK
 	switch off := interviewOff(*cfg); { // the run is scoped to the epic filed
+	case cfg.specFile != "": // broken down from the spec, once it is committed (spec.go)
+		cfg.Ticket, filedCode = s.runSpec(ctx)
 	case cfg.Feature == "":
 	case typed && off == "": // talked through with the user, and filed, in a Claude Code session
-		cfg.Ticket, featureCode = runInterview(ctx, s.stops, *cfg, s.holder.Pane, s.log, e.stdin, e.stdout, e.stderr)
+		cfg.Ticket, filedCode = runInterview(ctx, s.stops, *cfg, s.holder.Pane, s.log, e.stdin, e.stdout, e.stderr)
 	default: // planned by the organs, and filed by orchestra
 		if typed {
 			fmt.Fprintf(e.stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)
 		}
-		cfg.Ticket, featureCode = runFeature(ctx, s.stops, *cfg, s.log, e.stdin, e.stdout, e.stderr)
+		cfg.Ticket, filedCode = runFeature(ctx, s.stops, *cfg, s.log, e.stdin, e.stdout, e.stderr)
 	}
 	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: buildVersion(), Repo: cfg.Repo,
-		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Concurrency: cfg.Concurrency})
-	if cfg.Feature != "" && cfg.Ticket == "" { // nothing filed to run
-		return featureCode, false
+		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})
+	if (cfg.Feature != "" || cfg.specFile != "") && cfg.Ticket == "" { // nothing filed to run
+		return filedCode, false
 	}
 	return dispatch.ExitOK, true
 }

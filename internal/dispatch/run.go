@@ -234,9 +234,9 @@ func (o *Loop) begin(ctx context.Context) {
 	if term.Where != "" {
 		where = term.Where
 	}
-	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %d, concurrent: %d, ticket limit: %s, "+
+	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
 		"check timeout: %s, terminal: %s, %s: %s, agent: %s, worktrees: %s, MCP servers: %s)",
-		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, c.Limit, c.Concurrency, ticketLimit,
+		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency, ticketLimit,
 		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.AgentKind,
 		c.WTRoot, c.mcpLabel())
 	if c.Watch != "" {
@@ -244,6 +244,9 @@ func (o *Loop) begin(ctx context.Context) {
 	}
 	if c.Feature != "" {
 		o.info("  feature: epic %s, planned from: %s", c.Ticket, FeatureLine(c.Feature))
+	}
+	if c.Spec != "" {
+		o.info("  spec: epic %s, broken down from: %s", c.Ticket, c.Spec)
 	}
 	o.sayMCP()
 }
@@ -419,7 +422,7 @@ func (r *runState) start(t Ticket, q queue) {
 	r.queued, r.soloShown, r.unclosedSaid = q, r.solo.state(), r.unclosed
 	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
 		Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
-		Text: fmt.Sprintf("[%d/%d] %s %s: %s", r.count, c.Limit, t.ID, how, t.Title)})
+		Text: fmt.Sprintf("[%s] %s %s: %s", Progress(r.count, c.Limit), t.ID, how, t.Title)})
 	r.startFootprint(t)
 	tr := o.newTicketRun(r.ctx, t)
 	r.launch(t.ID, true, &tr.how, tr.work)

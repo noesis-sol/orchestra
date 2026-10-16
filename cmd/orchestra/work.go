@@ -19,11 +19,12 @@ import (
 // lock is held, so that an answer is never followed by "orchestra cannot start".
 
 // asksWork reports whether the run c asks what to work on. terminal says whether stdin and stdout
-// are both a terminal, as the form is drawn on stdout. --feature, --ticket (or ORCHESTRA_TICKET),
-// --tickets (or ORCHESTRA_TICKETS=1) and -plain say already. So does a run whose -limit is reached:
-// it starts nothing, and a feature would be filed with none of it run.
+// are both a terminal, as the form is drawn on stdout. --feature, --spec (or ORCHESTRA_SPEC), --ticket
+// (or ORCHESTRA_TICKET), --tickets (or ORCHESTRA_TICKETS=1) and -plain say already. So does a run
+// whose -limit is reached: it starts nothing, and a feature would be filed with none of it run.
 func asksWork(c options, terminal bool) bool {
-	return terminal && c.Feature == "" && c.Ticket == "" && !c.Tickets && !c.Plain && c.DoneSoFar < c.Limit
+	return terminal && c.Feature == "" && c.specFile == "" && c.Ticket == "" && !c.Tickets && !c.Plain &&
+		c.DoneSoFar < c.Limit
 }
 
 // workQuestion is the question a run asks first.

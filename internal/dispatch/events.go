@@ -54,7 +54,7 @@ type Event struct {
 	Time   time.Time
 	Kind   Kind
 	N      int // EvDispatch: the ticket's number in the run; EvDone: the tickets in all, as Text counts them
-	Limit  int // EvDispatch and EvDone: the ticket limit
+	Limit  int // EvDispatch and EvDone: the ticket limit, NoLimit for none
 	Ticket string
 	// Title: the ticket's title, for EvDispatch, EvClosed, EvDeferred, EvAsked, EvWaits and
 	// EvAnswered; the verdict's summary for EvTriage.

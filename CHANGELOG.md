@@ -30,6 +30,15 @@ All notable changes to orchestra are documented here. The format follows
   in `orchestra plan`, whether the repository's files are known or not. It
   was kept as one file, `web/src`, so the two ran side by side over the
   same new files. A name without the slash is still a file.
+- `orchestra --spec <file>` (or `ORCHESTRA_SPEC`) runs a spec, a Markdown or
+  plain-text file: it commits the spec, alone, where workers can read it (a
+  file outside the repository as a copy in `.orchestra/specs/`), has it broken
+  down into an epic and its tickets, and runs that epic without asking, with
+  no ticket limit unless `-limit` or `LIMIT` gives one. `--refine` (or
+  `ORCHESTRA_REFINE`) asks to talk the spec through first. The breakdown
+  itself isn't in this build yet: a spec run stops once the spec is committed.
+  The run lock, the START line and the event stream's start record name the
+  spec.
 
 ## [0.7.7] - 2026-10-16
 
