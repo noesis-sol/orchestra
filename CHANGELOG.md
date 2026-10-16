@@ -13,6 +13,12 @@ All notable changes to orchestra are documented here. The format follows
   does: it labels the tickets of the workers it leaves running, saves them for
   the next run, logs its end and exits 130. SIGPIPE ended it at its next line
   of output, before that bookkeeping, with exit 141.
+- A ticket handed back to its worker, to resolve a rebase or fix a failing
+  check, whose worker left its worktree on another branch or a detached HEAD
+  is set aside instead of merged. The check ran on what the worktree had
+  checked out, and the merge then brought in the ticket's branch, which was
+  never checked. Its branch is no longer reset either: the reset reset the
+  branch the worktree was on.
 
 ## [0.7.6] - 2026-10-16
 

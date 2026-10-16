@@ -195,17 +195,21 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 }
 
 // verifyFixed checks what the worker left after a hand-back of a failed check on r's branch at commit
-// at, without taking its word for it: no rebase in progress, the worktree clean, and the branch at
-// with new commits on top, each naming the ticket. It returns what was committed, as in "2 commits",
-// or why it is rejected. The check runs next (see checkRebased).
+// at, without taking its word for it: no rebase in progress, the worktree clean and on the branch, and
+// the branch at with new commits on top, each naming the ticket. It returns what was committed, as in
+// "2 commits", or why it is rejected. The check runs next (see checkRebased), on what the worktree has
+// checked out, and the merge then brings in the branch: they must be the same.
 func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed, why string) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed fix
+	on := o.offBranch(keep, r.worker)
 	switch {
 	case o.merger.RebaseInProgress(keep, r.wt):
 		return "", "its worker left a rebase in progress in " + r.wt
 	case o.checkout.DirtyWorktree(keep, r.wt) != "":
 		return "", "its worker left uncommitted changes in " + r.wt
+	case on != "":
+		return "", o.leftOffBranch(r, on)
 	case !o.merger.IsAncestor(keep, c.Repo, at, r.br):
 		return "", fmt.Sprintf("its worker rewrote the commits on %s rather than add to them", r.br)
 	}
@@ -239,6 +243,8 @@ func (x restored) afterFix() string {
 		return "; its rebase could not be aborted, so " + x.wt + " is left mid-rebase"
 	case x.dirty:
 		return "; " + x.wt + " is left as its worker left it"
+	case x.off != "":
+		return fmt.Sprintf("; %s is left at %s, as %s has %s", x.br, short(x.now), x.wt, x.off)
 	case x.now == x.to:
 		return ""
 	case x.err != nil:

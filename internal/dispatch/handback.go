@@ -170,18 +170,22 @@ func (o *Loop) waitResolved(ctx context.Context, agent, wt string, deadline time
 }
 
 // verifyResolved checks, without taking the worker's word for it, that the rebase is over, the
-// worktree clean, and the branch on top of onto with the ticket's own commits and nothing more: as
-// many as it had, or fewer where its worker skipped those whose change Base has already. A branch
-// left with no change of its own, every commit skipped or what is left changing nothing, passes too,
-// to be closed as unchanged (see merge). It returns why not; the check runs next (see checkRebased).
+// worktree clean and on the branch, and the branch on top of onto with the ticket's own commits and
+// nothing more: as many as it had, or fewer where its worker skipped those whose change Base has
+// already. A branch left with no change of its own, every commit skipped or what is left changing
+// nothing, passes too, to be closed as unchanged (see merge). It returns why not; the check runs next
+// (see checkRebased), on what the worktree has checked out, and the merge then brings in the branch.
 func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed resolution
+	on := o.offBranch(keep, r.worker)
 	switch {
 	case o.merger.RebaseInProgress(keep, r.wt):
 		return "its worker left the rebase unfinished"
 	case o.checkout.DirtyWorktree(keep, r.wt) != "":
 		return "its worker left uncommitted changes in " + r.wt
+	case on != "":
+		return o.leftOffBranch(r, on)
 	case !o.merger.IsAncestor(keep, c.Repo, r.onto, r.br):
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base)
 	case o.merger.Unchanged(keep, c.Repo, r.onto, r.br):
@@ -194,6 +198,13 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 			r.br, n, r.own)
 	}
 	return ""
+}
+
+// leftOffBranch says why what r's worker left after a hand-back is rejected, its worktree having on
+// (see offBranch) rather than r's branch checked out: the check would run on that, and the merge bring
+// in the branch unchecked.
+func (o *Loop) leftOffBranch(r rebaseStop, on string) string {
+	return fmt.Sprintf("its worker left %s with %s, not %s", r.wt, on, r.br)
 }
 
 // undoResolution puts the branch back as the ticket closed it after a failed hand-back (see
@@ -209,13 +220,14 @@ type restored struct {
 	stuck      bool   // a rebase in progress could not be aborted, so nothing more was done
 	aborted    bool   // a rebase in progress was aborted
 	dirty      bool   // the worktree has changes, so the branch was left where it is
-	now        string // where the branch was, after any abort; reset to to unless it was there or dirty
+	off        string // what the worktree has checked out instead of the branch (see offBranch), left as it is
+	now        string // where the branch was, after any abort; reset to to unless it was there, dirty or off
 	err        error  // why the reset failed
 }
 
 // restoreBranch puts r's branch back at commit to after a hand-back to its worker is rejected: a rebase
-// in progress aborted, and the branch reset to to when it is elsewhere and the worktree is clean. The
-// caller holds repoMu.
+// in progress aborted, and the branch reset to to when it is elsewhere and the worktree is clean and on
+// it, as a reset in the worktree resets what it has checked out. The caller holds repoMu.
 func (o *Loop) restoreBranch(ctx context.Context, r rebaseStop, to string) restored {
 	x := restored{br: r.br, wt: r.wt, to: to}
 	if o.merger.RebaseInProgress(ctx, r.wt) {
@@ -228,6 +240,9 @@ func (o *Loop) restoreBranch(ctx context.Context, r rebaseStop, to string) resto
 	x.dirty = o.checkout.DirtyWorktree(ctx, r.wt) != ""
 	x.now = o.checkout.Head(ctx, o.cfg.Repo, r.br)
 	if x.now == to || x.dirty {
+		return x
+	}
+	if x.off = o.offBranch(ctx, r.worker); x.off != "" {
 		return x
 	}
 	var out string
@@ -248,6 +263,9 @@ func (x restored) afterResolution() string {
 		return x.br + " is as the ticket closed it"
 	case x.dirty:
 		return fmt.Sprintf("%s is left as its worker left it (it was at %s before the rebase)", x.br, short(x.to))
+	case x.off != "":
+		return fmt.Sprintf("%s is left at %s (it was at %s before the rebase), as %s has %s",
+			x.br, short(x.now), short(x.to), x.wt, x.off)
 	case x.err != nil:
 		return fmt.Sprintf("%s could not be reset to %s, where it was before the rebase; it is left at %s",
 			x.br, short(x.to), short(x.now))

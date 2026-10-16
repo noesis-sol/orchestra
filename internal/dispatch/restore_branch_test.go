@@ -11,14 +11,15 @@ import (
 // worker left, on a stub git.
 
 // stubGit is git as a hand-back's worker left the ticket's worktree: whether a rebase is in progress and
-// can be aborted, the worktree's changes, the branch's commit, and the answers to the checks on it. It
-// records the reset.
+// can be aborted, the worktree's changes and what it has checked out, the branch's commit, and the
+// answers to the checks on it. It records the reset.
 type stubGit struct {
 	upToDate
 	cleanCheckout
 	rebasing     bool
 	abortErr     error
 	dirty        string
+	on           string // what the worktree has checked out, when not the ticket's branch ("HEAD": detached)
 	head         string
 	resetErr     error
 	resetTo      string
@@ -42,6 +43,15 @@ func (g *stubGit) Head(ctx context.Context, repo, rev string) string    { return
 func (g *stubGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	g.resetTo = rev
 	return "", g.resetErr
+}
+func (g *stubGit) CurrentBranch(ctx context.Context, repo string) (string, error) {
+	switch g.on {
+	case "":
+		return stubStop.br, nil
+	case "HEAD":
+		return "", nil
+	}
+	return g.on, nil
 }
 func (g *stubGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
 	return !g.notAncestor
