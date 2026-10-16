@@ -19,9 +19,9 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 
 | `kind` | What happened | Its other fields |
 |---|---|---|
-| `start` | the run's first record, once its startup checks pass (for a feature, once it is filed, or isn't) | `version`; `repo`, the main checkout; `branch`, where finished tickets land; `scope`, the ticket the run is scoped to (`--ticket`, or the epic a feature was filed as), absent for all of `bd ready`; `feature`, the feature request (`--feature`, or typed at the start); `concurrency` |
+| `start` | the run's first record, once its startup checks pass (for a feature, once it is filed, or isn't; for a spec, once its breakdown is over, or isn't needed) | `version`; `repo`, the main checkout; `branch`, where finished tickets land; `scope`, the ticket the run is scoped to (`--ticket`, the epic a feature was filed as, or a spec's root epic), absent for all of `bd ready`; `feature`, the feature request (`--feature`, or typed at the start); `spec`, the spec's path in the repository ([`--spec`](running.md#a-whole-app-from-a-spec), or chosen at the start); `concurrency` |
 | `info` | progress: the `START` line, worktrees, how workers settled… | `text`; `ticket` on some |
-| `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`; `queued`, how many ready tickets wait for a slot; `held` and `held_by`, the ready tickets held back (see below); `unclosed`, how many tickets aren't closed (open, in progress, blocked or deferred; in a run scoped to a ticket, the scope's); `solo` |
+| `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`, `limit` left out in a run with no ticket limit (a spec run's, unless `-limit` or `LIMIT` gives one), whose lines read `[n]`; `queued`, how many ready tickets wait for a slot; `held` and `held_by`, the ready tickets held back (see below); `unclosed`, how many tickets aren't closed (open, in progress, blocked or deferred; in a run scoped to a ticket, the scope's); `solo` |
 | `queue` | the number of ready tickets waiting for a slot or held back, or of tickets not closed, changed: the dashboard's **In queue**, which the log doesn't have | `queued`, `held`, `held_by`, `unclosed`, `solo` |
 | `closed` | a ticket closed and was merged, or closed with no change of its own to merge | `ticket`, `title`; `detail`, as in `ffd6ce4 merged into main`, or `no change to merge` |
 | `deferred` | a ticket was set aside | `ticket`, `title`; `detail`, why: `by the worker`, `still in_progress, noted for review`, … |
@@ -34,7 +34,9 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `hold` | something stopped the run: no new tickets while the running ones finish | `ticket` on some; `blocked` when that ticket's work is done but it can't merge until you act (`DIRTY_TREE`, `GIT_FAILED`, `MERGE_FAILED`): why, as the dashboard says it, as in `main checkout has uncommitted changes`, `does not fast-forward onto main` |
 | `drain`, `resume` | the run was asked to stop after the running tickets, or that was taken back | |
 | `probed` | a probe found the machine working after an environment hold: tickets start again | |
-| `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `INTERRUPTED`, … | `detail`, the word its text starts with; `ticket`, the one it stopped over, if one did; `blocked`, as for `hold` |
+| `usage_limit` | a worker reached the account's [usage limit](running.md#the-usage-limit): the run holds, starting no new tickets, until it resets; once per hold | `ticket`; `detail`, what Claude Code said of the limit, as in `You've hit your session limit · resets 7pm (Europe/Athens)`; `reset`, when it resets (RFC 3339), when Claude Code said |
+| `usage_limit_lifted` | the limit reset, or a worker went on past it: tickets start again, and the workers still limited are told to carry on | |
+| `stop` | the loop stopped and needs you: `PAUSED`, `MERGE_FAILED`, `USAGE_LIMIT`, `INTERRUPTED`, … | `detail`, the word its text starts with; `ticket`, the one it stopped over, if one did; `blocked`, as for `hold` |
 | `done` | the loop finished: `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, with `SCOPE_DONE` or `SCOPE_OPEN` in a scoped run; or the run had nothing to run: `READY_EMPTY after 0 tickets: everything is done`, or `: nothing ready` | |
 | `full_check` | the [full check](running.md#the-full-check) after a run that ended by itself and merged a ticket, before triage finishes and the run report | `detail`, how it went: `passed`, `failed`, `timed out`, `skipped` (stopped with Ctrl+C) or `not run` (no worktree could be made for it); when it failed or timed out, `suite`, the suite it failed in (none when the setup before it failed), `output`, where its whole output is, and `ticket`, the ticket filed for that suite or the one open for it already |
 | `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes) |
@@ -45,7 +47,7 @@ A failing terminal, Herdr, tmux or cmux, stops the run as `TERMINAL_FAILED`; up 
 
 A run with [nothing to run](running.md#nothing-to-run) writes three records: `start`, `done` and `end` with code 0. Its done text says why: `READY_EMPTY after 0 tickets: everything is done` when no ticket is left but epics and none is closed but not merged, or `READY_EMPTY after 0 tickets: nothing ready`; a scoped run adds its scope's `; SCOPE_DONE: …` or `; SCOPE_OPEN: …`.
 
-Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .git/orchestra.lock` in the main checkout says which. A feature run writes nothing there while the request is screened and planned, or talked through. If the stream can't be written, the log says so once, and the run goes on.
+Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .git/orchestra.lock` in the main checkout says which. A feature run writes nothing there while the request is screened and planned, or talked through, nor a spec run while its spec is committed and broken down: the log has those steps, on its `SPEC:` lines. If the stream can't be written, the log says so once, and the run goes on.
 
 With `jq`, in the main checkout:
 
@@ -55,4 +57,5 @@ run=$(jq -r .started .git/orchestra.lock)   # the latest run's start, as its loc
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end")))' $E   # how it ended
 jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it closed
 tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run
+jq -r 'select(.kind == "start" and .spec) | .scope' $E | tail -n 1                             # the last spec run's root epic
 ```

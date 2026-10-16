@@ -65,6 +65,8 @@ The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`,
 
 `TestLiveOrgans` calls the real `claude` against a real repository without writing anything. Its comment shows how to run it.
 
+`TestLiveSpec` (`cmd/orchestra`) breaks a tiny spec down with the real `claude`, in a new repository with Beads, and checks the tree it filed; it takes minutes and costs money, so it runs only with `SPEC_LIVE=1`: `SPEC_LIVE=1 go test -run TestLiveSpec -v -timeout 30m ./cmd/orchestra/`.
+
 The fake bd, herdr, claude and git the tests run are shell scripts written with `internal/faketool`, whose `Write` makes each a hard link to one dispatcher per test binary, run once, beside the script it runs. A new executable would cost far more: macOS scans each one the first time it runs, which takes 0.2-0.6 seconds, and several seconds while other workers run their checks. A package whose tests call `Write` runs them through `faketool.Main` from its `TestMain`.
 
 A fake too involved for a script, such as a claude that reads its `--settings` and runs their hooks, is a Go function the test binary runs: `faketool.Func` registers it, from a package variable, and `faketool.WriteFunc` puts it on PATH, a script that runs the test binary again, which macOS has scanned already. `claudetest.Claude` (`internal/claudetest`) is such a fake Claude Code, for a tmux pane or a cmux terminal: it goes through a script of steps (the trust dialog, start, a prompt pasted or typed, with a file it attaches, tool uses, a permission prompt, the turn's end, exiting), running the hooks orchestra gave it with the input Claude Code gives them. Those hooks run the binary that wrote them (`os.Executable`), here the test binary, as `hook <event> <folder> <process>` with `ORCHESTRA_HOOK=1`: `internal/claude` serves the hook from its `init` in any binary that has it, so a test binary is the hook as orchestra's own is, without running its tests again.
@@ -84,6 +86,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
 | `mcp.go` | the MCP servers a Claude worker starts with, and the warning the run gives once about them |
+| `permission_mode.go` | the permission mode Claude workers start in (`--permission-mode`), as the `START` line says it, and whether their `claude --help` lists it |
 | `screen.go` | reading a worker's screen: its prompt still unsent in the input box, its latest action |
 | `work.go` | one ticket from start to outcome (`ticketRun`): its earlier worker, its worktree, its worker's files, starting or adopting the worker, and the outcome: asked, deferred, paused or closed |
 | `asked.go` | tickets waiting on a question that don't come back through `bd ready`: where each left its worker, adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |
@@ -111,6 +114,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `eventstream.go` | the event stream (`events.jsonl`), and what a notification says of an event (`Notice`) |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
+| `usagelimit.go` | holding the run while workers wait on the account's usage limit, telling them to carry on once it resets, and stopping the run (`USAGE_LIMIT`) when it holds longer than `usage_limit_wait` |
 | `advice.go` | triage and the run review |
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |

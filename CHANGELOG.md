@@ -125,6 +125,16 @@ All notable changes to orchestra are documented here. The format follows
   the repository where it is (`docs/shop-spec.md`, say), outside
   `.orchestra/specs/`, so the tickets broken down from it, which all cite
   it, ran one at a time. A ticket from no spec, or another, still counts it.
+- The README, the docs and the orchestra skill describe spec runs: the
+  README's **A whole app from a spec**; in `docs/running.md`, the start
+  question's Spec option, the breakdown and its checks, `--refine`,
+  carrying on across nights, an empty repository, **Every night** (a cron
+  and a launchd recipe that start `orchestra --spec <file>` with its workers
+  in a detached tmux session, and what to read in the morning), **The usage
+  limit** and exit code 8; `docs/setup.md`'s **A spec run's setup**;
+  `docs/workers.md`'s **Permission mode** and the spec line in a worker's
+  first message; the event stream's `spec`, `usage_limit` and
+  `usage_limit_lifted`; and the dashboard's usage-limit line.
 
 ### Fixed
 

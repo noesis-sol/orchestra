@@ -1,6 +1,6 @@
 ---
 name: orchestra
-description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own tab (in Herdr, tmux or cmux) and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, follow one, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
+description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own tab (in Herdr, tmux or cmux) and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, build what a spec describes (orchestra --spec, also nightly), follow a run, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
 ---
 
 # orchestra
@@ -41,8 +41,9 @@ jq . .orchestra/run/state.json              # the workers the last run left behi
 Run the last four in the main checkout. A run holds `.git/orchestra.lock`, in the git directory the
 worktrees share (`git rev-parse --git-common-dir` names it from any of them), for as long as it runs,
 and the system lets go of it when orchestra exits, even killed, so only a running orchestra has it
-open. `git clean` never removes it. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`) or
-`feature` (the `--feature` request), and `pane`, the Herdr or tmux pane, or cmux terminal, it runs in. It stays after the run;
+open. `git clean` never removes it. The file is JSON: `pid`, `started`, `version`, `branch`, `ticket` (`--ticket`),
+`feature` (the `--feature` request) or `spec` (a `--spec` run's spec, its path in the repository), and `pane`, the
+Herdr or tmux pane, or cmux terminal, it runs in. It stays after the run;
 whether `lsof` lists a PID is what says a run is going. Runs in other repositories have their own.
 
 `.orchestra/run/events.jsonl` is the runs' events for you to read: one JSON
@@ -77,8 +78,13 @@ check-full (default 60m; `--check-full-timeout` / `ORCHESTRA_CHECK_FULL_TIMEOUT`
 types never dispatched (default `["epic"]`; `[]` dispatches every type), and `environment_hold`,
 when workers failing the same way hold the run (default `{"count": 2, "window": "2m", "probe": "10m"}`;
 `"count": 0` turns it off), and how long after a hold a worker without a ticket probes the machine
-(`"probe": "0"` for no probe). The old `check` and `check_timeout` are read as `check_fast` and
-`check_fast_timeout`.
+(`"probe": "0"` for no probe), `usage_limit_wait`, how long the run waits for the account's usage
+limit to reset before it stops (default `"6h"`; `"0"` doesn't wait), `worker_permission_mode`, the Claude
+Code permission mode workers start in (`default` or `manual`, `acceptEdits`, `auto`; unset, Claude Code's
+own, or `auto` in a spec run; `--worker-permission-mode` / `WORKER_PERMISSION_MODE` overrides it), and
+`spec_timeout` and `spec_effort`, how long a spec's breakdown may take and its effort (default `"60m"`
+and `high`; `--spec-timeout`, `--spec-effort`). The old `check` and `check_timeout` are read as
+`check_fast` and `check_fast_timeout`.
 
 ## Setting a project up
 
@@ -122,7 +128,8 @@ Requirements, checked by `orchestra` at startup (it lists every problem, exit co
   or `.orchestra/settings.json` (or a legacy `.claude/worker-prompt.md`), `orchestra` and
   `orchestra --feature` say first `orchestra isn't set up in this repository yet. Run this first:
   orchestra init`, then any other problem under `Also fix before a run:`. Set the project up as
-  above, with the user's answers, rather than run `bd init` yourself;
+  above, with the user's answers, rather than run `bd init` yourself. A spec run (below) is the
+  exception: it sets the repository up itself;
 - a terminal for the workers: Herdr when `orchestra` runs inside a Herdr pane (`HERDR_ENV=1`),
   its tabs in that pane's workspace unless `--workspace ID` names another; otherwise tmux, which must
   be installed (`brew install tmux`, `apt install tmux`: the user's call), its windows in orchestra's
@@ -174,10 +181,11 @@ and Enter into the new one with `cmux send` and `cmux send-key`, and read it wit
 `new-split` prints).
 
 Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
-should work on (`Current tickets: N ready`, `none, all done` or `none ready (N open)`, or `New
-feature`, which asks the user to describe one and then talks it through with them in a Claude Code
-session): the wait above would time out on the question. `--ticket <id>`
-and `--feature "<request>"` don't ask either. Leave the bare command to a user at the keyboard.
+should work on (`Current tickets: N ready`, `none, all done` or `none ready (N open)`, `Spec`, which
+asks for a spec file, or `New feature`, which asks the user to describe one and then talks it through
+with them in a Claude Code session): the wait above would time out on the question. `--ticket <id>`,
+`--feature "<request>"` and `--spec <file>` don't ask either. Leave the bare command to a user at the
+keyboard.
 
 A run with nothing to run (nothing ready, or only tickets it would hold back, and no worker the last
 run left to carry on with) doesn't open the dashboard: it shows a box, `✓ All done` (with `Still
@@ -221,6 +229,53 @@ function it names, unless both name different functions the file mentions), the 
 ticket first, and changes nothing. Show the user the proposal; run `orchestra plan --apply` (which adds
 them with `bd dep add`) only when they approve.
 
+## A spec run
+
+When the user wants a feature or a whole app built from a spec (a Markdown or plain-text file that
+describes it), launch `orchestra --spec <file>` in a pane, as above, in place of `--tickets`. It asks
+nothing: it commits the spec (one outside the repository as a copy in `.orchestra/specs/<name>`), has
+`claude -p` break it down into a root epic, child epics and tickets, each carrying the metadata `spec`,
+and runs them as `--ticket <root epic>` would, with no ticket limit (unless `-limit` / `LIMIT`) and
+workers in Claude Code's `auto` permission mode. In Herdr, for example:
+
+```
+herdr pane run "$P" "orchestra --spec ~/specs/shop.md"
+herdr pane wait-output "$P" --regex "[Bb]reaking the spec down|carrying on with|is built|cannot start|cannot run|couldn't|dispatching" --timeout 60000
+grep 'SPEC:' .orchestra/orchestra.log | tail    # the breakdown's steps and the epics it has filed
+```
+
+The breakdown may take up to an hour (`spec_timeout`), while the pane shows a spinner counting the
+epics and tickets filed; the log has a `SPEC:` line for each epic and each step, and the event stream
+starts only once the breakdown is over. Its first lines say what it did: `committed the spec <path>`
+or `the spec <path> is committed already`, then `broke the spec down into <root> (N epics, M
+tickets)` and the assumptions it made, which also go under `Assumptions` in the root epic's notes.
+Relay those to the user: they are the choices the spec left open, and changing the spec is how to
+change one.
+
+- **In a repository `orchestra init` hasn't set up**, even an empty one with no commit, a spec run
+  sets it up itself as `init` does without a terminal (bd init, the worker prompt, runners that check
+  nothing yet, no MCP servers for workers) and commits that with the spec. Outside a git repository
+  it says to run `git init` first: ask the user before you do. It never installs `bd`.
+- **Run again, the same command carries on**: with the spec unchanged, it runs what is left under the
+  root epic (`the spec <path> is unchanged; carrying on with <root>`), or says `✓ <path> is built
+  (<root>)` and exits 0; with the spec changed, it commits it and the breakdown files tickets for the
+  change under the same root epic (`the spec <path> changed since <root> was filed: updating its
+  tickets`). A breakdown that didn't finish is carried on too.
+- **`--refine`** breaks the spec down with the user, in an interactive Claude Code session in a pane
+  split off orchestra's, which asks them what the spec leaves open; the run starts once they agree
+  and the tickets are filed. Leave it to the user at the keyboard, or launch it only in a pane they
+  watch and say so: don't answer its questions yourself. Without a terminal it stops with exit 2.
+- **Exit 2 after the breakdown** (`orchestra couldn't break the spec down: …`, or `won't run what the
+  spec's breakdown filed`) lists what was filed and ends `Run it again to carry on: orchestra --spec
+  <file>`: tell the user why, and rerun it once they agree. `warning: …` lines after a breakdown
+  (tickets without files metadata or acceptance criteria, blocks cycles) don't stop the run: relay them.
+- **The root epic**: `jq -r 'select(.kind == "start" and .spec) | .scope' .orchestra/run/events.jsonl
+  | tail -n 1`, or the `START` block's `  spec: epic <root>, broken down from: <path>` line. `bd show
+  <root>` has the Assumptions; `bd list --metadata-field spec=<path> --all` lists the spec's issues.
+- **Every night**: docs/running.md's "Every night" in the orchestra repository has a cron and a launchd
+  recipe, and what to read in the morning. Installing a crontab line or a launchd agent changes the
+  user's machine: show them the recipe with their paths, and install it only when they ask you to.
+
 ## While it runs
 
 - **Leave the main checkout alone.** An uncommitted change outside `.claude/`, `.beads/` and
@@ -258,6 +313,11 @@ them with `bd dep add`) only when they approve.
   wait it names, a worker without a ticket (tab `orchestra-probe`, in the main checkout) runs one
   command. `PROBE_OK` means the run takes tickets again; otherwise it ends with `ENVIRONMENT`. Don't
   restart it meanwhile; `kill -USR1` ends it during the wait, as `ENVIRONMENT`.
+- **A `USAGE_LIMIT:` line means the run is still going**: a worker reached the account's usage limit,
+  and the run holds, starting no new tickets, until it resets (the line says when, as does the
+  dashboard's title line); then the limited workers are told to carry on (`USAGE_LIMIT lifted`). Don't
+  restart it or type into a limited worker's tab. A hold longer than `usage_limit_wait` (6h) ends the
+  run with `USAGE_LIMIT`, exit 8.
 - **Don't type into a worker's tab or press keys on its dialogs** unless the user asks; Enter on a
   dialog picks an option (on Claude Code's trust dialog, "No, exit").
 
@@ -305,11 +365,13 @@ Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never 
 Each record has `kind`, `time` and `run`, the run's start time, which is the same in all its
 records and in the lock's `started`; docs/events.md in the orchestra repository lists every kind and
 field.
-A run's records go `start` (with `version`, `repo`, `branch`, `scope`, `feature`, `concurrency`),
+A run's records go `start` (with `version`, `repo`, `branch`, `scope`, `feature`, `spec`, `concurrency`),
 then its events, each with the log line as `text` (`dispatch`, `closed`, `deferred`, `asked`,
 `warn`, `hold`, `triage`, `info`, …), then `stop` or `done`, and last `end`, with `code`, the exit
 code, once orchestra has exited. No `end` yet: the run is still going (`lsof` lists its PID), or was
-killed. A feature run writes its `start` only once the feature is filed (or isn't).
+killed. A feature run writes its `start` only once the feature is filed (or isn't), and a spec run once
+its breakdown is over. A `usage_limit` record (`ticket`, `detail`, `reset`) starts a hold for the
+account's usage limit, and `usage_limit_lifted` ends it.
 
 ```
 E=.orchestra/run/events.jsonl
@@ -347,6 +409,7 @@ ended with, say why it ended:
 | `UNKNOWN >5min` | 3 | the terminal couldn't tell what a worker was doing for 5 minutes (Herdr from its screen, or in tmux and cmux its hooks) | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, the next run merges it. |
 | `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
+| `USAGE_LIMIT` | 8 | a worker reached the account's usage limit, and the run held for it longer than `usage_limit_wait` (6h by default) | Nothing to fix: the limited workers are left in their tabs, noted on their tickets. Tell the user when the limit resets (the line says); the next run carries the workers over and tells them to carry on once it has. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
 | `START_FAILED`, `TAB_FAILED`, `TERMINAL_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | the terminal (Herdr, tmux or cmux), Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
@@ -474,6 +537,13 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   it, then `bd undefer <id>`.
 - `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, so its branch wasn't
   rebased before its worker started; it is rebased when it merges.
+- `PERMISSION_MODE: claude --help doesn't list the permission mode <mode>` (or `cannot read claude
+  --help …`), in the `START` block: the workers start in the mode Claude Code's settings give, without
+  `--permission-mode`. Tell the user; `claude update` may bring the mode.
+- `SPEC: warning: …`, before a spec run's loop: what orchestra's check found amiss in the tree the
+  breakdown filed (issues outside the root epic or without the spec's metadata, tickets without files
+  metadata or acceptance criteria, a blocks cycle, which keeps its tickets from ever starting). The run
+  goes on; relay it, and for a cycle suggest the `bd dep remove` that breaks it.
 
 ## Where to look
 
@@ -484,6 +554,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | what finished, what was set aside and why, what needs the user | the latest run report |
 | the whole output of the last full check that failed | `.orchestra/run/check-full.log` in the main checkout |
 | why a ticket was deferred | `bd show <id>`: the worker's notes, orchestra's notes, `Triage (orchestra): cause = …` |
+| what a spec's breakdown assumed where the spec left a choice open | `bd show <root epic>`: `Assumptions` in its notes (`Decisions` in its description after `--refine`); `Assumed:` in each ticket that depends on one |
 | a worker's screen and final message | its tab, labelled with the ticket ID (a tmux window or cmux workspace named with it) |
 | a ticket's work | worktree `<repo>-worktrees/<id>`, branch `wt/<id>`: `git log --oneline <base>..wt/<id>` |
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
@@ -540,6 +611,9 @@ sudo install -m 755 /tmp/orchestra "$(command -v orchestra)" && orchestra --vers
 
 - `git push` and anything else that leaves the machine, such as opening or merging pull requests,
   unless they asked for it.
-- Answers to questions (`human` tickets) and to dialogs in worker tabs.
+- Answers to questions (`human` tickets), to dialogs in worker tabs, and to a `--refine` session's
+  questions.
+- Scheduling runs: a crontab line or a launchd agent for a nightly spec run, unless they ask you to
+  install it.
 - `orchestra init --force`, raising `concurrent` above 1, and installing `orchestra` where it needs
   `sudo`.

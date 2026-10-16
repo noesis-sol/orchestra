@@ -1,6 +1,6 @@
 # Setting a project up
 
-What `orchestra init` does, in full. Back to the [README](../README.md).
+What `orchestra init` does, in full, and the setup a spec run does without it. Back to the [README](../README.md).
 
 ## Set up a project
 
@@ -16,9 +16,10 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 .orchestra/worker-prompt.md   committed: the worker prompt (from the built-in template)
 .orchestra/settings.json      committed: the two checks and their time limits, how many tickets run at once, the MCP servers workers get (by name), an optional ticket limit, the issue types never dispatched, whether tickets are kept apart by footprint, whether conflicts go back to their workers, and when failing workers hold the run
 .orchestra/.gitignore         committed: ignores the three below
+.orchestra/specs/             committed: the specs spec runs (orchestra --spec) copied in from outside the repository
 .orchestra/orchestra.log      the event log
 .orchestra/reports/           run reports
-.orchestra/run/               per-ticket files in each worktree (the launch prompt and the standing rules, the worker's MCP servers, its hooks and what they report, and the whole output of a merge check that failed there, check.log); in the main checkout, the event stream, the workers the last run left behind (state.json), and a feature interview's instructions, its description (feature-request.md) and the epic it filed (feature.json)
+.orchestra/run/               per-ticket files in each worktree (the launch prompt and the standing rules, the worker's MCP servers, its hooks and what they report, and the whole output of a merge check that failed there, check.log); in the main checkout, the event stream, the workers the last run left behind (state.json), a feature interview's instructions, its description (feature-request.md) and the epic it filed (feature.json), and a spec's breakdown's instructions (spec-prompt.md), the change it updates the tree for (spec-update.md) and the root epic a refinement handed back (spec.json)
 ```
 
 and the project's two checks, the runners, in `scripts/`:
@@ -35,6 +36,39 @@ Run `init` from the main checkout, between runs. It refuses, with exit code 2 an
 First, `init` sets Beads up. Where `bd` isn't installed, it installs it: with Homebrew (`brew install beads`) where `brew` is on the `PATH`, as Beads recommends, otherwise, on macOS, Linux and FreeBSD, with the Beads install script (`curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash`), which checks what it downloads and falls back to `go install`. On Windows it installs nothing and says how: `irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex` in PowerShell. In a terminal the form asks first, offering yes; `--install-beads` installs without asking and `--install-beads=false` declines. Without a terminal or either flag, `init` installs nothing and reports `bd` missing. The install may take up to 15 minutes, and Ctrl+C stops it. If `bd` lands in a folder that isn't on your `PATH` (the script uses `~/.local/bin` where it can't write to `/usr/local/bin`), `init` says where it is and how to add the folder. Then, in a repository without `.beads/`, `init` runs `bd init --non-interactive --role maintainer --init-if-missing`: no questions, the answers being "not contributing to someone else's repo" and auto-export off. Otherwise `bd init` does what it does when run by hand: it adds `.beads/`, `AGENTS.md`, `CLAUDE.md` and other agents' integration files, and points git's hooks at `.beads/hooks`. bd 1.3.0 also commits what it adds, along with anything already staged, so `init` runs it before staging anything of its own, then lists what `bd` committed and what is left to commit with `.orchestra/`. A failed install or `bd init` shows the command's error, and the **Next** box keeps the fix.
 
 In a terminal, `init` asks with a short form in two steps, one screen each, under a stepper showing the steps done, current and to come, such as **✓ Workers ──── ● Checks**; a question answered and left shows its choice ticked (✓). **Workers** asks whether to install Beads (where `bd` is missing, as above), how many **tickets to run at the same time** by default, and which **MCP servers workers get** (see [MCP servers for workers](workers.md#mcp-servers-for-workers)). Where the project keeps a `CHANGELOG.md` that `.gitattributes` doesn't merge by union yet, it also offers to add `CHANGELOG.md merge=union` there, so tickets that each add an entry at the same spot don't conflict (see [Several tickets at once](running.md#several-tickets-at-once)). **Checks** chooses the project's checks, as [Choosing the checks](#choosing-the-checks) says, and asks, where the repository has a lockfile and `settings.json` no setup command, the **setup command** (see [The checks](#the-checks)), and last the **ticket prefix** (see [The ticket prefix](#the-ticket-prefix)). It asks no time limit: `init` writes the defaults to `settings.json` where it has none, `check_fast_timeout` 30m and `check_full_timeout` 60m, and you change them by editing that file (see [The checks](#the-checks)); a value there is kept. Enter on a step's last question goes on to the next step, and Shift+Tab on its first goes back to the previous one, with its answers kept. Nothing is installed or written until the last step is submitted: Esc or Ctrl+C at any step ends `init` with the project as it was. A step whose every question a flag answers is skipped, and the one step left has its name alone as its header; with every question answered, there is no form. With `TERM=dumb`, the form asks its questions one after another as plain lines, each step's under a header such as **Step 1 of 2 · Workers**; Ctrl+D (the end of input) there ends `init` as Esc does. `--check-fast "<command>"` (or `--check`) and `--check-full "<command>"` (either answers the choice of checks, and there is then no scout), `--verifier` (or `--verifier=false`), `--check-fast-timeout 5m` (or `--check-timeout`), `--check-full-timeout 90m`, `--setup "<command>"` (or `--setup ""` for none), `--concurrent N` (or `-c N`), `--mcp a,b` (or `--mcp ""` for none), `--prefix name` and `--changelog-union` (or `--changelog-union=false`) answer those without asking, which is what a script, or an agent setting the project up for you, should use. Without a terminal it asks nothing, uses 1 at a time, leaves the MCP servers as they were (unset on a first run), and leaves `.gitattributes` alone. `init` then shows each step, whether `bd`, Beads, a terminal for the workers (`herdr`, `tmux` or `cmux`) and `claude` are there, and a **Next** box with only what's left, ending with the command to start a run and where to start it from: a Herdr pane, a cmux terminal or, with tmux, any terminal, as the machine has them. `init` also checks for `bd`, `.beads`, one of `herdr`, `tmux` and `cmux`, and `claude`, and says what's missing. It installs no terminal: with none, it says `install Herdr, tmux (brew install tmux, apt install tmux) or cmux`. tmux is the one to install for running anywhere; a run picks Herdr in a Herdr pane, cmux in a cmux terminal, tmux elsewhere ([Herdr, tmux or cmux](running.md#herdr-tmux-or-cmux)). It finds `cmux` on the `PATH`, as it is in a cmux terminal, or in the app, `/Applications/cmux.app/Contents/Resources/bin/cmux`. It never replaces an existing prompt unless you pass `--force`, and keeps existing settings unless its flags change them. In a project set up by an earlier version, it moves `.claude/worker-prompt.md` into `.orchestra/` (staged with `git mv`); the old `.claude/orchestrate.log` and reports stay where they are, as history. Commit `.orchestra/` and the runners (and `.gitattributes`, if it changed, and whatever `bd init` left uncommitted; the **Next** box names them) afterwards: a ticket's worktree has only what is committed, and its merge check runs there.
+
+## A spec run's setup
+
+A [spec run](running.md#a-whole-app-from-a-spec), `orchestra --spec <file>`, builds an app from nothing, unattended, so it doesn't need `init` first:
+
+```
+mkdir shop && cd shop && git init && orchestra --spec ~/specs/shop.md
+```
+
+In a repository `init` hasn't set up (no `.orchestra/worker-prompt.md` or `.orchestra/settings.json`, nor a `.claude/worker-prompt.md` from before `init`), even one with no commit yet, the run sets it up itself, once it holds the run lock and before it commits the spec, rather than stop with `orchestra isn't set up in this repository yet`. It does what `init` does without a terminal, taking its defaults and declining what it offers:
+
+- **Beads**: `bd init` where the repository has no `.beads/`, as [above](#set-up-a-project). It never installs `bd`: without it the run doesn't start, `Required command not found: bd` (exit code 2).
+- **The worker prompt** from the template, and `.orchestra/.gitignore`.
+- **The runners** `scripts/check-fast.sh` and `scripts/check-full.sh`, checking nothing yet, or, where the project has a `scripts/check.sh`, calling it as `init` does: the breakdown's first ticket scaffolds the project and wires its checks into them.
+- **`settings.json`** with the concurrency `-c` (or `ORCHESTRA_CONCURRENT`) gives, else 1, and `"mcp_servers": []`: workers get no MCP servers (the `START` line says `MCP servers: none`).
+
+No test work is filed, no skill or verifier written, and `.gitattributes` is left alone. The run then commits what it wrote, the files whose `git status` the setup changed, with the spec, as `orchestra: set up for spec <name>`: the repository's first commit where it has none, on the branch `HEAD` names. bd 1.3 commits its own files first, as `bd init: initialize beads issue tracking`. It says:
+
+```
+orchestra init hasn't set this repository up: setting it up as init does without a terminal
+setting Beads up here: bd init --non-interactive --role maintainer --init-if-missing
+  - Beads: ran bd init (maintainer, not contributing to someone else's repo; auto-export off); bd committed .agents/, .beads/, …
+  - worker prompt: wrote .orchestra/worker-prompt.md from the template
+  - .gitignore: the log, reports and per-ticket files stay out of git
+  - check-fast: wrote scripts/check-fast.sh: it checks nothing yet (--check-fast "<command>" gives it one)
+  - check-full: wrote scripts/check-full.sh: it checks nothing yet (--check-full "<command>" gives it one)
+  - settings: 1 at the same time · …
+  - MCP servers: none: workers get no MCP servers (…)
+committed the setup with the spec .orchestra/specs/shop.md as 4e6924256897 (6 files)
+the spec .orchestra/specs/shop.md is committed already (sha256 bba415566a7b)
+```
+
+The log has `SPEC: setting up <repo>, which orchestra init hasn't, as init does without a terminal`, a `SPEC: setup: <step>: <detail>` line for each step, and `SPEC: committed the setup with the spec <path> as <commit> (6 files)`. Outside a git repository the run says `Not inside a git repository: cd into the project first, or for a new one, start it with: git init` (exit code 2). Uncommitted changes in the main checkout, besides the spec's own file, stop it with exit code 5 before anything is set up. A setup that fails leaves what it wrote uncommitted, for you to look at with `git status` (`orchestra init sets the repository up with you.`) and ends the run (`SPEC: not set up: <why>` in the log): `bd init` or the commit failing with exit code 4, anything else with 2. Ctrl+C stops it with nothing committed (exit code 130; `SPEC: stopped while setting the repository up`). Run `orchestra init` afterwards, between runs, for what the setup leaves out: the scout, the checks you choose, the MCP servers workers get, the verifier.
 
 ## The ticket prefix
 

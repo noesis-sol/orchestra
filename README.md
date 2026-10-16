@@ -55,7 +55,7 @@ Workers run in the terminal orchestra runs in, the innermost when one runs in an
 
 Under tmux and cmux, workers are Claude Code: its hooks say what each one is doing. `--terminal herdr|tmux|cmux` (or `"terminal"` in `.orchestra/settings.json`) chooses instead; see [Herdr, tmux or cmux](docs/running.md#herdr-tmux-or-cmux).
 
-In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default) runs the backlog as below; it reads `Current tickets: N ready`, or with none ready `Current tickets: none, all done` or `Current tickets: none ready (N open)`. **New feature** asks you to describe a feature in a few lines, then opens Claude Code in a pane beside orchestra's, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Once the tickets are filed and Claude has said so, orchestra closes that pane by itself, shows the tickets and runs them once you confirm; `/exit` there, or closing the pane, ends an interview that files nothing. Ctrl+C in orchestra's pane stops the interview. When orchestra has no pane to split (tmux run from outside tmux), or can't open one, Claude Code gets orchestra's terminal instead. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
+In a terminal, `orchestra` first asks what the run should work on. **Current tickets** (the default) runs the backlog as below; it reads `Current tickets: N ready`, or with none ready `Current tickets: none, all done` or `Current tickets: none ready (N open)`. **Spec** asks for a spec file (Tab completes the path, Ctrl+O browses for it) and whether to refine it with Claude first, then builds what it describes, as `--spec` does ([below](#a-whole-app-from-a-spec)). **New feature** asks you to describe a feature in a few lines, then opens Claude Code in a pane beside orchestra's, which interviews you about it until you share an understanding, proposes an epic and its tickets, and files them once you agree. Once the tickets are filed and Claude has said so, orchestra closes that pane by itself, shows the tickets and runs them once you confirm; `/exit` there, or closing the pane, ends an interview that files nothing. Ctrl+C in orchestra's pane stops the interview. When orchestra has no pane to split (tmux run from outside tmux), or can't open one, Claude Code gets orchestra's terminal instead. Esc or Ctrl+C at the question exits with nothing changed. `--tickets` skips the question and runs the current tickets, as scripts and agents should; `--ticket`, `--feature`, `--spec` and `-plain` don't ask either. `--feature "<request>"` plans a feature with the organs instead, without the interview.
 
 How a run goes:
 - **Dispatch.** Each ready ticket in `bd ready` goes to its own worker, up to `concurrent` at a time. Tickets that touch the same files or functions don't run side by side, and a ticket labelled `solo` runs alone.
@@ -63,7 +63,8 @@ How a run goes:
 - **Questions.** A worker that needs your decision files a question (a ticket labelled `human`), and the run goes on. Answer it with `bd human respond <question> --response "…"`.
 - **Nothing to run.** A run with nothing ready (or only tickets it would hold back, such as a parent waiting for its subtickets), and no worker the last run left to carry on with, shows `✓ All done` or what holds the tickets left (questions for you, tickets waiting on others, in progress, deferred, closed but not merged), and exits 0 without opening the dashboard.
 - **Ending.** The run ends when nothing is left to start. Something that needs you (a worker blocked or idle with its ticket open, a tool failing) stops new tickets, lets the running ones finish, and ends the run. The next run carries on with any workers it left behind.
-- **One at a time.** One run at a time works on a repository. Run `orchestra init` first; `orchestra` says so if you haven't.
+- **One at a time.** One run at a time works on a repository. Run `orchestra init` first; `orchestra` says so if you haven't (a spec run sets the repository up itself).
+- **The usage limit.** A worker that reaches the account's usage limit holds the run: no new tickets start until the limit resets, then the limited workers are told to carry on. A hold longer than `usage_limit_wait` (6 hours by default) ends the run with exit code 8.
 
 | Option | |
 |---|---|
@@ -71,12 +72,23 @@ How a run goes:
 | `--tickets` | run the current tickets without asking first |
 | `--ticket <id>` | run only this ticket and its subtickets |
 | `--feature "<request>"` | plan a request into an epic and its tickets, confirm, file them and run them |
+| `--spec <file>` | commit a spec, break it down into an epic and its tickets, and run them, unattended; `--refine` breaks it down with you |
 | `--ticket-limit 2h` | stop if a worker is still going this long after its ticket started |
 | `--worker-effort medium` | Claude workers' effort (`low` … `max`) |
 | `-plain` | log lines instead of the dashboard |
 | `LIMIT=40`, `NOTIFY=0`, `TRIAGE=0`, `REVIEW=0` | tickets per run, macOS notifications, the triage and report organs |
 
 `orchestra -h` lists every flag. Run `orchestra plan` after filing a batch of tickets: it proposes blocks links between tickets that touch the same code, and `--apply` adds them. The details, from footprints and merges to conflict hand-back and carrying workers over, are in [docs/running.md](docs/running.md).
+
+### A whole app from a spec
+
+```
+orchestra --spec ~/specs/shop.md
+```
+
+`--spec` builds what a spec describes, a feature or a whole app written down in Markdown or plain text, with nobody there. It commits the spec, where workers can read it (a file from outside the repository as a copy in `.orchestra/specs/`), and Claude breaks it down into Beads tickets: a root epic, child epics where the spec has separable parts, and tickets of one worker session each, citing the spec's sections. Where the spec leaves a choice open, it takes the most conservative reading and writes it under Assumptions in the root epic's notes. Then the tickets run as `--ticket <root epic>` would, without asking: with no ticket limit, workers in Claude Code's auto permission mode, and the usage limit waited out. `--refine` breaks the spec down with you instead, in Claude Code beside orchestra's pane, asking only what the spec leaves open.
+
+The same command carries on the next night: with the spec unchanged, it runs what is left; changed, it files tickets for the change. It starts from nothing too: `mkdir shop && cd shop && git init && orchestra --spec ~/specs/shop.md` sets the repository up as `orchestra init` would and builds the app. [A whole app from a spec](docs/running.md#a-whole-app-from-a-spec) has the rest, and [Every night](docs/running.md#every-night) a recipe for running it each night from cron or launchd, and what to read in the morning.
 
 ## Running orchestra through an agent
 
@@ -88,9 +100,9 @@ How a run goes:
 
 - [docs/install.md](docs/install.md): the install script, building from a clone, `orchestra update`, build provenance, versions
 - [docs/dashboard.md](docs/dashboard.md): what you see, the keys, the closing lines, notifications
-- [docs/setup.md](docs/setup.md): everything `orchestra init` does
-- [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, several tickets at once, the full check, stops and exit codes
-- [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, hooks and run files, workers in tmux and cmux
+- [docs/setup.md](docs/setup.md): everything `orchestra init` does, and the setup a spec run does without it
+- [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, spec runs and the nightly recipe, several tickets at once, the usage limit, the full check, stops and exit codes
+- [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, their permission mode, hooks and run files, workers in tmux and cmux
 - [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen, the plan and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
 - [docs/development.md](docs/development.md): the check, the code's layout and tests, differences from `orchestrate.sh`
