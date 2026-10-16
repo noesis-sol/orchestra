@@ -80,7 +80,11 @@ func (m Dashboard) drainQuestion() drainQuestion {
 	}
 	q := drainQuestion{ask: "Stop after the running tickets?", short: "Stop after current?",
 		keys: yesNo("stop after current", "keep going")}
-	lead, list, tail := dispatch.DrainWords(m.runningIDs())
+	ids := m.runningIDs()
+	for i, id := range ids {
+		ids[i] = oneLine(id)
+	}
+	lead, list, tail := dispatch.DrainWords(ids)
 	switch len(m.active) {
 	case 0:
 		q.about = "No new tickets will start. Nothing is running, so the run ends now."

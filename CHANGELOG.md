@@ -32,6 +32,11 @@ All notable changes to orchestra are documented here. The format follows
   The run took it for still waiting on the prompt, which no hook clears on a
   refusal, showed `permission — waiting for you` and stopped 4 minutes on with
   `BLOCKED >4min: … its worker waits on a permission prompt`.
+- The dashboard and the summary printed after it show a ticket's ID without
+  its escape sequences, in the tickets table, the worker list and box, the
+  solo line and the stop question. A worker files tickets itself, so an ID
+  such as `x` followed by an OSC 52 clipboard write reached the terminal on
+  every redraw, though the printed log already dropped them.
 
 ## [0.7.6] - 2026-10-16
 

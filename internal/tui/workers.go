@@ -52,7 +52,7 @@ func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 	if st.Merge == dispatch.MergeQueued && st.Place > 0 {
 		label = toMergeStyle.Render(fmt.Sprintf("%s (%s)", toMergeLabel, ordinal(st.Place)))
 	}
-	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), pickedStyle.Render(st.Ticket), label,
+	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), pickedStyle.Render(oneLine(st.Ticket)), label,
 		dimStyle.Render(elapsed.String()))
 }
 

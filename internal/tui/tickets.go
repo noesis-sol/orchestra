@@ -192,7 +192,7 @@ func aboutWidth(w, idWidth int) int {
 func (m Dashboard) ticketsTable(w, lines int) string {
 	idWidth := minIDWidth
 	for _, r := range m.rows {
-		idWidth = max(idWidth, ansi.StringWidth(r.id))
+		idWidth = max(idWidth, ansi.StringWidth(oneLine(r.id)))
 	}
 	// IDs longer than a third of the table are cut, so the titles keep their room
 	idWidth = min(idWidth, max(w/3, minIDWidth))
@@ -215,7 +215,7 @@ func (m Dashboard) ticketsTable(w, lines int) string {
 			l := workerLook(st)
 			worker = &l
 		}
-		r.id = ansi.Truncate(r.id, idWidth, "…")
+		r.id = ansi.Truncate(oneLine(r.id), idWidth, "…") // a worker files tickets, so an ID is untrusted
 		c := r.cells(about, worker)
 		data = append(data, c[:])
 	}

@@ -308,9 +308,9 @@ func (m Dashboard) titleLine(w int) string {
 	}
 	switch {
 	case m.solo.Next:
-		line += deferredStyle.Render("  · solo " + m.solo.Ticket + " next")
+		line += deferredStyle.Render("  · solo " + oneLine(m.solo.Ticket) + " next")
 	case m.solo.Ticket != "":
-		line += pickedStyle.Render("  · solo " + m.solo.Ticket + " running")
+		line += pickedStyle.Render("  · solo " + oneLine(m.solo.Ticket) + " running")
 	}
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
 		m.cfg.Base, dispatch.ScopeLabel(m.cfg), runTime(m.since(m.began))))
