@@ -331,6 +331,44 @@ func (f *specField) newPicker(dir string) *filepicker.Model {
 	return &fp
 }
 
+// newPickerOn is a picker in the folder dir, which it has read, its cursor on the entry name, or on the
+// first entry when dir lists none of that name. The cursor moves there as ↓ moves it, which can't take it
+// past the end of the list even if dir changed since pickerIndex read it.
+func (f *specField) newPickerOn(dir, name string) *filepicker.Model {
+	fp := f.newPicker(dir)
+	keys := fp.KeyMap
+	fp.KeyMap = filepicker.KeyMap{Down: key.NewBinding(key.WithKeys("down"))} // ↓, whatever the form's keys
+	for range pickerIndex(dir, name) {
+		*fp, _ = fp.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	fp.KeyMap = keys
+	return fp
+}
+
+// pickerIndex is where bubbles' picker lists the entry name of the folder dir, or -1 when it doesn't (or
+// dir can't be read): the picker sorts a folder's entries folders first, then by name, and leaves hidden
+// ones out. A link to a folder sorts among the files, as the picker has it.
+func pickerIndex(dir, name string) int {
+	entries, err := os.ReadDir(dir) // by name
+	if err != nil {
+		return -1
+	}
+	entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
+		hidden, _ := filepicker.IsHidden(e.Name()) // an entry it can't tell about is listed, as the picker does
+		return hidden
+	})
+	slices.SortStableFunc(entries, func(a, b fs.DirEntry) int {
+		switch {
+		case a.IsDir() == b.IsDir():
+			return 0
+		case a.IsDir():
+			return -1
+		}
+		return 1
+	})
+	return slices.IndexFunc(entries, func(e fs.DirEntry) bool { return e.Name() == name })
+}
+
 // specPickerDraws is how many times at most the field draws the picker's list, reading its folder again
 // each time an entry has gone, the last time letting the picker panic: an entry goes between a folder's
 // reading and its drawing, microseconds apart, only by chance.
@@ -390,19 +428,27 @@ func (f *specField) closePicker() tea.Cmd {
 
 // browse handles a key while the picker is open: Esc closes it, and choosing a spec file puts its
 // path in the input and closes it, leaving the focus on the field. Choosing another file is an error,
-// and so is going to a folder that can't be read: the picker stays where it was.
+// and so is going to a folder that can't be read: the picker stays where it was. Going up a folder puts
+// the cursor on the one it left.
 func (f *specField) browse(k tea.KeyMsg) tea.Cmd {
 	if key.Matches(k, specCloseKey) {
 		return f.closePicker()
 	}
 	f.pickErr = nil
 	fp, cmd := f.picker.Update(k)
-	if fp.CurrentDirectory != f.picker.CurrentDirectory && cmd != nil { // the folder to read
+	if from := f.picker.CurrentDirectory; fp.CurrentDirectory != from && cmd != nil { // the folder to read
 		// bubbles' picker would show the folder it left under the name of one it can't read.
 		if f.pickErr = f.unreadable(fp.CurrentDirectory); f.pickErr != nil {
 			return nil
 		}
-		fp, _ = fp.Update(cmd()) // read now, as on opening
+		if fp.CurrentDirectory == filepath.Dir(from) {
+			// Up a folder, bubbles' picker puts back the cursor it had there, by its place in the list: past the
+			// end of a folder that lost entries since, where choosing it panics, and on another entry in one
+			// that changed. A picker of the field's own puts it on the folder it came from instead.
+			fp = *f.newPickerOn(fp.CurrentDirectory, filepath.Base(from))
+		} else {
+			fp, _ = fp.Update(cmd()) // read now, as on opening
+		}
 		cmd = nil
 	}
 	f.picker = &fp
