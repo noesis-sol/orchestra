@@ -92,6 +92,14 @@ All notable changes to orchestra are documented here. The format follows
   `orchestra plan`. It meant only the files already there, so the two ran
   side by side. Two tickets listing the folder are still compared on its
   files one by one, by function where both name functions a file mentions.
+- A glob in a ticket's `files` metadata that matches no file yet
+  (`web/src/*.ts`, in a folder a project built from a spec adds) now holds
+  the files and folders other tickets name that it would match, from the
+  repository's root: a ticket listing it overlaps one naming
+  `web/src/cart.ts`, in the run and in `orchestra plan`, whether the
+  repository's files are known or not, but not one naming `web/lib/a.ts`.
+  It was dropped, or kept as a file named `web/src/*.ts` when git couldn't
+  list the files, so the two ran side by side over the same new files.
 - `orchestra --spec <file>` (or `ORCHESTRA_SPEC`) runs a spec, a Markdown or
   plain-text file: it commits the spec, alone, where workers can read it (a
   file outside the repository as a copy in `.orchestra/specs/`), has it broken

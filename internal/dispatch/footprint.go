@@ -31,6 +31,12 @@ type Footprint struct {
 	// ending in /, beside the tracked files under it: it holds the files under it, those another ticket
 	// adds included, and is all there is of a new one (or of any, the files unknown).
 	Files []string
+	// Globs are the globs the files metadata lists that match none of the repository's files (any, the
+	// files unknown), sorted, cleaned and in NFC: web/src/*.ts, which a ticket of a project built from a
+	// spec may list before there is any. Each holds the files and folders other footprints name that it
+	// would match from the repository's root (globHolds). They are kept apart from Files, where a name
+	// may hold a [ of its own.
+	Globs []string
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
 	Areas []string // area:<name> labels
 	// Predicted says Files are the predictor's guess for a ticket naming nothing (PredictedKey).
@@ -54,14 +60,14 @@ func TicketFiles(t Ticket) []string { return metadataList(t, FilesKey) }
 const PredictedKey = "predicted_files"
 
 // Empty reports whether the footprint names nothing.
-func (f Footprint) Empty() bool { return len(f.Files)+len(f.Funcs)+len(f.Areas) == 0 }
+func (f Footprint) Empty() bool { return len(f.Files)+len(f.Globs)+len(f.Funcs)+len(f.Areas) == 0 }
 
-// String lists the footprint for the log: functions, files, then areas.
+// String lists the footprint for the log: functions, files, globs, then areas.
 func (f Footprint) String() string {
 	if f.Empty() {
 		return "nothing named"
 	}
-	s := strings.Join(slices.Concat(f.Funcs, f.Files, f.Areas), ", ")
+	s := strings.Join(slices.Concat(f.Funcs, f.Files, f.Globs, f.Areas), ", ")
 	if f.Predicted {
 		s += " (predicted)"
 	}
@@ -242,20 +248,25 @@ func (r *repoFiles) file(name string) string {
 // in an existing folder. explicit, for a files metadata entry, also takes a folder (internal/dispatch/,
 // or dispatch/) for the files under it and the folder itself, kept with a trailing slash in NFC, which
 // holds the files under it other footprints name (takesIn): those another ticket adds. It takes a
-// glob (*.go, internal/**/*_test.go) for the files it matches, and keeps a name that means none of
-// these as a file the ticket adds, even in a folder that doesn't exist yet (a project built from a
-// spec), but never one that can't be a path in the repository (repoPath). Such a name written as a
-// folder (web/src/, web/src/.) is kept as a folder, with its trailing slash. Without the repository's
-// files, a name with a folder or a known extension is kept. A name kept is cleaned (path.Clean)
-// whether the files are known or not, and given in NFC when it isn't tracked.
+// glob (*.go, internal/**/*_test.go) for the files it matches, none when the files are unknown (listed
+// keeps the glob), and keeps a name that means none of these as a file the ticket adds, even in a
+// folder that doesn't exist yet (a project built from a spec), but never one that can't be a path in
+// the repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as a folder,
+// with its trailing slash. Without the repository's files, a name with a folder or a known extension
+// is kept. A name kept is cleaned (path.Clean) whether the files are known or not, and given in NFC
+// when it isn't tracked.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
-	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
-	if !repoPath(name) {
+	name, folder := cleanName(name)
+	if name == "" {
 		return nil
 	}
-	last := name[strings.LastIndex(name, "/")+1:]
-	folder := explicit && (last == "" || last == "." || last == "..")
-	name = path.Clean(name)
+	folder = explicit && folder
+	if explicit && isGlob(name) {
+		if r == nil {
+			return nil
+		}
+		return r.glob(name)
+	}
 	if r == nil || r.files == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 		switch {
@@ -265,9 +276,6 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 			return []string{name}
 		}
 		return nil
-	}
-	if explicit && strings.ContainsAny(name, "*?[") {
-		return r.glob(name)
 	}
 	found := slices.Clone(r.files[name])
 	for _, n := range r.byBase[path.Base(name)] {
@@ -296,6 +304,35 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 		return []string{name}
 	}
 	return nil
+}
+
+// cleanName is name as resolve compares it: in NFC, without a ./ before it and cleaned (path.Clean),
+// and whether it is written as a folder (web/src/, web/src/.); "" for a name that can't be a path in
+// the repository (repoPath).
+func cleanName(name string) (clean string, folder bool) {
+	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
+	if !repoPath(name) {
+		return "", false
+	}
+	last := name[strings.LastIndex(name, "/")+1:]
+	return path.Clean(name), last == "" || last == "." || last == ".."
+}
+
+// isGlob reports whether files metadata entry name is a glob: it has a *, a ? or a [.
+func isGlob(name string) bool { return strings.ContainsAny(name, "*?[") }
+
+// listed returns what files metadata entry name means: the files resolve gives it, or, for a glob that
+// matches none of the repository's files (any, the files unknown), the glob itself, cleaned and in NFC
+// (web/src/*/ as web/src/*, whose last part holds a folder's files as glob's does), which holds the
+// files other footprints name that it would match (Footprint.Globs).
+func (r *repoFiles) listed(name string) (files []string, glob string) {
+	if files = r.resolve(name, true); len(files) > 0 {
+		return files, ""
+	}
+	if g, _ := cleanName(name); isGlob(g) {
+		return nil, g
+	}
+	return nil, ""
 }
 
 // glob returns the files pattern matches, in any folder as a partial path does: its last part a
@@ -335,6 +372,108 @@ func globMatch(pat, parts []string) bool {
 	}
 	ok, _ := path.Match(pat[0], parts[0]) // a malformed pattern matches nothing
 	return ok && globMatch(pat[1:], parts[1:])
+}
+
+// globHolds reports whether glob g, one of a footprint's Globs, holds p, a file or a folder (ending in
+// /) of another's: a file g matches, or a folder holding one. g matches from the repository's root, as
+// a name kept for a file a ticket adds does (web/src/*.ts holds web/src/cart.ts, not app/web/src/cart.ts):
+// in any folder, as glob matches the repository's files, it would hold some file under every folder.
+func globHolds(g, p string) bool { return partsMeet(globParts(g), pathParts(p)) }
+
+// globsMeet reports whether two of footprints' Globs can match the same file.
+func globsMeet(g, h string) bool { return g == h || partsMeet(globParts(g), globParts(h)) }
+
+// globParts are glob g's parts as partsMeet takes them, followed by **: its last part a folder's name
+// as well as a file's, as for glob.
+func globParts(g string) []string { return append(strings.Split(g, "/"), "**") }
+
+// globEscape escapes a name's *, ?, [ and \ for path.Match, which then matches the name alone.
+var globEscape = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`)
+
+// pathParts are the parts of p, a file or a folder (ending in /), in NFC as globs are, each escaped
+// (globEscape) so that partsMeet takes it as itself, a folder's followed by ** for the files under it.
+func pathParts(p string) []string {
+	folder := strings.HasSuffix(p, "/")
+	parts := strings.Split(strings.TrimSuffix(norm.NFC.String(p), "/"), "/")
+	for i, part := range parts {
+		parts[i] = globEscape.Replace(part)
+	}
+	if folder {
+		parts = append(parts, "**")
+	}
+	return parts
+}
+
+// partsMeet reports whether a path can match both a and b, the parts of globs as globMatch takes them:
+// ** any number of folders, the others path.Match patterns that partMeet compares.
+func partsMeet(a, b []string) bool {
+	// The ways tried that met nothing: each step moves on in a or b, so none comes round again.
+	failed := make([]bool, (len(a)+1)*(len(b)+1))
+	var meet func(i, j int) bool
+	meet = func(i, j int) bool {
+		if failed[i*(len(b)+1)+j] {
+			return false
+		}
+		var ok bool
+		switch {
+		case i < len(a) && a[i] == "**":
+			ok = meet(i+1, j) || j < len(b) && meet(i, j+1)
+		case j < len(b) && b[j] == "**":
+			ok = meet(i, j+1) || i < len(a) && meet(i+1, j)
+		case i == len(a) || j == len(b):
+			ok = i == len(a) && j == len(b)
+		default:
+			ok = partMeet(a[i], b[j]) && meet(i+1, j+1)
+		}
+		failed[i*(len(b)+1)+j] = !ok
+		return ok
+	}
+	return meet(0, 0)
+}
+
+// partMeet reports whether a name can match both x and y, parts of a path as path.Match takes them: the
+// name one of them stands for alone (literal), which the other matches, or, both patterns, any name
+// their literal beginnings and ends allow (*.ts and c*.ts meet, *.ts and *.go don't).
+func partMeet(x, y string) bool {
+	lx, xName := literal(x)
+	ly, yName := literal(y)
+	switch {
+	case xName && yName:
+		return lx == ly
+	case yName:
+		ok, _ := path.Match(x, ly) // a malformed pattern matches nothing
+		return ok
+	case xName:
+		ok, _ := path.Match(y, lx)
+		return ok
+	}
+	// A pattern's literal beginning ends at its first *, ?, [ or \, and its literal end starts after
+	// its last one or ].
+	px, py := x[:strings.IndexAny(x, `*?[\`)], y[:strings.IndexAny(y, `*?[\`)]
+	sx, sy := x[strings.LastIndexAny(x, `*?[]\`)+1:], y[strings.LastIndexAny(y, `*?[]\`)+1:]
+	return (strings.HasPrefix(px, py) || strings.HasPrefix(py, px)) &&
+		(strings.HasSuffix(sx, sy) || strings.HasSuffix(sy, sx))
+}
+
+// literal returns the one name part s of a path matches (path.Match), its escapes undone, and false
+// when it matches others (a *, a ? or a [class]) or none (a \ ending it).
+func literal(s string) (string, bool) {
+	if !strings.ContainsAny(s, `*?[\`) {
+		return s, true
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '*', '?', '[':
+			return "", false
+		case '\\':
+			if i++; i == len(s) {
+				return "", false
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String(), true
 }
 
 // stdPackages are standard packages whose functions tickets name in passing (os.WriteFile,
@@ -422,9 +561,14 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	files, funcs := pathsIn(text, repo, spec)
 	maps.Copy(funcs, callsIn(text))
 	maps.Copy(funcs, codeSpansIn(text))
+	globs := map[string]bool{}
 	for _, f := range metadataList(t, FilesKey) {
-		for _, p := range repo.resolve(f, true) {
+		found, glob := repo.listed(f)
+		for _, p := range found {
 			files[p] = true
+		}
+		if glob != "" {
+			globs[glob] = true
 		}
 	}
 	var fp Footprint
@@ -434,6 +578,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 		}
 	}
 	fp.Files, fp.Funcs = slices.Sorted(maps.Keys(files)), slices.Sorted(maps.Keys(funcs))
+	fp.Globs = slices.Sorted(maps.Keys(globs))
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
 		return predictedFootprint(metadataList(t, PredictedKey), repo, spec)
@@ -575,12 +720,20 @@ func sharedFunc(f, g Footprint) string {
 	return ""
 }
 
-// takesIn reports whether a footprint's files take in p: p itself, or a folder among them (one kept
-// with its trailing slash, web/src/) that p is under (web/src/cart.ts, web/src/ui/).
-func takesIn(files []string, p string) bool {
-	return slices.ContainsFunc(files, func(f string) bool {
+// takesIn reports whether footprint fp takes in p, a file or a folder: p itself, a folder among its
+// files (one kept with its trailing slash, web/src/) that p is under (web/src/cart.ts, web/src/ui/),
+// or one of its globs holding p (globHolds).
+func takesIn(fp Footprint, p string) bool {
+	return slices.ContainsFunc(fp.Files, func(f string) bool {
 		return f == p || strings.HasSuffix(f, "/") && strings.HasPrefix(p, f)
-	})
+	}) || slices.ContainsFunc(fp.Globs, func(g string) bool { return globHolds(g, p) })
+}
+
+// meetsGlob reports whether footprint fp works where glob g does: on a file or folder g holds, or by a
+// glob of its own that can match a file g does.
+func meetsGlob(fp Footprint, g string) bool {
+	return slices.ContainsFunc(fp.Files, func(p string) bool { return globHolds(g, p) }) ||
+		slices.ContainsFunc(fp.Globs, func(h string) bool { return globsMeet(g, h) })
 }
 
 // holdsNamed reports whether p is a folder (one kept with its trailing slash) holding a file among
@@ -597,7 +750,9 @@ func holdsNamed(p string, files []string) bool {
 // whether one does), and a file both work on is shared unless both name functions it mentions: they
 // are compared by function (sharedFunc). A folder both work on is shared only when neither names a
 // file in it (a new folder): the files they name in it, those it holds when it exists, are compared
-// one by one instead, by function where both name some. A folder mentions no function.
+// one by one instead, by function where both name some. A folder mentions no function. A glob (Globs)
+// works on the files it holds (globHolds), and is compared itself, as a new folder is, only when it
+// holds no file either names: its files are compared one by one too.
 func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
 		folder := strings.HasSuffix(p, "/")
@@ -610,10 +765,17 @@ func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, 
 		}
 		seen[p] = true
 		fIn, rIn := namesIn(f, p), namesIn(r, p)
-		fAt := fIn || takesIn(f.Files, p)
-		rAt := rIn || takesIn(r.Files, p) || slices.Contains(edited, p)
+		fAt := fIn || takesIn(f, p)
+		rAt := rIn || takesIn(r, p) || slices.Contains(edited, p)
 		if fAt && rAt && !(fIn && rIn) && (keep == nil || keep(p)) {
 			return p
+		}
+	}
+	named := slices.Concat(f.Files, r.Files)
+	for _, g := range slices.Concat(f.Globs, r.Globs) {
+		holdsFile := slices.ContainsFunc(named, func(p string) bool { return !strings.HasSuffix(p, "/") && globHolds(g, p) })
+		if !holdsFile && meetsGlob(f, g) && meetsGlob(r, g) && (keep == nil || keep(g)) {
+			return g
 		}
 	}
 	return ""

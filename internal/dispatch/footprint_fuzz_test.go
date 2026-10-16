@@ -18,8 +18,10 @@ import (
 // a path in the repository (not empty, not its root, neither absolute nor outside it) and none a
 // spec under .orchestra/specs/, the spec its metadata names or a folder (ending in /) unless its
 // files metadata lists something, with the repository's files unknown each cleaned (path.Clean, a
-// folder's with one /), and its areas sorted, each an area label naming an area. go test runs the
-// seeds; docs/development.md says how to fuzz.
+// folder's with one /), its globs sorted, without repeats, only when its files metadata lists
+// something, each a clean path in the repository in NFC holding none of the repository's files
+// (globHolds agrees with glob), and its areas sorted, each an area label naming an area. go test
+// runs the seeds; docs/development.md says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
@@ -37,6 +39,8 @@ func FuzzTicketFootprint(f *testing.F) {
 		{"Say hello", `{"files": 3}`, ""},
 		{"Say hello", `{"files": ["", "./", ".", "a/..", "/etc/passwd", "../x.go"]}`, ""},
 		{"Fix ../x.go and .//y.go", "", ""},
+		{"Lay out web/src/cart.ts", `{"files": ["web/src/*.ts", "./web/**/*.ts", "web/src/*/", "web//lib/[a-c]?.ts",
+			"web/[src/a.ts", "*.swift", "internal/dispatch/*.go", "internal/dispatch/*.rs", "../web/*.ts"]}`, ""},
 	} {
 		f.Add(c.text, c.meta, c.labels, tracked, true, "scripts/check.sh")
 		f.Add(c.text, c.meta, c.labels, "", false, "")
@@ -66,7 +70,7 @@ func FuzzTicketFootprint(f *testing.F) {
 		}
 		tk := Ticket{ID: "x", Description: text, Metadata: json.RawMessage(meta), Labels: strings.Split(labels, ",")}
 		fp := TicketFootprint(tk, tracked, check)
-		for what, l := range map[string][]string{"files": fp.Files, "functions": fp.Funcs} {
+		for what, l := range map[string][]string{"files": fp.Files, "globs": fp.Globs, "functions": fp.Funcs} {
 			if !slices.IsSorted(l) || len(slices.Compact(slices.Clone(l))) != len(l) {
 				t.Errorf("the %s %q are unsorted or repeat", what, l)
 			}
@@ -89,6 +93,20 @@ func FuzzTicketFootprint(f *testing.F) {
 			}
 			if clean := path.Clean(f); !known && (folder && clean+"/" != f || !folder && clean != f) {
 				t.Errorf("the name %q isn't clean, with the repository's files unknown", f)
+			}
+		}
+		for _, g := range fp.Globs {
+			switch {
+			case len(TicketFiles(tk)) == 0:
+				t.Errorf("the glob %q counts, yet the files metadata lists nothing", g)
+			case !isGlob(g) || !repoPath(g) || path.Clean(g) != g || !norm.NFC.IsNormalString(g):
+				t.Errorf("the glob %q is no glob, no path in the repository, not clean or not in NFC", g)
+			}
+			// It is kept for matching none of the repository's files, as glob matches them, and holds none.
+			for _, f := range tracked {
+				if n := norm.NFC.String(f); repoPath(n) && !strings.HasSuffix(n, "/") && globHolds(g, f) {
+					t.Errorf("the glob %q is kept, yet it holds %q, one of the repository's files", g, f)
+				}
 			}
 		}
 		if !slices.IsSorted(fp.Areas) ||
