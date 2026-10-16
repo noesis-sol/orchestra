@@ -297,7 +297,8 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
 // reported nothing readable; with it, when its last turn ended, if no prompt has started another, and
 // when Claude Code noted it idle at its prompt since (as after a permission prompt refused), and the
-// usage limit its last turn ended on, if it did.
+// API error its last turn ended on, if it did: the usage limit, or another, which ends the turn as a
+// Stop does.
 func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
@@ -317,7 +318,11 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 		case t.Event == "Stop":
 			u.Stopped = fi.ModTime()
 		case t.Event == "StopFailure":
-			u.Limit, _ = usageLimit(t.Error, t.Message, fi.ModTime())
+			var limited bool
+			if u.Limit, limited = usageLimit(t.Error, t.Message, fi.ModTime()); !limited {
+				u.Stopped = fi.ModTime() // another API error ends the turn as a Stop does
+			}
+			u.Failure = t.Error
 		}
 	}
 	if b, fi, err := readRun(worktree, noticeName); err == nil && fi.ModTime().After(u.At) {
@@ -461,6 +466,6 @@ func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
 	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return dispatch.ToolUse{}, false
 	}
-	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Session: in.Session,
-		Transcript: in.Transcript, Agent: in.Agent, AgentType: in.AgentType}, true
+	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Failure: in.Error,
+		Session: in.Session, Transcript: in.Transcript, Agent: in.Agent, AgentType: in.AgentType}, true
 }

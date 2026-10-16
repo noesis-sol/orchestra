@@ -117,6 +117,12 @@ All notable changes to orchestra are documented here. The format follows
   StopFailure, which Claude Code runs instead of Stop when an API error ends
   a turn, and the time the limit resets is read from what Claude Code says
   of it. In Herdr, the limit is read from the worker's screen.
+- A Claude worker whose turn ends on an API error other than the usage
+  limit (a 500, a 529, a rate limit that isn't the account's) now counts as
+  at the end of its turn, as at a Stop: with its ticket in progress it is
+  told to continue at once, rather than waiting out the 10-minute idle grace
+  before `PAUSED`, and one done with its ticket settles there. The log names
+  it: `A settled: StopFailure hook (server_error) at 15:04:05`.
 
 ## [0.7.7] - 2026-10-16
 

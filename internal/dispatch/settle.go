@@ -21,7 +21,8 @@ import (
 // (hooksOf), for every decision the poll makes. A worker whose turn ends with its ticket still in
 // progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
 // whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
-// turn's end (see endOfTurn): its Stop hook, or Claude Code noting it idle after a permission prompt refused.
+// turn's end (see endOfTurn): its Stop hook, its StopFailure for an API error other than the usage
+// limit, or Claude Code noting it idle after a permission prompt refused.
 // A worker whose turn ended on the account's usage limit (limited) is none of these: the run holds for
 // the limit, and the worker waits until it is told to carry on, or stops the run, as the hold says (see
 // limitPoll); the time it waits doesn't count toward its ticket limit.
@@ -198,15 +199,15 @@ func (s *streak) track(on bool) time.Duration {
 // idleWait is what waitSettled keeps of a worker's idle polls from one to the next.
 type idleWait struct {
 	streak           // how long it has been idle
-	readTo time.Time // turns that ended before it have been read; the next turn's Stop comes after
+	readTo time.Time // turns that ended before it have been read; the next turn's end comes after
 	unread int       // failed reads of its ticket's status in a row
 	nudges int       // times it was told to continue
 }
 
 // idlePoll is a poll of waitSettled's that finds the worker w idle, as it has been since idle.since,
 // its hooks having reported h; begun is when it was confirmed started on its prompt. It reads w's
-// ticket and returns when w went idle once it has settled: at a Stop hook with its ticket waiting on a
-// question (endOfTurn), or as idleSettled says. A worker whose turn ended with its ticket still in
+// ticket and returns when w went idle once it has settled: at its turn's end with its ticket waiting
+// on a question (endOfTurn), or as idleSettled says. A worker whose turn ended with its ticket still in
 // progress is told to continue first, up to maxNudges times; one that takes the message up (nudged)
 // starts its idle time afresh.
 // stop is why the wait stops on it; a zero idleAt and a nil stop say it goes on.
@@ -340,9 +341,12 @@ func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time
 // turnEnded says whether the turn of a worker whose hooks reported h has ended, at now, and when: at
 // its Stop hook, which the last tool use is or which a PreToolUse record written after it replaced
 // (replaced), or, after a permission prompt reported, when Claude Code noted it idle at its prompt
-// (ToolUse.Idle): the prompt was refused, which ends the turn with no Stop hook. Without a tool use
-// reported, it hasn't. Claude Code forks agents at the end of a turn (a prompt suggestion, say) that
-// run the worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt
+// (ToolUse.Idle): the prompt was refused, which ends the turn with no Stop hook. An API error (a 500,
+// a 529, a rate limit that isn't the account's) ends the turn with a StopFailure hook instead of the
+// Stop, which counts as one; one that ended on the account's usage limit (ToolUse.Limit) doesn't: the
+// run holds for it (see limitPoll), and the worker waits until it is told to carry on. Without a tool
+// use reported, it hasn't. Claude Code forks agents at the end of a turn (a prompt suggestion, say)
+// that run the worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt
 // that starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on,
 // Stop or not: one in the background (as every subagent is in fork mode) outlives the turn that
 // started it, and its answer starts the next, and one still running after the Stop may be the one
@@ -351,9 +355,9 @@ func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time
 func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) {
 	u := h.use
 	switch {
-	case !h.ok:
+	case !h.ok, u.Limit.Reached():
 		return time.Time{}, false, false
-	case u.Event == "Stop":
+	case u.Event == "Stop", u.Event == "StopFailure":
 		at = u.At
 	case u.Event == "PreToolUse" && !u.Stopped.IsZero() && !u.At.IsZero() && !u.At.Before(u.Stopped):
 		at, replaced = u.Stopped, true
@@ -371,9 +375,17 @@ func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) 
 // turnEndName names, for the log, the end of the turn of a worker whose hooks reported h, which
 // turnEnded found ended at at.
 func turnEndName(h hooksSeen, at time.Time) string {
-	if h.use.Event == EventPermission {
+	u := h.use
+	switch {
+	case u.Event == EventPermission:
 		return fmt.Sprintf("idle at its prompt at %s after a permission prompt for %s refused",
-			at.Format("15:04:05"), h.use.Tool)
+			at.Format("15:04:05"), u.Tool)
+	case u.Event == "StopFailure", u.Failure != "": // or one a PreToolUse record replaced
+		name := "StopFailure hook"
+		if u.Failure != "" {
+			name += " (" + u.Failure + ")"
+		}
+		return name + " at " + at.Format("15:04:05")
 	}
 	return "Stop hook at " + at.Format("15:04:05")
 }
@@ -438,13 +450,15 @@ func idleSettled(ticket TicketStatus, h hooksSeen, since, now time.Time,
 
 // hooksSettled is idleSettled for a worker whose ticket isn't in progress and whose hooks reported a
 // tool use (h.ok). Case by case, as it returns:
-//   - A Stop hook, or a PreToolUse record of no turn that replaced one, or a permission prompt refused
-//     (see turnEnded), not before since: settled, as the record is removed before a worker starts, so
-//     any Stop came after its prompt.
+//   - A Stop hook, a StopFailure for an API error other than the usage limit, a PreToolUse record of
+//     no turn that replaced either, or a permission prompt refused (see turnEnded), not before since:
+//     settled, as the record is removed before a worker starts, so any turn's end came after its prompt.
 //   - A subagent still running: the turn goes on; settled after idleGrace.
 //   - A subagent that stopped past the Stop, with no turn on its answer yet: settled after idleGrace.
+//   - A turn that ended on the usage limit, which the terminal shows idle rather than limited: settled
+//     after idleGrace, as the run holds for the limit only while the terminal shows it (see limitPoll).
 //   - Any other last report, a tool use: mid-turn, whatever the terminal says; settled after
-//     idleGrace, as a turn that fails ends without a Stop.
+//     idleGrace, as a turn interrupted ends with no hook.
 func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (settled bool, why string) {
 	u := h.use
 	if at, ended, replaced := turnEnded(h, now); ended && (since.IsZero() || !at.Before(since)) {
@@ -458,14 +472,21 @@ func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (set
 		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with a subagent still running",
 			command.ShortDuration(idleGrace), u.Event)
 	}
-	stop := u.Stopped
-	if u.Event == "Stop" {
-		stop = u.At
+	stop, hook := u.Stopped, "Stop"
+	switch {
+	case u.Event == "Stop", u.Event == "StopFailure":
+		stop, hook = u.At, u.Event
+	case u.Failure != "": // a StopFailure a later record replaced
+		hook = "StopFailure"
 	}
 	if answerPending(h.rec, stop) {
 		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a subagent stopped at %s, past the "+
-			"turn's Stop hook, with no turn on its answer", command.ShortDuration(idleGrace),
-			h.rec.SubagentStopped.Format("15:04:05"))
+			"turn's %s hook, with no turn on its answer", command.ShortDuration(idleGrace),
+			h.rec.SubagentStopped.Format("15:04:05"), hook)
+	}
+	if u.Limit.Reached() {
+		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after its turn ended on the usage limit at %s (%s)",
+			command.ShortDuration(idleGrace), u.Limit.At.Format("15:04:05"), u.Limit.Message)
 	}
 	return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
 		command.ShortDuration(idleGrace), u.Event, u.Reporter())

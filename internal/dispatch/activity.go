@@ -17,8 +17,9 @@ type ToolUse struct {
 	Command string    // Bash's command
 	At      time.Time // when it was reported; zero if not known
 
-	// When the worker's last turn ended, at its Stop hook, if no prompt has started another since;
-	// zero otherwise. A record of a tool use written after it comes from no turn of the worker's.
+	// When the worker's last turn ended, at its Stop hook or its StopFailure for an API error other
+	// than the usage limit, if no prompt has started another since; zero otherwise. A record of a tool
+	// use written after it comes from no turn of the worker's.
 	Stopped time.Time
 
 	// When Claude Code noted the worker idle at its prompt for a while (its idle_prompt notification)
@@ -29,6 +30,11 @@ type ToolUse struct {
 	// The usage limit the worker's last turn ended on, if it ended on one and no prompt has started
 	// another since; zero otherwise.
 	Limit UsageLimit
+
+	// The kind of API error that ended the turn (StopFailure's error, as Claude Code names it:
+	// server_error, rate_limit, …): of this report, a StopFailure, or of the turn's end a later report
+	// replaced (see Stopped); empty for none, or when Claude Code named none.
+	Failure string
 
 	// Who reported it, as the hook's input says (set for a tool use or a permission prompt):
 	// the Claude Code session, its transcript, and the subagent (ID and type) whose tool it is,
