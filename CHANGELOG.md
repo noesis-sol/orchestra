@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- An organ call runs claude in an empty directory of its own that only you
+  can open, no longer in the temporary directory itself. On Linux with
+  TMPDIR unset that was the world-writable /tmp, and claude read the
+  `.claude` settings another user left there as project settings, so their
+  `env` or `apiKeyHelper` could send each organ call, with your credentials
+  and the run's evidence, to their server or run their command as you.
 - In tmux and cmux, a worker started in the worktree of an earlier one left
   running in its tab, as when its deferred ticket is taken up again, no
   longer reads as gone when the earlier one exits or is closed: the earlier

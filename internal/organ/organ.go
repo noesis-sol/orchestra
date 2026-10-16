@@ -257,11 +257,20 @@ func askAs[T any](ctx context.Context, g Client, s spec, input string, parse fun
 }
 
 // ask runs claude -p for the organ s on input, outside the project: no project CLAUDE.md, settings or
-// hooks. A run that fails or reports an error is an error: a *CallError when claude answered with an
-// error result or a refusal; one stopped at its time limit says "timed out after" the limit. Spent
-// hears of each call claude answered.
+// hooks. It runs in an empty directory of its own, made for the call and private to the user, never in
+// the temporary directory itself: claude reads .claude/settings.json and settings.local.json in its
+// working directory as project settings, safe mode or not, and on Linux with TMPDIR unset that directory
+// is the world-writable /tmp, where another user could leave settings that send the call elsewhere or run
+// a command of theirs. A run that fails or reports an error is an error: a *CallError when claude
+// answered with an error result or a refusal; one stopped at its time limit says "timed out after" the
+// limit. Spent hears of each call claude answered.
 func (g Client) ask(ctx context.Context, s spec, input string) (Result, error) {
-	return g.askIn(ctx, s, os.TempDir(), nil, input)
+	dir, err := os.MkdirTemp("", "orchestra-organ-") // mode 0700, under a name nobody had
+	if err != nil {
+		return Result{}, fmt.Errorf("making a directory for the %s organ: %w", s.name, err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }() // best effort: an empty directory left in TMPDIR harms nothing
+	return g.askIn(ctx, s, dir, nil, input)
 }
 
 // askIn runs claude -p for the organ s on input, as ask does, but in dir and with flags added after the
