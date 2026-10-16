@@ -21,6 +21,11 @@ All notable changes to orchestra are documented here. The format follows
   every ticket broken down from a spec cites it, so naming its file kept
   them all from running side by side, and `orchestra plan` ordered them in
   one chain.
+- A ticket's footprint also leaves out the spec its `spec` metadata names,
+  unless its `files` metadata lists it: a spec run keeps a spec already in
+  the repository where it is (`docs/shop-spec.md`, say), outside
+  `.orchestra/specs/`, so the tickets broken down from it, which all cite
+  it, ran one at a time. A ticket from no spec, or another, still counts it.
 
 ### Fixed
 

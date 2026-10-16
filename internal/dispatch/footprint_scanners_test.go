@@ -29,7 +29,7 @@ func TestFootprintScanners(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			files, funcs := pathsIn(c.text, repo)
+			files, funcs := pathsIn(c.text, repo, "")
 			for _, got := range []struct {
 				what string
 				set  map[string]bool

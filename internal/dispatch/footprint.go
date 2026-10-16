@@ -23,9 +23,9 @@ import (
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
 // the files its metadata lists. Two tickets whose footprints overlap are likely to conflict when
 // they run at the same time, so the loop doesn't start one beside the other. The files the
-// project's check command names, and specs under .orchestra/specs/, count only when the metadata
-// lists them: nearly every ticket names the check, asking for it to pass, and every ticket broken
-// down from a spec cites it, without changing them.
+// project's check command names, specs under .orchestra/specs/ and the spec a ticket's own metadata
+// names (SpecKey), count only when the metadata lists them: nearly every ticket names the check,
+// asking for it to pass, and every ticket broken down from a spec cites it, without changing them.
 type Footprint struct {
 	// Files are paths in the repository, sorted. A folder the files metadata lists that has no tracked
 	// files under it (a new one, or the files unknown) is kept as one, ending in /: it holds the files
@@ -192,10 +192,28 @@ func (r *repoFiles) mentions(file, fn string) bool {
 // down from a spec cites it, and may name its file, without changing it.
 const specsDir = project.Dir + "/specs/"
 
-// inPassing reports whether f is a file tickets name without working on it: one the check command
-// names, which nearly every ticket asks to pass, or a spec under .orchestra/specs/.
-func (r *repoFiles) inPassing(f string) bool {
-	return r != nil && r.check[f] || strings.HasPrefix(path.Clean(f), specsDir)
+// inPassing reports whether f is a file a ticket names without working on it: one the check command
+// names, which nearly every ticket asks to pass, a spec under .orchestra/specs/, or spec, the spec
+// the ticket comes from (specFile; "" for none).
+func (r *repoFiles) inPassing(f, spec string) bool {
+	c := path.Clean(f)
+	return r != nil && r.check[f] || strings.HasPrefix(c, specsDir) || spec != "" && norm.NFC.String(c) == spec
+}
+
+// specFile is the path in the repository of the spec ticket t comes from (SpecKey), in NFC as
+// resolve gives a new file, or "" when its metadata names none or none that can be a path in the
+// repository. A spec run keeps a spec already in the repository where it is (docs/shop.md), and
+// every ticket broken down from it cites it without changing it.
+func specFile(t Ticket) string {
+	var spec string
+	if json.Unmarshal(t.metadataField(SpecKey), &spec) != nil {
+		return ""
+	}
+	spec = norm.NFC.String(strings.TrimPrefix(strings.TrimSpace(spec), "./"))
+	if !repoPath(spec) {
+		return ""
+	}
+	return path.Clean(spec)
 }
 
 // repoPath reports whether name can be a path in the repository, relative to its root: not empty,
@@ -362,9 +380,9 @@ func funcName(s string) string {
 // TicketFootprint is where ticket t works: the files and functions named in its title and text,
 // its area labels and the files its metadata lists; with none of these, the files predicted for it
 // (PredictedKey). Paths are checked against the repository's files (git ls-files), nil when they
-// aren't known. The files the project's check command (check) names, and specs under
-// .orchestra/specs/, count only when its metadata lists them. With nothing named or predicted it is
-// empty, and the ticket runs beside anything.
+// aren't known. The files the project's check command (check) names, specs under .orchestra/specs/
+// and the spec its metadata names (SpecKey) count only when its files metadata lists them. With
+// nothing named or predicted it is empty, and the ticket runs beside anything.
 func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
 	return ticketFootprint(t, newRepoFiles(tracked, check))
 }
@@ -394,7 +412,8 @@ func eachPathToken(text string, take func(tok string) bool) {
 
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria, t.Notes}, "\n")
-	files, funcs := pathsIn(text, repo)
+	spec := specFile(t)
+	files, funcs := pathsIn(text, repo, spec)
 	maps.Copy(funcs, callsIn(text))
 	maps.Copy(funcs, codeSpansIn(text))
 	for _, f := range metadataList(t, FilesKey) {
@@ -411,19 +430,19 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	fp.Files, fp.Funcs = slices.Sorted(maps.Keys(files)), slices.Sorted(maps.Keys(funcs))
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
-		return predictedFootprint(metadataList(t, PredictedKey), repo)
+		return predictedFootprint(metadataList(t, PredictedKey), repo, spec)
 	}
 	return fp
 }
 
 // pathsIn returns the repository files the words of text that may be paths name, but those named in
-// passing (inPassing), and the Type.method words among them that name no file.
-func pathsIn(text string, repo *repoFiles) (files, funcs map[string]bool) {
+// passing (inPassing) by a ticket from spec, and the Type.method words among them that name no file.
+func pathsIn(text string, repo *repoFiles, spec string) (files, funcs map[string]bool) {
 	files, funcs = map[string]bool{}, map[string]bool{}
 	eachPathToken(text, func(tok string) bool {
 		if found := repo.resolve(tok, false); len(found) > 0 {
 			for _, f := range found {
-				if !repo.inPassing(f) { // "scripts/check.sh passes" says nothing about where a ticket works
+				if !repo.inPassing(f, spec) { // "scripts/check.sh passes" says nothing about where a ticket works
 					files[f] = true
 				}
 			}
@@ -467,13 +486,13 @@ func codeSpansIn(text string) map[string]bool {
 	return funcs
 }
 
-// predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it
-// but those named in passing (inPassing).
-func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
+// predictedFootprint is the footprint of a ticket from spec (specFile) naming nothing, from the files
+// predicted for it but those named in passing (inPassing).
+func predictedFootprint(predicted []string, repo *repoFiles, spec string) Footprint {
 	files := map[string]bool{}
 	for _, f := range predicted {
 		for _, p := range repo.resolve(f, false) {
-			if !repo.inPassing(p) {
+			if !repo.inPassing(p, spec) {
 				files[p] = true
 			}
 		}
@@ -627,7 +646,7 @@ func (r *runState) footprintOf(t Ticket) Footprint {
 	fp := ticketFootprint(t, r.files)
 	if fp.Empty() {
 		if files := r.o.prediction(t.ID); len(files) > 0 {
-			fp = predictedFootprint(files, r.files)
+			fp = predictedFootprint(files, r.files, specFile(t))
 		}
 	}
 	return fp

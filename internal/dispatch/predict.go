@@ -172,15 +172,15 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, string(list)); err != nil {
 		o.log.Raw("", err)
 	}
-	o.givePrediction(t.ID, files, tracked)
+	o.givePrediction(t, files, tracked)
 	o.info("  %s footprint predicted: %s", t.ID, strings.Join(files, ", "))
 }
 
-// givePrediction gives a running ticket with an empty footprint its predicted files.
-func (o *Loop) givePrediction(id string, files, tracked []string) {
+// givePrediction gives ticket t, when it is running with an empty footprint, its predicted files.
+func (o *Loop) givePrediction(t Ticket, files, tracked []string) {
 	o.mu.Lock()
 	defer o.mu.Unlock() // deferred: a panic must not leave the loop locked
-	if r := o.footprints[id]; r != nil && r.fp.Empty() {
-		r.fp = predictedFootprint(files, newRepoFiles(tracked, o.cfg.Check))
+	if r := o.footprints[t.ID]; r != nil && r.fp.Empty() {
+		r.fp = predictedFootprint(files, newRepoFiles(tracked, o.cfg.Check), specFile(t))
 	}
 }
