@@ -16,6 +16,13 @@ import (
 // terminal or Herdr pane.
 var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
+// pipeSignals are what a write to stdout or stderr gets once nothing reads it, as with
+// orchestra -plain | tee and Ctrl+C, which ends tee too: SIGPIPE. Go's default ends orchestra at that
+// write, in the middle of winding down; caught, the write fails with EPIPE instead (and the printer
+// drops it), and the run ends as it would have. Caught rather than ignored (signal.Ignore), as a
+// program orchestra starts would inherit the ignoring.
+var pipeSignals = []os.Signal{syscall.SIGPIPE}
+
 // stopWatch catches stopSignals for the whole of a run, so that the first of them doesn't end
 // orchestra outright: a merge under way, its notes and the log would be left unfinished. Each
 // phase of the run (the feature request, the loop, the organs) says with on what a signal does to
@@ -37,7 +44,7 @@ var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 // on(f) starts the next phase: listening with an f, between without one (or winding at once, when
 // f takes a signal that pends). windDown goes to winding without a signal.
 type stopWatch struct {
-	stop func() // stops the relay: see release
+	stop func() // stops the relays: see release
 
 	mu      sync.Mutex
 	phase   stopPhase
@@ -73,10 +80,16 @@ type quitter struct {
 	exit func(code int) // os.Exit
 }
 
-// catchStops starts catching stopSignals. Call release once the run is over.
+// catchStops starts catching stopSignals, and pipeSignals, which it drops. Call release once the
+// run is over.
 func catchStops() *stopWatch {
 	w := &stopWatch{}
-	w.stop = relay(stopSignals, w.deliver)
+	stopPipes := relay(pipeSignals, func(os.Signal) {})
+	stopStops := relay(stopSignals, w.deliver)
+	w.stop = func() {
+		stopStops()
+		stopPipes()
+	}
 	return w
 }
 
@@ -225,7 +238,7 @@ func (w *stopWatch) leaving() bool {
 	return w.leave
 }
 
-// release stops catching stopSignals: from then on they have their default effect again.
+// release stops catching stopSignals and pipeSignals: from then on they have their default effect again.
 func (w *stopWatch) release() { w.stop() }
 
 // stoppedHow says how signal s stopped the run, for its INTERRUPTED line: "with Ctrl+C", "by SIGTERM".

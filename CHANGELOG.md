@@ -4,6 +4,16 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A run whose output goes to a pipe nobody reads any more, as when Ctrl+C on
+  `orchestra -plain | tee run.txt` ends tee too, winds down as a stopped run
+  does: it labels the tickets of the workers it leaves running, saves them for
+  the next run, logs its end and exits 130. SIGPIPE ended it at its next line
+  of output, before that bookkeeping, with exit 141.
+
 ## [0.7.6] - 2026-10-16
 
 ### Added
