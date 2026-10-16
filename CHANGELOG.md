@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A run file in a worktree's `.orchestra/run/` that a worker replaced with
+  a symlink to a file in the same worktree, by an absolute path or by one
+  that climbs out of the worktree and back in, is replaced by the file again.
+  It stopped the whole run when the ticket came back with MCP servers
+  chosen, and its worker started without its launch prompt or hooks.
 - In tmux and cmux, an earlier worker left running in its tab beside the
   worker started since in the same worktree no longer takes over that
   worker's records when you clear it (`/clear`) or it resumes another session:

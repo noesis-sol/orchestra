@@ -101,10 +101,18 @@ func WriteRunFrom(root *os.Root, dir, rel string, r io.Reader, perm fs.FileMode)
 
 // RemoveRun removes the file rel from root, an os.Root at the checkout dir, if it is there. Removing a
 // symlink would not touch what it points to, but one that leads out of dir was put there to send
-// orchestra's file elsewhere: it is refused as an *EscapeError, like a write through it.
+// orchestra's file elsewhere: it is refused as an *EscapeError, like a write through it. One that
+// leads to a file inside dir is removed, even by a way the os.Root won't follow (an absolute target,
+// or one that climbs out of dir and back in): the os.Root refuses those as it refuses an escape.
 func RemoveRun(root *os.Root, dir, rel string) error {
 	if _, err := root.Stat(rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return RunError(dir, rel, err)
+		fi, lerr := root.Lstat(rel)
+		if lerr != nil || fi.Mode()&fs.ModeSymlink == 0 {
+			return RunError(dir, rel, err)
+		}
+		if out := escapes(dir, rel); out != "" {
+			return &EscapeError{Dir: dir, Path: out, Err: err}
+		}
 	}
 	if err := root.Remove(rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return RunError(dir, rel, err)
