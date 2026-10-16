@@ -66,6 +66,10 @@ type Settings struct {
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
+	// UsageLimitWait is how long a run holding for the account's usage limit waits for it to reset
+	// before it stops (USAGE_LIMIT), as a duration such as "6h". Empty: DefaultUsageLimitWait; "0":
+	// it doesn't wait.
+	UsageLimitWait string `json:"usage_limit_wait,omitempty"`
 	// MCPServers names the MCP servers workers get, defined in each machine's Claude Code config
 	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
 	// server Claude Code finds; [] gives them none.
@@ -125,6 +129,10 @@ const (
 	DefaultEnvironmentHoldWindow = 2 * time.Minute
 	DefaultEnvironmentProbe      = 10 * time.Minute
 )
+
+// DefaultUsageLimitWait is how long a run waits for the account's usage limit to reset when
+// settings.json doesn't say: longer than the five-hour session limit takes to reset.
+const DefaultUsageLimitWait = 6 * time.Hour
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
 var DefaultExcludeTypes = []string{"epic"}
@@ -560,6 +568,12 @@ func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err er
 		return 0, 0, err
 	}
 	return count, window, nil
+}
+
+// ResolveUsageLimitWait picks how long a run holding for the account's usage limit waits for it to
+// reset: the project's setting, else DefaultUsageLimitWait; 0 for not at all.
+func ResolveUsageLimitWait(s Settings) (time.Duration, error) {
+	return fromSettings(durationSetting("usage_limit_wait", s.UsageLimitWait, "6h", true), DefaultUsageLimitWait)
 }
 
 // ResolveEnvironmentProbe picks how long after an environment hold, once no ticket runs, the run

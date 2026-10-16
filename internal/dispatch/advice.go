@@ -154,7 +154,11 @@ func (o *Loop) triage(d queuedDeferral) {
 	// time limit.
 	ctx := context.Background()
 	if err != nil {
-		if o.organCtx.Err() == nil {
+		switch why := LimitRefusal(err); {
+		case o.organCtx.Err() != nil:
+		case why != "":
+			o.info("  triage of %s skipped: %s", d.ID, why)
+		default:
 			o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf(
 				"  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})
 		}
@@ -357,6 +361,9 @@ func exitMeaning(code int) string {
 		return "a finished ticket's branch did not fast-forward"
 	case ExitEnvironment:
 		return "workers kept failing at once, whichever ticket they had: the environment, not the tickets"
+	case ExitUsageLimit:
+		return "workers reached the account's usage limit, and it held longer than the run waits for it to reset " +
+			"(usage_limit_wait); they are left in their tabs, and the next run carries them on"
 	case ExitInterrupted:
 		return "stopped with Ctrl+C"
 	}

@@ -213,6 +213,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			o.triaged(r.keep, v) // a hold is picked up above
 		case req := <-o.drainReqs:
 			r.hear(req)
+		case <-o.liftWake: // the usage limit lifted: tickets start again above
 		case <-poll.C:
 			r.polled()
 		case <-ctx.Done():
@@ -334,8 +335,13 @@ func (r *runState) sayHold(s *stopReason, ticket string) {
 }
 
 // taking reports whether the run takes new tickets: nothing has stopped it, the maintainer hasn't
-// asked it to wind down, and Config.Limit isn't reached.
+// asked it to wind down, Config.Limit isn't reached, and it doesn't hold for the usage limit.
 func (r *runState) taking() bool {
+	return r.wouldTake() && !r.o.limitHolds()
+}
+
+// wouldTake reports whether the run would take new tickets but for the usage limit (see taking).
+func (r *runState) wouldTake() bool {
 	return r.stops.first == nil && !r.drained && r.count < r.o.cfg.Limit
 }
 
@@ -481,11 +487,15 @@ func (r *runState) follow() bool {
 }
 
 // goOnWhenEmpty is Run's step once nothing runs, and reports whether the run goes on: asked tickets were
-// adopted, or the run held for the environment and a probe found that commands run again.
+// adopted, the usage limit the run held for lifted (see waitOutLimit), or the run held for the
+// environment and a probe found that commands run again.
 func (r *runState) goOnWhenEmpty() bool {
 	// Before the run ends, the asked tickets are read once more.
 	if r.follow() {
 		return true
+	}
+	if r.wouldTake() && r.o.limitHolds() {
+		return r.waitOutLimit()
 	}
 	// Held for the environment, the run may probe the machine and take tickets again.
 	s := r.stops.first

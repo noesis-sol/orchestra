@@ -194,8 +194,10 @@ func renderEvent(ev dispatch.Event) string {
 		return closing(ev, 0)
 	case dispatch.EvDrain, dispatch.EvResume:
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
-	case dispatch.EvProbed:
+	case dispatch.EvProbed, dispatch.EvLimitLift:
 		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
+	case dispatch.EvLimited: // the run waits for it, as it does when winding down
+		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+Tildify(ev.Text)))
 	case dispatch.EvFullCheck: // after the run: passed, or something to look at
 		if ev.Detail == dispatch.FullCheckPassed {
 			return fmt.Sprintf("%s %s", ts, closedStyle.Render("✓ "+Tildify(strings.TrimSpace(ev.Text))))

@@ -319,6 +319,8 @@ func (o *Loop) awaitProbe(ctx context.Context, agent, tab string, deadline time.
 			return fmt.Errorf("it went away without running its command (tab %s)", tab)
 		case err == nil && (st == StateIdle || st == StateDone) && !ran():
 			return fmt.Errorf("it stopped without running its command; see tab %s", tab)
+		case err == nil && st == StateLimited && !ran():
+			return fmt.Errorf("it reached the account's usage limit without running its command; see tab %s", tab)
 		case time.Now().After(deadline):
 			return fmt.Errorf("it ran no command within %s; see tab %s",
 				command.ShortDuration(probeLimit), tab)

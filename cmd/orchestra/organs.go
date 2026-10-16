@@ -67,6 +67,11 @@ func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, cod
 	case err != nil && ctx.Err() != nil:
 		busy.Done("Run report skipped")
 		return
+	case dispatch.LimitRefusal(err) != "":
+		msg := "REVIEW_SKIPPED: " + dispatch.LimitRefusal(err)
+		log.Line(time.Now(), msg)
+		busy.Warn(msg)
+		return
 	case err != nil:
 		msg := "REVIEW_FAILED: " + dispatch.FirstLine(err.Error())
 		log.Line(time.Now(), msg)

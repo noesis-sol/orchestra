@@ -28,6 +28,8 @@ const (
 	EvResume                // the maintainer took that back
 	EvQueue                 // the number of ready tickets waiting changed; for the dashboard, not logged
 	EvProbed                // a probe found the machine working after an environment hold: tickets start again
+	EvLimited               // a worker reached the account's usage limit: no new tickets until it resets (Reset)
+	EvLimitLift             // the usage limit reset, or a worker went on past it: tickets start again
 	EvAnswered              // an asked ticket's question was answered: it comes back, dispatched next
 	EvFullCheck             // the full check (check_full) at the end of the run: Detail says how it went
 )
@@ -37,7 +39,8 @@ var kindNames = [...]string{
 	EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred", EvWarn: "warn",
 	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
 	EvReopened: "reopened", EvHold: "hold",
-	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed", EvAnswered: "answered",
+	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed",
+	EvLimited: "usage_limit", EvLimitLift: "usage_limit_lifted", EvAnswered: "answered",
 	EvFullCheck: "full_check",
 }
 
@@ -71,6 +74,9 @@ type Event struct {
 	// EvStop, what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
 	Detail string
 	Text   string // the full line written to the log file
+	// Reset: for EvLimited, when the limit resets; zero when Claude Code didn't say, or said it in
+	// words not read.
+	Reset time.Time
 	// Closed and SetAside: for EvDone, the tickets closed in the run (merged, or with nothing to
 	// merge), and those set aside (deferred, or left for review), as their events said.
 	Closed, SetAside int

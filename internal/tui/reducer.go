@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -136,6 +137,10 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 		m.setDraining(ev.Kind == dispatch.EvDrain)
 	case dispatch.EvProbed: // the machine works again after an environment hold
 		m.stopping = false
+	case dispatch.EvLimited: // no new tickets until the usage limit resets
+		m.limited, m.limitReset = true, ev.Reset
+	case dispatch.EvLimitLift:
+		m.limited, m.limitReset = false, time.Time{}
 	case dispatch.EvHold:
 		m.stopping = true
 		// A stop found before dispatching belongs to no ticket; one met as a finished ticket

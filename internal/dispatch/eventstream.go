@@ -57,6 +57,7 @@ type startRecord struct {
 // eventRecord is an Event. Queued, Held, Unclosed and Solo are given for EvDispatch and EvQueue, N
 // and Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
 // once read, the tickets held back only when there are some, the limit only when the run has one.
+// Reset is given for EvLimited, when known.
 type eventRecord struct {
 	recordHead
 	Ticket   string      `json:"ticket,omitempty"`
@@ -67,6 +68,7 @@ type eventRecord struct {
 	Blocked  string      `json:"blocked,omitempty"`
 	Suite    string      `json:"suite,omitempty"`
 	Output   string      `json:"output,omitempty"`
+	Reset    *time.Time  `json:"reset,omitempty"`
 	N        *int        `json:"n,omitempty"`
 	Limit    *int        `json:"limit,omitempty"`
 	Queued   *int        `json:"queued,omitempty"`
@@ -146,6 +148,9 @@ func (l *Log) Record(ev Event) {
 			r.Limit = &ev.Limit
 		}
 	}
+	if ev.Kind == EvLimited && !ev.Reset.IsZero() {
+		r.Reset = &ev.Reset
+	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
 		if h := ev.Held; h.Total() > 0 {
@@ -218,8 +223,8 @@ const noticeWidth = 60
 
 // Notice is what a notification says of ev, in a few words, or "" for an event that doesn't notify.
 // Only the outcomes that matter to the maintainer do: a ticket merged, set aside or waiting on a
-// question, and the run stopping or finishing. Holds, probes, the other warnings and triage are in
-// the log, the event stream and the dashboard.
+// question, the run holding for the usage limit, and the run stopping or finishing. The other holds,
+// probes, the other warnings and triage are in the log, the event stream and the dashboard.
 func Notice(ev Event) string {
 	switch ev.Kind {
 	case EvClosed:
@@ -242,6 +247,11 @@ func Notice(ev Event) string {
 			n += " on " + ev.Ticket
 		}
 		return n
+	case EvLimited:
+		if ev.Reset.IsZero() {
+			return "Usage limit reached · the run waits"
+		}
+		return "Usage limit reached · resets " + ResetLabel(ev.Reset, ev.Time)
 	case EvFullCheck:
 		if ev.Suite != "" {
 			return about("Full check failed", ev.Suite)

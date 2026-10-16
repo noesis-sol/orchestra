@@ -66,7 +66,16 @@ type Result struct {
 	CostUSD    float64         `json:"total_cost_usd"`
 	Turns      int             `json:"num_turns"`
 	SessionID  string          `json:"session_id"`
+	// The API's error that ended the call, when one did: its HTTP status and its kind, as 429 and
+	// APIErrorUsageLimit for the account's usage limit, whose words Result then holds.
+	APIErrorStatus int    `json:"api_error_status"`
+	APIError       string `json:"api_error"`
 }
+
+// APIErrorUsageLimit is Result.APIError for a call the account's usage limit refused: claude -p exits
+// 1, with is_error, api_error_status 429 and Claude Code's words in result, as "You've hit your
+// session limit · resets 7pm (Europe/Athens)" (Claude Code 2.1.301).
+const APIErrorUsageLimit = "usage_limit_reached"
 
 // Subtype is how a call ended, as its result message says.
 type Subtype string
@@ -101,7 +110,8 @@ func (r Result) failure(bin string) error {
 	if detail == "" {
 		detail = r.Result
 	}
-	return &CallError{Bin: bin, Subtype: r.Subtype, StopReason: r.StopReason, Detail: strings.TrimSpace(detail)}
+	return &CallError{Bin: bin, Subtype: r.Subtype, StopReason: r.StopReason, APIError: r.APIError,
+		Detail: strings.TrimSpace(detail)}
 }
 
 // CallError is an organ call that claude answered with an error result or a refusal, so the caller can
@@ -110,11 +120,23 @@ type CallError struct {
 	Bin        string
 	Subtype    Subtype    // an error subtype; success, or none from an older CLI, for a refusal or another error
 	StopReason StopReason // StopRefusal when the model declined
+	APIError   string     // the kind of the API's error that ended it, if one did (Result.APIError)
 	Detail     string     // what claude said of it: its errors, or its result text; may be ""
 }
 
 // Refused tells whether the model declined to answer.
 func (e *CallError) Refused() bool { return e.StopReason == StopRefusal }
+
+// UsageLimit reports whether err is an organ call the account's usage limit refused, and what claude
+// said of it ("You've hit your session limit · resets 7pm (Europe/Athens)"), for a line saying the
+// call was skipped: the limit is the run's to wait out, not the organ's failure.
+func UsageLimit(err error) (said string, limited bool) {
+	e, ok := errors.AsType[*CallError](err)
+	if !ok || e.APIError != APIErrorUsageLimit {
+		return "", false
+	}
+	return e.Detail, true
+}
 
 func (e *CallError) Error() string {
 	var what string

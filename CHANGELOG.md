@@ -33,6 +33,21 @@ All notable changes to orchestra are documented here. The format follows
   when it can't; other runs leave the mode to Claude Code, as before. The
   START line names the mode. A `claude` whose `--help` doesn't list it gets
   a `PERMISSION_MODE` warning once, and its workers start without it.
+- A run waits out the account's usage limit rather than ending: once a
+  worker reaches it, the run holds (`USAGE_LIMIT: <id>'s worker reached the
+  usage limit; it resets at 14:05`), starting no new tickets, and the limited
+  workers wait, their wait not counting toward the ticket limit. A minute
+  after the reset each is told to carry on (Escape first, which dismisses
+  Claude Code's own question) and the hold lifts (`USAGE_LIMIT lifted`); with
+  no reset time known, one limited worker is told every 15 minutes, and once
+  one goes on past the limit the rest are told too. `usage_limit_wait` in
+  `settings.json` (default `6h`, `0` for none) is how long a hold may last:
+  then the run stops with `USAGE_LIMIT` and exit code 8, the workers left in
+  their tabs for the next run. The dashboard's title line shows `usage limit
+  · resets 14:05`, one notification says so, and the event stream records
+  `usage_limit` (with `reset`) and `usage_limit_lifted`. Triage, the
+  predictor and the run report skip a call the limit refuses, with a line
+  saying so.
 ### Changed
 
 - Footprints leave out specs under `.orchestra/specs/`, as they leave out

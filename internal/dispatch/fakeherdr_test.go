@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,6 +52,7 @@ type fakeHerdr struct {
 	labels     map[string]string     // the open tabs' labels, by tab
 	pasted     []string              // tickets whose prompt was pasted
 	texts      map[string][]string   // the prompts pasted, by ticket
+	typed      []string              // what reached the workers, in order: "<ticket> <key>" for a key, "<ticket> prompt"
 	starts     []string              // tickets StartAgent was asked to start a worker for
 	args       map[string][][]string // the arguments of each LaunchInPane and StartAgent, by ticket
 	behaviours map[string][]behaviour
@@ -154,6 +156,20 @@ func (h *fakeHerdr) pastedTo() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.pasted...)
+}
+
+// typedTo returns what reached ticket id's workers, in order: each key pressed, by its name, and
+// "prompt" for each prompt pasted.
+func (h *fakeHerdr) typedTo(id string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var l []string
+	for _, in := range h.typed {
+		if what, ok := strings.CutPrefix(in, id+" "); ok {
+			l = append(l, what)
+		}
+	}
+	return l
 }
 
 // pastedText returns the prompts pasted to ticket id's workers, in order.
@@ -416,6 +432,7 @@ func (h *fakeHerdr) submit(name, prompt string) error {
 		h.texts = map[string][]string{}
 	}
 	h.texts[h.panes[a.pane].ticket] = append(h.texts[h.panes[a.pane].ticket], prompt)
+	h.typed = append(h.typed, h.panes[a.pane].ticket+" prompt")
 	if h.onPrompt != nil {
 		h.onPrompt(h.panes[a.pane].ticket)
 	}
@@ -434,6 +451,11 @@ func (h *fakeHerdr) submit(name, prompt string) error {
 func (h *fakeHerdr) SendKeys(ctx context.Context, name string, keys ...string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if a := h.agent(name); a != nil {
+		for _, k := range keys {
+			h.typed = append(h.typed, h.panes[a.pane].ticket+" "+k)
+		}
+	}
 	if a := h.agent(name); a != nil && a.boxed && slices.Contains(keys, "enter") {
 		a.entered = true
 	}

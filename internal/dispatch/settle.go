@@ -22,11 +22,16 @@ import (
 // progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
 // whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
 // turn's end (see endOfTurn): its Stop hook, or Claude Code noting it idle after a permission prompt refused.
+// A worker whose turn ended on the account's usage limit (limited) is none of these: the run holds for
+// the limit, and the worker waits until it is told to carry on, or stops the run, as the hold says (see
+// limitPoll); the time it waits doesn't count toward its ticket limit.
 func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
 	var idle idleWait
 	var blocked, unknown streak
+	var limit limitWait
+	defer func() { o.limitDone(w.id, &limit, idleAt, stop) }()
 	failed := 0
 	warned := false
 	for polled := false; ; polled = true {
@@ -46,6 +51,7 @@ func (o *Loop) waitSettled(
 		}
 		failed = 0
 		if st == StateGone {
+			limit.leave(time.Now(), st)
 			o.info("  %s settled: its worker is gone", w.id)
 			if idle.since.IsZero() {
 				return time.Now(), nil
@@ -53,6 +59,11 @@ func (o *Loop) waitSettled(
 			return idle.since, nil
 		}
 		h := o.hooksOf(w)
+		if stop, told := o.limitPoll(ctx, w, st, h, &limit); stop != nil {
+			return time.Time{}, stop
+		} else if told {
+			continue // the checks below wait for its next poll
+		}
 		// A permission prompt the terminal shows as idle waits for the maintainer as a blocked worker does.
 		asks := asksPermission(h, st)
 		if stop := stuck(w, st, asks, &blocked, &unknown); stop != nil {
@@ -69,7 +80,7 @@ func (o *Loop) waitSettled(
 				continue // the checks below wait for its next poll
 			}
 		}
-		if stop := o.overTime(ctx, w, st, &warned); stop != nil {
+		if stop := o.overTime(ctx, w, st, limit.limited(time.Now()), &warned); stop != nil {
 			return time.Time{}, stop
 		}
 	}
@@ -110,9 +121,12 @@ func stuck(w worker, st AgentState, asks bool, blocked, unknown *streak) *stopRe
 
 // overTime says why the wait on the worker w, in state st, stops for how long it has gone on: past
 // Config.TicketLimit since it started (dispatch), noted on its ticket. Without a limit, one still going
-// after longRunning is reported once, warned noting it was; nil while it may go on.
-func (o *Loop) overTime(ctx context.Context, w worker, st AgentState, warned *bool) *stopReason {
-	if limit := o.cfg.TicketLimit; limit > 0 && time.Since(w.started) > limit {
+// after longRunning is reported once, warned noting it was; nil while it may go on. The time it waited
+// on the usage limit, limited, doesn't count.
+func (o *Loop) overTime(ctx context.Context, w worker, st AgentState, limited time.Duration,
+	warned *bool) *stopReason {
+	gone := time.Since(w.started) - limited
+	if limit := o.cfg.TicketLimit; limit > 0 && gone > limit {
 		o.appendNotes(context.WithoutCancel(ctx), w.id, fmt.Sprintf(
 			"Orchestra: worker in tab %s was still %s after the %s ticket limit (worktree %s).",
 			w.tab, st, command.ShortDuration(limit), w.wt))
@@ -120,7 +134,7 @@ func (o *Loop) overTime(ctx context.Context, w worker, st AgentState, warned *bo
 			": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
 			w.id, st, command.ShortDuration(limit), w.tab, w.wt)
 	}
-	if o.cfg.TicketLimit == 0 && !*warned && time.Since(w.started) > longRunning {
+	if o.cfg.TicketLimit == 0 && !*warned && gone > longRunning {
 		*warned = true
 		o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf(
 			"  LONG_RUNNING: %s still %s after %s in tab %s; still waiting on it, as no ticket limit is set (--ticket-limit)",

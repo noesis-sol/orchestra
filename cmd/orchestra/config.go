@@ -549,6 +549,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	keep(&problems, &c.CheckHandBacks)(project.ResolveCheckHandBacks(settings))
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
 	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
+	keep(&problems, &c.UsageLimitWait)(project.ResolveUsageLimitWait(settings))
 	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
 	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
 	return problems

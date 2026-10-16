@@ -27,6 +27,8 @@ type Dashboard struct {
 	spin        spinner.Model
 	active      map[string]dispatch.Status // running workers, by ticket
 	stopping    bool                       // something stopped the run; the running ones are finishing
+	limited     bool                       // the run holds for the account's usage limit
+	limitReset  time.Time                  // when that limit resets; zero when not known
 	draining    bool                       // the maintainer asked to stop after the running tickets
 	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
 	asking      bool                       // the question whether to stop after them, or to go on, is open
@@ -297,14 +299,21 @@ func shortVersion(v string) string {
 	return base + "-dev " + hash + dirty
 }
 
-// titleLine is the Orchestra pill, the version, whether the run is stopping, the solo ticket
-// running alone or next, the branch, the ticket a scoped run works on and how long the run has
-// gone. The states come first so a narrow pane cuts the branch and time instead. A run winding
-// down says so on its own line above the hint.
+// titleLine is the Orchestra pill, the version, whether the run is stopping, whether it holds for the
+// usage limit and when that resets, the solo ticket running alone or next, the branch, the ticket a
+// scoped run works on and how long the run has gone. The states come first so a narrow pane cuts the
+// branch and time instead. A run winding down says so on its own line above the hint.
 func (m Dashboard) titleLine(w int) string {
 	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version))
 	if m.stopping {
 		line += stopStyle.Render("  · stopping")
+	}
+	if m.limited {
+		limit := "  · usage limit"
+		if !m.limitReset.IsZero() {
+			limit += " · resets " + dispatch.ResetLabel(m.limitReset, m.clock())
+		}
+		line += deferredStyle.Render(limit)
 	}
 	switch {
 	case m.solo.Next:
@@ -320,10 +329,15 @@ func (m Dashboard) titleLine(w int) string {
 // since is how long ago t was by the dashboard's clock; a dashboard made without NewDashboard reads
 // the time.
 func (m Dashboard) since(t time.Time) time.Duration {
+	return m.clock().Sub(t)
+}
+
+// clock is the time by the dashboard's clock; a dashboard made without NewDashboard reads the time.
+func (m Dashboard) clock() time.Time {
 	if m.now == nil {
-		return time.Since(t)
+		return time.Now()
 	}
-	return m.now().Sub(t)
+	return m.now()
 }
 
 // Interrupted reports whether the run was stopped with Ctrl+C.

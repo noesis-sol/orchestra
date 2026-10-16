@@ -31,6 +31,7 @@ const (
 	ExitDirty       = 5   // uncommitted changes in the main checkout, or it left its branch
 	ExitMerge       = 6   // a finished ticket's branch does not fast-forward
 	ExitEnvironment = 7   // workers kept failing at once, whichever ticket they had: the machine, not the tickets
+	ExitUsageLimit  = 8   // workers reached the account's usage limit, and it held longer than Config.UsageLimitWait
 	ExitInterrupted = 130 // stopped with Ctrl+C
 )
 
@@ -49,6 +50,7 @@ type Loop struct {
 	predictor   // predicting footprints, under predictMu
 	triageQueue // triage's queue, set by StartTriage before any worker runs
 	envHold     // holding for the environment: Run's own, and triage's once Run has returned
+	usageHold   // holding for the account's usage limit, under limitMu
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -226,6 +228,7 @@ func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 		cfg: cfg, log: log, prompt: prompt,
 		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
 		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
+		usageHold: usageHold{liftWake: make(chan struct{}, 1)},
 		drainReqs: make(chan drainRequest, 1),
 	}
 }
@@ -272,6 +275,7 @@ const (
 	stopTerminalFailed   stopKind = "TERMINAL_FAILED"
 	stopTicketLimit      stopKind = "TICKET_LIMIT"
 	stopUnknown          stopKind = "UNKNOWN"
+	stopUsageLimit       stopKind = "USAGE_LIMIT"
 	stopWorktreeFailed   stopKind = "WORKTREE_FAILED"
 )
 
@@ -506,6 +510,9 @@ type Config struct {
 	// project.ProbeRun in Repo's .orchestra/run/: a terminal that reads its workers' state from their
 	// hooks (tmux), not their screens (Herdr), needs them to tell what it is doing.
 	ProbeHooks bool
+	// UsageLimitWait is how long the run waits for the account's usage limit to reset, from when it
+	// began to hold for it, before the workers still limited stop it (USAGE_LIMIT); 0 for not at all.
+	UsageLimitWait time.Duration
 	// MCP is the MCP servers Claude workers get and no others: those mcp_servers in
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.
