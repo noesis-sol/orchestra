@@ -496,15 +496,26 @@ func ResolveEffort(flagValue, key, setting string) (string, error) {
 }
 
 // The permission modes of Claude Code's that workers can be started in (claude --permission-mode).
+// PermissionDefault and PermissionManual name one mode, which asks before every tool the settings
+// don't allow: Claude Code's --help listed it as default, and lists it as manual since 2.1.301.
 const (
 	PermissionDefault     = "default"
+	PermissionManual      = "manual"
 	PermissionAcceptEdits = "acceptEdits"
 	PermissionAuto        = "auto"
 )
 
 // PermissionModes are the permission modes workers can be started in. Claude Code's others don't
 // suit a worker: bypassPermissions runs every command unchecked, and plan never changes anything.
-var PermissionModes = []string{PermissionDefault, PermissionAcceptEdits, PermissionAuto}
+var PermissionModes = []string{PermissionDefault, PermissionManual, PermissionAcceptEdits, PermissionAuto}
+
+// RenamedPermissionModes pair the names Claude Code has given one permission mode, each with the
+// other: a run passes whichever its workers' claude lists, so one setting suits an older claude and
+// a newer alike.
+var RenamedPermissionModes = map[string]string{
+	PermissionDefault: PermissionManual,
+	PermissionManual:  PermissionDefault,
+}
 
 // unsuitedModes say why Claude Code's permission modes outside PermissionModes don't suit a worker.
 var unsuitedModes = map[string]string{

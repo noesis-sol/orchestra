@@ -342,9 +342,10 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"effort Claude workers start at: low, medium, high, xhigh or max "+
 			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
 	bindEnv(e, fs.StringVar, &c.WorkerPermissionMode, "worker-permission-mode", "WORKER_PERMISSION_MODE", "",
-		parseText, "permission mode Claude workers start in: default, acceptEdits or auto, where Claude Code's "+
-			"classifier decides and asks only when it can't (default: .orchestra/settings.json, else auto for a "+
-			"--spec run and Claude Code's default otherwise) [WORKER_PERMISSION_MODE]")
+		parseText, "permission mode Claude workers start in: default (or manual, its name in newer Claude Code), "+
+			"acceptEdits or auto, where Claude Code's classifier decides and asks only when it can't (default: "+
+			".orchestra/settings.json, else auto for a --spec run and Claude Code's default otherwise) "+
+			"[WORKER_PERMISSION_MODE]")
 	bindEnv(e, fs.StringVar, &c.Ticket, "ticket", "ORCHESTRA_TICKET", "", parseText,
 		"work on this ticket and its subtickets only, each parent after its children; "+
 			"nothing else is started [ORCHESTRA_TICKET]")

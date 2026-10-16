@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // permissionLabel is what the START line says of the permission mode workers start in, after the
@@ -22,9 +24,10 @@ func (c Config) permissionLabel() string {
 
 // permissionArgs are the arguments that start Claude workers in Config.WorkerPermissionMode, which
 // begin asks the workers' claude about once, as the run starts: --permission-mode and the mode
-// where its --help lists the mode. Where it doesn't, or its help can't be read, the run says so
-// and workers start without them, in the mode Claude Code's settings give: a claude that doesn't
-// know the mode refuses it, and no worker would start.
+// where its --help lists the mode, by its name or the one Claude Code renamed it from or to
+// (default and manual), which is then the name passed. Where it doesn't, or its help can't be
+// read, the run says so and workers start without them, in the mode Claude Code's settings give:
+// a claude that doesn't know the mode refuses it, and no worker would start.
 func (o *Loop) permissionArgs(ctx context.Context) []string {
 	c := o.cfg
 	mode := c.WorkerPermissionMode
@@ -35,6 +38,7 @@ func (o *Loop) permissionArgs(ctx context.Context) []string {
 	if o.help != nil {
 		help, err = o.help.Help(ctx)
 	}
+	listed := listedPermissionMode(help, mode)
 	switch {
 	case ctx.Err() != nil:
 	case err != nil:
@@ -42,14 +46,26 @@ func (o *Loop) permissionArgs(ctx context.Context) []string {
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  PERMISSION_MODE: cannot read claude --help to tell whether "+
 			"it takes the permission mode %s (%s); workers start without it, in the mode Claude Code's settings give",
 			mode, strings.Join(strings.Fields(err.Error()), " "))})
-	case !listsPermissionMode(help, mode):
+	case listed == "":
 		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  PERMISSION_MODE: claude --help doesn't list the permission "+
 			"mode %s; workers start without it, in the mode Claude Code's settings give (claude update may bring it)",
 			mode)})
 	default:
-		return []string{"--permission-mode", mode}
+		return []string{"--permission-mode", listed}
 	}
 	return nil
+}
+
+// listedPermissionMode is the name help, claude's --help, lists the permission mode mode by: mode
+// itself, else the name Claude Code renamed it from or to (project.RenamedPermissionModes), else
+// "" when it lists neither.
+func listedPermissionMode(help, mode string) string {
+	for _, m := range []string{mode, project.RenamedPermissionModes[mode]} {
+		if m != "" && listsPermissionMode(help, m) {
+			return m
+		}
+	}
+	return ""
 }
 
 // listsPermissionMode tells whether help, claude's --help, lists mode among the choices of its
