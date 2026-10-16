@@ -82,6 +82,11 @@ type hookInput struct {
 	Reason       string   `json:"reason,omitzero"`
 	Notification string   `json:"notification_type,omitzero"`
 	Input        toolArgs `json:"tool_input,omitzero"`
+	// StopFailure's only (see failureRecord): the kind of API error that ended the turn, and what
+	// Claude Code said of it, its last assistant message. Readers that don't know them read the turn
+	// as over.
+	Error   string `json:"error,omitzero"`
+	Message string `json:"last_assistant_message,omitzero"`
 	// A permission prompt's note only: the removal in its command that Claude Code's safety check
 	// holds for a person (dispatch.GuardedRemoval), read from the whole command, of which the note
 	// keeps the start. Readers that don't know it read the prompt as an ordinary one.
@@ -141,6 +146,14 @@ func writeRecords(root *os.Root, event string, in []byte, process string) {
 	case "Stop":
 		replace(root, activityName, eventRecord(event))
 		replace(root, turnName, eventRecord(event))
+	case "StopFailure":
+		// A subagent's failure ends its own turn, not the worker's: it comes back to the main agent as
+		// its tool's result, and the main agent's next request, refused for the same usage limit, ends
+		// the worker's turn with a StopFailure of its own.
+		if h.Agent == "" {
+			replace(root, activityName, failureRecord(h))
+			replace(root, turnName, failureRecord(h))
+		}
 	case "UserPromptSubmit":
 		replace(root, turnName, eventRecord(event))
 	case "SessionStart":
@@ -206,6 +219,14 @@ func withFormat(in []byte) []byte {
 // eventRecord is the record of the event alone.
 func eventRecord(event string) []byte {
 	b, _ := json.Marshal(hookInput{V: recordFormat, Event: event}) // strings only: it can't fail
+	return b
+}
+
+// failureRecord is the record of StopFailure, whose input is h: the event, the error's kind and what
+// Claude Code said, kept short. Its input names the session and the prompt, which no reader needs.
+func failureRecord(h hookInput) []byte {
+	b, _ := json.Marshal(hookInput{V: recordFormat, Event: "StopFailure", Error: h.Error,
+		Message: dispatch.Clip(h.Message, 300)}) // strings only: it can't fail
 	return b
 }
 

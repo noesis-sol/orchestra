@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -509,11 +510,22 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 }
 
 // Status returns the agent's state, StateGone if Herdr has no such agent. If Herdr cannot be asked
-// it returns the error and no state: the agent may well be there.
+// it returns the error and no state: the agent may well be there. Herdr has no state for a Claude Code
+// agent whose turn ended on the account's usage limit: one it shows at rest (idle, done, or blocked on
+// the dialog Claude Code may ask then) is limited when its screen shows the limit
+// (claude.ShowsUsageLimit).
 func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
-	_, _, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
+	_, kind, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
+	if err == nil && kind == claudeAgent &&
+		(st == dispatch.StateIdle || st == dispatch.StateDone || st == dispatch.StateBlocked) &&
+		claude.ShowsUsageLimit(t.Screen(ctx, name, st)) {
+		return dispatch.StateLimited, nil
+	}
 	return st, err
 }
+
+// claudeAgent is Herdr's kind of a Claude Code agent.
+const claudeAgent = "claude"
 
 // Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
 // dispatch.Agents gives it: the last dispatch.ScreenLines lines. Herdr can capture scrollback only

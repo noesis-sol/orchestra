@@ -44,6 +44,14 @@ All notable changes to orchestra are documented here. The format follows
   itself isn't in this build yet: a spec run stops once the spec is committed.
   The run lock, the START line and the event stream's start record name the
   spec.
+- A worker whose turn ends on the account's usage limit (the five-hour
+  session limit, the weekly one) now shows as `limited`, rather than idle
+  with its ticket in progress, and is no longer told to continue into the
+  limit: the run waits on it, and Claude Code's own automatic continue, when
+  on, carries it on once the limit resets. Workers' hooks now include
+  StopFailure, which Claude Code runs instead of Stop when an API error ends
+  a turn, and the time the limit resets is read from what Claude Code says
+  of it. In Herdr, the limit is read from the worker's screen.
 
 ## [0.7.7] - 2026-10-16
 

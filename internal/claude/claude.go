@@ -29,15 +29,17 @@ const (
 	// settingsName is the hooks' settings themselves, written by reportArgs and loaded with --settings.
 	settingsName = "hooks.json"
 	// activityName is the last report of any agent of the session, replaced by PreToolUse and
-	// PermissionRequest (the hook's input: the tool and its arguments) and by PostToolUse,
-	// PostToolUseFailure and Stop (the event alone: a finished tool's input carries its whole output).
+	// PermissionRequest (the hook's input: the tool and its arguments), by PostToolUse,
+	// PostToolUseFailure and Stop (the event alone: a finished tool's input carries its whole output)
+	// and by the main agent's StopFailure (failureRecord).
 	// A permission prompt is recorded like a tool use: the worker waits on it until it is answered,
 	// and the tool runs once it is allowed. Read by LastToolUse and ReadHooks.
 	activityName = "activity.json"
-	// turnName is the last turn's end (Stop) or prompt's start (UserPromptSubmit), replaced by those
-	// hooks only, so a tool use reported after a Stop, from no turn of the worker's, can't hide that
-	// the turn ended: Claude Code forks agents at the end of a turn (a prompt suggestion, say) that run
-	// the worker's PreToolUse hook and are then refused the tool. Read by LastToolUse and ReadHooks.
+	// turnName is the last turn's end (Stop, or StopFailure when an API error such as the usage limit
+	// ended it) or prompt's start (UserPromptSubmit), replaced by those hooks only, so a tool use
+	// reported after a Stop, from no turn of the worker's, can't hide that the turn ended: Claude Code
+	// forks agents at the end of a turn (a prompt suggestion, say) that run the worker's PreToolUse hook
+	// and are then refused the tool. Read by LastToolUse and ReadHooks.
 	turnName = "turn.json"
 	// editsName is the path of each file the worker is about to edit, one per line, appended by
 	// PreToolUse for Edit, MultiEdit, Write and NotebookEdit: activity keeps only the last tool use,
@@ -82,6 +84,10 @@ const (
 // format, once there is one, is read by its own rules or not at all: nothing on disk is rewritten.
 // edits is plain text, a path a line: a change to it takes a new file name. What the asked records hold
 // only the hooks that wrote them read, the worker's own.
+//
+// A field or an event added to format 1 that its earlier readers can ignore keeps the format: a
+// permission prompt's removal, or StopFailure's record, which those readers take for a turn that is
+// over (State: idle) without the usage limit it may tell, as hooks that ran none left it before.
 const recordFormat = 1
 
 // readable reports whether a record in format v, 0 for none given, is one these readers know.
@@ -274,6 +280,7 @@ func hookSettings(bin, records string) map[string]any {
 		"SubagentStart":      other("SubagentStart"),
 		"SubagentStop":       other("SubagentStop"),
 		"Stop":               other("Stop"),
+		"StopFailure":        other("StopFailure"),
 		"UserPromptSubmit":   other("UserPromptSubmit"),
 		"SessionStart":       other("SessionStart"),
 		"SessionEnd":         other("SessionEnd"),
@@ -289,7 +296,8 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
 // reported nothing readable; with it, when its last turn ended, if no prompt has started another, and
-// when Claude Code noted it idle at its prompt since (as after a permission prompt refused).
+// when Claude Code noted it idle at its prompt since (as after a permission prompt refused), and the
+// usage limit its last turn ended on, if it did.
 func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
@@ -302,10 +310,14 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	}
 	u.At = fi.ModTime() // each report replaces the file, so it was written then
 	if b, fi, err := readRun(worktree, turnName); err == nil {
-		if t, ok := parseToolUse(b); ok && t.Event == "Stop" {
-			u.Stopped = fi.ModTime()
-		} else if !ok {
+		var t hookInput
+		switch {
+		case json.Unmarshal(b, &t) != nil || !readable(t.V):
 			r.sayNewer(worktree, turnName, b)
+		case t.Event == "Stop":
+			u.Stopped = fi.ModTime()
+		case t.Event == "StopFailure":
+			u.Limit, _ = usageLimit(t.Error, t.Message, fi.ModTime())
 		}
 	}
 	if b, fi, err := readRun(worktree, noticeName); err == nil && fi.ModTime().After(u.At) {

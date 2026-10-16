@@ -70,11 +70,14 @@ func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (st
 //   - working while a subagent runs (dispatch.HookRecord.SubagentsRunning: one started and not
 //     stopped, until no hook has reported anything for dispatch.SubagentQuiet), after a prompt
 //     (UserPromptSubmit) until the turn's Stop, or after a tool use with no turn recorded;
-//   - idle after the turn's Stop, even where a tool use reported later replaced it, as an agent Claude
-//     Code forks at the end of a turn reports one it is refused (see turnEnded in dispatch) — but a
-//     tool that finished after it means the turn goes on; after the notification that it waits at
-//     its prompt, which an interrupted turn ends with, Stop or not; and once a session started and
-//     no prompt since;
+//   - limited after a turn that ended on the account's usage limit (its StopFailure, see usageLimit),
+//     until a prompt starts another, whatever the notifications say meanwhile and however long ago
+//     the limit reset: the loop decides when to try again;
+//   - idle after the turn's Stop, or a StopFailure for another API error, even where a tool use
+//     reported later replaced it, as an agent Claude Code forks at the end of a turn reports one it
+//     is refused (see turnEnded in dispatch) — but a tool that finished after it means the turn goes
+//     on; after the notification that it waits at its prompt, which an interrupted turn ends with,
+//     Stop or not; and once a session started and no prompt since;
 //   - unknown before any hook ran, as while claude starts or shows a dialog that runs no hook (trust
 //     this folder): the terminal's screen may say more.
 func State(records string) dispatch.AgentState {
@@ -91,6 +94,8 @@ type Hooks struct {
 	// once the tool is done), so one allowed reads asked until its tool is done, however long that
 	// takes: the terminal's screen says whether its dialog still shows (ShowsPermission).
 	Asked bool
+	// Limit is the usage limit the session's last turn ended on, when State is limited; zero otherwise.
+	Limit dispatch.UsageLimit
 	// Turned is whether the records tell a turn of the session: a prompt or a turn's end. Claude Code
 	// asks its dialogs that run no hook (trust this folder, the project's MCP servers) before a
 	// session's first turn, so a terminal looks for them on its screen only until then: a session's
@@ -118,7 +123,11 @@ func ReadHooks(records, dir string) Hooks {
 	activity, turn := readRecord(root, activityName), readRecord(root, turnName)
 	st, asked := state(activity, turn, readRecord(root, noticeName), readAsked(root),
 		readSessions(b, noted, activity.at, time.Now()))
-	return Hooks{State: st, Asked: asked, Turned: !turn.at.IsZero()}
+	h := Hooks{State: st, Asked: asked, Turned: !turn.at.IsZero()}
+	if st == dispatch.StateLimited {
+		h.Limit = turn.limit
+	}
+	return h
 }
 
 // Settle is the session's state, given screen, which reads its terminal's visible screen, once its
@@ -157,10 +166,11 @@ func settle(h Hooks, screen string, read bool) dispatch.AgentState {
 	return h.State
 }
 
-// record is one of the hooks' replaced records: the event, a notification's type, and when it was
-// written; a zero at when there is none.
+// record is one of the hooks' replaced records: the event, a notification's type, the usage limit a
+// StopFailure tells, and when it was written; a zero at when there is none.
 type record struct {
 	event, notification string
+	limit               dispatch.UsageLimit
 	at                  time.Time
 }
 
@@ -213,6 +223,9 @@ func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentStat
 			if s.subagents {
 				return dispatch.StateWorking, false
 			}
+			if turn.limit.Reached() {
+				return dispatch.StateLimited, false // waiting at its prompt is what the limit leaves it to
+			}
 			return dispatch.StateIdle, false
 		}
 	}
@@ -228,9 +241,12 @@ func unasked(activity, turn record, s sessions) dispatch.AgentState {
 		return dispatch.StateWorking
 	}
 	switch turn.event {
-	case "Stop":
+	case "Stop", "StopFailure":
 		if activity.event == "PostToolUse" && activity.after(turn) {
 			return dispatch.StateWorking
+		}
+		if turn.limit.Reached() {
+			return dispatch.StateLimited
 		}
 		return dispatch.StateIdle
 	case "UserPromptSubmit":
@@ -239,7 +255,7 @@ func unasked(activity, turn record, s sessions) dispatch.AgentState {
 	switch activity.event {
 	case "PreToolUse", "PostToolUse":
 		return dispatch.StateWorking
-	case "Stop":
+	case "Stop", "StopFailure":
 		return dispatch.StateIdle
 	}
 	if s.started {
@@ -259,7 +275,11 @@ func readRecord(root *os.Root, name string) record {
 	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
 		return record{}
 	}
-	return record{event: in.Event, notification: in.Notification, at: fi.ModTime()}
+	r := record{event: in.Event, notification: in.Notification, at: fi.ModTime()}
+	if in.Event == "StopFailure" {
+		r.limit, _ = usageLimit(in.Error, in.Message, r.at)
+	}
+	return r
 }
 
 // readAsked returns the latest of the permission prompts' records in root, an os.Root at the records'

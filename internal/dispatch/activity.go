@@ -10,8 +10,8 @@ import (
 // ToolUse is what a worker last reported through its hooks.
 type ToolUse struct {
 	// PreToolUse (using Tool now), PermissionRequest (asking to use Tool: waiting on the answer
-	// while the terminal shows it at rest, using it once allowed), PostToolUse (between tools) or Stop
-	// (turn over)
+	// while the terminal shows it at rest, using it once allowed), PostToolUse (between tools), Stop
+	// (turn over) or StopFailure (turn over on an API error, which runs no Stop: see Limit)
 	Event   string
 	Tool    string    // Bash, Edit, Read, …
 	Command string    // Bash's command
@@ -25,6 +25,10 @@ type ToolUse struct {
 	// after this report; zero otherwise. A permission prompt reported has been answered by then: refused,
 	// which runs no hook, as allowing it would have the tool's end replace this report.
 	Idle time.Time
+
+	// The usage limit the worker's last turn ended on, if it ended on one and no prompt has started
+	// another since; zero otherwise.
+	Limit UsageLimit
 
 	// Who reported it, as the hook's input says (set for a tool use or a permission prompt):
 	// the Claude Code session, its transcript, and the subagent (ID and type) whose tool it is,
@@ -55,6 +59,18 @@ func (u ToolUse) Reporter() string {
 
 // EventPermission is the ToolUse event of a permission prompt.
 const EventPermission = "PermissionRequest"
+
+// UsageLimit is the account's usage limit (its five-hour session limit, its weekly one, …) a worker's
+// turn ended on: Claude Code refuses its requests until the limit resets. The zero UsageLimit is none.
+type UsageLimit struct {
+	At    time.Time // when the turn ended on it; zero: it didn't
+	Reset time.Time // when the limit resets; zero when Claude Code didn't say, or said it in words not read
+	// What Claude Code said, as "You've hit your session limit · resets 7pm (Europe/Athens)"
+	Message string
+}
+
+// Reached reports whether the turn ended on the usage limit.
+func (l UsageLimit) Reached() bool { return !l.At.IsZero() }
 
 // HookRecord is what a worker's hooks noted besides its last tool use, since it was started (or
 // resumed): the permission prompts it waited on, its context's compactions and its subagents.

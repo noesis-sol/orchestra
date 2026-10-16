@@ -98,6 +98,9 @@ const (
 	StateWorking AgentState = "working"
 	StateBlocked AgentState = "blocked"
 	StateDone    AgentState = "done"
+	// The agent's turn ended on its account's usage limit, and it waits for the limit to reset or for a
+	// prompt (ToolUse.Limit says when it resets, if known).
+	StateLimited AgentState = "limited"
 	StateUnknown AgentState = "unknown" // the terminal can't tell what the agent is doing
 	StateGone    AgentState = "gone"    // the terminal has no such agent
 )
