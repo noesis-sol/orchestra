@@ -59,11 +59,12 @@ const (
 	// waits on where no other hook says, as an interrupted turn has no Stop. Read by ReadHooks, and
 	// by LastToolUse for the session idle after its last report.
 	noticeName = "notice.json"
-	// askedPrefix, followed by an agent's ID ("main" for the session's own), is the tool that agent
-	// asked to use, replaced by its PermissionRequest and removed by its tool's end (PostToolUse or
-	// PostToolUseFailure of the same agent and tool) or its stop (SubagentStop). Other agents' tool
-	// uses, which replace activity, leave it, so a prompt one subagent waits on still shows while
-	// another works; a prompt refused ends the turn, which turn tells. Read by ReadHooks.
+	// askedPrefix, followed by an agent's ID ("main" for the session's own), is the tool call that agent
+	// asked to make (askedRecord), replaced by its PermissionRequest and removed by its tool's end
+	// (PostToolUse or PostToolUseFailure of the same agent, tool and input) or its stop (SubagentStop).
+	// Its other calls of the tool, run beside it, and other agents' tool uses, which replace activity,
+	// leave it, so a prompt one call waits on still shows while another works; a prompt refused ends the
+	// turn, which turn tells. Read by ReadHooks, which reads only when it was written.
 	askedPrefix = "asked-"
 )
 
@@ -73,8 +74,8 @@ const (
 // records. One with no "v" was written before records carried it, in what is format 1; one in a newer
 // format than recordFormat is unreadable (readable), and the Reporter says so in the log. An older
 // format, once there is one, is read by its own rules or not at all: nothing on disk is rewritten.
-// edits and the asked records are plain text, a path a line and a tool name: a change to them takes a
-// new file name.
+// edits is plain text, a path a line: a change to it takes a new file name. What the asked records hold
+// only the hooks that wrote them read, the worker's own.
 const recordFormat = 1
 
 // readable reports whether a record in format v, 0 for none given, is one these readers know.

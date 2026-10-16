@@ -2,6 +2,8 @@ package claude
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -113,13 +115,13 @@ func writeRecords(root *os.Root, event string, in []byte) {
 		// case. The event alone: a finished tool's input carries its whole output.
 		replace(root, activityName, eventRecord("PostToolUse"))
 		name := askedName(h.Agent)
-		if b, err := root.ReadFile(name); err == nil && string(b) == h.Tool {
+		if b, err := root.ReadFile(name); err == nil && bytes.Equal(b, askedRecord(h.Tool, in)) {
 			_ = root.Remove(name) // one gone already is no prompt asked
 		}
 	case "PermissionRequest":
 		replace(root, activityName, input)
 		note(root, event, h)
-		replace(root, askedName(h.Agent), []byte(h.Tool))
+		replace(root, askedName(h.Agent), askedRecord(h.Tool, in))
 	case "SubagentStop":
 		note(root, event, h)
 		_ = root.Remove(askedName(h.Agent)) // none there is none asked
@@ -199,6 +201,22 @@ func askedName(agent string) string {
 		id = "main"
 	}
 	return askedPrefix + id
+}
+
+// askedRecord is the record of the permission prompt asked for the call of tool whose hook's input is in:
+// the tool's name, then a hash of its input on a line of its own. PermissionRequest carries no tool_use_id,
+// so the input tells the call apart from another of the same tool the agent runs beside it (Claude Code
+// runs Read, Grep, WebFetch and read-only Bash in parallel), whose end leaves the prompt asked. The input
+// is hashed as decoded and encoded again, so key order and spacing don't count; one that reaches the
+// tool changed (a dialog's updatedInput) leaves the record to the turn's end or the agent's stop.
+func askedRecord(tool string, in []byte) []byte {
+	var h struct {
+		Input any `json:"tool_input"`
+	}
+	_ = json.Unmarshal(in, &h)    // unreadable: no input, as for every other unreadable one
+	b, _ := json.Marshal(h.Input) // what JSON decoded: it can't fail
+	sum := sha256.Sum256(b)
+	return []byte(tool + "\n" + hex.EncodeToString(sum[:]) + "\n")
 }
 
 // replace replaces the record name in root with b, written to a temporary file moved over it, so a

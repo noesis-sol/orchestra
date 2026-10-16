@@ -93,10 +93,11 @@ func TestHookRecordsAreTheShellHooks(t *testing.T) {
 	if got, want := read(activityName), `{"v":1,`+ask[1:]; got != want {
 		t.Errorf("activity at the prompt = %q, want %q", got, want)
 	}
-	if got := read(askedPrefix + "a1"); got != "Bash" {
-		t.Errorf("asked = %q", got)
+	if got, want := read(askedPrefix+"a1"), string(askedRecord("Bash", []byte(ask))); got != want {
+		t.Errorf("asked = %q, want %q", got, want)
 	}
-	runHooks(t, settings, "PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","agent_id":"a/1","tool_name":"Bash"}`)
+	runHooks(t, settings, "PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","agent_id":"a/1","tool_name":"Bash",`+
+		`"tool_input":{ "command": "x" }}`)
 	if got := read(activityName); got != `{"v":1,"hook_event_name":"PostToolUse"}` {
 		t.Errorf("activity after the tool = %q", got)
 	}

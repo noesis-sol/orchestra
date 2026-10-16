@@ -35,8 +35,10 @@ var (
 	}
 	stepPrompt  = stepAt("UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","prompt":"work on the ticket"}`)
 	stepUseBash = stepAt("PreToolUse", `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"go test ./..."}}`)
-	stepUsedIt  = stepAt("PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"ok"}}`)
-	stepFailed  = stepAt("PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"exit 1"}`)
+	stepUsedIt  = stepAt("PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash",`+
+		`"tool_input":{"command":"rm -rf build"},"tool_response":{"stdout":"ok"}}`)
+	stepFailed = stepAt("PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","tool_name":"Bash",`+
+		`"tool_input":{"command":"rm -rf build"},"error":"exit 1"}`)
 	stepAskBash = stepAt("PermissionRequest", `{"hook_event_name":"PermissionRequest","tool_name":"Bash",`+
 		`"tool_input":{"command":"rm -rf build"}}`)
 	stepStop     = stepAt("Stop", `{"hook_event_name":"Stop","stop_hook_active":false}`)

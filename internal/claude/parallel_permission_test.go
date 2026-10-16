@@ -11,13 +11,13 @@ import (
 
 var (
 	stepSubUsedIt = stepAt("PostToolUse", `{"hook_event_name":"PostToolUse","agent_id":"a1","agent_type":"verifier",`+
-		`"tool_name":"Bash","tool_response":{"stdout":"ok"}}`)
+		`"tool_name":"Bash","tool_input":{"command":"rm -rf build"},"tool_response":{"stdout":"ok"}}`)
 	stepOtherStart = stepAt("SubagentStart", `{"hook_event_name":"SubagentStart","agent_id":"b2","agent_type":"explorer"}`)
 	stepOtherStop  = stepAt("SubagentStop", `{"hook_event_name":"SubagentStop","agent_id":"b2","agent_type":"explorer"}`)
 	stepOtherBash  = stepAt("PreToolUse", `{"hook_event_name":"PreToolUse","agent_id":"b2","agent_type":"explorer",`+
 		`"tool_name":"Bash","tool_input":{"command":"ls"}}`)
 	stepOtherUsedIt = stepAt("PostToolUse", `{"hook_event_name":"PostToolUse","agent_id":"b2","agent_type":"explorer",`+
-		`"tool_name":"Bash","tool_response":{"stdout":"ok"}}`)
+		`"tool_name":"Bash","tool_input":{"command":"ls"},"tool_response":{"stdout":"ok"}}`)
 )
 
 // A permission prompt one subagent waits on is still asked while another subagent works, whose tool

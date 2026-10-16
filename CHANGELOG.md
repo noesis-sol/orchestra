@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker waiting on a permission prompt for one call of a tool, which it
+  runs beside another call of the same tool (two WebFetches, Reads or
+  read-only Bash commands at once), reads as blocked until that call is
+  answered. The other call's end cleared the prompt's record, so tmux and cmux
+  showed the worker as working and the run never stopped on the prompt.
 - A worker that asked a question and, answered in its tab, waits on a
   permission prompt Herdr shows as idle is adopted when its ticket is taken up
   again, never told the answer is in: the message's Enter picked the dialog's
