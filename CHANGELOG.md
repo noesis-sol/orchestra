@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra init` now holds the run lock from the form's answers to its
+  end, so a run started meanwhile is refused, naming init (`orchestra init,
+  pid …`). It only looked for a run, so one started while init renamed the
+  tickets, wrote its files or filed tickets went ahead on tickets renamed
+  under it, in a tree init made dirty.
 - A run no longer starts a second worker on a ticket whose worker the last
   run left in another terminal (tmux, Herdr or cmux), once bd ready lists
   it again, as when its question is answered. The run left that worker in

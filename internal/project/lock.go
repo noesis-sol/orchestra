@@ -32,8 +32,10 @@ import (
 const LockName = "orchestra.lock"
 
 // Holder is what a run writes into the lock it holds: for a second run refused the lock, and for
-// people and agents finding out whether a run is going and what it runs.
+// people and agents finding out whether a run is going and what it runs. orchestra init holds the
+// lock too while it changes the project, as a holder with Init and its PID only.
 type Holder struct {
+	Init    bool      `json:"init,omitempty"` // orchestra init, setting the project up, rather than a run
 	PID     int       `json:"pid"`
 	Started time.Time `json:"started,omitzero"`
 	Version string    `json:"version,omitempty"`
@@ -62,6 +64,9 @@ func (e *HeldError) Error() string {
 // describe is h for a message: its PID, start time, branch, scope and pane, those it has.
 func (h Holder) describe(now time.Time) string {
 	var parts []string
+	if h.Init {
+		parts = append(parts, "orchestra init")
+	}
 	if h.PID > 0 {
 		parts = append(parts, fmt.Sprintf("pid %d", h.PID))
 	}

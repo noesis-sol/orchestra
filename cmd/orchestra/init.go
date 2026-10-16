@@ -68,10 +68,13 @@ func runInit(
 		return dispatch.ExitSetup
 	}
 	// Checked again once the form is answered, which can take a while: a run may have started since.
-	if refusal := initRefusal(ctx, repo); refusal != "" {
+	// From here init holds the lock, so that no run starts while it changes the project.
+	lock, refusal := lockInit(ctx, repo)
+	if refusal != "" {
 		ui.Steps(steps)
 		return fail(refusal)
 	}
+	defer func() { _ = lock.Close() }() // only releases it; init exiting would too
 	beadsSteps, stopped := setUpBeads(ctx, repo, choice, getenv, ui.Working)
 	if steps = append(steps, beadsSteps...); stopped {
 		ui.Steps(steps)
@@ -401,10 +404,36 @@ func initRefusal(ctx context.Context, repo string) string {
 	case err != nil:
 		return "cannot tell whether a run is going: " + err.Error()
 	case held:
-		return fmt.Sprintf("%v. init changes files and tickets a run works from, which would stop it: "+
-			"set up between runs.", &project.HeldError{Repo: repo, Holder: holder})
+		return heldRefusal(&project.HeldError{Repo: repo, Holder: holder})
 	}
 	return ""
+}
+
+// lockInit takes the run lock of the repository whose main checkout is repo for init, and returns it,
+// or why init doesn't set the repository up, as initRefusal says. Held until init ends, it keeps a run
+// that starts meanwhile from working on tickets init renames, in a tree init writes into, and from
+// taking up the tickets init files. A nil lock, where the system has none, holds nothing.
+func lockInit(ctx context.Context, repo string) (*project.RunLock, string) {
+	if p := mainCheckoutProblem(ctx, repo); p != "" {
+		return nil, p
+	}
+	lock, err := project.LockRun(ctx, repo, project.Holder{Init: true, PID: os.Getpid()})
+	var held *project.HeldError
+	switch {
+	case errors.As(err, &held):
+		return nil, heldRefusal(held)
+	case errors.Is(err, errors.ErrUnsupported): // no run lock on this system: nothing to hold
+		return nil, ""
+	case err != nil:
+		return nil, "cannot take the run lock: " + err.Error()
+	}
+	return lock, ""
+}
+
+// heldRefusal is why init doesn't set up a repository whose lock held names the holder of.
+func heldRefusal(held *project.HeldError) string {
+	return fmt.Sprintf("%v. init changes files and tickets a run works from, which would stop it: "+
+		"set up between runs.", held)
 }
 
 // scoutEffort is the effort the scout runs at: ORGAN_EFFORT's, else settings.json's organ_effort, checked

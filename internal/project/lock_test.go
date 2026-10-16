@@ -18,6 +18,7 @@ func TestHolderDescription(t *testing.T) {
 			"pid 7, since Oct 1 23:05, batch/x, --ticket x-1"},
 		{Holder{PID: 7, Feature: "Add a --json flag\nto  every command that lists things"},
 			`pid 7, --feature "Add a --json flag to every command that…"`},
+		{Holder{Init: true, PID: 7}, "orchestra init, pid 7"},
 		{Holder{}, LockName + " doesn't say which"},
 	} {
 		if got := tc.h.describe(now); got != tc.want {

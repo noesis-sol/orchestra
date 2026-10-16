@@ -51,7 +51,7 @@ With `jq`, in the main checkout:
 
 ```
 E=.orchestra/run/events.jsonl
-run=$(jq -r .started .git/orchestra.lock)   # the latest run's start, as its lock gives it
+run=$(jq -r .started .git/orchestra.lock)   # the latest run's start, as its lock gives it (null after init)
 jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "done", "end")))' $E   # how it ended
 jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it closed
 tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run
