@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -307,8 +308,19 @@ func (f *specField) browseFrom() string {
 // openPicker opens the picker below the input, and takes Esc from the form's Quit while it is open:
 // huh's form checks Quit before the field sees a key, and Esc then closes the picker instead.
 func (f *specField) openPicker() tea.Cmd {
+	f.picker = f.newPicker(f.browseFrom())
+	f.pickErr = f.unreadable(f.picker.CurrentDirectory)
+	if f.keys != nil {
+		f.quit = f.keys.Quit
+		f.keys.Quit = withoutKey(f.keys.Quit, "esc")
+	}
+	return tea.WindowSize() // the form measures itself on a window size only
+}
+
+// newPicker is a picker in the folder dir, which it has read, its cursor on the first entry.
+func (f *specField) newPicker(dir string) *filepicker.Model {
 	fp := filepicker.New()
-	fp.CurrentDirectory = f.browseFrom()
+	fp.CurrentDirectory = dir
 	fp.AllowedTypes = specExtensions
 	fp.ShowHidden, fp.ShowPermissions, fp.ShowSize = false, false, false
 	fp.AutoHeight = false
@@ -316,12 +328,52 @@ func (f *specField) openPicker() tea.Cmd {
 	fp.KeyMap = f.pickerKeys()
 	fp.Styles = pickerStyles(f.styleTheme())
 	fp, _ = fp.Update(fp.Init()()) // the folder read now, so that the picker opens on it
-	f.picker, f.pickErr = &fp, f.unreadable(fp.CurrentDirectory)
-	if f.keys != nil {
-		f.quit = f.keys.Quit
-		f.keys.Quit = withoutKey(f.keys.Quit, "esc")
+	return &fp
+}
+
+// specPickerDraws is how many times at most the field draws the picker's list, reading its folder again
+// each time an entry has gone, the last time letting the picker panic: an entry goes between a folder's
+// reading and its drawing, microseconds apart, only by chance.
+const specPickerDraws = 3
+
+// pickerView is the picker's list. bubbles' picker draws each entry from the FileInfo the entry gives,
+// without checking that it gave one: an entry removed or renamed since the folder was read gives none,
+// and drawing it panics. The field then reads the folder again and draws it as it is now (see reread).
+func (f *specField) pickerView() string {
+	for range specPickerDraws - 1 {
+		if view, ok := drawPicker(f.picker); ok {
+			return view
+		}
+		f.reread()
 	}
-	return tea.WindowSize() // the form measures itself on a window size only
+	return f.picker.View()
+}
+
+// drawPicker is fp's view, and false if drawing it panicked on a runtime error, as on an entry with no
+// FileInfo.
+func drawPicker(fp *filepicker.Model) (view string, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, isRuntime := r.(runtime.Error); !isRuntime {
+				panic(r) // not the picker's misstep
+			}
+		}
+	}()
+	return fp.View(), true
+}
+
+// reread reads the picker's folder again after an entry in it went, the cursor back on the first entry
+// (where it was may be past the end now). A folder that can't be read any more (removed, say) gives way
+// to the nearest one above it that can, and the field's error says why.
+func (f *specField) reread() {
+	dir := f.picker.CurrentDirectory
+	if err := f.unreadable(dir); err != nil {
+		f.pickErr = err
+		for dir != filepath.Dir(dir) && f.unreadable(dir) != nil {
+			dir = filepath.Dir(dir)
+		}
+	}
+	f.picker = f.newPicker(dir)
 }
 
 // closePicker closes the picker, if open, and gives the form's Quit its Esc back.
@@ -467,12 +519,13 @@ func (f *specField) View() string {
 	view := f.input.View()
 	switch {
 	case f.picker != nil:
+		list := strings.TrimSuffix(f.pickerView(), "\n") // first: it may read another folder
 		help := f.styleTheme().Help
 		folder := tildePath(f.home, f.picker.CurrentDirectory)
 		if !strings.HasSuffix(folder, string(filepath.Separator)) {
 			folder += string(filepath.Separator)
 		}
-		view += "\n" + help.ShortDesc.Render(folder) + "\n" + strings.TrimSuffix(f.picker.View(), "\n")
+		view += "\n" + help.ShortDesc.Render(folder) + "\n" + list
 	case f.focused:
 		help := f.styleTheme().Help
 		view += "\n" + help.ShortKey.Render(specBrowseKey.Help().Key) + " " + help.ShortDesc.Render("Browse…")
