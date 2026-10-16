@@ -77,8 +77,15 @@ func (f Footprint) String() string {
 var (
 	// pathToken is anything that could be a path: loop.go, internal/dispatch/loop.go:661 (the line
 	// number is left off), docs/café.md, Loop.merge (sorted out later). Letters and digits of any
-	// script count, and combining marks: macOS often writes é as e and U+0301.
-	pathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+`)
+	// script count, and combining marks: macOS often writes é as e and U+0301. So do brackets, single
+	// or double, around a name inside a word, as in the routes of a Next.js or SvelteKit project
+	// (pages/[id].tsx, app/[[...slug]]/page.tsx, src/routes/[page=fruit]/), but not one starting it:
+	// [README.md](/README.md), a Markdown link, names README.md.
+	pathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+` +
+		`(?:(?:\[[\p{L}\p{M}\p{N}_.=-]+\]|\[\[[\p{L}\p{M}\p{N}_.=-]+\]\])[\p{L}\p{M}\p{N}_./-]*)*`)
+	// plainPathToken is a part of a path token without brackets, which a word with them may be made
+	// of instead: an index expression (files[i], Footprint.Files[0]).
+	plainPathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+`)
 	// asciiPathToken is a path token's ASCII part, which may be a path run into words of a script
 	// written without spaces: 修改loop.go, loop.goを直す.
 	asciiPathToken = regexp.MustCompile(`[\w./-]+`)
@@ -253,8 +260,8 @@ func (r *repoFiles) file(name string) string {
 // folder that doesn't exist yet (a project built from a spec), but never one that can't be a path in
 // the repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as a folder,
 // with its trailing slash. Without the repository's files, a name with a folder or a known extension
-// is kept. A name kept is cleaned (path.Clean) whether the files are known or not, and given in NFC
-// when it isn't tracked.
+// is kept, but not the extension alone (.tsx). A name kept is cleaned (path.Clean) whether the files
+// are known or not, and given in NFC when it isn't tracked.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name, folder := cleanName(name)
 	if name == "" {
@@ -269,10 +276,12 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 	}
 	if r == nil || r.files == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
+		// An extension alone (.tsx, as in "the .tsx files") is no file's name.
+		named := sourceExtensions[ext] && !strings.EqualFold(strings.TrimLeft(name, "."), ext)
 		switch {
 		case folder:
 			return []string{name + "/"}
-		case explicit || strings.Contains(name, "/") || sourceExtensions[ext]:
+		case explicit || strings.Contains(name, "/") || named:
 			return []string{name}
 		}
 		return nil
@@ -564,19 +573,30 @@ func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
 
 // eachPathToken calls take with each word of text that may be a path: with an extension, and
 // neither an absolute path nor a URL, which aren't in the repository. take reports whether the word
-// names something. A word with characters outside ASCII that names nothing is tried in its ASCII
-// parts instead: a path run into words of a script written without spaces (修改loop.go, loop.goを直す)
-// is one of them.
+// names something. A word with brackets that names nothing is tried in its parts without them
+// instead, as the words they were before brackets were taken in: an index expression
+// (Footprint.Files[0]) is one of them. A word with characters outside ASCII that names nothing is
+// tried in its ASCII parts: a path run into words of a script written without spaces (修改loop.go,
+// loop.goを直す) is one of them.
 func eachPathToken(text string, take func(tok string) bool) {
-	nonASCII := func(r rune) bool { return r > unicode.MaxASCII }
 	for _, word := range pathToken.FindAllString(text, -1) {
-		word = strings.TrimRight(word, "./-")
-		if strings.HasPrefix(word, "/") { // an absolute path or a URL, no part of which is in the repository
-			continue
+		takePath(word, take)
+	}
+}
+
+// takePath calls take with word, a path token, or its parts, as eachPathToken says.
+func takePath(word string, take func(tok string) bool) {
+	word = strings.TrimRight(word, "./-")
+	if strings.HasPrefix(word, "/") { // an absolute path or a URL, no part of which is in the repository
+		return
+	}
+	switch {
+	case extension.MatchString(word) && take(word):
+	case strings.ContainsAny(word, "[]"):
+		for _, part := range plainPathToken.FindAllString(word, -1) {
+			takePath(part, take)
 		}
-		if extension.MatchString(word) && take(word) || !strings.ContainsFunc(word, nonASCII) {
-			continue
-		}
+	case strings.ContainsFunc(word, func(r rune) bool { return r > unicode.MaxASCII }):
 		for _, part := range asciiPathToken.FindAllString(word, -1) {
 			if part = strings.TrimRight(part, "./-"); !strings.HasPrefix(part, "/") && extension.MatchString(part) {
 				take(part)

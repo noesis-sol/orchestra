@@ -112,6 +112,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A path with brackets named in a ticket's text, such as a route of a
+  Next.js or SvelteKit project (`pages/[id].tsx`,
+  `app/[[...slug]]/page.tsx`), now means that file: the ticket overlaps one
+  listing it and a worker editing it, in the run and in `orchestra plan`,
+  whether the repository's files are known or not. It was read as `pages/`,
+  `id` and `.tsx`, which named nothing of it. A Markdown link
+  (`[README.md](…)`) and an index expression (`Footprint.Files[0]`) read as
+  before. An extension alone (the `.tsx` of "the `.tsx` files") no longer
+  counts as a file when the repository's files are unknown, where it
+  overlapped any other ticket saying `.tsx`.
 - A name with a `[` in a ticket's `files` metadata, such as a route of a
   Next.js or SvelteKit project (`pages/[id].tsx`, `src/routes/[slug]/`), now
   means the file or folder of that name, as well as what it matches as a

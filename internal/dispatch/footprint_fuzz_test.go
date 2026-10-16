@@ -18,10 +18,11 @@ import (
 // a path in the repository (not empty, not its root, neither absolute nor outside it) and none a
 // spec under .orchestra/specs/, the spec its metadata names or a folder (ending in /) unless its
 // files metadata lists something, with the repository's files unknown each cleaned (path.Clean, a
-// folder's with one /), its globs sorted, without repeats, only when its files metadata lists
-// something, each a clean path in the repository in NFC holding none of the repository's files
-// (globHolds agrees with glob), and its areas sorted, each an area label naming an area. go test
-// runs the seeds; docs/development.md says how to fuzz.
+// folder's with one /) and none an extension alone (.tsx) unless its files metadata lists something,
+// its globs sorted, without repeats, only when its files metadata lists something, each a clean path
+// in the repository in NFC holding none of the repository's files (globHolds agrees with glob), and
+// its areas sorted, each an area label naming an area. go test runs the seeds; docs/development.md
+// says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
@@ -49,6 +50,11 @@ func FuzzTicketFootprint(f *testing.F) {
 	routes := `{"files": ["pages/[id].tsx", "src/routes/[slug]/", "pages/[id].ts", "src/routes/[a", "pages/\\[x].tsx"]}`
 	f.Add("Fix pages/[id].tsx", routes, "", strings.Join(trackedRoutes, "\n"), true, "")
 	f.Add("Fix pages/[id].tsx", routes, "", "", false, "")
+	// Routes named in a ticket's text, beside a Markdown link, index expressions and an extension alone.
+	text := "Fix pages/[id].tsx, app/[[...slug]]/page.tsx and src/routes/[page=fruit]/[a]-[b].ts, not " +
+		"[README.md](/README.md), `files[i]`, Footprint.Files[0], a[b c] or the .tsx files (..tsx, x[1:2])."
+	f.Add(text, "", "", strings.Join(trackedRoutes, "\n"), true, "")
+	f.Add(text, "", "", "", false, "")
 	// Tickets broken down from a spec, under .orchestra/specs/ or elsewhere in the repository: citing
 	// it, listing it, and listing files in folders that don't exist yet, in a repository with files
 	// and in one with none.
@@ -97,6 +103,10 @@ func FuzzTicketFootprint(f *testing.F) {
 			}
 			if clean := path.Clean(f); !known && (folder && clean+"/" != f || !folder && clean != f) {
 				t.Errorf("the name %q isn't clean, with the repository's files unknown", f)
+			}
+			ext := strings.TrimPrefix(path.Ext(f), ".")
+			if !known && len(TicketFiles(tk)) == 0 && strings.EqualFold(strings.TrimLeft(f, "."), ext) {
+				t.Errorf("the extension %q counts as a file, with the repository's files unknown", f)
 			}
 		}
 		for _, g := range fp.Globs {
