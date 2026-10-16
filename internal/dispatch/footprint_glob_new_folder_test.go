@@ -80,9 +80,6 @@ func TestAGlobInANewFolderHoldsTheFilesItWouldMatch(t *testing.T) {
 	if what := shared(added, glob, nil, nil); what != "internal/dispatch/cart.rs" {
 		t.Errorf("a new internal/dispatch/cart.rs beside internal/dispatch/*.rs: shared %q", what)
 	}
-	if fp := TicketFootprint(listing("a", "internal/dispatch/*.go"), trackedHere, ""); len(fp.Globs) > 0 {
-		t.Errorf("a glob matching files that are there: globs %q, want its files alone", fp.Globs)
-	}
 }
 
 // partMeet compares parts of globs: a part that is no pattern stands for one name, escapes undone,

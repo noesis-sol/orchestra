@@ -192,6 +192,14 @@ All notable changes to orchestra are documented here. The format follows
   `orchestra plan`. It meant only the files already there, so the two ran
   side by side. Two tickets listing the folder are still compared on its
   files one by one, by function where both name functions a file mentions.
+- A glob in a ticket's `files` metadata that matches files that are there
+  (`internal/dispatch/*.go`, or `dispatch/*.go`) now also holds the files
+  other tickets add where it matched: a ticket listing it overlaps one
+  naming a new `internal/dispatch/cart.go`, in the run and in `orchestra
+  plan`, but not one naming a new `internal/dispatch/cart.ts`. It meant only
+  the files already there, so the two ran side by side. Two tickets listing
+  it are still compared on its files one by one, by function where both
+  name functions a file mentions.
 - A glob in a ticket's `files` metadata that matches no file yet
   (`web/src/*.ts`, in a folder a project built from a spec adds) now holds
   the files and folders other tickets name that it would match, from the

@@ -21,9 +21,10 @@ func TestAListedNameWithABracketMeansThatFile(t *testing.T) {
 	for _, tracked := range [][]string{trackedRoutes, trackedHere, {}, nil} {
 		route := TicketFootprint(listing("a", "pages/[id].tsx"), tracked, "")
 		if slices.Equal(tracked, trackedRoutes) {
-			if want := []string{"pages/[id].tsx", "pages/i.tsx"}; !slices.Equal(route.Files, want) || len(route.Globs) > 0 {
-				t.Errorf("listing pages/[id].tsx (files %v): files %q, globs %q, want files %q", tracked, route.Files,
-					route.Globs, want)
+			want := []string{"pages/[id].tsx", "pages/i.tsx"}
+			if !slices.Equal(route.Files, want) || !slices.Equal(route.Globs, []string{"pages/[id].tsx"}) {
+				t.Errorf("listing pages/[id].tsx (files %v): files %q, globs %q, want files %q beside the glob", tracked,
+					route.Files, route.Globs, want)
 			}
 		} else if !slices.Equal(route.Globs, []string{"pages/[id].tsx"}) || len(route.Files) > 0 {
 			t.Errorf("listing pages/[id].tsx (files %v): files %q, globs %q, want the glob alone", tracked, route.Files,

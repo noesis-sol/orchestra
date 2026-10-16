@@ -22,8 +22,8 @@ import (
 // folder's with one /) and none an extension alone (.tsx) unless its files metadata lists something,
 // nor with a + other than one starting a name of its path (+page.svelte, src/routes/+layout.ts)
 // unless its metadata lists or predicts something, its globs sorted, without repeats, only when its
-// files metadata lists something, each a clean path in the repository in NFC holding none of the
-// repository's files (globHolds agrees with glob), and its areas sorted, each an area label naming an
+// files metadata lists something, each a clean path in the repository in NFC holding only repository
+// files among its files (globHolds agrees with glob), and its areas sorted, each an area label naming an
 // area. go test runs the seeds; docs/development.md says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	// strayPlus is a + that doesn't start a name of a path: one after anything but a /, or before
@@ -47,6 +47,7 @@ func FuzzTicketFootprint(f *testing.F) {
 		{"Fix ../x.go and .//y.go", "", ""},
 		{"Lay out web/src/cart.ts", `{"files": ["web/src/*.ts", "./web/**/*.ts", "web/src/*/", "web//lib/[a-c]?.ts",
 			"web/[src/a.ts", "*.swift", "internal/dispatch/*.go", "internal/dispatch/*.rs", "../web/*.ts"]}`, ""},
+		{"Rework dispatch", `{"files": ["dispatch/*.go", "*.md", "**/run.go", "internal/*/", "*.svelte"]}`, ""},
 	} {
 		f.Add(c.text, c.meta, c.labels, tracked, true, "scripts/check.sh")
 		f.Add(c.text, c.meta, c.labels, "", false, "")
@@ -130,10 +131,12 @@ func FuzzTicketFootprint(f *testing.F) {
 			case !isGlob(g) || !repoPath(g) || path.Clean(g) != g || !norm.NFC.IsNormalString(g):
 				t.Errorf("the glob %q is no glob, no path in the repository, not clean or not in NFC", g)
 			}
-			// It is kept for matching none of the repository's files, as glob matches them, and holds none.
+			// It is kept as listed for matching none of the repository's files, as glob matches them, or
+			// anchored at a folder where it matched some, which are among the files: it holds no other.
 			for _, f := range tracked {
-				if n := norm.NFC.String(f); repoPath(n) && !strings.HasSuffix(n, "/") && globHolds(g, f) {
-					t.Errorf("the glob %q is kept, yet it holds %q, one of the repository's files", g, f)
+				if n := norm.NFC.String(f); repoPath(n) && !strings.HasSuffix(n, "/") && globHolds(g, f) &&
+					!slices.Contains(fp.Files, f) {
+					t.Errorf("the glob %q holds %q, one of the repository's files, yet the files lack it", g, f)
 				}
 			}
 		}

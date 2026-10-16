@@ -32,11 +32,13 @@ type Footprint struct {
 	// ending in /, beside the tracked files under it: it holds the files under it, those another ticket
 	// adds included, and is all there is of a new one (or of any, the files unknown).
 	Files []string
-	// Globs are the globs the files metadata lists that match none of the repository's files (any, the
-	// files unknown), sorted, cleaned and in NFC: web/src/*.ts, which a ticket of a project built from a
-	// spec may list before there is any. Each holds the files and folders other footprints name that it
-	// would match from the repository's root (globHolds). They are kept apart from Files, where a name
-	// may hold a [ of its own.
+	// Globs are the globs the files metadata lists, sorted, cleaned and in NFC: one that matches none of
+	// the repository's files (any, the files unknown) as it is (web/src/*.ts, which a ticket of a project
+	// built from a spec may list before there is any), one that matches some anchored at each folder it
+	// matched in (dispatch/*.go as internal/dispatch/*.go), beside those files in Files. Each holds the
+	// files and folders other footprints name that it would match from the repository's root
+	// (globHolds): those another ticket adds there. They are kept apart from Files, where a name may hold
+	// a [ of its own.
 	Globs []string
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
 	Areas []string // area:<name> labels
@@ -260,13 +262,12 @@ func (r *repoFiles) file(name string) string {
 
 // resolve returns the repository files name means, in whichever Unicode form, as git lists them:
 // itself and every file it ends (run.go means ./run.go and internal/dispatch/run.go), or a new file
-// in an existing folder. explicit, for a files metadata entry, also takes a folder (internal/dispatch/,
-// or dispatch/) for the files under it and the folder itself, kept with a trailing slash in NFC, which
-// holds the files under it other footprints name (takesIn): those another ticket adds. It takes a
-// glob (*.go, internal/**/*_test.go) for the files it matches, none when the files are unknown (listed
-// keeps the glob), and keeps a name that means none of these as a file the ticket adds, even in a
-// folder that doesn't exist yet (a project built from a spec), but never one that can't be a path in
-// the repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as a folder,
+// in an existing folder. explicit, for a files metadata entry other than a glob (listed), also takes a
+// folder (internal/dispatch/, or dispatch/) for the files under it and the folder itself, kept with a
+// trailing slash in NFC, which holds the files under it other footprints name (takesIn): those another
+// ticket adds. It keeps a name that means none of these as a file the ticket adds, even in a folder
+// that doesn't exist yet (a project built from a spec), but never one that can't be a path in the
+// repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as a folder,
 // with its trailing slash. Without the repository's files, a name with a folder or a known extension
 // is kept, but not the extension alone (.tsx). A name kept is cleaned (path.Clean) whether the files
 // are known or not, and given in NFC when it isn't tracked.
@@ -276,12 +277,6 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 		return nil
 	}
 	folder = explicit && folder
-	if explicit && isGlob(name) {
-		if r == nil {
-			return nil
-		}
-		return r.glob(name)
-	}
 	if r == nil || r.files == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 		// An extension alone (.tsx, as in "the .tsx files") is no file's name.
@@ -338,36 +333,56 @@ func cleanName(name string) (clean string, folder bool) {
 // isGlob reports whether files metadata entry name is a glob: it has a *, a ? or a [.
 func isGlob(name string) bool { return strings.ContainsAny(name, "*?[") }
 
-// listed returns what files metadata entry name means: the files resolve gives it, or, for a glob that
-// matches none of the repository's files (any, the files unknown), the glob itself, cleaned and in NFC
-// (web/src/*/ as web/src/*, whose last part holds a folder's files as glob's does), which holds the
-// files other footprints name that it would match (Footprint.Globs).
-func (r *repoFiles) listed(name string) (files []string, glob string) {
-	if files = r.resolve(name, true); len(files) > 0 {
-		return files, ""
+// listed returns what files metadata entry name means: the files resolve gives it, or, for a glob
+// (*.go, internal/**/*_test.go), the files it matches (glob) and the globs that hold the files other
+// footprints name that it would match (Footprint.Globs): itself anchored at each folder it matched in,
+// or, matching none of the repository's files (any, the files unknown), itself. A glob is cleaned and
+// in NFC (web/src/*/ as web/src/*, whose last part holds a folder's files as glob's does).
+func (r *repoFiles) listed(name string) (files, globs []string) {
+	g, _ := cleanName(name)
+	if !isGlob(g) {
+		return r.resolve(name, true), nil
 	}
-	if g, _ := cleanName(name); isGlob(g) {
-		return nil, g
+	if r != nil {
+		files, globs = r.glob(g)
 	}
-	return nil, ""
+	if len(files) == 0 {
+		return nil, []string{g}
+	}
+	return files, globs
 }
 
 // glob returns the files pattern matches, in any folder as a partial path does: its last part a
 // file's name or a folder's, holding every file under it. * and ? match within a part of a path, ** any
-// number of folders, and each other part the name written as it is too (nameMatch).
-func (r *repoFiles) glob(pattern string) []string {
-	pat := append([]string{"**"}, strings.Split(pattern, "/")...)
-	var found []string
+// number of folders, and each other part the name written as it is too (nameMatch). anchored is pattern
+// anchored at each folder it matched in, sorted and cleaned (dispatch/*.go as internal/dispatch/*.go),
+// which holds the files another ticket adds there that it would match, from the repository's root
+// (globHolds): matching in any folder, it would hold some file under every folder. A folder's name is a
+// part of the glob as it is, matching itself (nameMatch) and, with a *, ? or [, other names besides.
+func (r *repoFiles) glob(pattern string) (files, anchored []string) {
+	pat := strings.Split(pattern, "/")
+	at := map[string]bool{}
 	for _, n := range slices.Sorted(maps.Keys(r.files)) {
 		parts := strings.Split(n, "/")
-		for end := 1; end <= len(parts); end++ {
-			if globMatch(pat, parts[:end]) {
-				found = append(found, r.files[n]...)
-				break
+		starts := len(parts)
+		if pat[0] == "**" { // it matches from the root wherever it matches deeper
+			starts = 1
+		}
+		matched := false
+		for start := range starts {
+			for end := start + 1; end <= len(parts); end++ {
+				if globMatch(pat, parts[start:end]) {
+					at[path.Join(append(slices.Clone(parts[:start]), pattern)...)] = true
+					matched = true
+					break
+				}
 			}
 		}
+		if matched {
+			files = append(files, r.files[n]...)
+		}
 	}
-	return found
+	return files, slices.Sorted(maps.Keys(at))
 }
 
 // globMatch reports whether the parts of a path match the pattern's: ** any number of them, each other
@@ -633,12 +648,12 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	maps.Copy(funcs, codeSpansIn(text))
 	globs := map[string]bool{}
 	for _, f := range metadataList(t, FilesKey) {
-		found, glob := repo.listed(f)
+		found, gs := repo.listed(f)
 		for _, p := range found {
 			files[p] = true
 		}
-		if glob != "" {
-			globs[glob] = true
+		for _, g := range gs {
+			globs[g] = true
 		}
 	}
 	var fp Footprint
