@@ -49,7 +49,7 @@ func TestTicketsCitingASpecRunSideBySide(t *testing.T) {
 
 	folder := TicketFootprint(Ticket{Title: "Revise the specs", Metadata: []byte(`{"files": [".orchestra/specs/"]}`)},
 		trackedWithSpec, "")
-	if want := []string{".orchestra/specs/shop.md"}; !slices.Equal(folder.Files, want) {
+	if want := []string{".orchestra/specs/", ".orchestra/specs/shop.md"}; !slices.Equal(folder.Files, want) {
 		t.Errorf("listing the specs' folder: files %q, want %q", folder.Files, want)
 	}
 

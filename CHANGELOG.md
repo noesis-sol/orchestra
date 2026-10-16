@@ -54,6 +54,12 @@ All notable changes to orchestra are documented here. The format follows
   in `orchestra plan`, whether the repository's files are known or not. It
   was kept as one file, `web/src`, so the two ran side by side over the
   same new files. A name without the slash is still a file.
+- A folder that exists in a ticket's `files` metadata (`internal/dispatch/`)
+  now also holds the files other tickets add in it: a ticket listing it
+  overlaps one naming a new `internal/dispatch/cart.go`, in the run and in
+  `orchestra plan`. It meant only the files already there, so the two ran
+  side by side. Two tickets listing the folder are still compared on its
+  files one by one, by function where both name functions a file mentions.
 - `orchestra --spec <file>` (or `ORCHESTRA_SPEC`) runs a spec, a Markdown or
   plain-text file: it commits the spec, alone, where workers can read it (a
   file outside the repository as a copy in `.orchestra/specs/`), has it broken

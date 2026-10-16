@@ -27,9 +27,9 @@ import (
 // names (SpecKey), count only when the metadata lists them: nearly every ticket names the check,
 // asking for it to pass, and every ticket broken down from a spec cites it, without changing them.
 type Footprint struct {
-	// Files are paths in the repository, sorted. A folder the files metadata lists that has no tracked
-	// files under it (a new one, or the files unknown) is kept as one, ending in /: it holds the files
-	// under it.
+	// Files are paths in the repository, sorted. A folder the files metadata lists is kept as one,
+	// ending in /, beside the tracked files under it: it holds the files under it, those another ticket
+	// adds included, and is all there is of a new one (or of any, the files unknown).
 	Files []string
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
 	Areas []string // area:<name> labels
@@ -240,13 +240,14 @@ func (r *repoFiles) file(name string) string {
 // resolve returns the repository files name means, in whichever Unicode form, as git lists them:
 // itself and every file it ends (run.go means ./run.go and internal/dispatch/run.go), or a new file
 // in an existing folder. explicit, for a files metadata entry, also takes a folder (internal/dispatch/,
-// or dispatch/) for the files under it and a glob (*.go, internal/**/*_test.go) for the files it
-// matches, and keeps a name that means none of these as a file the ticket adds, even in a folder
-// that doesn't exist yet (a project built from a spec), but never one that can't be a path in the
-// repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as one, with
-// a trailing slash: it holds the files under it that other footprints name (takesIn). Without the
-// repository's files, a name with a folder or a known extension is kept. A name kept is cleaned
-// (path.Clean) whether the files are known or not, and given in NFC when it isn't tracked.
+// or dispatch/) for the files under it and the folder itself, kept with a trailing slash in NFC, which
+// holds the files under it other footprints name (takesIn): those another ticket adds. It takes a
+// glob (*.go, internal/**/*_test.go) for the files it matches, and keeps a name that means none of
+// these as a file the ticket adds, even in a folder that doesn't exist yet (a project built from a
+// spec), but never one that can't be a path in the repository (repoPath). Such a name written as a
+// folder (web/src/, web/src/.) is kept as a folder, with its trailing slash. Without the repository's
+// files, a name with a folder or a known extension is kept. A name kept is cleaned (path.Clean)
+// whether the files are known or not, and given in NFC when it isn't tracked.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
 	if !repoPath(name) {
@@ -278,6 +279,11 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 		for _, n := range slices.Sorted(maps.Keys(r.files)) {
 			if strings.HasPrefix(n, name+"/") || strings.Contains(n, "/"+name+"/") {
 				found = append(found, r.files[n]...)
+			}
+		}
+		for _, d := range slices.Sorted(maps.Keys(r.dirs)) {
+			if d == name || strings.HasSuffix(d, "/"+name) {
+				found = append(found, d+"/")
 			}
 		}
 	}
@@ -577,18 +583,29 @@ func takesIn(files []string, p string) bool {
 	})
 }
 
+// holdsNamed reports whether p is a folder (one kept with its trailing slash) holding a file among
+// files, not a folder: one that exists, or one a ticket adds in it.
+func holdsNamed(p string, files []string) bool {
+	return strings.HasSuffix(p, "/") && slices.ContainsFunc(files, func(f string) bool {
+		return !strings.HasSuffix(f, "/") && strings.HasPrefix(f, p)
+	})
+}
+
 // sharedFile returns a file both footprints work on, for which keep holds (any, when keep is nil),
 // or "". A ticket works on a file it names or one under a folder it names (takesIn), and on one the
 // other ticket names or r's worker edited (edited) that mentions a function it names (in reports
 // whether one does), and a file both work on is shared unless both name functions it mentions: they
-// are compared by function (sharedFunc).
+// are compared by function (sharedFunc). A folder both work on is shared only when neither names a
+// file in it (a new folder): the files they name in it, those it holds when it exists, are compared
+// one by one instead, by function where both name some. A folder mentions no function.
 func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
-		return in != nil && slices.ContainsFunc(fp.Funcs, func(fn string) bool { return in(p, fn) })
+		folder := strings.HasSuffix(p, "/")
+		return in != nil && !folder && slices.ContainsFunc(fp.Funcs, func(fn string) bool { return in(p, fn) })
 	}
 	seen := map[string]bool{}
 	for _, p := range slices.Concat(f.Files, r.Files, edited) {
-		if seen[p] {
+		if seen[p] || holdsNamed(p, f.Files) || holdsNamed(p, r.Files) {
 			continue
 		}
 		seen[p] = true

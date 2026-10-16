@@ -51,15 +51,18 @@ func TestTicketFootprintMeansEveryFileOfThatName(t *testing.T) {
 	}
 }
 
-// A folder or a glob in the files metadata means the files under it or matching it.
+// A folder or a glob in the files metadata means the files under it or matching it, and a folder
+// is kept too, for the files another ticket adds in it.
 func TestFilesMetadataTakesFoldersAndGlobs(t *testing.T) {
+	dispatchFiles := []string{"internal/dispatch/", "internal/dispatch/loop.go", "internal/dispatch/loop_test.go",
+		"internal/dispatch/run.go"}
 	cases := []struct {
 		files string
 		want  []string
 	}{
-		{"internal/dispatch/", []string{"internal/dispatch/loop.go", "internal/dispatch/loop_test.go", "internal/dispatch/run.go"}},
-		{"internal/tui", []string{"internal/tui/run.go", "internal/tui/view/view.go"}},
-		{"dispatch/", []string{"internal/dispatch/loop.go", "internal/dispatch/loop_test.go", "internal/dispatch/run.go"}},
+		{"internal/dispatch/", dispatchFiles},
+		{"internal/tui", []string{"internal/tui/", "internal/tui/run.go", "internal/tui/view/view.go"}},
+		{"dispatch/", dispatchFiles},
 		{"*.md", []string{"README.md", "docs/running.md"}},
 		{"internal/dispatch/*_test.go", []string{"internal/dispatch/loop_test.go"}},
 		{"internal/**/view.go", []string{"internal/tui/view/view.go"}},
