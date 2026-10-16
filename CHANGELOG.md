@@ -24,6 +24,22 @@ All notable changes to orchestra are documented here. The format follows
   wouldn't commit it ends the run with exit 2. Esc or Ctrl+C at any step
   exits 130 with nothing changed; the accessible form (`TERM=dumb`) asks the
   same.
+- Running `orchestra --spec <file>` again carries on rather than break the
+  spec down again, so the nightly command stays the same. orchestra looks
+  for the spec's root epic, the epic whose `spec` metadata is the spec's
+  path. With the spec unchanged since its tree was filed (`spec_sha256`), the
+  run is scoped to it and carries on, the last run's workers carried over;
+  once everything is merged the nothing-to-run box says `✓ <path> is built
+  (<root>)`. With the spec changed, the new version is committed and the
+  breakdown runs in update mode, headless or with `--refine`: given the diff
+  from the version at the root epic's `spec_commit` and the tree under it,
+  open and closed (in `.orchestra/run/spec-update.md`), it files tickets only
+  for what changed, under the same root epic, never changes a closed issue,
+  and defers the open tickets the change makes obsolete with a note naming
+  it; the root epic's `spec_sha256` and `spec_commit` then become the new
+  version's. A breakdown now sets those two last of all, so a root epic
+  without them is one whose breakdown didn't finish, which the next run
+  carries on. Two root epics for one spec are a setup problem naming both.
 - `orchestra --spec <file> --refine` breaks the spec down with you: an
   interactive Claude Code session in a pane beside orchestra's (Herdr, tmux
   or cmux), as the New feature interview has, or on orchestra's own terminal

@@ -17,6 +17,9 @@ import (
 // holds the tickets left.
 type NothingToRun struct {
 	Scope string // the run's scope (Config.Ticket), or "" for all of bd ready
+	// Built, all done in a spec run, is the spec's path: its root epic is the scope, and it is built.
+	// The caller sets it; CheckNothingToRun knows nothing of specs.
+	Built string
 	// AllDone: no ticket is left but those of the excluded types, never run, and none is closed but
 	// not merged. In a scoped run: SCOPE_DONE.
 	AllDone bool

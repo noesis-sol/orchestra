@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -50,9 +51,9 @@ type refineBreakdown struct {
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
 	tracker specLister // bd, which counts what the session files, and has its root epic if it stops
-	// terminal runs the session on orchestra's own terminal, message its first message: where
-	// orchestra runs in no pane, or the pane can't be opened.
-	terminal func(ctx context.Context, message string) error
+	// terminal runs the session on orchestra's own terminal, message its first message, in update mode
+	// with update: where orchestra runs in no pane, or the pane can't be opened.
+	terminal func(ctx context.Context, message string, update bool) error
 	log      *dispatch.Log // nil in tests
 	out, err io.Writer
 }
@@ -69,8 +70,8 @@ func newRefineBreakdown(s *session) refineBreakdown {
 	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
 		b.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
-	b.terminal = func(ctx context.Context, message string) error {
-		return refineOnTerminal(ctx, s.stops, c.Repo, message, e.stdin, e.stdout, e.stderr)
+	b.terminal = func(ctx context.Context, message string, update bool) error {
+		return refineOnTerminal(ctx, s.stops, c.Repo, message, update, e.stdin, e.stdout, e.stderr)
 	}
 	return b
 }
@@ -82,17 +83,17 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	if why := organ.Unavailable("claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
-	prompt, err := project.WriteRefinePrompt(b.repo)
+	prompt, err := project.WriteRefinePrompt(b.repo, r.Update != nil)
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
-	message := refineMessage(r.Spec)
-	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message) }
+	message := refineMessage(r.Spec, r.Update)
+	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, r.Update != nil) }
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, fallback: terminal,
 			out: b.out, err: b.err, progress: b.line,
-			about: refineSubject{spec: r.Spec, tracker: b.tracker, every: refineCountEvery}}.talk
+			about: refineSubject{spec: r.Spec, update: r.Update, tracker: b.tracker, every: refineCountEvery}}.talk
 	}
 	b.logLine("SPEC: refining " + r.Path + " with claude and you")
 	err = session(ctx, prompt)
@@ -119,22 +120,29 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	return breakdownResult{Root: root}, nil
 }
 
-// refineMessage is the refinement's first message, one line: the spec it breaks down with the user.
-func refineMessage(s project.Spec) string {
-	return fmt.Sprintf("Break the spec at %s down into Beads tickets with me (sha256 %s, commit %s).", s.Path,
-		s.SHA256, s.Commit)
+// refineMessage is the refinement's first message, one line: the spec it breaks down with the user;
+// in update mode (u), the root epic whose tree it updates for the spec's change, the version of the
+// spec that tree was filed for, and where to read the change and the tree.
+func refineMessage(s project.Spec, u *specUpdate) string {
+	if u == nil {
+		return fmt.Sprintf("Break the spec at %s down into Beads tickets with me (sha256 %s, commit %s).", s.Path,
+			s.SHA256, s.Commit)
+	}
+	return fmt.Sprintf("The spec at %s has changed since its Beads tickets were filed under %s (for sha256 %s, "+
+		"commit %s): update them for the change with me (sha256 %s, commit %s). The change and the tree are in %s.",
+		s.Path, u.Root, u.Was.SHA256, cmp.Or(u.Was.Commit, "not recorded"), s.SHA256, s.Commit, u.File)
 }
 
-// refineOnTerminal runs the refinement on orchestra's own terminal, message its first message, until
-// the user exits it. orchestra can't end the session there once it has handed back, as it does in a
-// pane, so its instructions, rewritten for the terminal, have claude say how to. Ctrl+C is Claude
-// Code's meanwhile, which interrupts and clears with it.
-func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, message string, stdin io.Reader,
+// refineOnTerminal runs the refinement on orchestra's own terminal, message its first message, in
+// update mode with update, until the user exits it. orchestra can't end the session there once it
+// has handed back, as it does in a pane, so its instructions, rewritten for the terminal, have claude
+// say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears with it.
+func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, message string, update bool, stdin io.Reader,
 	stdout, stderr io.Writer) error {
 	if !isTerminal(stdin) || !isTerminal(stdout) {
 		return errRefineNeedsTerminal
 	}
-	prompt, err := project.WriteTerminalRefine(repo)
+	prompt, err := project.WriteTerminalRefine(repo, update)
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
@@ -162,21 +170,28 @@ func (r specRun) notHandedBack(ctx context.Context, spec project.Spec) int {
 		r.logLine("SPEC: the refinement ended with nothing filed for " + spec.Path)
 		return dispatch.ExitOK
 	}
-	fmt.Fprintln(r.err, "orchestra: the refinement ended without handing back a root epic, so there is "+
-		"nothing to run.")
+	if r.update != nil {
+		fmt.Fprintf(r.err, "orchestra: the refinement ended without handing back %s, so its tree isn't updated for "+
+			"the spec's change, and nothing runs.\n", r.update.Root)
+	} else {
+		fmt.Fprintln(r.err, "orchestra: the refinement ended without handing back a root epic, so there is "+
+			"nothing to run.")
+	}
 	r.logLine("SPEC: the refinement ended without handing back a root epic")
 	return r.unfinished(ctx, spec, "")
 }
 
-// refineSubject is a spec's refinement as the subject of a session in a pane: the spec, and bd, which
-// counts what the session has filed for it every so often (every).
+// refineSubject is a spec's refinement as the subject of a session in a pane: the spec, its update
+// (nil but in update mode), and bd, which counts what the session has filed for it every so often
+// (every).
 type refineSubject struct {
 	spec    project.Spec
+	update  *specUpdate
 	tracker specLister
 	every   time.Duration
 }
 
-func (s refineSubject) message(string) (string, error) { return refineMessage(s.spec), nil }
+func (s refineSubject) message(string) (string, error) { return refineMessage(s.spec, s.update), nil }
 
 func (refineSubject) handedBack(repo string) (string, bool) {
 	root, err := project.FiledSpec(repo)
@@ -192,19 +207,24 @@ func (refineSubject) inPane() string {
 }
 
 func (s refineSubject) shown(line *tui.InterviewLine, began time.Time) paneShown {
-	return &refineShown{line: line, tracker: s.tracker, spec: s.spec.Path, every: s.every, began: began}
+	r := &refineShown{line: line, tracker: s.tracker, spec: s.spec.Path, every: s.every, began: began}
+	if s.update != nil {
+		r.before = s.update.Before
+	}
+	return r
 }
 
 // refineShown is what orchestra's pane shows of a spec's refinement in the pane beside it, under its
 // fixed message: claude's state and the time so far, as an interview's line has them, and how many
-// epics and tickets carry the spec's metadata, counted from bd every so often (every); nothing when
-// line is nil.
+// epics and tickets carry the spec's metadata, counted from bd every so often (every), but for those
+// that did before it began (before); nothing when line is nil.
 type refineShown struct {
 	line    *tui.InterviewLine
 	tracker specLister
 	spec    string // the spec's path, which everything filed for it carries in its metadata
 	every   time.Duration
 	began   time.Time
+	before  filedCount // in update mode, the tree filed already
 	now     tui.InterviewProgress
 	counted time.Time         // when bd was last asked
 	count   <-chan filedCount // its answer, once it has given it; nil when none is awaited
@@ -214,6 +234,19 @@ type refineShown struct {
 type filedCount struct {
 	epics, tickets int
 	ok             bool
+}
+
+// countOf counts issues, those bd has for a spec, by epics and the rest.
+func countOf(issues []dispatch.Ticket) filedCount {
+	n := filedCount{ok: true}
+	for _, t := range issues {
+		if t.IssueType == "epic" {
+			n.epics++
+		} else {
+			n.tickets++
+		}
+	}
+	return n
 }
 
 // show draws the refinement's progress after a reading: st is claude's state ("" when the terminal
@@ -230,7 +263,8 @@ func (s *refineShown) show(ctx context.Context, _ string, st dispatch.AgentState
 	case n := <-s.count: // never ready while count is nil
 		s.count = nil
 		if n.ok {
-			s.now.Counted, s.now.FiledEpics, s.now.FiledTickets = true, n.epics, n.tickets
+			s.now.Counted, s.now.FiledEpics, s.now.FiledTickets = true, max(n.epics-s.before.epics, 0),
+				max(n.tickets-s.before.tickets, 0)
 		}
 	default: // not counted yet
 	}
@@ -250,15 +284,7 @@ func (s *refineShown) countFiled(ctx context.Context) <-chan filedCount {
 			read <- filedCount{}
 			return
 		}
-		n := filedCount{ok: true}
-		for _, t := range issues {
-			if t.IssueType == "epic" {
-				n.epics++
-			} else {
-				n.tickets++
-			}
-		}
-		read <- n
+		read <- countOf(issues)
 	}()
 	return read
 }

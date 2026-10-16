@@ -350,6 +350,14 @@ func (Git) LastCommit(ctx context.Context, repo, path string) string {
 	return strings.TrimSpace(out) // "" on failure, as documented
 }
 
+// PathDiff is the diff of the file at path, relative to repo, from commit from to commit to, as git
+// diff prints it without colour or an external diff tool; "" when it is the same in both. It returns
+// git's error when git can't say, as when it has no commit from.
+func (Git) PathDiff(ctx context.Context, repo, from, to, path string) (string, error) {
+	return readGit(ctx, repo, "diff", "--no-ext-diff", "--no-color", "--no-textconv", from, to, "--",
+		":(literal)"+path)
+}
+
 // ChangedFiles lists the files that differ between commits from and to in repo, or every file in
 // to when from is "" (to is the first commit). It lists none if git can't.
 func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {

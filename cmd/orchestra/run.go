@@ -388,6 +388,7 @@ func plainOutput(asked bool, getenv func(string) string, stdin io.Reader, stdout
 // and gives the run's done line to the log and the event stream, as the loop's end would, without
 // a notification; run's deferred End records the end, with code 0. Nothing is cleared, opened or
 // asked of claude. A run whose limit is reached is left to the loop, which ends it LIMIT_REACHED.
+// A spec run whose root epic is all done says the spec is built.
 func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.Writer, plain bool) bool {
 	if c.DoneSoFar >= c.Limit {
 		return false
@@ -396,6 +397,9 @@ func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.W
 	n, err := dispatch.CheckNothingToRun(ctx, c.Config, tracker, repo, repo)
 	if err != nil || n == nil { // what the check couldn't read, the loop reads again and reports
 		return false
+	}
+	if c.Spec != "" && n.AllDone && n.Scope != "" {
+		n.Built = c.Spec
 	}
 	ev := dispatch.Event{Kind: dispatch.EvDone, N: c.DoneSoFar, Limit: c.Limit, Text: n.Done, Time: time.Now()}
 	log.Line(ev.Time, ev.Text)

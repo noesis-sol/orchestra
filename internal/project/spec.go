@@ -53,19 +53,24 @@ const (
 	// SpecName is where a refinement hands its root epic back to orchestra, {"epic":"<id>"}, once it
 	// has filed the spec's tree.
 	SpecName = "spec.json"
+	// SpecUpdateName is what a breakdown in update mode reads besides the spec: how the spec changed
+	// since its tree was filed, and that tree (see WriteSpecUpdate).
+	SpecUpdateName = "spec-update.md"
 )
 
 // WriteSpecPrompt writes the instructions of a spec's headless breakdown to .orchestra/run/ in the
-// main checkout repo, over an earlier breakdown's, and returns their path.
-func WriteSpecPrompt(repo string) (string, error) {
-	return writeSpecPrompt(repo, false, false)
+// main checkout repo, over an earlier breakdown's, and returns their path. With update, the spec
+// changed since its tree was filed: the breakdown updates that tree for the change, from what
+// WriteSpecUpdate wrote.
+func WriteSpecPrompt(repo string, update bool) (string, error) {
+	return writeSpecPrompt(repo, false, false, update)
 }
 
 // WriteRefinePrompt readies the main checkout repo for a spec's refinement with the user (--refine):
 // it removes the spec.json an earlier refinement left, so that only this one's counts, and writes
-// the instructions for a session in a pane beside orchestra's to .orchestra/run/. It returns their
-// path.
-func WriteRefinePrompt(repo string) (string, error) {
+// the instructions for a session in a pane beside orchestra's to .orchestra/run/, in update mode
+// with update, as WriteSpecPrompt has it. It returns their path.
+func WriteRefinePrompt(repo string, update bool) (string, error) {
 	root, err := OpenRun(repo)
 	if err != nil {
 		return "", err
@@ -75,24 +80,26 @@ func WriteRefinePrompt(repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return writeSpecPrompt(repo, true, false)
+	return writeSpecPrompt(repo, true, false, update)
 }
 
 // WriteTerminalRefine writes the instructions for a refinement on orchestra's own terminal over those
-// WriteRefinePrompt wrote to the main checkout repo, and returns their path, the same. orchestra
-// closes a session in a pane beside its own once it has handed the root epic back, but can only wait
-// for one on its terminal to end: these instructions add that claude tells the user to type /exit
-// then.
-func WriteTerminalRefine(repo string) (string, error) {
-	return writeSpecPrompt(repo, true, true)
+// WriteRefinePrompt wrote to the main checkout repo, in update mode with update, and returns their
+// path, the same. orchestra closes a session in a pane beside its own once it has handed the root
+// epic back, but can only wait for one on its terminal to end: these instructions add that claude
+// tells the user to type /exit then.
+func WriteTerminalRefine(repo string, update bool) (string, error) {
+	return writeSpecPrompt(repo, true, true, update)
 }
 
 // writeSpecPrompt writes the breakdown's instructions to .orchestra/run/ in the main checkout repo,
 // over an earlier breakdown's, and returns their path: refine's sections in place of the headless
-// ones, and with onTerminal what a session on orchestra's own terminal adds.
-func writeSpecPrompt(repo string, refine, onTerminal bool) (string, error) {
+// ones, with onTerminal what a session on orchestra's own terminal adds, and with update the
+// sections that update a tree filed for an earlier version of the spec.
+func writeSpecPrompt(repo string, refine, onTerminal, update bool) (string, error) {
 	var text bytes.Buffer
-	if err := specPrompt.Execute(&text, struct{ Refine, OnTerminal bool }{refine, onTerminal}); err != nil {
+	if err := specPrompt.Execute(&text, struct{ Refine, OnTerminal, Update bool }{refine, onTerminal,
+		update}); err != nil {
 		return "", fmt.Errorf("cannot make the breakdown's instructions: %w", err)
 	}
 	root, err := OpenRun(repo)
@@ -105,6 +112,23 @@ func writeSpecPrompt(repo string, refine, onTerminal bool) (string, error) {
 		return "", err
 	}
 	return filepath.Join(repo, rel), nil
+}
+
+// WriteSpecUpdate writes text, what a breakdown in update mode reads besides the spec (the change to
+// the spec since its tree was filed, and that tree), to .orchestra/run/ in the main checkout repo,
+// over an earlier update's, and returns its path, relative to repo and slash-separated, as the
+// breakdown's first message names it.
+func WriteSpecUpdate(repo string, text []byte) (string, error) {
+	root, err := OpenRun(repo)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
+	rel := RunPath(SpecUpdateName)
+	if err := WriteRun(root, repo, rel, text, 0o644); err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // ErrNoSpecRoot is FiledSpec's error when the refinement handed nothing back: it wrote no spec.json.

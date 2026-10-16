@@ -44,7 +44,11 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 			rest = append(rest, fmt.Sprintf("Still open: %s (%s)", strings.Join(n.StillOpen, ", "),
 				command("bd close "+strings.Join(n.StillOpen, " "))))
 		}
-		return style(closedStyle, "✓") + " " + style(bold, "All done"), rest
+		heading := "All done"
+		if n.Built != "" {
+			heading = n.Built + " is built (" + n.Scope + ")"
+		}
+		return style(closedStyle, "✓") + " " + style(bold, heading), rest
 	}
 	heading := "Nothing ready to run"
 	if n.Scope != "" {

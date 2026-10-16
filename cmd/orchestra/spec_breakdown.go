@@ -88,7 +88,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	if why := organ.Unavailable("claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
-	prompt, err := project.WriteSpecPrompt(h.repo)
+	prompt, err := project.WriteSpecPrompt(h.repo, r.Update != nil)
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the breakdown's instructions: %w", err)
 	}
@@ -99,7 +99,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	progress := startSpecProgress(h.say, h.log, h.countEvery)
 	stream := &specStream{pending: map[string][]filedIssue{}, filed: progress.filed}
 	began := time.Now()
-	err = command.Stream(ctx, h.limit, h.repo, nil, specMessage(r.Spec, h.limit), stream, "claude", args...)
+	err = command.Stream(ctx, h.limit, h.repo, nil, specMessage(r, h.limit), stream, "claude", args...)
 	stream.end()
 	h.logSession(stream, time.Since(began))
 	answer, err := stream.answer(ctx, err)
@@ -140,11 +140,25 @@ func claudeHelp(ctx context.Context) string {
 	return help
 }
 
-// specMessage is the session's first message: the spec it breaks down, and how long it has.
-func specMessage(s project.Spec, limit time.Duration) string {
-	return fmt.Sprintf("Break down the spec at %s into Beads tickets.\n\n- path: %s\n- sha256: %s\n- commit: %s\n"+
-		"- time limit: %s, after which orchestra stops this session\n", s.Path, s.Path, s.SHA256, s.Commit,
-		command.ShortDuration(limit))
+// specMessage is the session's first message: the spec it breaks down, and how long it has; in update
+// mode, also the root epic whose tree it updates, the version of the spec that tree was filed for, and
+// where to read the change and the tree.
+func specMessage(r breakdownRequest, limit time.Duration) string {
+	s, u := r.Spec, r.Update
+	var b strings.Builder
+	if u == nil {
+		fmt.Fprintf(&b, "Break down the spec at %s into Beads tickets.\n\n", s.Path)
+	} else {
+		fmt.Fprintf(&b, "The spec at %s has changed since its Beads tickets were filed under %s: update them for "+
+			"the change.\n\n", s.Path, u.Root)
+	}
+	fmt.Fprintf(&b, "- path: %s\n- sha256: %s\n- commit: %s\n", s.Path, s.SHA256, s.Commit)
+	if u != nil {
+		fmt.Fprintf(&b, "- root epic: %s\n- filed for: sha256 %s, commit %s\n- the change and the tree: %s\n", u.Root,
+			u.Was.SHA256, cmp.Or(u.Was.Commit, "not recorded"), u.File)
+	}
+	fmt.Fprintf(&b, "- time limit: %s, after which orchestra stops this session\n", command.ShortDuration(limit))
+	return b.String()
 }
 
 // specLister is bd as a breakdown reads what it filed: the issues carrying the spec's metadata.
@@ -163,26 +177,19 @@ func filedRoot(ctx context.Context, bd specLister, s project.Spec) string {
 }
 
 // rootAmong is the spec's root epic among issues, those carrying the spec's metadata: the one epic
-// among them whose parent isn't among them, or of several such the one whose SHA-256 is the spec's;
-// "" when that names none, or more than one.
+// among them whose parent isn't among them (see topEpics), or of several such the one whose SHA-256
+// is the spec's; "" when that names none, or more than one.
 func rootAmong(issues []dispatch.Ticket, s project.Spec) string {
-	ids := map[string]bool{}
-	for _, t := range issues {
-		ids[t.ID] = true
-	}
-	var tops, same []string
-	for _, t := range issues {
-		if t.IssueType != "epic" || ids[t.Parent] {
-			continue
-		}
-		tops = append(tops, t.ID)
+	tops := topEpics(issues)
+	var same []string
+	for _, t := range tops {
 		if t.MetadataText(project.SpecSHA256Key) == s.SHA256 {
 			same = append(same, t.ID)
 		}
 	}
 	switch {
 	case len(tops) == 1:
-		return tops[0]
+		return tops[0].ID
 	case len(same) == 1:
 		return same[0]
 	}

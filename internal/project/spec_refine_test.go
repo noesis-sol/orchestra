@@ -35,14 +35,14 @@ func readText(t *testing.T, p string) string {
 // before filing, and hand the root epic back in spec.json; the headless parts are gone.
 func TestWriteRefinePromptWritesTheRefineSections(t *testing.T) {
 	repo := runFolder(t)
-	if _, err := WriteSpecPrompt(repo); err != nil {
+	if _, err := WriteSpecPrompt(repo, false); err != nil {
 		t.Fatal(err)
 	}
 	spec := filepath.Join(repo, RunPath(SpecName))
 	if err := os.WriteFile(spec, []byte(`{"epic":"old-1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, err := WriteRefinePrompt(repo)
+	p, err := WriteRefinePrompt(repo, false)
 	if err != nil || p != filepath.Join(repo, RunPath("spec-prompt.md")) {
 		t.Fatalf("WriteRefinePrompt: %q, %v", p, err)
 	}
@@ -57,7 +57,7 @@ func TestWriteRefinePromptWritesTheRefineSections(t *testing.T) {
 		"Finding _facts_ is your job, never the user's",
 		"Under the heading `Decisions`",                               // in the root epic's description
 		"Ask the user to go ahead, and file nothing until they agree", // the go-ahead
-		`"spec_sha256":"<sha256>","spec_commit":"<commit>"`,           // the headless rules for the tree
+		"--set-metadata spec_sha256=<sha256>",                         // the headless rules for the tree
 		"carries the metadata `spec`", "label `solo` and priority 0",
 		"never put a file name in text that many tickets share",
 		"printf '{\"epic\":\"%s\"}\\n' '<root epic ID>' > .orchestra/run/spec.json",
@@ -74,7 +74,7 @@ func TestWriteRefinePromptWritesTheRefineSections(t *testing.T) {
 			t.Errorf("the refine instructions have %q", gone)
 		}
 	}
-	if headless, _ := WriteSpecPrompt(repo); strings.Contains(readText(t, headless), "## Questions") {
+	if headless, _ := WriteSpecPrompt(repo, false); strings.Contains(readText(t, headless), "## Questions") {
 		t.Error("the headless instructions have the refinement's Questions")
 	}
 }
@@ -87,7 +87,7 @@ func TestWriteTerminalRefineSaysHowToHandBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, RunPath(SpecName)), []byte(`{"epic":"s-1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, err := WriteTerminalRefine(repo)
+	p, err := WriteTerminalRefine(repo, false)
 	if err != nil || p != filepath.Join(repo, RunPath("spec-prompt.md")) {
 		t.Fatalf("WriteTerminalRefine: %q, %v", p, err)
 	}

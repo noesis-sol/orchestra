@@ -22,13 +22,17 @@ import (
 // can read it (see project.CommitSpec), and has it broken down into Beads tickets: a root epic,
 // child epics where the spec has separable parts, and tickets of one worker session each, which the
 // breakdown files itself. The run is then scoped to the root epic, as a --feature run is to its
-// epic, and starts without asking. It has no ticket limit unless -limit or LIMIT gives one.
+// epic, and starts without asking. It has no ticket limit unless -limit or LIMIT gives one. Run again,
+// it carries on with the root epic an earlier run filed rather than break the spec down again, and
+// with the spec changed since, the breakdown only updates that tree for the change (spec_carry.go).
 
 // breakdownRequest is what a spec's breakdown is given: the committed spec, by its path in the
-// repository, its SHA-256 and its commit, and whether to refine it with the user first (--refine).
+// repository, its SHA-256 and its commit, whether to refine it with the user first (--refine), and,
+// when the spec changed since an earlier run filed its tree, what changed (update mode).
 type breakdownRequest struct {
 	project.Spec
 	Refine bool
+	Update *specUpdate // nil for a spec broken down for the first time
 }
 
 // breakdownResult is what a breakdown filed: the root epic, under which it filed the rest, and the
@@ -120,7 +124,8 @@ type specTracker interface {
 	SetMetadata(ctx context.Context, id, key, value string) error
 }
 
-// specRun is a spec run's step before its loop: the spec committed, then broken down.
+// specRun is a spec run's step before its loop: the spec committed, then broken down, unless an
+// earlier run broke it down already.
 type specRun struct {
 	file      string // the spec, as --spec gives it, made absolute
 	repo      string // the main checkout
@@ -129,11 +134,13 @@ type specRun struct {
 	tracker   specTracker
 	log       *dispatch.Log // nil in tests
 	out, err  io.Writer
+	update    *specUpdate // the breakdown's update, once run finds the spec changed since its tree was filed
 }
 
 // runSpec sets up the repository of the run s where orchestra init hasn't (spec_setup.go), commits
-// the spec and has it broken down, and returns the root epic's ID, which the run is then scoped to.
-// When there is nothing to run it returns "" and the exit code; what happened has been reported.
+// the spec and has it broken down, or carries on with the root epic an earlier run filed for it, and
+// returns the root epic's ID, which the run is then scoped to. When there is nothing to run it
+// returns "" and the exit code; what happened has been reported.
 func (s *session) runSpec(ctx context.Context) (string, int) {
 	// Ctrl+C stops the breakdown as it does the loop; what it filed so far stays filed.
 	ctx, stop := s.stops.context(ctx)
@@ -154,7 +161,15 @@ func (r specRun) run(ctx context.Context) (string, int) {
 	if code != dispatch.ExitOK {
 		return "", code
 	}
-	res, err := r.breakdown.BreakDown(ctx, breakdownRequest{Spec: spec, Refine: r.refine})
+	c, code := r.carryOn(ctx, spec)
+	switch {
+	case code != dispatch.ExitOK:
+		return "", code
+	case c.root != "": // the spec unchanged since its tree was filed: no breakdown
+		return c.root, dispatch.ExitOK
+	}
+	r.update = c.update
+	res, err := r.breakdown.BreakDown(ctx, breakdownRequest{Spec: spec, Refine: r.refine, Update: c.update})
 	switch {
 	case ctx.Err() != nil:
 		return "", r.stopped(true, res.Root)
@@ -207,8 +222,13 @@ func (r specRun) unfinished(ctx context.Context, spec project.Spec, root string)
 		if root != "" {
 			filed += ", under " + root
 		}
-		fmt.Fprintf(r.err, "It filed %s:\n", filed)
-		r.logLine("SPEC: filed " + filed)
+		if r.update != nil { // filed by this run's update and earlier runs
+			fmt.Fprintf(r.err, "The spec's tree has %s:\n", filed)
+			r.logLine("SPEC: the tree has " + filed)
+		} else {
+			fmt.Fprintf(r.err, "It filed %s:\n", filed)
+			r.logLine("SPEC: filed " + filed)
+		}
 		for i, t := range issues {
 			if i == unfinishedShown {
 				fmt.Fprintf(r.err, "  … and %d more: bd list --metadata-field %s --all\n", len(issues)-i,
@@ -226,10 +246,17 @@ func (r specRun) unfinished(ctx context.Context, spec project.Spec, root string)
 const unfinishedShown = 20
 
 // check checks the tree a breakdown filed under root before the run starts on it (checkBreakdown),
-// whichever breakdown it was: a root epic that isn't the spec's ends the run, exit 2, saying what was
-// filed; anything else amiss is a warning, said and logged. It returns the exit code.
+// whichever breakdown it was: a root epic that isn't the spec's, or in update mode another than the
+// one whose tree it updated, ends the run, exit 2, saying what was filed; anything else amiss is a
+// warning, said and logged. It returns the exit code.
 func (r specRun) check(ctx context.Context, spec project.Spec, root string) int {
-	warnings, err := checkBreakdown(ctx, r.tracker, spec, root)
+	var warnings []string
+	var err error
+	if r.update != nil && root != r.update.Root {
+		err = fmt.Errorf("it named %s as the root epic, not %s, whose tree it was to update", root, r.update.Root)
+	} else {
+		warnings, err = checkBreakdown(ctx, r.tracker, spec, root)
+	}
 	for _, w := range warnings {
 		w = planLine(w)
 		fmt.Fprintln(r.err, "warning: "+w)
@@ -283,7 +310,8 @@ func (r specRun) commit(ctx context.Context) (project.Spec, int) {
 }
 
 // sayFiled says what the breakdown filed: the root epic, the epics and tickets under it (by bd's
-// count, the root among the epics), and the assumptions it made.
+// count, the root among the epics), and the assumptions it made. After an update, the counts are
+// the tree's, earlier runs' issues with the update's.
 func (r specRun) sayFiled(ctx context.Context, res breakdownResult) {
 	counts := ""
 	if under, err := r.tracker.Descendants(ctx, res.Root); err != nil {
@@ -297,8 +325,13 @@ func (r specRun) sayFiled(ctx context.Context, res breakdownResult) {
 		}
 		counts = fmt.Sprintf(" (%s, %s)", plural(epics, "epic"), plural(len(under)+1-epics, "ticket"))
 	}
-	fmt.Fprintf(r.out, "broke the spec down into %s%s\n", res.Root, counts)
-	r.logLine("SPEC: broken down into " + res.Root + counts)
+	if r.update != nil {
+		fmt.Fprintf(r.out, "updated %s for the spec's change%s\n", res.Root, counts)
+		r.logLine("SPEC: updated " + res.Root + " for the change" + counts)
+	} else {
+		fmt.Fprintf(r.out, "broke the spec down into %s%s\n", res.Root, counts)
+		r.logLine("SPEC: broken down into " + res.Root + counts)
+	}
 	if len(res.Assumptions) == 0 {
 		return
 	}
@@ -318,6 +351,9 @@ func (r specRun) stopped(during bool, root string) int {
 	case !during:
 		fmt.Fprintln(r.err, "orchestra: stopped before the spec was broken down; nothing was filed.")
 		r.logLine("SPEC: stopped before the breakdown")
+	case r.update != nil:
+		fmt.Fprintf(r.err, "orchestra: stopped while %s's tree was updated for the spec's change.\n", r.update.Root)
+		r.logLine("SPEC: stopped during the update of " + r.update.Root)
 	case root != "":
 		fmt.Fprintf(r.err, "orchestra: stopped while the spec was broken down, with %s filed.\n", root)
 		r.logLine("SPEC: stopped during the breakdown, with " + root + " filed")
