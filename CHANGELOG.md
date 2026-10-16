@@ -11,6 +11,9 @@ All notable changes to orchestra are documented here. The format follows
 - On tmux 3.7, a child ticket's worker gets its window, named with `_` for
   the `.` in its ID: tmux 3.7 refuses a window name holding `.` or `:`, so the
   run stopped on the first such ticket, blaming the workspace.
+- An MCP server unticked in orchestra init stays unticked when the terminal
+  is resized: the resize drew it ticked again, and leaving the field or
+  toggling another server saved it to settings.json.
 - A worker waiting on a permission prompt for one call of a tool, which it
   runs beside another call of the same tool (two WebFetches, Reads or
   read-only Bash commands at once), reads as blocked until that call is

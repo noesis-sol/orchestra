@@ -17,6 +17,8 @@ import (
 type wrappingMultiSelect[T comparable] struct {
 	*huh.MultiSelect[T]
 	opts       []huh.Option[T] // as given, the labels whole
+	shown      []huh.Option[T] // the MultiSelect's own, which hold the ticks on screen
+	value      *[]T            // the field's value
 	theme      *huh.Theme      // the field's, for the room its frame, cursor and checkbox take
 	room       int             // the columns the labels are wrapped to; 0 while they are whole
 	accessible bool
@@ -25,7 +27,9 @@ type wrappingMultiSelect[T comparable] struct {
 // newWrappingMultiSelect gives m the options, then value, and wraps their labels at its width.
 func newWrappingMultiSelect[T comparable](m *huh.MultiSelect[T], value *[]T,
 	opts ...huh.Option[T]) *wrappingMultiSelect[T] {
-	return &wrappingMultiSelect[T]{MultiSelect: m.Options(opts...).Value(value), opts: opts}
+	// m keeps the slice it is given and ticks the value's options in it.
+	return &wrappingMultiSelect[T]{MultiSelect: m.Options(opts...).Value(value), opts: slices.Clone(opts),
+		shown: opts, value: value}
 }
 
 // WithTheme sets the field's theme, the first one given, as huh does.
@@ -79,21 +83,34 @@ func (w *wrappingMultiSelect[T]) indent() int {
 }
 
 // wrap sets the options with their labels wrapped to room columns, or whole for 0, keeping the
-// selection and the cursor on its option. Setting the options moves huh's cursor to the first
-// selected option, so it moves it back as the arrow keys would.
+// ticks on screen and the cursor on its option. huh's Options can tick an option but never untick
+// one, and ticks the value's options, which select all and select none leave as they were until the
+// field is left; so wrap sets the value from the ticks first, as leaving the field would. Setting the
+// options moves huh's cursor to the first selected option, so it moves it back as the arrow keys would.
 func (w *wrappingMultiSelect[T]) wrap(room int) {
 	if room == w.room {
 		return
 	}
 	w.room = room
 	opts := slices.Clone(w.opts)
-	if room > 0 {
-		for i := range opts {
+	value, changed := make([]T, 0), false
+	for i := range opts {
+		if room > 0 {
 			opts[i].Key = ansi.Wrap(opts[i].Key, room, "")
 		}
+		ticked := w.shown[i] == w.shown[i].Selected(true) // Option hides its tick but compares it
+		opts[i] = opts[i].Selected(ticked)
+		if ticked {
+			value = append(value, opts[i].Value)
+		}
+		changed = changed || ticked != slices.Contains(*w.value, opts[i].Value)
+	}
+	if changed { // else the value keeps its order, settings.json's until the field is left
+		*w.value = value
 	}
 	hovered, ok := w.Hovered()
 	w.Options(opts...)
+	w.shown = opts
 	at := func(v T) int { return slices.IndexFunc(w.opts, func(o huh.Option[T]) bool { return o.Value == v }) }
 	now, _ := w.Hovered()
 	if !ok || at(hovered) < 0 {
