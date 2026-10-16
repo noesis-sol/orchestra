@@ -330,7 +330,8 @@ func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
 			if e.Tool == "" {
 				e.Tool = "an unnamed tool"
 			}
-			r.Permissions = append(r.Permissions, e.Tool)
+			r.Permissions = append(r.Permissions, dispatch.Permission{Tool: e.Tool, Command: e.Input.Command,
+				Removal: e.Removal})
 		case "PreCompact":
 			if e.Trigger == "" {
 				e.Trigger = "unknown trigger"

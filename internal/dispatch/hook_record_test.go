@@ -58,7 +58,7 @@ func TestPermissionPromptShownAsIdleStopsAsBlocked(t *testing.T) {
 			w.claim()
 			hooks.use(w.wt, ToolUse{Event: "PreToolUse", Tool: "Bash", Command: "rm -rf build"})
 			hooks.use(w.wt, ToolUse{Event: EventPermission, Tool: "Bash", Command: "rm -rf build"})
-			hooks.note(w.wt, func(r *HookRecord) { r.Permissions = append(r.Permissions, "Bash") })
+			hooks.note(w.wt, func(r *HookRecord) { r.Permissions = append(r.Permissions, Permission{Tool: "Bash"}) })
 			asked = time.Now()
 			w.shows(StateIdle)
 			time.Sleep(3 * statusPoll)
@@ -169,7 +169,7 @@ func TestHookRecordEvidence(t *testing.T) {
 	if got := (HookRecord{Subagents: 2}).Evidence(); got != "" {
 		t.Errorf("nothing for triage in running subagents: %q", got)
 	}
-	got := HookRecord{Permissions: []string{"Bash", "WebFetch"}, Compactions: []string{"auto"}}.Evidence()
+	got := HookRecord{Permissions: []Permission{{Tool: "Bash"}, {Tool: "WebFetch"}}, Compactions: []string{"auto"}}.Evidence()
 	want := "It waited on a permission prompt twice, Claude Code asking to allow: Bash, WebFetch.\n" +
 		"Its context was compacted once (auto): the summary that replaced its earlier messages may have lost " +
 		"some of what it was told or found."
@@ -186,7 +186,7 @@ func TestTriageEvidenceHasWhatTheHooksNoted(t *testing.T) {
 		hooks := &recordReporter{}
 		h.reporter = hooks
 		h.beads.add("A", "first", 1)
-		hooks.note(h.worktree("A"), func(r *HookRecord) { r.Permissions, r.Compactions = []string{"Bash"}, []string{"auto"} })
+		hooks.note(h.worktree("A"), func(r *HookRecord) { r.Permissions, r.Compactions = []Permission{{Tool: "Bash"}}, []string{"auto"} })
 		d := h.loop().gatherDeferral(context.Background(), "A", "the worker deferred it", h.worktree("A"))
 		if !strings.Contains(d.Hooks, "permission prompt once") || !strings.Contains(d.Hooks, "compacted once (auto)") {
 			t.Errorf("hooks evidence %q", d.Hooks)

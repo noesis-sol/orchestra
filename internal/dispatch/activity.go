@@ -54,13 +54,63 @@ const EventPermission = "PermissionRequest"
 // HookRecord is what a worker's hooks noted besides its last tool use, since it was started (or
 // resumed): the permission prompts it waited on, its context's compactions and its subagents.
 type HookRecord struct {
-	Permissions []string // the tool each permission prompt asked about, oldest first
-	Compactions []string // what triggered each compaction (auto, or manual: /compact), oldest first
-	Subagents   int      // subagents started and not stopped
+	Permissions []Permission // each permission prompt, oldest first
+	Compactions []string     // what triggered each compaction (auto, or manual: /compact), oldest first
+	Subagents   int          // subagents started and not stopped
 	// When a subagent started and stopped, if its stop is the hooks' last note (its answer starts
 	// the worker's next turn); zero otherwise
 	SubagentStopped time.Time
 	Noted           time.Time // when the hooks last noted one of these, or a session's start or end; zero: never
+}
+
+// Permission is a permission prompt a worker's hooks noted.
+type Permission struct {
+	Tool    string // the tool it asked to use: Bash, Edit, …
+	Command string // the start of Bash's command; "" for another tool, or a note that has none
+	// The removal in Command that Claude Code's built-in safety check holds for a person (see
+	// GuardedRemoval); "" when the prompt is an ordinary one, which an allow rule would spare
+	Removal string
+}
+
+// String names the prompt for the evidence: its tool, and its command when there is one.
+func (p Permission) String() string {
+	switch {
+	case p.Removal != "":
+		return p.Tool + " (" + p.Removal + ")"
+	case p.Command != "":
+		return p.Tool + " (" + p.Command + ")"
+	}
+	return p.Tool
+}
+
+// permissionsSaid says what the prompts were: the tools Claude Code asked to allow, an allow rule's
+// for each sparing its wait, apart from the removals its safety check held, which no allow rule spares.
+func permissionsSaid(ps []Permission) string {
+	var asked, held []string
+	for _, p := range ps {
+		if p.Removal != "" {
+			held = append(held, p.String())
+		} else {
+			asked = append(asked, p.String())
+		}
+	}
+	var said []string
+	if len(asked) > 0 {
+		said = append(said, "Claude Code asking to allow: "+strings.Join(asked, ", "))
+	}
+	if n := len(held); n > 0 {
+		which := "a removal"
+		switch {
+		case len(asked) > 0:
+			which = fmt.Sprintf("%d of them a removal", n)
+		case n > 1:
+			which = "each a removal"
+		}
+		said = append(said, fmt.Sprintf("%s held by Claude Code's built-in safety check, its target a variable "+
+			"or a glob (%s), which only a person can approve and no allow rule skips: the worker prompt should "+
+			"keep workers from writing such removals", which, strings.Join(held, ", ")))
+	}
+	return strings.Join(said, "; ")
 }
 
 // SubagentQuiet is how long a subagent started and not stopped may go without any hook reporting
@@ -83,8 +133,8 @@ func (r HookRecord) SubagentsRunning(used, now time.Time) bool {
 func (r HookRecord) Evidence() string {
 	var lines []string
 	if n := len(r.Permissions); n > 0 {
-		lines = append(lines, fmt.Sprintf("It waited on a permission prompt %s, Claude Code asking to allow: %s.",
-			times(n), strings.Join(r.Permissions, ", ")))
+		lines = append(lines, fmt.Sprintf("It waited on a permission prompt %s, %s.", times(n),
+			permissionsSaid(r.Permissions)))
 	}
 	if n := len(r.Compactions); n > 0 {
 		lines = append(lines, fmt.Sprintf("Its context was compacted %s (%s): the summary that replaced its "+

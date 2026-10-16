@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // The worker's hooks are orchestra's own binary, the one that launched the worker, run as 'orchestra hook
@@ -71,6 +73,10 @@ type hookInput struct {
 	Reason       string   `json:"reason,omitzero"`
 	Notification string   `json:"notification_type,omitzero"`
 	Input        toolArgs `json:"tool_input,omitzero"`
+	// A permission prompt's note only: the removal in its command that Claude Code's safety check
+	// holds for a person (dispatch.GuardedRemoval), read from the whole command, of which the note
+	// keeps the start. Readers that don't know it read the prompt as an ordinary one.
+	Removal string `json:"removal,omitzero"`
 }
 
 // toolArgs is the tool's arguments in a hook's input, those orchestra reads.
@@ -159,6 +165,8 @@ func noteOf(event string, h hookInput) hookInput {
 	switch event {
 	case "PermissionRequest":
 		n.Tool = h.Tool
+		n.Input.Command = dispatch.Clip(h.Input.Command, 80) // a note is short: the start names the program
+		n.Removal = dispatch.GuardedRemoval(h.Input.Command)
 	case "PreCompact":
 		n.Trigger = h.Trigger
 	case "SubagentStart", "SubagentStop":

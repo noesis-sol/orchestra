@@ -6,6 +6,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The worker prompt and the verifier tell workers to leave throwaway files in
+  their scratchpad and never `rm` a target built from a variable or a glob
+  (`rm -f $S/*`, `rm -f *`): Claude Code's built-in safety check holds such a
+  removal for a person whatever the settings allow, and three workers in a
+  run stalled on cleanups they didn't need. An existing project copies the
+  bullets in (docs/workers.md says where).
+
 ### Changed
 
 - `orchestra init` starts on a cleared screen, its header on the first line,
@@ -14,6 +23,13 @@ All notable changes to orchestra are documented here. The format follows
   nothing, and what init prints after the form stays on the screen.
 ### Fixed
 
+- A permission prompt held by Claude Code's safety check on removals is no
+  longer reported as an allowlist miss. The hooks note each prompt's command
+  start and the removal the check holds; `PERMISSION_PROMPT` names that
+  removal rather than the command's first 80 characters, and the run report
+  and triage say no allow rule skips it and suggest the worker-prompt rule.
+  For an ordinary prompt the report names the allow rule, such as
+  `Bash(ffprobe:*)`, rather than "those commands".
 - `orchestra init`'s stepper stays at the top of the form on a terminal
   shorter than a stage, such as the Checks stage with the suites the scout
   found listed: huh drew the stage a line taller than the terminal, which

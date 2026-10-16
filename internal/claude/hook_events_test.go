@@ -72,7 +72,7 @@ func TestHooksNotePermissionPromptsCompactionsAndSubagents(t *testing.T) {
 		t.Errorf("the notes should leave the last report as it was: %+v", u)
 	}
 	rec := r.HookRecord(wt)
-	if !slices.Equal(rec.Permissions, []string{"Bash"}) || !slices.Equal(rec.Compactions, []string{"auto", "manual"}) ||
+	if !slices.Equal(rec.Permissions, []dispatch.Permission{{Tool: "Bash", Command: "rm -rf build"}}) || !slices.Equal(rec.Compactions, []string{"auto", "manual"}) ||
 		rec.Subagents != 1 {
 		t.Errorf("noted: %+v", rec)
 	}
@@ -100,7 +100,7 @@ func TestParseEvents(t *testing.T) {
 {"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":"Explore"}
 `)
 	rec := parseEvents(b, time.Time{})
-	if !slices.Equal(rec.Permissions, []string{"Edit", "an unnamed tool"}) ||
+	if !slices.Equal(rec.Permissions, []dispatch.Permission{{Tool: "Edit"}, {Tool: "an unnamed tool"}}) ||
 		!slices.Equal(rec.Compactions, []string{"unknown trigger"}) || rec.Subagents != 1 {
 		t.Errorf("%+v", rec)
 	}

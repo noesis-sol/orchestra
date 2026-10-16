@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -493,10 +492,11 @@ func (w *watcher) notePermission(u ToolUse) {
 	}
 	w.asked = u.At
 	what := u.Tool
-	if cmd := strings.Join(strings.Fields(u.Command), " "); cmd != "" {
-		if r := []rune(cmd); len(r) > 80 {
-			cmd = string(r[:80]) + "…"
-		}
+	if rm := GuardedRemoval(u.Command); rm != "" {
+		// The command's start may not show the removal, and allowing the tool would not spare this wait.
+		what += " (" + rm + "), a removal Claude Code's built-in safety check holds for a person, which " +
+			"no allow rule skips,"
+	} else if cmd := Clip(u.Command, 80); cmd != "" {
 		what += " (" + cmd + ")"
 	}
 	id := w.base.Ticket

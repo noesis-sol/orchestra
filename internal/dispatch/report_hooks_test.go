@@ -22,7 +22,7 @@ func TestReviewInputHasWhatTheHooksNoted(t *testing.T) {
 		h.worker("A", func(w *fakeWorker) AgentState {
 			w.claim()
 			hooks.note(w.wt, func(r *HookRecord) {
-				r.Permissions, r.Compactions = []string{"Bash", "WebFetch"}, []string{"auto"}
+				r.Permissions, r.Compactions = []Permission{{Tool: "Bash"}, {Tool: "WebFetch"}}, []string{"auto"}
 			})
 			w.commit("a.txt")
 			w.close()
@@ -47,7 +47,7 @@ func TestReviewInputHasWhatTheHooksNoted(t *testing.T) {
 			t.Fatalf("no section %q:\n%s", section, in)
 		}
 		for _, want := range []string{
-			"A: its workers waited on 2 permission prompts (Bash, WebFetch); had their context compacted once (auto).",
+			"A: its workers waited on 2 permission prompts (Claude Code asking to allow: Bash, WebFetch); had their context compacted once (auto).",
 			"B: its workers had their context compacted once (manual).",
 		} {
 			if !strings.Contains(in, want) {
@@ -72,13 +72,13 @@ func TestHookTallyKeepsEarlierWorkersNotes(t *testing.T) {
 		wt := h.worktree("A")
 		set := func(rec HookRecord) { hooks.note(wt, func(r *HookRecord) { *r = rec }) }
 
-		set(HookRecord{Permissions: []string{"Bash"}}) // the last run's worker
+		set(HookRecord{Permissions: []Permission{{Tool: "Bash"}}}) // the last run's worker
 		o.newWorkerHooks("A", wt)
-		set(HookRecord{Permissions: []string{"Edit"}, Compactions: []string{"auto"}})
+		set(HookRecord{Permissions: []Permission{{Tool: "Edit"}}, Compactions: []string{"auto"}})
 		o.newWorkerHooks("A", wt) // resumed: its hooks start afresh
-		set(HookRecord{Permissions: []string{"Write"}})
+		set(HookRecord{Permissions: []Permission{{Tool: "Write"}}})
 
-		want := "A: its workers waited on 2 permission prompts (Edit, Write); had their context compacted once (auto)."
+		want := "A: its workers waited on 2 permission prompts (Claude Code asking to allow: Edit, Write); had their context compacted once (auto)."
 		if got := o.hookEvidence(); got != want {
 			t.Errorf("got  %q\nwant %q", got, want)
 		}

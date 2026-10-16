@@ -39,6 +39,10 @@ and try to show that it is not done.
   and for running the checks.
 - Other workers run the same programs and tests on this machine: never stop processes by name or
   pattern (`pkill`, `killall`), only those you started, by their PID.
+- Put throwaway files in a new folder of your scratchpad and leave them there. Never `rm` a target
+  built from a variable or a glob (`rm -f $S/*`, `rm -f $f`, `rm -f *`): Claude Code's safety check
+  holds such a removal for a person, and the worker waits on you. Overwrite instead (`-y`, `>`) or
+  write to a new name.
 - Report only gaps that affect correctness or the ticket's requirements. Leave out style
   preferences, and don't ask for defensive code or tests of cases that can't happen.
 - Start your answer with PASS or FAIL. Then give each gap with its file:line and its evidence: the

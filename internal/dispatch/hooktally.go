@@ -121,13 +121,13 @@ func (o *Loop) hookEvidence() string {
 	return strings.Join(lines, "\n")
 }
 
-// hooksLine reads "orchestra-1: its workers waited on 2 permission prompts (Bash, Edit); their
-// context was compacted once (auto)."; "" when there were neither.
-func hooksLine(id string, permissions, compactions []string) string {
+// hooksLine reads "orchestra-1: its workers waited on 2 permission prompts (Claude Code asking to allow:
+// Bash (go vet ./...), Edit); had their context compacted once (auto)."; "" when there were neither.
+func hooksLine(id string, permissions []Permission, compactions []string) string {
 	var said []string
 	if n := len(permissions); n > 0 {
 		said = append(said, fmt.Sprintf("waited on %s (%s)", counted(n, "permission prompt"),
-			strings.Join(permissions, ", ")))
+			permissionsSaid(permissions)))
 	}
 	if n := len(compactions); n > 0 {
 		said = append(said, fmt.Sprintf("had their context compacted %s (%s)", times(n),
