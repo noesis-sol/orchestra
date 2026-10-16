@@ -407,16 +407,26 @@ func (Git) Move(ctx context.Context, repo, from, to string) (string, error) {
 // with message msg, and returns the commit as a full hash. What else is staged stays staged and out
 // of the commit. The repository's hooks before a commit don't run: one could add files to it.
 func (g Git) CommitPath(ctx context.Context, repo, path, msg string) (string, error) {
-	if _, err := writeGit(ctx, repo, "add", "--", ":(literal)"+path); err != nil {
+	return g.CommitPaths(ctx, repo, msg, path)
+}
+
+// CommitPaths is CommitPath for the files at paths, each taken literally. In a repository with no
+// commit yet, such as one git init has just made, it makes the first, on the branch HEAD names.
+func (g Git) CommitPaths(ctx context.Context, repo, msg string, paths ...string) (string, error) {
+	specs := make([]string, len(paths))
+	for i, p := range paths {
+		specs[i] = ":(literal)" + p
+	}
+	if _, err := writeGit(ctx, repo, append([]string{"add", "--"}, specs...)...); err != nil {
 		return "", err
 	}
-	if _, err := writeGit(ctx, repo, "commit", "--quiet", "--no-verify", "--only", "-m", msg,
-		"--", ":(literal)"+path); err != nil {
+	commit := append([]string{"commit", "--quiet", "--no-verify", "--only", "-m", msg, "--"}, specs...)
+	if _, err := writeGit(ctx, repo, commit...); err != nil {
 		return "", err
 	}
 	head := g.Head(ctx, repo, "HEAD")
 	if head == "" {
-		return "", errors.New("git committed " + path + " but HEAD names no commit")
+		return "", errors.New("git committed " + strings.Join(paths, ", ") + " but HEAD names no commit")
 	}
 	return head, nil
 }

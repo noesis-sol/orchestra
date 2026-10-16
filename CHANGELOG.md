@@ -14,6 +14,16 @@ All notable changes to orchestra are documented here. The format follows
   ticket is part of that spec: to read the sections the ticket cites before
   it starts, and to treat the spec as settled. Its standing rules are
   unchanged.
+- A spec run starts from an empty repository: `mkdir app && cd app && git
+  init && orchestra --spec ~/app-spec.md` works unattended. In a repository
+  `orchestra init` hasn't set up, it sets it up as init does without a
+  terminal (bd init where Beads isn't set up, the worker prompt, runners that
+  check nothing yet, settings with the concurrency `-c` gives, else 1, and no
+  MCP servers for workers; no test work and no skill, as the breakdown's first
+  ticket scaffolds the project and its checks), and commits that with the spec
+  as `orchestra: set up for spec <name>`, the repository's first commit where
+  it has none. Outside a git repository it says to run `git init` first; bd
+  missing is a setup problem, as nothing is installed unattended.
 ### Changed
 
 - Footprints leave out specs under `.orchestra/specs/`, as they leave out

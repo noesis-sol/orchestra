@@ -251,12 +251,11 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	s.lock = lock
 	s.onClose(func(error) { _ = lock.Close() }) // only releases it; orchestra exiting would too
 
-	prompt, err := os.ReadFile(cfg.WorkerPrompt)
-	if err != nil {
-		fmt.Fprintln(e.stderr, "orchestra cannot read the worker prompt:", err)
-		return s, dispatch.ExitSetup
+	if cfg.specSetup == nil { // else read once the spec run's setup has written it (spec_setup.go)
+		if code := s.readPrompt(); code != dispatch.ExitOK {
+			return s, code
+		}
 	}
-	s.prompt = string(prompt)
 	for _, dir := range []string{cfg.WTRoot, filepath.Dir(cfg.LogPath)} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			fmt.Fprintln(e.stderr, "orchestra cannot create its folder:", err)
@@ -266,6 +265,7 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	// From here to the end, closing the log included, a stop signal doesn't end orchestra outright.
 	s.stops = catchStops()
 	s.onClose(func(error) { s.stops.release() })
+	var err error
 	if s.log, err = dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo)); err != nil {
 		fmt.Fprintln(e.stderr, "orchestra cannot open its log:", err)
 		return s, dispatch.ExitSetup
@@ -290,6 +290,18 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 		return s, dispatch.ExitSetup
 	}
 	return s, dispatch.ExitOK
+}
+
+// readPrompt reads the worker prompt, for the run's workers. It returns the exit code, having said
+// what went wrong.
+func (s *session) readPrompt() int {
+	prompt, err := os.ReadFile(s.cfg.WorkerPrompt)
+	if err != nil {
+		fmt.Fprintln(s.e.stderr, "orchestra cannot read the worker prompt:", err)
+		return dispatch.ExitSetup
+	}
+	s.prompt = string(prompt)
+	return dispatch.ExitOK
 }
 
 // chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or

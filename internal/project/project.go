@@ -374,16 +374,7 @@ func settingsStep(repo string, c Choice) (Step, error) {
 		// what s holds over the keys it knows.
 		return Step{}, err
 	}
-	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
-	// The defaults where the choice has none: init asks no time limit, so they are there to edit.
-	s.CheckFastTimeout = orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
-	s.CheckFullTimeout = orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)
-	if c.Setup != c.SetupWas {
-		s.Setup = c.Setup
-	}
-	if c.MCP != nil && *c.MCP == nil {
-		s.MCPServers = &[]string{} // none, not null
-	}
+	s = ChoiceSettings(s, c)
 	if err := SaveSettings(repo, s); err != nil {
 		return Step{}, err
 	}
@@ -432,6 +423,23 @@ func settingsStep(repo string, c Choice) (Step, error) {
 		detail += fmt.Sprintf(" · with %d at once, the checks must cope with running side by side", c.Concurrent)
 	}
 	return Step{Kind: kind, Label: "settings", Detail: detail}, nil
+}
+
+// ChoiceSettings is s, a project's settings, with the choice over them as ApplySettings saves it: the
+// runners as check_fast and check_full, their time limits (the defaults where the choice has none),
+// the concurrency, the MCP servers, and the setup command where the choice changes it.
+func ChoiceSettings(s Settings, c Choice) Settings {
+	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
+	// The defaults where the choice has none: init asks no time limit, so they are there to edit.
+	s.CheckFastTimeout = orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
+	s.CheckFullTimeout = orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)
+	if c.Setup != c.SetupWas {
+		s.Setup = c.Setup
+	}
+	if c.MCP != nil && *c.MCP == nil {
+		s.MCPServers = &[]string{} // none, not null
+	}
+	return s
 }
 
 // orText is v, or def when v is empty.

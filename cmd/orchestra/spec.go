@@ -126,13 +126,16 @@ type specRun struct {
 	out, err  io.Writer
 }
 
-// runSpec commits the spec of the run s and has it broken down, and returns the root epic's ID,
-// which the run is then scoped to. When there is nothing to run it returns "" and the exit code;
-// what happened has been reported.
+// runSpec sets up the repository of the run s where orchestra init hasn't (spec_setup.go), commits
+// the spec and has it broken down, and returns the root epic's ID, which the run is then scoped to.
+// When there is nothing to run it returns "" and the exit code; what happened has been reported.
 func (s *session) runSpec(ctx context.Context) (string, int) {
 	// Ctrl+C stops the breakdown as it does the loop; what it filed so far stays filed.
 	ctx, stop := s.stops.context(ctx)
 	defer stop()
+	if code := s.setUpForSpec(ctx); code != dispatch.ExitOK {
+		return "", code
+	}
 	c := s.cfg
 	return specRun{
 		file: c.specFile, repo: c.Repo, refine: c.Refine,

@@ -188,6 +188,8 @@ type options struct {
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
+	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
+	specSetup *project.Choice
 	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
 	terminalAsked string
 	where         runsIn // where orchestra itself runs, as checkTerminal finds it
@@ -210,7 +212,8 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // argument such as 'init' after a flag; both have been reported to output.
 //
 // Its phases, in the order their problems are reported: the flags, and the spec file --spec gives;
-// the repository; the terminal, under the project's settings, read once here for it and the project;
+// the repository; the terminal, under the project's settings, read once here for it and the project
+// (for a spec run that sets the repository up, those its setup writes: see planSpecSetup);
 // the commands a run calls; then, in a repository, the project's settings and layout, its checkout,
 // and where the spec is kept there.
 func loadConfig(
@@ -225,6 +228,7 @@ func loadConfig(
 	problems = append(problems, specProblems...)
 	problems = append(problems, findRepo(ctx, &c)...)
 	settings, unreadable := loadSettings(c.Repo)
+	settings = planSpecSetup(&c, f.concurrency, settings)
 	problems = append(problems, checkTerminal(ctx, &c, settings, getenv)...)
 	problems = append(problems, checkTools()...)
 	if c.Repo != "" {
@@ -372,7 +376,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.StringVar, &c.specFile, "spec", "ORCHESTRA_SPEC", "", parseText,
 		"commit this spec, a Markdown or plain-text file (one outside the repository as a copy in "+
 			project.Dir+"/"+project.SpecsDir+"/), break it down into an epic and its tickets, "+
-			"and run the epic as --ticket would [ORCHESTRA_SPEC]")
+			"and run the epic as --ticket would; a repository orchestra init hasn't set up, even one with no "+
+			"commit, is set up first, with init's defaults [ORCHESTRA_SPEC]")
 	bindEnv(e, fs.BoolVar, &c.Refine, "refine", "ORCHESTRA_REFINE", false, parseOnOff,
 		"with --spec, talk the spec through with you in a Claude Code session before it is broken down "+
 			"[ORCHESTRA_REFINE=1]")
@@ -447,7 +452,10 @@ func (f *runFlags) specFrom() string {
 // findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory.
 func findRepo(ctx context.Context, c *options) []string {
 	repo, err := (git.Git{}).TopLevel(ctx, "")
-	if err != nil {
+	switch {
+	case err != nil && c.specFile != "":
+		return []string{noRepoForSpec}
+	case err != nil:
 		return []string{"Not inside a git repository: cd into the project first."}
 	}
 	c.Repo = repo
@@ -564,21 +572,22 @@ func keep2[A, B any](problems *[]string, dstA *A, dstB *B) func(A, B, error) {
 	}
 }
 
-// checkCheckout checks that the project in c.Repo can be run: that it was set up (c.notSetUp), its
-// worker prompt, its Beads database and the ticket --ticket scopes the run to, a main checkout on a
-// branch (c.Base), and a folder for the worktrees outside it (c.WTRoot).
+// checkCheckout checks that the project in c.Repo can be run: that it was set up (c.notSetUp), unless
+// the spec run sets it up (c.specSetup), its worker prompt, its Beads database and the ticket --ticket
+// scopes the run to, a main checkout on a branch (c.Base), and a folder for the worktrees outside it
+// (c.WTRoot).
 func checkCheckout(ctx context.Context, c *options) []string {
 	var problems []string
 	// A project never set up is missing what orchestra init writes or sets up, the worker prompt and
-	// Beads: run says to run it, first, in place of those two problems.
-	c.notSetUp = !c.ownPrompt && !project.IsSetUp(c.Repo)
+	// Beads: run says to run it, first, in place of those two problems. A spec run sets it up itself.
+	c.notSetUp = c.specSetup == nil && !c.ownPrompt && !project.IsSetUp(c.Repo)
 	prompt := c.WorkerPrompt
 	if rel, err := filepath.Rel(c.Repo, prompt); err == nil && filepath.IsLocal(rel) {
 		prompt = rel
 	}
 	b, err := os.ReadFile(c.WorkerPrompt)
 	switch {
-	case c.notSetUp:
+	case c.notSetUp, c.specSetup != nil && !c.ownPrompt: // to be written
 	case err != nil && c.ownPrompt:
 		problems = append(problems, "Worker prompt not found: "+prompt+" (from -prompt or WORKER_PROMPT).")
 	case err != nil:
@@ -595,7 +604,7 @@ func checkCheckout(ctx context.Context, c *options) []string {
 		}
 	}
 	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
-		if !c.notSetUp {
+		if !c.notSetUp && c.specSetup == nil {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
 		}
 	} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
