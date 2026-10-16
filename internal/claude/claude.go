@@ -247,6 +247,8 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 //     pipe. The command reads what bin left, as when it is gone.
 //   - It doesn't make the folder again: a git stash pop of the worker's own git stash --all would
 //     then fail on the file.
+//   - It records nothing of a session other than the one the folder's session record names (foreign),
+//     as an earlier worker's left running in the same worktree.
 func hookSettings(bin, records string) map[string]any {
 	hook := func(event string) []any {
 		line := "{ " + hookCookie + "=1 " + command.ShellQuote(bin) + " " + hookCommand + " " + event + " " +

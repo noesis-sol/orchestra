@@ -98,6 +98,9 @@ func writeRecords(root *os.Root, event string, in []byte) {
 	if json.Unmarshal(in, &h) != nil {
 		h = hookInput{} // the input is unreadable: only the records that need none of it are written
 	}
+	if foreign(root, event, h) {
+		return
+	}
 	input := withFormat(in)
 	switch event {
 	case "PreToolUse":
@@ -138,6 +141,25 @@ func writeRecords(root *os.Root, event string, in []byte) {
 	case "Notification":
 		replace(root, noticeName, input)
 	}
+}
+
+// foreign reports whether the event's hook, whose input is h, is one of a session other than the one
+// the folder's session record (sessionName) names: an earlier worker's, left running in its tab beside
+// the worker started since in the same worktree (dispatch renames an idle earlier worker and leaves
+// it), whose hooks write to the same folder. Its records would tell of the worker that came after it:
+// its SessionEnd, as it is closed or exited, that one gone. A session's start is its own, which it
+// records, but a compaction's, which keeps the session's ID: one under another ID is another
+// session's. An input or a record that names no session is the folder's session's.
+func foreign(root *os.Root, event string, h hookInput) bool {
+	if h.Session == "" || event == "SessionStart" && h.Source != "compact" {
+		return false
+	}
+	b, err := root.ReadFile(sessionName)
+	var rec hookInput
+	if err != nil || json.Unmarshal(b, &rec) != nil || rec.Session == "" {
+		return false // no session recorded yet, as before its start: none to tell another from
+	}
+	return rec.Session != h.Session
 }
 
 // withFormat returns in, a hook's input, as a record: the JSON object with V first; nil when in is no

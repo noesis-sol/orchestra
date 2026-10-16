@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- In tmux and cmux, a worker started in the worktree of an earlier one left
+  running in its tab, as when its deferred ticket is taken up again, no
+  longer reads as gone when the earlier one exits or is closed: the earlier
+  one's hooks wrote to the same records, so its end ended the worker too and
+  orchestra resumed the worker's session in a second Claude beside it. The
+  hooks now record only the session the worktree's last start named.
 - On tmux 3.7, a child ticket's worker gets its window, named with `_` for
   the `.` in its ID: tmux 3.7 refuses a window name holding `.` or `:`, so the
   run stopped on the first such ticket, blaming the workspace.
