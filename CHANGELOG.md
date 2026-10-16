@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket set aside as its check failed again after its worker's fix is
+  checked once more only after its merge has returned. Taken up while bd was
+  still labelling it, with Base moved on during the hand-back, it ran twice at
+  once: the first's end cleared the second's slot and dashboard row, so the
+  run could end, report and exit while the second still rebased, checked or
+  fast-forwarded Base, and one ticket more than the concurrency could run.
 - A run whose output goes to a pipe nobody reads any more, as when Ctrl+C on
   `orchestra -plain | tee run.txt` ends tee too, winds down as a stopped run
   does: it labels the tickets of the workers it leaves running, saves them for

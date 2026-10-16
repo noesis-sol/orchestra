@@ -55,8 +55,10 @@ func (o *Loop) isRechecked(id string) bool {
 }
 
 // dueRecheck takes up the first ticket waiting to be checked again whose Base has moved on since
-// its check failed, if any.
-func (o *Loop) dueRecheck(ctx context.Context) (recheck, bool) {
+// its check failed, if any, leaving out those still running: a ticket is kept to be checked again
+// as it is set aside, before its merge has returned (see checksFailed), and a second goroutine for
+// it would share its slot and its dashboard row, the first's end clearing them under the second.
+func (o *Loop) dueRecheck(ctx context.Context, running map[string]bool) (recheck, bool) {
 	c := o.cfg
 	o.mu.Lock()
 	waiting := slices.Clone(o.rechecks)
@@ -66,6 +68,9 @@ func (o *Loop) dueRecheck(ctx context.Context) (recheck, bool) {
 	}
 	base := o.checkout.Head(ctx, c.Repo, c.Base)
 	for i, rc := range waiting {
+		if running[rc.w.id] {
+			continue // taken up once its merge has returned
+		}
 		// On, not merely elsewhere: on a Base moved back, its branch would fast-forward unchecked.
 		if base == rc.onto || !o.merger.IsAncestor(ctx, c.Repo, rc.onto, c.Base) {
 			continue
@@ -90,7 +95,7 @@ func (r *runState) recheckTickets() {
 		if r.takeDrainRequest() {
 			return
 		}
-		rc, ok := o.dueRecheck(r.ctx)
+		rc, ok := o.dueRecheck(r.ctx, r.inflight)
 		if !ok {
 			return
 		}
