@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 // IDProblem says why ticket id can't be run, or returns "". A ticket's ID names its worktree, a
 // folder under the worktree root, and its branch, wt/<id>; workers file tickets themselves, and
 // Beads checks only an ID's prefix, so an ID like x-../../y or x-a/b reaches the loop. It must be a
 // plain local name (filepath.IsLocal, with no path separator and no ..) that git takes in a branch
-// name (git help check-ref-format).
+// name (git help check-ref-format), and every character of it printable: git takes C1 controls such
+// as U+009B, the 8-bit CSI, and format characters such as U+202E, which reorders the text after it,
+// but an ID also names a tab and is printed wherever orchestra reports on its ticket.
 func IDProblem(id string) string {
 	if id == "." || !filepath.IsLocal(id) || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
 		return "IDs with path characters can't be run"
@@ -19,6 +22,9 @@ func IDProblem(id string) string {
 	if strings.HasPrefix(id, ".") || strings.HasSuffix(id, ".") || strings.HasSuffix(id, ".lock") ||
 		strings.Contains(id, "@{") || strings.ContainsFunc(id, notInRef) {
 		return "IDs that can't name a git branch can't be run"
+	}
+	if strings.ContainsFunc(id, notPrintable) {
+		return "IDs with control or invisible characters can't be run"
 	}
 	return ""
 }
@@ -31,6 +37,12 @@ func branchOf(id string) string {
 // notInRef reports whether git refuses r anywhere in a ref name.
 func notInRef(r rune) bool {
 	return r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[", r)
+}
+
+// notPrintable reports whether r is a character an ID can't show: a control, format or unassigned
+// character, or a space other than ASCII's (which notInRef refuses).
+func notPrintable(r rune) bool {
+	return !unicode.IsPrint(r)
 }
 
 // setAsideBadIDs sets aside each ticket in ready, not already skipped, whose ID IDProblem refuses,

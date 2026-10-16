@@ -15,7 +15,7 @@ var trickyIDs = []string{
 	"orchestra-k4i", "orchestra-k4i.1", "B", "émile-q2", "x\xff", "-x", "x-@", "@", "x-a@b", "x-HEAD", "x-a.lock.b",
 	"x-a/b", `x-a\b`, "x-../../y", "x-..", "x-a..b", "../y", "/abs", "", ".", "x/", "x//y", "x/.y", "x.lock/y",
 	"x-a b", "x-a~1", "x-a^", "x-a:b", "x-a?", "x-a[", "x-a.lock", "x-a.", ".x", "x-@{1}", "x-a*", "x-\x7f",
-	"x-\n", "x-\t", "x-\x01",
+	"x-\n", "x-\t", "x-\x01", "x-\u009b", "x-\u202e",
 }
 
 // FuzzIDProblem gives IDProblem any ID. One it accepts names a branch git takes, wt/<id>, and a

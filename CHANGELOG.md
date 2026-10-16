@@ -13,6 +13,10 @@ All notable changes to orchestra are documented here. The format follows
   again, never told the answer is in: the message's Enter picked the dialog's
   first option, so orchestra allowed the tool itself, a removal Claude Code's
   safety check held for a person included.
+- A ready ticket whose ID carries a character that can't be shown, a C1
+  control such as U+009B (the 8-bit CSI), a format character such as U+202E
+  or a space other than ASCII's, is set aside like one whose ID can't name a
+  git branch, instead of naming a branch, a worktree and a tab.
 - A ticket set aside as its check failed again after its worker's fix is
   checked once more only after its merge has returned. Taken up while bd was
   still labelling it, with Base moved on during the hand-back, it ran twice at
