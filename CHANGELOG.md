@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra --spec <file>` (or `ORCHESTRA_SPEC`) runs a spec, a Markdown or
+  plain-text file: it commits the spec, alone, where workers can read it (a
+  file outside the repository as a copy in `.orchestra/specs/`), has it broken
+  down into an epic and its tickets, and runs that epic without asking, with
+  no ticket limit unless `-limit` or `LIMIT` gives one. `--refine` (or
+  `ORCHESTRA_REFINE`) asks to talk the spec through first. The run lock, the
+  START line and the event stream's start record name the spec.
 - In a terminal, "What should this run work on?" offers a third option
   between the current tickets and a new feature: **Spec: build what a spec
   file describes**. It asks for the spec's file: a path typed or pasted (a
@@ -208,13 +215,6 @@ All notable changes to orchestra are documented here. The format follows
   repository's files are known or not, but not one naming `web/lib/a.ts`.
   It was dropped, or kept as a file named `web/src/*.ts` when git couldn't
   list the files, so the two ran side by side over the same new files.
-- `orchestra --spec <file>` (or `ORCHESTRA_SPEC`) runs a spec, a Markdown or
-  plain-text file: it commits the spec, alone, where workers can read it (a
-  file outside the repository as a copy in `.orchestra/specs/`), has it broken
-  down into an epic and its tickets, and runs that epic without asking, with
-  no ticket limit unless `-limit` or `LIMIT` gives one. `--refine` (or
-  `ORCHESTRA_REFINE`) asks to talk the spec through first. The run lock, the
-  START line and the event stream's start record name the spec.
 - A worker whose turn ends on the account's usage limit (the five-hour
   session limit, the weekly one) now shows as `limited`, rather than idle
   with its ticket in progress, and is no longer told to continue into the
