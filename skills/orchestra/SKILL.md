@@ -16,9 +16,11 @@ a closed ticket with no commits of its own and a clean worktree, which has nothi
 else is left for review, and the loop moves on or stops. It never pushes.
 
 Two words, kept apart: **workers** do tickets, one per tab and worktree; **organs** are
-orchestra's own one-shot advisers (triage, the predictor, the reviewer that writes the run report),
-each a `claude -p` call with no tools and no MCP servers that only reads what it is given and
-answers. Organs never change a ticket or the code.
+orchestra's own one-shot advisers: triage, the predictor, the reviewer that writes the run report,
+the screen and the plan (for a feature request) and the scout (for `orchestra init`'s checks).
+Each is a `claude -p` call with no MCP servers that answers from what it is given. All but the
+scout have no tools; the scout reads the repository itself, with read-only tools only (Read, Glob,
+Grep). Organs never change a ticket or the code.
 
 ## First, find out where the project stands
 
