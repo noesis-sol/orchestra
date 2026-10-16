@@ -60,7 +60,7 @@ func (o *Loop) waitSettled(
 			return idle.since, nil
 		}
 		h := o.hooksOf(w)
-		if stop, told := o.limitPoll(ctx, w, st, h, &limit); stop != nil {
+		if stop, told := o.limitPoll(ctx, w, st, h, &limit, carryOnAfterLimit(w.id)); stop != nil {
 			return time.Time{}, stop
 		} else if told {
 			continue // the checks below wait for its next poll

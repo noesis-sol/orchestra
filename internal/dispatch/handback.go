@@ -42,14 +42,15 @@ func (o *Loop) whyNotHandBack(ctx context.Context, r rebaseStop, handedBack int)
 }
 
 // workerAway says why ticket id's worker can't be handed its finished ticket back, or "" when it is
-// idle in its tab.
+// idle in its tab, or at the account's usage limit there: it is handed it back once the run's hold
+// says it carries on (see waitResolved).
 func (o *Loop) workerAway(ctx context.Context, id string) string {
 	switch st, err := o.agents.Status(ctx, o.agentName(id)); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
 	case st == StateGone:
 		return "its worker is gone"
-	case st != StateIdle && st != StateDone:
+	case st != StateIdle && st != StateDone && st != StateLimited:
 		return "its worker is " + string(st)
 	}
 	return ""
@@ -74,8 +75,9 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 // handBack gives a stopped rebase to the ticket's worker and waits for it to finish, then looks at
 // the result itself. It returns why the resolution failed, or "" once the branch is on top of onto
 // with the ticket's own commits, or those of them Base hasn't already, to be checked next (see
-// checkRebased) or closed as unchanged when none are left, or errInterrupted after
-// Ctrl+C (the rebase is left as it is). Neither lock is held: the worker may take minutes.
+// checkRebased) or closed as unchanged when none are left, or the reason the run stops meanwhile,
+// errInterrupted after Ctrl+C or the usage limit's, the rebase left as it is (see handBackTo). Neither
+// lock is held: the worker may take minutes.
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
 	line := fmt.Sprintf("  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve "+
 		"(up to %s)", r.br, o.cfg.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(o.handBackLimit()))
@@ -98,29 +100,26 @@ func (o *Loop) handBackLimit() time.Duration {
 	return orDefault(o.cfg.ResolveTimeout, project.DefaultResolveTimeout)
 }
 
-// handBackTo hands r's ticket back to its idle worker as mode says, with line for the log and prompt
-// for the worker, waits for it to settle (see waitResolved), and then returns why verify, which looks
-// at what the worker left without taking its word for it, rejects that: "" when it doesn't. It returns
-// why the hand-back failed before that, or errInterrupted after Ctrl+C, the worker's work left as it is.
-// Neither lock is held: the worker may take minutes. The time limit, handBackLimit, runs from the
-// hand-back, not from when the worker is seen to take it.
+// handBackTo hands r's ticket back to its worker as mode says, with line for the log and prompt for
+// the worker, waits for it to settle (see waitResolved), and then returns why verify, which looks at
+// what the worker left without taking its word for it, rejects that: "" when it doesn't. It returns
+// why the hand-back failed before that, or the reason the run stops meanwhile, the worker's work left
+// as it is and the ticket handed back still: errInterrupted after Ctrl+C, or the usage limit's (see
+// limitStop). Neither lock is held: the worker may take minutes, or wait out the usage limit. The time
+// limit, handBackLimit, runs from the hand-back, not from when the worker is seen to take it, and
+// leaves out the time it waits on the usage limit.
 func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line, prompt string,
 	verify func() string) (string, *stopReason) {
-	agent := o.agentName(r.id)
 	limit := o.handBackLimit()
 	deadline := time.Now().Add(limit)
-	w := o.newWatcher(r.wt, o.setHandedBack(r.id, mode))
+	watch := o.newWatcher(r.wt, o.setHandedBack(r.id, mode))
 	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: line})
-	if !o.deliverPrompt(ctx, agent, prompt) {
-		if ctx.Err() != nil {
-			return "", errInterrupted
-		}
-		o.setHandedBack(r.id, handNone)
-		return "its worker did not take the prompt", nil
+	why, stop := o.waitResolved(ctx, r.worker, prompt, deadline, limit, watch.report)
+	if stop == nil && ctx.Err() != nil {
+		stop = errInterrupted
 	}
-	why := o.waitResolved(ctx, agent, r.wt, deadline, limit, w.report)
-	if ctx.Err() != nil {
-		return "", errInterrupted
+	if stop != nil {
+		return "", stop
 	}
 	o.setHandedBack(r.id, handNone)
 	if why != "" {
@@ -129,44 +128,112 @@ func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line
 	return verify(), nil
 }
 
-// waitResolved waits for the worker to settle after its hand-back, which it took and has started
-// on: idle with the rebase over, idle for idleGrace with it still in progress (its own background
-// command may keep it idle), gone, or still busy at deadline, limit after the hand-back, which it
-// returns as the reason. Each status read goes to report.
-func (o *Loop) waitResolved(ctx context.Context, agent, wt string, deadline time.Time, limit time.Duration,
-	report func(context.Context, AgentState, error)) string {
-	var idleSince time.Time
-	for {
-		st, err := o.agents.Status(ctx, agent)
+// waitResolved hands the worker w its finished ticket back with prompt and waits for it to settle once
+// it has started on it: idle with the rebase over, idle for idleGrace with it still in progress (its
+// own background command may keep it idle), gone, or still busy at deadline, limit after the
+// hand-back, which it returns as the reason, as it does a prompt not taken. A worker at the account's
+// usage limit, as it is handed back or later, joins the run's hold (see limitPoll), the time it waits
+// not counting toward limit: one limited as it is handed back is given prompt where the hold tells it
+// to carry on, or once it goes idle by itself, and one limited later is told to carry on. It returns
+// the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the hold's once it has lasted
+// Config.UsageLimitWait. Each status read goes to report.
+func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadline time.Time, limit time.Duration,
+	report func(context.Context, AgentState, error)) (why string, stop *stopReason) {
+	var lw limitWait
+	var idleSince, settled time.Time
+	defer func() { o.limitDone(w.id, &lw, settled, stop) }()
+	given := false
+	give := func() string {
+		if !o.deliverPrompt(ctx, w.agent, prompt) {
+			return "its worker did not take the prompt"
+		}
+		given = true
+		return ""
+	}
+	if st, err := o.agents.Status(ctx, w.agent); err == nil && st == StateLimited {
+		o.info("  %s's worker is at the usage limit: it is handed back once the limit lifts, the wait not counting "+
+			"toward the %s", w.id, command.ShortDuration(limit))
+	} else if why := give(); why != "" {
+		return why, nil
+	}
+	for polled := false; ; polled = true {
+		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
+			return "", errInterrupted
+		}
+		st, err := o.agents.Status(ctx, w.agent)
 		report(ctx, st, err)
-		if err != nil {
+		switch {
+		case err != nil:
 			o.log.Raw("", err)
+		case st == StateGone:
+			lw.leave(time.Now(), st)
+			if !given {
+				return "its worker is gone", nil
+			}
+			return "", nil
+		default:
+			var h hooksSeen
+			msg := carryOnAfterLimit(w.id)
+			if st == StateLimited {
+				h = o.hooksOf(w) // when its limit resets, as they say
+			}
+			if !given {
+				msg = prompt
+			}
+			stop, told := o.limitPoll(ctx, w, st, h, &lw, msg)
+			if stop != nil {
+				return "", stop
+			}
+			if told {
+				given, idleSince = true, time.Time{}
+				continue // the checks below wait for its next poll
+			}
 		}
 		idle := err == nil && (st == StateIdle || st == StateDone)
+		if idle && !given { // past the limit by itself: handed back now
+			if why := give(); why != "" {
+				return why, nil
+			}
+			continue
+		}
 		switch {
-		case err == nil && st == StateGone:
-			return ""
 		case !idle:
 			idleSince = time.Time{}
 		case idleSince.IsZero():
 			idleSince = time.Now()
 		}
-		if idle && (!o.merger.RebaseInProgress(ctx, wt) || time.Since(idleSince) >= idleGrace) {
-			return ""
+		if idle && (!o.merger.RebaseInProgress(ctx, w.wt) || time.Since(idleSince) >= idleGrace) {
+			settled = time.Now()
+			return "", nil
 		}
-		if time.Now().After(deadline) {
+		if now := time.Now(); now.After(deadline.Add(lw.limited(now))) {
 			if idle {
-				return "" // what it left is checked next
+				settled = now
+				return "", nil // what it left is checked next
 			}
 			if err != nil {
-				return fmt.Sprintf("its worker's status could still not be read after %s", command.ShortDuration(limit))
+				return fmt.Sprintf("its worker's status could still not be read after %s", command.ShortDuration(limit)), nil
 			}
-			return fmt.Sprintf("its worker was still %s after %s", st, command.ShortDuration(limit))
-		}
-		if !sleep(ctx, o.pollEvery()) {
-			return ""
+			return fmt.Sprintf("its worker was still %s after %s", st, command.ShortDuration(limit)), nil
 		}
 	}
+}
+
+// handBackLeft says what a stop of the run leaves under way of ticket id's hand-back to its worker,
+// for the maintainer to finish, as a line or a note on it puts it: "" when it has none.
+func (o *Loop) handBackLeft(id string) string {
+	o.mu.Lock()
+	st := o.active[id]
+	o.mu.Unlock()
+	switch {
+	case st.Resolving:
+		return "its rebase, handed back to resolve, is left in progress: once its worker has finished it, " +
+			"run the check and merge the branch by hand"
+	case st.Fixing:
+		return "its failing check, handed back to fix, is left to its worker: once it has committed the fix, " +
+			"run the check and merge the branch by hand"
+	}
+	return ""
 }
 
 // verifyResolved checks, without taking the worker's word for it, that the rebase is over, the

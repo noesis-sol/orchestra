@@ -31,7 +31,8 @@ type checked struct {
 // a failure back to its worker to fix while it can (see whyNotFixCheck), *fixes counting the hand-backs
 // in the ticket's merge; resolved says its worker resolved the rebase. The caller holds the merge queue,
 // which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
-// is rejected. It returns errInterrupted after Ctrl+C, the worker's work left as it is.
+// is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's stop during a hand-back,
+// the worker's work left as it is.
 func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fixes *int,
 	resolved bool) (checked, *stopReason) {
 	c := o.cfg
@@ -144,8 +145,9 @@ func times(n int) string {
 // fixCheck hands a failure on r's branch at commit at, as res says, back to the ticket's worker to fix,
 // the nth hand-back in its merge, waits for it to finish, and then looks at what it left (see
 // verifyFixed). It returns what the worker committed, as in "2 commits", or why the hand-back failed,
-// or errInterrupted after Ctrl+C. Neither lock is held: the worker may take minutes. The time limit is
-// the one for resolving conflicts, from the hand-back (see handBackTo).
+// or the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the usage limit's. Neither
+// lock is held: the worker may take minutes. The time limit is the one for resolving conflicts, from
+// the hand-back (see handBackTo).
 func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checked, n int) (fixed, why string,
 	stop *stopReason) {
 	c := o.cfg

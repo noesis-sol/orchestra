@@ -16,14 +16,17 @@ import (
 // for it (USAGE_LIMIT) rather than ending: no new ticket starts, as its worker would only reach the
 // limit too, and each worker that reached it waits, neither told to continue nor settled, nor counted
 // toward the hold for the environment (see waitSettled), the time not counting toward its ticket
-// limit. A minute after the limit resets (Claude Code says when, to the minute), each worker still
-// limited is told to carry on, and the hold lifts; Claude Code's own automatic continue, when on, has
-// carried it on by then. When the reset isn't known, one limited worker is told to carry on every
-// limitRetry, to try the limit. A worker seen going on for limitCarried after it was limited, or
-// settling once it went on, shows that the limit has lifted: the hold lifts, and the workers still
-// limited are told to carry on. A worker that reaches the limit again starts another hold. Each hold
-// lasts at most Config.UsageLimitWait: then the workers still limited stop the run (USAGE_LIMIT,
-// ExitUsageLimit), left in their tabs for the next run to carry over.
+// limit. A worker handed its finished ticket back (see waitResolved) waits the same way, the time not
+// counting toward the hand-back's time limit; one limited as it is handed back is given the hand-back
+// where it would be told to carry on. A minute after the limit resets (Claude Code says when, to the
+// minute), each worker still limited is told to carry on, and the hold lifts; Claude Code's own
+// automatic continue, when on, has carried it on by then. When the reset isn't known, one limited
+// worker is told to carry on every limitRetry, to try the limit. A worker seen going on for
+// limitCarried after it was limited, or settling once it went on, shows that the limit has lifted: the
+// hold lifts, and the workers still limited are told to carry on. A worker that reaches the limit
+// again starts another hold. Each hold lasts at most Config.UsageLimitWait: then the workers still
+// limited stop the run (USAGE_LIMIT, ExitUsageLimit), left in their tabs for the next run to carry
+// over, or, handed back, for the maintainer to finish the hand-back.
 
 // How the run waits out the usage limit.
 const (
@@ -187,12 +190,13 @@ const (
 	limitGivesUp                    // stops the run: the hold has lasted Config.UsageLimitWait
 )
 
-// limitPoll is waitSettled's turn on the usage limit at each poll of the worker w that finds it in
-// state st (not gone), its hooks having reported h; lw is what it keeps of it. A limited worker joins
-// the hold, starting one if the run has none, and is told to carry on when the hold says (told), or
-// stops the run (stop) once the hold has gone on for Config.UsageLimitWait (see limitTurn). One seen
-// going on after the limit for limitCarried lifts the hold (see limitCarriedOn).
-func (o *Loop) limitPoll(ctx context.Context, w worker, st AgentState, h hooksSeen, lw *limitWait) (
+// limitPoll is waitSettled's and waitResolved's turn on the usage limit at each poll of the worker w
+// that finds it in state st (not gone), its hooks having reported h; lw is what it keeps of it. A
+// limited worker joins the hold, starting one if the run has none, and is told to carry on with msg
+// when the hold says (told: it took that up; see tellAfterLimit), or stops the run (stop) once the
+// hold has gone on for Config.UsageLimitWait (see limitTurn). One seen going on after the limit for
+// limitCarried lifts the hold (see limitCarriedOn).
+func (o *Loop) limitPoll(ctx context.Context, w worker, st AgentState, h hooksSeen, lw *limitWait, msg string) (
 	stop *stopReason, told bool) {
 	now := time.Now()
 	if st != StateLimited {
@@ -207,7 +211,7 @@ func (o *Loop) limitPoll(ctx context.Context, w worker, st AgentState, h hooksSe
 	lw.enter(now, h.use.Limit)
 	switch o.limitTurn(w.id, lw, now) {
 	case limitTells:
-		return nil, o.tellAfterLimit(ctx, w, lw)
+		return nil, o.tellAfterLimit(ctx, w, lw, msg)
 	case limitGivesUp:
 		return o.limitStop(ctx, w, lw), false
 	}
@@ -327,12 +331,20 @@ func (o *Loop) limitDone(id string, lw *limitWait, idleAt time.Time, stop *stopR
 	}
 }
 
-// tellAfterLimit tells the limited worker w to carry on with its ticket now that the usage limit has
-// reset, or may have, and reports whether it took that up. Escape goes first: with Claude Code's
-// automatic continue off, it asks what to do in a dialog that text typed into would answer, and
-// Escape dismisses it; with it on, Escape cancels its own continue if it still waits, which this
-// message takes the place of.
-func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait) bool {
+// carryOnAfterLimit is what the limited worker on ticket id is told to carry on with (see
+// tellAfterLimit).
+func carryOnAfterLimit(id string) string {
+	return fmt.Sprintf("Orchestra: the account's usage limit has reset. Carry on with %s where you left off, "+
+		"as your instructions say.", id)
+}
+
+// tellAfterLimit tells the limited worker w to carry on now that the usage limit has reset, or may
+// have, with msg: with its ticket (carryOnAfterLimit), or with the hand-back it waited to be given (see
+// waitResolved). It reports whether it took that up. Escape goes first: with Claude Code's automatic
+// continue off, it asks what to do in a dialog that text typed into would answer, and Escape dismisses
+// it; with it on, Escape cancels its own continue if it still waits, which this message takes the
+// place of.
+func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait, msg string) bool {
 	lw.told = time.Now()
 	if err := o.agents.SendKeys(ctx, w.agent, "esc"); err != nil {
 		o.log.Raw("", fmt.Errorf("cannot press Escape for %s: %w", w.agent, err))
@@ -340,8 +352,6 @@ func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait) bool
 	if !sleep(ctx, escapeSettle) {
 		return false
 	}
-	msg := fmt.Sprintf("Orchestra: the account's usage limit has reset. Carry on with %s where you left off, "+
-		"as your instructions say.", w.id)
 	if !o.deliverPrompt(ctx, w.agent, msg) {
 		if ctx.Err() == nil {
 			o.log.Raw("", fmt.Errorf("%s's worker did not take the message to carry on after the usage limit", w.id))
@@ -354,18 +364,24 @@ func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait) bool
 
 // limitStop is the reason the limited worker w stops the run with once the hold has gone on for
 // Config.UsageLimitWait, as lw has its limit: it is left in its tab, noted on its ticket, for the next
-// run to carry over.
+// run to carry over; one handed its finished ticket back, with the hand-back left under way for the
+// maintainer to finish (see handBackLeft).
 func (o *Loop) limitStop(ctx context.Context, w worker, lw *limitWait) *stopReason {
 	now := time.Now()
 	waited := "and usage_limit_wait is 0"
 	if wait := o.cfg.UsageLimitWait; wait > 0 {
 		waited = "still waiting after " + command.ShortDuration(wait)
 	}
+	left := o.handBackLeft(w.id)
+	if left != "" {
+		left = "; " + left
+	}
 	o.appendNotes(context.WithoutCancel(ctx), w.id, fmt.Sprintf(
 		"Orchestra: the worker in tab %s reached the account's usage limit (%s), %s; the run stopped, "+
-			"leaving it there (worktree %s).", w.tab, resetsSaid(lw.reset, now), waited, w.wt))
+			"leaving it there (worktree %s)%s.", w.tab, resetsSaid(lw.reset, now), waited, w.wt, left))
 	return halt(ExitUsageLimit, stopUsageLimit, ": %s's worker reached the usage limit (%s), %s; stopping, "+
-		"with its tab %s and worktree %s left as they are", w.id, resetsSaid(lw.reset, now), waited, w.tab, w.wt)
+		"with its tab %s and worktree %s left as they are%s", w.id, resetsSaid(lw.reset, now), waited, w.tab, w.wt,
+		left)
 }
 
 // waitOutLimit is Run's step once nothing runs while the run holds for the usage limit and would take

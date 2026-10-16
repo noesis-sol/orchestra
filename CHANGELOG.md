@@ -102,6 +102,14 @@ All notable changes to orchestra are documented here. The format follows
   lists. `default` was dropped on a current `claude` with a
   `PERMISSION_MODE` warning, and workers started in the mode Claude Code's
   settings give; one setting now suits an older `claude` and a newer alike.
+- A worker that reaches the account's usage limit while it resolves its
+  rebase's conflicts or fixes its failing check now holds the run and waits
+  out the limit, as one on its ticket does: no new tickets start, the wait
+  doesn't count toward `resolve_timeout`, and it is told to carry on after
+  the reset. It was taken for busy until the 20 minutes ran out and the
+  ticket was set aside, while new tickets kept starting. A worker already at
+  the limit when its ticket is to be handed back is handed it once the limit
+  lifts, rather than the ticket being set aside (`its worker is limited`).
 - A folder that doesn't exist yet in a ticket's `files` metadata, written
   with a trailing slash (`web/src/`), now holds the files under it: a
   ticket listing it overlaps one naming `web/src/cart.ts`, in the run and

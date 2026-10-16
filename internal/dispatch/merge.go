@@ -256,7 +256,7 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 	why, stop := o.handBack(ctx, r)
 	m.queue.lock()
 	if stop != nil {
-		return mergeDone, stop // Ctrl+C: the rebase is left as it is, as the INTERRUPTED line says
+		return mergeDone, stop // Ctrl+C or the usage limit: the rebase is left as it is, as the stop says
 	}
 	if why == "" {
 		m.repo.lock()
@@ -268,7 +268,7 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 		o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
 		var res checked
 		if res, stop = o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, true); stop != nil {
-			return mergeDone, stop // Ctrl+C: a fix under way is left as it is
+			return mergeDone, stop // Ctrl+C or the usage limit: a fix under way is left as it is
 		}
 		why = o.failedResolved(r, res)
 	}
