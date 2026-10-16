@@ -138,6 +138,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra -h`'s exit codes name 8, `usage limit held too long`: the code
+  a run ends with when the account's usage limit holds it longer than
+  `usage_limit_wait`. The line left it out.
 - A file of a SvelteKit route named in a ticket's text, whose name starts
   with `+` (`src/routes/[slug]/+page.svelte`, `+layout.ts`), now means that
   file: the ticket overlaps one listing it and a worker editing it, whether
