@@ -4,7 +4,7 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.6] - 2026-10-16
 
 ### Added
 
@@ -21,6 +21,7 @@ All notable changes to orchestra are documented here. The format follows
   instead of below whatever the terminal showed: the form gets the terminal's
   full height. Written to a pipe or a file, or with `TERM=dumb`, it clears
   nothing, and what init prints after the form stays on the screen.
+
 ### Fixed
 
 - A permission prompt held by Claude Code's safety check on removals is no
@@ -2148,6 +2149,7 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[0.7.6]: https://github.com/noesis-sol/orchestra/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/noesis-sol/orchestra/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/noesis-sol/orchestra/compare/v0.7.2...v0.7.4
 [0.7.2]: https://github.com/noesis-sol/orchestra/compare/v0.7.1...v0.7.2
