@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/text/unicode/norm"
@@ -74,17 +75,24 @@ func (f Footprint) String() string {
 	return s
 }
 
+// pathRest is the rest of a run of a path token outside brackets: letters, digits, marks, _ . / -,
+// and a + starting a name after a /.
+const pathRest = `(?:/\+[\p{L}\p{M}\p{N}_]|[\p{L}\p{M}\p{N}_./-])*`
+
 var (
 	// pathToken is anything that could be a path: loop.go, internal/dispatch/loop.go:661 (the line
 	// number is left off), docs/café.md, Loop.merge (sorted out later). Letters and digits of any
 	// script count, and combining marks: macOS often writes é as e and U+0301. So do brackets, single
 	// or double, around a name inside a word, as in the routes of a Next.js or SvelteKit project
 	// (pages/[id].tsx, app/[[...slug]]/page.tsx, src/routes/[page=fruit]/), but not one starting it:
-	// [README.md](/README.md), a Markdown link, names README.md.
-	pathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+` +
-		`(?:(?:\[[\p{L}\p{M}\p{N}_.=-]+\]|\[\[[\p{L}\p{M}\p{N}_.=-]+\]\])[\p{L}\p{M}\p{N}_./-]*)*`)
-	// plainPathToken is a part of a path token without brackets, which a word with them may be made
-	// of instead: an index expression (files[i], Footprint.Files[0]).
+	// [README.md](/README.md), a Markdown link, names README.md. So does a + starting a name at the
+	// word's start or after a /, as in a SvelteKit route's files (src/routes/[slug]/+page.svelte,
+	// +layout.ts), but no other: C++, 1.26+ and the + of a+b, which eachPathToken drops, are no part
+	// of a path.
+	pathToken = regexp.MustCompile(`(?:\+[\p{L}\p{M}\p{N}_]|[\p{L}\p{M}\p{N}_./-])` + pathRest +
+		`(?:(?:\[[\p{L}\p{M}\p{N}_.=-]+\]|\[\[[\p{L}\p{M}\p{N}_.=-]+\]\])` + pathRest + `)*`)
+	// plainPathToken is a part of a path token without brackets or a +, which a word with them may be
+	// made of instead: an index expression (files[i], Footprint.Files[0]), or a + marking an added line.
 	plainPathToken = regexp.MustCompile(`[\p{L}\p{M}\p{N}_./-]+`)
 	// asciiPathToken is a path token's ASCII part, which may be a path run into words of a script
 	// written without spaces: 修改loop.go, loop.goを直す.
@@ -573,15 +581,27 @@ func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
 
 // eachPathToken calls take with each word of text that may be a path: with an extension, and
 // neither an absolute path nor a URL, which aren't in the repository. take reports whether the word
-// names something. A word with brackets that names nothing is tried in its parts without them
-// instead, as the words they were before brackets were taken in: an index expression
-// (Footprint.Files[0]) is one of them. A word with characters outside ASCII that names nothing is
-// tried in its ASCII parts: a path run into words of a script written without spaces (修改loop.go,
-// loop.goを直す) is one of them.
+// names something. A + starts a word only after a space or punctuation that isn't a closing bracket:
+// after a letter, digit, mark, _ . - + or a closing bracket it joins two words of an expression
+// (a+b.go, x[0]+y.go, C++), and is left off. A word with brackets or a + that names nothing is tried
+// in its parts without them instead, as the words they were before brackets and a + were taken in:
+// an index expression (Footprint.Files[0]) and a + marking an added line (+loop.go) are among them.
+// A word with characters outside ASCII that names nothing is tried in its ASCII parts: a path run
+// into words of a script written without spaces (修改loop.go, loop.goを直す) is one of them.
 func eachPathToken(text string, take func(tok string) bool) {
-	for _, word := range pathToken.FindAllString(text, -1) {
+	for _, m := range pathToken.FindAllStringIndex(text, -1) {
+		word := text[m[0]:m[1]]
+		if before, _ := utf8.DecodeLastRuneInString(text[:m[0]]); m[0] > 0 && joinsWords(before) {
+			word = strings.TrimPrefix(word, "+")
+		}
 		takePath(word, take)
 	}
+}
+
+// joinsWords reports whether r, the character before a + starting a path token, makes the + join two
+// words of an expression rather than start a name: a letter, digit, mark, _ . - + or a closing bracket.
+func joinsWords(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsMark(r) || unicode.IsNumber(r) || strings.ContainsRune("_.-+)]}", r)
 }
 
 // takePath calls take with word, a path token, or its parts, as eachPathToken says.
@@ -592,7 +612,7 @@ func takePath(word string, take func(tok string) bool) {
 	}
 	switch {
 	case extension.MatchString(word) && take(word):
-	case strings.ContainsAny(word, "[]"):
+	case strings.ContainsAny(word, "[]+"):
 		for _, part := range plainPathToken.FindAllString(word, -1) {
 			takePath(part, take)
 		}

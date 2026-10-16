@@ -128,6 +128,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A file of a SvelteKit route named in a ticket's text, whose name starts
+  with `+` (`src/routes/[slug]/+page.svelte`, `+layout.ts`), now means that
+  file: the ticket overlaps one listing it and a worker editing it, whether
+  the repository's files are known or not. It was read as
+  `src/routes/[slug]` and `page.svelte`, which named nothing of it. A `+`
+  joining two words (`C++`, `a+b.go`, `1.26+`) is no part of a path, as
+  before, and a word with a `+` that names nothing (`+loop.go`) is read
+  without it.
 - A path with brackets named in a ticket's text, such as a route of a
   Next.js or SvelteKit project (`pages/[id].tsx`,
   `app/[[...slug]]/page.tsx`), now means that file: the ticket overlaps one

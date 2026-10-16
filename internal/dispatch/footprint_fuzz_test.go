@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -19,11 +20,15 @@ import (
 // spec under .orchestra/specs/, the spec its metadata names or a folder (ending in /) unless its
 // files metadata lists something, with the repository's files unknown each cleaned (path.Clean, a
 // folder's with one /) and none an extension alone (.tsx) unless its files metadata lists something,
-// its globs sorted, without repeats, only when its files metadata lists something, each a clean path
-// in the repository in NFC holding none of the repository's files (globHolds agrees with glob), and
-// its areas sorted, each an area label naming an area. go test runs the seeds; docs/development.md
-// says how to fuzz.
+// nor with a + other than one starting a name of its path (+page.svelte, src/routes/+layout.ts)
+// unless its metadata lists or predicts something, its globs sorted, without repeats, only when its
+// files metadata lists something, each a clean path in the repository in NFC holding none of the
+// repository's files (globHolds agrees with glob), and its areas sorted, each an area label naming an
+// area. go test runs the seeds; docs/development.md says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
+	// strayPlus is a + that doesn't start a name of a path: one after anything but a /, or before
+	// anything but a letter, digit, mark or _.
+	strayPlus := regexp.MustCompile(`[^/]\+|\+(?:$|[^\p{L}\p{M}\p{N}_])`)
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
 		{"When `Loop.merge` (internal/dispatch/loop.go:1125) aborts, call `o.agentName(id)` and `deliverPrompt`, " +
@@ -55,6 +60,12 @@ func FuzzTicketFootprint(f *testing.F) {
 		"[README.md](/README.md), `files[i]`, Footprint.Files[0], a[b c] or the .tsx files (..tsx, x[1:2])."
 	f.Add(text, "", "", strings.Join(trackedRoutes, "\n"), true, "")
 	f.Add(text, "", "", "", false, "")
+	// SvelteKit routes named in a ticket's text, a + starting a name, beside a + joining two words or
+	// starting none.
+	plus := "Fix src/routes/[slug]/+page.svelte and +layout.ts (+loop.go, +Loop.merge), not C++, Go 1.26+, " +
+		"a+b.go, x[0]+y.go, (a)+g.go, a/++b.go, src/+/x.go or +.go."
+	f.Add(plus, "", "", strings.Join(append(slices.Clone(trackedRoutes), "internal/dispatch/loop.go"), "\n"), true, "")
+	f.Add(plus, "", "", "", false, "")
 	// Tickets broken down from a spec, under .orchestra/specs/ or elsewhere in the repository: citing
 	// it, listing it, and listing files in folders that don't exist yet, in a repository with files
 	// and in one with none.
@@ -107,6 +118,9 @@ func FuzzTicketFootprint(f *testing.F) {
 			ext := strings.TrimPrefix(path.Ext(f), ".")
 			if !known && len(TicketFiles(tk)) == 0 && strings.EqualFold(strings.TrimLeft(f, "."), ext) {
 				t.Errorf("the extension %q counts as a file, with the repository's files unknown", f)
+			}
+			if !known && len(TicketFiles(tk)) == 0 && !fp.Predicted && strayPlus.MatchString(f) {
+				t.Errorf("the file %q has a + starting no name, with the repository's files unknown", f)
 			}
 		}
 		for _, g := range fp.Globs {
