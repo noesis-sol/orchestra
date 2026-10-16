@@ -8,6 +8,22 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `orchestra --spec <file> --refine` breaks the spec down with you: an
+  interactive Claude Code session in a pane beside orchestra's (Herdr, tmux
+  or cmux), as the New feature interview has, or on orchestra's own terminal
+  where there is no pane. Taking the spec as mostly settled, it asks only
+  where the spec leaves open a decision that changes what gets built, in the
+  interview's rounds of numbered questions with recommended answers; then it
+  sums up the epics and tickets it will file and asks to go ahead. It files
+  them with the headless breakdown's rules, the decisions settled under
+  Decisions in the root epic's description, and hands the root epic back in
+  `.orchestra/run/spec.json`. orchestra then closes the pane, checks the tree
+  and starts the run on it without asking. Meanwhile orchestra's pane shows
+  claude's state, the time so far and the epics and tickets filed, counted
+  from bd every 5 seconds. `/exit` or closing the pane before the hand-back
+  files nothing more and ends the run: exit 0 if nothing was filed for the
+  spec, else exit 2, listing what was. Without a terminal or a pane it ends
+  with exit 2 once the spec is committed.
 - A worker on a ticket whose metadata names a spec (`spec`, the committed
   spec's path, which a spec run's breakdown gives every ticket it files) is
   told in its first message, and again when its session is resumed, that the

@@ -236,19 +236,18 @@ func TestSpecRunCommitsASpecInsideInPlace(t *testing.T) {
 	}
 }
 
-// Until a build has the breakdown with the user, a spec run with --refine stops once the spec is
-// committed, exit 2; a breakdown that names no root epic ends the run the same way. Neither run starts
-// its loop.
+// A breakdown that names no root epic ends the run, exit 2, once the spec is committed; the run
+// doesn't start its loop.
 func TestSpecRunWithoutARootEpic(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
+		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
 	repo, spec, _ := specRunFixture(t)
-	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain", "--refine")
-	if code != 2 || !strings.Contains(stderr, "orchestra couldn't break the spec down: "+
-		"refining a spec with you (--refine) isn't available in this build; "+
-		"without --refine, orchestra breaks it down unattended\n") || strings.Contains(stdout, "START") {
-		t.Errorf("no breakdown: exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
+	useBreakdown(t, &fakeBreakdown{repo: repo})
+	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
+	if code != 2 || !strings.Contains(stderr, "orchestra: the spec's breakdown named no root epic, so there is "+
+		"nothing to run.") || strings.Contains(stdout, "START") {
+		t.Errorf("no root epic: exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}
 	if subject := gitIn(t, repo, "log", "-1", "--format=%s"); subject != "orchestra: add spec app.md" {
 		t.Errorf("the spec wasn't committed: HEAD %q", subject)
@@ -257,12 +256,6 @@ func TestSpecRunWithoutARootEpic(t *testing.T) {
 	if kindsOf(recs) != "start end" || recs[0]["spec"] != ".orchestra/specs/app.md" || recs[0]["scope"] != nil ||
 		recs[1]["code"] != 2.0 {
 		t.Errorf("records: %v", recs)
-	}
-
-	useBreakdown(t, &fakeBreakdown{repo: repo})
-	_, stderr, code = runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
-	if code != 2 || !strings.Contains(stderr, "orchestra: the spec's breakdown named no root epic, so there is nothing to run.") {
-		t.Errorf("no root epic: exit %d, stderr:\n%s", code, stderr)
 	}
 }
 

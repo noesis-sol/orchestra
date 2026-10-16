@@ -11,7 +11,8 @@ import (
 
 // While a typed feature is talked through in a Herdr pane beside orchestra's, orchestra's pane says
 // where the interview stands on one line under its fixed message, updated in place: claude's state
-// and how long the interview has run, or, once claude has filed the feature, the epic.
+// and how long the interview has run, or, once claude has filed the feature, the epic. A spec refined
+// in a pane (--refine) shows the same line, with how many epics and tickets it has filed so far.
 
 // InterviewProgress is where a feature interview in a pane stands.
 type InterviewProgress struct {
@@ -20,6 +21,9 @@ type InterviewProgress struct {
 	Epic    string              // the epic claude filed, once feature.json names it
 	Title   string              // the epic's title, once bd has given it and its tickets
 	Tickets int                 // how many tickets the epic has, when Title is set
+	// What a spec's refinement has filed so far, once bd has counted it (Counted).
+	Counted                  bool
+	FiledEpics, FiledTickets int
 }
 
 // Line is the progress as one line, styled as the dashboard's are and at most width columns wide
@@ -39,8 +43,12 @@ func (p InterviewProgress) Line(width int) string {
 		}
 		return ansi.Truncate(line, width, "…")
 	}
-	return ansi.Truncate(interviewState(p.Agent)+"  "+dimStyle.Render(p.Elapsed.Truncate(time.Second).String()),
-		width, "…")
+	line := interviewState(p.Agent) + "  " + dimStyle.Render(p.Elapsed.Truncate(time.Second).String())
+	if p.Counted {
+		line += dimStyle.Render(" · " + plural(p.FiledEpics, "epic", "epics") + ", " +
+			plural(p.FiledTickets, "ticket", "tickets") + " filed")
+	}
+	return ansi.Truncate(line, width, "…")
 }
 
 // interviewStates are claude's states in words, coloured as the dashboard colours a worker's.

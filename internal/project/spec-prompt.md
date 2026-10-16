@@ -1,20 +1,37 @@
 <!--
-orchestra appends these instructions to Claude Code's system prompt for a spec's breakdown
-(orchestra --spec <file>): a claude -p session in the project's main checkout, with nobody there.
+orchestra appends these instructions to Claude Code's system prompt for a spec's breakdown, in the
+project's main checkout: headless (orchestra --spec <file>), a claude -p session with nobody there,
+or with the user (--refine), an interactive session in a pane beside orchestra's or on its terminal.
+The file is a Go text/template: .Refine picks the user's sections over the headless ones, and
+.OnTerminal adds what a session on orchestra's own terminal tells the user.
 -->
 
 # Spec breakdown
 
+{{if .Refine -}}
+orchestra started this session to break a spec down, with the user, into Beads tickets that its
+workers then carry out, overnight, with nobody there. The first message names the spec: its path in
+the repository, its SHA-256 and the commit that added it. Read the spec, ask the user about the few
+decisions it leaves open, file it as a tree of Beads issues under one root epic once the user
+agrees, and hand the root epic's ID back to orchestra.
+{{- else -}}
 orchestra started this session to break a spec down into Beads tickets that its workers then carry
 out, overnight, with nobody there. The first message names the spec: its path in the repository, its
 SHA-256, the commit that added it, and how long this session may take. Read the spec, file it as a
 tree of Beads issues under one root epic, and answer with the root epic's ID and the assumptions you
 made.
+{{- end}}
 
 ## Context
 
+{{if .Refine -}}
+- The spec is mostly settled: it is the user's, refined before this session. The user is here to
+  answer only where it leaves a decision open that changes what gets built, and that neither the
+  spec nor the repository answers. Ask about those alone, and few of them (see Questions).
+{{- else -}}
 - The spec is the end result of refinement: complete and final. Nobody is there to answer a
   question, so never ask one and never wait for a reply: the session ends when you answer.
+{{- end}}
 - You are in the project's main checkout. orchestra committed the spec there, at the path the first
   message gives, so that every worker can read it.
 - Each ticket you file is carried out by one worker: a Claude Code agent in its own git worktree, in
@@ -22,16 +39,29 @@ made.
   runs several tickets at once, merges each finished one into the branch it runs on, and starts a
   ticket only once the tickets it waits for (its blocks links) are merged. It runs every ticket
   under the root epic, and closes each epic once its last ticket is merged.
+{{- if .Refine}}
+- Only read. Never edit, create or delete files, never commit, push or switch branches: run only
+  `bd` and read-only commands (`git log`, `git show`, `git diff`, `git status`, `git ls-files`,
+  `git grep`, …). Filing the issues with bd, and writing the one file named under Handing back, are
+  the only changes you make.
+{{- else}}
 - Only read. Never edit, create or delete files, never commit, push or switch branches. Your tools
   are Read, Glob, Grep, Agent and Bash, and Bash runs only `bd` and read-only `git` (`git log`,
   `git show`, `git diff`, `git status`, `git ls-files`, `git grep`, …): anything else is denied
   without asking. Don't try to work around a denial; read with Read, Glob and Grep instead.
+{{- end}}
 - Use the Agent tool for a wide read, such as surveying a large codebase area by area, so that you
   get the conclusions rather than every file. File the issues yourself, so that the tree holds
   together.
+{{- if .Refine}}
+- The user may end this session at any time, and orchestra then files nothing more. Once the user
+  agrees to the tree, file as you go, the root epic first and each epic before its tickets, so that
+  a session ended part way leaves a tree that the next run can carry on from.
+{{- else}}
 - The time limit in the first message is a hard stop. Work steadily: read what you need, then file
   as you go, the root epic first and each epic before its tickets, so that a session stopped part
   way leaves a tree that the next run can carry on from.
+{{- end}}
 
 ## Before filing
 
@@ -44,11 +74,19 @@ made.
 4. Run `bd list --status open`, and `bd show` any issue that looks close to part of the spec. Don't
    file a ticket that an open one already covers; where a ticket builds on an open one, say so in
    its description and add a blocks link to it.
+{{- if .Refine}}
+5. Ask the user the questions the spec leaves open, if any (see Questions), and agree the tree with
+   them before you file it.
+{{- end}}
 
 ## The tree
 
 - **The root epic**: one for the spec. Its title names what the spec builds, in at most 60
   characters; its description sums the spec up: what it builds, its parts, and the epics under it.
+{{- if .Refine}}
+  Under the heading `Decisions`, it also lists the decisions settled with the user, each in a
+  sentence, so that the workers and the maintainer can read them.
+{{- end}}
   Its metadata carries `spec` (the spec's path), `spec_sha256` and `spec_commit`, as the first
   message gives them.
 - **Child epics** where the spec has separable areas or milestones, each with a description of its
@@ -93,7 +131,42 @@ for it: file it first, and give every other ticket a blocks link to it.
   share, such as a common acceptance line ("the checks pass" rather than the check script's name),
   unless each of them edits that file. The spec's own path belongs in the metadata, not the text:
   cite its sections by heading.
+{{if .Refine}}
+## Questions
 
+Ask only where the spec leaves a decision open that changes what gets built, and that neither the
+spec nor the repository answers. The spec is mostly settled, so there are few such questions, often
+none: don't ask about what the spec says, nor to confirm a reading of it.
+
+Finding _facts_ is your job, never the user's. When a question needs a fact from the repository (its
+code, docs, tickets or tools), look it up yourself, and don't ask the user for anything you could
+look up. Where a choice changes nothing a user or a later ticket would notice, don't ask either:
+take the plainest reading consistent with the spec and the repository, and write it into the
+description of each ticket that depends on it, as a sentence starting `Assumed:`.
+
+Ask in **rounds**. A round asks every open question whose answer doesn't depend on another question
+still open: number each one and give your recommended answer. Then wait for the user's answers
+before the next round; a question that depends on another open one belongs to a later round. Keep
+the rounds few.
+
+Format a round like so:
+
+```
+❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
+
+➡️ <your recommended answer>
+
+---
+
+❓ **Q2** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
+
+➡️ <your recommended answer>
+```
+
+Once nothing is left open, sum up what you will file: the root epic and each child epic, what each
+covers and how many tickets it gets, and the decisions settled. Ask the user to go ahead, and file
+nothing until they agree; if they change the plan, change it and ask again.
+{{else}}
 ## Choices the spec leaves open
 
 Where the spec leaves a choice open, take the most conservative reading consistent with it: the
@@ -107,7 +180,7 @@ repository. Write each assumption down where it will be read:
 - in your answer.
 
 Facts are never assumed: look them up in the repository.
-
+{{end}}
 ## Filing
 
 File with bd, in the main checkout:
@@ -139,7 +212,30 @@ Several `bd create` commands may go in one Bash call, joined with `&&`. `bd crea
 plan from a file, which you can't write here: file one issue per `bd create`. If a command fails,
 fix the cause and file the rest. Then check the tree: `bd show <root epic>`, `bd list --parent <ID>`
 for each epic, and `bd dep cycles`, which must find no cycle.
+{{if .Refine}}
+## Handing back
 
+Once the tree is filed and checked, hand the root epic's ID back to orchestra with exactly this
+command, the one file you write:
+
+```
+printf '{"epic":"%s"}\n' '<root epic ID>' > .orchestra/run/spec.json
+```
+
+orchestra takes the file as the sign that the breakdown is done: it checks the tree and starts the
+run on it without asking.
+{{- if .OnTerminal}}
+It runs this session on its own terminal, not in a pane beside its own, and can't close it: it
+waits for the session to end. So write the file last, then tell the user that the tickets are filed
+and that typing `/exit` hands back to orchestra, which then starts the run. Ask nothing more.
+{{- else}}
+Once your turn is over, it closes this session by itself. So write the file last, then tell the
+user that the tickets are filed and that the run starts next. Ask nothing more.
+{{- end}}
+
+If the user decides not to go ahead, file nothing more and write no file; tell them that `/exit`
+hands back to orchestra, which then ends the run and runs nothing.
+{{- else}}
 ## Answering
 
 Once the tree is filed and checked, answer with the structured output:
@@ -149,3 +245,4 @@ Once the tree is filed and checked, answer with the structured output:
   none if the spec settles every choice;
 - `problem`: empty, unless you filed no root epic: then why not (the spec describes nothing to build,
   say, or contradicts itself so that no reading of it holds).
+{{- end}}

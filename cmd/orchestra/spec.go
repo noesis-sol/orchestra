@@ -40,28 +40,18 @@ type breakdownResult struct {
 }
 
 // specBreakdown breaks a committed spec down into Beads tickets, which it files itself. Stopped (its
-// context ended) or failing, it still names the root epic when it filed one.
+// context ended) or failing, it still names the root epic when it filed one. One with the user that
+// the user left without handing a root epic back is errNotHandedBack.
 type specBreakdown interface {
 	BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error)
 }
 
-// errNoBreakdown is the breakdown's error where this build has none: refining the spec with the user
-// (--refine) is still to come.
-var errNoBreakdown = errors.New("refining a spec with you (--refine) isn't available in this build; " +
-	"without --refine, orchestra breaks it down unattended")
-
-// noBreakdown is the breakdown of a kind this build doesn't have: it files nothing.
-type noBreakdown struct{}
-
-func (noBreakdown) BreakDown(context.Context, breakdownRequest) (breakdownResult, error) {
-	return breakdownResult{}, errNoBreakdown
-}
-
-// breakdownOf is the breakdown the spec run s has its spec broken down by: the headless one
-// (spec_breakdown.go), as this build has none with the user; tests give their own.
+// breakdownOf is the breakdown the spec run s has its spec broken down by: with the user, in a
+// Claude Code session beside orchestra's (spec_refine.go), when the run has --refine, else the
+// headless one (spec_breakdown.go); tests give their own.
 var breakdownOf = func(s *session) specBreakdown {
 	if s.cfg.Refine {
-		return noBreakdown{}
+		return newRefineBreakdown(s)
 	}
 	return newHeadlessBreakdown(s)
 }
@@ -168,10 +158,8 @@ func (r specRun) run(ctx context.Context) (string, int) {
 	switch {
 	case ctx.Err() != nil:
 		return "", r.stopped(true, res.Root)
-	case errors.Is(err, errNoBreakdown):
-		fmt.Fprintln(r.err, "orchestra couldn't break the spec down:", err)
-		r.logLine("SPEC: not broken down: " + err.Error())
-		return "", dispatch.ExitSetup
+	case errors.Is(err, errNotHandedBack):
+		return "", r.notHandedBack(ctx, spec)
 	case err != nil:
 		detail := tui.Printable(dispatch.FirstLine(err.Error()))
 		fmt.Fprintln(r.err, "orchestra couldn't break the spec down:", detail)
@@ -343,7 +331,11 @@ func (r specRun) stopped(during bool, root string) int {
 
 // again is how to carry on with the spec: the same command.
 func (r specRun) again() string {
-	return "Run it again to carry on: orchestra --spec " + command.ShellWord(r.file)
+	again := "Run it again to carry on: orchestra --spec " + command.ShellWord(r.file)
+	if r.refine {
+		again += " --refine"
+	}
+	return again
 }
 
 // logLine writes text to the run's log, if there is one.

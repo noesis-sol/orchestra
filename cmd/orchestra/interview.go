@@ -220,21 +220,94 @@ type interviewPanes interface {
 
 // paneSession is a featureInterview's session in a pane split off orchestra's, to its right:
 // claude talks the feature through there, with its own screen and keys, while orchestra's pane stays
-// in view and says how the interview ends.
+// in view and says how the interview ends. A spec's refinement (spec_refine.go) is a session in a
+// pane too, about the spec rather than a feature.
 type paneSession struct {
 	panes interviewPanes
 	pane  string // orchestra's own (HERDR_PANE_ID, TMUX_PANE, CMUX_SURFACE_ID)
 	// hooks has claude report through hooks, to project.InterviewRun: a terminal that reads its
 	// state from them (tmux, cmux) needs them.
-	hooks    bool
-	repo     string // the main checkout, where claude runs
+	hooks bool
+	repo  string // the main checkout, where claude runs
+	// The feature, unless about says what else the session is about.
 	request  string
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
-	// Where the interview stands, on a line under the fixed message, when out is a terminal (nil
-	// otherwise), and bd, which has the title and tickets of the epic it filed.
+	// Where the session stands, on a line under the fixed message, when out is a terminal (nil
+	// otherwise), and, for a feature's interview, bd, which has the title and tickets of the epic it
+	// filed.
 	progress *tui.InterviewLine
 	tracker  epicTracker
+	about    paneSubject // what the session is about; nil for the feature in request
+}
+
+// paneSubject is what a session in a pane beside orchestra's is about, and what that changes: its
+// first message, the file it hands its epic back in, orchestra's words for it, and the progress
+// orchestra's pane shows. A feature talked through (featureSubject) is one; a spec refined and broken
+// down (refineSubject, spec_refine.go) another.
+type paneSubject interface {
+	// message is the session's first message, one line: Herdr types claude's command into the pane's
+	// shell, which takes no argument with line breaks. It may write a file the message brings in.
+	message(repo string) (string, error)
+	// handedBack is the epic the session has handed back in its file in repo; ok is false until one
+	// names an epic.
+	handedBack(repo string) (epic string, ok bool)
+	name() string   // the session, as orchestra's messages call it ("the interview")
+	inPane() string // what orchestra's pane says while the session runs in the pane beside it
+	// shown is what orchestra's pane shows of the session's progress, begun at began, on line (nil for
+	// none).
+	shown(line *tui.InterviewLine, began time.Time) paneShown
+}
+
+// paneShown is what orchestra's pane shows of a session in a pane, under its fixed message, from
+// paneSession.wait's readings.
+type paneShown interface {
+	// show draws the progress after a reading: epic is the epic the session has handed back ("" for
+	// none), st claude's state ("" when the terminal couldn't say, which keeps the last one shown).
+	show(ctx context.Context, epic string, st dispatch.AgentState)
+	clear() // removes what show drew, before orchestra's pane goes on
+}
+
+// subject is what the session is about: about, or the feature in request.
+func (p paneSession) subject() paneSubject {
+	if p.about != nil {
+		return p.about
+	}
+	return featureSubject{request: p.request, tracker: p.tracker}
+}
+
+// featureSubject is a feature's interview as a paneSubject: the feature's description, request, and
+// bd, which has the title and tickets of the epic the interview files.
+type featureSubject struct {
+	request string
+	tracker epicTracker
+}
+
+// message brings the description in from a file: it can have several lines. Claude Code attaches a
+// file named after @ to the message, as the user's own message would. The file holds the description
+// in its pasted_content tags.
+func (f featureSubject) message(repo string) (string, error) {
+	request, err := project.WriteFeatureRequest(repo, pastedFeature(f.request))
+	if err != nil {
+		return "", fmt.Errorf("cannot write the description for it: %w", err)
+	}
+	return featureLead + " @" + request, nil
+}
+
+func (featureSubject) handedBack(repo string) (string, bool) {
+	epic, err := project.FiledFeature(repo)
+	return epic, err == nil // a file that names no epic files nothing: /exit ends that interview
+}
+
+func (featureSubject) name() string { return "the interview" }
+
+func (featureSubject) inPane() string {
+	return "Talking the feature through with claude in the pane on the right, which closes once the feature is " +
+		"filed. Type /exit there to leave without filing; Ctrl+C here stops."
+}
+
+func (f featureSubject) shown(line *tui.InterviewLine, began time.Time) paneShown {
+	return &interviewShown{line: line, tracker: f.tracker, began: began}
 }
 
 // How often the interview's pane is looked at, and how long claude may take to appear in it, as
@@ -249,13 +322,13 @@ const (
 var errPaneClosed = errors.New("the interview's pane was closed")
 
 // talk opens the interview's pane, starts claude there with the instructions in prompt, and waits
-// until claude has filed the feature and finished its turn, has left the pane (/exit), or the pane
-// is gone. It then closes the pane, which ends claude if it is still there and gives orchestra's
-// pane the keyboard focus back: Herdr returns it to the pane that had it before the split,
-// orchestra's, where the description was typed. When ctx ends first (Ctrl+C in orchestra's
-// pane, SIGTERM, SIGHUP) the pane is closed all the same, which ends claude. When the pane can't be
-// opened or claude doesn't appear in it, orchestra says why, closes any pane it made, and hands
-// claude its terminal instead (fallback).
+// until claude has filed the feature (or, for another subject, handed its epic back) and finished
+// its turn, has left the pane (/exit), or the pane is gone. It then closes the pane, which ends
+// claude if it is still there and gives orchestra's pane the keyboard focus back: Herdr returns it
+// to the pane that had it before the split, orchestra's, where the description was typed. When ctx
+// ends first (Ctrl+C in orchestra's pane, SIGTERM, SIGHUP) the pane is closed all the same, which
+// ends claude. When the pane can't be opened or claude doesn't appear in it, orchestra says why,
+// closes any pane it made, and hands claude its terminal instead (fallback).
 func (p paneSession) talk(ctx context.Context, prompt string) error {
 	began := time.Now()
 	interview, err := p.open(ctx, prompt)
@@ -263,12 +336,11 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 	case ctx.Err() != nil, errors.Is(err, errPaneClosed): // the interview is over
 	case err != nil:
 		p.close(ctx, interview)
-		fmt.Fprintln(p.err, "orchestra couldn't open the interview in a pane beside its own, so claude takes this "+
-			"terminal: "+dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(p.err, "orchestra couldn't open "+p.subject().name()+" in a pane beside its own, so claude "+
+			"takes this terminal: "+dispatch.FirstLine(err.Error()))
 		return p.fallback(ctx, prompt)
 	default:
-		fmt.Fprintln(p.out, "Talking the feature through with claude in the pane on the right, which closes once "+
-			"the feature is filed. Type /exit there to leave without filing; Ctrl+C here stops.")
+		fmt.Fprintln(p.out, p.subject().inPane())
 		p.wait(ctx, interview, began)
 	}
 	p.close(ctx, interview)
@@ -278,13 +350,9 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 // open splits orchestra's pane and starts claude in the new one, in the main checkout, and returns
 // the new pane's ID ("" if none was made) once Herdr sees claude in it.
 func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
-	// Herdr types claude's command into the pane's shell, which takes no argument with line breaks;
-	// the description can have several. Its first message names the file instead: Claude Code
-	// attaches a file named after @ to the message, as the user's own message would. The file holds
-	// the description in its pasted_content tags.
-	request, err := project.WriteFeatureRequest(p.repo, pastedFeature(p.request))
+	message, err := p.subject().message(p.repo)
 	if err != nil {
-		return "", fmt.Errorf("cannot write the description for it: %w", err)
+		return "", err
 	}
 	args := []string{"--append-system-prompt-file", prompt}
 	if p.hooks {
@@ -298,7 +366,7 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := p.panes.LaunchInPane(ctx, pane, "claude", append(args, "--", featureLead+" @"+request)); err != nil {
+	if err := p.panes.LaunchInPane(ctx, pane, "claude", append(args, "--", message)); err != nil {
 		return pane, err
 	}
 	return pane, p.started(ctx, pane)
@@ -337,16 +405,18 @@ func (p paneSession) started(ctx context.Context, pane string) error {
 
 // wait waits until the interview is over, or ctx ends. It is over once claude has left the pane or
 // the pane is gone, which Herdr answers alike, with no agent in it, or once claude has filed the
-// feature, its feature.json naming the epic, and its turn has ended (idle, or done until the pane
-// is looked at). claude writes the file during its last turn, before it tells the user the feature
-// is filed, so the file is looked at before claude's state is read: a turn's end read after the
-// file was there is the end of that turn or a later one. A read that fails says nothing about
-// claude: Herdr is asked again. After each reading, orchestra's pane shows where the interview
-// stands, since began, on a line that is gone once wait returns.
+// feature, its feature.json naming the epic (another subject's file, for another), and its turn
+// has ended (idle, or done until the pane is looked at). claude writes the file during its last
+// turn, before it tells the user the feature is filed, so the file is looked at before claude's
+// state is read: a turn's end read after the file was there is the end of that turn or a later
+// one. A read that fails says nothing about claude: Herdr is asked again. After each reading,
+// orchestra's pane shows where the interview stands, since began, on a line that is gone once wait
+// returns.
 func (p paneSession) wait(ctx context.Context, pane string, began time.Time) {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel() // ends a read of the filed epic still going
-	shown := &interviewShown{line: p.progress, tracker: p.tracker, began: began}
+	defer cancel() // ends a read of bd for the progress still going
+	about := p.subject()
+	shown := about.shown(p.progress, began)
 	defer shown.clear()
 	for {
 		select {
@@ -354,8 +424,7 @@ func (p paneSession) wait(ctx context.Context, pane string, began time.Time) {
 			return
 		case <-time.After(interviewPoll):
 		}
-		epic, err := project.FiledFeature(p.repo)
-		filed := err == nil // a file that names no epic files nothing: /exit ends that interview
+		epic, filed := about.handedBack(p.repo)
 		_, _, st, err := p.panes.PaneAgent(ctx, pane)
 		switch {
 		case err != nil:
@@ -436,7 +505,7 @@ func (p paneSession) close(ctx context.Context, pane string) {
 		return
 	}
 	if err := p.panes.ClosePane(context.WithoutCancel(ctx), pane); err != nil {
-		fmt.Fprintf(p.err, "orchestra couldn't close the interview's pane %s: %s\n", pane,
+		fmt.Fprintf(p.err, "orchestra couldn't close %s's pane %s: %s\n", p.subject().name(), pane,
 			dispatch.FirstLine(err.Error()))
 	}
 }

@@ -93,16 +93,23 @@ var ErrNoFeature = errors.New("no " + FeatureName)
 // feature.json names it. Without the file the error is ErrNoFeature; a file that can't be read, or
 // names no epic, is an error saying so.
 func FiledFeature(repo string) (string, error) {
+	return handedBack(repo, FeatureName, ErrNoFeature)
+}
+
+// handedBack returns the epic a session in the main checkout repo handed back to orchestra in the
+// file name in .orchestra/run/, {"epic":"<id>"}. Without the file the error is none; a file that
+// can't be read, or names no epic, is an error saying so.
+func handedBack(repo, name string, none error) (string, error) {
 	root, err := OpenRun(repo)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = root.Close() }() // read-only
-	rel := RunPath(FeatureName)
+	rel := RunPath(name)
 	b, err := root.ReadFile(rel)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return "", ErrNoFeature
+		return "", none
 	case err != nil:
 		return "", RunError(repo, rel, err)
 	}

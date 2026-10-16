@@ -65,9 +65,7 @@ type headlessBreakdown struct {
 	say    tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
 	log    *dispatch.Log // nil in tests
 	// bd, which has what a session that gave no answer filed
-	tracker interface {
-		WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error)
-	}
+	tracker    specLister
 	countEvery time.Duration // specCountEvery; tests give their own
 }
 
@@ -107,7 +105,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	answer, err := stream.answer(ctx, err)
 	if err != nil {
 		progress.end(ctx.Err() != nil)
-		return breakdownResult{Root: h.filedRoot(ctx, r.Spec)}, err
+		return breakdownResult{Root: filedRoot(ctx, h.tracker, r.Spec)}, err
 	}
 	progress.done()
 	return breakdownResult(answer), nil
@@ -149,10 +147,15 @@ func specMessage(s project.Spec, limit time.Duration) string {
 		command.ShortDuration(limit))
 }
 
+// specLister is bd as a breakdown reads what it filed: the issues carrying the spec's metadata.
+type specLister interface {
+	WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error)
+}
+
 // filedRoot is the root epic of the spec that bd has, as rootAmong finds it, or "": after a session
 // that gave no answer. bd is read after a stop or the time limit all the same, with its own limit.
-func (h headlessBreakdown) filedRoot(ctx context.Context, s project.Spec) string {
-	issues, err := h.tracker.WithMetadata(context.WithoutCancel(ctx), dispatch.SpecKey, s.Path)
+func filedRoot(ctx context.Context, bd specLister, s project.Spec) string {
+	issues, err := bd.WithMetadata(context.WithoutCancel(ctx), dispatch.SpecKey, s.Path)
 	if err != nil {
 		return ""
 	}

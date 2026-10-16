@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"unicode/utf8"
 
 	"github.com/noesis-sol/orchestra/internal/git"
@@ -36,27 +37,84 @@ const (
 )
 
 // A spec is broken down in a Claude Code session in the main checkout, its instructions
-// (spec-prompt.md) appended to Claude Code's system prompt from .orchestra/run/.
+// (spec-prompt.md) appended to Claude Code's system prompt from .orchestra/run/: headless, with
+// nobody there, or refined with the user first (--refine), in a pane beside orchestra's or on its
+// own terminal. The instructions are a text/template, which gives each its sections.
 //
 //go:embed spec-prompt.md
-var specPrompt string
+var specPromptText string
 
-// specPromptName is the breakdown's instructions' file in .orchestra/run/.
-const specPromptName = "spec-prompt.md"
+// specPrompt is spec-prompt.md, parsed.
+var specPrompt = template.Must(template.New(specPromptName).Option("missingkey=error").Parse(specPromptText))
 
-// WriteSpecPrompt writes the instructions of a spec's breakdown to .orchestra/run/ in the main
-// checkout repo, over an earlier breakdown's, and returns their path.
+// The breakdown's files in .orchestra/run/ of the main checkout.
+const (
+	specPromptName = "spec-prompt.md" // its instructions
+	// SpecName is where a refinement hands its root epic back to orchestra, {"epic":"<id>"}, once it
+	// has filed the spec's tree.
+	SpecName = "spec.json"
+)
+
+// WriteSpecPrompt writes the instructions of a spec's headless breakdown to .orchestra/run/ in the
+// main checkout repo, over an earlier breakdown's, and returns their path.
 func WriteSpecPrompt(repo string) (string, error) {
+	return writeSpecPrompt(repo, false, false)
+}
+
+// WriteRefinePrompt readies the main checkout repo for a spec's refinement with the user (--refine):
+// it removes the spec.json an earlier refinement left, so that only this one's counts, and writes
+// the instructions for a session in a pane beside orchestra's to .orchestra/run/. It returns their
+// path.
+func WriteRefinePrompt(repo string) (string, error) {
+	root, err := OpenRun(repo)
+	if err != nil {
+		return "", err
+	}
+	err = RemoveRun(root, repo, RunPath(SpecName))
+	_ = root.Close() // nothing written
+	if err != nil {
+		return "", err
+	}
+	return writeSpecPrompt(repo, true, false)
+}
+
+// WriteTerminalRefine writes the instructions for a refinement on orchestra's own terminal over those
+// WriteRefinePrompt wrote to the main checkout repo, and returns their path, the same. orchestra
+// closes a session in a pane beside its own once it has handed the root epic back, but can only wait
+// for one on its terminal to end: these instructions add that claude tells the user to type /exit
+// then.
+func WriteTerminalRefine(repo string) (string, error) {
+	return writeSpecPrompt(repo, true, true)
+}
+
+// writeSpecPrompt writes the breakdown's instructions to .orchestra/run/ in the main checkout repo,
+// over an earlier breakdown's, and returns their path: refine's sections in place of the headless
+// ones, and with onTerminal what a session on orchestra's own terminal adds.
+func writeSpecPrompt(repo string, refine, onTerminal bool) (string, error) {
+	var text bytes.Buffer
+	if err := specPrompt.Execute(&text, struct{ Refine, OnTerminal bool }{refine, onTerminal}); err != nil {
+		return "", fmt.Errorf("cannot make the breakdown's instructions: %w", err)
+	}
 	root, err := OpenRun(repo)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = root.Close() }() // nothing written is lost: WriteRun closed its file
 	rel := RunPath(specPromptName)
-	if err := WriteRun(root, repo, rel, []byte(specPrompt), 0o644); err != nil {
+	if err := WriteRun(root, repo, rel, text.Bytes(), 0o644); err != nil {
 		return "", err
 	}
 	return filepath.Join(repo, rel), nil
+}
+
+// ErrNoSpecRoot is FiledSpec's error when the refinement handed nothing back: it wrote no spec.json.
+var ErrNoSpecRoot = errors.New("no " + SpecName)
+
+// FiledSpec returns the root epic a spec's refinement in the main checkout repo handed back, as its
+// spec.json names it. Without the file the error is ErrNoSpecRoot; a file that can't be read, or
+// names no epic, is an error saying so.
+func FiledSpec(repo string) (string, error) {
+	return handedBack(repo, SpecName, ErrNoSpecRoot)
 }
 
 // ErrSpecEmpty is ReadSpec's error for a spec with nothing but whitespace in it.
