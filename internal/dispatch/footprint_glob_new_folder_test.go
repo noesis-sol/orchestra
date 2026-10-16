@@ -86,7 +86,8 @@ func TestAGlobInANewFolderHoldsTheFilesItWouldMatch(t *testing.T) {
 }
 
 // partMeet compares parts of globs: a part that is no pattern stands for one name, escapes undone,
-// and two patterns meet when their literal beginnings and ends allow a name both match.
+// and two patterns meet when their literal beginnings and ends allow a name both match, or the name
+// one of them is written as.
 func TestPartsOfGlobsMeet(t *testing.T) {
 	for _, c := range []struct {
 		x, y string
@@ -96,9 +97,10 @@ func TestPartsOfGlobsMeet(t *testing.T) {
 		{"cart.ts", "cart.go", false},
 		{"*.ts", "cart.ts", true},
 		{"*.ts", "cart.go", false},
-		{`\[id].tsx`, `\[id].tsx`, true}, // a file of the name, escaped (globEscape)
+		{`\[id].tsx`, `\[id].tsx`, true}, // a file of the name, escaped
 		{`\[id].tsx`, "*.tsx", true},
-		{`\[id].tsx`, "[id].tsx", false}, // a class: i.tsx or d.tsx
+		{`\[id].tsx`, "[id].tsx", true}, // a class, i.tsx or d.tsx, and the name as written
+		{`\[id].tsx`, "[ix].tsx", false},
 		{"[id].tsx", "i.tsx", true},
 		{"*.ts", "c*.ts", true},
 		{"a*.ts", "*b.ts", true},
@@ -106,13 +108,13 @@ func TestPartsOfGlobsMeet(t *testing.T) {
 		{"*.ts", "*.tsx", false},
 		{"a*", "b*", false},
 		{`*\.ts`, "*.ts", true},
-		{"[a", "a", false}, // malformed, matching nothing
+		{"[a", "a", false}, // malformed, matching only [a, as written
 		{`a\`, "a", false},
 	} {
-		if got := partMeet(c.x, c.y); got != c.want {
+		if got := partMeet(part{c.x, true}, part{c.y, true}); got != c.want {
 			t.Errorf("partMeet(%q, %q) = %v, want %v", c.x, c.y, got, c.want)
 		}
-		if got := partMeet(c.y, c.x); got != c.want {
+		if got := partMeet(part{c.y, true}, part{c.x, true}); got != c.want {
 			t.Errorf("partMeet(%q, %q) = %v, want %v", c.y, c.x, got, c.want)
 		}
 	}

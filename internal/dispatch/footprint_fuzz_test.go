@@ -45,6 +45,10 @@ func FuzzTicketFootprint(f *testing.F) {
 		f.Add(c.text, c.meta, c.labels, tracked, true, "scripts/check.sh")
 		f.Add(c.text, c.meta, c.labels, "", false, "")
 	}
+	// Routes of a Next.js or SvelteKit project, named with brackets, listed with the files known and unknown.
+	routes := `{"files": ["pages/[id].tsx", "src/routes/[slug]/", "pages/[id].ts", "src/routes/[a", "pages/\\[x].tsx"]}`
+	f.Add("Fix pages/[id].tsx", routes, "", strings.Join(trackedRoutes, "\n"), true, "")
+	f.Add("Fix pages/[id].tsx", routes, "", "", false, "")
 	// Tickets broken down from a spec, under .orchestra/specs/ or elsewhere in the repository: citing
 	// it, listing it, and listing files in folders that don't exist yet, in a repository with files
 	// and in one with none.

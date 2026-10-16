@@ -336,8 +336,8 @@ func (r *repoFiles) listed(name string) (files []string, glob string) {
 }
 
 // glob returns the files pattern matches, in any folder as a partial path does: its last part a
-// file's name or a folder's, holding every file under it. * and ? match within a part of a path, and
-// ** any number of folders.
+// file's name or a folder's, holding every file under it. * and ? match within a part of a path, ** any
+// number of folders, and each other part the name written as it is too (nameMatch).
 func (r *repoFiles) glob(pattern string) []string {
 	pat := append([]string{"**"}, strings.Split(pattern, "/")...)
 	var found []string
@@ -353,8 +353,8 @@ func (r *repoFiles) glob(pattern string) []string {
 	return found
 }
 
-// globMatch reports whether the parts of a path match the pattern's, path.Match for each but **,
-// which matches any number of them.
+// globMatch reports whether the parts of a path match the pattern's: ** any number of them, each other
+// part one name (nameMatch).
 func globMatch(pat, parts []string) bool {
 	if len(pat) == 0 {
 		return len(parts) == 0
@@ -370,8 +370,15 @@ func globMatch(pat, parts []string) bool {
 	if len(parts) == 0 {
 		return false
 	}
-	ok, _ := path.Match(pat[0], parts[0]) // a malformed pattern matches nothing
-	return ok && globMatch(pat[1:], parts[1:])
+	return nameMatch(pat[0], parts[0]) && globMatch(pat[1:], parts[1:])
+}
+
+// nameMatch reports whether pattern, a part of a glob, matches name, a part of a path: the names
+// path.Match takes, and the name written as it is. A route of a Next.js or SvelteKit project is named
+// with brackets (pages/[id].tsx, src/routes/[slug]/), which path.Match takes for a class (i.tsx or d.tsx).
+func nameMatch(pattern, name string) bool {
+	ok, _ := path.Match(pattern, name) // a malformed pattern matches nothing more
+	return ok || pattern == name
 }
 
 // globHolds reports whether glob g, one of a footprint's Globs, holds p, a file or a folder (ending in
@@ -383,30 +390,46 @@ func globHolds(g, p string) bool { return partsMeet(globParts(g), pathParts(p)) 
 // globsMeet reports whether two of footprints' Globs can match the same file.
 func globsMeet(g, h string) bool { return g == h || partsMeet(globParts(g), globParts(h)) }
 
+// part is a part of a path as partsMeet takes it: a glob's (glob), matching the names nameMatch does,
+// or a file's or a folder's, matching its name alone.
+type part struct {
+	s    string
+	glob bool
+}
+
+// anyFolders is **, the part of a glob matching any number of folders, which ends a folder's parts too.
+var anyFolders = part{"**", true}
+
+// matches reports whether p matches name n.
+func (p part) matches(n string) bool { return p.s == n || p.glob && nameMatch(p.s, n) }
+
 // globParts are glob g's parts as partsMeet takes them, followed by **: its last part a folder's name
 // as well as a file's, as for glob.
-func globParts(g string) []string { return append(strings.Split(g, "/"), "**") }
+func globParts(g string) []part {
+	var parts []part
+	for s := range strings.SplitSeq(g, "/") {
+		parts = append(parts, part{s, true})
+	}
+	return append(parts, anyFolders)
+}
 
-// globEscape escapes a name's *, ?, [ and \ for path.Match, which then matches the name alone.
-var globEscape = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`)
-
-// pathParts are the parts of p, a file or a folder (ending in /), in NFC as globs are, each escaped
-// (globEscape) so that partsMeet takes it as itself, a folder's followed by ** for the files under it.
-func pathParts(p string) []string {
+// pathParts are the parts of p, a file or a folder (ending in /), in NFC as globs are, as partsMeet
+// takes them, a folder's followed by ** for the files under it.
+func pathParts(p string) []part {
 	folder := strings.HasSuffix(p, "/")
-	parts := strings.Split(strings.TrimSuffix(norm.NFC.String(p), "/"), "/")
-	for i, part := range parts {
-		parts[i] = globEscape.Replace(part)
+	var parts []part
+	for s := range strings.SplitSeq(strings.TrimSuffix(norm.NFC.String(p), "/"), "/") {
+		parts = append(parts, part{s, false})
 	}
 	if folder {
-		parts = append(parts, "**")
+		parts = append(parts, anyFolders)
 	}
 	return parts
 }
 
-// partsMeet reports whether a path can match both a and b, the parts of globs as globMatch takes them:
-// ** any number of folders, the others path.Match patterns that partMeet compares.
-func partsMeet(a, b []string) bool {
+// partsMeet reports whether a path can match both a and b, the parts of globs or paths: ** any number
+// of folders, the others one name each, which partMeet compares.
+func partsMeet(a, b []part) bool {
 	// The ways tried that met nothing: each step moves on in a or b, so none comes round again.
 	failed := make([]bool, (len(a)+1)*(len(b)+1))
 	var meet func(i, j int) bool
@@ -416,9 +439,9 @@ func partsMeet(a, b []string) bool {
 		}
 		var ok bool
 		switch {
-		case i < len(a) && a[i] == "**":
+		case i < len(a) && a[i] == anyFolders:
 			ok = meet(i+1, j) || j < len(b) && meet(i, j+1)
-		case j < len(b) && b[j] == "**":
+		case j < len(b) && b[j] == anyFolders:
 			ok = meet(i, j+1) || i < len(a) && meet(i+1, j)
 		case i == len(a) || j == len(b):
 			ok = i == len(a) && j == len(b)
@@ -431,26 +454,33 @@ func partsMeet(a, b []string) bool {
 	return meet(0, 0)
 }
 
-// partMeet reports whether a name can match both x and y, parts of a path as path.Match takes them: the
-// name one of them stands for alone (literal), which the other matches, or, both patterns, any name
-// their literal beginnings and ends allow (*.ts and c*.ts meet, *.ts and *.go don't).
-func partMeet(x, y string) bool {
-	lx, xName := literal(x)
-	ly, yName := literal(y)
+// partMeet reports whether a name can match both x and y: the name one of them is written as, which the
+// other matches, or, both a glob's, one both match as path.Match patterns: the name one stands for alone
+// (literal), which the other matches, or any name their literal beginnings and ends allow (*.ts and c*.ts
+// meet, *.ts and *.go don't).
+func partMeet(x, y part) bool {
+	if x.matches(y.s) || y.matches(x.s) {
+		return true
+	}
+	if !x.glob || !y.glob {
+		return false
+	}
+	lx, xName := literal(x.s)
+	ly, yName := literal(y.s)
 	switch {
 	case xName && yName:
 		return lx == ly
 	case yName:
-		ok, _ := path.Match(x, ly) // a malformed pattern matches nothing
+		ok, _ := path.Match(x.s, ly) // a malformed pattern matches nothing
 		return ok
 	case xName:
-		ok, _ := path.Match(y, lx)
+		ok, _ := path.Match(y.s, lx)
 		return ok
 	}
 	// A pattern's literal beginning ends at its first *, ?, [ or \, and its literal end starts after
 	// its last one or ].
-	px, py := x[:strings.IndexAny(x, `*?[\`)], y[:strings.IndexAny(y, `*?[\`)]
-	sx, sy := x[strings.LastIndexAny(x, `*?[]\`)+1:], y[strings.LastIndexAny(y, `*?[]\`)+1:]
+	px, py := x.s[:strings.IndexAny(x.s, `*?[\`)], y.s[:strings.IndexAny(y.s, `*?[\`)]
+	sx, sy := x.s[strings.LastIndexAny(x.s, `*?[]\`)+1:], y.s[strings.LastIndexAny(y.s, `*?[]\`)+1:]
 	return (strings.HasPrefix(px, py) || strings.HasPrefix(py, px)) &&
 		(strings.HasSuffix(sx, sy) || strings.HasSuffix(sy, sx))
 }

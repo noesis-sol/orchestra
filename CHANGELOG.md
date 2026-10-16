@@ -96,6 +96,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A name with a `[` in a ticket's `files` metadata, such as a route of a
+  Next.js or SvelteKit project (`pages/[id].tsx`, `src/routes/[slug]/`), now
+  means the file or folder of that name, as well as what it matches as a
+  glob: a ticket listing it overlaps one naming that file and a worker
+  editing it, in the run and in `orchestra plan`, whether the repository's
+  files are known or not. Its `[id]` was taken for a class alone, matching
+  `pages/i.tsx` but never `pages/[id].tsx`, so the two ran side by side.
 - `worker_permission_mode` (and `--worker-permission-mode`) takes `manual`,
   the name Claude Code 2.1.301's `--help` gives the mode it listed as
   `default`, and a run passes whichever of the two its workers' `claude`
