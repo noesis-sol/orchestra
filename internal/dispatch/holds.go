@@ -65,7 +65,7 @@ func (s *sayOnce) forget(id string) {
 type holds struct {
 	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
 	running  map[string]bool        // the tickets whose workers are running
-	asked    map[string]bool        // the tickets waiting on a question, or carried over (askedIDs)
+	asked    map[string]bool        // the tickets waiting on a question, carried over (askedIDs) or kept out
 	unmerged func(id string) string // why the ticket is closed but not merged, or ""
 	// pending: a ticket is running, asked, or closed but not merged; only then can one blocking a
 	// ready ticket, or one it was discovered from, hold it, and its links are read
@@ -77,6 +77,9 @@ type holds struct {
 // holds is what keeps a ready ticket waiting, as the run knows it.
 func (o *Loop) holds(running, parents map[string]bool) holds {
 	asked := o.askedSet()
+	for _, id := range o.keptOutIDs() { // their workers may still close them (see isKeptOut)
+		asked[id] = true
+	}
 	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy,
 		pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged(), links: o.linksOf}
 }

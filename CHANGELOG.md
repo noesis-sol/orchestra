@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A run no longer starts a second worker on a ticket whose worker the last
+  run left in another terminal (tmux, Herdr or cmux), once bd ready lists
+  it again, as when its question is answered. The run left that worker in
+  its tab on the same worktree and saved it for a run there; this one now
+  leaves its ticket alone, holds the tickets it blocks, and saves it once.
 - A run file in a worktree's `.orchestra/run/` that a worker replaced with
   a symlink to a file in the same worktree, by an absolute path or by one
   that climbs out of the worktree and back in, is replaced by the file again.

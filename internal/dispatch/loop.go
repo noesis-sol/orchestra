@@ -176,8 +176,8 @@ func newLedger() ledger {
 type carryover struct {
 	leftMu sync.Mutex
 	// keptOut: the workers the last run left behind that this run doesn't carry over but doesn't
-	// drop either, on tickets outside its scope or that it couldn't check, saved again for a later
-	// run as they were.
+	// drop either, on tickets outside its scope, in the other terminal or that it couldn't check,
+	// saved again for a later run as they were. The run doesn't start their tickets (see isKeptOut).
 	keptOut []project.LeftWorker
 	// carriedIn: whether the run has carried over the last run's workers (see loadCarried); leftSaved,
 	// whether it has saved those it leaves for the next (see leaveBehind, SaveLeft).

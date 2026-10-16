@@ -735,6 +735,11 @@ func (r *runState) pick() (*Ticket, queue, error) {
 	for id := range running {
 		skip[id] = true
 	}
+	// A ticket whose worker the last run left, kept for a later run, is that worker's: its question
+	// answered, it would otherwise get a second worker in the same worktree.
+	for _, id := range o.keptOutIDs() {
+		skip[id] = true
+	}
 	// A ticket whose ID isn't a plain name is set aside before its ID is made a path or a branch.
 	o.setAsideBadIDs(context.WithoutCancel(ctx), ready, skip)
 	// With a free slot, a ticket whose footprint overlaps a running ticket's is skipped for the next

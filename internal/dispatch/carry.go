@@ -78,6 +78,23 @@ func (o *Loop) loadCarried(ctx context.Context) {
 	}
 }
 
+// isKeptOut reports whether ticket id's worker, left by the last run, is kept for a later run (see
+// loadCarried): in the other terminal, outside this run's scope, or not checked. Its worker may still
+// be at work, so the run doesn't start it, as it would a second worker in the same worktree, and it
+// holds the tickets it blocks as one running does.
+func (o *Loop) isKeptOut(id string) bool {
+	o.leftMu.Lock()
+	defer o.leftMu.Unlock()
+	return slices.ContainsFunc(o.keptOut, func(e project.LeftWorker) bool { return e.Ticket == id })
+}
+
+// keptOutIDs is the tickets whose workers are kept for a later run (see isKeptOut).
+func (o *Loop) keptOutIDs() []string {
+	o.leftMu.Lock()
+	defer o.leftMu.Unlock()
+	return ticketsOf(o.keptOut)
+}
+
 // state is what the worker was left waiting on, for a list of them: "asked Q", or "left running:
 // PAUSED".
 func (w workerSpot) state() string {

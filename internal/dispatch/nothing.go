@@ -124,6 +124,9 @@ func CheckNothingToRun(
 	h := startHolds(tickets, unclosed, unmerged, st)
 	held := map[string]holdKind{}
 	for _, t := range ready {
+		if st.carried[t.ID] {
+			continue // its worker is kept for a later run, which the loop doesn't start (see isKeptOut)
+		}
 		hd, err := h.why(ctx, t)
 		if hd.why == "" || err != nil {
 			return nil, err // one the loop would start, or bd can't say whether it would
@@ -185,8 +188,9 @@ func (st startState) unmergedWhy(id string) string {
 }
 
 // startHolds is what keeps a ready ticket waiting as a run starts, before any Loop (see holds):
-// nothing is running, and the tickets bd lists as not closed (unclosed) and those closed but not
-// merged (unmerged), as st knows them, say what is held.
+// nothing is running, the workers the last run left (st's carried) count as busy, as the loop keeps
+// out those it doesn't carry over, and the tickets bd lists as not closed (unclosed) and those
+// closed but not merged (unmerged), as st knows them, say what is held.
 func startHolds(tickets Tickets, unclosed, unmerged []Ticket, st startState) holds {
 	pending := map[string]string{}
 	for _, t := range unmerged {
@@ -194,8 +198,9 @@ func startHolds(tickets Tickets, unclosed, unmerged []Ticket, st startState) hol
 	}
 	return holds{
 		parents:  parentsOf(unclosed, pending),
+		asked:    st.carried, // those the loop doesn't carry over it keeps out, as busy (see isKeptOut)
 		unmerged: st.unmergedWhy,
-		pending:  len(unmerged) > 0,
+		pending:  len(unmerged) > 0 || len(st.carried) > 0,
 		links: func(ctx context.Context, t Ticket) (links, error) {
 			return showLinks(ctx, tickets, t.ID)
 		},
