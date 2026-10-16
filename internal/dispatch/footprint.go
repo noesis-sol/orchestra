@@ -27,7 +27,10 @@ import (
 // lists them: nearly every ticket names the check, asking for it to pass, and every ticket broken
 // down from a spec cites it, without changing them.
 type Footprint struct {
-	Files []string // paths in the repository, sorted
+	// Files are paths in the repository, sorted. A folder the files metadata lists that has no tracked
+	// files under it (a new one, or the files unknown) is kept as one, ending in /: it holds the files
+	// under it.
+	Files []string
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
 	Areas []string // area:<name> labels
 	// Predicted says Files are the predictor's guess for a ticket naming nothing (PredictedKey).
@@ -222,21 +225,28 @@ func (r *repoFiles) file(name string) string {
 // or dispatch/) for the files under it and a glob (*.go, internal/**/*_test.go) for the files it
 // matches, and keeps a name that means none of these as a file the ticket adds, even in a folder
 // that doesn't exist yet (a project built from a spec), but never one that can't be a path in the
-// repository (repoPath). Without the repository's files, a name with a folder or a known extension
-// is kept. A name kept but not tracked is given in NFC.
+// repository (repoPath). Such a name written as a folder (web/src/, web/src/.) is kept as one, with
+// a trailing slash: it holds the files under it that other footprints name (takesIn). Without the
+// repository's files, a name with a folder or a known extension is kept. A name kept is cleaned
+// (path.Clean) whether the files are known or not, and given in NFC when it isn't tracked.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
 	if !repoPath(name) {
 		return nil
 	}
+	last := name[strings.LastIndex(name, "/")+1:]
+	folder := explicit && (last == "" || last == "." || last == "..")
+	name = path.Clean(name)
 	if r == nil || r.files == nil {
 		ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
-		if explicit || strings.Contains(name, "/") || sourceExtensions[ext] {
+		switch {
+		case folder:
+			return []string{name + "/"}
+		case explicit || strings.Contains(name, "/") || sourceExtensions[ext]:
 			return []string{name}
 		}
 		return nil
 	}
-	name = path.Clean(name)
 	if explicit && strings.ContainsAny(name, "*?[") {
 		return r.glob(name)
 	}
@@ -256,6 +266,8 @@ func (r *repoFiles) resolve(name string, explicit bool) []string {
 	switch {
 	case len(found) > 0:
 		return found
+	case folder:
+		return []string{name + "/"}
 	case explicit || strings.Contains(name, "/") && r.dirs[path.Dir(name)]:
 		return []string{name}
 	}
@@ -538,10 +550,19 @@ func sharedFunc(f, g Footprint) string {
 	return ""
 }
 
+// takesIn reports whether a footprint's files take in p: p itself, or a folder among them (one kept
+// with its trailing slash, web/src/) that p is under (web/src/cart.ts, web/src/ui/).
+func takesIn(files []string, p string) bool {
+	return slices.ContainsFunc(files, func(f string) bool {
+		return f == p || strings.HasSuffix(f, "/") && strings.HasPrefix(p, f)
+	})
+}
+
 // sharedFile returns a file both footprints work on, for which keep holds (any, when keep is nil),
-// or "". A ticket works on a file it names and on one the other ticket names or r's worker edited
-// (edited) that mentions a function it names (in reports whether one does), and a file both work on
-// is shared unless both name functions it mentions: they are compared by function (sharedFunc).
+// or "". A ticket works on a file it names or one under a folder it names (takesIn), and on one the
+// other ticket names or r's worker edited (edited) that mentions a function it names (in reports
+// whether one does), and a file both work on is shared unless both name functions it mentions: they
+// are compared by function (sharedFunc).
 func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
 		return in != nil && slices.ContainsFunc(fp.Funcs, func(fn string) bool { return in(p, fn) })
@@ -553,8 +574,8 @@ func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, 
 		}
 		seen[p] = true
 		fIn, rIn := namesIn(f, p), namesIn(r, p)
-		fAt := fIn || slices.Contains(f.Files, p)
-		rAt := rIn || slices.Contains(r.Files, p) || slices.Contains(edited, p)
+		fAt := fIn || takesIn(f.Files, p)
+		rAt := rIn || takesIn(r.Files, p) || slices.Contains(edited, p)
 		if fAt && rAt && !(fIn && rIn) && (keep == nil || keep(p)) {
 			return p
 		}

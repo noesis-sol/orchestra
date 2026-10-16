@@ -66,7 +66,7 @@ func TestFilesMetadataTakesFoldersAndGlobs(t *testing.T) {
 		{"internal/*", []string{"internal/dispatch/loop.go", "internal/dispatch/loop_test.go", "internal/dispatch/run.go",
 			"internal/tui/run.go", "internal/tui/view/view.go"}},
 		{"*.swift", nil},
-		{"internal/new/", []string{"internal/new"}}, // a folder the ticket adds, as before
+		{"internal/new/", []string{"internal/new/"}}, // a folder the ticket adds, holding the files under it
 	}
 	for _, c := range cases {
 		fp := TicketFootprint(Ticket{Metadata: []byte(`{"files": ["` + c.files + `"]}`)}, trackedNested, "")

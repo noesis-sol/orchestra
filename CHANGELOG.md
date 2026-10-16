@@ -22,6 +22,15 @@ All notable changes to orchestra are documented here. The format follows
   them all from running side by side, and `orchestra plan` ordered them in
   one chain.
 
+### Fixed
+
+- A folder that doesn't exist yet in a ticket's `files` metadata, written
+  with a trailing slash (`web/src/`), now holds the files under it: a
+  ticket listing it overlaps one naming `web/src/cart.ts`, in the run and
+  in `orchestra plan`, whether the repository's files are known or not. It
+  was kept as one file, `web/src`, so the two ran side by side over the
+  same new files. A name without the slash is still a file.
+
 ## [0.7.7] - 2026-10-16
 
 ### Fixed

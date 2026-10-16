@@ -14,8 +14,10 @@ import (
 // command. It doesn't panic: funcName indexes a qualifier's first byte, which only the regular
 // expressions guarantee. Its files and functions come out sorted, without repeats, its files each
 // a path in the repository (not empty, not its root, neither absolute nor outside it) and none a
-// spec under .orchestra/specs/ unless its files metadata lists something, and its areas sorted, each
-// an area label naming an area. go test runs the seeds; docs/development.md says how to fuzz.
+// spec under .orchestra/specs/ or a folder (ending in /) unless its files metadata lists something,
+// with the repository's files unknown each cleaned (path.Clean, a folder's with one /), and its areas
+// sorted, each an area label naming an area. go test runs the seeds; docs/development.md says how to
+// fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
@@ -45,6 +47,7 @@ func FuzzTicketFootprint(f *testing.F) {
 		{"Revise the spec", `{"files": [".orchestra/specs/shop.md", ".orchestra/specs/"]}`},
 		{"Say hello", `{"predicted_files": ".orchestra/specs/shop.md,README.md"}`},
 		{"Add the cart in web/src/cart.ts", `{"files": ["web/src/cart.ts", "./web/src/", "Makefile", "../web/x.ts", "/srv/x.ts"]}`},
+		{"Lay out web/srcx/a.ts", `{"files": ["web//src/", "web/lib/../src/.", "web/src/ui/..", "web/src", "internal/dispatch/"]}`},
 	} {
 		f.Add(c.text, c.meta, "", withSpec, true, "")
 		f.Add(c.text, c.meta, "", "", true, "")
@@ -67,6 +70,15 @@ func FuzzTicketFootprint(f *testing.F) {
 		spec := func(f string) bool { return strings.HasPrefix(path.Clean(f), specsDir) }
 		if i := slices.IndexFunc(fp.Files, spec); i >= 0 && len(TicketFiles(tk)) == 0 {
 			t.Errorf("the spec %q counts, yet the files metadata lists nothing", fp.Files[i])
+		}
+		for _, f := range fp.Files {
+			folder := strings.HasSuffix(f, "/")
+			if folder && len(TicketFiles(tk)) == 0 {
+				t.Errorf("the folder %q counts, yet the files metadata lists nothing", f)
+			}
+			if clean := path.Clean(f); !known && (folder && clean+"/" != f || !folder && clean != f) {
+				t.Errorf("the name %q isn't clean, with the repository's files unknown", f)
+			}
 		}
 		if !slices.IsSorted(fp.Areas) ||
 			slices.ContainsFunc(fp.Areas, func(a string) bool { return !strings.HasPrefix(a, AreaPrefix) || a == AreaPrefix }) {
