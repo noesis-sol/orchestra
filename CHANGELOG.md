@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker that asked a question and, answered in its tab, waits on a
+  permission prompt Herdr shows as idle is adopted when its ticket is taken up
+  again, never told the answer is in: the message's Enter picked the dialog's
+  first option, so orchestra allowed the tool itself, a removal Claude Code's
+  safety check held for a person included.
 - A ticket set aside as its check failed again after its worker's fix is
   checked once more only after its merge has returned. Taken up while bd was
   still labelling it, with Base moved on during the hand-back, it ran twice at

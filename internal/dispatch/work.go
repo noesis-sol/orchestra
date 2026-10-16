@@ -143,7 +143,7 @@ func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked
 			": an earlier worker for %s is still %s; stopping rather than starting a second one on %s",
 			id, stillIn(st, "its tab"), r.br)
 	case tellEarlier:
-		return r.tellEarlier(ctx, earlier, adopted)
+		return r.tellEarlier(ctx, earlier, st, adopted)
 	case renameEarlier:
 		stop := r.renameEarlier(ctx)
 		return st, stop != nil, stop
@@ -152,10 +152,17 @@ func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked
 }
 
 // tellEarlier tells the earlier worker of a ticket back from its answered question, idle in its
-// tab, to carry on, and adopts it if it does, as of adopted. It returns as takeUpEarlier does.
-func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, adopted time.Time) (AgentState,
-	bool, *stopReason) {
+// tab (st), to carry on, and adopts it if it does, as of adopted. One its hooks show waiting on a
+// permission prompt is adopted without being told: it carries on already. It returns as takeUpEarlier
+// does.
+func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, st AgentState, adopted time.Time) (
+	AgentState, bool, *stopReason) {
 	o, id := r.o, r.id
+	if at, asks := o.permissionPending(earlier, st); asks {
+		o.info("  %s's earlier worker in tab %s waits on a permission prompt; adopting it rather than telling it %s",
+			id, earlier.tab, earlier.told())
+		return st, true, r.adopt(ctx, earlier, st, at)
+	}
 	// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
 	// ticket from now on, as one adopted does.
 	o.takeOn(r.t, earlier)
@@ -449,7 +456,12 @@ func (r *ticketRun) adoptAsked(ctx context.Context, w workerSpot, resume *Sessio
 		return halt(ExitTool, stopTerminalFailed,
 			": cannot tell what %s's worker is doing in tab %s: %v", id, w.tab, err).causedBy(err)
 	}
+	at, asks := o.permissionPending(w, st)
 	switch {
+	case asks:
+		adopted = at
+		o.info("  %s's worker in tab %s waits on a permission prompt with the ticket %s; adopting it rather than "+
+			"telling it %s", id, w.tab, t.Status, w.told())
 	case t.Status != StatusClosed && (st == StateIdle || st == StateDone) && o.tellToCarryOn(ctx, id, r.agent, w):
 		o.info("  %s's worker in tab %s was told %s and carries on; adopting it", id, w.tab, w.told())
 		st = StateWorking
@@ -470,6 +482,19 @@ func (o *Loop) budgetNote() string {
 	}
 	return fmt.Sprintf("\n\nYou have about %s for this ticket: a worker still going after that stops the run, "+
 		"so pace yourself to it.\n", command.ShortDuration(limit))
+}
+
+// permissionPending says whether the worker a ticket left in its tab, w, which the terminal shows in
+// state st, waits on a permission prompt, as its hooks tell, and when it asked. Herdr may show such a
+// worker idle or done: telling it to carry on would press Enter on the prompt's dialog and so allow
+// the tool, which is the maintainer's to answer. Adopted as of then, it is waited on as a blocked
+// worker is (see waitSettled), as the request counts among what its hooks reported once adopted.
+func (o *Loop) permissionPending(w workerSpot, st AgentState) (time.Time, bool) {
+	h := o.hooksOf(worker{wt: w.wt, hooks: w.hooks})
+	if !asksPermission(h, st) {
+		return time.Time{}, false
+	}
+	return h.use.At, true
 }
 
 // tellToCarryOn tells an asked ticket's earlier worker, idle in its tab, that its question is answered and
