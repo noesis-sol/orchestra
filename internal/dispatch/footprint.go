@@ -601,11 +601,16 @@ func (r *runState) footprintOf(t Ticket) Footprint {
 	return fp
 }
 
-// startFootprint records a dispatched ticket's footprint, and logs it.
+// startFootprint records a dispatched ticket's footprint, and logs it. A ticket adopted as the run
+// starts comes before the first pick has read the repository's files, so they are read for it:
+// its footprint is kept for its whole run, and compared with ready tickets' in the repository's paths.
 func (r *runState) startFootprint(t Ticket) {
 	o := r.o
 	if !o.footprintOn() {
 		return
+	}
+	if r.files == nil {
+		r.readFiles(r.ctx)
 	}
 	fp := r.footprintOf(t)
 	o.mu.Lock()

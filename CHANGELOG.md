@@ -13,6 +13,10 @@ All notable changes to orchestra are documented here. The format follows
   read-only Bash commands at once), reads as blocked until that call is
   answered. The other call's end cleared the prompt's record, so tmux and cmux
   showed the worker as working and the run never stopped on the prompt.
+- The footprint of a ticket whose worker a run adopts as it starts names the
+  repository's files, as a ready ticket's does: read before the repository's
+  files were, it kept a name such as loop.go as written, so a ready ticket
+  naming the same file by its path ran beside it.
 - A worker that asked a question and, answered in its tab, waits on a
   permission prompt Herdr shows as idle is adopted when its ticket is taken up
   again, never told the answer is in: the message's Enter picked the dialog's
