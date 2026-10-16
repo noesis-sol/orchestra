@@ -14,6 +14,13 @@ All notable changes to orchestra are documented here. The format follows
   ticket is part of that spec: to read the sections the ticket cites before
   it starts, and to treat the spec as settled. Its standing rules are
   unchanged.
+### Changed
+
+- Footprints leave out specs under `.orchestra/specs/`, as they leave out
+  the check command's files, unless a ticket's `files` metadata lists them:
+  every ticket broken down from a spec cites it, so naming its file kept
+  them all from running side by side, and `orchestra plan` ordered them in
+  one chain.
 
 ## [0.7.7] - 2026-10-16
 

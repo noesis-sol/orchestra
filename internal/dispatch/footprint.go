@@ -16,14 +16,16 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/text/unicode/norm"
 )
 
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
 // the files its metadata lists. Two tickets whose footprints overlap are likely to conflict when
 // they run at the same time, so the loop doesn't start one beside the other. The files the
-// project's check command names count only when the metadata lists them: nearly every ticket
-// names them, asking for the check to pass, without changing them.
+// project's check command names, and specs under .orchestra/specs/, count only when the metadata
+// lists them: nearly every ticket names the check, asking for it to pass, and every ticket broken
+// down from a spec cites it, without changing them.
 type Footprint struct {
 	Files []string // paths in the repository, sorted
 	Funcs []string // functions and types, as named: Loop.merge, refreshBranch
@@ -183,8 +185,15 @@ func (r *repoFiles) mentions(file, fn string) bool {
 	return words[typ] && words[name]
 }
 
-// checks reports whether f is a file the check command names.
-func (r *repoFiles) checks(f string) bool { return r != nil && r.check[f] }
+// specsDir is the folder a spec from outside the repository is committed to. Every ticket broken
+// down from a spec cites it, and may name its file, without changing it.
+const specsDir = project.Dir + "/specs/"
+
+// inPassing reports whether f is a file tickets name without working on it: one the check command
+// names, which nearly every ticket asks to pass, or a spec under .orchestra/specs/.
+func (r *repoFiles) inPassing(f string) bool {
+	return r != nil && r.check[f] || strings.HasPrefix(path.Clean(f), specsDir)
+}
 
 // repoPath reports whether name can be a path in the repository, relative to its root: not empty,
 // not the root itself (., a/..), and neither absolute nor leading out of it (/etc/passwd, ../x.go).
@@ -211,9 +220,10 @@ func (r *repoFiles) file(name string) string {
 // itself and every file it ends (run.go means ./run.go and internal/dispatch/run.go), or a new file
 // in an existing folder. explicit, for a files metadata entry, also takes a folder (internal/dispatch/,
 // or dispatch/) for the files under it and a glob (*.go, internal/**/*_test.go) for the files it
-// matches, and keeps a name that means none of these as a file the ticket adds, but never one that
-// can't be a path in the repository (repoPath). Without the repository's files, a name with a folder
-// or a known extension is kept. A name kept but not tracked is given in NFC.
+// matches, and keeps a name that means none of these as a file the ticket adds, even in a folder
+// that doesn't exist yet (a project built from a spec), but never one that can't be a path in the
+// repository (repoPath). Without the repository's files, a name with a folder or a known extension
+// is kept. A name kept but not tracked is given in NFC.
 func (r *repoFiles) resolve(name string, explicit bool) []string {
 	name = norm.NFC.String(strings.TrimPrefix(name, "./"))
 	if !repoPath(name) {
@@ -340,8 +350,9 @@ func funcName(s string) string {
 // TicketFootprint is where ticket t works: the files and functions named in its title and text,
 // its area labels and the files its metadata lists; with none of these, the files predicted for it
 // (PredictedKey). Paths are checked against the repository's files (git ls-files), nil when they
-// aren't known. The files the project's check command (check) names count only when its metadata
-// lists them. With nothing named or predicted it is empty, and the ticket runs beside anything.
+// aren't known. The files the project's check command (check) names, and specs under
+// .orchestra/specs/, count only when its metadata lists them. With nothing named or predicted it is
+// empty, and the ticket runs beside anything.
 func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
 	return ticketFootprint(t, newRepoFiles(tracked, check))
 }
@@ -393,14 +404,14 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	return fp
 }
 
-// pathsIn returns the repository files the words of text that may be paths name, but those the
-// check command names, and the Type.method words among them that name no file.
+// pathsIn returns the repository files the words of text that may be paths name, but those named in
+// passing (inPassing), and the Type.method words among them that name no file.
 func pathsIn(text string, repo *repoFiles) (files, funcs map[string]bool) {
 	files, funcs = map[string]bool{}, map[string]bool{}
 	eachPathToken(text, func(tok string) bool {
 		if found := repo.resolve(tok, false); len(found) > 0 {
 			for _, f := range found {
-				if !repo.checks(f) { // "scripts/check.sh passes" says nothing about where a ticket works
+				if !repo.inPassing(f) { // "scripts/check.sh passes" says nothing about where a ticket works
 					files[f] = true
 				}
 			}
@@ -445,12 +456,12 @@ func codeSpansIn(text string) map[string]bool {
 }
 
 // predictedFootprint is the footprint of a ticket naming nothing, from the files predicted for it
-// but those the check command names.
+// but those named in passing (inPassing).
 func predictedFootprint(predicted []string, repo *repoFiles) Footprint {
 	files := map[string]bool{}
 	for _, f := range predicted {
 		for _, p := range repo.resolve(f, false) {
-			if !repo.checks(p) {
+			if !repo.inPassing(p) {
 				files[p] = true
 			}
 		}

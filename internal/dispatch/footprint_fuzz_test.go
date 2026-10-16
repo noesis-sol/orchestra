@@ -13,9 +13,9 @@ import (
 // by commas), against any repository files (one per line, or unknown when known is false) and check
 // command. It doesn't panic: funcName indexes a qualifier's first byte, which only the regular
 // expressions guarantee. Its files and functions come out sorted, without repeats, its files each
-// a path in the repository (not empty, not its root, neither absolute nor outside it), and its
-// areas sorted, each an area label naming an area. go test runs the seeds; docs/development.md says
-// how to fuzz.
+// a path in the repository (not empty, not its root, neither absolute nor outside it) and none a
+// spec under .orchestra/specs/ unless its files metadata lists something, and its areas sorted, each
+// an area label naming an area. go test runs the seeds; docs/development.md says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	tracked := strings.Join(trackedHere, "\n")
 	for _, c := range []struct{ text, meta, labels string }{
@@ -37,6 +37,18 @@ func FuzzTicketFootprint(f *testing.F) {
 		f.Add(c.text, c.meta, c.labels, tracked, true, "scripts/check.sh")
 		f.Add(c.text, c.meta, c.labels, "", false, "")
 	}
+	// Tickets broken down from a spec: citing it, listing it, and listing files in folders that
+	// don't exist yet, in a repository with files and in one with none.
+	withSpec := strings.Join(trackedWithSpec, "\n")
+	for _, c := range []struct{ text, meta string }{
+		{"Build the cart, as .orchestra/specs/shop.md says under Cart (specs/shop.md, shop.md).", ""},
+		{"Revise the spec", `{"files": [".orchestra/specs/shop.md", ".orchestra/specs/"]}`},
+		{"Say hello", `{"predicted_files": ".orchestra/specs/shop.md,README.md"}`},
+		{"Add the cart in web/src/cart.ts", `{"files": ["web/src/cart.ts", "./web/src/", "Makefile", "../web/x.ts", "/srv/x.ts"]}`},
+	} {
+		f.Add(c.text, c.meta, "", withSpec, true, "")
+		f.Add(c.text, c.meta, "", "", true, "")
+	}
 	f.Fuzz(func(t *testing.T, text, meta, labels, files string, known bool, check string) {
 		var tracked []string
 		if known {
@@ -51,6 +63,10 @@ func FuzzTicketFootprint(f *testing.F) {
 		}
 		if i := slices.IndexFunc(fp.Files, func(f string) bool { return !filepath.IsLocal(f) || path.Clean(f) == "." }); i >= 0 {
 			t.Errorf("the file %q is no path in the repository", fp.Files[i])
+		}
+		spec := func(f string) bool { return strings.HasPrefix(path.Clean(f), specsDir) }
+		if i := slices.IndexFunc(fp.Files, spec); i >= 0 && len(TicketFiles(tk)) == 0 {
+			t.Errorf("the spec %q counts, yet the files metadata lists nothing", fp.Files[i])
 		}
 		if !slices.IsSorted(fp.Areas) ||
 			slices.ContainsFunc(fp.Areas, func(a string) bool { return !strings.HasPrefix(a, AreaPrefix) || a == AreaPrefix }) {
