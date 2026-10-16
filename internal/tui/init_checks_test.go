@@ -165,7 +165,7 @@ func TestUseThemAsTheyAreWritesTheSuitesTicked(t *testing.T) {
 			t.Errorf("%s: check-full.sh:\n%s", tc.name, full)
 		}
 		e2eIn := map[bool]string{true: fast, false: full}[len(tc.fast) == 3]
-		if !strings.Contains(e2eIn, "lock e2e\nnpm run e2e\nunlock\n") {
+		if !strings.Contains(e2eIn, "lock e2e\n(\nnpm run e2e\n)\nunlock\n") {
 			t.Errorf("%s: e2e doesn't take turns:\n%s", tc.name, e2eIn)
 		}
 	}

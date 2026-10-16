@@ -19,6 +19,14 @@ All notable changes to orchestra are documented here. The format follows
   checked out, and the merge then brought in the ticket's branch, which was
   never checked. Its branch is no longer reset either: the reset reset the
   branch the worktree was on.
+- The runners `orchestra init` writes run each suite in a subshell, `( … )`,
+  so a suite such as `scripts/check.sh && make lint` fails the runner when
+  `scripts/check.sh` fails: `set -e` alone let sh go on to the next suite and
+  pass, and the merge check merged the broken ticket; an `unlock` after a
+  suite taking turns hid even the last one's failure. A suite's `cd` no longer
+  carries over to the next suite either. A runner written before keeps the
+  bug until replaced: `orchestra init` says it differs from what init writes
+  now, and replacing it there fixes it.
 
 ## [0.7.6] - 2026-10-16
 

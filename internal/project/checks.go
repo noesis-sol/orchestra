@@ -46,7 +46,9 @@ type Suite struct {
 const runnerHeader = "#!/bin/sh\n" +
 	"# %s: %s\n" +
 	"# orchestra init wrote it; it is the project's to edit. Each suite is one command, run from the\n" +
-	"# repository's root, and finds its own test files: a new test in an existing suite needs no edit here.\n"
+	"# repository's root, and finds its own test files: a new test in an existing suite needs no edit here.\n" +
+	"# Each runs in a subshell, ( ), so that a command failing anywhere in it (cd web && npm test) fails\n" +
+	"# the script, and its cd leaves the next suite at the root.\n"
 
 const (
 	fastPurpose = "orchestra's merge check, run on every ticket rebased onto work merged while it ran."
@@ -198,10 +200,14 @@ func runnerScript(path, purpose string, suites []Suite) string {
 	for _, s := range lines {
 		b.WriteString("\n" + suiteComment(s) + "\n")
 		b.WriteString(markerPrintf + shellQuote(SuiteMarker+" "+suiteLabel(s)) + "\n")
+		// Under set -e, sh carries on past a failure in an AND-OR list anywhere but at its end, and
+		// an unlock after it would hide even that: the subshell's status is its last command's, and
+		// set -e stops the script on it. The ) goes on a line of its own, after any comment or here
+		// document the command ends with.
 		if s.Serial {
-			fmt.Fprintf(&b, "lock %s\n%s\nunlock\n", lockName(s), s.Command)
+			fmt.Fprintf(&b, "lock %s\n(\n%s\n)\nunlock\n", lockName(s), s.Command)
 		} else {
-			b.WriteString(s.Command + "\n")
+			b.WriteString("(\n" + s.Command + "\n)\n")
 		}
 	}
 	return b.String()
@@ -334,7 +340,7 @@ func PlanRunners(repo string, c Choice) ([]Runner, error) {
 
 // RunnerCommands are the commands a runner's script runs, one per line, for a question to show: its
 // lines without the comments and what init writes around the suites (set -e, the cd, the lock, the
-// SuiteMarker lines).
+// subshells' parentheses, the SuiteMarker lines).
 func RunnerCommands(script string) []string {
 	script = strings.Replace(script, lockFunctions, "", 1)
 	var commands []string
@@ -342,7 +348,7 @@ func RunnerCommands(script string) []string {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "", strings.HasPrefix(line, "#"), line == "set -e", line == `cd "$(dirname "$0")/.."`,
-			line == "unlock", strings.HasPrefix(line, "lock ") && !strings.ContainsAny(line, ";&|"),
+			line == "(", line == ")", line == "unlock", strings.HasPrefix(line, "lock ") && !strings.ContainsAny(line, ";&|"),
 			isMarkerLine(line):
 			continue
 		}

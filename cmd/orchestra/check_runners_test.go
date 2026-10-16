@@ -41,7 +41,7 @@ func TestInitWritesTheRunnersFromTheCheckFlags(t *testing.T) {
 		t.Errorf("check-fast.sh:\n%s", got)
 	}
 	if got := read(t, filepath.Join(repo, project.FullRunner)); !strings.HasSuffix(got,
-		"\n"+project.FastRunner+"\n\n# from --check-full\nprintf '%s\\n' 'SUITE: make e2e'\nmake e2e\n") {
+		"\n"+project.FastRunner+"\n)\n\n# from --check-full\nprintf '%s\\n' 'SUITE: make e2e'\n(\nmake e2e\n)\n") {
 		t.Errorf("check-full.sh:\n%s", got)
 	}
 	plain := strings.Join(strings.Fields(stdout), " ")
@@ -90,7 +90,7 @@ func TestInitCallsTheProjectsCheckScript(t *testing.T) {
 	}
 	runner := read(t, filepath.Join(repo, project.FastRunner))
 	if !strings.Contains(runner, "\n# the project's own check, from scripts/check.sh\n"+
-		"printf '%s\\n' 'SUITE: the project'\\''s own check'\nscripts/check.sh\n") {
+		"printf '%s\\n' 'SUITE: the project'\\''s own check'\n(\nscripts/check.sh\n)\n") {
 		t.Errorf("check-fast.sh doesn't call it:\n%s", runner)
 	}
 	if got := read(t, filepath.Join(repo, project.CheckScript)); got != script {
@@ -166,7 +166,7 @@ func TestInitMovesTheOldCheckSettingsToTheNewNames(t *testing.T) {
 		t.Errorf("settings.json = %v", m)
 	}
 	if runner := read(t, filepath.Join(repo, project.FastRunner)); !strings.Contains(runner,
-		"\n# from settings.json\nprintf '%s\\n' 'SUITE: make check'\nmake check\n") {
+		"\n# from settings.json\nprintf '%s\\n' 'SUITE: make check'\n(\nmake check\n)\n") {
 		t.Errorf("check-fast.sh:\n%s", runner)
 	}
 }
