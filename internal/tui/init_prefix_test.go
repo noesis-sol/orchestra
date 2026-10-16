@@ -28,7 +28,7 @@ func TestEnterKeepsTheTicketPrefix(t *testing.T) {
 		"existing":  existingPrefix(),
 	} {
 		term := askOn(t, func(in io.Reader, out io.Writer) error {
-			return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+			return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
 		})
 		term.waitFor(t, onPrefix)
 		term.waitFor(t, "orchestra")
@@ -49,7 +49,7 @@ func TestChangingTheTicketPrefixAsksToRenameTheTickets(t *testing.T) {
 	for _, answer := range []string{"y", "n"} {
 		c := existingPrefix()
 		term := askOn(t, func(in io.Reader, out io.Writer) error {
-			return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+			return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
 		})
 		term.typeSteps(t, []keysOn{
 			{onPrefix, ctrlU + "orc-"},
@@ -68,7 +68,7 @@ func TestChangingTheTicketPrefixAsksToRenameTheTickets(t *testing.T) {
 func TestTheFormRefusesAnInvalidTicketPrefix(t *testing.T) {
 	c := project.Choice{Prefix: "orchestra", PrefixWas: "orchestra", PrefixNew: true}
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+		return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
 	})
 	term.typeSteps(t, []keysOn{
 		{onPrefix, ctrlU + "Orc"},
@@ -90,7 +90,7 @@ func TestTheFormKeepsTheTicketPrefixWhileTheTicketsCantBeRenamed(t *testing.T) {
 	c := existingPrefix()
 	c.PrefixRefusal = "the last run left workers on orchestra-a1 (in .orchestra/run/state.json)"
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
+		return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Prefix: true}})
 	})
 	term.typeSteps(t, []keysOn{
 		{"It stays orchestra for now", ctrlU + "orc"},
@@ -119,7 +119,7 @@ func TestAccessibleFormAsksForTheTicketPrefix(t *testing.T) {
 	} {
 		c := existingPrefix()
 		var out strings.Builder
-		if err := AskInit(typed(tc.answers...), &out, &c, Ask{Questions: project.Questions{Prefix: true}}); err != nil {
+		if err := AskInit(t.Context(), typed(tc.answers...), &out, &c, Ask{Questions: project.Questions{Prefix: true}}); err != nil {
 			t.Fatalf("%v: %v\n%s", tc.answers, err, out.String())
 		}
 		if c.Prefix != tc.prefix || c.RenamePrefix != tc.rename {

@@ -52,11 +52,19 @@ func runInit(
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
 	scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"), Effort: scoutEffort(getenv, existing.OrganEffort)}
-	spent, err := askOrDefault(stdin, stdout, interactive, repo, &choice, ask, scout)
+	// Caught while the form asks, which a stop signal cancels as Esc does: Bubble Tea's own handler
+	// would take SIGTERM for a submitted form.
+	formCtx, stopForm := signal.NotifyContext(ctx, stopSignals...)
+	spent, err := askOrDefault(formCtx, stdin, stdout, interactive, repo, &choice, ask, scout)
+	signalled := formCtx.Err() != nil && ctx.Err() == nil
+	stopForm()
 	steps := scoutSteps(spent)
-	if err != nil {
+	if err != nil || signalled {
 		ui.Steps(steps)
 		ui.Cancelled()
+		if signalled {
+			return dispatch.ExitInterrupted
+		}
 		return dispatch.ExitSetup
 	}
 	// Checked again once the form is answered, which can take a while: a run may have started since.
@@ -317,9 +325,11 @@ func planPrefix(ctx context.Context, repo string, flag project.Given[string], c 
 
 // askOrDefault asks the questions ask names in a terminal (interactive), with the scout looking for
 // the suites of the project in repo, and returns what the scout's calls cost; the error is the form's,
-// cancelled. Outside a terminal it takes the questions as unasked (see Choice.DeclineUnasked).
+// cancelled by Esc or by the end of ctx. Outside a terminal it takes the questions as unasked (see
+// Choice.DeclineUnasked).
 func askOrDefault(
-	in io.Reader, out io.Writer, interactive bool, repo string, c *project.Choice, ask tui.Ask, scout organ.Client,
+	ctx context.Context, in io.Reader, out io.Writer, interactive bool, repo string, c *project.Choice, ask tui.Ask,
+	scout organ.Client,
 ) (spent []organ.Spend, err error) {
 	if !interactive || !ask.Any() {
 		c.DeclineUnasked(ask.Questions)
@@ -330,7 +340,7 @@ func askOrDefault(
 		scout.Spent = func(s organ.Spend) { spent = append(spent, s) }
 		ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
 	}
-	err = tui.AskInit(in, out, c, ask)
+	err = tui.AskInit(ctx, in, out, c, ask)
 	return spent, err
 }
 

@@ -58,7 +58,7 @@ func TestAccessibleInitFormCancelsAtTheEndOfInput(t *testing.T) {
 		c := project.Choice{Concurrent: 1, InstallBeads: true, Union: true,
 			Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
 		var out strings.Builder
-		err := AskInit(typedThenEnd(tc.answers...), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
+		err := AskInit(t.Context(), typedThenEnd(tc.answers...), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
 		if !errors.Is(err, huh.ErrUserAborted) {
 			t.Errorf("%s: AskInit = %v; want %v\n%s", tc.name, err, huh.ErrUserAborted, ansi.Strip(out.String()))
 		}
@@ -70,7 +70,7 @@ func TestAccessibleInitFormStillTakesEveryAnswer(t *testing.T) {
 	c := project.Choice{Concurrent: 1, InstallBeads: true, Union: true,
 		Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
 	var out strings.Builder
-	err := AskInit(typed("n", "3", "n"), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
+	err := AskInit(t.Context(), typed("n", "3", "n"), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
 	if err != nil || c.InstallBeads || c.Concurrent != 3 || c.Union {
 		t.Errorf("AskInit: %v, install %v, concurrent %d, union %v; want nil, false, 3, false\n%s",
 			err, c.InstallBeads, c.Concurrent, c.Union, ansi.Strip(out.String()))

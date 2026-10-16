@@ -140,8 +140,8 @@ func TestInitChoiceTakesTheFlagsOverTheProject(t *testing.T) {
 func TestAskOrDefaultOutsideATerminalDeclinesTheOffers(t *testing.T) {
 	c := project.Choice{Union: true, InstallBeads: true, Verifier: true, Unasked: project.Questions{Concurrent: true}}
 	ask := project.Questions{Check: true, Concurrent: true, MCP: true, Union: true, Install: true, Verifier: true}
-	spent, err := askOrDefault(strings.NewReader(""), io.Discard, false, t.TempDir(), &c, tui.Ask{Questions: ask},
-		organ.Client{})
+	spent, err := askOrDefault(t.Context(), strings.NewReader(""), io.Discard, false, t.TempDir(), &c,
+		tui.Ask{Questions: ask}, organ.Client{})
 	if err != nil || len(spent) != 0 {
 		t.Fatalf("spent %v, %v", spent, err)
 	}

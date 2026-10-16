@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   worker's own reports were left out. The hooks now name the Claude Code
   process that runs them, and record only the one that started first since
   the worker's launch.
+- A stop signal while `orchestra init` asks its questions (`kill`, a
+  process supervisor, an IDE stopping the task) cancels init as Esc does,
+  with nothing changed, and exits 130. Bubble Tea took SIGTERM for a
+  submitted form, so init went on to set up Beads and write `.orchestra/`
+  with the answers given so far.
 - An organ call runs claude in an empty directory of its own that only you
   can open, no longer in the temporary directory itself. On Linux with
   TMPDIR unset that was the world-writable /tmp, and claude read the

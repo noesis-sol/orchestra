@@ -518,8 +518,9 @@ func stepper(names []string, n int) string {
 // from in and drawing the form on out. It asks them in stages, each stage under its header; a stage
 // with no question to ask is left out. It changes nothing but c: Esc or Ctrl+C at any stage returns
 // huh.ErrUserAborted, as the end of in does in the accessible form (TERM=dumb), and init then writes
-// and installs nothing.
-func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
+// and installs nothing. The end of ctx (a stop signal) ends the form too: AskInit returns ctx's error
+// and leaves c as it was.
+func AskInit(ctx context.Context, in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	workers, answers := workersStage(c, ask)
 	checks := &initStage{name: "Checks"}
 	accessible := os.Getenv("TERM") == "dumb" // huh's accessible form, which asks with plain lines
@@ -542,13 +543,13 @@ func AskInit(in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
 	form, fields := buildForm(stages, in, out)
 	var err error
 	if accessible {
-		err = runAccessible(context.Background(), fields, in, out)
+		err = runAccessible(ctx, fields, in, out)
 	} else {
 		var scout *scoutRun
 		if stage2 != nil {
 			scout = stage2.scout
 		}
-		err = runForm(form, scout, in, out)
+		err = runForm(ctx, form, scout, in, out)
 	}
 	if err != nil {
 		return err

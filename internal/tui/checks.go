@@ -639,15 +639,26 @@ func unwrapField(f huh.Field) huh.Field {
 // quit rather than interrupt, as AskWork's do: on tea.Interrupt Bubble Tea closes the terminal's
 // input without waiting for its goroutine still reading it, a data race. The form's State then tells
 // a cancelled form from a submitted one.
-func runForm(form *huh.Form, scout *scoutRun, in io.Reader, out io.Writer) error {
+//
+// orchestra watches the stop signals itself and ends ctx on one: Bubble Tea's handler would take
+// SIGTERM for a submitted form. The form quits on the end of ctx rather than being killed by
+// tea.WithContext, which closes the input in the same way.
+func runForm(ctx context.Context, form *huh.Form, scout *scoutRun, in io.Reader, out io.Writer) error {
 	form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
-	_, err := tea.NewProgram(initModel{form: form, scout: scout}, tea.WithInput(in), tea.WithOutput(out),
-		tea.WithReportFocus()).Run()
+	p := tea.NewProgram(initModel{form: form, scout: scout}, tea.WithInput(in), tea.WithOutput(out),
+		tea.WithReportFocus(), tea.WithoutSignalHandler())
+	stop := context.AfterFunc(ctx, p.Quit) // Quit returns once Run has, if it is still sending
+	_, err := p.Run()
+	stop()
 	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
 	case form.State == huh.StateAborted:
 		return huh.ErrUserAborted
 	case err != nil:
 		return fmt.Errorf("huh: %w", err)
+	case form.State != huh.StateCompleted: // quit some other way: not answered
+		return huh.ErrUserAborted
 	}
 	return nil
 }

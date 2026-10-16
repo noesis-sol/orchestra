@@ -16,7 +16,7 @@ func TestInitFormAsksNoTimeLimit(t *testing.T) {
 	var out strings.Builder
 	// The choice of checks (3, Manual), the check command and the setup command offered.
 	ask := Ask{Questions: project.Questions{Check: true, Setup: true}}
-	if err := AskInit(typed("3", "make check", ""), &out, &c, ask); err != nil {
+	if err := AskInit(t.Context(), typed("3", "make check", ""), &out, &c, ask); err != nil {
 		t.Fatal(err)
 	}
 	if screen := ansi.Strip(out.String()); strings.Contains(screen, "time limit") || !strings.Contains(screen, "Setup") {
