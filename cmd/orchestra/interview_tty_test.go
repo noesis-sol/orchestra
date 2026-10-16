@@ -84,7 +84,7 @@ esac
 func describeFeature(t *testing.T, term *fakeTerminal) {
 	t.Helper()
 	term.waitFor(t, "> Current tickets: none, all done")
-	term.typeKeys(t, keyDown+keyEnter, false)
+	term.typeKeys(t, pickFeature, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, "- Add a --json flag"+keyNewLine+"- to the list command"+keyEnter, false)
 }

@@ -186,6 +186,7 @@ type options struct {
 	Yes          bool   // file a --feature plan without asking
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
+	limitGiven   bool   // -limit or LIMIT gave Config.Limit, which a spec run otherwise hasn't
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
@@ -253,7 +254,6 @@ type runFlags struct {
 	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
 	specTimeout                                 project.Given[time.Duration]
 	resolveConflicts                            project.Given[bool]
-	limitGiven                                  bool            // -limit or LIMIT gave the limit
 	set                                         map[string]bool // the flags the command line sets
 	env                                         envFlags
 }
@@ -277,7 +277,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
 			"With --spec, commit the spec and break it down into an epic and its tickets first, and run those.\n"+
 			"In a terminal, without --feature, --spec, --ticket, --tickets or -plain, it first asks which: "+
-			"the current tickets, or a new feature you describe.\n\n")
+			"the current tickets, a spec you pick (as --spec runs it), or a new feature you describe.\n\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
 			"4 terminal (Herdr, tmux or cmux), Beads or git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+

@@ -554,6 +554,10 @@ func (f *specField) Error() error {
 	return f.input.Error()
 }
 
+// entered reports whether the field was left holding a spec's path: the start question draws what
+// it asks of the spec next only then.
+func (f *specField) entered() bool { return !f.focused && *f.value != "" && f.input.Error() == nil }
+
 // Run runs the field in a form of its own.
 func (f *specField) Run() error { return huh.Run(f) }
 

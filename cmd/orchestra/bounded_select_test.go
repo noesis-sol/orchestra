@@ -33,7 +33,7 @@ func TestWorkQuestionStopsAtTheLastOption(t *testing.T) {
 	for _, down := range downKeys {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 		term.waitFor(t, "> Current tickets: 3 ready")
-		term.typeKeys(t, keyDown+down+keyEnter, false)
+		term.typeKeys(t, keyDown+keyDown+down+keyEnter, false)
 		term.waitFor(t, describing)
 		term.typeKeys(t, "Add a --json flag"+keyEnter, true)
 		if a := answer(); a.description != "Add a --json flag" || a.code != dispatch.ExitOK {

@@ -8,6 +8,22 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- In a terminal, "What should this run work on?" offers a third option
+  between the current tickets and a new feature: **Spec: build what a spec
+  file describes**. It asks for the spec's file: a path typed or pasted (a
+  relative one starts at the repository, `~` is your home folder), Tab
+  completing folders and `.md`, `.markdown` and `.txt` files, or a file
+  chosen by browsing with Ctrl+O (Esc closes the browser). Enter goes on
+  once the path names a file of text with something in it. Then it asks
+  "Refine it with claude first?": **Run it as it is**, selected to start
+  with, runs it as `orchestra --spec <file>` does; **Refine it with claude
+  first** as `orchestra --spec <file> --refine` does. The run then goes as
+  if those flags had been given: no ticket limit unless `-limit` or `LIMIT`
+  gives one, workers in auto permission mode unless a mode is given, and the
+  run lock, the log and the start record name the spec. A spec where git
+  wouldn't commit it ends the run with exit 2. Esc or Ctrl+C at any step
+  exits 130 with nothing changed; the accessible form (`TERM=dumb`) asks the
+  same.
 - `orchestra --spec <file> --refine` breaks the spec down with you: an
   interactive Claude Code session in a pane beside orchestra's (Herdr, tmux
   or cmux), as the New feature interview has, or on orchestra's own terminal

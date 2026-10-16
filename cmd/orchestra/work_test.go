@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
 // Keys as a terminal sends them.
@@ -21,6 +22,9 @@ const (
 	keyEsc     = "\x1b"
 	keyCtrlC   = "\x03"
 )
+
+// pickFeature picks New feature, the question's third option, from the first.
+const pickFeature = keyDown + keyDown + keyEnter
 
 // fakeReady is the run's ready query: n tickets, or err; and with none, the check for nothing to
 // run: nothing, or checkErr.
@@ -60,7 +64,8 @@ func (s *screen) String() string {
 
 // workAnswer is what the question returned, and what it drew and said.
 type workAnswer struct {
-	description string
+	work        tui.Work
+	description string // work's, for a new feature
 	code        int
 	out, err    string
 }
@@ -105,6 +110,12 @@ func (term *fakeTerminal) typeKeys(t *testing.T, keys string, last bool) {
 // the answer, which waits for the form to end.
 func askWorkOn(ctx context.Context, t *testing.T, ready fakeReady) (*fakeTerminal, func() workAnswer) {
 	t.Helper()
+	return askWorkIn(ctx, t, t.TempDir(), ready)
+}
+
+// askWorkIn is askWorkOn in the repository repo, where a spec's relative path starts.
+func askWorkIn(ctx context.Context, t *testing.T, repo string, ready fakeReady) (*fakeTerminal, func() workAnswer) {
+	t.Helper()
 	in, keys := io.Pipe()
 	end := func() { _ = keys.Close() } // only ends the input
 	t.Cleanup(end)
@@ -112,8 +123,9 @@ func askWorkOn(ctx context.Context, t *testing.T, ready fakeReady) (*fakeTermina
 	var errOut strings.Builder
 	done := make(chan workAnswer, 1)
 	go func() {
-		d, code := workQuestion{tickets: ready, nothing: ready.check, in: in, out: &term.screen, err: &errOut}.ask(ctx)
-		done <- workAnswer{description: d, code: code}
+		w, code := workQuestion{tickets: ready, nothing: ready.check, repo: repo, in: in, out: &term.screen,
+			err: &errOut}.ask(ctx)
+		done <- workAnswer{work: w, description: w.Description, code: code}
 	}()
 	return term, func() workAnswer {
 		t.Helper()
@@ -167,7 +179,7 @@ func TestWorkQuestionCountsNothingWhenBdCantSay(t *testing.T) {
 func TestWorkQuestionTakesAMultiLineFeatureDescription(t *testing.T) {
 	term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 	term.waitFor(t, "> Current tickets: 3 ready")
-	term.typeKeys(t, keyDown+keyEnter, false)
+	term.typeKeys(t, pickFeature, false)
 	term.waitFor(t, describing)
 	term.typeKeys(t, "Add a --json flag"+keyNewLine+"to the list command  "+keyEnter, true)
 	a := answer()
@@ -186,7 +198,7 @@ func TestWorkQuestionRefusesAnEmptyDescription(t *testing.T) {
 	for _, empty := range []string{"", "  " + keyNewLine} {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 		term.waitFor(t, "> Current tickets: 3 ready")
-		term.typeKeys(t, keyDown+keyEnter, false)
+		term.typeKeys(t, pickFeature, false)
 		term.waitFor(t, describing)
 		term.typeKeys(t, empty+keyEnter, false)
 		term.waitFor(t, refused)
@@ -211,7 +223,7 @@ func TestWorkQuestionCancelledExits130(t *testing.T) {
 
 		term, answer = askWorkOn(context.Background(), t, fakeReady{n: 3})
 		term.waitFor(t, "> Current tickets: 3 ready")
-		term.typeKeys(t, keyDown+keyEnter, false)
+		term.typeKeys(t, pickFeature, false)
 		term.waitFor(t, describing)
 		term.typeKeys(t, "Add a fl", false)
 		term.waitFor(t, "Add a fl")

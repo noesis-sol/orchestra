@@ -306,23 +306,28 @@ func (s *session) readPrompt() int {
 
 // chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or
 // given with --feature is talked through or planned, and filed, the run then scoped to its epic; a
-// spec given with --spec is committed and broken down, the run then scoped to its root epic. It
-// records the run's start. ok is false where the run ends there with code: the question left, or
-// nothing filed to run.
+// spec chosen there or given with --spec is committed and broken down, the run then scoped to its
+// root epic. It records the run's start. ok is false where the run ends there with code: the question
+// left, a spec chosen that can't be run, or nothing filed to run.
 func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	cfg, e := &s.cfg, s.e
 	typed := false // the feature was typed at the question rather than given with --feature
 	if asksWork(*cfg, isTerminal(e.stdin) && isTerminal(e.stdout)) {
-		feature, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr)
+		work, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr)
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
 			return code, false
 		}
-		cfg.Feature, typed = feature, feature != "" // "" for the current tickets
-		// The lock, taken before the question, says from now on what --feature would have.
-		if typed {
-			s.holder.Feature = feature
+		switch work.Kind {
+		case tui.WorkFeature:
+			cfg.Feature, typed = work.Description, true
+			// The lock, taken before the question, says from now on what --feature would have.
+			s.holder.Feature = work.Description
 			if err := s.lock.Rewrite(s.holder); err != nil {
 				s.log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
+			}
+		case tui.WorkSpec:
+			if code := s.specChosen(ctx, work); code != dispatch.ExitOK {
+				return code, false
 			}
 		}
 	}

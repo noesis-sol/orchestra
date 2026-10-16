@@ -29,13 +29,13 @@ func TestAccessibleWorkFormAsksForADescriptionOnlyForAFeature(t *testing.T) {
 		asked   bool
 	}{
 		{"current tickets", []string{"1"}, "", false},
-		{"new feature", []string{"2", "", "  Export the run report  "}, "Export the run report", true},
+		{"new feature", []string{"3", "", "  Export the run report  "}, "Export the run report", true},
 	} {
 		var out strings.Builder
-		got, err := AskWork(context.Background(), typed(tc.answers...), &out, 3, nil)
+		got, err := AskWork(context.Background(), typed(tc.answers...), &out, t.TempDir(), 3, nil)
 		screen := ansi.Strip(out.String())
-		if err != nil || got != tc.want {
-			t.Errorf("%s: AskWork = %q, %v; want %q\n%s", tc.name, got, err, tc.want, screen)
+		if err != nil || got.Description != tc.want {
+			t.Errorf("%s: AskWork = %+v, %v; want %q\n%s", tc.name, got, err, tc.want, screen)
 		}
 		if asked := strings.Contains(screen, "Describe the feature"); asked != tc.asked {
 			t.Errorf("%s: asked for a description: %v, want %v\n%s", tc.name, asked, tc.asked, screen)

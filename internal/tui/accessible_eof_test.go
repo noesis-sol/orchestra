@@ -34,13 +34,13 @@ func TestAccessibleWorkFormCancelsAtTheEndOfInput(t *testing.T) {
 		answers []string
 	}{
 		{"at the first question", nil},
-		{"at the description", []string{"2"}},
-		{"after an empty description", []string{"2", ""}},
+		{"at the description", []string{"3"}},
+		{"after an empty description", []string{"3", ""}},
 	} {
 		var out strings.Builder
-		got, err := AskWork(context.Background(), typedThenEnd(tc.answers...), &out, 3, nil)
+		got, err := AskWork(context.Background(), typedThenEnd(tc.answers...), &out, t.TempDir(), 3, nil)
 		if !errors.Is(err, ErrCancelled) {
-			t.Errorf("%s: AskWork = %q, %v; want %v\n%s", tc.name, got, err, ErrCancelled, ansi.Strip(out.String()))
+			t.Errorf("%s: AskWork = %+v, %v; want %v\n%s", tc.name, got, err, ErrCancelled, ansi.Strip(out.String()))
 		}
 	}
 }
@@ -84,7 +84,7 @@ func TestAccessibleWorkFormStopsWhenCtxEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := AskWork(ctx, in, io.Discard, 3, nil)
+		_, err := AskWork(ctx, in, io.Discard, t.TempDir(), 3, nil)
 		done <- err
 	}()
 	time.Sleep(10 * time.Millisecond) // the form is reading by now, or reads an ended input
