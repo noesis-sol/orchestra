@@ -56,7 +56,8 @@ const (
 	eventsName = "events"
 	// noticeName is the last notification Claude Code showed (a permission prompt, a dialog asking for
 	// input, the session idle at its prompt for a while), replaced by Notification: what the session
-	// waits on where no other hook says, as an interrupted turn has no Stop. Read by ReadHooks.
+	// waits on where no other hook says, as an interrupted turn has no Stop. Read by ReadHooks, and
+	// by LastToolUse for the session idle after its last report.
 	noticeName = "notice.json"
 	// askedPrefix, followed by an agent's ID ("main" for the session's own), is the tool that agent
 	// asked to use, replaced by its PermissionRequest and removed by its tool's end (PostToolUse or
@@ -276,7 +277,8 @@ func hookSettings(bin, records string) map[string]any {
 var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 
 // LastToolUse returns what the worker in worktree reported last, and when, and false when it has
-// reported nothing readable; with it, when its last turn ended, if no prompt has started another.
+// reported nothing readable; with it, when its last turn ended, if no prompt has started another, and
+// when Claude Code noted it idle at its prompt since (as after a permission prompt refused).
 func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
@@ -293,6 +295,12 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 			u.Stopped = fi.ModTime()
 		} else if !ok {
 			r.sayNewer(worktree, turnName, b)
+		}
+	}
+	if b, fi, err := readRun(worktree, noticeName); err == nil && fi.ModTime().After(u.At) {
+		var in hookInput
+		if json.Unmarshal(b, &in) == nil && readable(in.V) && in.Notification == idlePrompt {
+			u.Idle = fi.ModTime()
 		}
 	}
 	return u, true

@@ -27,6 +27,11 @@ All notable changes to orchestra are documented here. The format follows
   carries over to the next suite either. A runner written before keeps the
   bug until replaced: `orchestra init` says it differs from what init writes
   now, and replacing it there fixes it.
+- A worker whose permission prompt you refused, waiting at its prompt with its
+  ticket in progress, settles after the idle grace as any idle worker does.
+  The run took it for still waiting on the prompt, which no hook clears on a
+  refusal, showed `permission — waiting for you` and stopped 4 minutes on with
+  `BLOCKED >4min: … its worker waits on a permission prompt`.
 
 ## [0.7.6] - 2026-10-16
 

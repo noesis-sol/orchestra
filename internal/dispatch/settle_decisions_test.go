@@ -138,6 +138,8 @@ func TestAsksPermission(t *testing.T) {
 		{"asked, blocked", hooksSeen{use: asked, ok: true}, StateBlocked, true},
 		{"asked, done", hooksSeen{use: asked, ok: true}, StateDone, true},
 		{"asked, working", hooksSeen{use: asked, ok: true}, StateWorking, false},
+		{"asked, refused", hooksSeen{use: ToolUse{Event: EventPermission, Tool: "Bash", At: asked.At,
+			Idle: asked.At.Add(time.Minute)}, ok: true}, StateIdle, false},
 		{"asked before the adoption", hooksSeen{use: asked}, StateIdle, false},
 		{"no hooks", hooksSeen{}, StateIdle, false},
 		{"a tool use", hooksSeen{use: ToolUse{Event: "PreToolUse", Tool: "Bash"}, ok: true}, StateIdle, false},

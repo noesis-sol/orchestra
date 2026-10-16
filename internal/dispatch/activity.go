@@ -21,6 +21,11 @@ type ToolUse struct {
 	// zero otherwise. A record of a tool use written after it comes from no turn of the worker's.
 	Stopped time.Time
 
+	// When Claude Code noted the worker idle at its prompt for a while (its idle_prompt notification)
+	// after this report; zero otherwise. A permission prompt reported has been answered by then: refused,
+	// which runs no hook, as allowing it would have the tool's end replace this report.
+	Idle time.Time
+
 	// Who reported it, as the hook's input says (set for a tool use or a permission prompt):
 	// the Claude Code session, its transcript, and the subagent (ID and type) whose tool it is,
 	// empty for the session's main agent.
@@ -188,8 +193,10 @@ func DoingOf(u ToolUse, check string) Doing {
 }
 
 // waitsOnPermission says whether a worker the terminal shows in state st, whose hooks last reported
-// u (ok: they did), is waiting on a permission prompt: asked, and the terminal shows it at rest
-// (idle, blocked or done). A worker the terminal shows working was allowed, and is using the tool.
+// u (ok: they did), is waiting on a permission prompt: asked, not refused since (u.Idle), and the
+// terminal shows it at rest (idle, blocked or done). A worker the terminal shows working was allowed,
+// and is using the tool.
 func waitsOnPermission(st AgentState, u ToolUse, ok bool) bool {
-	return ok && u.Event == EventPermission && (st == StateIdle || st == StateBlocked || st == StateDone)
+	return ok && u.Event == EventPermission && u.Idle.IsZero() &&
+		(st == StateIdle || st == StateBlocked || st == StateDone)
 }
