@@ -305,6 +305,38 @@ func TestSpecPickerRefusesOtherFiles(t *testing.T) {
 	}
 }
 
+// The picker goes into a folder and back up, and stays where it is, saying why, rather than go into one
+// it can't read.
+func TestSpecPickerGoesIntoFoldersItCanRead(t *testing.T) {
+	repo, _ := specRepo(t)
+	d := newDrivenSpec(repo)
+	d.press(pressCtrlO, pressDown, pressEnter) // My Specs, then docs
+	if got, want := d.field.picker.CurrentDirectory, filepath.Join(repo, "docs"); got != want ||
+		!strings.Contains(d.view(), "story.txt") {
+		t.Fatalf("Enter on docs: the picker is in %s, want %s:\n%s", got, want, d.view())
+	}
+	d.press(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := d.field.picker.CurrentDirectory; got != repo || !strings.Contains(d.view(), "README.md") {
+		t.Fatalf("← in docs: the picker is in %s, want %s:\n%s", got, repo, d.view())
+	}
+	if os.Geteuid() == 0 { // root reads the folder all the same
+		return
+	}
+	locked := filepath.Join(repo, "locked")
+	if err := os.Mkdir(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // for the temporary folder's removal
+	d = newDrivenSpec(repo)
+	d.press(pressCtrlO, pressDown, pressDown, pressDown, pressEnter) // My Specs, docs, links, then locked
+	if got := d.field.picker.CurrentDirectory; got != repo || !strings.Contains(d.view(), "README.md") {
+		t.Errorf("Enter on a folder it can't read: the picker is in %s, want %s:\n%s", got, repo, d.view())
+	}
+	if err := d.field.Error(); err == nil || err.Error() != "cannot open "+locked+": permission denied" {
+		t.Errorf("Enter on a folder it can't read: the error is %v", err)
+	}
+}
+
 // Esc closes the picker rather than cancelling the question, which Esc then cancels.
 func TestSpecPickerEscClosesItAndKeepsTheQuestion(t *testing.T) {
 	repo, _ := specRepo(t)

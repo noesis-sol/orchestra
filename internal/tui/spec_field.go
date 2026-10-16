@@ -316,7 +316,7 @@ func (f *specField) openPicker() tea.Cmd {
 	fp.KeyMap = f.pickerKeys()
 	fp.Styles = pickerStyles(f.styleTheme())
 	fp, _ = fp.Update(fp.Init()()) // the folder read now, so that the picker opens on it
-	f.picker, f.pickErr = &fp, nil
+	f.picker, f.pickErr = &fp, f.unreadable(fp.CurrentDirectory)
 	if f.keys != nil {
 		f.quit = f.keys.Quit
 		f.keys.Quit = withoutKey(f.keys.Quit, "esc")
@@ -337,13 +337,22 @@ func (f *specField) closePicker() tea.Cmd {
 }
 
 // browse handles a key while the picker is open: Esc closes it, and choosing a spec file puts its
-// path in the input and closes it, leaving the focus on the field. Choosing another file is an error.
+// path in the input and closes it, leaving the focus on the field. Choosing another file is an error,
+// and so is going to a folder that can't be read: the picker stays where it was.
 func (f *specField) browse(k tea.KeyMsg) tea.Cmd {
 	if key.Matches(k, specCloseKey) {
 		return f.closePicker()
 	}
 	f.pickErr = nil
 	fp, cmd := f.picker.Update(k)
+	if fp.CurrentDirectory != f.picker.CurrentDirectory && cmd != nil { // the folder to read
+		// bubbles' picker would show the folder it left under the name of one it can't read.
+		if f.pickErr = f.unreadable(fp.CurrentDirectory); f.pickErr != nil {
+			return nil
+		}
+		fp, _ = fp.Update(cmd()) // read now, as on opening
+		cmd = nil
+	}
 	f.picker = &fp
 	if ok, p := fp.DidSelectFile(k); ok {
 		f.setTyped(f.shownPath(p))
@@ -353,6 +362,14 @@ func (f *specField) browse(k tea.KeyMsg) tea.Cmd {
 		f.pickErr = errNotASpec
 	}
 	return cmd
+}
+
+// unreadable is why the picker can't show the folder dir, or nil when it can.
+func (f *specField) unreadable(dir string) error {
+	if _, err := os.ReadDir(dir); err != nil {
+		return fmt.Errorf("cannot open %s: %w", tildePath(f.home, dir), pathCause(err))
+	}
+	return nil
 }
 
 // pickerKeys are the picker's keys: the form's for huh's file picker, all enabled, but Esc, which
