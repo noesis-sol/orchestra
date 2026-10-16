@@ -221,7 +221,8 @@ func (o *Loop) Run(ctx context.Context) int {
 	}
 }
 
-// begin notes when the run starts and Base's commit then, and says how it runs.
+// begin notes when the run starts and Base's commit then, says how it runs, and finds whether the
+// workers' claude takes their permission mode.
 func (o *Loop) begin(ctx context.Context) {
 	c := o.cfg
 	o.started = time.Now()
@@ -235,9 +236,9 @@ func (o *Loop) begin(ctx context.Context) {
 		where = term.Where
 	}
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
-		"check timeout: %s, terminal: %s, %s: %s, agent: %s, worktrees: %s, MCP servers: %s)",
+		"check timeout: %s, terminal: %s, %s: %s, agent: %s%s, worktrees: %s, MCP servers: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency, ticketLimit,
-		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.AgentKind,
+		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.AgentKind, c.permissionLabel(),
 		c.WTRoot, c.mcpLabel())
 	if c.Watch != "" {
 		o.info("  to see the workers' tabs: %s", c.Watch)
@@ -249,6 +250,7 @@ func (o *Loop) begin(ctx context.Context) {
 		o.info("  spec: epic %s, broken down from: %s", c.Ticket, c.Spec)
 	}
 	o.sayMCP()
+	o.permission = o.permissionArgs(ctx)
 }
 
 // runState is what Run owns: only its goroutine reads or changes it. Its methods are Run's steps.

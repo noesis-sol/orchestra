@@ -77,6 +77,9 @@ func TestPrecedence(t *testing.T) {
 			func(c options, _ project.Settings) any { return c.ResolveConflicts }, true, true, nil, false},
 		{"--worker-effort", []string{"--worker-effort", "xhigh"}, "WORKER_EFFORT", "max", `{"worker_effort": "medium"}`,
 			func(c options, _ project.Settings) any { return c.WorkerEffort }, "", "medium", "max", "xhigh"},
+		{"--worker-permission-mode", []string{"--worker-permission-mode", "acceptEdits"}, "WORKER_PERMISSION_MODE",
+			"default", `{"worker_permission_mode": "auto"}`,
+			func(c options, _ project.Settings) any { return c.WorkerPermissionMode }, "", "auto", "default", "acceptEdits"},
 		{"--organ-effort", []string{"--organ-effort", "low"}, "ORGAN_EFFORT", "max", `{"organ_effort": "high"}`,
 			func(c options, _ project.Settings) any { return c.OrganEffort }, "", "high", "max", "low"},
 		{"--terminal", []string{"--terminal", "tmux"}, "ORCHESTRA_TERMINAL", "herdr", `{"terminal": "cmux"}`,
@@ -186,6 +189,16 @@ func TestRunSettingProblems(t *testing.T) {
 			[]string{".orchestra/settings.json: resolve_timeout must be a positive duration such as 20m (got 'soon')."}},
 		{"--worker-effort extreme", []string{"--worker-effort", "extreme"}, nil, "",
 			[]string{"--worker-effort must be one of low, medium, high, xhigh, max (got 'extreme')."}},
+		{"--worker-permission-mode plan", []string{"--worker-permission-mode", "plan"}, nil, "",
+			[]string{"--worker-permission-mode (or WORKER_PERMISSION_MODE) can't be plan: a worker in it only plans, " +
+				"and never changes a file. Use one of default, acceptEdits, auto."}},
+		{"WORKER_PERMISSION_MODE", nil, map[string]string{"WORKER_PERMISSION_MODE": "bypassPermissions"}, "",
+			[]string{"--worker-permission-mode (or WORKER_PERMISSION_MODE) can't be bypassPermissions: a worker in it " +
+				"would run every command unchecked, where auto has Claude Code's classifier check them. " +
+				"Use one of default, acceptEdits, auto."}},
+		{"worker_permission_mode", nil, nil, `{"worker_permission_mode": "Auto"}`,
+			[]string{".orchestra/settings.json: worker_permission_mode must be one of default, acceptEdits, auto " +
+				"(got 'Auto')."}},
 		{"organ_effort", nil, nil, `{"organ_effort": "hi"}`,
 			[]string{".orchestra/settings.json: organ_effort must be one of low, medium, high, xhigh, max (got 'hi')."}},
 		{"exclude_types", nil, nil, `{"exclude_types": ["epic,decision"]}`,

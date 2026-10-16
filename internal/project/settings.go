@@ -73,6 +73,10 @@ type Settings struct {
 	// WorkerEffort is the effort Claude workers are started at (claude --effort), unless
 	// --worker-effort says otherwise. Empty: Claude Code's own default.
 	WorkerEffort string `json:"worker_effort,omitempty"`
+	// WorkerPermissionMode is the permission mode Claude workers are started in (claude
+	// --permission-mode), one of PermissionModes, unless --worker-permission-mode says otherwise.
+	// Empty: Claude Code's own default from the user's settings, or PermissionAuto in a spec run.
+	WorkerPermissionMode string `json:"worker_permission_mode,omitempty"`
 	// OrganEffort is the effort of every organ, unless --organ-effort says otherwise. Empty: each
 	// organ's own, low for triage and the predictor and medium for the run report.
 	OrganEffort string `json:"organ_effort,omitempty"`
@@ -453,6 +457,61 @@ var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 func ResolveEffort(flagValue, key, setting string) (string, error) {
 	return resolve(givenText(flagValue), oneOfFlag("--"+strings.ReplaceAll(key, "_", "-"), Efforts),
 		choiceSetting(key, setting, Efforts), "")
+}
+
+// The permission modes of Claude Code's that workers can be started in (claude --permission-mode).
+const (
+	PermissionDefault     = "default"
+	PermissionAcceptEdits = "acceptEdits"
+	PermissionAuto        = "auto"
+)
+
+// PermissionModes are the permission modes workers can be started in. Claude Code's others don't
+// suit a worker: bypassPermissions runs every command unchecked, and plan never changes anything.
+var PermissionModes = []string{PermissionDefault, PermissionAcceptEdits, PermissionAuto}
+
+// unsuitedModes say why Claude Code's permission modes outside PermissionModes don't suit a worker.
+var unsuitedModes = map[string]string{
+	"bypassPermissions": "would run every command unchecked, where auto has Claude Code's classifier check them",
+	"plan":              "only plans, and never changes a file",
+}
+
+// ResolvePermissionMode picks the permission mode Claude workers start in: flagValue (from
+// --worker-permission-mode or WORKER_PERMISSION_MODE) unless it is empty, else the project's
+// setting, else PermissionAuto in a spec run, where nobody answers a permission prompt, else "" for
+// Claude Code's own default. Either must be one of PermissionModes.
+func ResolvePermissionMode(flagValue string, s Settings, spec bool) (string, error) {
+	def := ""
+	if spec {
+		def = PermissionAuto
+	}
+	return resolve(givenText(flagValue), func(v string) error {
+		if err := permissionModeErr(v); err != nil {
+			return fmt.Errorf("--worker-permission-mode (or WORKER_PERMISSION_MODE) %w", err)
+		}
+		return nil
+	}, func() (string, bool, error) {
+		if s.WorkerPermissionMode == "" {
+			return "", false, nil
+		}
+		if err := permissionModeErr(s.WorkerPermissionMode); err != nil {
+			return "", false, settingErr("worker_permission_mode", err)
+		}
+		return s.WorkerPermissionMode, true, nil
+	}, def)
+}
+
+// permissionModeErr says why mode isn't one of PermissionModes, after the name of what gives it, or
+// returns nil.
+func permissionModeErr(mode string) error {
+	modes := strings.Join(PermissionModes, ", ")
+	if why, ok := unsuitedModes[mode]; ok {
+		return fmt.Errorf("can't be %s: a worker in it %s. Use one of %s", mode, why, modes)
+	}
+	if !slices.Contains(PermissionModes, mode) {
+		return fmt.Errorf("must be one of %s (got '%s')", modes, mode)
+	}
+	return nil
 }
 
 // The terminals workers run in, as settings.json's "terminal", --terminal and the run's state file

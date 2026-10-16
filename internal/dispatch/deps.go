@@ -158,6 +158,12 @@ type Reporter interface {
 	ReportArgsIn(dir, folder string) ([]string, error)
 }
 
+// AgentHelp reads what the workers' agent says it takes.
+type AgentHelp interface {
+	// Help is claude --help: its options, and the values it lists for them
+	Help(ctx context.Context) (string, error)
+}
+
 // Session is a Claude Code worker's session, as its hooks recorded it: resumed (claude --resume),
 // the worker has all it knew of its ticket.
 type Session struct {
@@ -232,7 +238,8 @@ type Deps struct {
 	Starter   Starter
 	Namer     Namer
 	Agents    Agents
-	Reporter  Reporter // nil: no reports
+	Reporter  Reporter  // nil: no reports
+	Help      AgentHelp // nil: the workers' claude can't be asked what it takes
 	Checkout  Checkout
 	Worktrees Worktrees
 	Merger    Merger

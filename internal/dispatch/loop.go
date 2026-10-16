@@ -52,6 +52,9 @@ type Loop struct {
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
+	// permission is --permission-mode and Config.WorkerPermissionMode, which every Claude worker
+	// starts with when its claude takes the mode, as the run found as it began; nil for none.
+	permission []string
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
@@ -86,6 +89,7 @@ type deps struct {
 	namer     Namer
 	agents    Agents
 	reporter  Reporter
+	help      AgentHelp
 	checkout  Checkout
 	worktrees Worktrees
 	merger    Merger
@@ -98,8 +102,8 @@ type deps struct {
 func depsFrom(d Deps) deps {
 	return deps{
 		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
-		reporter: d.Reporter, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger, history: d.History,
-		organ: d.Advisor, organCtx: d.AdviceCtx,
+		reporter: d.Reporter, help: d.Help, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger,
+		history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
 	}
 }
 
@@ -492,6 +496,9 @@ type Config struct {
 	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome, and
 	// --effort when the project sets one.
 	WorkerArgs []string
+	// WorkerPermissionMode is the permission mode Claude workers start in (claude --permission-mode),
+	// when the workers' claude lists it (see permissionArgs); "" for Claude Code's own default.
+	WorkerPermissionMode string
 	// EnvProbe is how long after the run holds for the environment, once no ticket runs, one
 	// worker without a ticket is started to see whether commands run again; 0 for none.
 	EnvProbe time.Duration

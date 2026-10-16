@@ -55,7 +55,8 @@ type harness struct {
 	logPath  string
 	cfg      Config
 	reporter Reporter
-	alerts   *alerts // the last loop's notifications
+	help     AgentHelp // what the workers' claude says it takes; nil: it can't be asked
+	alerts   *alerts   // the last loop's notifications
 }
 
 // newHarness sets up a repository on main and an empty tracker; workers are Claude, given their
@@ -115,8 +116,8 @@ func (h *harness) loop() *Loop {
 	}
 	h.alerts = recordAlerts(log)
 	d := Deps{Tickets: h.beads, Notes: h.beads, Tabs: h.herdr, Starter: h.herdr, Namer: h.herdr, Agents: h.herdr,
-		Reporter: h.reporter, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{}, History: git.Git{},
-		Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()}
+		Reporter: h.reporter, Help: h.help, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{},
+		History: git.Git{}, Advisor: organ.Client{Bin: filepath.Join(h.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()}
 	if h.mem != nil {
 		d.Checkout, d.Worktrees, d.Merger, d.History = h.mem, h.mem, h.mem, h.mem
 	}

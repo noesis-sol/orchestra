@@ -24,6 +24,15 @@ All notable changes to orchestra are documented here. The format follows
   as `orchestra: set up for spec <name>`, the repository's first commit where
   it has none. Outside a git repository it says to run `git init` first; bd
   missing is a setup problem, as nothing is installed unattended.
+- `worker_permission_mode` in `.orchestra/settings.json`, or
+  `--worker-permission-mode` (`WORKER_PERMISSION_MODE`) for one run, starts
+  Claude workers, the resumed and the environment probe's included, with
+  `--permission-mode default`, `acceptEdits` or `auto`; `bypassPermissions`
+  and `plan` are setup problems. A spec run defaults to `auto`, so Claude
+  Code's classifier decides and a worker waits on a permission prompt only
+  when it can't; other runs leave the mode to Claude Code, as before. The
+  START line names the mode. A `claude` whose `--help` doesn't list it gets
+  a `PERMISSION_MODE` warning once, and its workers start without it.
 ### Changed
 
 - Footprints leave out specs under `.orchestra/specs/`, as they leave out

@@ -189,7 +189,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 	s := &workerStart{o: o, id: id, tab: tab, pane: pane, wt: wt, agent: agent,
 		mcpArgs: a.mcp, fixed: slices.Clip(a.mcp), rules: a.rules, report: a.report, launch: launch}
 	if c.ClaudeWorkers() {
-		s.fixed = append(s.fixed, c.WorkerArgs...)
+		s.fixed = append(append(s.fixed, c.WorkerArgs...), o.permission...)
 	}
 	if session != "" {
 		s.fixed = append(s.fixed, "--resume", session)
@@ -228,8 +228,8 @@ func (s *workerStart) place() {
 }
 
 // args are the worker's arguments: its MCP servers, the run's arguments for every Claude worker
-// (--no-chrome or --chrome, --effort) and the session it resumes, which it always gets, then its
-// standing rules, its reports and its prompt, if it has them.
+// (--no-chrome or --chrome, --effort, --permission-mode) and the session it resumes, which it always
+// gets, then its standing rules, its reports and its prompt, if it has them.
 func (s *workerStart) args() []string {
 	args := append(append(append([]string{}, s.fixed...), s.rules...), s.report...)
 	if s.launch != "" {
