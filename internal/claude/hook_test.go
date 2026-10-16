@@ -170,7 +170,7 @@ func TestHookExitsZeroWhateverHappens(t *testing.T) {
 		return ""
 	}
 	records := t.TempDir()
-	for _, args := range [][]string{nil, {"Stop"}, {"Stop", records, "more"}, {"NoSuchEvent", records},
+	for _, args := range [][]string{nil, {"Stop"}, {"Stop", records, "1", "more"}, {"NoSuchEvent", records},
 		{"Stop", filepath.Join(records, "gone")}} {
 		var stderr strings.Builder
 		if code := Hook(args, cookie, strings.NewReader("{}"), &stderr); code != 0 || stderr.Len() > 0 {

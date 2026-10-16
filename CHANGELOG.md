@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- In tmux and cmux, an earlier worker left running in its tab beside the
+  worker started since in the same worktree no longer takes over that
+  worker's records when you clear it (`/clear`) or it resumes another session:
+  the session it then started, under a new ID, read as the worker's, and the
+  worker's own reports were left out. The hooks now name the Claude Code
+  process that runs them, and record only the one that started first since
+  the worker's launch.
 - An organ call runs claude in an empty directory of its own that only you
   can open, no longer in the temporary directory itself. On Linux with
   TMPDIR unset that was the world-writable /tmp, and claude read the

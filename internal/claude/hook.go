@@ -35,8 +35,9 @@ func init() {
 	}
 }
 
-// Hook is 'orchestra hook <event> <folder>', args being what follows hook: the worker's hook for the
-// event, which writes its records to folder. It keeps the rules hookSettings lists: it exits 0
+// Hook is 'orchestra hook <event> <folder> [<process>]', args being what follows hook: the worker's hook
+// for the event, which writes its records to folder, run by the Claude Code of that process ID (the
+// hooks of an orchestra before it name none). It keeps the rules hookSettings lists: it exits 0
 // whatever happens, reads all its input and never makes the folder. Without hookCookie set to 1 in
 // getenv, it reads nothing and says on stderr what it is.
 func Hook(args []string, getenv func(string) string, stdin io.Reader, stderr io.Writer) int {
@@ -46,15 +47,21 @@ func Hook(args []string, getenv func(string) string, stdin io.Reader, stderr io.
 		return 0
 	}
 	in, err := io.ReadAll(stdin) // all of it: Claude Code would be left writing to a closed pipe
-	if err != nil || len(args) != 2 {
+	if err != nil || len(args) != 2 && len(args) != 3 {
 		return 0
+	}
+	process := ""
+	if len(args) == 3 {
+		if n, err := strconv.Atoi(args[2]); err == nil && n > 0 {
+			process = args[2]
+		}
 	}
 	root, err := os.OpenRoot(args[1])
 	if err != nil {
 		return 0 // the folder is gone, as the worker removed it: never made again
 	}
 	defer func() { _ = root.Close() }() // what is written is closed: nothing to lose
-	writeRecords(root, args[0], in)
+	writeRecords(root, args[0], in, process)
 	return 0
 }
 
@@ -91,14 +98,15 @@ type toolArgs struct {
 // editTools are the tools whose file the hook adds to editsName before they run.
 var editTools = []string{"Edit", "MultiEdit", "Write", "NotebookEdit"}
 
-// writeRecords writes the records of the event's hook, whose input is in, to root, an os.Root at their
-// folder; a record it can't write is left as it was.
-func writeRecords(root *os.Root, event string, in []byte) {
+// writeRecords writes the records of the event's hook, whose input is in, run by the Claude Code of
+// process ("" when the hook names none), to root, an os.Root at their folder; a record it can't write
+// is left as it was.
+func writeRecords(root *os.Root, event string, in []byte, process string) {
 	var h hookInput
 	if json.Unmarshal(in, &h) != nil {
 		h = hookInput{} // the input is unreadable: only the records that need none of it are written
 	}
-	if foreign(root, event, h) {
+	if foreign(root, event, h, process) {
 		return
 	}
 	input := withFormat(in)
@@ -137,21 +145,39 @@ func writeRecords(root *os.Root, event string, in []byte) {
 		replace(root, turnName, eventRecord(event))
 	case "SessionStart":
 		replace(root, sessionName, input)
+		if process != "" {
+			replace(root, processName, []byte(process+"\n"))
+		} else {
+			_ = root.Remove(processName) // hooks that name none: the session tells another apart
+		}
 		note(root, event, h)
 	case "Notification":
 		replace(root, noticeName, input)
 	}
 }
 
-// foreign reports whether the event's hook, whose input is h, is one of a session other than the one
-// the folder's session record (sessionName) names: an earlier worker's, left running in its tab beside
-// the worker started since in the same worktree (dispatch renames an idle earlier worker and leaves
-// it), whose hooks write to the same folder. Its records would tell of the worker that came after it:
-// its SessionEnd, as it is closed or exited, that one gone. A session's start is its own, which it
-// records, but a compaction's, which keeps the session's ID: one under another ID is another
-// session's. An input or a record that names no session is the folder's session's.
-func foreign(root *os.Root, event string, h hookInput) bool {
-	if h.Session == "" || event == "SessionStart" && h.Source != "compact" {
+// foreign reports whether the event's hook, whose input is h, run by the Claude Code of process, is
+// one of another Claude Code than the one whose session the folder records: an earlier worker's, left
+// running in its tab beside the worker started since in the same worktree (dispatch renames an idle
+// earlier worker and leaves it), whose hooks write to the same folder. Its records would tell of the
+// worker that came after it: its SessionEnd, as it is closed or exited, that one gone, and its
+// SessionStart, as it is cleared or resumes another session, a session of that one's.
+//
+// Another Claude Code is a process other than the one the folder's process record (processName) names,
+// or, with none recorded, as with hooks that name none, a session other than the one its session
+// record (sessionName) names. A start is the new worker's, which it records: a startup's, which only a
+// process's start has, and with no process recorded, as after a start, any session's but a
+// compaction's, which keeps the session's ID (one under another ID is another session's). An input or
+// a record that names no session is the folder's session's.
+func foreign(root *os.Root, event string, h hookInput, process string) bool {
+	start := event == "SessionStart"
+	if start && h.Source == "startup" {
+		return false
+	}
+	if b, err := root.ReadFile(processName); err == nil && len(bytes.TrimSpace(b)) > 0 {
+		return process != string(bytes.TrimSpace(b)) // hooks that name none are of a start before this one's
+	}
+	if h.Session == "" || start && h.Source != "compact" {
 		return false
 	}
 	b, err := root.ReadFile(sessionName)

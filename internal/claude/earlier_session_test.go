@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -36,12 +37,16 @@ func TestEarlierSessionLeftRunningIsNotRecorded(t *testing.T) {
 			wt := t.TempDir()
 			records := Records(wt, "")
 			settings := reportingSettings(t, wt, false)
-			runHooks(t, settings, "SessionStart", start(earlier, "startup"))
-			runHooks(t, settings, "Stop", `{"hook_event_name":"Stop","session_id":"`+earlier+`"}`)
+			runHooksApart(t, settings, "SessionStart", start(earlier, "startup"))
+			runHooksApart(t, settings, "Stop", `{"hook_event_name":"Stop","session_id":"`+earlier+`"}`)
 			settings = reportingSettings(t, wt, false) // the later worker, launched in the same worktree
 			runHooks(t, settings, "SessionStart", start(later, "startup"))
 			runHooks(t, settings, "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","session_id":"`+later+`"}`)
-			runHooks(t, settings, c.event, c.input)
+			run := runHooksApart
+			if strings.HasPrefix(c.name, "the later one") {
+				run = runHooks
+			}
+			run(t, settings, c.event, c.input)
 			if got := State(records); got != c.want {
 				t.Errorf("%s: %s, want %s", c.name, got, c.want)
 			}

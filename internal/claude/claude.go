@@ -47,6 +47,12 @@ const (
 	// the session starts or is resumed, cleared or compacted: what to resume, and where the transcript
 	// is. Read by Session and TranscriptTail.
 	sessionName = "session.json"
+	// processName is the process ID of the Claude Code whose session the folder records, a line of
+	// plain text, written by the SessionStart of a process the folder has none recorded for (after a
+	// start) and removed by each start: the hooks of another process are an earlier worker's, left
+	// running in the same worktree, whose events, its /clear and /resume included, are left out
+	// (foreign). Read by the hooks only.
+	processName = "process"
 	// eventsName is a log of one JSON line each, appended by PermissionRequest (its tool), PreCompact
 	// (its trigger), SubagentStart and SubagentStop (its ID and type), SessionStart (its source:
 	// startup, resume, clear, compact) and SessionEnd (its reason: exit, clear, logout, …), which the
@@ -160,15 +166,16 @@ func (Reporter) ReportArgsIn(dir, folder string) ([]string, error) {
 }
 
 // allRecords are the files the hooks write, all of them an earlier session's for a new one.
-var allRecords = []string{activityName, turnName, editsName, sessionName, eventsName, noticeName}
+var allRecords = []string{activityName, turnName, editsName, sessionName, processName, eventsName, noticeName}
 
 // ResumeArgs is ReportArgs for a worker resuming the session of the one before it in worktree: the
 // files that one edited are kept, as the resumed worker carries on its work, and so is its session,
 // which the resumed worker's SessionStart hook writes again (claude --resume keeps the session ID):
 // were the start to fail, as when Herdr is down, the next run still finds the session to resume.
-// Its other records are removed: the subagents its process ran ended with it.
+// Its other records are removed: the subagents its process ran ended with it, and the resumed session
+// runs in a process of its own.
 func (Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, "", activityName, turnName, eventsName, noticeName)
+	return reportArgs(worktree, "", activityName, turnName, processName, eventsName, noticeName)
 }
 
 // reportArgs is ReportArgsIn, removing the earlier session's records named stale; folder "" is
@@ -237,7 +244,8 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 // hookSettings is the settings that have the worker's hooks write their records to the folder records
 // (activityName and the other names say what each holds), each JSON one in recordFormat, and that
 // carry workerEnv. Each event's hook is bin, orchestra's binary that launches the worker, run as 'bin
-// hook <event> <records>' (Hook), and keeps to these rules:
+// hook <event> <records> <process>' (Hook), process being the shell's $PPID, the Claude Code that runs
+// the hook, and keeps to these rules:
 //   - A record replaced is written to a temporary file and moved over it, so a reader never sees
 //     half of one.
 //   - It exits 0, ignoring its errors: a reporting hook must never change what the worker does, and
@@ -247,12 +255,12 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 //     pipe. The command reads what bin left, as when it is gone.
 //   - It doesn't make the folder again: a git stash pop of the worker's own git stash --all would
 //     then fail on the file.
-//   - It records nothing of a session other than the one the folder's session record names (foreign),
-//     as an earlier worker's left running in the same worktree.
+//   - It records nothing of a process or a session other than the ones the folder's records name
+//     (foreign), as an earlier worker's left running in the same worktree.
 func hookSettings(bin, records string) map[string]any {
 	hook := func(event string) []any {
 		line := "{ " + hookCookie + "=1 " + command.ShellQuote(bin) + " " + hookCommand + " " + event + " " +
-			command.ShellQuote(records) + "; cat >/dev/null; } 2>/dev/null; exit 0"
+			command.ShellQuote(records) + ` "$PPID"; cat >/dev/null; } 2>/dev/null; exit 0`
 		return []any{map[string]any{"type": "command", "command": line}}
 	}
 	tool := func(event string) []any { return []any{map[string]any{"matcher": "*", "hooks": hook(event)}} }
