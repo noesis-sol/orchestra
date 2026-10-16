@@ -43,6 +43,19 @@ func reachesLimit(hooks *hookReporter, claims bool, reset time.Time) behaviour {
 	}
 }
 
+// readyOnceHeld adds ticket id to h's bd once the run holds for the usage limit (its EvLimited event),
+// a second after: a ticket that becomes ready while the run holds. One added as a worker reaches the
+// limit may be taken before any poll sees the worker limited, by the run filling a free slot at once.
+func readyOnceHeld(h *harness, id, title string, prio int) {
+	go func() {
+		for start := time.Now(); len(h.sink.eventsOf(EvLimited)) == 0 && time.Since(start) < time.Hour; {
+			time.Sleep(time.Second)
+		}
+		time.Sleep(time.Second) // the run, parked meanwhile, has seen the hold
+		h.beads.add(id, title, prio)
+	}()
+}
+
 // carriesOn is a worker turn that goes on with its ticket for took, then claims it, commits file and
 // closes it.
 func carriesOn(hooks *hookReporter, file string, took time.Duration) behaviour {
@@ -128,7 +141,7 @@ func TestALimitedWorkerHoldsTheRunUntilTheReset(t *testing.T) {
 		h.beads.add("A", "claimed, then limited", 1)
 		h.beads.add("C", "limited before its claim", 2)
 		h.worker("A", func(w *fakeWorker) AgentState {
-			h.beads.add("B", "ready while the run holds", 3)
+			readyOnceHeld(h, "B", "ready while the run holds", 3)
 			return reachesLimit(hooks, true, reset)(w)
 		}, carriesOn(hooks, "a.txt", 2*time.Minute))
 		h.worker("C", reachesLimit(hooks, false, reset), carriesOn(hooks, "c.txt", 2*time.Minute))
@@ -290,7 +303,7 @@ func TestTheUsageLimitWaitGivesUpWithExit8(t *testing.T) {
 		reset := start.Add(5 * time.Hour)
 		h.beads.add("A", "a", 1)
 		h.worker("A", func(w *fakeWorker) AgentState {
-			h.beads.add("B", "b", 2) // no behaviour: a worker on it fails the test
+			readyOnceHeld(h, "B", "b", 2) // no behaviour: a worker on it fails the test
 			return reachesLimit(hooks, true, reset)(w)
 		})
 		o, code := h.run()
