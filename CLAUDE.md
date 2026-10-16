@@ -86,8 +86,9 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 
 orchestra is a Go CLI that works through a Beads backlog: it hands each ready ticket to a **worker** (a Claude Code
 agent) in its own tab (Herdr's, a tmux window or a cmux workspace) and git worktree, and fast-forwards finished
-tickets into the branch it runs on. **Organs** are its one-shot advisers (triage, the run report): `claude -p` with no
-tools and no MCP servers. docs/organs.md and the orchestra skill's opening define both terms; use them consistently.
+tickets into the branch it runs on. **Organs** are its one-shot advisers (triage, the run report, init's scout):
+`claude -p` with no MCP servers, and no tools but the scout's read-only ones (Read, Glob, Grep). docs/organs.md and
+the orchestra skill's opening define both terms; use them consistently.
 
 - `cmd/orchestra`: flags and settings, choosing the terminal (`terminal.go`: the one it runs in, Herdr, tmux or cmux,
   else tmux; each terminal a row of `terminalKinds`), `orchestra init`, `orchestra plan`, the dashboard or plain output,
