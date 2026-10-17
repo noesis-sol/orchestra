@@ -58,26 +58,28 @@ func TestCommandRunSaid(t *testing.T) {
 }
 
 // runLimited runs its commands one after another until one fails, and says which, within one time
-// limit for them all.
+// limit for them all. Only the case that times out has a short limit: the others' is one that starting
+// their shells under load (several workers' race checks at once) can't reach.
 func TestRunLimited(t *testing.T) {
 	dir := t.TempDir()
 	ran := filepath.Join(dir, "ran")
 	cases := []struct {
 		name     string
 		cmds     []string
+		limit    time.Duration
 		failed   int
 		timedOut bool
 		last     string // the end of the last output kept
 		second   bool   // the second command ran
 	}{
-		{"both pass", []string{"echo one", "echo two; touch ran"}, -1, false, "two", true},
-		{"the first fails", []string{"echo one; exit 1", "touch ran"}, 0, false, "one", false},
-		{"the second fails", []string{"echo one", "echo two; touch ran; exit 1"}, 1, false, "two", true},
-		{"the first times out", []string{"sleep 5", "touch ran"}, 0, true, "", false},
+		{"both pass", []string{"echo one", "echo two; touch ran"}, time.Minute, -1, false, "two", true},
+		{"the first fails", []string{"echo one; exit 1", "touch ran"}, time.Minute, 0, false, "one", false},
+		{"the second fails", []string{"echo one", "echo two; touch ran; exit 1"}, time.Minute, 1, false, "two", true},
+		{"the first times out", []string{"sleep 5", "touch ran"}, 200 * time.Millisecond, 0, true, "", false},
 	}
 	for _, tc := range cases {
 		_ = os.Remove(ran) // absent at first
-		run, failed := runLimited(t.Context(), dir, 200*time.Millisecond, tc.cmds...)
+		run, failed := runLimited(t.Context(), dir, tc.limit, tc.cmds...)
 		if failed != tc.failed || (run.err != nil) != (tc.failed >= 0) || run.timedOut() != tc.timedOut {
 			t.Errorf("%s: runLimited = %v, %d, want %d, timed out %v", tc.name, run.err, failed, tc.failed, tc.timedOut)
 		}
