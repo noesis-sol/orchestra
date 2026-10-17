@@ -40,12 +40,12 @@ func TestSpecPromptsInUpdateMode(t *testing.T) {
 			[]string{"## Answering", "the one the first message names", "never ask one",
 				"in the note you add for the change"},
 			[]string{"## Questions", "--notes`, once the tree is filed"}},
-		{"refinement in a pane", func(repo string) (string, error) { return WriteRefinePrompt(repo, true) },
+		{"refinement in a pane", func(repo string) (string, error) { return WriteRefinePrompt(repo, RefineUpdate) },
 			[]string{"## Questions", "In this update, ask only about the change", "sum up the update",
 				"under the heading `Decisions`", "it closes this session by itself",
 				"Once the user agrees to the update, file as you go"},
 			[]string{"## Answering", "`assumptions`"}},
-		{"refinement on the terminal", func(repo string) (string, error) { return WriteTerminalRefine(repo, true) },
+		{"refinement on the terminal", func(repo string) (string, error) { return WriteTerminalRefine(repo, RefineUpdate) },
 			[]string{"## Questions", "typing `/exit` hands back to orchestra"},
 			[]string{"## Answering", "it closes this session by itself"}},
 	} {
@@ -74,8 +74,8 @@ func TestSpecPromptsInUpdateMode(t *testing.T) {
 func TestSpecPromptsForANewSpec(t *testing.T) {
 	for name, write := range map[string]func(repo string) (string, error){
 		"headless":                   func(repo string) (string, error) { return WriteSpecPrompt(repo, false) },
-		"refinement in a pane":       func(repo string) (string, error) { return WriteRefinePrompt(repo, false) },
-		"refinement on the terminal": func(repo string) (string, error) { return WriteTerminalRefine(repo, false) },
+		"refinement in a pane":       func(repo string) (string, error) { return WriteRefinePrompt(repo, RefineSpec) },
+		"refinement on the terminal": func(repo string) (string, error) { return WriteTerminalRefine(repo, RefineSpec) },
 	} {
 		p, err := write(runFolder(t))
 		if err != nil {

@@ -42,7 +42,7 @@ func TestWriteRefinePromptWritesTheRefineSections(t *testing.T) {
 	if err := os.WriteFile(spec, []byte(`{"epic":"old-1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, err := WriteRefinePrompt(repo, false)
+	p, err := WriteRefinePrompt(repo, RefineSpec)
 	if err != nil || p != filepath.Join(repo, RunPath("spec-prompt.md")) {
 		t.Fatalf("WriteRefinePrompt: %q, %v", p, err)
 	}
@@ -87,7 +87,7 @@ func TestWriteTerminalRefineSaysHowToHandBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, RunPath(SpecName)), []byte(`{"epic":"s-1"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p, err := WriteTerminalRefine(repo, false)
+	p, err := WriteTerminalRefine(repo, RefineSpec)
 	if err != nil || p != filepath.Join(repo, RunPath("spec-prompt.md")) {
 		t.Fatalf("WriteTerminalRefine: %q, %v", p, err)
 	}

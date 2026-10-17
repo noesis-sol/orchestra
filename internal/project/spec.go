@@ -39,7 +39,10 @@ const (
 // A spec is broken down in a Claude Code session in the main checkout, its instructions
 // (spec-prompt.md) appended to Claude Code's system prompt from .orchestra/run/: headless, with
 // nobody there, or refined with the user first (--refine), in a pane beside orchestra's or on its
-// own terminal. The instructions are a text/template, which gives each its sections.
+// own terminal. A feature, its description given as text, is broken down as a spec refined with the
+// user, in the instructions' feature mode, its interview method adapted from mattpocock/skills under
+// the MIT License, whose notice they carry. The instructions are a text/template, which gives each
+// its sections.
 //
 //go:embed spec-prompt.md
 var specPromptText string
@@ -58,48 +61,76 @@ const (
 	SpecUpdateName = "spec-update.md"
 )
 
+// RefineMode is what a breakdown with the user breaks down, and so which sections its instructions
+// have and which file it hands its root epic back in.
+type RefineMode int
+
+// The modes of a breakdown with the user.
+const (
+	RefineSpec    RefineMode = iota // a spec whose tree isn't filed yet; it hands back in spec.json
+	RefineUpdate                    // a spec changed since its tree was filed (see WriteSpecPrompt); spec.json
+	RefineFeature                   // a feature talked through, its description given as text; feature.json
+)
+
+// handBack is the file in .orchestra/run/ that a breakdown in mode m hands its root epic back in.
+func (m RefineMode) handBack() string {
+	if m == RefineFeature {
+		return FeatureName
+	}
+	return SpecName
+}
+
+// specPromptData picks spec-prompt.md's sections: Refine the user's over the headless ones,
+// OnTerminal what a session on orchestra's own terminal adds, Update the sections that update a tree
+// filed for an earlier version of the spec, and Feature, with Refine alone, those of a feature.
+type specPromptData struct{ Refine, OnTerminal, Update, Feature bool }
+
+// refined is the data of a breakdown with the user in mode m, on orchestra's own terminal with
+// onTerminal.
+func (m RefineMode) refined(onTerminal bool) specPromptData {
+	return specPromptData{Refine: true, OnTerminal: onTerminal, Update: m == RefineUpdate, Feature: m == RefineFeature}
+}
+
 // WriteSpecPrompt writes the instructions of a spec's headless breakdown to .orchestra/run/ in the
 // main checkout repo, over an earlier breakdown's, and returns their path. With update, the spec
 // changed since its tree was filed: the breakdown updates that tree for the change, from what
 // WriteSpecUpdate wrote.
 func WriteSpecPrompt(repo string, update bool) (string, error) {
-	return writeSpecPrompt(repo, false, false, update)
+	return writeSpecPrompt(repo, specPromptData{Update: update})
 }
 
-// WriteRefinePrompt readies the main checkout repo for a spec's refinement with the user (--refine):
-// it removes the spec.json an earlier refinement left, so that only this one's counts, and writes
-// the instructions for a session in a pane beside orchestra's to .orchestra/run/, in update mode
-// with update, as WriteSpecPrompt has it. It returns their path.
-func WriteRefinePrompt(repo string, update bool) (string, error) {
+// WriteRefinePrompt readies the main checkout repo for a breakdown with the user in mode m: a spec's
+// refinement (--refine), new or an update, or a feature's. It removes the file an earlier breakdown
+// in that mode handed back in (spec.json, or feature.json for a feature), so that only this one's
+// counts, and writes the instructions for a session in a pane beside orchestra's to .orchestra/run/.
+// It returns their path.
+func WriteRefinePrompt(repo string, m RefineMode) (string, error) {
 	root, err := OpenRun(repo)
 	if err != nil {
 		return "", err
 	}
-	err = RemoveRun(root, repo, RunPath(SpecName))
+	err = RemoveRun(root, repo, RunPath(m.handBack()))
 	_ = root.Close() // nothing written
 	if err != nil {
 		return "", err
 	}
-	return writeSpecPrompt(repo, true, false, update)
+	return writeSpecPrompt(repo, m.refined(false))
 }
 
-// WriteTerminalRefine writes the instructions for a refinement on orchestra's own terminal over those
-// WriteRefinePrompt wrote to the main checkout repo, in update mode with update, and returns their
-// path, the same. orchestra closes a session in a pane beside its own once it has handed the root
-// epic back, but can only wait for one on its terminal to end: these instructions add that claude
-// tells the user to type /exit then.
-func WriteTerminalRefine(repo string, update bool) (string, error) {
-	return writeSpecPrompt(repo, true, true, update)
+// WriteTerminalRefine writes the instructions for a breakdown with the user on orchestra's own
+// terminal, in mode m, over those WriteRefinePrompt wrote to the main checkout repo, and returns
+// their path, the same. orchestra closes a session in a pane beside its own once it has handed the
+// root epic back, but can only wait for one on its terminal to end: these instructions add that
+// claude tells the user to type /exit then.
+func WriteTerminalRefine(repo string, m RefineMode) (string, error) {
+	return writeSpecPrompt(repo, m.refined(true))
 }
 
-// writeSpecPrompt writes the breakdown's instructions to .orchestra/run/ in the main checkout repo,
-// over an earlier breakdown's, and returns their path: refine's sections in place of the headless
-// ones, with onTerminal what a session on orchestra's own terminal adds, and with update the
-// sections that update a tree filed for an earlier version of the spec.
-func writeSpecPrompt(repo string, refine, onTerminal, update bool) (string, error) {
+// writeSpecPrompt writes the breakdown's instructions, with the sections d picks, to .orchestra/run/
+// in the main checkout repo, over an earlier breakdown's, and returns their path.
+func writeSpecPrompt(repo string, d specPromptData) (string, error) {
 	var text bytes.Buffer
-	if err := specPrompt.Execute(&text, struct{ Refine, OnTerminal, Update bool }{refine, onTerminal,
-		update}); err != nil {
+	if err := specPrompt.Execute(&text, d); err != nil {
 		return "", fmt.Errorf("cannot make the breakdown's instructions: %w", err)
 	}
 	root, err := OpenRun(repo)

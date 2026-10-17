@@ -5,11 +5,12 @@ builds with are listed in `go.mod`, each with its own license.
 
 ## mattpocock/skills
 
-The instructions for the feature interview (`internal/project/interview-prompt.md`) adapt the
-"grilling" skill, `skills/productivity/grilling/SKILL.md` of
-[mattpocock/skills](https://github.com/mattpocock/skills): the design tree, the rounds of the
-frontier with numbered questions and recommended answers, facts looked up rather than asked, and
-the shared understanding the user confirms. The file carries this notice too.
+The instructions for a feature's breakdown (the feature mode of `internal/project/spec-prompt.md`)
+and for the feature interview (`internal/project/interview-prompt.md`) adapt the "grilling" skill,
+`skills/productivity/grilling/SKILL.md` of [mattpocock/skills](https://github.com/mattpocock/skills):
+the design tree, the rounds of the frontier with numbered questions and recommended answers, facts
+looked up rather than asked, and the shared understanding the user confirms. Each file carries this
+notice too.
 
 ```
 MIT License

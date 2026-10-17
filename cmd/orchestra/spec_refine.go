@@ -83,7 +83,7 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	if why := organ.Unavailable("claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
-	prompt, err := project.WriteRefinePrompt(b.repo, r.Update != nil)
+	prompt, err := project.WriteRefinePrompt(b.repo, refineMode(r.Update != nil))
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
@@ -133,6 +133,14 @@ func refineMessage(s project.Spec, u *specUpdate) string {
 		s.Path, u.Root, u.Was.SHA256, cmp.Or(u.Was.Commit, "not recorded"), s.SHA256, s.Commit, u.File)
 }
 
+// refineMode is the mode of a spec's refinement: an update's with update.
+func refineMode(update bool) project.RefineMode {
+	if update {
+		return project.RefineUpdate
+	}
+	return project.RefineSpec
+}
+
 // refineOnTerminal runs the refinement on orchestra's own terminal, message its first message, in
 // update mode with update, until the user exits it. orchestra can't end the session there once it
 // has handed back, as it does in a pane, so its instructions, rewritten for the terminal, have claude
@@ -142,7 +150,7 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, message strin
 	if !isTerminal(stdin) || !isTerminal(stdout) {
 		return errRefineNeedsTerminal
 	}
-	prompt, err := project.WriteTerminalRefine(repo, update)
+	prompt, err := project.WriteTerminalRefine(repo, refineMode(update))
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}

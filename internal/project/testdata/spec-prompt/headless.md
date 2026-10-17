@@ -1,10 +1,38 @@
 <!--
 orchestra appends these instructions to Claude Code's system prompt for a spec's breakdown, in the
 project's main checkout: headless (orchestra --spec <file>), a claude -p session with nobody there,
-or with the user (--refine), an interactive session in a pane beside orchestra's or on its terminal.
-The file is a Go text/template: .Refine picks the user's sections over the headless ones,
-.OnTerminal adds what a session on orchestra's own terminal tells the user, and .Update the
-sections of an update, which changes the tree filed for an earlier version of the spec.
+or with the user (--refine), an interactive session in a pane beside orchestra's or on its terminal;
+and for a feature's, always with the user. The file is a Go text/template: .Refine picks the
+user's sections over the headless ones, .OnTerminal adds what a session on orchestra's own terminal
+tells the user, .Update the sections of an update, which changes the tree filed for an earlier
+version of the spec, and .Feature, always with .Refine and never with .Update, those of a feature
+talked through with the user, its description given as text rather than as a spec.
+
+The interview method of a feature's breakdown (the design tree, the rounds of the frontier, facts
+looked up rather than asked, the shared understanding confirmed) is adapted from the "grilling"
+skill of mattpocock/skills: https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md
+
+MIT License
+
+Copyright (c) 2026 Matt Pocock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 -->
 
 # Spec breakdown
