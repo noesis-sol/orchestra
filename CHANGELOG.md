@@ -33,6 +33,10 @@ All notable changes to orchestra are documented here. The format follows
   deferring or closing the ticket for it.
 ### Changed
 
+- A feature run's `START` line says `feature: epic <id>, talked through
+  from: <request>`, and the run report's evidence calls the request the one
+  the epic was talked through from, no longer planned from: a feature is
+  talked through with you, not planned by the organs.
 - A feature run, from `--feature` or typed at the start, takes a spec run's
   defaults: workers start in the `auto` permission mode unless
   `--worker-permission-mode`, `WORKER_PERMISSION_MODE` or

@@ -209,7 +209,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		if c.Feature != "" {
 			scope = fmt.Sprintf("Run of epic %s and its subtickets only, filed from a feature request (orchestra "+
 				"--feature) just before the run", c.Ticket)
-			feature = organ.Section(tag, "The feature request epic "+c.Ticket+" was planned from", c.Feature)
+			feature = organ.Section(tag, "The feature request epic "+c.Ticket+" was talked through from", c.Feature)
 		}
 	}
 	outside := o.outsideScopeSection(ctx, tag)

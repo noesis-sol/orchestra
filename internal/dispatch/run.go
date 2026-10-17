@@ -245,7 +245,7 @@ func (o *Loop) begin(ctx context.Context) {
 		o.info("  to see the workers' tabs: %s", c.Watch)
 	}
 	if c.Feature != "" {
-		o.info("  feature: epic %s, planned from: %s", c.Ticket, FeatureLine(c.Feature))
+		o.info("  feature: epic %s, talked through from: %s", c.Ticket, FeatureLine(c.Feature))
 	}
 	if c.Spec != "" {
 		o.info("  spec: epic %s, broken down from: %s", c.Ticket, c.Spec)
