@@ -37,6 +37,11 @@ All notable changes to orchestra are documented here. The format follows
   from: <request>`, and the run report's evidence calls the request the one
   the epic was talked through from, no longer planned from: a feature is
   talked through with you, not planned by the organs.
+- orchestra's own check, `scripts/check.sh`, keeps go test's events (`go
+  test -json`) when its tests fail, in a temporary file it names, so that the
+  race detector's report of a data race that doesn't recur is not lost; it
+  ends with a `DATA RACE: <package> <test>` line for each test that raced.
+
 - A feature run, from `--feature` or typed at the start, takes a spec run's
   defaults: workers start in the `auto` permission mode unless
   `--worker-permission-mode`, `WORKER_PERMISSION_MODE` or

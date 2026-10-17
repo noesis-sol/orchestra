@@ -55,6 +55,12 @@ for i in $(seq 12); do /tmp/tui.test -test.count 500 \
 
 A failure in a few thousand runs is the flake; a fix holds when the same load brings none (`-test.run '^TestParent$/^sub$'` picks a subtest).
 
+A failed check keeps go test's events (`go test -json`, every test's output) in a temporary file it names in its last lines: `go test's events (go test -json) are kept in <file>`. They are for the race detector's reports above all: a data race stops the check without a rerun and may never recur, and gotestsum prints the report amid the failed tests' output, which a long check's reader may not keep. Above that line the check names each test that raced, `DATA RACE: <package> <test>`, or `DATA RACE: <package> (outside its tests)` for a race in `TestMain` or after its test ended. gotestsum shows the failed tests' output again, the reports with it, from the file:
+
+```
+go run gotest.tools/gotestsum@v1.13.0 --format=standard-quiet --raw-command -- cat <file>
+```
+
 The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzTicketFootprint`, `FuzzGlobsMeet` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
 
 ```

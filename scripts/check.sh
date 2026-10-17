@@ -22,10 +22,28 @@ scripts/shellcheck.sh
 seed="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
 events="$(mktemp)"
 trap 'rm -f "$events"' EXIT
+# A failed run keeps go test -json's events, every test's output, in a file it names: above all for
+# the race detector's reports, as a data race stops the check without a rerun and may never recur, and
+# gotestsum prints them amid the failed tests' output, which a long check's reader may not keep. Its end
+# names each test that raced, 'DATA RACE: <package> <test>', as the FLAKY: lines below do, or
+# '(outside its tests)' for a race in TestMain or after its test ended (docs/development.md).
 GOTOOLCHAIN="$(go env GOVERSION)" go run gotest.tools/gotestsum@v1.13.0 --format=standard-quiet \
 	--packages=./... --jsonfile="$events" --rerun-fails=1 --rerun-fails-max-failures=3 \
-	--rerun-fails-abort-on-data-race -- -race -shuffle="$seed" ||
-	{ echo "The tests ran in the order of -shuffle=$seed"; exit 1; }
+	--rerun-fails-abort-on-data-race -- -race -shuffle="$seed" || {
+	awk -v module="$(go list -m)" '
+		BEGIN { prefix = length("\"Package\":\"" module) }
+		/"Output":"WARNING: DATA RACE\\n"/ {
+			pkg = test = ""
+			if (match($0, /"Package":"[^"]*"/)) pkg = "." substr($0, RSTART + prefix, RLENGTH - prefix - 1)
+			if (match($0, /"Test":"([^"\\]|\\.)*"/)) test = substr($0, RSTART + 8, RLENGTH - 9)
+			if (test == "") test = "(outside its tests)"
+			if (!seen[pkg " " test]++) print "DATA RACE: " pkg " " test
+		}' "$events"
+	trap - EXIT
+	echo "go test's events (go test -json) are kept in $events"
+	echo "The tests ran in the order of -shuffle=$seed"
+	exit 1
+}
 # gotestsum passed, so each test that failed passed its rerun: 'FLAKY: <package> <test>
 # (-shuffle=<seed>)', the package relative to the module, but for a subtest's parent, which failed with
 # it. Not so a package that failed with none of its tests failing, in TestMain (goleak's check) or an
