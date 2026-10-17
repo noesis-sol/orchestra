@@ -103,7 +103,7 @@ The same command carries on the next night: with the spec unchanged, it runs wha
 - [docs/setup.md](docs/setup.md): everything `orchestra init` does, and the setup a spec run does without it
 - [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, spec runs and the nightly recipe, several tickets at once, the usage limit, the full check, stops and exit codes
 - [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, their permission mode, hooks and run files, workers in tmux and cmux
-- [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer, the screen, the plan and the scout
+- [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
 - [docs/development.md](docs/development.md): the check, the code's layout and tests, differences from `orchestrate.sh`
 - [Changelog](CHANGELOG.md)

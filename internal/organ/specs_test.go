@@ -16,8 +16,7 @@ var organs = []struct {
 	spec
 	doc string
 }{
-	{triage, "triage"}, {predict, "the predictor"}, {screen, "the screen"}, {review, "the report"},
-	{scout, "the scout"}, {plan, "the plan"},
+	{triage, "triage"}, {predict, "the predictor"}, {review, "the report"}, {scout, "the scout"},
 }
 
 // docList joins items as docs/organs.md writes a list: "a", "a and b", "a, b and c".
@@ -108,7 +107,6 @@ func TestOrganPromptsAreRendered(t *testing.T) {
 		system, want string
 	}{
 		{predict.system, "Pick at most " + strconv.Itoa(MaxPredicted) + " files"},
-		{plan.system, "Plan 1 to " + strconv.Itoa(maxPlanned) + " tickets"},
 		{scout.system, "Never list scripts/check-fast.sh or scripts/check-full.sh"},
 		{scout.system, "When scripts/check.sh exists, it comes first"},
 	} {

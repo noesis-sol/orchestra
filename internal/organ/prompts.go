@@ -17,9 +17,9 @@ var promptFiles embed.FS
 
 // promptValues are what the prompts name that the code holds as well.
 var promptValues = struct {
-	MaxPredicted, MaxPlanned            int
+	MaxPredicted                        int
 	FastRunner, FullRunner, CheckScript string
-}{MaxPredicted, maxPlanned, project.FastRunner, project.FullRunner, project.CheckScript}
+}{MaxPredicted, project.FastRunner, project.FullRunner, project.CheckScript}
 
 // evidence is what the evidence rule says of an organ's evidence: where it comes from (Source) and
 // what to do with it (Use). Files is set for the organ that reads the repository's files itself, the

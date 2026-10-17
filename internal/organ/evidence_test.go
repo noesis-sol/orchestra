@@ -80,7 +80,6 @@ func TestTicketTitlesStayInsideTheTags(t *testing.T) {
 	inputs := map[string]string{
 		"triage":    triageInput(Deferral{ID: "k-1", How: "the worker deferred it", Ticket: show}),
 		"predictor": predictInput(Footprint{ID: "k-1", Ticket: show, Files: []string{"a.go"}}),
-		"plan":      planInput(FeatureEvidence{Request: "Add a flag", Repo: "r", Unclosed: []UnclosedTicket{{ID: "k-1", Status: "open", Title: title}}}),
 	}
 	for name, in := range inputs {
 		evidenceIDs(t, in)
@@ -93,8 +92,7 @@ func TestTicketTitlesStayInsideTheTags(t *testing.T) {
 	}
 	// The request comes last, after the evidence.
 	for name, want := range map[string]string{"triage": "Ticket k-1 was set aside: the worker deferred it",
-		"predictor": "Predict the files ticket k-1 will change.",
-		"plan":      "Plan the feature request above for the repository r as an epic and its tickets."} {
+		"predictor": "Predict the files ticket k-1 will change."} {
 		in := strings.TrimSuffix(inputs[name], "\n")
 		if last := in[strings.LastIndex(in, "\n")+1:]; last != want ||
 			!strings.HasSuffix(in, "</evidence id=\""+evidenceIDs(t, in)[0]+"\">\n\n"+want) {

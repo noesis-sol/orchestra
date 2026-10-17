@@ -72,6 +72,9 @@ All notable changes to orchestra are documented here. The format follows
   run with exit 2, saying that `--feature` always talks the feature through
   with you and that `orchestra --spec <file>` runs a request written to a file
   unattended.
+- The screen and plan organs are gone: nothing called them once `--feature`
+  is talked through. The organs left are triage, the predictor, the reviewer
+  and the scout.
 
 ## [0.8.0] - 2026-10-16
 

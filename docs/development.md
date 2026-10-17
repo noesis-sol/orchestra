@@ -55,10 +55,10 @@ for i in $(seq 12); do /tmp/tui.test -test.count 500 \
 
 A failure in a few thousand runs is the flake; a fix holds when the same load brings none (`-test.run '^TestParent$/^sub$'` picks a subtest).
 
-The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzParsePlan` (`internal/organ`), `FuzzTicketFootprint`, `FuzzGlobsMeet` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
+The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzTicketFootprint`, `FuzzGlobsMeet` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
 
 ```
-go test -run '^$' -fuzz '^FuzzParsePlan$' -fuzztime 60s ./internal/organ
+go test -run '^$' -fuzz '^FuzzTicketFootprint$' -fuzztime 60s ./internal/dispatch
 ```
 
 The fuzzer saves an input that fails in the package's `testdata/fuzz/<target>/`, where `go test` runs it with the seeds from then on: commit it with the fix, or add it to the target's seeds (`f.Add`). The inputs it found new paths with stay in Go's cache, so the next run goes on from them; `go clean -fuzzcache` empties it.
@@ -128,7 +128,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.
 
-The organs, `internal/organ`, have one file each (`triage.go`, `review.go`, `predict.go`, `screen.go`, `plan.go`, `scout.go`), and `organ.go` runs them. An organ is a `spec`: its name, time limit, effort, JSON schema and tools, and its system prompt, a template in `prompts/` named after it, rendered once with the numbers and paths the code holds (`prompts.go`) and ended by the evidence rule every organ shares (`prompts/evidence.md`). Its method gathers the input and calls `askAs` with the spec and a parser for the answer. `TestDocsGiveTheOrgansSpecs` checks the time limits and efforts [docs/organs.md](organs.md) gives against the specs.
+The organs, `internal/organ`, have one file each (`triage.go`, `review.go`, `predict.go`, `scout.go`), and `organ.go` runs them. An organ is a `spec`: its name, time limit, effort, JSON schema and tools, and its system prompt, a template in `prompts/` named after it, rendered once with the numbers and paths the code holds (`prompts.go`) and ended by the evidence rule every organ shares (`prompts/evidence.md`). Its method gathers the input and calls `askAs` with the spec and a parser for the answer. `TestDocsGiveTheOrgansSpecs` checks the time limits and efforts [docs/organs.md](organs.md) gives against the specs.
 
 ### Adding a terminal or an agent
 

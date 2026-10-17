@@ -29,9 +29,6 @@ import (
 //             set aside and why, and what needs the maintainer.
 //   predictor each ready ticket that names no files: the files it will likely change, which the
 //             orchestrator caches on the ticket and schedules it by.
-//   screen    a feature request typed or pasted: ok to plan, reject (malicious or inappropriate) or unclear.
-//   plan      a screened feature request: an epic and its child tickets, or the questions it needs
-//             answered first. Orchestra checks the plan and files it.
 //   scout     a project at init: the test suites, lints, type checks and builds it already has. The
 //             one organ with tools, read-only ones, it reads the repository itself.
 
@@ -164,7 +161,7 @@ func (e *CallError) Error() string {
 
 // Spend is what one organ call cost, as claude's result says.
 type Spend struct {
-	Organ   string        // triage, review, predict, screen, plan or scout
+	Organ   string        // triage, review, predict or scout
 	CostUSD float64       // total_cost_usd: the whole call, subagents too; 0 from an older CLI
 	Turns   int           // num_turns
 	Session string        // session_id

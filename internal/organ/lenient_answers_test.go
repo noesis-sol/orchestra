@@ -2,7 +2,6 @@ package organ
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -40,11 +39,6 @@ func TestOrganAnswersReadJSONWrappedInText(t *testing.T) {
 		if v, err := parseTriage(Result{Result: text}); err != nil || v.Cause != "problem" {
 			t.Errorf("%s: got %+v, %v", name, v, err)
 		}
-	}
-	fenced, _ := json.Marshal("```json\n" + goodPlan + "\n```")
-	r := cliOutput(t, `{"type":"result","is_error":false,"result":`+string(fenced)+`}`)
-	if p, err := parsePlan(r, planTracked); err != nil || p.Epic.Title != "JSON output" {
-		t.Errorf("fenced plan: got %+v, %v", p, err)
 	}
 	for _, text := range []string{"no JSON here", "```json\n{\"cause\":\n```", ""} {
 		if v, err := parseTriage(Result{Result: text}); err == nil || !strings.Contains(err.Error(), "unreadable triage") {
