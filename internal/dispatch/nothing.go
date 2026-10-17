@@ -187,6 +187,8 @@ func newStartState(workers []project.LeftWorker, unmerged []Ticket) startState {
 
 func (st startState) busy(id string) bool { return st.carried[id] }
 
+func (startState) leftOpenWhy(string) string { return "" } // no run has left a worker open yet
+
 func (st startState) unmergedWhy(id string) string {
 	if st.unmerged[id] {
 		return earlierRun // as loadUnmerged holds it

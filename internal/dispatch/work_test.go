@@ -102,7 +102,7 @@ func TestAFailedDeferKeepsTheTicketOutOfTheRun(t *testing.T) {
 		case EvDeferred:
 			deferred++
 		case EvWarn:
-			warned = ev.Ticket == "A" && ev.Aside && strings.Contains(ev.Text, "DEFER_FAILED") &&
+			warned = warned || ev.Ticket == "A" && ev.Aside && strings.Contains(ev.Text, "DEFER_FAILED") &&
 				strings.Contains(ev.Text, "database is locked (another bd holds it)")
 		}
 	}

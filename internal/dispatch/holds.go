@@ -62,19 +62,22 @@ func (s *sayOnce) forget(id string) {
 // count as blocking), waits for that ticket as it would for a blocker: it was written against the
 // ticket's code, which is not on Base until it merges. A closed ticket the run didn't see close (by
 // hand, in a tab the run left, under an earlier run) has not merged while its branch isn't on Base
-// (see closedBranches). The loop knows them from its run (Loop.holds); the nothing-to-run check,
-// before any Loop, from bd and git, with nothing running.
+// (see closedBranches). A ticket set aside with its worker left in its tab, closed or not, has not
+// merged: the worker may close it there, and it merges only once the run has seen it close (see
+// mergeLate). The loop knows them from its run (Loop.holds); the nothing-to-run check, before any
+// Loop, from bd and git, with nothing running.
 type holds struct {
 	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
 	running  map[string]bool        // the tickets whose workers are running
 	asked    map[string]bool        // the tickets waiting on a question, carried over (askedIDs) or kept out
 	unmerged func(id string) string // why the ticket is closed but not merged, as the run left it, or ""
+	left     func(id string) string // why the ticket, its worker left in its tab, has not merged, or ""; nil for none
 	// branches returns why closed ticket id's work is only on its branch (see closedBranches), or "";
 	// nil for none
 	branches func(ctx context.Context, id string) string
-	// pending: a ticket is running, asked, or closed but not merged as the run left it. Without one,
-	// a ready ticket whose links bd can't show goes ahead: only a closed ticket's branch could hold it,
-	// a backstop not worth keeping it out of the run for a bd failure.
+	// pending: a ticket is running, asked, left open, or closed but not merged as the run left it.
+	// Without one, a ready ticket whose links bd can't show goes ahead: only a closed ticket's branch
+	// could hold it, a backstop not worth keeping it out of the run for a bd failure.
 	pending bool
 	// links returns the tickets ready ticket t waits on, or why bd can't say
 	links func(ctx context.Context, t Ticket) (links, error)
@@ -86,8 +89,9 @@ func (o *Loop) holds(running, parents map[string]bool) holds {
 	for _, id := range o.keptOutIDs() { // their workers may still close them (see isKeptOut)
 		asked[id] = true
 	}
-	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy,
-		branches: o.branchWhy, pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged(), links: o.linksOf}
+	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy, left: o.leftOpenWhy,
+		branches: o.branchWhy, pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged() || o.anyLeftOpen(),
+		links: o.linksOf}
 }
 
 // holdKind is what holds a ready ticket back.
@@ -137,6 +141,9 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 		case pendingBusy:
 			return hold{fmt.Sprintf("filed by %s's worker; waiting for it to merge", id), heldFollowUp}, nil
 		default:
+			if !l.closed[id] { // its worker left in its tab
+				return hold{fmt.Sprintf("filed by %s's worker; waiting for it to merge (%s)", id, why), heldFollowUp}, nil
+			}
 			return hold{fmt.Sprintf("filed by %s's worker; %s closed but not merged (%s)", id, id, why), heldFollowUp}, nil
 		}
 	}
@@ -144,6 +151,13 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 }
 
 func (h holds) busy(id string) bool { return h.running[id] || h.asked[id] }
+
+func (h holds) leftOpenWhy(id string) string {
+	if h.left == nil {
+		return ""
+	}
+	return h.left(id)
+}
 
 func (h holds) closedWhy(ctx context.Context, id string) string {
 	if why := h.unmerged(id); why != "" || h.branches == nil {
@@ -158,6 +172,9 @@ type mergeState interface {
 	// busy reports whether the ticket's worker runs, or waits on a question: it closes the ticket
 	// before it merges
 	busy(id string) bool
+	// leftOpenWhy is why the ticket, set aside with its worker left in its tab, has not merged, closed
+	// or not: the worker may close it there (see leaveOpen); or ""
+	leftOpenWhy(id string) string
 	// closedWhy is why the ticket, closed, is not merged: as one merging or left unmerged is, or one
 	// whose work is only on its branch (see closedBranches); or ""
 	closedWhy(ctx context.Context, id string) string
@@ -172,14 +189,16 @@ const (
 // pendingWhy returns why ticket id, blocking another ticket or the one it was discovered from, has
 // not merged, as s knows it, and closed is whether bd shows it closed; "" once it has merged, and its
 // code is on Base. A ticket whose worker runs or waits on a question has not (pendingBusy), closed
-// or not; nor has one not closed (pendingOpen), or one closed but merging, left unmerged or with its
-// work only on its branch, whose reason is s's. The holds, a worker stopped with nothing done
-// (unmergedBlockers) and the deferred tickets freed (freeing) all ask it, so that they agree on what
-// has merged.
+// or not, nor has one set aside with its worker left in its tab, whose reason is s's; nor has one not
+// closed (pendingOpen), or one closed but merging, left unmerged or with its work only on its branch,
+// whose reason is s's. The holds, a worker stopped with nothing done (unmergedBlockers) and the
+// deferred tickets freed (freeing) all ask it, so that they agree on what has merged.
 func pendingWhy(ctx context.Context, s mergeState, id string, closed bool) string {
 	switch {
 	case s.busy(id):
 		return pendingBusy
+	case s.leftOpenWhy(id) != "":
+		return s.leftOpenWhy(id)
 	case !closed:
 		return pendingOpen
 	}

@@ -11,10 +11,17 @@ import (
 // fakeMergeState is what a run knows of the tickets not merged yet, as a test sets it.
 type fakeMergeState struct {
 	busyIDs  map[string]bool
+	leftTabs map[string]string // the tabs workers were left in, by ticket
 	unmerged map[string]string
 }
 
-func (s fakeMergeState) busy(id string) bool                             { return s.busyIDs[id] }
+func (s fakeMergeState) busy(id string) bool { return s.busyIDs[id] }
+func (s fakeMergeState) leftOpenWhy(id string) string {
+	if tab, ok := s.leftTabs[id]; ok {
+		return leftInTab(tab)
+	}
+	return ""
+}
 func (s fakeMergeState) closedWhy(ctx context.Context, id string) string { return s.unmerged[id] }
 
 // TestPendingWhy pins the one rule for whether a ticket blocking another has merged: the holds, a
@@ -22,6 +29,7 @@ func (s fakeMergeState) closedWhy(ctx context.Context, id string) string { retur
 func TestPendingWhy(t *testing.T) {
 	s := fakeMergeState{
 		busyIDs:  map[string]bool{"k-run": true, "k-ask": true},
+		leftTabs: map[string]string{"k-tab": "tab7"},
 		unmerged: map[string]string{"k-left": earlierRun, "k-merging": "merge conflict"},
 	}
 	for _, tc := range []struct {
@@ -33,6 +41,8 @@ func TestPendingWhy(t *testing.T) {
 		{"running, not closed yet", "k-run", false, pendingBusy},
 		{"running, closed by its worker before it merges", "k-run", true, pendingBusy},
 		{"asked, closed in its tab", "k-ask", true, pendingBusy},
+		{"set aside, its worker left in its tab", "k-tab", false, "its worker was left in tab tab7"},
+		{"set aside, closed in its worker's tab", "k-tab", true, "its worker was left in tab tab7"},
 		{"open or deferred", "k-open", false, pendingOpen},
 		{"closed, left unmerged by an earlier run", "k-left", true, earlierRun},
 		{"closed, not merged in this run", "k-merging", true, "merge conflict"},

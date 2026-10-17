@@ -137,7 +137,8 @@ func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
 	tk := deferringTickets{entered: make(chan struct{}), release: make(chan struct{}), once: &sync.Once{}}
 	sink := &goneSink{gone: make(chan struct{})}
 	o := New(Config{Repo: "repo", Base: "main", Workspace: "ws", Limit: 1, Concurrency: 1, WTRoot: "wts", LogPath: "log",
-		AgentKind: "claude"}, log, "", Deps{Tickets: tk, Tabs: noTabs{}, Starter: okStarter{}, Agents: noAgents{},
+		AgentKind: "claude"}, log, "", Deps{Tickets: tk, Notes: newFakeBeads(), Tabs: noTabs{}, Starter: okStarter{},
+		Agents:   noAgents{},
 		Checkout: cleanCheckout{}, Worktrees: newWorktrees{}, Merger: upToDate{}, History: quietHistory{},
 		Advisor: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
 	o.SetSink(sink)

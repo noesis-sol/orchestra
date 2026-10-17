@@ -462,14 +462,16 @@ func (r *runState) launch(id string, counted bool, how *settling, work func(ctx 
 }
 
 // follow adopts the asked tickets whose workers claimed them again or closed them in their tabs
-// (see followAsked), and reports whether it adopted any. Their workers are at work already, so
-// they count as running at once, even beyond Concurrency. Once something has stopped the run,
-// they are left to leaveAsked.
+// (see followAsked), and merges those set aside whose workers, left in their tabs, closed them there
+// (see mergeLate), and reports whether it took up any. Their workers are at work already, or done,
+// so they count as running at once, even beyond Concurrency. Once something has stopped the run,
+// they are left to leaveAsked, and to their UnmergedLabel.
 func (r *runState) follow() bool {
 	o := r.o
 	if r.stops.first != nil || r.ctx.Err() != nil {
 		return false
 	}
+	late := r.mergeLate()
 	adopt, s := r.followAsked()
 	for _, a := range adopt {
 		if HasLabel(a.t, SoloLabel) {
@@ -483,7 +485,7 @@ func (r *runState) follow() bool {
 	if s != nil {
 		r.stops.add(s)
 	}
-	return len(adopt) > 0
+	return late || len(adopt) > 0
 }
 
 // goOnWhenEmpty is Run's step once nothing runs, and reports whether the run goes on: asked tickets were
@@ -536,8 +538,8 @@ func (r *runState) returned(res result) {
 	}
 }
 
-// polled is Run's step on each poll: it follows the asked tickets, warns of edits the workers
-// share and, with every slot taken, brings the queue count up to date.
+// polled is Run's step on each poll: it follows the asked tickets and those left open, warns of
+// edits the workers share and, with every slot taken, brings the queue count up to date.
 func (r *runState) polled() {
 	o := r.o
 	r.follow()

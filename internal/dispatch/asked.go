@@ -109,15 +109,18 @@ func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
 	return adoption{t: t, w: w}
 }
 
-// askedDeferred sets aside asked ticket t, which its worker deferred in its tab, and hands it to
-// triage as triageDeferred does. ctx is the run's, so that after Ctrl+C no evidence is gathered
-// (triageTaking). Run calls it on its own goroutine, so the deferral is offered (offerTriage).
+// askedDeferred sets aside asked ticket t, which its worker deferred in its tab, following the
+// worker left there should it close t (see leaveOpen), and hands it to triage as triageDeferred
+// does. ctx is the run's, so that after Ctrl+C no evidence is gathered (triageTaking). Run calls it
+// on its own goroutine, so the deferral is offered (offerTriage).
 func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w workerSpot) {
 	id := t.ID
 	o.setAsked(id, nil)
 	o.markAside(id)
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
+	o.leaveOpen(context.WithoutCancel(ctx), worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab,
+		agent: o.agentName(id), hooks: w.hooks})
 	if o.triageTaking(ctx) {
 		o.offerTriage(ctx, o.gatherDeferral(ctx, id, "the worker deferred it", w.wt))
 	}

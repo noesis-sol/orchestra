@@ -8,6 +8,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket set aside with its worker left in its tab (deferred by the worker,
+  settled with the ticket unfinished, or `PROMPT_FAILED`) is followed for the
+  rest of the run: should the worker carry on there and close it, as Claude
+  Code continuing a worker by itself after the usage limit resets does, it is
+  merged once the worker has settled, rebased, checked and merged as any
+  closed ticket is (`LATE_CLOSE: <id> was closed in tab <tab> after it was
+  set aside; merging it now`). The tickets it blocks, and follow-ups filed
+  from it, wait for it meanwhile ("its worker was left in tab <tab>"). It is
+  labelled `unmerged` as it is set aside, so that closed after the run ends it
+  holds them in later runs too. It is no longer followed once its worker is
+  gone with it not closed, or once it is dispatched again.
 - A worker that ends its turn normally at the account's usage limit, after
   Claude Code's note that a short grace allowance remains, is `limited` as
   one the limit cuts off: its transcript's "Usage limit reached · continuing

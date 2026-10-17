@@ -152,6 +152,9 @@ type ledger struct {
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
 	askedIDs map[string]workerSpot
+	// leftOpen: tickets set aside in this run with their workers left in their tabs, which may still
+	// close them there (see leaveOpen).
+	leftOpen map[string]leftOpen
 	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
 	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
 	placed map[string]workerSpot
@@ -178,8 +181,8 @@ func newLedger() ledger {
 		active: map[string]Status{}, finishing: map[string]string{}, unmerged: map[string]string{},
 		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
 		setUpFor: map[string]string{}, blockers: map[string]blockLinks{}, askedIDs: map[string]workerSpot{},
-		placed: map[string]workerSpot{}, sessionResumed: map[string]bool{}, parentOf: map[string]string{},
-		footprints: map[string]*runFootprint{},
+		leftOpen: map[string]leftOpen{}, placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
+		parentOf: map[string]string{}, footprints: map[string]*runFootprint{},
 	}
 }
 

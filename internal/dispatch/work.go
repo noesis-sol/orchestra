@@ -86,6 +86,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	// leaveAsked, saveCarried), until its earlier worker is told to carry on or adopted (see takeOn),
 	// or a new worker is to take it.
 	earlier, asked := o.asked(id)
+	o.dropLeftOpen(id) // dispatched again: its earlier worker is adopted or replaced below
 	if HasLabel(r.t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
@@ -291,6 +292,8 @@ func (r *ticketRun) start(ctx context.Context, wt string) *stopReason {
 			failed: id + "'s worker never started on its prompt, and bd could not defer it",
 			then:   fmt.Sprintf("worktree %s and tab %s left open", wt, tab),
 		})
+		o.leaveOpen(r.keep, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, started: started,
+			hooks: launched.hooks})
 		return nil
 	}
 
@@ -536,8 +539,9 @@ type worker struct {
 }
 
 // conclude waits for the ticket's worker, w, to settle, and then does what its ticket's status says:
-// merge it, set it aside, or stop the run. head is its branch's commit before the worker began. It
-// sets r.how to how the worker settled.
+// merge it, set it aside, or stop the run. A ticket set aside with its worker left in its tab is
+// followed there, should the worker close it later (see leaveOpen). head is its branch's commit before
+// the worker began. It sets r.how to how the worker settled.
 func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 	report func(ctx context.Context, st AgentState, err error)) *stopReason {
 	o, t, keep := r.o, r.t, r.keep
@@ -590,6 +594,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		o.markAside(id)
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
+		o.leaveOpen(keep, w)
 		o.triageDeferred(ctx, id, "the worker deferred it", wt)
 	case outcomePaused:
 		if o.workerGone(keep, w.agent) {
@@ -608,7 +613,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		if o.failedAtOnce(keep, s, w.started, idleAt, br, head, wt) {
 			r.how = settledFast
 		}
-		if !o.putAside(keep, t, asideTexts{
+		deferred := o.putAside(keep, t, asideTexts{
 			note: fmt.Sprintf("Orchestra: worker in tab %s settled with the ticket still '%s'; "+
 				"deferred for review (worktree %s).", tab, s, wt),
 			reason:   fmt.Sprintf("worker finished without closing; see tab %s and worktree %s", tab, wt),
@@ -616,7 +621,9 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 			deferred: fmt.Sprintf("  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab),
 			failed:   fmt.Sprintf("%s still %s, and bd could not defer it", id, s),
 			then:     fmt.Sprintf("worktree %s and tab %s left for review", wt, tab),
-		}) {
+		})
+		o.leaveOpen(keep, w)
+		if !deferred {
 			return nil
 		}
 		settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
