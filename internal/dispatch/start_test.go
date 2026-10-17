@@ -36,6 +36,7 @@ func (h *refusingHerdr) AdoptAgent(ctx context.Context, pane, kind, name string)
 func (h *refusingHerdr) PaneAgent(ctx context.Context, pane string) (string, string, AgentState, error) {
 	return "", "claude", "working", nil
 }
+func (h *refusingHerdr) AgentTab(ctx context.Context, name string) (string, error) { return "", nil }
 func (h *refusingHerdr) RenameAgent(ctx context.Context, name, to string) error {
 	return errNameRefused
 }

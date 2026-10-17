@@ -48,6 +48,15 @@ func (t Terminal) PaneAgent(
 	return p.agent, p.kind, t.state(ctx, p), nil
 }
 
+// AgentTab returns the window of the agent named name in t's repository, "" if no pane holds one.
+func (t Terminal) AgentTab(ctx context.Context, name string) (string, error) {
+	p, ok, err := t.agentPane(ctx, name)
+	if err != nil || !ok {
+		return "", err
+	}
+	return p.window, nil
+}
+
 // RenameAgent gives the agent, by name in t's repository or by its pane's ID, a new name.
 func (t Terminal) RenameAgent(ctx context.Context, name, to string) error {
 	ps, err := t.panes(ctx)

@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket dispatched again with its earlier worker idle or done in a tab an
+  earlier run left it in (set aside then, undeferred by hand since) has that
+  tab closed too, found under the worker's name in Herdr, tmux or cmux, rather
+  than the worker renamed and its tab left open.
 - Worker tabs that hold nothing to review are closed. A ticket dispatched
   again in the run that set it aside, its earlier worker idle or done in its
   tab, has that tab closed rather than the worker renamed: the new worker

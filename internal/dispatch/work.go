@@ -215,10 +215,17 @@ func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, st Agen
 // closeEarlier closes the tab of the ticket's earlier worker, earlier, left idle or done (st) there
 // when its ticket was set aside: the new worker takes up its worktree, as each ticket has one, so the
 // tab holds nothing to review but its session, whose transcript the log names. One whose tab the run
-// doesn't know, or that stays open (see closeOwnTab), is renamed instead. It returns as renameEarlier
-// does.
+// doesn't know, as one an earlier run left, is looked for under the ticket's name (see foundEarlier).
+// One whose tab the terminal can't say either, or that stays open (see closeOwnTab), is renamed
+// instead. It returns as renameEarlier does.
 func (r *ticketRun) closeEarlier(ctx context.Context, earlier workerSpot, st AgentState) *stopReason {
 	o, id := r.o, r.id
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	if earlier.tab == "" {
+		earlier = r.foundEarlier(ctx)
+	}
 	if ctx.Err() != nil {
 		return errInterrupted
 	}
@@ -237,6 +244,26 @@ func (r *ticketRun) closeEarlier(ctx context.Context, earlier workerSpot, st Age
 	o.info("  %s's earlier worker was %s in tab %s; its tab is closed, as the new worker takes up its worktree; %s",
 		id, st, earlier.tab, transcript)
 	return nil
+}
+
+// foundEarlier is where the ticket's earlier worker is when the run has no record of it, as one an
+// earlier run left in its tab as it set the ticket aside: the tab the terminal has it in under the
+// ticket's name, and the ticket's worktree, whose hooks' records are the last worker's there. Its tab
+// is "" when the terminal can't say.
+func (r *ticketRun) foundEarlier(ctx context.Context) workerSpot {
+	o := r.o
+	tab, err := o.namer.AgentTab(ctx, r.agent)
+	if err != nil {
+		if ctx.Err() == nil {
+			o.log.Raw("", fmt.Errorf("cannot find the tab of %s's earlier worker, to close it: %w", r.id, err))
+		}
+		return workerSpot{}
+	}
+	if tab == "" {
+		return workerSpot{}
+	}
+	wt, _ := o.worktrees.WorktreeOf(ctx, o.cfg.Repo, r.br) // "": its transcript isn't known
+	return workerSpot{tab: tab, wt: wt, hooks: wt != ""}
 }
 
 // renameEarlier renames the earlier worker still in its tab under the ticket's name, for the new

@@ -353,6 +353,16 @@ func (h *fakeHerdr) PaneAgent(ctx context.Context, pane string) (string, string,
 	return "", "", StateGone, nil
 }
 
+// AgentTab returns the tab of the agent named name, or "" when none is.
+func (h *fakeHerdr) AgentTab(ctx context.Context, name string) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if a := h.agent(name); a != nil {
+		return h.panes[a.pane].tab, nil
+	}
+	return "", nil
+}
+
 // RenameAgent renames the agent called name, or the one in the pane called name.
 func (h *fakeHerdr) RenameAgent(ctx context.Context, name, to string) error {
 	h.mu.Lock()

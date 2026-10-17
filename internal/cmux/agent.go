@@ -172,6 +172,16 @@ func (t Terminal) PaneAgent(
 	return e.Agent, e.Kind, t.state(ctx, key(pane), e, l), nil
 }
 
+// AgentTab returns the workspace of the agent named name, as the book has it, "" if no surface
+// holds one.
+func (t Terminal) AgentTab(_ context.Context, name string) (string, error) {
+	_, e, ok, err := t.agentSurface(name)
+	if err != nil || !ok {
+		return "", err
+	}
+	return e.Workspace, nil
+}
+
 // RenameAgent gives the agent, by name or by its surface's UUID, a new name.
 func (t Terminal) RenameAgent(_ context.Context, name, to string) error {
 	return t.edit(func(b *book) error {

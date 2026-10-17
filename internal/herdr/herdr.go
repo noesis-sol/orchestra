@@ -450,6 +450,34 @@ func readAgent(out string, err error) (name, kind string, state dispatch.AgentSt
 	return name, a.Agent, dispatch.AgentState(a.AgentStatus), nil
 }
 
+// AgentTab returns the tab of the agent named name, "" if Herdr has no such agent, and an error if
+// Herdr could not be asked or didn't say.
+func (t Terminal) AgentTab(ctx context.Context, name string) (string, error) {
+	out, err := run(ctx, command.ReadLimit, "agent", "get", name)
+	if HasCode(err, AgentNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		Result *struct {
+			Agent *struct {
+				TabID string `json:"tab_id"`
+			} `json:"agent"`
+		} `json:"result"`
+	}
+	switch jerr := json.Unmarshal([]byte(out), &r); {
+	case jerr != nil || r.Result == nil:
+		return "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
+	case r.Result.Agent == nil:
+		return "", nil
+	case r.Result.Agent.TabID == "":
+		return "", fmt.Errorf("'herdr agent get' names no tab for %s: %s", name, out)
+	}
+	return r.Result.Agent.TabID, nil
+}
+
 // RenameAgent gives the agent (by name or pane) a new name.
 func (t Terminal) RenameAgent(ctx context.Context, name, to string) error {
 	_, err := run(ctx, command.ReadLimit, "agent", "rename", name, to)

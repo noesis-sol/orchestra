@@ -85,6 +85,8 @@ type Namer interface {
 	AdoptAgent(ctx context.Context, pane, kind, name string) (AgentState, error)
 	// state and error as Agents.Status gives them
 	PaneAgent(ctx context.Context, pane string) (name, kind string, state AgentState, err error)
+	// the tab holding the agent named name, as CreateTab gave it; "" when the terminal has no agent so named
+	AgentTab(ctx context.Context, name string) (string, error)
 	// give an agent a new name; agent is its name or its pane's ID
 	RenameAgent(ctx context.Context, agent, to string) error
 	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
