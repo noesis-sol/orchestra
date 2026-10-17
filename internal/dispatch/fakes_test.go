@@ -186,6 +186,12 @@ func (b *fakeBeads) Reopen(ctx context.Context, id string) error {
 	return nil
 }
 
+// Undefer brings a deferred ticket back in progress, as bd undefer and bd update --status in_progress do.
+func (b *fakeBeads) Undefer(ctx context.Context, id string) error {
+	b.set(id, "in_progress")
+	return nil
+}
+
 // Close closes the ticket, as bd close does, keeping the reason with its notes.
 func (b *fakeBeads) Close(ctx context.Context, id, reason string) error {
 	b.set(id, "closed")

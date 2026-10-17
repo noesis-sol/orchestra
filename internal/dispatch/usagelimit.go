@@ -3,6 +3,8 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -127,6 +129,78 @@ func LimitRefusal(err error) string {
 	return "claude is at the account's usage limit (" + said + ")"
 }
 
+// resetWords match the reset time in Claude Code's words of the usage limit ("resets 7pm (Europe/Athens)")
+// or of its automatic continue ("continuing automatically at 5:30am"): its day (month, day and year), its
+// hour and minutes, am or pm, and its time zone; "15:04", in 24 hours, is read as well.
+var resetWords = regexp.MustCompile(`\b(?:resets|continuing automatically at) ` +
+	`(?:([A-Z][a-z]{2}) (\d{1,2})(?:, (\d{4}))?(?:,| at) )?(\d{1,2})(?::(\d{2}))?([ap]m)?(?: \(([^()]+)\))?`)
+
+// LimitReset reads the reset time in message, Claude Code's words of the usage limit or of its automatic
+// continue, written at at; zero when it has none it can read. A time with no day is the next one at that
+// hour after at, or just before it (an hour at most): Claude Code gives the day of one more than 24 hours
+// away. A time with no time zone, or one Go doesn't know, is in the local one, the user's.
+func LimitReset(message string, at time.Time) time.Time {
+	m := resetWords.FindStringSubmatch(message)
+	if m == nil || m[5] == "" && m[6] == "" {
+		return time.Time{} // "resets 7", no more: not a time
+	}
+	hour, _ := strconv.Atoi(m[4])
+	minute, _ := strconv.Atoi(m[5])
+	switch {
+	case m[6] != "" && (hour < 1 || hour > 12), m[6] == "" && hour > 23, minute > 59:
+		return time.Time{}
+	case m[6] == "am" && hour == 12:
+		hour = 0
+	case m[6] == "pm" && hour != 12:
+		hour += 12
+	}
+	loc := time.Local
+	if m[7] != "" {
+		if l, err := time.LoadLocation(m[7]); err == nil {
+			loc = l
+		}
+	}
+	now := at.In(loc)
+	if m[1] == "" {
+		t := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, loc)
+		if t.Before(now.Add(-time.Hour)) {
+			t = time.Date(now.Year(), now.Month(), now.Day()+1, hour, minute, 0, 0, loc)
+		}
+		return t
+	}
+	month, err := time.Parse("Jan", m[1])
+	day, _ := strconv.Atoi(m[2])
+	if err != nil || day < 1 || day > 31 {
+		return time.Time{}
+	}
+	year := now.Year()
+	if m[3] != "" {
+		year, _ = strconv.Atoi(m[3])
+	}
+	return time.Date(year, month.Month(), day, hour, minute, 0, 0, loc)
+}
+
+// organLimited is the run's turn on an organ call, what (as "triage of X"), that the account's usage limit
+// refused, Claude Code saying said of it (organ.UsageLimit): the workers share the account, so the run holds
+// for the limit, as for a worker that reached it, when it doesn't already; the limit resets when said says.
+func (o *Loop) organLimited(what, said string) {
+	var say []Event
+	defer func() { o.emitAll(say) }()
+	o.limitMu.Lock()
+	defer o.limitMu.Unlock()
+	now := time.Now()
+	reset := LimitReset(said, now)
+	switch {
+	case !o.limitOn:
+		say = append(say, o.holdForLimit("", what+" was refused for the usage limit",
+			&limitWait{at: now, reset: reset, message: said}, now))
+	case o.limitReset.IsZero() && !reset.IsZero():
+		o.limitReset = reset
+		say = append(say, Event{Kind: EvInfo, Text: fmt.Sprintf("  USAGE_LIMIT: %s, as %s's refusal says",
+			resetsSaid(reset, now), what)})
+	}
+}
+
 // limitWait is what waitSettled keeps of a worker's usage limit from one poll to the next.
 type limitWait struct {
 	since   time.Time // when it was first seen limited, this time; zero while it isn't
@@ -139,6 +213,8 @@ type limitWait struct {
 	// was first seen going on (working, blocked, idle or done) since, zero while it isn't.
 	left     bool
 	carrying time.Time
+	// read: its ticket was read since it was last seen limited (see limitTicket); closed: it was closed then.
+	read, closed bool
 }
 
 // limited is how long the worker has waited on the limit by now, this time and before: time that
@@ -167,6 +243,7 @@ func (l *limitWait) enter(now time.Time, u UsageLimit) {
 
 // leave notes a poll at now that finds the worker in state st, not limited.
 func (l *limitWait) leave(now time.Time, st AgentState) {
+	l.read = false
 	if !l.since.IsZero() {
 		l.waited += now.Sub(l.since)
 		l.since, l.left = time.Time{}, true
@@ -218,6 +295,49 @@ func (o *Loop) limitPoll(ctx context.Context, w worker, st AgentState, h hooksSe
 	return nil, false
 }
 
+// limitTicket is waitSettled's look at ticket w.id as a poll first finds its worker limited, each time it
+// does, st and h being what the poll read: it returns them as the rest of the poll takes them. A ticket the
+// worker closed before its turn ended at the limit, as one that finishes within Claude Code's grace allowance
+// does, is done with: the worker is idle, as after any turn's end, and settles as usual. One the worker
+// deferred as it stopped is brought back in progress, with a note, for it to carry on after the reset,
+// however it carries on: told to by the hold, or by Claude Code itself.
+func (o *Loop) limitTicket(ctx context.Context, w worker, st AgentState, h hooksSeen, lw *limitWait) (
+	AgentState, hooksSeen) {
+	if st != StateLimited {
+		return st, h
+	}
+	if !lw.read {
+		lw.read, lw.closed = true, false
+		t, err := o.tickets.Show(ctx, w.id)
+		switch {
+		case err != nil: // unread: it waits as limited
+		case t.Status == StatusClosed:
+			lw.closed = true
+		case t.Status == StatusDeferred:
+			o.undeferAtLimit(ctx, w.id)
+		}
+	}
+	if !lw.closed {
+		return st, h
+	}
+	h.use.Limit = UsageLimit{}
+	return StateIdle, h
+}
+
+// undeferAtLimit brings ticket id back in progress, its worker having deferred it as it stopped at the
+// usage limit, so that the worker isn't set aside when it settles.
+func (o *Loop) undeferAtLimit(ctx context.Context, id string) {
+	ctx = context.WithoutCancel(ctx) // once begun, the ticket is brought back whole
+	if err := o.notes.Undefer(ctx, id); err != nil {
+		o.log.Raw("", fmt.Errorf("cannot bring back %s, which its worker deferred at the usage limit: %w", id, err))
+		return
+	}
+	o.appendNotes(ctx, id, "Orchestra: the worker deferred this ticket as it stopped at the account's usage limit; "+
+		"brought back in progress, for it to carry on after the reset.")
+	o.info("  %s's worker deferred its ticket as it stopped at the usage limit; brought back in progress, for it "+
+		"to carry on after the reset", id)
+}
+
 // limitTurn takes a poll at now that finds ticket id's worker limited, as lw has it, and says what the
 // worker does. A worker limited since before the last hold lifted, or whose limit has reset already
 // (when the hold would lift at once), is told to carry on, once, then again only limitRetry later; any
@@ -257,7 +377,7 @@ func (o *Loop) limitTurn(id string, lw *limitWait, now time.Time) limitAction {
 			}
 			return limitWaits
 		}
-		say = append(say, o.holdForLimit(id, lw, now))
+		say = append(say, o.holdForLimit(id, id+"'s worker reached the usage limit", lw, now))
 	} else if o.limitReset.IsZero() && !lw.reset.IsZero() {
 		o.limitReset = lw.reset
 		say = append(say, Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
@@ -282,12 +402,13 @@ func (o *Loop) limitTurn(id string, lw *limitWait, now time.Time) limitAction {
 	return limitTells
 }
 
-// holdForLimit starts a hold at now, for ticket id's worker, limited as lw has it, and returns the
-// event that says so. The caller holds limitMu.
-func (o *Loop) holdForLimit(id string, lw *limitWait, now time.Time) Event {
+// holdForLimit starts a hold at now, for ticket id's worker, limited as lw has it ("" and the limit an
+// organ was refused for), and returns the event that says so, why: what reached the limit. The caller
+// holds limitMu.
+func (o *Loop) holdForLimit(id, why string, lw *limitWait, now time.Time) Event {
 	o.limitOn, o.limitSince, o.limitReset = true, now, lw.reset
 	o.limitTried, o.limitTrying = time.Time{}, ""
-	text := fmt.Sprintf("USAGE_LIMIT: %s's worker reached the usage limit; %s", id, resetsSaid(lw.reset, now))
+	text := fmt.Sprintf("USAGE_LIMIT: %s; %s", why, resetsSaid(lw.reset, now))
 	switch wait := o.cfg.UsageLimitWait; {
 	case wait <= 0:
 		text += "; the run doesn't wait for it (usage_limit_wait 0)"
@@ -343,8 +464,12 @@ func carryOnAfterLimit(id string) string {
 // waitResolved). It reports whether it took that up. Escape goes first: with Claude Code's automatic
 // continue off, it asks what to do in a dialog that text typed into would answer, and Escape dismisses
 // it; with it on, Escape cancels its own continue if it still waits, which this message takes the
-// place of.
+// place of. One that has gone on since its status was read, its own continue having fired, is not
+// interrupted: it isn't told.
 func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait, msg string) bool {
+	if st, err := o.agents.Status(ctx, w.agent); err == nil && st != StateLimited {
+		return false // gone on by itself: the polls that follow see it
+	}
 	lw.told = time.Now()
 	if err := o.agents.SendKeys(ctx, w.agent, "esc"); err != nil {
 		o.log.Raw("", fmt.Errorf("cannot press Escape for %s: %w", w.agent, err))

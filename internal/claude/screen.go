@@ -1,8 +1,6 @@
 package claude
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -77,6 +75,22 @@ func bottom(screen string) []string {
 // in, the user's own unless set: "7pm (Europe/Athens)", "7:08pm (UTC)". One more than 24 hours away
 // has its day before it, and its year when another year's: "Oct 19 at 5:08pm (Europe/Athens)" (another
 // ICU may write "Oct 19, 5:08pm").
+//
+// Claude Code has a second way to the limit, which three workers of a run took on 2026-10-17 with Claude
+// Code 2.1.302, as their transcripts show: as the account reaches the limit it adds a note to the turn, a
+// user entry "[Usage limit reached; a short grace allowance remains, then this turn is cut off without
+// warning. …]", and the worker wraps up and ends its turn normally, with a Stop hook. Its automatic
+// continue is then armed as after a turn the limit cut off: the transcript has a system entry of subtype
+// informational, "Usage limit reached · continuing automatically at 5:30am · esc to cancel" (the reset time
+// as above, with no time zone: the user's own; "shortly" once it has passed). At the reset a
+// queue-operation enqueues the prompt above, the informational "Usage limit reset · continuing
+// automatically" follows, and the prompt starts a turn. Its other informational entries, as its code has
+// them: "Usage limit reached again · continuing automatically …" for a prompt refused again, "Usage limit
+// available again · continuing now", "Usage limit has reset · press enter to continue" once it no longer
+// continues by itself, "Automatic continue cancelled · …" after Escape, and others that say it was turned
+// off or stopped. Those notices are the screen's "⏺ Usage limit reached · continuing automatically at …"
+// above, and the lines under the input box its status while it waits, however the limit was reached; the
+// screen of the grace path itself was not captured.
 
 // limitWords are how Claude Code's words of the account's usage limit start: the limit hit, or the
 // usage credits that go on past it spent. Its other words that start "You've", such as "You've
@@ -90,7 +104,7 @@ func usageLimit(kind, message string, at time.Time) (dispatch.UsageLimit, bool) 
 	if kind != "rate_limit" || !saysLimit(message) {
 		return dispatch.UsageLimit{}, false
 	}
-	return dispatch.UsageLimit{At: at, Reset: resetTime(message, at), Message: message}, true
+	return dispatch.UsageLimit{At: at, Reset: dispatch.LimitReset(message, at), Message: message}, true
 }
 
 // saysLimit reports whether s, StopFailure's message, is Claude Code's words of the usage limit.
@@ -111,65 +125,16 @@ func showsLimit(l string) bool {
 	return ok && saysLimit(strings.TrimLeft(rest, " \u00a0"))
 }
 
-// resetWords match the reset time in Claude Code's words of the usage limit: its day (month, day and
-// year), its hour and minutes, am or pm, and its time zone; "15:04", in 24 hours, is read as well.
-var resetWords = regexp.MustCompile(`\bresets (?:([A-Z][a-z]{2}) (\d{1,2})(?:, (\d{4}))?(?:,| at) )?` +
-	`(\d{1,2})(?::(\d{2}))?([ap]m)?(?: \(([^()]+)\))?`)
-
-// resetTime reads the reset time in message, Claude Code's words of the usage limit, written at at;
-// zero when it has none it can read. A time with no day is the next one at that hour after at, or
-// just before it (an hour at most): Claude Code gives the day of one more than 24 hours away. A time
-// zone Go doesn't know is taken for the local one.
-func resetTime(message string, at time.Time) time.Time {
-	m := resetWords.FindStringSubmatch(message)
-	if m == nil || m[5] == "" && m[6] == "" {
-		return time.Time{} // "resets 7", no more: not a time
-	}
-	hour, _ := strconv.Atoi(m[4])
-	minute, _ := strconv.Atoi(m[5])
-	switch {
-	case m[6] != "" && (hour < 1 || hour > 12), m[6] == "" && hour > 23, minute > 59:
-		return time.Time{}
-	case m[6] == "am" && hour == 12:
-		hour = 0
-	case m[6] == "pm" && hour != 12:
-		hour += 12
-	}
-	loc := time.Local
-	if m[7] != "" {
-		if l, err := time.LoadLocation(m[7]); err == nil {
-			loc = l
-		}
-	}
-	now := at.In(loc)
-	if m[1] == "" {
-		t := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, loc)
-		if t.Before(now.Add(-time.Hour)) {
-			t = time.Date(now.Year(), now.Month(), now.Day()+1, hour, minute, 0, 0, loc)
-		}
-		return t
-	}
-	month, err := time.Parse("Jan", m[1])
-	day, _ := strconv.Atoi(m[2])
-	if err != nil || day < 1 || day > 31 {
-		return time.Time{}
-	}
-	year := now.Year()
-	if m[3] != "" {
-		year, _ = strconv.Atoi(m[3])
-	}
-	return time.Date(year, month.Month(), day, hour, minute, 0, 0, loc)
-}
-
 // ShowsUsageLimit reports whether screen, a Claude session's screen, shows its last turn ended on the
-// account's usage limit: Claude Code's words of the limit under a prompt, with no message after them but
-// its notice that it continues by itself once the limit resets (what it shows is above limitWords).
-// It reads the whole screen given: the dialog Claude Code may show under the words takes 8 lines.
+// account's usage limit: Claude Code's words of the limit under a prompt, or its notice that it continues by
+// itself once the limit resets (after a turn ended normally at the limit), with no message after them but
+// that notice (what it shows is above limitWords). It reads the whole screen given: the dialog Claude Code
+// may show under the words takes 8 lines.
 func ShowsUsageLimit(screen string) bool {
 	lines := strings.Split(screen, "\n")
 	last := -1
 	for i, l := range lines {
-		if showsLimit(l) {
+		if showsLimit(l) || showsContinue(l) {
 			last = i
 		}
 	}
@@ -182,4 +147,12 @@ func ShowsUsageLimit(screen string) bool {
 		}
 	}
 	return true
+}
+
+// showsContinue reports whether l, a line of the screen, is Claude Code's notice that it continues by
+// itself once the usage limit resets: "⏺ Usage limit reached · continuing automatically at 7:41pm · esc to
+// cancel", or "… reached again · …".
+func showsContinue(l string) bool {
+	l = strings.TrimSpace(l)
+	return strings.HasPrefix(l, "⏺ Usage limit reached") && strings.Contains(l, "continuing automatically")
 }

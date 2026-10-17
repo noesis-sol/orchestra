@@ -28,7 +28,7 @@ const (
 	EvResume                // the maintainer took that back
 	EvQueue                 // the number of ready tickets waiting changed; for the dashboard, not logged
 	EvProbed                // a probe found the machine working after an environment hold: tickets start again
-	EvLimited               // a worker reached the account's usage limit: no new tickets until it resets (Reset)
+	EvLimited               // a worker or organ met the account's usage limit: no new tickets until it resets (Reset)
 	EvLimitLift             // the usage limit reset, or a worker went on past it: tickets start again
 	EvAnswered              // an asked ticket's question was answered: it comes back, dispatched next
 	EvFullCheck             // the full check (check_full) at the end of the run: Detail says how it went

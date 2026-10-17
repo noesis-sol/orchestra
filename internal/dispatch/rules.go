@@ -16,15 +16,27 @@ import (
 // foreground. Workers of other kinds get the whole prompt as their first message.
 
 // workerRules are ticket id's worker's standing rules: the worker prompt with its TICKET_ID filled
-// in, and what the run adds for the whole of the ticket (its scope, its time limit).
+// in, and what the run adds for the whole of the ticket (its scope, its time limit, the usage limit).
 func (o *Loop) workerRules(id string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote() + o.limitNote()
 }
 
 // fullPrompt is ticket id's whole prompt as one first message, for a worker without its rules in
 // its system prompt: the worker prompt, then first (see firstNotes) and the run's notes.
 func (o *Loop) fullPrompt(id, first string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.budgetNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.budgetNote() + o.limitNote()
+}
+
+// limitNote tells a Claude worker what to do at the account's usage limit, which Claude Code may let its
+// turn run a little past, telling it so (its grace allowance): the run holds for the limit and has the
+// worker carry on after the reset, while a ticket deferred or closed for it would be set aside or merged
+// unfinished. "" for workers of other kinds.
+func (o *Loop) limitNote() string {
+	if !o.cfg.ClaudeWorkers() {
+		return ""
+	}
+	return "\n\nAt the account's usage limit, commit what you have and stop, without deferring or closing the " +
+		"ticket for it: you'll carry on after the reset.\n"
 }
 
 // ticketPrompt is the first message of ticket id's worker, its standing rules in its system prompt:

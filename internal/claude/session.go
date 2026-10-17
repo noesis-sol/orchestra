@@ -53,6 +53,12 @@ func (r Reporter) Session(worktree string) (dispatch.Session, bool) {
 		r.sayNewer(worktree, sessionName, b)
 		return dispatch.Session{}, false
 	}
+	return sessionOf(in)
+}
+
+// sessionOf is the session the record in, read from sessionName, names (see Reporter.Session), and false
+// when it names none to resume.
+func sessionOf(in hookInput) (dispatch.Session, bool) {
 	if !sessionID.MatchString(in.Session) {
 		return dispatch.Session{}, false
 	}

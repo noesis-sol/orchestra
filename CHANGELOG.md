@@ -4,6 +4,23 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A worker that ends its turn normally at the account's usage limit, after
+  Claude Code's note that a short grace allowance remains, is `limited` as
+  one the limit cuts off: its transcript's "Usage limit reached · continuing
+  automatically at 5:30am" (or, in Herdr, that line on its screen) says so,
+  with when the limit resets. It waits in the run's `USAGE_LIMIT` hold rather
+  than being set aside, its ticket brought back in progress if it deferred it
+  as it stopped; one that closed its ticket first merges as usual. A worker
+  Claude Code has continued by itself after the reset isn't told to carry on
+  again. An organ call the limit refuses (`triage of <id> skipped: claude is
+  at the account's usage limit`) starts the hold when the run has none, and
+  workers' standing rules say to commit and stop at the limit, without
+  deferring or closing the ticket for it.
+
 ## [0.8.0] - 2026-10-16
 
 ### Added

@@ -158,6 +158,8 @@ func (o *Loop) triage(d queuedDeferral) {
 		case o.organCtx.Err() != nil:
 		case why != "":
 			o.info("  triage of %s skipped: %s", d.ID, why)
+			said, _ := organ.UsageLimit(err)
+			o.organLimited("triage of "+d.ID, said)
 		default:
 			o.emit(Event{Kind: EvWarn, Ticket: d.ID, Text: fmt.Sprintf(
 				"  TRIAGE_FAILED for %s: %v", d.ID, FirstLine(err.Error()))})

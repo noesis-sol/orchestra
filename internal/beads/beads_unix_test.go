@@ -47,6 +47,7 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 	check("AppendNotes", b.AppendNotes(context.Background(), "k-1", "note"))
 	check("Defer", b.Defer(context.Background(), "k-1", "reason"))
 	check("Reopen", b.Reopen(context.Background(), "k-1"))
+	check("Undefer", b.Undefer(context.Background(), "k-1"))
 	check("Close", b.Close(context.Background(), "k-1", "reason"))
 	check("AddLabel", b.AddLabel(context.Background(), "k-1", "unmerged"))
 	check("RemoveLabel", b.RemoveLabel(context.Background(), "k-1", "unmerged"))

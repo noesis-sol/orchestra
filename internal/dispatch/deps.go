@@ -27,6 +27,7 @@ type Notes interface {
 	AppendNotes(ctx context.Context, id, note string) error
 	Defer(ctx context.Context, id, reason string) error
 	Reopen(ctx context.Context, id string) error
+	Undefer(ctx context.Context, id string) error       // brings a deferred ticket back, in progress
 	Close(ctx context.Context, id, reason string) error // closes the ticket, with the reason
 	AddLabel(ctx context.Context, id, label string) error
 	RemoveLabel(ctx context.Context, id, label string) error

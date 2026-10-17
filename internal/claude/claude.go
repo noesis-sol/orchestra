@@ -298,7 +298,8 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 // reported nothing readable; with it, when its last turn ended, if no prompt has started another, and
 // when Claude Code noted it idle at its prompt since (as after a permission prompt refused), and the
 // API error its last turn ended on, if it did: the usage limit, or another, which ends the turn as a
-// Stop does.
+// Stop does. A turn that ended with a Stop at the usage limit, as its transcript tells (see
+// limitNotices), ended on the limit too.
 func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
@@ -316,7 +317,9 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 		case json.Unmarshal(b, &t) != nil || !readable(t.V):
 			r.sayNewer(worktree, turnName, b)
 		case t.Event == "Stop":
-			u.Stopped = fi.ModTime()
+			if u.Limit = r.stopLimit(worktree, fi.ModTime()); !u.Limit.Reached() {
+				u.Stopped = fi.ModTime()
+			}
 		case t.Event == "StopFailure":
 			var limited bool
 			if u.Limit, limited = usageLimit(t.Error, t.Message, fi.ModTime()); !limited {
@@ -332,6 +335,16 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 		}
 	}
 	return u, true
+}
+
+// stopLimit is the usage limit the worker in worktree waits on after a turn that ended at at with a Stop,
+// as its session's transcript tells (see limitNotices); zero when it waits on none.
+func (r Reporter) stopLimit(worktree string, at time.Time) dispatch.UsageLimit {
+	s, ok := r.Session(worktree)
+	if !ok {
+		return dispatch.UsageLimit{}
+	}
+	return transcriptLimit(s.Transcript, at)
 }
 
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the

@@ -161,6 +161,8 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 		return // the run ended
 	case LimitRefusal(err) != "":
 		o.info("  %s footprint not predicted: skipped, as %s", t.ID, LimitRefusal(err))
+		said, _ := organ.UsageLimit(err)
+		o.organLimited("the footprint prediction of "+t.ID, said)
 		return
 	case err != nil:
 		o.info("  %s footprint not predicted: %s", t.ID, FirstLine(err.Error()))

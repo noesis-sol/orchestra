@@ -25,7 +25,8 @@ import (
 // limit, or Claude Code noting it idle after a permission prompt refused.
 // A worker whose turn ended on the account's usage limit (limited) is none of these: the run holds for
 // the limit, and the worker waits until it is told to carry on, or stops the run, as the hold says (see
-// limitPoll); the time it waits doesn't count toward its ticket limit.
+// limitPoll); the time it waits doesn't count toward its ticket limit. One that closed its ticket first
+// settles as usual, and a ticket it deferred as it stopped is brought back (see limitTicket).
 func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
@@ -60,6 +61,7 @@ func (o *Loop) waitSettled(
 			return idle.since, nil
 		}
 		h := o.hooksOf(w)
+		st, h = o.limitTicket(ctx, w, st, h, &limit)
 		if stop, told := o.limitPoll(ctx, w, st, h, &limit, carryOnAfterLimit(w.id)); stop != nil {
 			return time.Time{}, stop
 		} else if told {

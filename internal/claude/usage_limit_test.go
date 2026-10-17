@@ -369,8 +369,8 @@ func TestResetTimeFromClaudeCodesWords(t *testing.T) {
 		{"resets soon", at, time.Time{}},
 		{"You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage", at, time.Time{}},
 	} {
-		if got := resetTime(c.message, c.at); !got.Equal(c.want) {
-			t.Errorf("resetTime(%q) = %v, want %v", c.message, got, c.want)
+		if got := dispatch.LimitReset(c.message, c.at); !got.Equal(c.want) {
+			t.Errorf("LimitReset(%q) = %v, want %v", c.message, got, c.want)
 		}
 	}
 }

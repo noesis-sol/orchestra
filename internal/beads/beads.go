@@ -424,6 +424,15 @@ func (b Tracker) Reopen(ctx context.Context, id string) error {
 	return err
 }
 
+// Undefer brings a deferred ticket back (bd undefer), in progress, as its worker's again.
+func (b Tracker) Undefer(ctx context.Context, id string) error {
+	if _, err := b.bd(ctx, command.WriteLimit, "undefer", id); err != nil {
+		return err
+	}
+	_, err := b.bd(ctx, command.WriteLimit, "update", id, "--status", "in_progress")
+	return err
+}
+
 // Close closes the ticket, with the reason.
 func (b Tracker) Close(ctx context.Context, id, reason string) error {
 	_, err := b.bd(ctx, command.WriteLimit, "close", id, "--reason="+reason)
