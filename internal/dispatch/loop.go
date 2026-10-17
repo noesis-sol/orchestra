@@ -68,6 +68,9 @@ type Loop struct {
 	holdSaid  sayOnce   // why each held ticket waits, as last said
 	doneSaid  sayOnce   // parents said to be ready to close
 
+	// branches: closed tickets' branches, as git found them (see branchWhy)
+	branches closedBranches
+
 	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
 	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
 	// the run winds down is Run's own (runState.drained).
@@ -141,9 +144,11 @@ type ledger struct {
 	rechecked map[string]bool      // tickets taken up to be checked again (see dueRecheck)
 	setUpFor  map[string]string    // the commit each finished ticket's dependencies were set up for (see setUp)
 	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
-	// many times pick has read bd ready.
+	// many times pick has read bd ready; baseAt, the commit Base was on as a pick last read it (see
+	// pickHead).
 	blockers map[string]blockLinks
 	picks    int
+	baseAt   pickedHead
 	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
 	// also those the last run left behind, carried over (see loadCarried).
 	askedIDs map[string]workerSpot

@@ -60,15 +60,21 @@ func (s *sayOnce) forget(id string) {
 // openParents) runs last: its worker couldn't close it while it has open children, and its work
 // builds on theirs. A follow-up a worker filed, linked discovered-from its ticket (which bd doesn't
 // count as blocking), waits for that ticket as it would for a blocker: it was written against the
-// ticket's code, which is not on Base until it merges. The loop knows them from its run
-// (Loop.holds); the nothing-to-run check, before any Loop, from bd and git, with nothing running.
+// ticket's code, which is not on Base until it merges. A closed ticket the run didn't see close (by
+// hand, in a tab the run left, under an earlier run) has not merged while its branch isn't on Base
+// (see closedBranches). The loop knows them from its run (Loop.holds); the nothing-to-run check,
+// before any Loop, from bd and git, with nothing running.
 type holds struct {
 	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
 	running  map[string]bool        // the tickets whose workers are running
 	asked    map[string]bool        // the tickets waiting on a question, carried over (askedIDs) or kept out
-	unmerged func(id string) string // why the ticket is closed but not merged, or ""
-	// pending: a ticket is running, asked, or closed but not merged; only then can one blocking a
-	// ready ticket, or one it was discovered from, hold it, and its links are read
+	unmerged func(id string) string // why the ticket is closed but not merged, as the run left it, or ""
+	// branches returns why closed ticket id's work is only on its branch (see closedBranches), or "";
+	// nil for none
+	branches func(ctx context.Context, id string) string
+	// pending: a ticket is running, asked, or closed but not merged as the run left it. Without one,
+	// a ready ticket whose links bd can't show goes ahead: only a closed ticket's branch could hold it,
+	// a backstop not worth keeping it out of the run for a bd failure.
 	pending bool
 	// links returns the tickets ready ticket t waits on, or why bd can't say
 	links func(ctx context.Context, t Ticket) (links, error)
@@ -81,7 +87,7 @@ func (o *Loop) holds(running, parents map[string]bool) holds {
 		asked[id] = true
 	}
 	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy,
-		pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged(), links: o.linksOf}
+		branches: o.branchWhy, pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged(), links: o.linksOf}
 }
 
 // holdKind is what holds a ready ticket back.
@@ -102,22 +108,22 @@ type hold struct {
 }
 
 // why returns why ready ticket t can't start yet; its why is "" when it can. When bd can't show the
-// tickets t waits on, t waits, and the error is bd's.
+// tickets t waits on, t waits, and the error is bd's, unless nothing is pending (see holds.pending).
 func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 	if h.parents[t.ID] {
 		return hold{"its subtickets are not all closed and merged", heldParent}, nil
 	}
-	if !h.pending {
-		return hold{}, nil
-	}
 	l, err := h.links(ctx, t)
-	if err != nil {
+	switch {
+	case err != nil && !h.pending:
+		return hold{}, nil
+	case err != nil:
 		return hold{"its dependencies could not be read", heldBlocked}, err
 	}
 	// bd ready lists t once its blockers are closed. A source open or deferred, and not running, holds
 	// nothing: it may never run. Either way, what the run knows of the ticket says whether it merged.
 	for _, id := range l.blockers {
-		switch why := pendingWhy(h, id, true); why {
+		switch why := pendingWhy(ctx, h, id, true); why {
 		case "":
 		case pendingBusy:
 			return hold{fmt.Sprintf("waiting for %s to merge", id), heldBlocked}, nil
@@ -126,8 +132,8 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 		}
 	}
 	for _, id := range l.sources {
-		switch why := pendingWhy(h, id, true); why {
-		case "":
+		switch why := pendingWhy(ctx, h, id, l.closed[id]); why {
+		case "", pendingOpen:
 		case pendingBusy:
 			return hold{fmt.Sprintf("filed by %s's worker; waiting for it to merge", id), heldFollowUp}, nil
 		default:
@@ -137,8 +143,14 @@ func (h holds) why(ctx context.Context, t Ticket) (hold, error) {
 	return hold{}, nil
 }
 
-func (h holds) busy(id string) bool          { return h.running[id] || h.asked[id] }
-func (h holds) unmergedWhy(id string) string { return h.unmerged(id) }
+func (h holds) busy(id string) bool { return h.running[id] || h.asked[id] }
+
+func (h holds) closedWhy(ctx context.Context, id string) string {
+	if why := h.unmerged(id); why != "" || h.branches == nil {
+		return why
+	}
+	return h.branches(ctx, id)
+}
 
 // mergeState is what a run knows of the tickets not merged yet: the loop's (Loop), what it holds a
 // ready ticket on (holds), or, before any Loop, what the run starts from (startState).
@@ -146,8 +158,9 @@ type mergeState interface {
 	// busy reports whether the ticket's worker runs, or waits on a question: it closes the ticket
 	// before it merges
 	busy(id string) bool
-	// unmergedWhy is why the ticket is closed but not merged, as one merging or left unmerged is, or ""
-	unmergedWhy(id string) string
+	// closedWhy is why the ticket, closed, is not merged: as one merging or left unmerged is, or one
+	// whose work is only on its branch (see closedBranches); or ""
+	closedWhy(ctx context.Context, id string) string
 }
 
 // Why a ticket has not merged, besides why it is closed but not merged (see pendingWhy).
@@ -159,31 +172,32 @@ const (
 // pendingWhy returns why ticket id, blocking another ticket or the one it was discovered from, has
 // not merged, as s knows it, and closed is whether bd shows it closed; "" once it has merged, and its
 // code is on Base. A ticket whose worker runs or waits on a question has not (pendingBusy), closed
-// or not; nor has one not closed (pendingOpen), or one closed but merging or left unmerged, whose
-// reason is s's. The holds, a worker stopped with nothing done (unmergedBlockers) and the deferred
-// tickets freed (freeing) all ask it, so that they agree on what has merged.
-func pendingWhy(s mergeState, id string, closed bool) string {
+// or not; nor has one not closed (pendingOpen), or one closed but merging, left unmerged or with its
+// work only on its branch, whose reason is s's. The holds, a worker stopped with nothing done
+// (unmergedBlockers) and the deferred tickets freed (freeing) all ask it, so that they agree on what
+// has merged.
+func pendingWhy(ctx context.Context, s mergeState, id string, closed bool) string {
 	switch {
 	case s.busy(id):
 		return pendingBusy
 	case !closed:
 		return pendingOpen
 	}
-	return s.unmergedWhy(id)
+	return s.closedWhy(ctx, id)
 }
 
 // unmergedBlockers returns the tickets blocking ticket info, as bd show gives it, that have not
 // merged: those not closed (running, asked, open or deferred), and those closed but not merged yet,
-// as one merging, waiting on a question or left unmerged is (see pendingWhy). A closed blocker none
-// of those is on Base, though bd may still label it UnmergedLabel: the run, not a label it couldn't
-// remove, says what has merged.
-func (o *Loop) unmergedBlockers(info Ticket) []string {
+// as one merging, waiting on a question, left unmerged or with its work only on its branch is (see
+// pendingWhy). A closed blocker none of those is on Base, though bd may still label it UnmergedLabel:
+// the run and git, not a label it couldn't remove, say what has merged.
+func (o *Loop) unmergedBlockers(ctx context.Context, info Ticket) []string {
 	var ids []string
 	for _, d := range info.Dependencies {
 		if d.DependencyType != "blocks" {
 			continue
 		}
-		if pendingWhy(o, d.ID, d.Status == StatusClosed) != "" {
+		if pendingWhy(ctx, o, d.ID, d.Status == StatusClosed) != "" {
 			ids = append(ids, d.ID)
 		}
 	}
@@ -192,10 +206,11 @@ func (o *Loop) unmergedBlockers(info Ticket) []string {
 
 // links are the tickets a ready ticket waits on, as bd show gives them: those blocking it, and the
 // tickets it was discovered from (sources), a follow-up filed with --deps discovered-from:<id>,
-// which bd doesn't count as blocking.
+// which bd doesn't count as blocking, and which of those sources bd showed closed (closed).
 type links struct {
 	blockers []string
 	sources  []string
+	closed   map[string]bool
 }
 
 // blockLinks are the links of a ready ticket, read when bd ready counted count tickets blocking it,
@@ -261,6 +276,12 @@ func showLinks(ctx context.Context, tickets Tickets, id string) (links, error) {
 			l.blockers = append(l.blockers, d.ID)
 		case "discovered-from":
 			l.sources = append(l.sources, d.ID)
+			if d.Status == StatusClosed {
+				if l.closed == nil {
+					l.closed = map[string]bool{}
+				}
+				l.closed[d.ID] = true
+			}
 		}
 	}
 	return l, nil

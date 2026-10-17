@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -13,8 +14,8 @@ type fakeMergeState struct {
 	unmerged map[string]string
 }
 
-func (s fakeMergeState) busy(id string) bool          { return s.busyIDs[id] }
-func (s fakeMergeState) unmergedWhy(id string) string { return s.unmerged[id] }
+func (s fakeMergeState) busy(id string) bool                             { return s.busyIDs[id] }
+func (s fakeMergeState) closedWhy(ctx context.Context, id string) string { return s.unmerged[id] }
 
 // TestPendingWhy pins the one rule for whether a ticket blocking another has merged: the holds, a
 // worker stopped with nothing done and the deferred tickets freed all ask it.
@@ -38,7 +39,7 @@ func TestPendingWhy(t *testing.T) {
 		{"closed and merged", "k-done", true, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := pendingWhy(s, tc.id, tc.closed); got != tc.want {
+			if got := pendingWhy(context.Background(), s, tc.id, tc.closed); got != tc.want {
 				t.Errorf("pendingWhy(%s, closed %v) = %q, want %q", tc.id, tc.closed, got, tc.want)
 			}
 		})
@@ -50,7 +51,7 @@ func TestPendingWhy(t *testing.T) {
 // labelled unmerged.
 func TestPendingWhyStates(t *testing.T) {
 	h := holds{running: map[string]bool{"k-run": true}, asked: map[string]bool{"k-ask": true},
-		unmerged: fakeMergeState{unmerged: map[string]string{"k-left": earlierRun}}.unmergedWhy}
+		unmerged: func(id string) string { return map[string]string{"k-left": earlierRun}[id] }}
 	st := newStartState([]project.LeftWorker{{Ticket: "k-run"}}, []Ticket{{ID: "k-left", Status: StatusClosed}})
 	for _, tc := range []struct {
 		name  string
@@ -61,7 +62,7 @@ func TestPendingWhyStates(t *testing.T) {
 		{"start", st, map[string]string{"k-run": pendingBusy, "k-ask": "", "k-left": earlierRun, "k-done": ""}},
 	} {
 		for id, want := range tc.want {
-			if got := pendingWhy(tc.state, id, true); got != want {
+			if got := pendingWhy(context.Background(), tc.state, id, true); got != want {
 				t.Errorf("%s: pendingWhy(%s) = %q, want %q", tc.name, id, got, want)
 			}
 		}
@@ -72,7 +73,8 @@ func TestPendingWhyStates(t *testing.T) {
 // nothing done waits only for the blockers the run knows have not merged. One whose UnmergedLabel bd
 // couldn't remove once it merged has merged, as the holds and DEFERRED_FREE find it.
 func TestUnmergedBlockersStaleLabel(t *testing.T) {
-	o := New(Config{}, nil, "", Deps{})
+	g := newFakeGit("main") // no branches: each closed blocker's work is on main, as far as git says
+	o := New(Config{Base: "main"}, nil, "", Deps{Checkout: g, Worktrees: g, Merger: g})
 	o.active = map[string]Status{"k-run": {Ticket: "k-run"}}
 	o.askedIDs = map[string]workerSpot{"k-ask": {}}
 	o.unmerged = map[string]string{"k-left": earlierRun}
@@ -95,7 +97,7 @@ func TestUnmergedBlockersStaleLabel(t *testing.T) {
 			info := Ticket{ID: "k-b", Status: StatusOpen, Dependencies: []Ticket{
 				tc.blocker, {ID: "k-x", Status: StatusOpen, DependencyType: "related"},
 			}}
-			if got := o.unmergedBlockers(info); !slices.Equal(got, tc.want) {
+			if got := o.unmergedBlockers(context.Background(), info); !slices.Equal(got, tc.want) {
 				t.Errorf("unmergedBlockers = %v, want %v", got, tc.want)
 			}
 		})

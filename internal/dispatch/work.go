@@ -575,7 +575,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 	// queue rather than be set aside. With work of its own, or a blocker merged already, it is set
 	// aside for review as below.
 	if s := info.Status; s == StatusOpen || s == StatusInProgress {
-		if on := o.unmergedBlockers(info); len(on) > 0 && o.nothingDone(keep, w) {
+		if on := o.unmergedBlockers(keep, info); len(on) > 0 && o.nothingDone(keep, w) {
 			r.how = requeued // neither failed at once nor done: the hold for the environment counts it for nothing
 			o.waitForMerge(keep, t, w, s, on)
 			return nil

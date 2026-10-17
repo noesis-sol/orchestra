@@ -36,6 +36,17 @@ All notable changes to orchestra are documented here. The format follows
   exit 2 before anything is filed, naming `orchestra --spec <file>` as the
   way to break a request written to a file down unattended. The feature
   interview's own instructions (`.orchestra/run/interview-prompt.md`) are gone.
+- A ticket closed where the run didn't see it close (by hand, by another
+  tool, in a tab the run left, under an earlier orchestra) no longer counts
+  as merged while its branch `wt/<id>` has commits the base doesn't have and
+  the base doesn't hold its changes: the tickets it blocks, and those filed
+  from it, wait with "<id> closed but not merged (wt/<id> is not on <base>)",
+  one `CLOSED_UNMERGED` warning says how to merge it or drop its branch, a
+  worker that started anyway and stops with nothing done goes back in the
+  queue (`WAITS_FOR_MERGE`), and the check for nothing to run counts such
+  tickets as waiting. Git is asked once for each such ticket and commit the
+  base is on. A closed ticket with no branch, or one with nothing beyond the
+  base, holds nothing, as before.
 
 ## [0.8.0] - 2026-10-16
 

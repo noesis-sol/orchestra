@@ -97,7 +97,7 @@ func (f freeing) list(ctx context.Context, unclosed []Ticket) ([]DeferredFree, e
 		case info.Status == StatusUnknown:
 			return nil, fmt.Errorf("bd show %s: its status is unknown", t.ID)
 		}
-		blockers, merged := f.blockers(info)
+		blockers, merged := f.blockers(ctx, info)
 		if !merged || len(blockers) == 0 {
 			continue
 		}
@@ -110,13 +110,13 @@ func (f freeing) list(ctx context.Context, unclosed []Ticket) ([]DeferredFree, e
 
 // blockers returns the tickets blocking ticket info, as bd show gives it, and whether each is
 // closed and merged (see pendingWhy).
-func (f freeing) blockers(info Ticket) ([]string, bool) {
+func (f freeing) blockers(ctx context.Context, info Ticket) ([]string, bool) {
 	var ids []string
 	for _, d := range info.Dependencies {
 		if d.DependencyType != "blocks" {
 			continue
 		}
-		if pendingWhy(f.state, d.ID, d.Status == StatusClosed) != "" {
+		if pendingWhy(ctx, f.state, d.ID, d.Status == StatusClosed) != "" {
 			return nil, false
 		}
 		ids = append(ids, d.ID)

@@ -78,11 +78,12 @@ type WorktreeCheckout interface {
 // to carry on with. A
 // ready ticket the loop would hold back at its start (see holds) is not one it would start: a parent
 // whose subtickets are not all closed and merged, or a ticket a closed but unmerged ticket blocks or
-// was discovered from. A ticket labelled UnmergedLabel that git finds merged since (see mergedSince)
-// counts as merged, as the loop would find it, though only the loop removes the label. With nothing to
-// run, it lists the deferred tickets whose blockers have merged (DeferredFree). It only reads, so it can run
-// before any Loop exists. Its error is bd's, or the state file's, when it can't tell: the run then
-// goes ahead, and the loop reports it.
+// was discovered from, its branch not on Base among them (see closedBranches). A ticket labelled
+// UnmergedLabel that git finds merged since (see mergedSince) counts as merged, as the loop would find
+// it, though only the loop removes the label. With nothing to run, it lists the deferred tickets
+// whose blockers have merged (DeferredFree). It only reads, so it can run before any Loop exists.
+// Its error is bd's, or the state file's, when it can't tell: the run then goes ahead, and the loop
+// reports it.
 func CheckNothingToRun(
 	ctx context.Context, c Config, tickets Tickets, worktrees WorktreeCheckout, merger Merger,
 ) (*NothingToRun, error) {
@@ -124,6 +125,7 @@ func CheckNothingToRun(
 		}
 	}
 	st := newStartState(s.Workers, unmerged)
+	st.branches = startBranches(c, worktrees, merger)
 	h := startHolds(tickets, unclosed, unmerged, st)
 	held := map[string]holdKind{}
 	for _, t := range ready {
@@ -162,10 +164,12 @@ func CheckNothingToRun(
 
 // startState is what a run knows of the tickets not merged yet as it starts, before any Loop (see
 // mergeState): the workers the last run left (carried), which close their tickets before they merge,
-// and the tickets closed but not merged (unmerged), each left so by an earlier run.
+// the tickets closed but not merged (unmerged), each left so by an earlier run, and why a closed
+// ticket's work is only on its branch (branches, see closedBranches; nil for none).
 type startState struct {
 	carried  map[string]bool
 	unmerged map[string]bool
+	branches func(ctx context.Context, id string) string
 }
 
 // newStartState is what a run starts from, given the workers the last run left and the tickets
@@ -190,6 +194,27 @@ func (st startState) unmergedWhy(id string) string {
 	return ""
 }
 
+func (st startState) closedWhy(ctx context.Context, id string) string {
+	if why := st.unmergedWhy(id); why != "" || st.branches == nil {
+		return why
+	}
+	return st.branches(ctx, id)
+}
+
+// startBranches returns why a closed ticket's work is only on its branch, as the loop's branchWhy
+// finds it, with Base where it is as the check first asks, and each ticket's answer kept.
+func startBranches(c Config, worktrees WorktreeCheckout, merger Merger) func(ctx context.Context, id string) string {
+	var b closedBranches
+	var head string
+	return func(ctx context.Context, id string) string {
+		if head == "" {
+			head = worktrees.Head(ctx, c.Repo, c.Base)
+		}
+		why, _ := b.why(id, head, func() string { return branchOff(ctx, c, worktrees, merger, id) })
+		return why
+	}
+}
+
 // startHolds is what keeps a ready ticket waiting as a run starts, before any Loop (see holds):
 // nothing is running, the workers the last run left (st's carried) count as busy, as the loop keeps
 // out those it doesn't carry over, and the tickets bd lists as not closed (unclosed) and those
@@ -203,6 +228,7 @@ func startHolds(tickets Tickets, unclosed, unmerged []Ticket, st startState) hol
 		parents:  parentsOf(unclosed, pending),
 		asked:    st.carried, // those the loop doesn't carry over it keeps out, as busy (see isKeptOut)
 		unmerged: st.unmergedWhy,
+		branches: st.branches,
 		pending:  len(unmerged) > 0 || len(st.carried) > 0,
 		links: func(ctx context.Context, t Ticket) (links, error) {
 			return showLinks(ctx, tickets, t.ID)

@@ -222,6 +222,7 @@ func (o *Loop) busy(id string) bool {
 	return o.isActive(id) || o.isAsked(id) || o.isKeptOut(id)
 }
 
+// unmergedWhy is why ticket id is closed but not merged, as the run left it, or "".
 func (o *Loop) unmergedWhy(id string) string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
