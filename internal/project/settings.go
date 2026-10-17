@@ -525,11 +525,12 @@ var unsuitedModes = map[string]string{
 
 // ResolvePermissionMode picks the permission mode Claude workers start in: flagValue (from
 // --worker-permission-mode or WORKER_PERMISSION_MODE) unless it is empty, else the project's
-// setting, else PermissionAuto in a spec run, where nobody answers a permission prompt, else "" for
-// Claude Code's own default. Either must be one of PermissionModes.
-func ResolvePermissionMode(flagValue string, s Settings, spec bool) (string, error) {
+// setting, else PermissionAuto in a run on a spec or a feature (planned), where nobody answers a
+// permission prompt once its plan is filed, else "" for Claude Code's own default. Either must be
+// one of PermissionModes.
+func ResolvePermissionMode(flagValue string, s Settings, planned bool) (string, error) {
 	def := ""
-	if spec {
+	if planned {
 		def = PermissionAuto
 	}
 	return resolve(givenText(flagValue), func(v string) error {

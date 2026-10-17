@@ -111,11 +111,36 @@ func (q workQuestion) ask(ctx context.Context) (tui.Work, int) {
 // question rather than given with --spec or ORCHESTRA_SPEC.
 const specChosenFrom = "chosen at the start"
 
+// plannedDefaults gives the run c, on a spec or a feature chosen at the question, what --spec or
+// --feature would have: no ticket limit unless -limit or LIMIT gives one, and workers in auto
+// permission mode unless the flag, its variable or the project's settings give one.
+func plannedDefaults(c *options) {
+	if !c.limitGiven {
+		c.Limit = dispatch.NoLimit
+	}
+	// The mode given, checked already, kept; else a planned run's, as no one answers a permission prompt.
+	if mode, err := project.ResolvePermissionMode(c.WorkerPermissionMode, project.Settings{}, true); err == nil {
+		c.WorkerPermissionMode = mode
+	}
+}
+
+// featureChosen has the run s run the feature typed at the question, work, as if --feature had
+// given it: with a planned run's defaults (plannedDefaults), and the feature in the run lock from
+// now on, as --feature's is.
+func (s *session) featureChosen(work tui.Work) {
+	s.cfg.Feature = work.Description
+	plannedDefaults(&s.cfg)
+	s.holder.Feature = work.Description
+	if err := s.lock.Rewrite(s.holder); err != nil {
+		s.log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
+	}
+}
+
 // specChosen has the run s run the spec chosen at the question, work, as if --spec (and --refine)
-// had given it: no ticket limit unless -limit or LIMIT gives one, workers in a spec run's permission
-// mode unless the flag or the project's settings give one, and the spec's path in the repository
-// (Config.Spec), which the run lock records from now on. A spec git can't commit where it would be
-// kept (see checkSpecPath) ends the run before it starts, having said why. It returns the exit code.
+// had given it: with a planned run's defaults (plannedDefaults), and the spec's path in the
+// repository (Config.Spec), which the run lock records from now on. A spec git can't commit where
+// it would be kept (see checkSpecPath) ends the run before it starts, having said why. It returns
+// the exit code.
 func (s *session) specChosen(ctx context.Context, work tui.Work) int {
 	c := &s.cfg
 	c.specFile, c.Refine = work.Spec, work.Refine
@@ -126,13 +151,7 @@ func (s *session) specChosen(ctx context.Context, work tui.Work) int {
 		}
 		return dispatch.ExitSetup
 	}
-	if !c.limitGiven {
-		c.Limit = dispatch.NoLimit
-	}
-	// The mode given, checked already, kept; else a spec run's, as no one answers a permission prompt.
-	if mode, err := project.ResolvePermissionMode(c.WorkerPermissionMode, project.Settings{}, true); err == nil {
-		c.WorkerPermissionMode = mode
-	}
+	plannedDefaults(c)
 	s.holder.Spec = c.Spec
 	if err := s.lock.Rewrite(s.holder); err != nil {
 		s.log.Raw("", fmt.Errorf("cannot record the spec in the run lock: %w", err))

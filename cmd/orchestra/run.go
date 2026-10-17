@@ -318,12 +318,7 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 		}
 		switch work.Kind {
 		case tui.WorkFeature:
-			cfg.Feature = work.Description
-			// The lock, taken before the question, says from now on what --feature would have.
-			s.holder.Feature = work.Description
-			if err := s.lock.Rewrite(s.holder); err != nil {
-				s.log.Raw("", fmt.Errorf("cannot record the feature in the run lock: %w", err))
-			}
+			s.featureChosen(work)
 		case tui.WorkSpec:
 			if code := s.specChosen(ctx, work); code != dispatch.ExitOK {
 				return code, false

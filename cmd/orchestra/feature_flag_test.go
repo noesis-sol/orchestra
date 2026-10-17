@@ -43,8 +43,8 @@ func TestConfigFeatureFlags(t *testing.T) {
 	}
 }
 
-// A feature run with no ticket left under the limit would file its plan and start none of it, so
-// it doesn't start; a run without --feature still ends at once with LIMIT_REACHED.
+// A feature run with no ticket left under a limit given would file its plan and start none of it,
+// so it doesn't start; a run without --feature still ends at once with LIMIT_REACHED.
 func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
 	configFixture(t, `{"concurrent": 1}`)
 	const want = "--feature would file a plan and run none of it"
@@ -52,7 +52,7 @@ func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
 		env  map[string]string
 		args []string
 	}{
-		{map[string]string{"DONE_SO_FAR": "40"}, nil},
+		{map[string]string{"DONE_SO_FAR": "40", "LIMIT": "40"}, nil},
 		{map[string]string{"LIMIT": "0"}, nil},
 		{nil, []string{"--limit", "3", "--done-so-far", "5"}},
 	} {

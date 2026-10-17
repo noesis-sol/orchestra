@@ -22,6 +22,11 @@ All notable changes to orchestra are documented here. The format follows
   deferring or closing the ticket for it.
 ### Changed
 
+- A feature run, from `--feature` or typed at the start, takes a spec run's
+  defaults: workers start in the `auto` permission mode unless
+  `--worker-permission-mode`, `WORKER_PERMISSION_MODE` or
+  `worker_permission_mode` gives one, and there is no ticket limit unless
+  `-limit` or `LIMIT` gives one.
 - A feature typed at the start (**New feature**) is talked through in the
   same Claude Code session as a spec with `--refine`, with the spec
   breakdown's instructions in a feature mode: the same filing rules, and the
