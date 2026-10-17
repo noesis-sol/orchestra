@@ -112,6 +112,8 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets; `pendingWhy`, the one rule for whether a ticket has merged |
 | `unmerged.go` | tickets closed but not merged: the `unmerged` label, those earlier runs left, whether one has merged since by hand |
 | `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
+| `late_close.go` | tickets set aside with their workers left in their tabs: following them, and merging one closed there (`LATE_CLOSE`) |
+| `closed_unmerged.go` | closed tickets whose work is only on their branch, which hold what they block (`CLOSED_UNMERGED`) |
 | `deferred_free.go` | deferred tickets whose blockers have all merged, listed in the `START` block and the nothing-to-run box (`DEFERRED_FREE`) |
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
 | `nothing.go` | why a run has nothing to run (`NothingToRun`, `CheckNothingToRun`): everything done, or nothing ready and what holds it |

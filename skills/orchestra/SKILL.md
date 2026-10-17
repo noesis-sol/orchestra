@@ -443,7 +443,17 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   that tab alone, and close the worker's own tab by hand if it is still open.
 - `deferred by worker`, `still <status> -> noted and deferred`: set aside. A `triage` line follows
   with the triage organ's verdict (cause: environment, instructions or problem), also appended to
-  the ticket's notes. `TRIAGE_FAILED` means triage itself failed.
+  the ticket's notes. `TRIAGE_FAILED` means triage itself failed. A worker that left nothing done
+  (no commits, a clean worktree) has its worktree, branch and tab removed, the line ending `nothing
+  done, so its worktree, branch and tab are removed`. Otherwise it is left in its tab, its ticket
+  labelled `unmerged`, and the run follows it: should it close the ticket there (Claude Code
+  carries a worker on by itself once the usage limit resets), `LATE_CLOSE: <id> was closed in tab
+  <tab> after it was set aside; merging it now` follows, and it merges as usual. One closed once the
+  run has ended, or after a stop, is merged by hand (below); its label holds the tickets it blocks
+  until then.
+- `<id>'s earlier worker was idle in tab <tab>; its tab is closed, as the new worker takes up its
+  worktree; its session's transcript is <path>`: a set-aside ticket dispatched again. Nothing to do;
+  the earlier session's transcript is there to read.
 - `PROMPT_FAILED`: the worker never started on its prompt; deferred, safe to reopen.
 - `ASKED`: the worker asked the user a question, as a ticket labelled `human` that blocks the work.
   Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
@@ -465,7 +475,13 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   it isn't on the base branch yet. A ticket closed but left unmerged is labelled `unmerged`, which
   holds its dependents in later runs too; orchestra removes the label when it merges the ticket, or
   when a run starts and finds it merged by hand. If the ticket needs no merge after all, remove it:
-  `bd label remove <id> unmerged`.
+  `bd label remove <id> unmerged`. `(its worker was left in tab <tab>)` names a ticket set aside
+  with its worker left there, which the run merges should the worker close it.
+- `CLOSED_UNMERGED: <id> is closed, but wt/<id> is not on <base>`, once, then `<dep> waits: <id>
+  closed but not merged (wt/<id> is not on <base>)`: a ticket closed where no run merged it (by
+  hand, or by a worker after its run ended) still has its work only on its branch, so the tickets it
+  blocks wait. No label is involved. Look at the branch with the user: merge it into the base
+  (below), or delete it if its work isn't wanted (`git branch -D wt/<id>`).
 - `<id> is left running in tab <tab> and labelled 'unmerged'`, just before the last line: the run
   ended with that ticket's worker still on it (the worker that stopped the run, or any at
   `INTERRUPTED`). If the worker closes it after the run, the next run merges it; until then the

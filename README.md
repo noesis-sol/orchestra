@@ -60,6 +60,7 @@ In a terminal, `orchestra` first asks what the run should work on. **Current tic
 How a run goes:
 - **Dispatch.** Each ready ticket in `bd ready` goes to its own worker, up to `concurrent` at a time. Tickets that touch the same files or functions don't run side by side, and a ticket labelled `solo` runs alone.
 - **Merge.** A finished ticket is rebased onto the branch and the check runs again before it merges. A conflict goes back to its worker to resolve. A ticket that still can't merge is set aside for review.
+- **Set aside.** A ticket whose worker stops without closing it is deferred for review; a worker left in its tab that closes it later is merged then.
 - **Questions.** A worker that needs your decision files a question (a ticket labelled `human`), and the run goes on. Answer it with `bd human respond <question> --response "…"`.
 - **Nothing to run.** A run with nothing ready (or only tickets it would hold back, such as a parent waiting for its subtickets), and no worker the last run left to carry on with, shows `✓ All done` or what holds the tickets left (questions for you, tickets waiting on others, in progress, deferred, closed but not merged), and exits 0 without opening the dashboard.
 - **Ending.** The run ends when nothing is left to start. Something that needs you (a worker blocked or idle with its ticket open, a tool failing) stops new tickets, lets the running ones finish, and ends the run. The next run carries on with any workers it left behind.
@@ -101,7 +102,7 @@ The same command carries on the next night: with the spec unchanged, it runs wha
 - [docs/install.md](docs/install.md): the install script, building from a clone, `orchestra update`, build provenance, versions
 - [docs/dashboard.md](docs/dashboard.md): what you see, the keys, the closing lines, notifications
 - [docs/setup.md](docs/setup.md): everything `orchestra init` does, and the setup a spec run does without it
-- [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, spec runs and the nightly recipe, several tickets at once, the usage limit, the full check, stops and exit codes
+- [docs/running.md](docs/running.md): Herdr, tmux or cmux, options, scoped and feature runs, spec runs and the nightly recipe, several tickets at once, tickets set aside, the usage limit, the full check, stops and exit codes
 - [docs/workers.md](docs/workers.md): the worker prompt, MCP servers for workers, their permission mode, hooks and run files, workers in tmux and cmux
 - [docs/organs.md](docs/organs.md): triage, the predictor, the reviewer and the scout
 - [docs/events.md](docs/events.md): the event stream for scripts and agents
