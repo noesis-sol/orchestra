@@ -212,7 +212,8 @@ func startBranches(c Config, worktrees WorktreeCheckout, merger Merger) func(ctx
 		if head == "" {
 			head = worktrees.Head(ctx, c.Repo, c.Base)
 		}
-		why, _ := b.why(id, head, func() string { return branchOff(ctx, c, worktrees, merger, id) })
+		why, _ := b.why(id, head, func() string { return worktrees.Head(ctx, c.Repo, branchOf(id)) },
+			func() string { return branchOff(ctx, c, worktrees, merger, id) })
 		return why
 	}
 }

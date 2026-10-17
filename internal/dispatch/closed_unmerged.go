@@ -25,28 +25,33 @@ func branchOff(ctx context.Context, c Config, worktrees Worktrees, merger Merger
 
 // closedBranches keeps what git said of closed tickets' branches (see branchOff), for each ticket
 // and the commit Base was on, so that a poll asks git once for each ticket, not once for each ready
-// ticket it blocks. Its zero value is ready to use, from any goroutine.
+// ticket it blocks. A branch found not on Base is asked of again once it is on another commit or
+// gone: deleted, as CLOSED_UNMERGED offers, it frees the tickets it blocks at the next poll. Its
+// zero value is ready to use, from any goroutine.
 type closedBranches struct {
 	mu     sync.Mutex
 	known  map[string]branchAt
 	warned map[string]bool
 }
 
-// branchAt is why a closed ticket's work was only on its branch, or "", with Base on head.
+// branchAt is why a closed ticket's work was only on its branch, or "", with Base on head and the
+// branch on tip.
 type branchAt struct {
-	head, why string
+	head, tip, why string
 }
 
 // why returns why closed ticket id's work is only on its branch, with Base on head, asking git (off)
-// unless it has already for that head; "" for a head means git couldn't say, and git is asked again.
-// first is whether this is the first time the ticket was found so.
-func (b *closedBranches) why(id, head string, off func() string) (why string, first bool) {
+// unless it has already for that head and, when it found the work only on the branch, for the commit
+// the branch is on (tip, asked each time); "" for a head or a tip means git couldn't say, and git is
+// asked again. first is whether this is the first time the ticket was found so.
+func (b *closedBranches) why(id, head string, tip, off func() string) (why string, first bool) {
 	b.mu.Lock()
 	k, ok := b.known[id]
 	b.mu.Unlock()
-	if ok && head != "" && k.head == head {
+	if ok && head != "" && k.head == head && (k.why == "" || k.tip != "" && tip() == k.tip) {
 		return k.why, false
 	}
+	at := tip() // before off: a branch that moves meanwhile is asked of again
 	why = off()
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -54,7 +59,7 @@ func (b *closedBranches) why(id, head string, off func() string) (why string, fi
 		if b.known == nil {
 			b.known = map[string]branchAt{}
 		}
-		b.known[id] = branchAt{head: head, why: why}
+		b.known[id] = branchAt{head: head, tip: at, why: why}
 	}
 	if why == "" || b.warned[id] {
 		return why, false
@@ -81,6 +86,8 @@ func (o *Loop) closedWhy(ctx context.Context, id string) string {
 func (o *Loop) branchWhy(ctx context.Context, id string) string {
 	c := o.cfg
 	why, first := o.branches.why(id, o.pickHead(ctx), func() string {
+		return o.checkout.Head(ctx, c.Repo, branchOf(id))
+	}, func() string {
 		return branchOff(ctx, c, o.worktrees, o.merger, id)
 	})
 	if first {

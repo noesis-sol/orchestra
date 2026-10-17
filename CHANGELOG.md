@@ -8,6 +8,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A closed ticket's branch deleted mid-run, as `CLOSED_UNMERGED` offers,
+  frees the tickets it blocks at the next poll, rather than once the base
+  branch moves on or in the next run.
 - A ticket dispatched again with its earlier worker idle or done in a tab an
   earlier run left it in (set aside then, undeferred by hand since) has that
   tab closed too, found under the worker's name in Herdr, tmux or cmux, rather
