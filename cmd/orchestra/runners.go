@@ -71,7 +71,7 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 		focus = focusTab(ctx, r.log, terminalOf(r.cfg))
 	}
 	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focus),
-		tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
+		tui.WithTerminal(stdin, stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
 		quitBy <- s // before the quit, so stoppedBy finds it

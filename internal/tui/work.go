@@ -100,7 +100,7 @@ func AskWork(
 		form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
 		// orchestra watches the stop signals itself and ends ctx on one; Bubble Tea's handler would
 		// take SIGTERM for a submitted form.
-		_, err = tea.NewProgram(form, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out),
+		_, err = tea.NewProgram(form, tea.WithContext(ctx), WithTerminal(in, out),
 			tea.WithoutSignalHandler()).Run()
 	}
 	switch {

@@ -645,7 +645,7 @@ func unwrapField(f huh.Field) huh.Field {
 // tea.WithContext, which closes the input in the same way.
 func runForm(ctx context.Context, form *huh.Form, scout *scoutRun, in io.Reader, out io.Writer) error {
 	form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
-	p := tea.NewProgram(initModel{form: form, scout: scout}, tea.WithInput(in), tea.WithOutput(out),
+	p := tea.NewProgram(initModel{form: form, scout: scout}, WithTerminal(in, out),
 		tea.WithReportFocus(), tea.WithoutSignalHandler())
 	stop := context.AfterFunc(ctx, p.Quit) // Quit returns once Run has, if it is still sending
 	_, err := p.Run()
