@@ -346,7 +346,8 @@ func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time
 // (ToolUse.Idle): the prompt was refused, which ends the turn with no Stop hook. An API error (a 500,
 // a 529, a rate limit that isn't the account's) ends the turn with a StopFailure hook instead of the
 // Stop, which counts as one; one that ended on the account's usage limit (ToolUse.Limit) doesn't: the
-// run holds for it (see limitPoll), and the worker waits until it is told to carry on. Without a tool
+// run holds for it (see limitPoll), and the worker waits until it is told to carry on. Nor does a Stop
+// that is still ending (ToolUse.Ending): whether the turn ended on the limit isn't told yet. Without a tool
 // use reported, it hasn't. Claude Code forks agents at the end of a turn (a prompt suggestion, say)
 // that run the worker's PreToolUse hook and are then refused the tool, so no PostToolUse follows; a prompt
 // that starts a turn (a nudge, an answer) clears the Stop. While a subagent runs the turn goes on,
@@ -357,7 +358,7 @@ func (o *Loop) endOfTurn(ctx context.Context, id string, h hooksSeen, after time
 func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) {
 	u := h.use
 	switch {
-	case !h.ok, u.Limit.Reached():
+	case !h.ok, u.Limit.Reached(), u.Ending:
 		return time.Time{}, false, false
 	case u.Event == "Stop", u.Event == "StopFailure":
 		at = u.At
@@ -459,6 +460,7 @@ func idleSettled(ticket TicketStatus, h hooksSeen, since, now time.Time,
 //   - A subagent that stopped past the Stop, with no turn on its answer yet: settled after idleGrace.
 //   - A turn that ended on the usage limit, which the terminal shows idle rather than limited: settled
 //     after idleGrace, as the run holds for the limit only while the terminal shows it (see limitPoll).
+//   - A Stop still ending (ToolUse.Ending), as for a moment after it: settled after idleGrace.
 //   - Any other last report, a tool use: mid-turn, whatever the terminal says; settled after
 //     idleGrace, as a turn interrupted ends with no hook.
 func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (settled bool, why string) {
@@ -489,6 +491,10 @@ func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (set
 	if u.Limit.Reached() {
 		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after its turn ended on the usage limit at %s (%s)",
 			command.ShortDuration(idleGrace), u.Limit.At.Format("15:04:05"), u.Limit.Message)
+	}
+	if u.Ending {
+		return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a Stop hook at %s, the turn's end not yet logged",
+			command.ShortDuration(idleGrace), u.Stopped.Format("15:04:05"))
 	}
 	return idleFor >= idleGrace, fmt.Sprintf("idle for %s after a %s hook, with no Stop hook; that record was %s",
 		command.ShortDuration(idleGrace), u.Event, u.Reporter())

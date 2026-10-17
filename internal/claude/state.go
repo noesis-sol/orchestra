@@ -74,6 +74,8 @@ func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (st
 //     or its Stop where the session's transcript tells Claude Code waits to continue by itself once the
 //     limit resets, see limitNotices), until a prompt starts another, whatever the notifications say
 //     meanwhile and however long ago the limit reset: the loop decides when to try again;
+//   - working, too, after a Stop whose end the session's transcript has yet to log, which tells whether
+//     the turn ended at the limit (see stopTold);
 //   - idle after the turn's Stop, or a StopFailure for another API error, even where a tool use
 //     reported later replaced it, as an agent Claude Code forks at the end of a turn reports one it
 //     is refused (see turnEnded in dispatch) — but a tool that finished after it means the turn goes
@@ -122,8 +124,8 @@ func ReadHooks(records, dir string) Hooks {
 		noted = fi.ModTime()
 	}
 	activity, turn := readRecord(root, activityName), readRecord(root, turnName)
-	if turn.event == "Stop" {
-		turn.limit = recordedLimit(root, turn.at) // a turn that ended normally at the limit
+	if turn.event == "Stop" { // a turn that ended normally at the limit, or whose end isn't logged yet
+		turn.limit, turn.ending = recordedStop(root, turn.at, time.Now())
 	}
 	st, asked := state(activity, turn, readRecord(root, noticeName), readAsked(root),
 		readSessions(b, noted, activity.at, time.Now()))
@@ -171,11 +173,12 @@ func settle(h Hooks, screen string, read bool) dispatch.AgentState {
 }
 
 // record is one of the hooks' replaced records: the event, a notification's type, the usage limit a
-// StopFailure tells (or a Stop's transcript, see ReadHooks), and when it was written; a zero at when
-// there is none.
+// StopFailure tells (or a Stop's transcript, see ReadHooks), whether a Stop's transcript has yet to log
+// the turn's end (see stopTold), and when it was written; a zero at when there is none.
 type record struct {
 	event, notification string
 	limit               dispatch.UsageLimit
+	ending              bool
 	at                  time.Time
 }
 
@@ -252,6 +255,9 @@ func unasked(activity, turn record, s sessions) dispatch.AgentState {
 		}
 		if turn.limit.Reached() {
 			return dispatch.StateLimited
+		}
+		if turn.ending {
+			return dispatch.StateWorking
 		}
 		return dispatch.StateIdle
 	case "UserPromptSubmit":

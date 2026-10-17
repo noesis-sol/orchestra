@@ -47,6 +47,11 @@ All notable changes to orchestra are documented here. The format follows
   tickets as waiting. Git is asked once for each such ticket and commit the
   base is on. A closed ticket with no branch, or one with nothing beyond the
   base, holds nothing, as before.
+- A worker's Stop isn't taken for its turn's end until its transcript logs
+  that end, for a minute at most: Claude Code logs the notice that a turn
+  ended at the usage limit only after the turn's Stop hooks have run, so a
+  status read in between saw an ordinary turn's end, and a worker that
+  deferred its ticket as it stopped at the limit was set aside.
 
 ## [0.8.0] - 2026-10-16
 

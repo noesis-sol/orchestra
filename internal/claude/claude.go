@@ -299,7 +299,8 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 // when Claude Code noted it idle at its prompt since (as after a permission prompt refused), and the
 // API error its last turn ended on, if it did: the usage limit, or another, which ends the turn as a
 // Stop does. A turn that ended with a Stop at the usage limit, as its transcript tells (see
-// limitNotices), ended on the limit too.
+// limitNotices), ended on the limit too; one whose end the transcript has yet to log, which tells
+// whether it did, is ending (see stopTold).
 func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
@@ -317,7 +318,7 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 		case json.Unmarshal(b, &t) != nil || !readable(t.V):
 			r.sayNewer(worktree, turnName, b)
 		case t.Event == "Stop":
-			if u.Limit = r.stopLimit(worktree, fi.ModTime()); !u.Limit.Reached() {
+			if u.Limit, u.Ending = r.stopTold(worktree, fi.ModTime()); !u.Limit.Reached() {
 				u.Stopped = fi.ModTime()
 			}
 		case t.Event == "StopFailure":
@@ -337,14 +338,15 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 	return u, true
 }
 
-// stopLimit is the usage limit the worker in worktree waits on after a turn that ended at at with a Stop,
-// as its session's transcript tells (see limitNotices); zero when it waits on none.
-func (r Reporter) stopLimit(worktree string, at time.Time) dispatch.UsageLimit {
+// stopTold is what the session's transcript tells now of the turn of the worker in worktree, which ended
+// at at with a Stop (see the function stopTold): the usage limit it waits on, and whether the turn still counts
+// as going on; nothing when the worker has no session.
+func (r Reporter) stopTold(worktree string, at time.Time) (dispatch.UsageLimit, bool) {
 	s, ok := r.Session(worktree)
 	if !ok {
-		return dispatch.UsageLimit{}
+		return dispatch.UsageLimit{}, false
 	}
-	return transcriptLimit(s.Transcript, at)
+	return stopTold(s.Transcript, at, time.Now())
 }
 
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the

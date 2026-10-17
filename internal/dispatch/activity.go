@@ -31,6 +31,11 @@ type ToolUse struct {
 	// another since; zero otherwise.
 	Limit UsageLimit
 
+	// Whether the worker's last turn, which its Stop hook ended (see Stopped), is still ending: Claude
+	// Code has yet to log the turn's end, and with it whether the turn ended on the usage limit, which it
+	// does a moment after the turn's Stop hooks have run, the user's own too. The turn hasn't ended yet.
+	Ending bool
+
 	// The kind of API error that ended the turn (StopFailure's error, as Claude Code names it:
 	// server_error, rate_limit, …): of this report, a StopFailure, or of the turn's end a later report
 	// replaced (see Stopped); empty for none, or when Claude Code named none.
