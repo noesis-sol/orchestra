@@ -17,7 +17,7 @@ else is left for review, and the loop moves on or stops. It never pushes.
 
 Two words, kept apart: **workers** do tickets, one per tab and worktree; **organs** are
 orchestra's own one-shot advisers: triage, the predictor, the reviewer that writes the run report,
-the screen and the plan (for a feature request) and the scout (for `orchestra init`'s checks).
+and the scout (for `orchestra init`'s checks).
 Each is a `claude -p` call with no MCP servers that answers from what it is given. All but the
 scout have no tools; the scout reads the repository itself, with read-only tools only (Read, Glob,
 Grep). Organs never change a ticket or the code.
@@ -144,7 +144,7 @@ Requirements, checked by `orchestra` at startup (it lists every problem, exit co
 - in the main checkout, on a branch, not a detached HEAD;
 - no uncommitted changes outside `.claude/`, `.beads/` and `.orchestra/`;
 - no other run in the same repository. A second one stops before changing anything (a `--feature`
-  request before it is screened) with `orchestra is already running in <repo> (pid …, since …,
+  request before it is talked through) with `orchestra is already running in <repo> (pid …, since …,
   <branch>, pane …)`: follow that run in its pane instead, or ask the user before stopping it.
 
 Run it on the branch finished tickets should land on. Unless the user says otherwise, propose a
@@ -185,9 +185,11 @@ and Enter into the new one with `cmux send` and `cmux send-key`, and read it wit
 Launch with `--tickets`. A pane is a terminal, and there the bare `orchestra` first asks what the run
 should work on (`Current tickets: N ready`, `none, all done` or `none ready (N open)`, `Spec`, which
 asks for a spec file, or `New feature`, which asks the user to describe one and then talks it through
-with them in a Claude Code session): the wait above would time out on the question. `--ticket <id>`,
-`--feature "<request>"` and `--spec <file>` don't ask either. Leave the bare command to a user at the
-keyboard.
+with them in a Claude Code session): the wait above would time out on the question. `--ticket <id>`
+and `--spec <file>` don't ask either. Leave the bare command to a user at the keyboard, and
+`--feature "<request>"` too: it skips the question but talks the feature through with the user in a
+Claude Code session beside orchestra's pane, and ends with exit code 2 and nothing filed where there
+is no pane or terminal for it. For a feature built with nobody there, see A spec run below.
 
 A run with nothing to run (nothing ready, or only tickets it would hold back, and no worker the last
 run left to carry on with) doesn't open the dashboard: it shows a box, `✓ All done` (with `Still
@@ -253,6 +255,16 @@ or `the spec <path> is committed already`, then `broke the spec down into <root>
 tickets)` and the assumptions it made, which also go under `Assumptions` in the root epic's notes.
 Relay those to the user: they are the choices the spec left open, and changing the spec is how to
 change one.
+
+**A request rather than a file.** When the user asks for a feature to be built by a run you start
+(a request in words, not a spec file), don't launch `orchestra --feature`: it needs the user at a
+terminal, to talk the feature through with them before it files anything, and there is no unattended
+feature run. Write the request to a Markdown file instead, with what the user settled when they
+asked, and launch `orchestra --spec <file>` as above. Its breakdown takes the file as complete and
+final and asks nothing, so say there what you know of the user's choices; where it leaves a choice
+open, the breakdown takes the plainest reading and writes it under `Assumptions`. A file outside the
+repository is committed as a copy in `.orchestra/specs/<name>`, which workers read; one inside it is
+committed where it is. Run again later, the same command carries on with what is left.
 
 - **In a repository `orchestra init` hasn't set up**, even an empty one with no commit, a spec run
   sets it up itself as `init` does without a terminal (bd init, the worker prompt, runners that check

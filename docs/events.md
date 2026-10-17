@@ -47,7 +47,7 @@ A failing terminal, Herdr, tmux or cmux, stops the run as `TERMINAL_FAILED`; up 
 
 A run with [nothing to run](running.md#nothing-to-run) writes three records: `start`, `done` and `end` with code 0. Its done text says why: `READY_EMPTY after 0 tickets: everything is done` when no ticket is left but epics and none is closed but not merged, or `READY_EMPTY after 0 tickets: nothing ready`; a scoped run adds its scope's `; SCOPE_DONE: …` or `; SCOPE_OPEN: …`.
 
-Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .git/orchestra.lock` in the main checkout says which. A feature run writes nothing there while the request is screened and planned, or talked through, nor a spec run while its spec is committed and broken down: the log has those steps, on its `SPEC:` lines. If the stream can't be written, the log says so once, and the run goes on.
+Until its `end` record a run is still going, or was killed (`kill -9`, a crash): `lsof -t .git/orchestra.lock` in the main checkout says which. A feature run writes nothing there while the feature is talked through, nor a spec run while its spec is committed and broken down: the log has those steps, on its `FEATURE` and `SPEC:` lines. If the stream can't be written, the log says so once, and the run goes on.
 
 With `jq`, in the main checkout:
 
