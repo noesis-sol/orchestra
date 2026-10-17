@@ -101,7 +101,7 @@ func TestSpecFlagCombinations(t *testing.T) {
 		want string
 	}{
 		{"no file", []string{"--spec", ""}, nil, "--spec needs the spec's file: orchestra --spec <file>"},
-		{"--refine without --spec", []string{"--refine"}, nil, "--refine only applies with --spec."},
+		{"--refine without --spec", []string{"--refine"}, nil, "--refine only applies with --spec or --feature."},
 		{"--feature", []string{"--spec", spec, "--feature", "Add a flag"}, nil,
 			"--spec can't be combined with --feature: one runs a spec, the other a feature request."},
 		{"ORCHESTRA_SPEC with --feature", []string{"--feature", "Add a flag"}, map[string]string{"ORCHESTRA_SPEC": spec},

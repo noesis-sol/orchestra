@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -277,7 +278,7 @@ func (r specRun) check(ctx context.Context, spec project.Spec, root string) int 
 // commit commits the spec, once the main checkout has nothing uncommitted besides it, and says so;
 // one committed already is left as it is. It returns ExitOK, or the exit code having said why not.
 func (r specRun) commit(ctx context.Context) (project.Spec, int) {
-	// Checked before anything is committed or filed, as a feature's checkout is before it is filed.
+	// Checked before anything is committed or filed, as a feature's checkout is before its session.
 	rel, _ := project.SpecPath(r.repo, r.file)
 	switch code := cleanCheckout(ctx, r.repo, r.err, rel); code {
 	case dispatch.ExitOK:
@@ -308,6 +309,30 @@ func (r specRun) commit(ctx context.Context) (project.Spec, int) {
 	}
 	return spec, dispatch.ExitOK
 }
+
+// cleanCheckout checks that the main checkout repo has no uncommitted changes, besides those to the
+// paths in besides (a spec about to be committed). The loop checks it before each ticket; a spec or a
+// feature is checked before anything is filed for it, so that a run that couldn't start files nothing.
+// It returns ExitOK, or the exit code having said why not; ExitInterrupted, saying nothing, when ctx
+// ended first.
+func cleanCheckout(ctx context.Context, repo string, stderr io.Writer, besides ...string) int {
+	dirty, err := (git.Git{}).DirtyTreeBesides(ctx, repo, besides...)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return dispatch.ExitInterrupted
+	case err != nil:
+		fmt.Fprintf(stderr, "orchestra couldn't read the state of %s: %v\n", repo, err)
+		return dispatch.ExitTool
+	case dirty != "":
+		fmt.Fprintf(stderr, "orchestra cannot start: uncommitted changes in %s. Commit or stash them first; "+
+			"inspect with: git status\n", repo)
+		return dispatch.ExitDirty
+	}
+	return dispatch.ExitOK
+}
+
+// planLine is s, text a breakdown or bd gave, printable and on one line.
+func planLine(s string) string { return strings.Join(strings.Fields(tui.Printable(s)), " ") }
 
 // sayFiled says what the breakdown filed: the root epic, the epics and tickets under it (by bd's
 // count, the root among the epics), and the assumptions it made. After an update, the counts are

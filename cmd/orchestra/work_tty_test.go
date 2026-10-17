@@ -93,9 +93,9 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	}
 }
 
-// Esc at the question ends orchestra with nothing done: nothing screened, no run recorded.
+// Esc at the question ends orchestra with nothing done: nothing talked through, no run recorded.
 func TestRunStoppedAtTheQuestionDoesNothing(t *testing.T) {
-	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
+	dir := featureTools(t)
 	term, repo, exit := runOnTerminal(t)
 	term.waitFor(t, "> Current tickets: none, all done")
 	term.typeKeys(t, pickFeature, false)
@@ -106,7 +106,7 @@ func TestRunStoppedAtTheQuestionDoesNothing(t *testing.T) {
 		t.Errorf("exit %d, stderr:\n%s", code, stderr)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "claude-n")); !os.IsNotExist(err) {
-		t.Errorf("screened after Esc: %v", err)
+		t.Errorf("claude ran after Esc: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(repo, project.RunPath(dispatch.EventsName))); err == nil && len(b) > 0 {
 		t.Errorf("a run was recorded:\n%s", b)

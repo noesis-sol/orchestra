@@ -183,7 +183,7 @@ type options struct {
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
 	OrganEffort  string // effort for every organ; "" gives each its own
 	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
-	Yes          bool   // file a --feature plan without asking
+	yes          bool   // --yes, which is gone: a run given it ends saying so
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
 	limitGiven   bool   // -limit or LIMIT gave Config.Limit, which a spec run otherwise hasn't
@@ -266,7 +266,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 	f := defineRunFlags(fs, getenv)
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "Usage: orchestra [flags]\n"+
-			"       orchestra --feature \"<request>\" [--yes] [flags]\n"+
+			"       orchestra --feature \"<request>\" [flags]\n"+
 			"       orchestra --spec <file> [--refine] [flags]\n")
 		for _, c := range subcommands {
 			fmt.Fprint(fs.Output(), usageLines("       ", c.name, c.synopsis))
@@ -274,11 +274,12 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		fmt.Fprint(fs.Output(), "\n"+
 			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
 			"as --concurrent allows, one worker (a coding agent) per tab and git worktree.\n"+
-			"With --feature, plan the request as an epic and its tickets first, and run those.\n"+
+			"With --feature, talk the request through with you in a Claude Code session first, which files it as an "+
+			"epic and its tickets, and run those.\n"+
 			"With --spec, commit the spec and break it down into an epic and its tickets first, and run those.\n"+
 			"In a terminal, without --feature, --spec, --ticket, --tickets or -plain, it first asks which: "+
 			"the current tickets, a spec you pick (as --spec runs it), or a new feature you describe.\n\n")
-		fs.PrintDefaults()
+		printDefaults(fs, "yes")
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
 			"4 terminal (Herdr, tmux or cmux), Beads or git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
 			"7 environment failing workers, 8 usage limit held too long, 130 Ctrl+C.\n")
@@ -307,6 +308,20 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		f.Limit = dispatch.NoLimit // a whole app can take far more tickets than a run's default
 	}
 	return f, append(problems, checkFlagCombos(f)...), nil
+}
+
+// printDefaults prints the flags of fs as fs.PrintDefaults does, without those named in hidden: flags
+// that are gone, kept only to say so.
+func printDefaults(fs *flag.FlagSet, hidden ...string) {
+	shown := flag.NewFlagSet(fs.Name(), flag.ContinueOnError)
+	shown.SetOutput(fs.Output())
+	fs.VisitAll(func(f *flag.Flag) {
+		if !slices.Contains(hidden, f.Name) {
+			shown.Var(f.Value, f.Name, f.Usage)
+			shown.Lookup(f.Name).DefValue = f.DefValue // as defined, not as parsed so far
+		}
+	})
+	shown.PrintDefaults()
 }
 
 // defineRunFlags defines a run's flags in fs, each bound to the environment variable it defaults
@@ -379,17 +394,17 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.BoolVar, &c.LaunchPrompt, "prompt-at-launch", "PROMPT_AT_LAUNCH", true, parseOnOff,
 		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	fs.StringVar(&c.Feature, "feature", "",
-		"screen and plan this feature request as an epic and its tickets, file them in Beads once you "+
-			"confirm, and run the epic as --ticket would")
-	fs.BoolVar(&c.Yes, "yes", false, "with --feature, file the plan without asking")
+		"talk this feature request through with you in a Claude Code session, which files it as an epic and its "+
+			"tickets in Beads, and run the epic as --ticket would")
+	fs.BoolVar(&c.yes, "yes", false, "gone; left out of the help, it ends the run saying what to use instead")
 	bindEnv(e, fs.StringVar, &c.specFile, "spec", "ORCHESTRA_SPEC", "", parseText,
 		"commit this spec, a Markdown or plain-text file (one outside the repository as a copy in "+
 			project.Dir+"/"+project.SpecsDir+"/), break it down into an epic and its tickets, "+
 			"and run the epic as --ticket would; a repository orchestra init hasn't set up, even one with no "+
 			"commit, is set up first, with init's defaults [ORCHESTRA_SPEC]")
 	bindEnv(e, fs.BoolVar, &c.Refine, "refine", "ORCHESTRA_REFINE", false, parseOnOff,
-		"with --spec, talk the spec through with you in a Claude Code session before it is broken down "+
-			"[ORCHESTRA_REFINE=1]")
+		"with --spec, talk the spec through with you in a Claude Code session before it is broken down; "+
+			"--feature always talks the feature through, with or without it [ORCHESTRA_REFINE=1]")
 	bindGiven(e, fs.DurationVar, &f.specTimeout, "spec-timeout", "ORCHESTRA_SPEC_TIMEOUT", 0,
 		project.ParseCheckTimeout,
 		"with --spec, stop the spec's breakdown after this long, e.g. 90m "+
@@ -407,6 +422,10 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 // checkFlagCombos checks how a run's flags go together: --feature and --spec with what they need
 // and against what they can't be combined with.
 func checkFlagCombos(f *runFlags) []string {
+	if f.set["yes"] {
+		return []string{"--yes is gone: --feature always talks the feature through with you; " +
+			"orchestra --spec <file> runs a request written to a file unattended."}
+	}
 	if p := checkSpecCombos(f); p != "" {
 		return []string{p}
 	}
@@ -420,8 +439,6 @@ func checkFlagCombos(f *runFlags) []string {
 	case feature && f.set["tickets"] && f.Tickets:
 		return []string{"--feature can't be combined with --tickets: " +
 			"one runs a new feature, the other the current tickets."}
-	case !feature && f.Yes:
-		return []string{"--yes only applies with --feature."}
 	case feature && f.Limit >= 0 && f.DoneSoFar >= f.Limit:
 		// The loop would end at once, the plan filed and none of it started.
 		return []string{fmt.Sprintf("--feature would file a plan and run none of it: "+
@@ -433,7 +450,8 @@ func checkFlagCombos(f *runFlags) []string {
 
 // checkSpecCombos says how --spec (or ORCHESTRA_SPEC) and --refine don't go with the run's other
 // flags, or returns "". ORCHESTRA_REFINE alone, like ORCHESTRA_TICKETS, is a standing choice that
-// a run without a spec leaves unused.
+// a run without a spec leaves unused; --refine with --feature changes nothing, as a feature is always
+// talked through.
 func checkSpecCombos(f *runFlags) string {
 	spec, from := f.specFile != "", f.specFrom()
 	switch {
@@ -446,8 +464,8 @@ func checkSpecCombos(f *runFlags) string {
 			"a spec run is scoped to the epic its breakdown files."
 	case spec && f.set["tickets"] && f.Tickets:
 		return from + " can't be combined with --tickets: one runs a spec, the other the current tickets."
-	case !spec && f.set["refine"] && f.Refine:
-		return "--refine only applies with --spec."
+	case !spec && !f.set["feature"] && f.set["refine"] && f.Refine:
+		return "--refine only applies with --spec or --feature."
 	case spec && f.DoneSoFar >= f.Limit:
 		// Only with -limit or LIMIT: a spec run has none otherwise.
 		return fmt.Sprintf("%s would break the spec down and run none of it: "+

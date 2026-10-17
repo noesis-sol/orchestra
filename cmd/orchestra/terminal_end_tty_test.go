@@ -16,15 +16,15 @@ import (
 // for it: no run is left going on a closed terminal, in a repository removed and an environment
 // restored beneath it, where the race detector blames whichever test runs then.
 func TestTerminalRunStopsAsTheTestEnds(t *testing.T) {
-	t.Run("ends while claude screens the feature", func(t *testing.T) {
-		dir := featureTools(t, featureScreenOK, "", 0)
-		// claude screens the request until it is stopped, in place of featureTools' claude.
+	t.Run("ends while claude talks the feature through", func(t *testing.T) {
+		dir := featureTools(t)
+		// claude talks the feature through until it is stopped, in place of featureTools' claude.
 		if err := os.Remove(filepath.Join(dir, "claude")); err != nil {
 			t.Fatal(err)
 		}
 		faketool.Write(t, dir, "claude", "#!/bin/sh\nexec sleep 600\n")
 		term, _, _ := runOnTerminal(t, "--feature", "Add a --json flag")
-		term.waitFor(t, "Screening the request with Claude…")
+		term.waitFor(t, "Talking the feature through with claude")
 	})
 	if n := runsLeft(); n > 0 {
 		t.Errorf("%d of orchestra's runs on a terminal still running after their test ended", n)

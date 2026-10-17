@@ -16,15 +16,16 @@ import (
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
-// A feature typed at the start of a run ("New feature", see work.go) is talked through with the user
-// by the spec's refinement session (refineBreakdown, spec_refine.go), in the Feature mode of the spec
-// breakdown's instructions (internal/project's spec-prompt.md): an interactive Claude Code session in
-// the main checkout, in a pane beside orchestra's or on its terminal, whatever agent the workers are.
+// A feature, typed at the start of a run ("New feature", see work.go) or given with --feature, is
+// talked through with the user by the spec's refinement session (refineBreakdown, spec_refine.go),
+// in the Feature mode of the spec breakdown's instructions (internal/project's spec-prompt.md): an
+// interactive Claude Code session in the main checkout, in a pane beside orchestra's or on its
+// terminal, whatever agent the workers are.
 // Its first message brings the description in from a file. Claude interviews the user until they
 // share an understanding of the feature, files it as an epic and its tickets once the user agrees,
 // and hands the epic back in .orchestra/run/feature.json. orchestra then checks the epic as it checks
-// a spec's tree (checkFeature), says what was filed, and starts the run on it without asking.
-// --feature itself still has the screen and plan organs plan the feature (feature.go).
+// a spec's tree (checkFeature), says what was filed, and starts the run on it without asking. There
+// is no unattended feature run: a request written to a file runs unattended with --spec <file>.
 
 // featureLead opens the session's first message, before the file that holds the description.
 const featureLead = "Here is the feature I'd like to talk through:"
@@ -51,17 +52,17 @@ const noFeature = "No feature was filed; nothing to run."
 var errFeatureNeedsTerminal = errors.New("talking the feature through needs you at a terminal, and orchestra's " +
 	"input or output isn't one: orchestra --spec <file> breaks a request written to a file down unattended")
 
-// featureEpicTracker is bd as a typed feature reads the epic its session handed back: the epic, the
+// featureEpicTracker is bd as a feature run reads the epic its session handed back: the epic, the
 // tickets under it, and the blocks cycles.
 type featureEpicTracker interface {
 	epicTracker
 	Cycles(ctx context.Context) ([][]string, error)
 }
 
-// featureTalk is a typed feature's step before its loop: talked through and filed in its session,
+// featureTalk is a feature run's step before its loop: talked through and filed in its session,
 // then checked.
 type featureTalk struct {
-	request   string // the feature's description, as typed
+	request   string // the feature's description, as typed or given with --feature
 	repo      string // the main checkout
 	breakdown refineBreakdown
 	tracker   featureEpicTracker
@@ -69,9 +70,10 @@ type featureTalk struct {
 	out, err  io.Writer
 }
 
-// talkFeature talks the feature typed at the start of the run s through with the user, in a session
-// that files it, checks the epic it hands back, and returns its ID, which the run is then scoped to.
-// When there is nothing to run it returns "" and the exit code; what happened has been reported.
+// talkFeature talks the feature of the run s, typed at its start or given with --feature, through
+// with the user, in a session that files it, checks the epic it hands back, and returns its ID, which
+// the run is then scoped to. When there is nothing to run it returns "" and the exit code; what
+// happened has been reported.
 func (s *session) talkFeature(ctx context.Context) (string, int) {
 	// SIGTERM and SIGHUP stop the session as they stop the run; Ctrl+C does too, except while the
 	// session has the terminal.

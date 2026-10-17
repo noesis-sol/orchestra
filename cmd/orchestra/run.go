@@ -230,7 +230,7 @@ func (s *session) close(err *error) {
 func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code int) {
 	s = &session{cfg: cfg, e: e, started: time.Now()}
 	// One run at a time in a repository: a second would race this one for the same tickets, worktrees
-	// and branch. Taken before anything changes, a --feature request's screening included, and held
+	// and branch. Taken before anything changes, a --feature request's session included, and held
 	// until orchestra exits, after the organ phase.
 	s.holder = project.Holder{
 		PID: os.Getpid(), Started: s.started, Version: buildVersion(), Branch: cfg.Base,
@@ -305,13 +305,12 @@ func (s *session) readPrompt() int {
 }
 
 // chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or
-// given with --feature is talked through or planned, and filed, the run then scoped to its epic; a
+// given with --feature is talked through with the user and filed, the run then scoped to its epic; a
 // spec chosen there or given with --spec is committed and broken down, the run then scoped to its
 // root epic. It records the run's start. ok is false where the run ends there with code: the question
 // left, a spec chosen that can't be run, or nothing filed to run.
 func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	cfg, e := &s.cfg, s.e
-	typed := false // the feature was typed at the question rather than given with --feature
 	if asksWork(*cfg, isTerminal(e.stdin) && isTerminal(e.stdout)) {
 		work, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr)
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
@@ -319,7 +318,7 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 		}
 		switch work.Kind {
 		case tui.WorkFeature:
-			cfg.Feature, typed = work.Description, true
+			cfg.Feature = work.Description
 			// The lock, taken before the question, says from now on what --feature would have.
 			s.holder.Feature = work.Description
 			if err := s.lock.Rewrite(s.holder); err != nil {
@@ -335,11 +334,8 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	switch { // the run is scoped to the epic filed
 	case cfg.specFile != "": // broken down from the spec, once it is committed (spec.go)
 		cfg.Ticket, filedCode = s.runSpec(ctx)
-	case cfg.Feature == "":
-	case typed: // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
+	case cfg.Feature != "": // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
 		cfg.Ticket, filedCode = s.talkFeature(ctx)
-	default: // --feature: planned by the organs, and filed by orchestra
-		cfg.Ticket, filedCode = runFeature(ctx, s.stops, *cfg, s.log, e.stdin, e.stdout, e.stderr)
 	}
 	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: buildVersion(), Repo: cfg.Repo,
 		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})

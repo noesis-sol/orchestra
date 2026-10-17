@@ -52,6 +52,21 @@ All notable changes to orchestra are documented here. The format follows
   ended at the usage limit only after the turn's Stop hooks have run, so a
   status read in between saw an ordinary turn's end, and a worker that
   deferred its ticket as it stopped at the limit was set aside.
+- `orchestra --feature "<request>"` talks the feature through with you, as a
+  feature typed at the start does: in the spec breakdown's Claude Code session
+  in its feature mode, which files the epic and its tickets once you agree,
+  after which orchestra checks the epic and runs it as `--ticket` would. The
+  screen and plan organs no longer plan it, and nothing shows a plan or asks
+  to file it. It needs you at a terminal (or a pane beside orchestra's):
+  without one the run ends, exit 2, with nothing filed. `--refine` with
+  `--feature` is accepted and changes nothing.
+
+### Removed
+
+- `--yes` is gone, as there is no unattended feature run: given, it ends the
+  run with exit 2, saying that `--feature` always talks the feature through
+  with you and that `orchestra --spec <file>` runs a request written to a file
+  unattended.
 
 ## [0.8.0] - 2026-10-16
 

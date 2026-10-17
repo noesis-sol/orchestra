@@ -25,15 +25,16 @@ func holdLock(t *testing.T, repo string, h project.Holder) {
 }
 
 // A second run in the same repository stops before it changes anything, naming the run that holds
-// the lock: a --feature request isn't screened, and no log, worktree folder or git exclude is written.
+// the lock: a --feature request isn't talked through, and no log, worktree folder or git exclude is
+// written.
 func TestASecondRunIsRefused(t *testing.T) {
-	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
+	dir := featureTools(t)
 	repo := configFixture(t, `{"concurrent": 1}`)
 	started := time.Now().Truncate(time.Minute)
 	holdLock(t, repo, project.Holder{PID: 44497, Started: started, Branch: "main", Pane: "w2B:p60"})
 
 	var out, errOut strings.Builder
-	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag", "--yes"}, os.Getenv,
+	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, os.Getenv,
 		strings.NewReader(""), &out, &errOut)
 	want := "(pid 44497, since " + started.Format("15:04") + ", main, pane w2B:p60). One run at a time"
 	if exitOf(err) != 2 || !strings.Contains(errOut.String(), "orchestra cannot start:\n  - orchestra is already running in ") ||
@@ -41,7 +42,7 @@ func TestASecondRunIsRefused(t *testing.T) {
 		t.Errorf("exit %d, stderr:\n%s\nwant it to contain %q", exitOf(err), errOut.String(), want)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "claude-n")); !os.IsNotExist(err) {
-		t.Errorf("screened while another run holds the lock: %v", err)
+		t.Errorf("claude ran while another run holds the lock: %v", err)
 	}
 	for _, p := range []string{filepath.Join(repo, ".orchestra", "orchestra.log"),
 		filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees")} {
@@ -56,7 +57,7 @@ func TestASecondRunIsRefused(t *testing.T) {
 
 // A run holds the lock while it runs and lets go as it ends, leaving its details in the file.
 func TestARunLeavesItsDetailsInTheLock(t *testing.T) {
-	featureTools(t, featureScreenOK, featurePlanJSON, 0)
+	featureTools(t)
 	t.Setenv("HERDR_PANE_ID", "w2B:p61")
 	repo, stdout, stderr, code := runFeatureIn(t, "--plain", "--ticket", "f-1")
 	if code != 0 {
