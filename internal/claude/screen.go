@@ -89,8 +89,21 @@ func bottom(screen string) []string {
 // available again · continuing now", "Usage limit has reset · press enter to continue" once it no longer
 // continues by itself, "Automatic continue cancelled · …" after Escape, and others that say it was turned
 // off or stopped. Those notices are the screen's "⏺ Usage limit reached · continuing automatically at …"
-// above, and the lines under the input box its status while it waits, however the limit was reached; the
-// screen of the grace path itself was not captured.
+// above, and the lines under the input box its status while it waits, however the limit was reached.
+//
+// The screen of the grace path, seen on 2026-10-17 in a real Claude Code 2.1.302 signed in to a Max
+// plan, whose requests went to a fake API: it arms the note on a response whose headers have
+// anthropic-ratelimit-unified-status and anthropic-ratelimit-unified-grace-5h-utilization (or
+// grace-7d-utilization) above 0, unless extra usage covers it (anthropic-ratelimit-unified-overage-status
+// allowed), and adds the note to the turn's next request after a tool call, its words from the
+// tengu_lantern_wick_* feature flags.
+// While the turn goes on, the line under the input box is "⚠ Usage limit reached · wrapping up · limit
+// resets 2:50pm · clau.de/wrap-up · /upgrade to keep using Claude Code", with no words under a prompt nor
+// notice above it. Once the worker has ended its turn, its last message is followed by the notice "⏺ Usage
+// limit reached · continuing automatically at 2:50pm · esc to cancel", and under the input box "⚠ Usage
+// limit reached · limit resets 2:50pm · clau.de/wrap-up" and "Continuing automatically at 2:50pm · esc to
+// cancel". At the reset (a minute or so after it, in that run) the screen shows "⏺ Usage limit reset ·
+// continuing automatically", not the prompt it sends, and the turn that prompt starts.
 
 // limitWords are how Claude Code's words of the account's usage limit start: the limit hit, or the
 // usage credits that go on past it spent. Its other words that start "You've", such as "You've
