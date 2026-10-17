@@ -38,7 +38,7 @@ func RunPath(name string) string {
 // worktree of its own, has its hooks write their records, apart from a ticket's and each other's.
 const (
 	ProbeRun     = "probe-session"     // the environment probe's worker
-	InterviewRun = "interview-session" // the feature interview's claude
+	InterviewRun = "interview-session" // the claude of a breakdown with the user: a feature's, or a spec's refinement
 )
 
 // OpenRun opens an os.Root at the checkout dir and makes .orchestra/run/ in it, for the caller to

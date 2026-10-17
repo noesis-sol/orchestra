@@ -332,16 +332,13 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 		}
 	}
 	filedCode := dispatch.ExitOK
-	switch off := interviewOff(*cfg); { // the run is scoped to the epic filed
+	switch { // the run is scoped to the epic filed
 	case cfg.specFile != "": // broken down from the spec, once it is committed (spec.go)
 		cfg.Ticket, filedCode = s.runSpec(ctx)
 	case cfg.Feature == "":
-	case typed && off == "": // talked through with the user, and filed, in a Claude Code session
-		cfg.Ticket, filedCode = runInterview(ctx, s.stops, *cfg, s.holder.Pane, s.log, e.stdin, e.stdout, e.stderr)
-	default: // planned by the organs, and filed by orchestra
-		if typed {
-			fmt.Fprintf(e.stdout, "orchestra can't talk the feature through with claude (%s): its organs plan it.\n", off)
-		}
+	case typed: // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
+		cfg.Ticket, filedCode = s.talkFeature(ctx)
+	default: // --feature: planned by the organs, and filed by orchestra
 		cfg.Ticket, filedCode = runFeature(ctx, s.stops, *cfg, s.log, e.stdin, e.stdout, e.stderr)
 	}
 	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: buildVersion(), Repo: cfg.Repo,

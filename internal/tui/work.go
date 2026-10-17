@@ -59,7 +59,7 @@ func AskWork(
 		Field: huh.NewText().
 			Title("Describe the feature").
 			Description("What it should do, and why. claude then interviews you about it and files the tickets " +
-				"you agree on; orchestra runs them once you confirm. Alt+Enter or Ctrl+J starts a new line.").
+				"you agree on; orchestra then runs them. Alt+Enter or Ctrl+J starts a new line.").
 			Lines(6).
 			Validate(func(v string) error {
 				if strings.TrimSpace(v) == "" {

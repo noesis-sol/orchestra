@@ -24,8 +24,8 @@ import (
 //	.orchestra/reports/           run reports
 //	.orchestra/run/               per-ticket scratch in each worktree (the launch prompt, the rules, the hooks);
 //	                              in the main checkout, the event stream (events.jsonl), the workers
-//	                              the last run left behind (state.json), and a feature interview's
-//	                              instructions and the epic it filed (feature.json)
+//	                              the last run left behind (state.json), and a breakdown's
+//	                              instructions and the epic it filed (feature.json, spec.json)
 //
 // The run lock is not among them: it is in the git directory (see LockRun).
 //

@@ -17,7 +17,7 @@ import (
 // A run in a terminal that nothing has told what to work on asks first: the current tickets, as a
 // run always did; a spec on this machine, run as --spec runs it (spec.go), refined with claude first
 // if asked, as --refine has it; or a new feature, which the user describes and then talks through
-// with claude, which files its tickets (interview.go). It asks once the startup checks have passed
+// with claude, which files its tickets (feature_refine.go). It asks once the startup checks have passed
 // and the run lock is held, so that an answer is never followed by "orchestra cannot start", but for
 // a spec git can't commit where it would be kept.
 

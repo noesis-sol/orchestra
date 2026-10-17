@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
@@ -20,7 +22,7 @@ import (
 // paneRequest is the feature typed at the question: a list, on two lines.
 const paneRequest = "- Add a --json flag\n- to the list command"
 
-// fakePanes is Herdr for the interview in a pane, orchestra's being w1:p1. The interview's pane,
+// fakePanes is Herdr for a session in a pane (a feature's interview, a spec's refinement), orchestra's being w1:p1. The interview's pane,
 // w1:p2 once split off it, holds what each read of its agent finds in turn, the last one for every
 // read after; "" is a read Herdr fails. step, if set, is called at the start of each read, numbered
 // from 1: it plays what claude and the user do meanwhile, such as filing the feature, closing the
@@ -91,11 +93,29 @@ func (filedEpic) Show(_ context.Context, id string) (dispatch.Ticket, error) {
 	return dispatch.Ticket{ID: "f-1", Title: "JSON output", IssueType: "epic"}, nil
 }
 
-func (filedEpic) Children(context.Context, string) ([]dispatch.Ticket, []dispatch.Link, error) {
+func (filedEpic) Children(_ context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	if id != "f-1" {
+		return nil, nil, nil
+	}
 	return []dispatch.Ticket{
-		{ID: "f-1.1", Title: "Add the JSON encoder", IssueType: "feature"},
-		{ID: "f-1.2", Title: "Add the --json flag", IssueType: "task"},
+		{ID: "f-1.1", Title: "Add the JSON encoder", IssueType: "feature", AcceptanceCriteria: "It encodes.",
+			Metadata: json.RawMessage(`{"files":["enc.go"]}`)},
+		{ID: "f-1.2", Title: "Add the --json flag", IssueType: "task", AcceptanceCriteria: "It prints JSON.",
+			Metadata: json.RawMessage(`{"files":["main.go"]}`)},
 	}, []dispatch.Link{{Blocker: "f-1.1", Blocked: "f-1.2"}}, nil
+}
+
+func (filedEpic) Cycles(context.Context) ([][]string, error) { return nil, nil }
+
+// featureRepo is a git repository with nothing to commit, and a claude on PATH, which a feature's
+// session needs there but the tests on fakePanes never run.
+func featureRepo(t *testing.T) string {
+	t.Helper()
+	repo, _ := gitRepo(t)
+	tools := t.TempDir()
+	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return repo
 }
 
 // fileFeature names the epic f-1 in the repository's feature.json, as the interview does once it
@@ -108,9 +128,9 @@ func fileFeature(t *testing.T, repo string) {
 	}
 }
 
-// paneOutcome is how an interview in a pane ended: what run returned, what orchestra showed on its
-// output and its error output, and the instructions the terminal session was given if orchestra
-// fell back to it ("" if it didn't).
+// paneOutcome is how a feature's interview in a pane ended: what run returned, what orchestra showed
+// on its output and its error output, and the first message the terminal session was given if
+// orchestra fell back to it ("" if it didn't).
 type paneOutcome struct {
 	epic        string
 	code        int
@@ -119,41 +139,43 @@ type paneOutcome struct {
 	closedFirst bool // the interview's pane was closed before the terminal session started
 }
 
-// interviewInPane runs the feature interview for paneRequest in repo, a git repository with nothing
-// to commit, its session in a pane on panes, and answers the question with answer. The terminal
-// session it may fall back to files the feature. ctx is the interview's, which a stop signal ends.
-func interviewInPane(ctx context.Context, t *testing.T, repo string, panes *fakePanes, answer string) paneOutcome {
+// interviewInPane talks the feature paneRequest through in repo (featureRepo), its session in a
+// pane on panes, with bd as filedEpic has it. The terminal session it may fall back to files the
+// feature. ctx is the interview's, which a stop signal ends.
+func interviewInPane(ctx context.Context, t *testing.T, repo string, panes *fakePanes) paneOutcome {
 	t.Helper()
-	return interviewInPaneOn(ctx, t, repo, panes, answer, 0)
+	return interviewInPaneOn(ctx, t, repo, panes, 0)
 }
 
 // interviewInPaneOn is interviewInPane with orchestra's output a terminal width columns wide, on
 // which orchestra's pane shows the interview's progress; 0 is output that isn't a terminal.
-func interviewInPaneOn(
-	ctx context.Context, t *testing.T, repo string, panes *fakePanes, answer string, width int,
-) paneOutcome {
+func interviewInPaneOn(ctx context.Context, t *testing.T, repo string, panes *fakePanes, width int) paneOutcome {
 	t.Helper()
 	var o paneOutcome
 	var out, errOut strings.Builder
-	fallback := func(_ context.Context, prompt string) error {
-		o.fellBack, o.closedFirst = prompt, slices.Contains(panes.calls, "close w1:p2")
-		fileFeature(t, repo)
-		return nil
-	}
-	session := paneSession{panes: panes, pane: "w1:p1", repo: repo, request: paneRequest, fallback: fallback,
-		out: &out, err: &errOut}
+	b := refineBreakdown{repo: repo, pane: "w1:p1", panes: panes, epics: filedEpic{}, out: &out, err: &errOut,
+		terminal: func(_ context.Context, message string, m project.RefineMode) error {
+			if m != project.RefineFeature {
+				t.Errorf("the terminal session is in mode %v, not a feature's", m)
+			}
+			o.fellBack, o.closedFirst = message, slices.Contains(panes.calls, "close w1:p2")
+			fileFeature(t, repo)
+			return nil
+		}}
 	if width > 0 {
-		session.progress = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
-		session.tracker = filedEpic{}
+		b.line = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
 	}
-	o.epic, o.code = featureInterview{
-		featureIO: featureIO{request: paneRequest, repo: repo, in: strings.NewReader(answer), out: &out, err: &errOut},
-		session:   session.talk,
-		tracker:   filedEpic{},
-	}.run(ctx)
+	o.epic, o.code = featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: filedEpic{}, out: &out,
+		err: &errOut}.run(ctx)
 	o.out, o.err = out.String(), errOut.String()
 	return o
 }
+
+// paneFiled is what orchestra's pane says once the interview has handed the epic f-1 back.
+const paneFiled = "filed the feature as f-1, JSON output (2 tickets)\n"
+
+// paneMessage is the interview's first message, which brings in the description from its file.
+var paneMessage = featureLead + " @" + project.RunPath("feature-request.md")
 
 // paneLine is what orchestra's pane says while the interview runs in the pane beside it.
 const paneLine = "Talking the feature through with claude in the pane on the right, which closes once the " +
@@ -163,9 +185,10 @@ const paneLine = "Talking the feature through with claude in the pane on the rig
 // checkout: claude starts there with the instructions and a first message, one line, that brings in
 // the description, every line of which is in the file it names. orchestra's pane says where the
 // interview is and waits through claude's turns. Once claude has filed the feature and left, the
-// pane is closed and the plan and the question follow in orchestra's pane, as on the terminal.
+// pane is closed, the epic is checked, and orchestra's pane says what was filed: the run starts on it
+// without asking.
 func TestPaneInterviewFilesTheFeature(t *testing.T) {
-	repo, _ := gitRepo(t)
+	repo := featureRepo(t)
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{
 			agent: []dispatch.AgentState{dispatch.StateGone, dispatch.StateWorking, "", dispatch.StateBlocked,
@@ -176,14 +199,14 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 				}
 			},
 		}
-		o := interviewInPane(t.Context(), t, repo, panes, "y\n")
+		o := interviewInPane(t.Context(), t, repo, panes)
 		if o.epic != "f-1" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 			t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 		}
 		if want := []string{"split w1:p1 " + repo, "launch w1:p2 claude", "close w1:p2"}; !slices.Equal(panes.calls, want) {
 			t.Errorf("Herdr was asked to %q, want %q", panes.calls, want)
 		}
-		prompt := filepath.Join(repo, project.RunPath("interview-prompt.md"))
+		prompt := filepath.Join(repo, project.RunPath("spec-prompt.md"))
 		request := project.RunPath("feature-request.md")
 		if want := []string{"--append-system-prompt-file", prompt, "--",
 			"Here is the feature I'd like to talk through: @" + request}; !slices.Equal(panes.launched, want) {
@@ -194,27 +217,23 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 		} else if text, _ := unpasted(t, strings.TrimSuffix(string(b), "\n")); text != paneRequest {
 			t.Errorf("%s holds %q", request, b)
 		}
-		if b, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(b), "# Feature interview") {
-			t.Errorf("the instructions at %s: %v", prompt, err)
+		if b, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(b), "# Feature breakdown") ||
+			!strings.Contains(string(b), ".orchestra/run/feature.json") ||
+			!strings.Contains(string(b), "it closes this session by itself") {
+			t.Errorf("the instructions at %s aren't a feature's in a pane (%v):\n%s", prompt, err, b)
 		}
-		if !strings.HasPrefix(o.out, paneLine) || strings.Contains(o.out, "Type /exit to come back.") {
-			t.Errorf("orchestra's pane doesn't start with the pane's line:\n%s", o.out)
-		}
-		for _, want := range []string{"Epic: f-1 JSON output\n", "f-1.1  feature", "f-1.2  task", "after: f-1.1\n",
-			"Start the run on f-1 (2 tickets)? [y/N] "} {
-			if !strings.Contains(o.out, want) {
-				t.Errorf("orchestra's pane lacks %q:\n%s", want, o.out)
-			}
+		if o.out != paneLine+paneFiled {
+			t.Errorf("orchestra's pane showed:\n%s\nwant:\n%s", o.out, paneLine+paneFiled)
 		}
 	})
 }
 
 // An interview that files nothing ends as on the terminal, its pane closed once claude has left.
 func TestPaneInterviewThatFilesNothing(t *testing.T) {
-	repo, _ := gitRepo(t)
+	repo := featureRepo(t)
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle, dispatch.StateWorking, dispatch.StateGone}}
-		o := interviewInPane(t.Context(), t, repo, panes, "")
+		o := interviewInPane(t.Context(), t, repo, panes)
 		if o.epic != "" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 			t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 		}
@@ -228,7 +247,7 @@ func TestPaneInterviewThatFilesNothing(t *testing.T) {
 }
 
 // The user can close the interview's pane rather than type /exit, even while claude starts: that
-// ends the interview with what it filed, at once, without falling back to the terminal.
+// ends the interview with what it handed back, at once, without falling back to the terminal.
 func TestPaneInterviewClosedByTheUser(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -239,7 +258,7 @@ func TestPaneInterviewClosedByTheUser(t *testing.T) {
 		{"before claude appeared", dispatch.StateGone, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				var panes *fakePanes
 				panes = &fakePanes{agent: []dispatch.AgentState{tc.agent}, step: func(read int) {
@@ -251,7 +270,7 @@ func TestPaneInterviewClosedByTheUser(t *testing.T) {
 					}
 				}}
 				started := time.Now()
-				o := interviewInPane(t.Context(), t, repo, panes, "n\n")
+				o := interviewInPane(t.Context(), t, repo, panes)
 				if o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 					t.Fatalf("exit %d, fell back %v; stderr:\n%s", o.code, o.fellBack != "", o.err)
 				}
@@ -260,7 +279,7 @@ func TestPaneInterviewClosedByTheUser(t *testing.T) {
 				}
 				want := noFeature
 				if tc.filed {
-					want = "Start it later with: orchestra --ticket f-1"
+					want = paneFiled
 				}
 				if !strings.Contains(o.out, want) {
 					t.Errorf("orchestra's pane lacks %q:\n%s", want, o.out)
@@ -283,7 +302,7 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 		{"while claude starts", dispatch.StateGone, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				ctx, stop := context.WithCancel(t.Context())
 				defer stop()
@@ -295,7 +314,7 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 						stop()
 					}
 				}}
-				o := interviewInPane(ctx, t, repo, panes, "y\n")
+				o := interviewInPane(ctx, t, repo, panes)
 				if o.epic != "" || o.code != dispatch.ExitInterrupted || o.fellBack != "" {
 					t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 				}
@@ -309,8 +328,8 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 				if last := panes.calls[len(panes.calls)-1]; last != "close w1:p2" {
 					t.Errorf("the interview's pane wasn't closed: %q", panes.calls)
 				}
-				if strings.Contains(o.out, "Start the run") {
-					t.Errorf("orchestra asked after the stop:\n%s", o.out)
+				if strings.Contains(o.out, "filed the feature") {
+					t.Errorf("orchestra went on after the stop:\n%s", o.out)
 				}
 			})
 		})
@@ -319,7 +338,7 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 
 // When the split fails, Herdr won't start claude in the new pane, or claude doesn't appear in it
 // within a minute, orchestra closes any pane it made, says why in one line, and hands claude its
-// terminal instead, with the same instructions; what that session files runs as before.
+// terminal instead, with the same first message; what that session files runs as before.
 func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -340,11 +359,11 @@ func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 			true, interviewStart},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				panes := tc.panes
 				started := time.Now()
-				o := interviewInPane(t.Context(), t, repo, &panes, "y\n")
+				o := interviewInPane(t.Context(), t, repo, &panes)
 				if o.epic != "f-1" || o.code != dispatch.ExitOK {
 					t.Fatalf("got %q, exit %d; stderr:\n%s", o.epic, o.code, o.err)
 				}
@@ -352,8 +371,8 @@ func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 					"terminal: " + tc.why + "\n"; o.err != want {
 					t.Errorf("stderr:\n%s\nwant:\n%s", o.err, want)
 				}
-				if want := filepath.Join(repo, project.RunPath("interview-prompt.md")); o.fellBack != want {
-					t.Errorf("the terminal session got the instructions at %q, want %q", o.fellBack, want)
+				if o.fellBack != paneMessage {
+					t.Errorf("the terminal session got the first message %q, want %q", o.fellBack, paneMessage)
 				}
 				if o.closedFirst != tc.paneMade || slices.Contains(panes.calls, "close w1:p2") != tc.paneMade {
 					t.Errorf("Herdr was asked to %q; closed before the terminal session: %v", panes.calls, o.closedFirst)
@@ -361,7 +380,7 @@ func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 				if waited := time.Since(started); waited < tc.minWaited || waited > tc.minWaited+5*time.Second {
 					t.Errorf("orchestra fell back after %v", waited)
 				}
-				if strings.Contains(o.out, paneLine) || !strings.Contains(o.out, "Start the run on f-1 (2 tickets)?") {
+				if o.out != paneFiled {
 					t.Errorf("orchestra's pane:\n%s", o.out)
 				}
 			})

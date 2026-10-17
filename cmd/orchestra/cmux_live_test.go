@@ -27,7 +27,7 @@ import (
 var _ = faketool.Func("claude", claudetest.Claude)
 
 // The interview opens claude in a terminal split to the right of orchestra's, with its hooks; once
-// claude has filed the feature and its turn has ended, the split closes, and orchestra's terminal
+// claude has handed the epic back and its turn has ended, the split closes, and orchestra's terminal
 // has the focus back.
 func TestCmuxInterviewInASplit(t *testing.T) {
 	app := cmuxtest.Start(t)
@@ -43,17 +43,14 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 	term := cmux.Terminal{Book: filepath.Join(repo, project.RunPath(cmux.BookName)), Own: app.Own}
 	var out, errOut strings.Builder
 	var split []string // orchestra's workspace's terminals, while claude talks the feature through
-	session := paneSession{panes: watchedPanes{term, func() {
-		split = app.Tree().Surfaces[app.Own]
-	}}, pane: app.OwnSurface, hooks: true, repo: repo, request: paneRequest,
-		fallback: func(context.Context, string) error {
+	b := refineBreakdown{repo: repo, pane: app.OwnSurface, hooks: true, epics: filedEpic{}, out: &out, err: &errOut,
+		panes: watchedPanes{term, func() { split = app.Tree().Surfaces[app.Own] }},
+		terminal: func(context.Context, string, project.RefineMode) error {
 			t.Error("the interview fell back to orchestra's terminal")
 			return nil
-		}, out: &out, err: &errOut}
-	epic, code := featureInterview{
-		featureIO: featureIO{request: paneRequest, repo: repo, in: strings.NewReader("y\n"), out: &out, err: &errOut},
-		session:   session.talk, tracker: filedEpic{},
-	}.run(t.Context())
+		}}
+	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: filedEpic{}, out: &out,
+		err: &errOut}.run(t.Context())
 	logged, _ := os.ReadFile(filepath.Join(claudeDir, "log")) // none reads as nothing
 	if epic != "f-1" || code != dispatch.ExitOK || errOut.Len() > 0 {
 		t.Fatalf("the interview filed %q, exit %d; stderr:\n%s\nclaude's log:\n%s", epic, code, errOut.String(), logged)

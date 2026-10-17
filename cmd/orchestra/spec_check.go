@@ -12,7 +12,8 @@ import (
 
 // The checks after a spec's breakdown, whichever breakdown it was (headless, or with the user), before
 // the run starts on its root epic: the root epic must be the spec's, and what else is amiss in the
-// tree filed is said, as orchestra runs it all the same.
+// tree filed is said, as orchestra runs it all the same. A feature's epic, which carries no spec's
+// metadata, has the checks that don't depend on it (checkFeature).
 
 // checkBreakdown checks the tree a breakdown filed for spec under root, as bd has it. root must be an
 // epic, and the spec's: one carrying another spec's metadata is an error. It sets the root epic's
@@ -110,9 +111,111 @@ func treeWarnings(root string, issues, under []dispatch.Ticket) []string {
 	}
 	add(outside, "issues carrying the spec's metadata outside "+root+", which the run leaves out")
 	add(unmarked, "issues under "+root+" without the spec's metadata, whose workers aren't pointed to the spec")
-	add(noFiles, "tickets under "+root+" without files metadata, whose files orchestra guesses")
-	add(noAcceptance, "tickets under "+root+" without acceptance criteria")
+	add(noFiles, noFilesUnder(root))
+	add(noAcceptance, noAcceptanceUnder(root))
 	return warnings
+}
+
+// noFilesUnder and noAcceptanceUnder say what the tickets a warning lists lack, under root.
+func noFilesUnder(root string) string {
+	return "tickets under " + root + " without files metadata, whose files orchestra guesses"
+}
+
+func noAcceptanceUnder(root string) string {
+	return "tickets under " + root + " without acceptance criteria"
+}
+
+// featureFiled is what a feature's session filed under its epic, as checkFeature finds it: the epic's
+// title, and the epics and tickets under it that aren't closed, unless bd couldn't list them.
+type featureFiled struct {
+	title          string
+	epics, tickets int
+	counted        bool
+}
+
+// counts is what the run's "filed" line says of the epics and tickets under the epic: " (2 tickets)",
+// " (1 epic, 3 tickets)" with child epics, nothing when they couldn't be counted.
+func (f featureFiled) counts() string {
+	switch {
+	case !f.counted:
+		return ""
+	case f.epics > 0:
+		return fmt.Sprintf(" (%s, %s)", plural(f.epics, "epic"), plural(f.tickets, "ticket"))
+	}
+	return " (" + plural(f.tickets, "ticket") + ")"
+}
+
+// checkFeature checks the tree a feature's session filed under epic, as bd has it, as checkBreakdown
+// checks a spec's but for what depends on the spec's metadata: epic must be an epic. The warnings say
+// what else is amiss: open tickets under it without files metadata or acceptance criteria, and blocks
+// cycles among them; and what couldn't be checked.
+func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (featureFiled, []string, error) {
+	t, err := bd.Show(ctx, epic)
+	switch {
+	case err != nil:
+		return featureFiled{}, nil, fmt.Errorf("can't read %s, the epic it named: %w", epic, err)
+	case t.IssueType != "epic":
+		return featureFiled{}, nil, fmt.Errorf("%s, which it named as the feature's epic, is a %s, not an epic", epic,
+			t.IssueType)
+	}
+	filed := featureFiled{title: t.Title}
+	under, err := openUnder(ctx, bd, epic)
+	if err != nil {
+		return filed, []string{"can't list the tickets under " + epic + ": " + dispatch.FirstLine(err.Error())}, nil
+	}
+	filed.counted = true
+	var noFiles, noAcceptance []string
+	for _, u := range under {
+		if u.IssueType == "epic" {
+			filed.epics++
+			continue
+		}
+		filed.tickets++
+		if len(dispatch.TicketFiles(u)) == 0 {
+			noFiles = append(noFiles, u.ID)
+		}
+		if strings.TrimSpace(u.AcceptanceCriteria) == "" {
+			noAcceptance = append(noAcceptance, u.ID)
+		}
+	}
+	var warnings []string
+	for _, w := range []struct {
+		ids  []string
+		what string
+	}{{noFiles, noFilesUnder(epic)}, {noAcceptance, noAcceptanceUnder(epic)}} {
+		if len(w.ids) > 0 {
+			warnings = append(warnings, fmt.Sprintf("%s (%d): %s", w.what, len(w.ids), idList(w.ids)))
+		}
+	}
+	cycles, err := bd.Cycles(ctx)
+	if err != nil {
+		return filed, append(warnings, "can't look for blocks cycles: "+dispatch.FirstLine(err.Error())), nil
+	}
+	return filed, append(warnings, cycleWarnings(epic, nil, under, cycles)...), nil
+}
+
+// openUnder is what isn't closed under the epic, at every level, with its text, as bd lists it: bd
+// lists one level at a time.
+func openUnder(ctx context.Context, bd epicTracker, epic string) ([]dispatch.Ticket, error) {
+	var all []dispatch.Ticket
+	seen := map[string]bool{epic: true}
+	for queue := []string{epic}; len(queue) > 0; queue = queue[1:] {
+		children, _, err := bd.Children(ctx, queue[0])
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range children {
+			if seen[c.ID] {
+				continue
+			}
+			seen[c.ID] = true
+			all = append(all, c)
+			if c.IssueType == "epic" {
+				queue = append(queue, c.ID)
+			}
+		}
+	}
+	return all, nil
 }
 
 // cycleWarnings are the warnings about the blocks cycles bd found (cycles) that hold an issue of the

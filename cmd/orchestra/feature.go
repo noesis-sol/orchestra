@@ -39,7 +39,7 @@ type featureTracker interface {
 	AddBlock(ctx context.Context, blocker, blocked string) error
 }
 
-// featureIO is what a feature run and a feature interview share: the request, the main checkout it
+// featureIO is what a feature run works with: the request, the main checkout it
 // is for, the log and the streams it talks on.
 type featureIO struct {
 	request  string

@@ -35,13 +35,13 @@ func progressLines(t *testing.T, out string) (before string, lines []string, aft
 // Under its fixed line, orchestra's pane says what claude is doing and how long the interview has
 // run, updated in place on each reading of Herdr's that the wait takes anyway: a reading that fails
 // keeps the state shown. Once claude has filed the feature the line names the epic, then, once bd
-// has given them, its title and tickets, until the interview's end. The line is gone before the
-// plan and the question, which look as they do without it.
+// has given them, its title and tickets, until the interview's end. The line is gone before what
+// was filed is said, which looks as it does without it.
 func TestPaneInterviewShowsItsProgress(t *testing.T) {
 	agent := []dispatch.AgentState{dispatch.StateWorking, dispatch.StateWorking, dispatch.StateBlocked, "",
 		dispatch.StateIdle, dispatch.StateDone, dispatch.StateWorking, dispatch.StateWorking, dispatch.StateDone}
 	interview := func(width int) (paneOutcome, int) {
-		repo, _ := gitRepo(t)
+		repo := featureRepo(t)
 		var o paneOutcome
 		var panes *fakePanes
 		synctest.Test(t, func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestPaneInterviewShowsItsProgress(t *testing.T) {
 					fileFeature(t, repo)
 				}
 			}}
-			o = interviewInPaneOn(t.Context(), t, repo, panes, "y\n", width)
+			o = interviewInPaneOn(t.Context(), t, repo, panes, width)
 		})
 		return o, panes.reads
 	}
@@ -84,7 +84,7 @@ func TestPaneInterviewShowsItsProgress(t *testing.T) {
 }
 
 // The line is cleared however the interview ends: claude leaving with nothing filed, a stop, or an
-// epic bd can't read, which the line names alone.
+// epic bd can't read, which the line names alone, and which orchestra won't run.
 func TestPaneInterviewProgressEnds(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -113,11 +113,11 @@ func TestPaneInterviewProgressEnds(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-			}, []string{"claude is working  1s", "claude is working  2s", "Filed f-2", "Filed f-2"}, dispatch.ExitOK,
-			noFeature + "\n"},
+			}, []string{"claude is working  1s", "claude is working  2s", "Filed f-2", "Filed f-2"}, dispatch.ExitSetup,
+			""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				ctx, stop := context.WithCancel(t.Context())
 				defer stop()
@@ -126,7 +126,7 @@ func TestPaneInterviewProgressEnds(t *testing.T) {
 						tc.step(t, repo, read, stop)
 					}
 				}}
-				o := interviewInPaneOn(ctx, t, repo, panes, "", 60)
+				o := interviewInPaneOn(ctx, t, repo, panes, 60)
 				if o.code != tc.code {
 					t.Fatalf("exit %d; stderr:\n%s", o.code, o.err)
 				}

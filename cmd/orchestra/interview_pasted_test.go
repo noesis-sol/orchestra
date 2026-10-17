@@ -1,9 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // pastedBlock is a description as pastedFeature gives it: between an opening and a closing
@@ -29,15 +33,19 @@ func unpasted(t *testing.T, block string) (text, id string) {
 }
 
 // terminalMessage checks that args, the arguments the fake claude recorded one per line in
-// brackets, end with -- and the interview's first message on the terminal: featureLead, then the
-// description in its pasted_content block. It returns the description.
-func terminalMessage(t *testing.T, args string) string {
+// brackets, end with -- and the interview's first message: featureLead, then the file in repo that
+// holds the description in its pasted_content block. It returns the description.
+func terminalMessage(t *testing.T, repo, args string) string {
 	t.Helper()
-	_, message, ok := strings.Cut(args, "[--]\n["+featureLead+"\n\n")
-	if !ok || !strings.HasSuffix(message, "]\n") {
+	file := project.RunPath("feature-request.md")
+	if !strings.HasSuffix(args, "[--]\n["+featureLead+" @"+file+"]\n") {
 		t.Fatalf("claude ran with:\n%s", args)
 	}
-	text, _ := unpasted(t, strings.TrimSuffix(message, "]\n"))
+	b, err := os.ReadFile(filepath.Join(repo, file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := unpasted(t, strings.TrimSuffix(string(b), "\n"))
 	return text
 }
 

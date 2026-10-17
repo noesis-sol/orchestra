@@ -129,7 +129,7 @@ func refineSpec(ctx context.Context, t *testing.T, repo string, panes *fakePanes
 	var out, errOut strings.Builder
 	spec := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), refineSpecText)
 	b := refineBreakdown{repo: repo, panes: panes, tracker: tree, out: &out, err: &errOut,
-		terminal: func(_ context.Context, message string, _ bool) error {
+		terminal: func(_ context.Context, message string, _ project.RefineMode) error {
 			o.terminal = message
 			if onTerminal != nil {
 				onTerminal()
@@ -403,7 +403,7 @@ func TestRefineOnTheTerminal(t *testing.T) {
 func TestRefineNeedsATerminal(t *testing.T) {
 	repo := t.TempDir()
 	var out strings.Builder
-	err := refineOnTerminal(t.Context(), nil, repo, "Break the spec down", false, strings.NewReader(""), &out,
+	err := refineOnTerminal(t.Context(), nil, repo, "Break the spec down", project.RefineSpec, strings.NewReader(""), &out,
 		&out)
 	if !errors.Is(err, errRefineNeedsTerminal) || out.Len() > 0 {
 		t.Errorf("got %v; output:\n%s", err, out.String())

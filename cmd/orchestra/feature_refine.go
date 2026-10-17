@@ -1,0 +1,224 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/organ"
+	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tui"
+)
+
+// A feature typed at the start of a run ("New feature", see work.go) is talked through with the user
+// by the spec's refinement session (refineBreakdown, spec_refine.go), in the Feature mode of the spec
+// breakdown's instructions (internal/project's spec-prompt.md): an interactive Claude Code session in
+// the main checkout, in a pane beside orchestra's or on its terminal, whatever agent the workers are.
+// Its first message brings the description in from a file. Claude interviews the user until they
+// share an understanding of the feature, files it as an epic and its tickets once the user agrees,
+// and hands the epic back in .orchestra/run/feature.json. orchestra then checks the epic as it checks
+// a spec's tree (checkFeature), says what was filed, and starts the run on it without asking.
+// --feature itself still has the screen and plan organs plan the feature (feature.go).
+
+// featureLead opens the session's first message, before the file that holds the description.
+const featureLead = "Here is the feature I'd like to talk through:"
+
+// pastedFeature is the feature's description as the session's first message brings it in: between
+// an opening and a closing pasted_content tag carrying the same random ID, each tag on its own line.
+// The description is often pasted from an issue or a web page, and Claude Code tags only what is
+// pasted into its own input box; the session's instructions say the text in the tags may carry
+// instructions the user didn't write. The ID is drawn once the description is known, and drawn
+// again while the description holds it, so no text in it can close the block early.
+func pastedFeature(request string) string {
+	id := organ.EvidenceID()
+	for strings.Contains(request, id) {
+		id = organ.EvidenceID()
+	}
+	return "<pasted_content id=\"" + id + "\">\n" + strings.Trim(request, "\n") + "\n</pasted_content id=\"" + id + "\">"
+}
+
+// noFeature is what orchestra says when the session handed no feature back to run.
+const noFeature = "No feature was filed; nothing to run."
+
+// errFeatureNeedsTerminal is a feature's session's error where it would take orchestra's terminal
+// and there is none to take: the feature is the user's to talk through.
+var errFeatureNeedsTerminal = errors.New("talking the feature through needs you at a terminal, and orchestra's " +
+	"input or output isn't one: orchestra --spec <file> breaks a request written to a file down unattended")
+
+// featureEpicTracker is bd as a typed feature reads the epic its session handed back: the epic, the
+// tickets under it, and the blocks cycles.
+type featureEpicTracker interface {
+	epicTracker
+	Cycles(ctx context.Context) ([][]string, error)
+}
+
+// featureTalk is a typed feature's step before its loop: talked through and filed in its session,
+// then checked.
+type featureTalk struct {
+	request   string // the feature's description, as typed
+	repo      string // the main checkout
+	breakdown refineBreakdown
+	tracker   featureEpicTracker
+	log       *dispatch.Log // nil in tests
+	out, err  io.Writer
+}
+
+// talkFeature talks the feature typed at the start of the run s through with the user, in a session
+// that files it, checks the epic it hands back, and returns its ID, which the run is then scoped to.
+// When there is nothing to run it returns "" and the exit code; what happened has been reported.
+func (s *session) talkFeature(ctx context.Context) (string, int) {
+	// SIGTERM and SIGHUP stop the session as they stop the run; Ctrl+C does too, except while the
+	// session has the terminal.
+	ctx, stop := s.stops.context(ctx)
+	defer stop()
+	c := s.cfg
+	return featureTalk{
+		request: c.Feature, repo: c.Repo, breakdown: newRefineBreakdown(s), tracker: beads.Tracker{Repo: c.Repo},
+		log: s.log, out: s.e.stdout, err: s.e.stderr,
+	}.run(ctx)
+}
+
+func (f featureTalk) run(ctx context.Context) (string, int) {
+	if why := organ.Unavailable("claude"); why != "" {
+		fmt.Fprintf(f.err, "orchestra can't talk the feature through: it needs Claude Code, and %s.\n", why)
+		f.logLine("FEATURE not talked through: " + why)
+		return "", dispatch.ExitSetup
+	}
+	switch code := cleanCheckout(ctx, f.repo, f.err); code {
+	case dispatch.ExitOK:
+	case dispatch.ExitInterrupted:
+		return "", f.stopped("")
+	default:
+		return "", code
+	}
+	f.logLine("FEATURE interview: " + dispatch.FeatureLine(f.request))
+	epic, err := f.breakdown.talkFeature(ctx, f.request)
+	switch {
+	case ctx.Err() != nil:
+		return "", f.stopped(epic)
+	case errors.Is(err, errNotHandedBack):
+		fmt.Fprintln(f.out, noFeature)
+		f.logLine("FEATURE interview filed nothing")
+		return "", dispatch.ExitOK
+	case err != nil:
+		detail := tui.Printable(dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(f.err, "orchestra couldn't talk the feature through:", detail)
+		f.logLine("FEATURE not talked through: " + detail)
+		if errors.Is(err, errFeatureNeedsTerminal) {
+			return "", dispatch.ExitSetup
+		}
+		return "", dispatch.ExitTool
+	}
+
+	filed, warnings, err := checkFeature(ctx, f.tracker, epic)
+	for _, w := range warnings {
+		w = planLine(w)
+		fmt.Fprintln(f.err, "warning: "+w)
+		f.logLine("FEATURE warning: " + w)
+	}
+	switch {
+	case ctx.Err() != nil:
+		return "", f.stopped(epic)
+	case err != nil:
+		detail := tui.Printable(dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(f.err, "orchestra won't run what the interview handed back:", detail)
+		f.logLine("FEATURE not run: " + detail)
+		return "", dispatch.ExitSetup
+	}
+	fmt.Fprintf(f.out, "filed the feature as %s, %s%s\n", epic, planLine(filed.title), filed.counts())
+	f.logLine(fmt.Sprintf("FEATURE interview filed epic %s%s: %s", epic, filed.counts(),
+		dispatch.FeatureLine(f.request)))
+	return epic, dispatch.ExitOK
+}
+
+// stopped reports that a stop signal ended the feature's session, or what came after it, before the
+// run started, naming the epic it filed, if it got that far, and returns the exit code.
+func (f featureTalk) stopped(epic string) int {
+	fmt.Fprintln(f.err, "orchestra: stopped before the run started.")
+	if epic != "" {
+		fmt.Fprintf(f.err, "The interview filed %s; start the run on it with: orchestra --ticket %s\n", epic, epic)
+	}
+	return dispatch.ExitInterrupted
+}
+
+// logLine writes text to the run's log, if there is one.
+func (f featureTalk) logLine(text string) {
+	if f.log != nil {
+		f.log.Line(time.Now(), text)
+	}
+}
+
+// talkFeature runs the session that talks the feature request through with the user, in Feature
+// mode: in a pane split off orchestra's when it runs in one, else on orchestra's terminal. It returns
+// the epic the session handed back. Stopped, it returns the epic handed back so far, if any; ended by
+// the user without a hand-back, or with one orchestra can't read (said on b.err), errNotHandedBack.
+func (b refineBreakdown) talkFeature(ctx context.Context, request string) (string, error) {
+	prompt, err := project.WriteRefinePrompt(b.repo, project.RefineFeature)
+	if err != nil {
+		return "", fmt.Errorf("cannot write the session's instructions: %w", err)
+	}
+	// One line, which brings the description in: Claude Code attaches a file named after @ to the
+	// message, as the user's own message would, and Herdr types claude's command into the pane's
+	// shell, which takes no argument with line breaks.
+	file, err := project.WriteFeatureRequest(b.repo, pastedFeature(request))
+	if err != nil {
+		return "", fmt.Errorf("cannot write the description for it: %w", err)
+	}
+	message := featureLead + " @" + file
+	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, project.RefineFeature) }
+	session := terminal
+	if b.pane != "" {
+		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, fallback: terminal,
+			out: b.out, err: b.err, progress: b.line, about: featureSubject{first: message, tracker: b.epics}}.talk
+	}
+	err = session(ctx, prompt)
+	epic, fileErr := project.FiledFeature(b.repo)
+	var exit *exec.ExitError
+	switch {
+	case ctx.Err() != nil:
+		return epic, ctx.Err()
+	case errors.As(err, &exit):
+		fmt.Fprintln(b.err, "claude ended with", exit) // it may have handed the epic back all the same
+	case err != nil:
+		return "", err
+	}
+	switch {
+	case errors.Is(fileErr, project.ErrNoFeature):
+		return "", errNotHandedBack
+	case fileErr != nil:
+		fmt.Fprintln(b.err, "orchestra can't read the epic the interview handed back:", fileErr)
+		return "", errNotHandedBack
+	}
+	return epic, nil
+}
+
+// featureSubject is a feature's session as the subject of a session in a pane: its first message,
+// and bd, which has the title and tickets of the epic the session hands back.
+type featureSubject struct {
+	first   string
+	tracker epicTracker
+}
+
+func (f featureSubject) message(string) (string, error) { return f.first, nil }
+
+func (featureSubject) handedBack(repo string) (string, bool) {
+	epic, err := project.FiledFeature(repo)
+	return epic, err == nil // a file that names no epic hands nothing back: /exit ends that session
+}
+
+func (featureSubject) name() string { return "the interview" }
+
+func (featureSubject) inPane() string {
+	return "Talking the feature through with claude in the pane on the right, which closes once the feature is " +
+		"filed. Type /exit there to leave without filing; Ctrl+C here stops."
+}
+
+func (f featureSubject) shown(line *tui.InterviewLine, began time.Time) paneShown {
+	return &interviewShown{line: line, tracker: f.tracker, began: began}
+}

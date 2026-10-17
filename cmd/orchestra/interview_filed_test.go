@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -14,7 +13,7 @@ import (
 
 // Once claude has filed the feature, its feature.json naming the epic, and its turn is over, idle
 // or done as Herdr reads it after a turn, orchestra closes the interview's pane by itself, which
-// ends claude, and shows the plan and the question: nobody types /exit. claude writes the file mid-
+// ends claude, and says what was filed: nobody types /exit. claude writes the file mid-
 // turn, while it still works, waits on a permission answer and goes on to tell the user the feature
 // is filed: the pane stays open through all that. A turn's end Herdr reports as the file appears
 // may be the turn before's, read late: the pane is closed only on a reading taken after the file
@@ -35,7 +34,7 @@ func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
 			dispatch.StateWorking, dispatch.StateIdle}, 4, 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				var panes *fakePanes
 				panes = &fakePanes{agent: tc.agent, step: func(read int) {
@@ -46,7 +45,7 @@ func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
 						t.Fatalf("orchestra still waits for the interview at read %d; Herdr was asked to %q", read, panes.calls)
 					}
 				}}
-				o := interviewInPane(t.Context(), t, repo, panes, "y\n")
+				o := interviewInPane(t.Context(), t, repo, panes)
 				if o.epic != "f-1" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 					t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 				}
@@ -56,13 +55,8 @@ func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
 				if want := []string{"split w1:p1 " + repo, "launch w1:p2 claude", "close w1:p2"}; !slices.Equal(panes.calls, want) {
 					t.Errorf("Herdr was asked to %q, want %q", panes.calls, want)
 				}
-				if !strings.HasPrefix(o.out, paneLine) {
-					t.Errorf("orchestra's pane doesn't start with the pane's line:\n%s", o.out)
-				}
-				for _, want := range []string{"Epic: f-1 JSON output\n", "Start the run on f-1 (2 tickets)? [y/N] "} {
-					if !strings.Contains(o.out, want) {
-						t.Errorf("orchestra's pane lacks %q:\n%s", want, o.out)
-					}
+				if o.out != paneLine+paneFiled {
+					t.Errorf("orchestra's pane showed:\n%s", o.out)
 				}
 			})
 		})
@@ -76,11 +70,11 @@ func TestPaneInterviewWithoutAFeatureWaitsForClaudeToLeave(t *testing.T) {
 		name, file, err string
 	}{
 		{"no feature.json", "", ""},
-		{"one that names no epic", "{}\n", "orchestra can't read the feature the interview filed: " +
+		{"one that names no epic", "{}\n", "orchestra can't read the epic the interview handed back: " +
 			project.RunPath(project.FeatureName) + " names no epic\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _ := gitRepo(t)
+			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
 				var panes *fakePanes
 				panes = &fakePanes{
@@ -98,7 +92,7 @@ func TestPaneInterviewWithoutAFeatureWaitsForClaudeToLeave(t *testing.T) {
 						}
 					},
 				}
-				o := interviewInPane(t.Context(), t, repo, panes, "")
+				o := interviewInPane(t.Context(), t, repo, panes)
 				if o.epic != "" || o.code != dispatch.ExitOK || o.err != tc.err || o.fellBack != "" {
 					t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 				}

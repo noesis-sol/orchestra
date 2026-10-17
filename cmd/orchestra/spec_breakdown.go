@@ -23,7 +23,7 @@ import (
 
 // The headless breakdown (orchestra --spec without --refine) takes the spec as complete and final,
 // with nobody there to ask: claude -p in the main checkout, with the user's own Claude Code setup
-// (the project's CLAUDE.md and settings, as the feature interview has), breaks it down. Its
+// (the project's CLAUDE.md and settings, as a feature's session has), breaks it down. Its
 // instructions (internal/project's spec-prompt.md) are appended to its system prompt; its first
 // message names the committed spec. It reads with Read, Glob, Grep and Agent, files the tickets with
 // bd through Bash, which runs nothing else but read-only git, and answers with the root epic and the

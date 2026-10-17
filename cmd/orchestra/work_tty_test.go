@@ -93,48 +93,6 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	}
 }
 
-// In a terminal, a run with nothing said asks what to work on. A run whose workers aren't Claude
-// Code can't talk the feature described through with claude (interview_tty_test.go), so it says
-// so and the feature goes to the --feature flow: screened, planned, shown, and filed if confirmed.
-// From the answer on, the run lock names the feature, as it does one given with --feature.
-func TestRunAsksWhatToWorkOnAndPlansTheDescribedFeature(t *testing.T) {
-	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)
-	term, repo, exit := runOnTerminal(t, "--agent", "codex")
-	term.waitFor(t, "> Current tickets: none, all done")
-	term.typeKeys(t, pickFeature, false)
-	term.waitFor(t, describing)
-	term.typeKeys(t, "Add a --json flag"+keyNewLine+"to the list command"+keyEnter, false)
-	term.waitFor(t, "File these 2 tickets and start the run? [y/N]")
-	if h, held, err := project.RunHolder(t.Context(), repo); err != nil || !held || h.PID != os.Getpid() ||
-		h.Feature != "Add a --json flag\nto the list command" {
-		t.Errorf("the run lock while the plan is shown: %+v, held %v, %v", h, held, err)
-	}
-	term.typeKeys(t, "n\n", false)
-	code, stderr := exit()
-	out := strings.ReplaceAll(term.screen.String(), "\r\n", "\n")
-	if code != dispatch.ExitOK || stderr != "" {
-		t.Errorf("exit %d, stderr:\n%s", code, stderr)
-	}
-	for _, want := range []string{"New feature:\n  Add a --json flag\n  to the list command\n",
-		"orchestra can't talk the feature through with claude (the workers' agent is codex): its organs plan it.\n",
-		"◆ Request screened", "Epic: JSON output", "Nothing was filed."} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the terminal lacks %q:\n%s", want, out)
-		}
-	}
-	if in := read(t, filepath.Join(dir, "in.1")); !strings.Contains(in, "Add a --json flag\nto the list command") {
-		t.Errorf("the screen organ wasn't given the description:\n%s", in)
-	}
-	// The count comes from the run's own ready query.
-	if calls := read(t, filepath.Join(dir, "bd-calls")); !strings.HasPrefix(calls,
-		"ready|--json|--limit|0|--exclude-label|human|--exclude-type|epic|\n") {
-		t.Errorf("bd calls:\n%s", calls)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "bd-n")); !os.IsNotExist(err) {
-		t.Errorf("bd filed something: %v", err)
-	}
-}
-
 // Esc at the question ends orchestra with nothing done: nothing screened, no run recorded.
 func TestRunStoppedAtTheQuestionDoesNothing(t *testing.T) {
 	dir := featureTools(t, featureScreenOK, `{"type":"result","is_error":false,"structured_output":`+featurePlanJSON+`}`, 0)

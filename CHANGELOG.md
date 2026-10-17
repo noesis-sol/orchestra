@@ -20,6 +20,22 @@ All notable changes to orchestra are documented here. The format follows
   at the account's usage limit`) starts the hold when the run has none, and
   workers' standing rules say to commit and stop at the limit, without
   deferring or closing the ticket for it.
+### Changed
+
+- A feature typed at the start (**New feature**) is talked through in the
+  same Claude Code session as a spec with `--refine`, with the spec
+  breakdown's instructions in a feature mode: the same filing rules, and the
+  same checks of what it files (the epic handed back must be an epic; open
+  tickets under it without files metadata or acceptance criteria, and blocks
+  cycles among them, are warnings). Once it hands the epic back, orchestra
+  says what was filed and starts the run on it without asking: the plan shown
+  and the "Start the run on …?" question are gone. With workers of another
+  agent the feature is still talked through with Claude Code; without
+  `claude`, the run ends saying so, exit 2, rather than have the organs plan
+  it. With neither a pane nor a terminal for the session, the run ends with
+  exit 2 before anything is filed, naming `orchestra --spec <file>` as the
+  way to break a request written to a file down unattended. The feature
+  interview's own instructions (`.orchestra/run/interview-prompt.md`) are gone.
 
 ## [0.8.0] - 2026-10-16
 

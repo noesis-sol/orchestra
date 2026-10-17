@@ -20,12 +20,13 @@ import (
 
 // A spec run with --refine breaks the spec down with the user, who is there. The spec is mostly
 // settled, so the interactive Claude Code session asks only where it leaves open a decision that
-// changes what gets built and that neither the spec nor the repository answers, in the feature
-// interview's rounds; then it sums up the epics and tickets it will file, files them once the user
-// agrees, with the headless breakdown's rules (the refine sections of internal/project's
-// spec-prompt.md), and hands the root epic back in .orchestra/run/spec.json, the one file it writes.
-// The session runs as the feature interview's does: in a pane split off orchestra's, to its right
-// (a paneSession about the spec), or, when that can't be done, on orchestra's own terminal. Once
+// changes what gets built and that neither the spec nor the repository answers, in the interview's
+// rounds; then it sums up the epics and tickets it will file, files them once the user agrees, with
+// the headless breakdown's rules (the refine sections of internal/project's spec-prompt.md), and
+// hands the root epic back in .orchestra/run/spec.json, the one file it writes. The session runs in
+// a pane split off orchestra's, to its right (a paneSession about the spec), or, when that can't be
+// done, on orchestra's own terminal. A feature typed at the start is talked through in the same
+// session, in Feature mode (feature_refine.go). Once
 // spec.json names the root epic and claude's turn has ended, orchestra closes the pane, checks the
 // tree as after any breakdown (specRun.check), and starts the run on it without asking. Leaving the
 // session (/exit, or closing its pane) without that files nothing more and ends the run.
@@ -50,10 +51,11 @@ type refineBreakdown struct {
 	hooks bool // claude reports through hooks (see paneSession)
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
-	tracker specLister // bd, which counts what the session files, and has its root epic if it stops
-	// terminal runs the session on orchestra's own terminal, message its first message, in update mode
-	// with update: where orchestra runs in no pane, or the pane can't be opened.
-	terminal func(ctx context.Context, message string, update bool) error
+	tracker specLister  // bd, which counts what the session files, and has its root epic if it stops
+	epics   epicTracker // bd, which has the title and tickets of the epic a feature's session hands back
+	// terminal runs the session on orchestra's own terminal, message its first message, in mode m:
+	// where orchestra runs in no pane, or the pane can't be opened.
+	terminal func(ctx context.Context, message string, m project.RefineMode) error
 	log      *dispatch.Log // nil in tests
 	out, err io.Writer
 }
@@ -62,7 +64,8 @@ type refineBreakdown struct {
 // runs in one, its progress shown there unless the run is plain.
 func newRefineBreakdown(s *session) refineBreakdown {
 	c, e := s.cfg, s.e
-	b := refineBreakdown{repo: c.Repo, pane: s.holder.Pane, tracker: beads.Tracker{Repo: c.Repo}, log: s.log,
+	tracker := beads.Tracker{Repo: c.Repo}
+	b := refineBreakdown{repo: c.Repo, pane: s.holder.Pane, tracker: tracker, epics: tracker, log: s.log,
 		out: e.stdout, err: e.stderr}
 	if b.pane != "" {
 		b.panes, b.hooks = terminalOf(c), terminalNamed(c.Terminal).hookDriven
@@ -70,8 +73,8 @@ func newRefineBreakdown(s *session) refineBreakdown {
 	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
 		b.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
-	b.terminal = func(ctx context.Context, message string, update bool) error {
-		return refineOnTerminal(ctx, s.stops, c.Repo, message, update, e.stdin, e.stdout, e.stderr)
+	b.terminal = func(ctx context.Context, message string, m project.RefineMode) error {
+		return refineOnTerminal(ctx, s.stops, c.Repo, message, m, e.stdin, e.stdout, e.stderr)
 	}
 	return b
 }
@@ -88,7 +91,9 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 		return breakdownResult{}, fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
 	message := refineMessage(r.Spec, r.Update)
-	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, r.Update != nil) }
+	terminal := func(ctx context.Context, _ string) error {
+		return b.terminal(ctx, message, refineMode(r.Update != nil))
+	}
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, fallback: terminal,
@@ -141,21 +146,30 @@ func refineMode(update bool) project.RefineMode {
 	return project.RefineSpec
 }
 
-// refineOnTerminal runs the refinement on orchestra's own terminal, message its first message, in
-// update mode with update, until the user exits it. orchestra can't end the session there once it
-// has handed back, as it does in a pane, so its instructions, rewritten for the terminal, have claude
-// say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears with it.
-func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, message string, update bool, stdin io.Reader,
-	stdout, stderr io.Writer) error {
+// refineOnTerminal runs a breakdown with the user in mode m (a spec's refinement, or a feature's) on
+// orchestra's own terminal, message its first message, until the user exits it. orchestra can't end
+// the session there once it has handed back, as it does in a pane, so its instructions, rewritten for
+// the terminal, have claude say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears
+// with it.
+func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, message string, m project.RefineMode,
+	stdin io.Reader, stdout, stderr io.Writer) error {
 	if !isTerminal(stdin) || !isTerminal(stdout) {
+		if m == project.RefineFeature {
+			return errFeatureNeedsTerminal
+		}
 		return errRefineNeedsTerminal
 	}
-	prompt, err := project.WriteTerminalRefine(repo, refineMode(update))
+	prompt, err := project.WriteTerminalRefine(repo, m)
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
-	fmt.Fprintln(stdout, "Breaking the spec down with claude, which asks you only what the spec leaves open and "+
-		"files the tickets once you agree. Type /exit to come back.")
+	if m == project.RefineFeature {
+		fmt.Fprintln(stdout, "Talking the feature through with claude, which files it as tickets once you agree. "+
+			"Type /exit to come back.")
+	} else {
+		fmt.Fprintln(stdout, "Breaking the spec down with claude, which asks you only what the spec leaves open and "+
+			"files the tickets once you agree. Type /exit to come back.")
+	}
 	defer stops.dropInterrupts()()
 	defer keepTerminal(stdin)()
 	// -- ends claude's options: the message after it is none of them.
