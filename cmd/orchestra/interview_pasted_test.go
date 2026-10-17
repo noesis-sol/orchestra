@@ -33,12 +33,14 @@ func unpasted(t *testing.T, block string) (text, id string) {
 }
 
 // terminalMessage checks that args, the arguments the fake claude recorded one per line in
-// brackets, end with -- and the interview's first message: featureLead, then the file in repo that
-// holds the description in its pasted_content block. It returns the description.
+// brackets, end with -- and the interview's first message: featureLead, the feature run, then the
+// file in repo that holds the description in its pasted_content block. It returns the description.
 func terminalMessage(t *testing.T, repo, args string) string {
 	t.Helper()
 	file := project.RunPath("feature-request.md")
-	if !strings.HasSuffix(args, "[--]\n["+featureLead+" @"+file+"]\n") {
+	last := regexp.MustCompile(`\[--\]\n\[` + regexp.QuoteMeta(featureLead) + ` \(feature run \d{8}T\d{6}Z\): @` +
+		regexp.QuoteMeta(file) + `\]\n\z`)
+	if !last.MatchString(args) {
 		t.Fatalf("claude ran with:\n%s", args)
 	}
 	b, err := os.ReadFile(filepath.Join(repo, file))

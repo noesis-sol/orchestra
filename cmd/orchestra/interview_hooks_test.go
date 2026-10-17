@@ -23,7 +23,7 @@ func TestInterviewInATmuxPaneReportsThroughHooks(t *testing.T) {
 		}
 		args := panes.launched
 		end := slices.Index(args, "--")
-		if end < 0 || end != len(args)-2 || !strings.HasPrefix(args[end+1], featureLead+" @") {
+		if end < 0 || end != len(args)-2 || args[end+1] != paneMessage {
 			t.Fatalf("hooks %v: claude's message isn't last, after --: %q", hooks, args)
 		}
 		i := slices.Index(args, "--settings")

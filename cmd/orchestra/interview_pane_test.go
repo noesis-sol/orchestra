@@ -107,6 +107,10 @@ func (filedEpic) Children(_ context.Context, id string) ([]dispatch.Ticket, []di
 
 func (filedEpic) Cycles(context.Context) ([][]string, error) { return nil, nil }
 
+func (filedEpic) WithMetadata(context.Context, string, string) ([]dispatch.Ticket, error) {
+	return nil, nil
+}
+
 // featureRepo is a git repository with nothing to commit, and a claude on PATH, which a feature's
 // session needs there but the tests on fakePanes never run.
 func featureRepo(t *testing.T) string {
@@ -165,8 +169,8 @@ func interviewInPaneOn(ctx context.Context, t *testing.T, repo string, panes *fa
 	if width > 0 {
 		b.line = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
 	}
-	o.epic, o.code = featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: filedEpic{}, out: &out,
-		err: &errOut}.run(ctx)
+	o.epic, o.code = featureTalk{request: paneRequest, runID: paneRun, repo: repo, breakdown: b, tracker: filedEpic{},
+		out: &out, err: &errOut}.run(ctx)
 	o.out, o.err = out.String(), errOut.String()
 	return o
 }
@@ -174,8 +178,12 @@ func interviewInPaneOn(ctx context.Context, t *testing.T, repo string, panes *fa
 // paneFiled is what orchestra's pane says once the interview has handed the epic f-1 back.
 const paneFiled = "filed the feature as f-1, JSON output (2 tickets)\n"
 
-// paneMessage is the interview's first message, which brings in the description from its file.
-var paneMessage = featureLead + " @" + project.RunPath("feature-request.md")
+// paneRun is the feature run of the interviews in these tests.
+const paneRun = "20261017T093005Z"
+
+// paneMessage is the interview's first message, which names its feature run and brings in the
+// description from its file.
+var paneMessage = featureMessage(paneRun, project.RunPath("feature-request.md"))
 
 // paneLine is what orchestra's pane says while the interview runs in the pane beside it.
 const paneLine = "Talking the feature through with claude in the pane on the right, which closes once the " +
@@ -209,7 +217,7 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 		prompt := filepath.Join(repo, project.RunPath("spec-prompt.md"))
 		request := project.RunPath("feature-request.md")
 		if want := []string{"--append-system-prompt-file", prompt, "--",
-			"Here is the feature I'd like to talk through: @" + request}; !slices.Equal(panes.launched, want) {
+			"Here is the feature I'd like to talk through (feature run " + paneRun + "): @" + request}; !slices.Equal(panes.launched, want) {
 			t.Errorf("claude started with %q, want %q", panes.launched, want)
 		}
 		if b, err := os.ReadFile(filepath.Join(repo, request)); err != nil {

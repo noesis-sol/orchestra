@@ -19,6 +19,12 @@ All notable changes to orchestra are documented here. The format follows
   labelled `unmerged` as it is set aside, so that closed after the run ends it
   holds them in later runs too. It is no longer followed once its worker is
   gone with it not closed, or once it is dispatched again.
+- A feature's session left before it handed the epic back (`/exit`, or its
+  pane closed) after it had filed tickets no longer says `No feature was
+  filed; nothing to run.`: every issue it files carries the run's
+  `feature_run` metadata, by which orchestra lists what it filed and says
+  `Start the run on it with: orchestra --ticket <epic>`. A stop before the
+  hand-back names that epic too.
 - A worker that ends its turn normally at the account's usage limit, after
   Claude Code's note that a short grace allowance remains, is `limited` as
   one the limit cuts off: its transcript's "Usage limit reached · continuing

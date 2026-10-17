@@ -18,7 +18,8 @@ import (
 )
 
 // featureTree is bd as a feature's session filed into it: each issue by its ID, the issues under
-// each epic, and the blocks cycles. A read of an ID in fail fails.
+// each epic, and the blocks cycles. A read of an ID in fail fails, and a list by a metadata key
+// there.
 type featureTree struct {
 	issues   map[string]dispatch.Ticket
 	children map[string][]string
@@ -45,6 +46,20 @@ func (f *featureTree) Children(_ context.Context, id string) ([]dispatch.Ticket,
 		under = append(under, f.issues[c])
 	}
 	return under, nil, nil
+}
+
+func (f *featureTree) WithMetadata(_ context.Context, key, value string) ([]dispatch.Ticket, error) {
+	if f.fail[key] {
+		return nil, errors.New("bd list --json: exit status 1")
+	}
+	var with []dispatch.Ticket
+	for _, t := range f.issues {
+		if t.MetadataText(key) == value {
+			with = append(with, t)
+		}
+	}
+	slices.SortFunc(with, func(a, b dispatch.Ticket) int { return strings.Compare(a.ID, b.ID) })
+	return with, nil
 }
 
 func (f *featureTree) Cycles(context.Context) ([][]string, error) {
@@ -165,8 +180,8 @@ func talkFeatureThrough(t *testing.T, repo string, tree featureEpicTracker, epic
 			return nil
 		}}
 	var r talkedThrough
-	r.epic, r.code = featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: tree, out: &out,
-		err: &errOut}.run(t.Context())
+	r.epic, r.code = featureTalk{request: paneRequest, runID: paneRun, repo: repo, breakdown: b, tracker: tree,
+		out: &out, err: &errOut}.run(t.Context())
 	r.out, r.err = out.String(), errOut.String()
 	return r
 }

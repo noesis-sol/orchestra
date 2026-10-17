@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -27,8 +28,20 @@ import (
 // a spec's tree (checkFeature), says what was filed, and starts the run on it without asking. There
 // is no unattended feature run: a request written to a file runs unattended with --spec <file>.
 
-// featureLead opens the session's first message, before the file that holds the description.
-const featureLead = "Here is the feature I'd like to talk through:"
+// featureLead opens the session's first message, before the feature run and the file that holds the
+// description.
+const featureLead = "Here is the feature I'd like to talk through"
+
+// featureMessage is the session's first message, one line: featureLead, the feature run (featureRun),
+// which every issue the session files carries in its metadata (project.FeatureRunKey), and the file,
+// relative to the main checkout, that holds the description.
+func featureMessage(run, file string) string {
+	return featureLead + " (feature run " + run + "): @" + file
+}
+
+// featureRun is the feature run of a run that started at started: that time in UTC, to the second,
+// which no other run in the main checkout shares while the run lock holds one at a time.
+func featureRun(started time.Time) string { return started.UTC().Format("20060102T150405Z") }
 
 // pastedFeature is the feature's description as the session's first message brings it in: between
 // an opening and a closing pasted_content tag carrying the same random ID, each tag on its own line.
@@ -53,9 +66,11 @@ var errFeatureNeedsTerminal = errors.New("talking the feature through needs you 
 	"input or output isn't one: orchestra --spec <file> breaks a request written to a file down unattended")
 
 // featureEpicTracker is bd as a feature run reads the epic its session handed back: the epic, the
-// tickets under it, and the blocks cycles.
+// tickets under it, and the blocks cycles; and, when it handed none back, what it filed under the
+// feature run.
 type featureEpicTracker interface {
 	epicTracker
+	specLister
 	Cycles(ctx context.Context) ([][]string, error)
 }
 
@@ -63,6 +78,7 @@ type featureEpicTracker interface {
 // then checked.
 type featureTalk struct {
 	request   string // the feature's description, as typed or given with --feature
+	runID     string // the feature run (featureRun), which every issue the session files carries
 	repo      string // the main checkout
 	breakdown refineBreakdown
 	tracker   featureEpicTracker
@@ -81,8 +97,8 @@ func (s *session) talkFeature(ctx context.Context) (string, int) {
 	defer stop()
 	c := s.cfg
 	return featureTalk{
-		request: c.Feature, repo: c.Repo, breakdown: newRefineBreakdown(s), tracker: beads.Tracker{Repo: c.Repo},
-		log: s.log, out: s.e.stdout, err: s.e.stderr,
+		request: c.Feature, runID: featureRun(s.started), repo: c.Repo, breakdown: newRefineBreakdown(s),
+		tracker: beads.Tracker{Repo: c.Repo}, log: s.log, out: s.e.stdout, err: s.e.stderr,
 	}.run(ctx)
 }
 
@@ -100,14 +116,15 @@ func (f featureTalk) run(ctx context.Context) (string, int) {
 		return "", code
 	}
 	f.logLine("FEATURE interview: " + dispatch.FeatureLine(f.request))
-	epic, err := f.breakdown.talkFeature(ctx, f.request)
+	epic, err := f.breakdown.talkFeature(ctx, f.request, f.runID)
 	switch {
 	case ctx.Err() != nil:
+		if epic == "" {
+			epic = f.filedEpic(ctx)
+		}
 		return "", f.stopped(epic)
 	case errors.Is(err, errNotHandedBack):
-		fmt.Fprintln(f.out, noFeature)
-		f.logLine("FEATURE interview filed nothing")
-		return "", dispatch.ExitOK
+		return "", f.notHandedBack(ctx)
 	case err != nil:
 		detail := tui.Printable(dispatch.FirstLine(err.Error()))
 		fmt.Fprintln(f.err, "orchestra couldn't talk the feature through:", detail)
@@ -149,6 +166,61 @@ func (f featureTalk) stopped(epic string) int {
 	return dispatch.ExitInterrupted
 }
 
+// notHandedBack ends a feature run whose session the user left without it handing the epic back
+// (/exit, or closing its pane), exit 0: nothing runs. With nothing filed under the feature run there
+// is nothing to run; else orchestra says what the session filed, as bd has it, and how to start the
+// run on it.
+func (f featureTalk) notHandedBack(ctx context.Context) int {
+	issues, err := f.tracker.WithMetadata(ctx, project.FeatureRunKey, f.runID)
+	switch {
+	case err != nil:
+		detail := tui.Printable(dispatch.FirstLine(err.Error()))
+		fmt.Fprintln(f.err, "orchestra: the interview handed no feature back, and orchestra can't list what it "+
+			"filed:", detail)
+		f.logLine("FEATURE interview handed nothing back; can't list what it filed: " + detail)
+		return dispatch.ExitOK
+	case len(issues) == 0:
+		fmt.Fprintln(f.out, noFeature)
+		f.logLine("FEATURE interview filed nothing")
+		return dispatch.ExitOK
+	}
+	epics := 0
+	for _, t := range issues {
+		if t.IssueType == "epic" {
+			epics++
+		}
+	}
+	filed := plural(epics, "epic") + " and " + plural(len(issues)-epics, "ticket")
+	fmt.Fprintf(f.out, "The interview ended without handing the feature back. It filed %s:\n", filed)
+	for i, t := range issues {
+		if i == unfinishedShown {
+			fmt.Fprintf(f.out, "  … and %d more: bd list --metadata-field %s --all\n", len(issues)-i,
+				command.ShellWord(project.FeatureRunKey+"="+f.runID))
+			break
+		}
+		fmt.Fprintf(f.out, "  %s  %s  %s\n", t.ID, t.IssueType, planLine(t.Title))
+	}
+	if tops := topEpics(issues); len(tops) == 1 {
+		fmt.Fprintln(f.out, "Start the run on it with: orchestra --ticket", tops[0].ID)
+		filed += " under " + tops[0].ID
+	} else {
+		fmt.Fprintln(f.out, "Start the run on one of them with: orchestra --ticket <ID>")
+	}
+	f.logLine("FEATURE interview handed nothing back; it filed " + filed)
+	return dispatch.ExitOK
+}
+
+// filedEpic is the epic a stopped session filed under the feature run, as bd has it: the one epic
+// among what it filed whose parent isn't among it, or "" when there is none or more than one. bd is
+// read after the stop all the same, with its own limit.
+func (f featureTalk) filedEpic(ctx context.Context) string {
+	issues, err := f.tracker.WithMetadata(context.WithoutCancel(ctx), project.FeatureRunKey, f.runID)
+	if tops := topEpics(issues); err == nil && len(tops) == 1 {
+		return tops[0].ID
+	}
+	return ""
+}
+
 // logLine writes text to the run's log, if there is one.
 func (f featureTalk) logLine(text string) {
 	if f.log != nil {
@@ -157,10 +229,11 @@ func (f featureTalk) logLine(text string) {
 }
 
 // talkFeature runs the session that talks the feature request through with the user, in Feature
-// mode: in a pane split off orchestra's when it runs in one, else on orchestra's terminal. It returns
-// the epic the session handed back. Stopped, it returns the epic handed back so far, if any; ended by
-// the user without a hand-back, or with one orchestra can't read (said on b.err), errNotHandedBack.
-func (b refineBreakdown) talkFeature(ctx context.Context, request string) (string, error) {
+// mode: in a pane split off orchestra's when it runs in one, else on orchestra's terminal, its first
+// message naming the feature run, run. It returns the epic the session handed back. Stopped, it
+// returns the epic handed back so far, if any; ended by the user without a hand-back, or with one
+// orchestra can't read (said on b.err), errNotHandedBack.
+func (b refineBreakdown) talkFeature(ctx context.Context, request, run string) (string, error) {
 	prompt, err := project.WriteRefinePrompt(b.repo, project.RefineFeature)
 	if err != nil {
 		return "", fmt.Errorf("cannot write the session's instructions: %w", err)
@@ -172,7 +245,7 @@ func (b refineBreakdown) talkFeature(ctx context.Context, request string) (strin
 	if err != nil {
 		return "", fmt.Errorf("cannot write the description for it: %w", err)
 	}
-	message := featureLead + " @" + file
+	message := featureMessage(run, file)
 	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, project.RefineFeature) }
 	session := terminal
 	if b.pane != "" {

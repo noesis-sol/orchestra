@@ -82,7 +82,9 @@ func TestFeatureModeRendersTheFeatureSections(t *testing.T) {
 		"`bd list --status open`", "Don't file a ticket that an open one already covers",
 		"new tests in a new test file named after its part",
 		"never put a file name in text that many tickets share", "label `solo`",
-		`--metadata '{"files":["a.go","b.go"]}' --silent`, "<<'EOF'",
+		`--metadata '{"feature_run":"<run>"}' --silent`, // every issue carries the feature run
+		`--metadata '{"feature_run":"<run>","files":["a.go","b.go"]}' --silent`, "<<'EOF'",
+		"names this session's feature run", "carries the metadata `feature_run`",
 		"`bd show <root epic>`", "`bd list --parent <ID>`", "`bd dep cycles`, which must find no cycle",
 		"printf '{\"epic\":\"%s\"}\\n' '<root epic ID>' > .orchestra/run/feature.json", // the hand-back
 		"it checks the tree and starts the run on it without asking",

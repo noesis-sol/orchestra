@@ -19,6 +19,11 @@ const (
 	FeatureName        = "feature.json"       // {"epic":"<id>"}, written by the session once it has filed the feature
 )
 
+// FeatureRunKey is the metadata key that every issue a feature's session files carries, with the
+// feature run its first message names: what orchestra finds them by when the session ends without
+// handing the epic back.
+const FeatureRunKey = "feature_run"
+
 // WriteFeatureRequest writes the feature's description, request, to .orchestra/run/ in the main
 // checkout repo, in place of an earlier session's, and returns its path relative to repo. It is
 // for a session started by typing its command into a shell (a Herdr pane's), which takes no
