@@ -49,6 +49,15 @@ func (o *Loop) dropLeftOpen(id string) {
 	delete(o.leftOpen, id)
 }
 
+// leftOpenSpot is where ticket id's worker was left in its tab as the ticket was set aside, and
+// whether it was.
+func (o *Loop) leftOpenSpot(id string) (workerSpot, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	lo, ok := o.leftOpen[id]
+	return workerSpot{tab: lo.w.tab, wt: lo.w.wt, hooks: lo.w.hooks}, ok
+}
+
 // leftOpenList is the workers left in their tabs as their tickets were set aside, by ticket.
 func (o *Loop) leftOpenList() []leftOpen {
 	o.mu.Lock()

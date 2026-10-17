@@ -12,11 +12,24 @@ import (
 // A ticket set aside with its worker left in its tab is followed: closed there later, it is merged
 // (LATE_CLOSE), and the tickets it blocks wait for that merge.
 
-// leavesOpen is a worker that settles with its ticket still open, once startGrace has passed, which
-// sets it aside with its tab left open.
+// leavesOpen is a worker that commits its work in progress and settles with its ticket still open,
+// once startGrace has passed, which sets it aside with its tab left open.
 func leavesOpen(w *fakeWorker) AgentState {
 	time.Sleep(time.Minute)
+	w.commitAs("wip.txt", w.id+": work in progress")
 	return "idle"
+}
+
+// earlierAttempt gives ticket id a worktree and branch with a commit of an earlier attempt, so a
+// worker that fails at once there leaves work to review.
+func earlierAttempt(h *harness, id string) {
+	h.t.Helper()
+	if _, err := h.mem.NewWorktree(h.t.Context(), "", h.worktree(id), branchOf(id), "main"); err != nil {
+		h.t.Fatal(err)
+	}
+	if err := h.mem.commitIn(h.worktree(id), id+": earlier attempt", id+"-earlier.txt"); err != nil {
+		h.t.Fatal(err)
+	}
 }
 
 // closesInTab is A's worker, left in tab, carrying on there: it commits on A's branch and closes A.
@@ -189,7 +202,8 @@ func TestLeftOpenWorkerWhoseTabIsGoneIsNoLongerFollowed(t *testing.T) {
 	})
 }
 
-// A and B fail at once and are set aside, their tabs left open; the hold for the environment
+// A and B, each with an earlier attempt on its branch, fail at once and are set aside, their tabs
+// left open; the hold for the environment
 // reopens them, and A, dispatched again, is no longer followed as left open: its new worker carries
 // it. B, not dispatched again, still is, its worker idle in its tab.
 func TestLeftOpenTicketDispatchedAgainIsNoLongerFollowed(t *testing.T) {
@@ -201,6 +215,8 @@ func TestLeftOpenTicketDispatchedAgainIsNoLongerFollowed(t *testing.T) {
 		h.cfg.Limit = 3
 		h.beads.add("A", "a", 1)
 		h.beads.add("B", "b", 2)
+		earlierAttempt(h, "A")
+		earlierAttempt(h, "B")
 		h.worker("A", givesUp, finishes("a.txt"))
 		h.worker("B", givesUp)
 		h.worker(probeID, runsProbe)

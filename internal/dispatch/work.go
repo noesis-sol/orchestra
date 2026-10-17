@@ -20,14 +20,16 @@ const (
 	adoptEarlier                        // adopt it: it carries the ticket on
 	tellEarlier                         // tell it to carry on, and adopt it if it does
 	stopForEarlier                      // stop the run: it is at work, and a second worker must not start beside it
+	closeEarlier                        // close its tab: the new worker takes up its worktree
 	renameEarlier                       // rename it, for the new worker to have its name
 )
 
 // earlierStep is what work does with a returning ticket's earlier worker in state st, asked saying
 // the ticket is back from a question asked in this run. One at work, or that the terminal can't
 // tell the state of (which may be at work, as settling counts it: see waitSettled), is adopted
-// when it was left by a question, and stops the run otherwise. One
-// left idle or done by a question is told to carry on. Any other still there is renamed.
+// when it was left by a question, and stops the run otherwise. One left idle or done by a question
+// is told to carry on, and any other idle or done has its tab closed (see closeEarlier). Any other
+// still there is renamed.
 func earlierStep(st AgentState, asked bool) earlierAction {
 	switch st {
 	case StateGone:
@@ -41,6 +43,7 @@ func earlierStep(st AgentState, asked bool) earlierAction {
 		if asked {
 			return tellEarlier
 		}
+		return closeEarlier
 	}
 	return renameEarlier
 }
@@ -86,6 +89,9 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	// leaveAsked, saveCarried), until its earlier worker is told to carry on or adopted (see takeOn),
 	// or a new worker is to take it.
 	earlier, asked := o.asked(id)
+	if !asked {
+		earlier, _ = o.leftOpenSpot(id) // set aside with its worker left in its tab: where that is
+	}
 	o.dropLeftOpen(id) // dispatched again: its earlier worker is adopted or replaced below
 	if HasLabel(r.t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
@@ -118,10 +124,10 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 // unnamed in its pane (see earlierState). It is looked at before the worktree is touched: one still
 // at work there must not have its branch rebased under it. One left by a question asked in this run
 // may have had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in.
-// Any other is renamed so the new worker can have the name; its tab stays as it is. One Herdr can't
-// tell the state of is read again for a while, and then counts as still at work. It returns the
-// earlier worker's state as last read, and whether the ticket's run is over, with the reason the
-// run must stop, if any.
+// Any other idle or done has its tab closed (see closeEarlier). Any other is renamed so the new
+// worker can have the name; its tab stays as it is. One Herdr can't tell the state of is read again
+// for a while, and then counts as still at work. It returns the earlier worker's state as last read,
+// and whether the ticket's run is over, with the reason the run must stop, if any.
 func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked bool) (AgentState, bool,
 	*stopReason) {
 	o, id := r.o, r.id
@@ -145,6 +151,9 @@ func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked
 			id, stillIn(st, "its tab"), r.br)
 	case tellEarlier:
 		return r.tellEarlier(ctx, earlier, st, adopted)
+	case closeEarlier:
+		stop := r.closeEarlier(ctx, earlier, st)
+		return st, stop != nil, stop
 	case renameEarlier:
 		stop := r.renameEarlier(ctx)
 		return st, stop != nil, stop
@@ -201,6 +210,33 @@ func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, st Agen
 	o.info("  %s's earlier worker in tab %s is still %s; starting a new one", id, earlier.tab, st)
 	stop := r.renameEarlier(ctx)
 	return st, stop != nil, stop
+}
+
+// closeEarlier closes the tab of the ticket's earlier worker, earlier, left idle or done (st) there
+// when its ticket was set aside: the new worker takes up its worktree, as each ticket has one, so the
+// tab holds nothing to review but its session, whose transcript the log names. One whose tab the run
+// doesn't know, or that stays open (see closeOwnTab), is renamed instead. It returns as renameEarlier
+// does.
+func (r *ticketRun) closeEarlier(ctx context.Context, earlier workerSpot, st AgentState) *stopReason {
+	o, id := r.o, r.id
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
+	if earlier.tab == "" {
+		return r.renameEarlier(ctx)
+	}
+	transcript := "its session's transcript isn't known"
+	if s, ok := o.sessionOf(earlier.wt, earlier.hooks); ok && s.Transcript != "" {
+		transcript = "its session's transcript is " + s.Transcript
+	}
+	said, closed := o.closeOwnTab(ctx, id, earlier.tab)
+	if !closed {
+		o.info("  %s's earlier worker is %s in tab %s; %s", id, st, earlier.tab, said)
+		return r.renameEarlier(ctx)
+	}
+	o.info("  %s's earlier worker was %s in tab %s; its tab is closed, as the new worker takes up its worktree; %s",
+		id, st, earlier.tab, transcript)
+	return nil
 }
 
 // renameEarlier renames the earlier worker still in its tab under the ticket's name, for the new
@@ -592,10 +628,20 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		}
 	case outcomeDeferred:
 		o.markAside(id)
+		empty := o.nothingDone(keep, w)
+		left := fmt.Sprintf("worktree %s and tab %s left open", wt, tab)
+		if empty {
+			left = nothingLeft
+		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
-			"  %s deferred by worker; worktree %s and tab %s left open", id, wt, tab)})
-		o.leaveOpen(keep, w)
+			"  %s deferred by worker; %s", id, left)})
+		if !empty {
+			o.leaveOpen(keep, w)
+		}
 		o.triageDeferred(ctx, id, "the worker deferred it", wt)
+		if empty {
+			o.dropNothingDone(keep, w)
+		}
 	case outcomePaused:
 		if o.workerGone(keep, w.agent) {
 			return r.pausedGone(ctx, w)
@@ -613,7 +659,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		if o.failedAtOnce(keep, s, w.started, idleAt, br, head, wt) {
 			r.how = settledFast
 		}
-		deferred := o.putAside(keep, t, asideTexts{
+		a := asideTexts{
 			note: fmt.Sprintf("Orchestra: worker in tab %s settled with the ticket still '%s'; "+
 				"deferred for review (worktree %s).", tab, s, wt),
 			reason:   fmt.Sprintf("worker finished without closing; see tab %s and worktree %s", tab, wt),
@@ -621,15 +667,48 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 			deferred: fmt.Sprintf("  %s still %s -> noted and deferred; worktree %s and tab %s left open", id, s, wt, tab),
 			failed:   fmt.Sprintf("%s still %s, and bd could not defer it", id, s),
 			then:     fmt.Sprintf("worktree %s and tab %s left for review", wt, tab),
-		})
-		o.leaveOpen(keep, w)
-		if !deferred {
-			return nil
 		}
-		settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
-		o.triageDeferred(ctx, id, settled, wt)
+		empty := o.nothingDone(keep, w)
+		if empty {
+			a.note = fmt.Sprintf("Orchestra: worker in tab %s settled with the ticket still '%s' and nothing done "+
+				"(no commits, no changes); deferred for review, its worktree, branch and tab removed.", tab, s)
+			a.reason = "worker finished without closing, and with nothing done"
+			a.deferred = fmt.Sprintf("  %s still %s -> noted and deferred; %s", id, s, nothingLeft)
+			a.then = nothingLeft
+		}
+		deferred := o.putAside(keep, t, a)
+		if !empty {
+			o.leaveOpen(keep, w)
+		}
+		if deferred {
+			settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
+			o.triageDeferred(ctx, id, settled, wt)
+		}
+		if empty {
+			o.dropNothingDone(keep, w)
+		}
 	}
 	return nil
+}
+
+// nothingLeft is what a set-aside's line says of a worker that left nothing done (see nothingDone).
+const nothingLeft = "nothing done, so its worktree, branch and tab are removed"
+
+// dropNothingDone removes the worktree, branch and tab of w's worker, set aside with nothing done (see
+// nothingDone): nothing there is left to review. Its triage has its evidence by then. A failure is
+// warned of, as the set-aside's line said they were removed.
+func (o *Loop) dropNothingDone(ctx context.Context, w worker) {
+	o.repoMu.Lock()
+	cleaned := o.removeWorktree(ctx, w.id, w.wt, w.br)
+	o.repoMu.Unlock()
+	if !cleaned {
+		o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf(
+			"  CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open", w.wt, w.br, o.cfg.LogPath, w.tab)})
+		return
+	}
+	if said, closed := o.closeOwnTab(ctx, w.id, w.tab); !closed {
+		o.info("  %s's worktree and branch removed; %s", w.id, said)
+	}
 }
 
 // nothingDone reports whether w's worker left nothing of its own: its branch has no commits beyond

@@ -30,6 +30,7 @@ func TestReviewInputHasWhatTheHooksNoted(t *testing.T) {
 		})
 		h.worker("B", func(w *fakeWorker) AgentState {
 			w.claim()
+			w.commit("b.txt") // work of its own: its worktree is left for review
 			w.deferIt()
 			return StateIdle
 		})

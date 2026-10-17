@@ -30,11 +30,12 @@ type fakeGit struct {
 	worktrees map[string]string       // the branch each worktree folder is on
 	conflicts map[string][]string     // the files each of these branches' rebases stops on
 	rebasing  map[string]bool         // worktree folders with a rebase stopped in them
+	dirty     map[string]string       // the uncommitted changes in these worktree folders, as git status shows them
 }
 
 func newFakeGit(base string) *fakeGit {
 	g := &fakeGit{base: base, branches: map[string][]fakeCommit{}, worktrees: map[string]string{},
-		conflicts: map[string][]string{}, rebasing: map[string]bool{}}
+		conflicts: map[string][]string{}, rebasing: map[string]bool{}, dirty: map[string]string{}}
 	g.branches[base] = []fakeCommit{g.newCommit("init", ".gitignore")}
 	return g
 }
@@ -50,6 +51,13 @@ func (g *fakeGit) commit(branch, subject string, files ...string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.branches[branch] = append(g.branches[branch], g.newCommit(subject, files...))
+}
+
+// leaveChange leaves file changed in the worktree, uncommitted.
+func (g *fakeGit) leaveChange(wt, file string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.dirty[wt] = " M " + file
 }
 
 // commitIn adds a commit to the branch the worktree is on.
@@ -139,7 +147,11 @@ func (g *fakeGit) only(base, rev string) []fakeCommit {
 // Checkout
 
 func (g *fakeGit) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
-func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) string      { return "" }
+func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.dirty[dir]
+}
 func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
 	return nil
 }

@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Worker tabs that hold nothing to review are closed. A ticket dispatched
+  again in the run that set it aside, its earlier worker idle or done in its
+  tab, has that tab closed rather than the worker renamed: the new worker
+  takes up its worktree, and the log names the earlier session's transcript.
+  A worker whose ticket is set aside (deferred by the worker, or settled with
+  it unfinished) with nothing done, no commits beyond the base branch and a
+  clean worktree, has its worktree, branch and tab removed once triage has
+  its evidence ("… nothing done, so its worktree, branch and tab are
+  removed"), and isn't followed as left in its tab.
 - A ticket set aside with its worker left in its tab (deferred by the worker,
   settled with the ticket unfinished, or `PROMPT_FAILED`) is followed for the
   rest of the run: should the worker carry on there and close it, as Claude

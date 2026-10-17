@@ -20,8 +20,8 @@ func TestEarlierStep(t *testing.T) {
 		{StateUnknown, true, adoptEarlier},
 		{StateIdle, true, tellEarlier},
 		{StateDone, true, tellEarlier},
-		{StateIdle, false, renameEarlier},
-		{StateDone, false, renameEarlier},
+		{StateIdle, false, closeEarlier},
+		{StateDone, false, closeEarlier},
 		{AgentState("other"), true, renameEarlier},
 	}
 	for _, c := range cases {

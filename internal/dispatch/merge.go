@@ -510,28 +510,36 @@ func (o *Loop) removeWorktree(ctx context.Context, id, wt, br string) bool {
 
 // closeWorkerTab closes tab, where ticket id's worker ran, once its work is merged (or it closed with
 // nothing to merge) and its worktree and branch are removed, and says what was removed, for the line
-// saying it closed. It closes the tab only while Herdr has it labelled id, as the worker's tab was
-// opened: Herdr numbers tabs afresh when it starts without restoring its last session, so a tab the
-// last run left a worker in, or one recorded before Herdr restarted, may by now be another, the
-// user's own included.
+// saying it closed (see closeOwnTab).
 func (o *Loop) closeWorkerTab(ctx context.Context, id, tab string) string {
-	const removed = "worktree and branch removed; "
+	if said, closed := o.closeOwnTab(ctx, id, tab); !closed {
+		return "worktree and branch removed; " + said
+	}
+	return "worktree, branch and tab removed"
+}
+
+// closeOwnTab closes tab, where ticket id's worker ran, and reports whether it did, saying otherwise
+// what became of the tab. It closes the tab only while Herdr has it labelled id, as the worker's tab
+// was opened: Herdr numbers tabs afresh when it starts without restoring its last session, so a tab
+// the last run left a worker in, or one recorded before Herdr restarted, may by now be another, the
+// user's own included.
+func (o *Loop) closeOwnTab(ctx context.Context, id, tab string) (string, bool) {
 	label, open, err := o.tabs.TabLabel(ctx, tab)
 	switch {
 	case err != nil:
 		o.log.Raw("", fmt.Errorf("cannot tell whether tab %s is still %s's, so it is left open: %w", tab, id, err))
-		return removed + "tab " + tab + " left open, as the terminal can't say whose it is"
+		return "tab " + tab + " left open, as the terminal can't say whose it is", false
 	case !open:
-		return removed + "its tab " + tab + " was closed already"
+		return "its tab " + tab + " was closed already", false
 	case label != id:
-		return fmt.Sprintf("%stab %s left open: the terminal has it labelled '%s' now, not %s, so it may not be its worker's",
-			removed, tab, label, id)
+		return fmt.Sprintf("tab %s left open: the terminal has it labelled '%s' now, not %s, so it may not be its worker's",
+			tab, label, id), false
 	}
 	if err := o.tabs.CloseTab(ctx, tab); err != nil {
 		o.log.Raw("", fmt.Errorf("cannot close tab %s: %w", tab, err))
-		return removed + "tab " + tab + " could not be closed"
+		return "tab " + tab + " could not be closed", false
 	}
-	return "worktree, branch and tab removed"
+	return "tab " + tab + " closed", true
 }
 
 // leaveConflict sets aside a ticket whose branch conflicts with Base, saying why it was not

@@ -54,7 +54,7 @@ func TestRunGoesOnPastATicketItsWorkerDefers(t *testing.T) {
 	h := newHarness(t)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); w.deferIt(); return "idle" })
+	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); w.commit("a.txt"); w.deferIt(); return "idle" })
 	h.worker("B", finishes("b.txt"))
 	o := h.loop()
 	o.StartTriage()
