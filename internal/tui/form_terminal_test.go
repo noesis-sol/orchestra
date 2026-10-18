@@ -23,9 +23,22 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 }
 
 func (s *syncBuffer) String() string {
+	return s.since(0)
+}
+
+// len is how much has been drawn: a mark for since.
+func (s *syncBuffer) len() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return ansi.Strip(s.b.String())
+	return s.b.Len()
+}
+
+// since is what was drawn after the mark len gave. Each write is a whole frame or more of the
+// renderer's, so a mark never splits an escape sequence.
+func (s *syncBuffer) since(mark int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return ansi.Strip(s.b.String()[mark:])
 }
 
 // formTerminal is where a form is asked in a test: the screen it draws on, and the keys typed at it,
@@ -33,6 +46,7 @@ func (s *syncBuffer) String() string {
 // huh moves the focus on a later message, so the keys after an Enter can reach the field it left.
 type formTerminal struct {
 	screen syncBuffer
+	typed  int // the screen's mark when keys were last typed
 	keys   io.Writer
 	done   chan error
 }
@@ -55,10 +69,13 @@ func askOn(t *testing.T, ask func(in io.Reader, out io.Writer) error) *formTermi
 	return term
 }
 
-// waitFor waits until the screen shows text.
+// waitFor waits until the screen shows text, drawn since keys were last typed: text the screen
+// showed before them, such as a field's title it showed until they moved the focus away, is only
+// there again once they have taken effect and the form drew it anew. Bubble Tea redraws only the
+// lines that change, so the text waited for must be on a line the keys change.
 func (term *formTerminal) waitFor(t *testing.T, text string) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(term.screen.String(), text); {
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(term.screen.since(term.typed), text); {
 		if time.Now().After(deadline) {
 			t.Fatalf("the screen never showed %q:\n%s", text, term.screen.String())
 		}
@@ -66,9 +83,13 @@ func (term *formTerminal) waitFor(t *testing.T, text string) {
 	}
 }
 
-// typeKeys types keys.
+// typeKeys types keys; none, as a step that only waits has, leaves what waitFor looks at as it was.
 func (term *formTerminal) typeKeys(t *testing.T, keys string) {
 	t.Helper()
+	if keys == "" {
+		return
+	}
+	term.typed = term.screen.len()
 	if _, err := term.keys.Write([]byte(keys)); err != nil {
 		t.Fatalf("typing %q: %v; the screen:\n%s", keys, err, term.screen.String())
 	}
