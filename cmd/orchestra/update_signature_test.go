@@ -8,6 +8,7 @@ import (
 
 // A release not signed with a key the binary trusts isn't installed, and says so.
 func TestUpdateRefusesAnUntrustedSignature(t *testing.T) {
+	t.Parallel()
 	u, _ := releaseServer(t, "v0.6.0", false)
 	other, _, err := ed25519.GenerateKey(nil)
 	if err != nil {

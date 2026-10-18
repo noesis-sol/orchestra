@@ -13,6 +13,7 @@ import (
 // new one is renamed into place, so the run keeps the build it started with. Run from the repository, as
 // orchestra would be, it installs the release.
 func TestUpdateGoesOnDuringARun(t *testing.T) {
+	t.Parallel()
 	repo, _ := gitRepo(t)
 	holdLock(t, repo, project.Holder{PID: 44497, Branch: "main"})
 	chdir(t, repo)

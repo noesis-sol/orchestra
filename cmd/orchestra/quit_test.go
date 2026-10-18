@@ -98,6 +98,7 @@ func (r *quitRig) quitOnce(t *testing.T, want string) {
 // While a stopped loop winds down with nothing under way that must finish, a second stop signal,
 // SIGTERM and SIGHUP as Ctrl+C, ends orchestra at once, naming the workers left running.
 func TestASecondStopSignalQuitsWhenNothingMustFinish(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		sigs []os.Signal
 		how  string
@@ -123,6 +124,7 @@ func TestASecondStopSignalQuitsWhenNothingMustFinish(t *testing.T) {
 // With a merge under way, the second stop signal says so and how to abandon it, and still skips
 // the organs once the merge is done; a third abandons it, naming it.
 func TestAStopSignalDuringAMergeWarnsAndTheNextQuits(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		sig       os.Signal
@@ -167,6 +169,7 @@ func TestAStopSignalDuringAMergeWarnsAndTheNextQuits(t *testing.T) {
 
 // One stop signal only stops the loop: the merge under way finishes, and the organs run after it.
 func TestOneStopSignalKeepsTheMergeAndTheOrgans(t *testing.T) {
+	t.Parallel()
 	r := newQuitRig(t, &windingLoop{finishing: []dispatch.Finishing{{Ticket: "a-1", What: "merge"}}})
 	r.stopLoop(os.Interrupt)
 	r.stops.on(nil) // the loop has wound down
@@ -199,6 +202,7 @@ func (o skippedOrgans) Review(ctx context.Context, code int, final string) (stri
 
 // In the organ phase a stop signal skips the organs, as before, and the one after it quits.
 func TestTheSignalAfterTheOneThatSkipsTheOrgansQuits(t *testing.T) {
+	t.Parallel()
 	r := newQuitRig(t, &windingLoop{})
 	var skipped, reviewed bool
 	log, err := dispatch.OpenLog(filepath.Join(t.TempDir(), "organs.log"), false, "t")
@@ -217,6 +221,7 @@ func TestTheSignalAfterTheOneThatSkipsTheOrgansQuits(t *testing.T) {
 // The dashboard closes before the loop winds down. A signal while it closes, which owns the
 // terminal, waits, and counts once it has: here, with nothing to finish, orchestra quits.
 func TestASignalWhileTheDashboardClosesCountsOnceItHas(t *testing.T) {
+	t.Parallel()
 	r := quitRigFor(t, &windingLoop{})
 	r.stopLoop(syscall.SIGTERM) // closes the dashboard
 	r.stops.deliver(syscall.SIGTERM)
@@ -232,6 +237,7 @@ func TestASignalWhileTheDashboardClosesCountsOnceItHas(t *testing.T) {
 // Ctrl+C in the dashboard stops the loop without a signal: the first signal after it is the
 // second stop.
 func TestASignalAfterTheDashboardsCtrlCQuits(t *testing.T) {
+	t.Parallel()
 	r := newQuitRig(t, &windingLoop{})
 	r.stops.on(func(os.Signal) { t.Error("the dashboard's handler got a signal after it closed") })
 	r.stops.on(nil)

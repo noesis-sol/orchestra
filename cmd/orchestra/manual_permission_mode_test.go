@@ -5,6 +5,7 @@ import "testing"
 // manual, the name newer Claude Code gives the default mode, is a permission mode workers can be
 // started in, from settings.json, the flag or its variable alike.
 func TestManualPermissionMode(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		args     []string

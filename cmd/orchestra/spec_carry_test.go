@@ -128,6 +128,7 @@ func committedAlready(spec project.Spec) string {
 // The spec unchanged since its root epic's tree was filed, and the root epic open: there is no
 // breakdown, and the run is scoped to the root epic, carrying on with it as it is.
 func TestSpecUnchangedCarriesOnWithItsRootEpic(t *testing.T) {
+	t.Parallel()
 	repo, file, spec := carryRepo(t, carryText)
 	tree := &specTree{issues: []dispatch.Ticket{rootFiledFor(spec, dispatch.StatusOpen),
 		carriedIssue("s-1.1", "task", "s-1", "List the things", dispatch.StatusClosed),
@@ -150,6 +151,7 @@ func TestSpecUnchangedCarriesOnWithItsRootEpic(t *testing.T) {
 // the run, scoped to the root epic, has nothing to run, which the nothing-to-run box says (see
 // TestSpecRunSaysABuiltSpecIsBuilt).
 func TestSpecUnchangedAndClosedIsNotBrokenDown(t *testing.T) {
+	t.Parallel()
 	repo, file, spec := carryRepo(t, carryText)
 	tree := &specTree{issues: []dispatch.Ticket{rootFiledFor(spec, dispatch.StatusClosed),
 		carriedIssue("s-1.1", "task", "s-1", "List the things", dispatch.StatusClosed)}}
@@ -163,6 +165,7 @@ func TestSpecUnchangedAndClosedIsNotBrokenDown(t *testing.T) {
 // The nothing-to-run box of a spec run whose root epic is all done says the spec is built, on a
 // terminal and in plain output; a run of another scope still says all done.
 func TestNothingToRunSaysTheSpecIsBuilt(t *testing.T) {
+	t.Parallel()
 	n := dispatch.NothingToRun{Scope: "s-1", AllDone: true, Built: carriedSpec}
 	var box, plain strings.Builder
 	tui.Printer{Out: &box, Styled: true, Width: 80}.Nothing(n)
@@ -187,6 +190,7 @@ func TestNothingToRunSaysTheSpecIsBuilt(t *testing.T) {
 // .orchestra/run/spec-update.md. What it files goes under the same root epic, whose SHA-256 and
 // commit are then the new version's.
 func TestSpecChangedIsUpdatedUnderItsRootEpic(t *testing.T) {
+	t.Parallel()
 	repo, file, was := carryRepo(t, carryText)
 	tree := &specTree{issues: []dispatch.Ticket{rootFiledFor(was, dispatch.StatusOpen),
 		carriedIssue("s-1.1", "epic", "s-1", "Listing", dispatch.StatusClosed),
@@ -250,6 +254,7 @@ func TestSpecChangedIsUpdatedUnderItsRootEpic(t *testing.T) {
 // Where git can't give the change, the root epic naming no commit or one git doesn't have, the update
 // says why, and is to compare the spec as it is now with the tree.
 func TestSpecUpdateWithoutADiff(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, commit, why string
 	}{
@@ -279,6 +284,7 @@ func TestSpecUpdateWithoutADiff(t *testing.T) {
 // An update that names another root epic than the one whose tree it updated is not run: the run ends,
 // exit 2, listing the spec's tree.
 func TestSpecUpdateNamingAnotherRootEpic(t *testing.T) {
+	t.Parallel()
 	repo, file, was := carryRepo(t, carryText)
 	tree := &specTree{issues: []dispatch.Ticket{rootFiledFor(was, dispatch.StatusOpen),
 		carriedIssue("s-1.1", "task", "s-1", "List the things", dispatch.StatusClosed)}}
@@ -304,6 +310,7 @@ func TestSpecUpdateNamingAnotherRootEpic(t *testing.T) {
 // Two root epics for one spec, one filed by hand, say, are a setup problem naming both, and nothing
 // is broken down; the problem suggests keeping the one a breakdown marked as filed.
 func TestSpecWithTwoRootEpics(t *testing.T) {
+	t.Parallel()
 	byHand := func(id string) dispatch.Ticket {
 		return issue(id, "epic", "", `{"spec":"`+carriedSpec+`"}`, "")
 	}
@@ -345,6 +352,7 @@ func TestSpecWithTwoRootEpics(t *testing.T) {
 // With no root epic for the spec, the spec is broken down as a new one; and so it is, carrying on,
 // when its root epic has no SHA-256: the breakdown that filed it didn't finish, as one sets it last.
 func TestSpecWithoutAFinishedRootEpicIsBrokenDown(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		filed  []dispatch.Ticket
@@ -386,6 +394,7 @@ func (failingLister) WithMetadata(context.Context, string, string) ([]dispatch.T
 // When bd can't say whether the spec has a root epic, nothing is broken down: the run ends, exit 4,
 // saying so; Ctrl+C before bd answers is a stop, exit 130.
 func TestSpecRootEpicUnread(t *testing.T) {
+	t.Parallel()
 	repo, file, _ := carryRepo(t, carryText)
 	tree := &specTree{}
 	b := &treeBreakdown{repo: repo, tree: tree, root: "s-1"}
@@ -407,6 +416,7 @@ func TestSpecRootEpicUnread(t *testing.T) {
 // root epic, the version its tree was filed for and where the change and the tree are; the refinement,
 // in one line.
 func TestSpecUpdateFirstMessages(t *testing.T) {
+	t.Parallel()
 	u := &specUpdate{Root: "s-1", Was: project.Spec{Path: testSpec.Path, SHA256: "0ld", Commit: "c1"},
 		File: ".orchestra/run/spec-update.md"}
 	if got, want := specMessage(breakdownRequest{Spec: testSpec, Update: u}, time.Hour),
@@ -463,6 +473,7 @@ const notToRun = "echo 'the breakdown ran' >&2\nexit 1\n"
 // The nightly command again with the spec unchanged and its root epic open: the run carries on with
 // the root epic, without a breakdown, its last run's worker carried over; the log says so.
 func TestSpecRunCarriesOnWithItsRootEpic(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -503,6 +514,7 @@ func TestSpecRunCarriesOnWithItsRootEpic(t *testing.T) {
 // The nightly command again once everything is merged, the spec unchanged and its root epic closed:
 // the nothing-to-run box says the spec is built, exit 0, and nothing is broken down.
 func TestSpecRunSaysABuiltSpecIsBuilt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -530,6 +542,7 @@ func TestSpecRunSaysABuiltSpecIsBuilt(t *testing.T) {
 // epic, the version its tree was filed for and the update's file, which has the diff and the tree.
 // What it files goes under the root epic, whose SHA-256 orchestra then sets to the new version's.
 func TestSpecRunUpdatesTheTreeForTheChange(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -594,6 +607,7 @@ func TestSpecRunUpdatesTheTreeForTheChange(t *testing.T) {
 // out the tree filed already: it counts what carries the spec's metadata past what did as the update
 // began.
 func TestRefineInUpdateModeCountsOnlyWhatItFiles(t *testing.T) {
+	t.Parallel()
 	var out strings.Builder
 	line := &tui.InterviewLine{Out: &out, Width: func() int { return 120 }}
 	count := make(chan filedCount, 1)

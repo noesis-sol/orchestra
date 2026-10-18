@@ -14,6 +14,7 @@ import (
 // Left to auto, a run picks Herdr in a Herdr pane, else tmux when it is installed, else neither; a
 // terminal chosen is taken as it is, checkTerminal saying when it is missing.
 func TestPickTerminal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, choice string
 		inHerdr      bool
@@ -85,6 +86,7 @@ func withoutTmux(t *testing.T) {
 // go to them. The project's setting chooses tmux even in a Herdr pane, and the probe reports through
 // hooks.
 func TestConfigTmuxOutsideTmuxUsesASessionOfItsOwn(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, `{"terminal": "tmux"}`)
 	fakeTmux(t)
 	c, p := loadWith(t)
@@ -102,6 +104,7 @@ func TestConfigTmuxOutsideTmuxUsesASessionOfItsOwn(t *testing.T) {
 // Inside tmux, the workers' windows open in orchestra's own session, in sight: no attaching. Another
 // session named with --workspace is out of sight, and switched to.
 func TestConfigTmuxInsideTmuxUsesItsOwnSession(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	fakeTmux(t)
 	setenv(t, "HERDR_ENV", "")
@@ -126,6 +129,7 @@ func TestConfigTmuxInsideTmuxUsesItsOwnSession(t *testing.T) {
 
 // --terminal overrides ORCHESTRA_TERMINAL, which overrides the project's setting.
 func TestConfigTerminalPrecedence(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": "tmux"}`)
 	fakeTmux(t)
 	setenv(t, "ORCHESTRA_TERMINAL", "herdr")
@@ -145,6 +149,7 @@ func TestConfigTerminalPrecedence(t *testing.T) {
 }
 
 func TestConfigRefusesAnUnknownTerminalSetting(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": "screen"}`)
 	_, p := loadWith(t)
 	if len(p) != 1 || !strings.Contains(p[0], "terminal must be one of herdr, tmux, cmux, auto (got 'screen')") {
@@ -154,6 +159,7 @@ func TestConfigRefusesAnUnknownTerminalSetting(t *testing.T) {
 
 // Under tmux only Claude workers can run: their hooks tell orchestra what they are doing.
 func TestConfigTmuxRefusesWorkersOtherThanClaude(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	fakeTmux(t)
 	_, p := loadWith(t, "--terminal", "tmux", "--agent", "codex")
@@ -168,6 +174,7 @@ func TestConfigTmuxRefusesWorkersOtherThanClaude(t *testing.T) {
 // tmux chosen and not installed is a setup problem naming it; left to auto outside a Herdr pane,
 // with no tmux, the problem says how to get either.
 func TestConfigTerminalMissing(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	withoutTmux(t)
 	_, p := loadWith(t, "--terminal", "tmux")
@@ -183,6 +190,7 @@ func TestConfigTerminalMissing(t *testing.T) {
 
 // Under Herdr, as before: its pane and workspace, in sight.
 func TestConfigHerdrInAHerdrPane(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	fakeTmux(t)
 	setenv(t, "HERDR_PANE_ID", "w7Q:p2")

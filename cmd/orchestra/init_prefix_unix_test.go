@@ -55,6 +55,7 @@ func beadsRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 }
 
 func TestInitGivesANewBeadsThePrefix(t *testing.T) {
+	t.Parallel()
 	dir := fakePrefixBd(t)
 	repo, _ := gitRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "true", "--mcp", "", "--prefix", "orc-")
@@ -71,6 +72,7 @@ func TestInitGivesANewBeadsThePrefix(t *testing.T) {
 }
 
 func TestInitKeepsTheFolderNameForANewBeadsWhenGivenIt(t *testing.T) {
+	t.Parallel()
 	dir := fakePrefixBd(t)
 	repo, _ := gitRepo(t)
 	name := project.DefaultPrefix(repo)
@@ -81,6 +83,7 @@ func TestInitKeepsTheFolderNameForANewBeadsWhenGivenIt(t *testing.T) {
 }
 
 func TestInitRenamesTheTicketsToTheGivenPrefix(t *testing.T) {
+	t.Parallel()
 	dir := fakePrefixBd(t)
 	repo, _ := beadsRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "true", "--mcp", "", "--prefix", "orc")
@@ -97,6 +100,7 @@ func TestInitRenamesTheTicketsToTheGivenPrefix(t *testing.T) {
 }
 
 func TestInitKeepsTheGivenPrefixWhereBeadsHasIt(t *testing.T) {
+	t.Parallel()
 	dir := fakePrefixBd(t)
 	repo, _ := beadsRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "true", "--mcp", "", "--prefix", "orchestra")
@@ -112,6 +116,7 @@ func TestInitKeepsTheGivenPrefixWhereBeadsHasIt(t *testing.T) {
 }
 
 func TestInitRefusesToRenameTicketsSomethingStillNames(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("runs init three times, over a second")
 	}
@@ -156,6 +161,7 @@ func TestInitRefusesToRenameTicketsSomethingStillNames(t *testing.T) {
 }
 
 func TestInitRefusesAnInvalidPrefix(t *testing.T) {
+	t.Parallel()
 	dir := fakePrefixBd(t)
 	repo, _ := gitRepo(t)
 	for value, want := range map[string]string{

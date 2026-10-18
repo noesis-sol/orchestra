@@ -30,6 +30,7 @@ var _ = faketool.Func("claude", claudetest.Claude)
 // claude has handed the epic back and its turn has ended, the split closes, and orchestra's terminal
 // has the focus back.
 func TestCmuxInterviewInASplit(t *testing.T) {
+	// Not parallel: cmuxtest sets the process's PATH.
 	app := cmuxtest.Start(t)
 	repo, _ := gitRepo(t)
 	bin, claudeDir := t.TempDir(), t.TempDir()
@@ -87,6 +88,7 @@ func (w watchedPanes) PaneAgent(ctx context.Context, pane string) (string, strin
 
 // On the dashboard, a worker's number selects its workspace in cmux.
 func TestCmuxDashboardNumbersSelectWorkspaces(t *testing.T) {
+	// Not parallel: cmuxtest sets the process's PATH.
 	app := cmuxtest.Start(t)
 	repo := t.TempDir()
 	term := cmux.Terminal{Book: filepath.Join(repo, project.RunPath(cmux.BookName)), Own: app.Own}

@@ -10,6 +10,7 @@ import (
 // attached to by name: --workspace foo:bar is the session foo_bar on every tmux, 3.8 included,
 // where only the session orchestra runs in keeps its ':', in sight and needing no hint.
 func TestConfigTmuxWorkspaceWithColonIsRenamed(t *testing.T) {
+	t.Parallel()
 	for _, version := range []string{"tmux 3.4", "tmux 3.8"} {
 		configFixture(t, `{"terminal": "tmux"}`)
 		dir := t.TempDir()

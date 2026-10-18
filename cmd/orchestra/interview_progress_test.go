@@ -38,6 +38,7 @@ func progressLines(t *testing.T, out string) (before string, lines []string, aft
 // has given them, its title and tickets, until the interview's end. The line is gone before what
 // was filed is said, which looks as it does without it.
 func TestPaneInterviewShowsItsProgress(t *testing.T) {
+	t.Parallel()
 	agent := []dispatch.AgentState{dispatch.StateWorking, dispatch.StateWorking, dispatch.StateBlocked, "",
 		dispatch.StateIdle, dispatch.StateDone, dispatch.StateWorking, dispatch.StateWorking, dispatch.StateDone}
 	interview := func(width int) (paneOutcome, int) {
@@ -86,6 +87,7 @@ func TestPaneInterviewShowsItsProgress(t *testing.T) {
 // The line is cleared however the interview ends: claude leaving with nothing filed, a stop, or an
 // epic bd can't read, which the line names alone, and which orchestra won't run.
 func TestPaneInterviewProgressEnds(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		agent []dispatch.AgentState

@@ -19,6 +19,7 @@ import (
 // may be the turn before's, read late: the pane is closed only on a reading taken after the file
 // was there.
 func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		agent  []dispatch.AgentState // in the pane until orchestra closes it, the last one for every read after
@@ -66,6 +67,7 @@ func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
 // An interview that files nothing ends only when claude leaves the pane (/exit), however many turns
 // end before: a feature.json that names no epic files nothing either. The pane is closed then.
 func TestPaneInterviewWithoutAFeatureWaitsForClaudeToLeave(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, file, err string
 	}{

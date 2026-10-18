@@ -39,6 +39,7 @@ func specFixture(t *testing.T) string {
 // --spec and ORCHESTRA_SPEC give the spec, the flag over the variable; --refine and ORCHESTRA_REFINE
 // say to refine it, read like the other on-or-off variables.
 func TestSpecFlagsAndTheirVariables(t *testing.T) {
+	t.Parallel()
 	outside := t.TempDir()
 	spec := writeSpec(t, filepath.Join(outside, "app.md"), "# An app\n")
 	other := writeSpec(t, filepath.Join(outside, "other.md"), "# Another\n")
@@ -77,6 +78,7 @@ func TestSpecFlagsAndTheirVariables(t *testing.T) {
 // A spec given relative to the working directory is found from there, and is kept in the repository
 // where it is, if it is inside, else in .orchestra/specs/.
 func TestSpecPathInTheRepository(t *testing.T) {
+	t.Parallel()
 	repo := specFixture(t)
 	writeSpec(t, filepath.Join(repo, "docs", "app.md"), "# An app\n")
 	c, problems := loadWith(t, "--spec", "docs/app.md")
@@ -93,6 +95,7 @@ func TestSpecPathInTheRepository(t *testing.T) {
 // --spec doesn't go with --feature, --ticket or --tickets, nor --refine without it; each is a setup
 // problem.
 func TestSpecFlagCombinations(t *testing.T) {
+	t.Parallel()
 	spec := "/specs/app.md"
 	for _, tc := range []struct {
 		name string
@@ -126,6 +129,7 @@ func TestSpecFlagCombinations(t *testing.T) {
 // A spec file that is missing, a folder, unreadable, empty or not text is a setup problem, naming
 // the file as given and where it came from.
 func TestSpecFileProblems(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	chdir(t, dir)
 	for _, tc := range []struct {
@@ -164,6 +168,7 @@ func TestSpecFileProblems(t *testing.T) {
 // A spec where git wouldn't commit it, ignored or in the .git folder, is a setup problem, listed
 // with the run's others.
 func TestSpecPathProblems(t *testing.T) {
+	t.Parallel()
 	repo := specFixture(t)
 	writeSpec(t, filepath.Join(repo, ".gitignore"), "private/\n")
 	ignored := writeSpec(t, filepath.Join(repo, "private", "app.md"), "# Mine\n")
@@ -185,6 +190,7 @@ func TestSpecPathProblems(t *testing.T) {
 // A spec run has no ticket limit unless --limit or LIMIT gives one; one given is held to, and one
 // already reached is a setup problem, as a feature run's is.
 func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
+	t.Parallel()
 	spec := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n")
 	for _, tc := range []struct {
 		name string
@@ -215,6 +221,7 @@ func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 
 // A spec says what the run works on: it doesn't ask, in a terminal or not.
 func TestSpecRunDoesntAsk(t *testing.T) {
+	t.Parallel()
 	c := options{specFile: "/tmp/app.md"}
 	c.Limit = dispatch.NoLimit
 	if asksWork(c, true) {

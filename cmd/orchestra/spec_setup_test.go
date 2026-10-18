@@ -52,6 +52,7 @@ func emptyRepoFixture(t *testing.T) (repo, spec, tools string) {
 // settings. Where bd init commits its own files, as bd does, the setup's commit holds the rest. A
 // file of the user's that the checkout's check leaves aside stays out of it.
 func TestSpecRunSetsUpAnEmptyRepository(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -143,6 +144,7 @@ func TestSpecRunSetsUpAnEmptyRepository(t *testing.T) {
 // A spec run in a repository set up already sets nothing up: no bd init, no runners, settings as
 // they were, and only the spec committed.
 func TestSpecRunLeavesASetUpRepositoryAlone(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -171,6 +173,7 @@ func TestSpecRunLeavesASetUpRepositoryAlone(t *testing.T) {
 // What stops a spec run before it sets anything up: a folder that isn't a git repository, bd
 // missing (nothing is installed unattended), and a main checkout with uncommitted changes.
 func TestSpecRunSetupProblems(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}

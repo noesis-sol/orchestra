@@ -14,6 +14,7 @@ import (
 // loadSettings reads the project's settings for every phase of loadConfig that needs them: none
 // outside a repository or without a settings.json, and none, with a problem, from one it can't read.
 func TestLoadSettingsPhase(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, settings string // settings "" writes no settings.json
 		noRepo         bool
@@ -54,6 +55,7 @@ func TestLoadSettingsPhase(t *testing.T) {
 
 // Settings a run can't read are one problem, though the terminal and the project both go by them.
 func TestConfigReportsUnreadableSettingsOnce(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": `)
 	_, p := loadWith(t)
 	if n := len(slices.DeleteFunc(slices.Clone(p), func(s string) bool {
@@ -66,6 +68,7 @@ func TestConfigReportsUnreadableSettingsOnce(t *testing.T) {
 // A run and init refuse a linked worktree in the same words, init's after "orchestra init: ", a
 // run's as a sentence.
 func TestMainCheckoutProblem(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("real git")
 	}

@@ -12,6 +12,7 @@ import (
 // log names it, and whether its workers report through hooks; "" is Herdr's, where workers ran before
 // there was a choice.
 func TestTerminalNamed(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, want string
 		label      dispatch.TerminalLabel
@@ -36,6 +37,7 @@ func TestTerminalNamed(t *testing.T) {
 
 // --terminal and settings.json take the terminals, in the table's order, and auto.
 func TestTerminalChoices(t *testing.T) {
+	t.Parallel()
 	want := []string{project.TerminalHerdr, project.TerminalTmux, project.TerminalCmux, project.TerminalAuto}
 	if got := terminalChoices(); !slices.Equal(got, want) {
 		t.Errorf("choices %q, want %q", got, want)
@@ -45,6 +47,7 @@ func TestTerminalChoices(t *testing.T) {
 // A hook-driven terminal refuses workers whose sessions report through no hooks, naming the terminal,
 // the agent and those that do, as it always has.
 func TestHookWorkers(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ terminal, agent, want string }{
 		{"tmux", "codex", "Workers in tmux must be Claude Code (got --agent codex, or AGENT_KIND): only Claude " +
 			"workers report through hooks, which tell orchestra what they are doing. Run from a Herdr pane for other agents."},

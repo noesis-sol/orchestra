@@ -11,6 +11,7 @@ import (
 
 // The setup and the files whose change has it run come from settings.json.
 func TestConfigSetup(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"concurrent": 1}`)
 	if c, p := loadWith(t); len(p) > 0 || c.Setup != "" ||
 		strings.Join(c.SetupFiles, " ") != strings.Join(project.DefaultSetupFiles, " ") {

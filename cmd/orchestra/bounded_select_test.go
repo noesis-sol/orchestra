@@ -17,6 +17,7 @@ var (
 
 // Up on the first option leaves it selected, and Enter runs the current tickets.
 func TestWorkQuestionStopsAtTheFirstOption(t *testing.T) {
+	t.Parallel()
 	for _, up := range upKeys {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 		term.waitFor(t, "> Current tickets: 3 ready")
@@ -30,6 +31,7 @@ func TestWorkQuestionStopsAtTheFirstOption(t *testing.T) {
 
 // Down on the last option leaves it selected, and Enter asks for the feature's description.
 func TestWorkQuestionStopsAtTheLastOption(t *testing.T) {
+	t.Parallel()
 	for _, down := range downKeys {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 		term.waitFor(t, "> Current tickets: 3 ready")
@@ -45,6 +47,7 @@ func TestWorkQuestionStopsAtTheLastOption(t *testing.T) {
 // '/' doesn't filter the options: with "New" typed after it, Enter would pick New feature. The
 // help line doesn't offer it.
 func TestWorkQuestionDoesNotFilter(t *testing.T) {
+	t.Parallel()
 	const ctrlA = "\x01" // ends the '/' key; does nothing at the question
 	term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 	term.waitFor(t, "> Current tickets: 3 ready")

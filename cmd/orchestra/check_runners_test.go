@@ -25,6 +25,7 @@ func settingsOf(t *testing.T, repo string) map[string]any {
 }
 
 func TestInitWritesTheRunnersFromTheCheckFlags(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra init on real git per case")
 	}
@@ -80,6 +81,7 @@ func TestInitWritesTheRunnersFromTheCheckFlags(t *testing.T) {
 }
 
 func TestInitCallsTheProjectsCheckScript(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	script := "#!/bin/sh\necho the project checked\n"
 	if err := os.MkdirAll(filepath.Join(repo, "scripts"), 0o755); err != nil {
@@ -112,6 +114,7 @@ func TestInitCallsTheProjectsCheckScript(t *testing.T) {
 }
 
 func TestInitReportsADifferingRunnerAndKeepsIt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra init three times on real git")
 	}
@@ -157,6 +160,7 @@ func TestInitReportsADifferingRunnerAndKeepsIt(t *testing.T) {
 }
 
 func TestInitMovesTheOldCheckSettingsToTheNewNames(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, project.Dir), 0o755); err != nil {
 		t.Fatal(err)

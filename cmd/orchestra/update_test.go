@@ -103,6 +103,7 @@ func updateIn(t *testing.T, current, exe string, u update.Updater, args ...strin
 }
 
 func TestUpdateInstallsANewerRelease(t *testing.T) {
+	t.Parallel()
 	u, _ := releaseServer(t, "v0.6.0", false)
 	exe := oldBinary(t)
 
@@ -119,6 +120,7 @@ func TestUpdateInstallsANewerRelease(t *testing.T) {
 
 // The latest release already, or a newer build, is left as it is: only the release's details are read.
 func TestUpdateLeavesTheLatestOrANewerOne(t *testing.T) {
+	t.Parallel()
 	for current, want := range map[string]string{
 		"v0.6.0": "orchestra v0.6.0 is the latest release already.\n",
 		"v0.7.0": "orchestra v0.7.0 is newer than the latest release, v0.6.0: nothing to do (orchestra update --force installs v0.6.0).\n",
@@ -141,6 +143,7 @@ func TestUpdateLeavesTheLatestOrANewerOne(t *testing.T) {
 
 // --force installs the latest release over a newer build.
 func TestUpdateForceInstallsOverANewerOne(t *testing.T) {
+	t.Parallel()
 	u, _ := releaseServer(t, "v0.6.0", false)
 	exe := oldBinary(t)
 	if code, out, errOut := updateIn(t, "v0.7.0", exe, u, "--force"); code != 0 ||
@@ -155,6 +158,7 @@ func TestUpdateForceInstallsOverANewerOne(t *testing.T) {
 // A build from a clone, dev or a pseudo-version, is replaced only with --force, which the refusal
 // names along with what it would replace.
 func TestUpdateReplacesACloneBuildOnlyWithForce(t *testing.T) {
+	t.Parallel()
 	for _, current := range []string{"dev", "v0.5.2-0.20261005062236-d70b642867ad", "v0.6.0+dirty"} {
 		t.Run(current, func(t *testing.T) {
 			u, requested := releaseServer(t, "v0.6.0", false)
@@ -182,6 +186,7 @@ func TestUpdateReplacesACloneBuildOnlyWithForce(t *testing.T) {
 
 // --check reports and changes nothing; it exits 1 when orchestra update would install the release.
 func TestUpdateCheckChangesNothing(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		current string
 		code    int
@@ -208,6 +213,7 @@ func TestUpdateCheckChangesNothing(t *testing.T) {
 
 // A failed update says the binary is unchanged.
 func TestUpdateChecksumMismatchLeavesTheBinary(t *testing.T) {
+	t.Parallel()
 	u, _ := releaseServer(t, "v0.6.0", true)
 	exe := oldBinary(t)
 	code, _, errOut := updateIn(t, "v0.5.1", exe, u)
@@ -223,6 +229,7 @@ func TestUpdateChecksumMismatchLeavesTheBinary(t *testing.T) {
 // A folder it can't write in, root's /usr/local/bin say, needs sudo, which orchestra update leaves
 // to the user.
 func TestUpdateInAFolderItCannotWriteSaysSudo(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes in any folder")
 	}
@@ -244,6 +251,7 @@ func TestUpdateInAFolderItCannotWriteSaysSudo(t *testing.T) {
 }
 
 func TestUpdateRejectsAnArgument(t *testing.T) {
+	t.Parallel()
 	u, requested := releaseServer(t, "v0.6.0", false)
 	if code, _, errOut := updateIn(t, "v0.5.1", oldBinary(t), u, "now"); code != 2 ||
 		errOut != "orchestra update: unexpected argument \"now\" (see orchestra update -h)\n" || len(requested()) > 0 {

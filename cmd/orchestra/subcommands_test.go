@@ -12,6 +12,7 @@ import (
 )
 
 func TestUsageLines(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		prefix, name, synopsis, want string
 	}{
@@ -27,6 +28,7 @@ func TestUsageLines(t *testing.T) {
 }
 
 func TestFindSubcommand(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		ok   bool
@@ -39,6 +41,7 @@ func TestFindSubcommand(t *testing.T) {
 }
 
 func TestParseArgs(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		args     []string
@@ -69,6 +72,7 @@ func TestParseArgs(t *testing.T) {
 // Each subcommand's synopsis is the one its -h, the main usage and the hint for flags given before it
 // show.
 func TestSubcommandSynopsisShownEverywhere(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	_, mainUsage, err := runIn(t, dir, nil, "-h")
 	if err != nil {
@@ -91,6 +95,7 @@ func TestSubcommandSynopsisShownEverywhere(t *testing.T) {
 
 // A subcommand's synopsis names each of its flags, its aliases and shorthands aside.
 func TestSubcommandSynopsisNamesEveryFlag(t *testing.T) {
+	t.Parallel()
 	flagLine := regexp.MustCompile(`(?m)^  -+(\S+).*\n\s+(.*)$`)
 	named := regexp.MustCompile(`\[--([a-z-]+)`)
 	for _, c := range subcommands {
@@ -118,6 +123,7 @@ func TestSubcommandSynopsisNamesEveryFlag(t *testing.T) {
 
 // close undoes what the session set up, the last first, each given the run's result.
 func TestSessionCloseUndoesLastFirst(t *testing.T) {
+	t.Parallel()
 	var got []string
 	s := &session{}
 	for _, name := range []string{"lock", "stops", "log", "newer"} {

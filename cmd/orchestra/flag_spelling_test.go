@@ -28,6 +28,7 @@ var listedFlag = regexp.MustCompile(`(?m)^  (-+)([\w-]+)`)
 
 // Each help lists its long flags as --name and its shorthands as -c, -v.
 func TestHelpListsLongFlagsWithTwoDashes(t *testing.T) {
+	t.Parallel()
 	wants := map[string][]string{
 		"-h":     {"  --limit int\n", "  -c int\n    \tshorthand for --concurrent\n", "  -v\tshorthand for --version\n"},
 		"init":   {"  --check-fast string\n", "  -c int\n"},
@@ -59,6 +60,7 @@ func TestHelpListsLongFlagsWithTwoDashes(t *testing.T) {
 // The listing is PrintDefaults' but for the dashes, and but for a flag whose usage gives its default already
 // ("(default: .orchestra/settings.json, else on)"), which isn't followed by a second.
 func TestFlagListingKeepsPrintDefaultsLayout(t *testing.T) {
+	t.Parallel()
 	fs := flag.NewFlagSet("orchestra", flag.ContinueOnError)
 	defineRunFlags(fs, func(string) string { return "" })
 	var ours, gos strings.Builder
@@ -100,6 +102,7 @@ func TestFlagListingKeepsPrintDefaultsLayout(t *testing.T) {
 
 // The help texts the ticket found stale say what is true now, --limit's default once.
 func TestHelpOfLimitTicketsAndOrganEffort(t *testing.T) {
+	t.Parallel()
 	_, help, err := runIn(t, t.TempDir(), nil, "-h")
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +126,7 @@ func TestHelpOfLimitTicketsAndOrganEffort(t *testing.T) {
 
 // A long flag still takes one dash, as Go's flags do: scripts written either way keep working.
 func TestLongFlagTakesOneDashToo(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"-limit", "5", "-plain"}, {"--limit", "5", "--plain"}} {
 		f, problems, err := readFlags(args, func(string) string { return "" }, &strings.Builder{})
 		if err != nil || len(problems) > 0 || f.Limit != 5 || !f.Plain {
@@ -135,6 +139,7 @@ func TestLongFlagTakesOneDashToo(t *testing.T) {
 // source's strings and comments, the docs, the skills, the prompts, nor the changelog's unreleased section
 // (released ones stay as they were).
 func TestNoTextWritesALongFlagWithOneDash(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra for each help text and reads the docs")
 	}

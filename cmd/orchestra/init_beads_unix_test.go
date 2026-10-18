@@ -69,6 +69,7 @@ func toolCalls(t *testing.T, dir string) string {
 const bdInitCall = "bd init --non-interactive --role maintainer --init-if-missing\n"
 
 func TestInitInstallsBeadsThenRunsBdInit(t *testing.T) {
+	t.Parallel()
 	dir := fakeBeadsTools(t, false)
 	repo, _ := gitRepo(t)
 	env := map[string]string{"HOME": t.TempDir()}
@@ -99,6 +100,7 @@ func TestInitInstallsBeadsThenRunsBdInit(t *testing.T) {
 }
 
 func TestInitRunsBdInitOnlyWhereBdIsInstalled(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra init on real git with fake tools")
 	}
@@ -116,6 +118,7 @@ func TestInitRunsBdInitOnlyWhereBdIsInstalled(t *testing.T) {
 }
 
 func TestInitWithoutATerminalOrConsentInstallsNothing(t *testing.T) {
+	t.Parallel()
 	dir := fakeBeadsTools(t, false)
 	repo, _ := gitRepo(t)
 	env := map[string]string{"HOME": t.TempDir()}

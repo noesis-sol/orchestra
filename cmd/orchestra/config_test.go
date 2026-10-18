@@ -61,7 +61,7 @@ func samePath(a, b string) bool {
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
 func loadWith(t *testing.T, args ...string) (options, []string) {
 	t.Helper()
-	c, problems, err := loadConfig(testCtx(t, context.Background()), workDir(t), args, getenv(t), io.Discard)
+	c, problems, err := loadConfig(testCtx(context.Background(), t), workDir(t), args, getenv(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +71,7 @@ func loadWith(t *testing.T, args ...string) (options, []string) {
 // Claude Code turns Chrome on by itself, so workers are started with --no-chrome once the project
 // chose its MCP servers without it, and --chrome when it chose it.
 func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"concurrent": 1}`)
 	if err := os.WriteFile(filepath.Join(workDir(t), ".mcp.json"), []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -91,6 +92,7 @@ func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
 }
 
 func TestConfigDefaultsAndLayout(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, `{"check": "make check"}`)
 	c, p := loadWith(t)
 	if len(p) > 0 {
@@ -128,6 +130,7 @@ func TestConfigDefaultsAndLayout(t *testing.T) {
 }
 
 func TestConfigLegacyLayout(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	if err := os.RemoveAll(filepath.Join(repo, ".orchestra")); err != nil {
 		t.Fatal(err)
@@ -146,6 +149,7 @@ func TestConfigLegacyLayout(t *testing.T) {
 
 // Every setup problem is reported, together; main exits with code 2 when there are any.
 func TestConfigSetupProblems(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "{}") // set up, so the missing prompt and Beads are listed (see not_set_up_test.go)
 	if err := os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md")); err != nil {
 		t.Fatal(err)
@@ -171,6 +175,7 @@ func TestConfigSetupProblems(t *testing.T) {
 }
 
 func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	_, git := gitRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
@@ -189,6 +194,7 @@ func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
 // A relative WT_ROOT, like a relative WORKER_PROMPT, is relative to the repository, wherever in it
 // orchestra runs.
 func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	if err := os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755); err != nil {
 		t.Fatal(err)
@@ -206,6 +212,7 @@ func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
 
 // Worktrees inside the repository are refused however the path reaches it.
 func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(repo, link); err != nil {
@@ -232,6 +239,7 @@ func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
 // mcp_servers is resolved to this machine's definitions at start-up; a name it can't give workers
 // is a setup problem naming the fix.
 func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, `{"mcp_servers": ["postgres", "exa"]}`)
 	dir := t.TempDir()
 	setenv(t, "CLAUDE_CONFIG_DIR", dir)

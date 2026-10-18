@@ -47,7 +47,7 @@ func initOnTerminal(t *testing.T, answer string) (*fakeTerminal, func() int) {
 	done := make(chan int, 1)
 	var errOut strings.Builder
 	go func() {
-		done <- runInit(testCtx(t, ctx), repo, []string{"--mcp", "", "--verifier=false"}, func(k string) string { return env[k] }, tty, tty, &errOut)
+		done <- runInit(testCtx(ctx, t), repo, []string{"--mcp", "", "--verifier=false"}, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()
 	t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 		cancel()
@@ -85,6 +85,7 @@ func scoutLine(term *fakeTerminal) string {
 
 // init has no log for the scout's ORGAN line: its summary says what the scout cost.
 func TestInitSaysWhatTheScoutCost(t *testing.T) {
+	t.Parallel()
 	term, exit := initOnTerminal(t, scoutFoundTwoCosting)
 	for _, step := range []struct{ on, keys string }{
 		{"┃ Tickets at the same time", keyEnter},
@@ -111,6 +112,7 @@ func TestInitSaysWhatTheScoutCost(t *testing.T) {
 
 // Cancelled, init changes nothing, but the scout's call was paid for all the same.
 func TestCancelledInitSaysWhatTheScoutCost(t *testing.T) {
+	t.Parallel()
 	term, exit := initOnTerminal(t, scoutFoundTwoCosting)
 	term.waitFor(t, "┃ Tickets at the same time")
 	term.typeKeys(t, keyEnter, false)
@@ -128,6 +130,7 @@ func TestCancelledInitSaysWhatTheScoutCost(t *testing.T) {
 // A scout that ended in an error is to watch, and says how it ended; one that never answered has no
 // line.
 func TestScoutStepsMarkAnErrorToWatch(t *testing.T) {
+	t.Parallel()
 	if steps := scoutSteps(nil); len(steps) != 0 {
 		t.Errorf("no call gave %v, want no step", steps)
 	}

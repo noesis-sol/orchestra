@@ -28,6 +28,7 @@ esac
 // --ticket (or ORCHESTRA_TICKET) scopes the run; an unknown, closed or question ticket is a setup
 // problem, listed with the others, as is an ID that isn't a plain name.
 func TestConfigTicketScope(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: loads the configuration on real git with a fake bd per case")
 	}

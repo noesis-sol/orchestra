@@ -34,3 +34,14 @@ func lockFile(f *os.File, exclusive bool) error {
 	}
 	return lockErr
 }
+
+// unlockFile releases the flock on f, then closes f. Closing f alone would release it only once every
+// copy of f is closed: a process forked meanwhile holds one until it execs its command, which under
+// load takes a while, and another run in the process, as in tests, would find the lock still held.
+// Unlocked, the lock is released at once, whatever holds a copy.
+func unlockFile(f *os.File) error {
+	if conn, err := f.SyscallConn(); err == nil {
+		_ = conn.Control(func(fd uintptr) { _ = syscall.Flock(int(fd), syscall.LOCK_UN) }) // closing releases it too
+	}
+	return f.Close()
+}

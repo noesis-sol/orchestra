@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,11 +21,12 @@ var (
 	testEnvs   = map[string]*testEnv{} // by test name
 )
 
-// testEnv is the environment one test set: its variables, over its parent's, and its working
-// directory, "" for its parent's.
+// testEnv is the environment one test set: its variables, over its parent's, its working
+// directory, "" for its parent's, and the breakdown of its spec runs, nil for its parent's.
 type testEnv struct {
-	vars map[string]string
-	dir  string
+	vars      map[string]string
+	dir       string
+	breakdown func(s *session) specBreakdown
 }
 
 // envOf is the environment t sets, made if need be, for setenv and chdir.
@@ -124,20 +126,39 @@ func workDir(t testing.TB) string {
 }
 
 // testCtx is ctx giving the commands run with it t's environment (command.WithEnv).
-func testCtx(t testing.TB, ctx context.Context) context.Context {
+func testCtx(ctx context.Context, t testing.TB) context.Context {
 	envs := lineage(t)
 	testEnvsMu.Lock()
 	defer testEnvsMu.Unlock()
 	var vars []string
-	for i := len(envs) - 1; i >= 0; i-- { // the outermost test's first, so that t's own win
-		for k, v := range envs[i].vars {
+	for _, e := range slices.Backward(envs) { // the outermost test's first, so that t's own win
+		for k, v := range e.vars {
 			vars = append(vars, k+"="+v)
 		}
 	}
 	return command.WithEnv(ctx, vars...)
 }
 
+// breakDownWith has t's spec runs broken down by the breakdown b gives, as cmdEnv.breakdown.
+func breakDownWith(t testing.TB, b func(s *session) specBreakdown) {
+	t.Helper()
+	e := envOf(t)
+	testEnvsMu.Lock()
+	defer testEnvsMu.Unlock()
+	e.breakdown = b
+}
+
 // testCmdEnv is orchestra's cmdEnv in t's environment and working directory, with these streams.
 func testCmdEnv(t testing.TB, stdin io.Reader, stdout, stderr io.Writer) cmdEnv {
-	return cmdEnv{dir: workDir(t), getenv: getenv(t), stdin: stdin, stdout: stdout, stderr: stderr}
+	e := cmdEnv{dir: workDir(t), getenv: getenv(t), stdin: stdin, stdout: stdout, stderr: stderr}
+	envs := lineage(t)
+	testEnvsMu.Lock()
+	defer testEnvsMu.Unlock()
+	for _, te := range envs {
+		if te.breakdown != nil {
+			e.breakdown = te.breakdown
+			break
+		}
+	}
+	return e
 }

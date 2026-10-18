@@ -19,6 +19,7 @@ func kill(t *testing.T, sig syscall.Signal) {
 
 // SIGTERM and SIGHUP are caught like Ctrl+C: nothing kills orchestra before it logs the stop.
 func TestStopSignalsAreCaught(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGHUP} {
 		stops := catchStops()
 		stopped := make(chan os.Signal, 1)
@@ -47,6 +48,7 @@ func TestStopSignalsAreCaught(t *testing.T) {
 // finishing a merge: the test process would die here if they didn't. Until the watch knows how to
 // quit (quitWith), they wait for the next phase, the first of them stopping it.
 func TestStopSignalsStayCaughtWhileTheLoopWindsDown(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	stops := catchStops()
 	defer stops.release()
 	stopped := make(chan os.Signal, 2)
@@ -87,6 +89,7 @@ func TestStopSignalsStayCaughtWhileTheLoopWindsDown(t *testing.T) {
 
 // SIGUSR1 asks the run to stop after its running tickets, each time it comes.
 func TestDrainSignalIsCaught(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	drained := make(chan struct{}, 2)
 	stop := watchDrain(func() { drained <- struct{}{} })
 	defer stop()

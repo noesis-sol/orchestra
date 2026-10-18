@@ -196,6 +196,7 @@ const paneLine = "Talking the feature through with claude in the pane on the rig
 // pane is closed, the epic is checked, and orchestra's pane says what was filed: the run starts on it
 // without asking.
 func TestPaneInterviewFilesTheFeature(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{
@@ -238,6 +239,7 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 
 // An interview that files nothing ends as on the terminal, its pane closed once claude has left.
 func TestPaneInterviewThatFilesNothing(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle, dispatch.StateWorking, dispatch.StateGone}}
@@ -257,6 +259,7 @@ func TestPaneInterviewThatFilesNothing(t *testing.T) {
 // The user can close the interview's pane rather than type /exit, even while claude starts: that
 // ends the interview with what it handed back, at once, without falling back to the terminal.
 func TestPaneInterviewClosedByTheUser(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		agent dispatch.AgentState // in the pane until the user closes it
@@ -301,6 +304,7 @@ func TestPaneInterviewClosedByTheUser(t *testing.T) {
 // whether claude has appeared yet or not: the interview's pane is closed, which ends claude, and
 // orchestra stops as on the terminal, naming the epic if one was filed.
 func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		agent dispatch.AgentState
@@ -348,6 +352,7 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 // within a minute, orchestra closes any pane it made, says why in one line, and hands claude its
 // terminal instead, with the same first message; what that session files runs as before.
 func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		panes     fakePanes

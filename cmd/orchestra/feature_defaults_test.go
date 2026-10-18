@@ -16,6 +16,7 @@ import (
 // ticket limit unless --limit or LIMIT gives one.
 
 func TestFeatureRunsDefaultToAutoPermissionMode(t *testing.T) {
+	t.Parallel()
 	feature := []string{"--feature", "Add a flag"}
 	for _, tc := range []struct {
 		name     string
@@ -39,6 +40,7 @@ func TestFeatureRunsDefaultToAutoPermissionMode(t *testing.T) {
 }
 
 func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
+	t.Parallel()
 	feature := []string{"--feature", "Add a flag"}
 	for _, tc := range []struct {
 		name string
@@ -71,6 +73,7 @@ func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 // workers in auto permission mode unless the flags say otherwise, and named in the run lock from
 // then on.
 func TestFeatureChosenRunsAsFeatureGivenDoes(t *testing.T) {
+	t.Parallel()
 	repo := specFixture(t)
 	setenv(t, "WORKER_PERMISSION_MODE", "")
 	setenv(t, "LIMIT", "")

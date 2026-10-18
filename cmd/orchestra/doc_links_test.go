@@ -19,6 +19,7 @@ import (
 // the links to it pointing nowhere, which GitHub shows as a 404 or as the top of the page. orchestra-hzyk fixed a
 // link in docs/organs.md to a README heading a commit had removed, which nothing caught but a check by hand.
 func TestDocLinksResolve(t *testing.T) {
+	t.Parallel()
 	repo := os.DirFS("../..")
 	docs, err := fs.Glob(repo, "docs/*.md")
 	if err != nil || len(docs) == 0 {
@@ -36,6 +37,7 @@ func TestDocLinksResolve(t *testing.T) {
 // The check finds a link to a file that is missing or to a heading its file doesn't have, a link anywhere a reader
 // can follow it, but not one inside code or to another site.
 func TestDocLinkProblems(t *testing.T) {
+	t.Parallel()
 	readme := strings.Join([]string{
 		"# Title",
 		"",
@@ -95,6 +97,7 @@ func TestDocLinkProblems(t *testing.T) {
 }
 
 func TestHeadingSlugs(t *testing.T) {
+	t.Parallel()
 	doc := strings.Join([]string{
 		"# Claude Agent Orchestra",
 		"## A spec run's setup",

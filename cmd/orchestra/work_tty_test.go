@@ -61,7 +61,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	ended := make(chan struct{}) // closed once run has returned
 	go func() {
 		defer close(ended)
-		err := run(testCtx(t, ctx), append([]string{"orchestra"}, args...), testCmdEnv(t, tty, tty, &errOut))
+		err := run(testCtx(ctx, t), append([]string{"orchestra"}, args...), testCmdEnv(t, tty, tty, &errOut))
 		done <- exitOf(err)
 	}()
 	// A test that ends before orchestra exits, as one that fails a wait does, stops orchestra and waits
@@ -95,6 +95,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 
 // Esc at the question ends orchestra with nothing done: nothing talked through, no run recorded.
 func TestRunStoppedAtTheQuestionDoesNothing(t *testing.T) {
+	t.Parallel()
 	dir := featureTools(t)
 	term, repo, exit := runOnTerminal(t)
 	term.waitFor(t, "> Current tickets: none, all done")

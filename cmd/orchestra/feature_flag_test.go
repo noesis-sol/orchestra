@@ -17,6 +17,7 @@ import (
 // --feature makes its own scope, so --ticket with it is a setup problem, as is an empty request.
 // --refine goes with it, and changes nothing: a feature is always talked through.
 func TestConfigFeatureFlags(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: loads the configuration on real git per case")
 	}
@@ -49,6 +50,7 @@ func TestConfigFeatureFlags(t *testing.T) {
 // A feature run with no ticket left under a limit given would file its plan and start none of it,
 // so it doesn't start; a run without --feature still ends at once with LIMIT_REACHED.
 func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"concurrent": 1}`)
 	const want = "--feature would file a plan and run none of it"
 	for _, tc := range []struct {
@@ -82,6 +84,7 @@ func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
 // naming --spec as the way to run a request unattended, before claude runs or anything is filed.
 // The help leaves it out.
 func TestYesIsGone(t *testing.T) {
+	t.Parallel()
 	const want = "--yes is gone: --feature always talks the feature through with you; " +
 		"orchestra --spec <file> runs a request written to a file unattended."
 	configFixture(t, `{"concurrent": 1}`)
@@ -91,7 +94,7 @@ func TestYesIsGone(t *testing.T) {
 		}
 	}
 	var help strings.Builder
-	if _, _, err := loadConfig(testCtx(t, context.Background()), workDir(t), []string{"-h"}, getenv(t), &help); err == nil ||
+	if _, _, err := loadConfig(testCtx(context.Background(), t), workDir(t), []string{"-h"}, getenv(t), &help); err == nil ||
 		strings.Contains(help.String(), "--yes") || !strings.Contains(help.String(), "--feature string") {
 		t.Errorf("the help (%v):\n%s", err, help.String())
 	}
@@ -114,6 +117,8 @@ func TestYesIsGone(t *testing.T) {
 // first and nothing asked of the organs. Once it hands the epic back, orchestra says what was filed
 // and runs it without asking; the lock and the run's start name the feature.
 func TestFeatureFlagIsTalkedThrough(t *testing.T) {
+	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
+	// beside it would catch too.
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -179,6 +184,7 @@ func TestFeatureFlagIsTalkedThrough(t *testing.T) {
 // Without a terminal to talk it through on, and no pane, --feature ends the run, exit 2, before
 // claude runs or anything is filed, naming --spec as the way to run a request unattended.
 func TestFeatureFlagWithoutATerminal(t *testing.T) {
+	t.Parallel()
 	dir := featureTools(t)
 	setenv(t, "HERDR_PANE_ID", "")
 	_, stdout, stderr, code := runFeatureIn(t, "--feature", "Add a --json flag", "--plain")
@@ -200,13 +206,14 @@ func TestFeatureFlagWithoutATerminal(t *testing.T) {
 
 // The run's startup checks come first: a --feature run that couldn't start talks nothing through.
 func TestFeatureStartupProblemsComeFirst(t *testing.T) {
+	t.Parallel()
 	dir := featureTools(t)
 	repo := configFixture(t, `{"concurrent": 1}`)
 	if err := os.WriteFile(filepath.Join(repo, "dirty.go"), []byte("package x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out, errOut strings.Builder
-	err := run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
+	err := run(testCtx(context.Background(), t), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	if exitOf(err) != dispatch.ExitDirty || !strings.Contains(errOut.String(), "uncommitted changes in") {
 		t.Errorf("dirty checkout: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}
@@ -217,7 +224,7 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 	setenv(t, "HERDR_ENV", "")
 	setenv(t, "ORCHESTRA_TERMINAL", "herdr")
 	errOut.Reset()
-	err = run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
+	err = run(testCtx(context.Background(), t), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	if exitOf(err) != dispatch.ExitSetup || !strings.Contains(errOut.String(), "Not running inside a Herdr pane") {
 		t.Errorf("outside Herdr: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}

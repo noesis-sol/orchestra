@@ -13,6 +13,7 @@ import (
 // Left to auto, a run in a cmux terminal picks cmux, before tmux, unless it runs in a Herdr pane or
 // in tmux inside cmux, the terminal it is in.
 func TestPickTerminalInCmux(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, choice string
 		env          map[string]string
@@ -46,6 +47,7 @@ func fakeCmux(t *testing.T, script string) {
 // being closed, the tabs are in sight, and the probe reports through hooks. The book of workspaces
 // is in the main checkout's .orchestra/run/.
 func TestConfigCmuxInACmuxTerminal(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	fakeCmux(t, "exit 0")
 	setenv(t, "HERDR_ENV", "")
@@ -70,6 +72,7 @@ func TestConfigCmuxInACmuxTerminal(t *testing.T) {
 // terminals. So is a cmux that doesn't answer, --workspace, which has no use there, and workers
 // other than Claude's.
 func TestConfigCmuxProblems(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": "cmux"}`)
 	fakeCmux(t, "echo 'Error: Socket not found at /nowhere/cmux.sock' >&2; exit 1")
 	_, p := loadWith(t)

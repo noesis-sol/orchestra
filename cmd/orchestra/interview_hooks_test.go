@@ -14,6 +14,7 @@ import (
 // In tmux, which reads claude's state from its hooks, the interview's claude reports through them to
 // its own run folder; in Herdr, which reads its screen, it has none.
 func TestInterviewInATmuxPaneReportsThroughHooks(t *testing.T) {
+	t.Parallel()
 	for _, hooks := range []bool{true, false} {
 		repo, _ := gitRepo(t)
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle}}

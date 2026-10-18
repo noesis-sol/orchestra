@@ -51,10 +51,13 @@ type specBreakdown interface {
 	BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error)
 }
 
-// breakdownOf is the breakdown the spec run s has its spec broken down by: with the user, in a
-// Claude Code session beside orchestra's (spec_refine.go), when the run has --refine, else the
-// headless one (spec_breakdown.go); tests give their own.
-var breakdownOf = func(s *session) specBreakdown {
+// breakdownOf is the breakdown the spec run s has its spec broken down by: the one its cmdEnv gives,
+// as tests do, else with the user, in a Claude Code session beside orchestra's (spec_refine.go),
+// when the run has --refine, else the headless one (spec_breakdown.go).
+func breakdownOf(s *session) specBreakdown {
+	if s.e.breakdown != nil {
+		return s.e.breakdown(s)
+	}
 	if s.cfg.Refine {
 		return newRefineBreakdown(s)
 	}

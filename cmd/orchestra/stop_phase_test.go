@@ -12,6 +12,7 @@ import (
 // quitter and with or without something finishing, it pends, goes to the listening phase, warns
 // or quits, and leaves the watch in the phase the table names.
 func TestStopPhaseTable(t *testing.T) {
+	t.Parallel()
 	merge := []dispatch.Finishing{{Ticket: "a-1", What: "merge"}}
 	for _, tc := range []struct {
 		name      string
@@ -61,6 +62,7 @@ func TestStopPhaseTable(t *testing.T) {
 
 // Only the first of the signals that pend is kept for the next phase.
 func TestStopPhaseKeepsTheFirstPending(t *testing.T) {
+	t.Parallel()
 	r := quitRigFor(t, &windingLoop{})
 	r.stops.deliver(syscall.SIGHUP)
 	r.stops.deliver(os.Interrupt)
@@ -72,6 +74,7 @@ func TestStopPhaseKeepsTheFirstPending(t *testing.T) {
 // on starts the next phase: listening with a function, between without one, and winding at once
 // when the function takes a signal that pends; windDown goes to winding, or stays warned.
 func TestStopPhaseOnAndWindDown(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	stops.on(func(os.Signal) {})

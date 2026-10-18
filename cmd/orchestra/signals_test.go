@@ -15,6 +15,7 @@ import (
 // Each stop signal goes to one phase: the one listening, or the next to listen when it comes
 // between phases, or while a stopped loop winds down before the watch knows how to quit (quitWith).
 func TestEachStopSignalGoesToOnePhase(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	var loop []os.Signal
@@ -59,6 +60,7 @@ func organRun(t *testing.T, stops *stopWatch) string {
 // A stop signal that came while the loop wound down skips the organ phase, as one during it does;
 // SIGTERM or SIGHUP at any time in the run skips it too.
 func TestAStopSignalBeforeTheOrganPhaseSkipsIt(t *testing.T) {
+	t.Parallel()
 	for _, sigs := range [][]os.Signal{{os.Interrupt, os.Interrupt}, {os.Interrupt, syscall.SIGHUP}, {syscall.SIGTERM}} {
 		stops := catchStops()
 		stops.on(func(os.Signal) {}) // the loop's
@@ -85,6 +87,7 @@ func TestAStopSignalBeforeTheOrganPhaseSkipsIt(t *testing.T) {
 // The feature run's context, like the organ phase's, is cancelled by the next stop signal, and
 // stops listening once released.
 func TestStopContextIsCancelledByTheNextSignal(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	ctx, stop := stops.context(context.Background())

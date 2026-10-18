@@ -54,6 +54,7 @@ func fullCheckPhase(t *testing.T, orch organs, opts options, stops *stopWatch, c
 // The full check runs after the run, before triage finishes and the run report, and with the organs
 // off too; not after a run that stopped.
 func TestFullCheckRunsBeforeTheOrgans(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	var steps []string
@@ -81,6 +82,7 @@ func TestFullCheckRunsBeforeTheOrgans(t *testing.T) {
 
 // Ctrl+C while the full check runs stops it and skips the organs after it.
 func TestCtrlCDuringTheFullCheckSkipsTheRest(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	var steps []string

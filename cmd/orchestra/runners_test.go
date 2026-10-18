@@ -35,6 +35,7 @@ func closedDashboard(t *testing.T, send func(*tea.Program, *tui.ProgramSink)) (t
 }
 
 func TestAnyEarlyEndOfTheDashboardStopsTheLoop(t *testing.T) {
+	t.Parallel()
 	cancelled := false
 	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }, func(bool) {}, func(string) {}).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil); why != "with Ctrl+C" || !cancelled {

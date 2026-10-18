@@ -43,6 +43,7 @@ var _ = faketool.Func("start-run", startRun)
 // form's answers to its end, so no run works on tickets renamed under it, in a tree init writes into.
 // Once init is over, a run starts.
 func TestARunStartedDuringInitIsRefused(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	faketool.WriteFunc(t, dir, "start-run")
 	faketool.Write(t, dir, "bd", `#!/bin/sh

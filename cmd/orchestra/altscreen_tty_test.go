@@ -14,6 +14,7 @@ import (
 // it, before the dashboard or after. Once the dashboard has closed, the normal screen gets the run's
 // summary, then the run's last line. This run reaches its ticket limit at once.
 func TestDashboardDrawsOnTheAlternateScreen(t *testing.T) {
+	t.Parallel()
 	nothingTools(t, backlog{})
 	term, _, exit := runOnTerminal(t, "--tickets", "--done-so-far", "3", "--limit", "3")
 	code, stderr := exit()

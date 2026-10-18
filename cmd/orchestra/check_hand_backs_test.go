@@ -8,6 +8,7 @@ import (
 )
 
 func TestConfigCheckHandBacks(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"concurrent": 2}`)
 	if c, p := loadWith(t); len(p) > 0 || c.CheckHandBacks != 2 {
 		t.Errorf("default: %d, %v", c.CheckHandBacks, p)

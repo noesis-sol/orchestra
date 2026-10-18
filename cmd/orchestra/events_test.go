@@ -41,6 +41,7 @@ func kindsOf(recs []map[string]any) string {
 // code 130, before the stream closes: no deferred code runs after it. A record the loop sends after
 // that is dropped.
 func TestQuittingAtOnceRecordsHowTheRunEnded(t *testing.T) {
+	t.Parallel()
 	loop := &windingLoop{running: []dispatch.Status{{Ticket: "a-1", Tab: "w1:2"}},
 		finishing: []dispatch.Finishing{{Ticket: "a-1", What: "merge"}}}
 	r := newQuitRig(t, loop)
@@ -69,6 +70,7 @@ func TestQuittingAtOnceRecordsHowTheRunEnded(t *testing.T) {
 
 // exitCode is the code main exits with, which the end record gives.
 func TestExitCode(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		err  error
 		want int

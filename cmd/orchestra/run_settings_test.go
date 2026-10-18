@@ -40,6 +40,7 @@ func settle(t *testing.T, args []string, env map[string]string, settings string)
 // Every run setting is taken from its flag over its environment variable, over the project's
 // settings.json where it has one, over its default.
 func TestPrecedence(t *testing.T) {
+	t.Parallel()
 	terminal := func(c options, s project.Settings) any {
 		got, err := project.ResolveTerminal(c.terminalAsked, s, terminalChoices())
 		if err != nil {
@@ -132,6 +133,7 @@ func TestPrecedence(t *testing.T) {
 // A run setting's problems, each worded as before: a variable's only where no flag overrides it,
 // in the order the flags are bound, and a flag held to its variable's rule.
 func TestRunSettingProblems(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		args     []string
@@ -214,6 +216,7 @@ func TestRunSettingProblems(t *testing.T) {
 // What the project's settings.json gives a run where no flag does: its checks, under their old
 // names too, how conflicts are resolved, the workers' effort as an argument, the types left out.
 func TestRunSettingsFromTheProject(t *testing.T) {
+	t.Parallel()
 	c, _, p := settle(t, nil, nil, `{"check": "make check", "check_timeout": "5m"}`)
 	if len(p) > 0 || c.Check != "make check" || c.CheckTimeout != 5*time.Minute || c.CheckFull != "" ||
 		c.CheckFullTimeout != project.DefaultCheckFullTimeout {
@@ -263,6 +266,7 @@ func TestRunSettingsFromTheProject(t *testing.T) {
 
 // readEnv gives the default for an unset variable, and for one parse doesn't take, with the problem.
 func TestReadEnv(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, value string
 		want        int

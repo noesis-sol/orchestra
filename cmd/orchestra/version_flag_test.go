@@ -7,6 +7,7 @@ import (
 
 // -v and --version print the version and exit 0, and -version, which scripts may use, still does.
 func TestVersionFlagForms(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	want := "orchestra " + buildVersion() + "\n"
 	for _, arg := range []string{"-v", "--version", "-version"} {
@@ -18,6 +19,7 @@ func TestVersionFlagForms(t *testing.T) {
 }
 
 func TestHelpListsVAsTheVersionShorthand(t *testing.T) {
+	t.Parallel()
 	_, stderr, err := runIn(t, t.TempDir(), nil, "-h")
 	if err != nil {
 		t.Fatalf("-h: %v", err)

@@ -146,7 +146,7 @@ func LockRun(ctx context.Context, repo string, h Holder) (*RunLock, error) {
 		}
 		l := &RunLock{f: f, path: path}
 		if err := l.Rewrite(h); err != nil {
-			_ = f.Close() // releases the lock: the run doesn't start
+			_ = unlockFile(f) // the run doesn't start
 			return nil, err
 		}
 		return l, nil
@@ -178,7 +178,7 @@ func lockOpened(repo, path string, f *os.File) error {
 	}
 	at, err := os.Stat(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		_ = f.Close() // releases a lock no other run would see
+		_ = unlockFile(f) // a lock no other run would see
 		return errReplaced
 	}
 	var locked fs.FileInfo
@@ -186,11 +186,11 @@ func lockOpened(repo, path string, f *os.File) error {
 		locked, err = f.Stat()
 	}
 	if err != nil {
-		_ = f.Close() // releases the lock: the run doesn't start
+		_ = unlockFile(f) // the run doesn't start
 		return fmt.Errorf("cannot lock %s: %w", path, err)
 	}
 	if !os.SameFile(at, locked) {
-		_ = f.Close() // releases a lock no other run would see
+		_ = unlockFile(f) // a lock no other run would see
 		return errReplaced
 	}
 	return nil
@@ -222,7 +222,7 @@ func (l *RunLock) Close() error {
 	if l == nil {
 		return nil
 	}
-	return l.f.Close()
+	return unlockFile(l.f)
 }
 
 // RunHolder reports whether a run holds the lock of the repository repo is a checkout of, and what
@@ -239,7 +239,7 @@ func RunHolder(ctx context.Context, repo string) (Holder, bool, error) {
 	if err != nil {
 		return Holder{}, false, err
 	}
-	defer func() { _ = f.Close() }() // read-only; releases the shared lock
+	defer func() { _ = unlockFile(f) }() // read-only; releases the shared lock
 	switch err := lockFile(f, false); {
 	case errors.Is(err, errLocked):
 		return readHolder(f), true, nil

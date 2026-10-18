@@ -9,6 +9,7 @@ import (
 // The spec breakdown's time limit and effort are taken from their flags over their variables, over
 // the project's settings.json, over the defaults: an hour, at effort high.
 func TestSpecBreakdownSettings(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		layer    string
 		args     []string
@@ -35,6 +36,7 @@ func TestSpecBreakdownSettings(t *testing.T) {
 
 // The breakdown's settings, flags and variables are checked as a run's others are.
 func TestSpecBreakdownSettingProblems(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		args     []string

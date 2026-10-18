@@ -17,6 +17,7 @@ import (
 // A stop signal while init's form asks cancels it, as Esc does: init changes nothing. Bubble Tea's
 // own handler would take SIGTERM for a submitted form, and init would go on with the answers so far.
 func TestInitIsCancelledByAStopSignalDuringTheForm(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(sig.String(), func(t *testing.T) {
 			tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
@@ -44,7 +45,7 @@ func TestInitIsCancelledByAStopSignalDuringTheForm(t *testing.T) {
 				"--mcp", "", "--setup", "", "--changelog-union=false", "--install-beads=false", "--verifier=false",
 				"--prefix", project.DefaultPrefix(repo)} // all but -c
 			go func() {
-				done <- runInit(testCtx(t, ctx), repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
+				done <- runInit(testCtx(ctx, t), repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
 			}()
 			t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 				cancel()

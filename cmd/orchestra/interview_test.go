@@ -10,6 +10,7 @@ import (
 // listening nor waits for the next one, while SIGTERM and SIGHUP still stop it. Afterwards Ctrl+C
 // stops a phase again.
 func TestInterruptsAreTheSessionsWhileItRuns(t *testing.T) {
+	t.Parallel()
 	stops := catchStops()
 	defer stops.release()
 	var got []os.Signal

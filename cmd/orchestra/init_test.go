@@ -13,6 +13,7 @@ import (
 )
 
 func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, project.Dir), 0o755); err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func TestInitCorrectsConcurrencyTrimsCheckAndKeepsUnknownKeys(t *testing.T) {
 }
 
 func TestInitSavesTheCheckTimeout(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "make check", "--check-timeout", "90s", "-c", "1")
 	if err != nil || !strings.Contains(strings.Join(strings.Fields(stdout), " "), "check-fast: make check, stopped after 1m30s") {
@@ -57,6 +59,7 @@ func TestInitSavesTheCheckTimeout(t *testing.T) {
 }
 
 func TestInitChoosesWorkersMCPServersWithoutATerminal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra init on real git per case")
 	}

@@ -47,9 +47,8 @@ func Getenv(ctx context.Context, name string) string {
 
 // lookupAdded is the variable name as WithEnv last added it to ctx, if it did.
 func lookupAdded(ctx context.Context, name string) (string, bool) {
-	env := added(ctx)
-	for i := len(env) - 1; i >= 0; i-- {
-		if k, v, _ := strings.Cut(env[i], "="); k == name {
+	for _, kv := range slices.Backward(added(ctx)) {
+		if k, v, _ := strings.Cut(kv, "="); k == name {
 			return v, true
 		}
 	}

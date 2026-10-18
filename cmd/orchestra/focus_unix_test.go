@@ -19,6 +19,7 @@ import (
 // log. The fake herdr fails only once the test lets it go, after the callback has returned: a
 // callback that waited for it would leave Herdr's own error out of the log.
 func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	release := filepath.Join(dir, "release")
 	script := "#!/bin/sh\nwhile [ ! -e '" + release + "' ]; do sleep 0.05; done\n" +
@@ -32,7 +33,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	}
 	defer func() { _ = log.Close() }() // the test reads the file itself
 
-	focusTab(testCtx(t, context.Background()), log, herdr.Terminal{})("w1:t9")
+	focusTab(testCtx(context.Background(), t), log, herdr.Terminal{})("w1:t9")
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

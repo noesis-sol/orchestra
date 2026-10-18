@@ -20,6 +20,7 @@ import (
 // repository as it was. In stage 2, Esc first skips the scout, which a claude that never answers
 // keeps looking, for a check typed by hand.
 func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
+	t.Parallel()
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 40, Col: 100}); err != nil {
 		t.Fatal(err)
@@ -46,7 +47,7 @@ func TestInitCancelledInItsLastStageChangesNothing(t *testing.T) {
 	done := make(chan int, 1)
 	var errOut strings.Builder
 	go func() {
-		done <- runInit(testCtx(t, ctx), repo, []string{"--mcp", ""}, func(k string) string { return env[k] }, tty, tty, &errOut)
+		done <- runInit(testCtx(ctx, t), repo, []string{"--mcp", ""}, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()
 	t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 		cancel()

@@ -145,6 +145,7 @@ func askWorkIn(ctx context.Context, t *testing.T, repo string, ready fakeReady) 
 const describing = "┃ Describe the feature"
 
 func TestWorkQuestionRunsTheCurrentTicketsByDefault(t *testing.T) {
+	t.Parallel()
 	term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 	term.waitFor(t, "> Current tickets: 3 ready")
 	term.typeKeys(t, keyEnter, true)
@@ -164,6 +165,7 @@ func TestWorkQuestionRunsTheCurrentTicketsByDefault(t *testing.T) {
 }
 
 func TestWorkQuestionCountsNothingWhenBdCantSay(t *testing.T) {
+	t.Parallel()
 	term, answer := askWorkOn(context.Background(), t, fakeReady{err: errors.New("bd: database is locked")})
 	term.waitFor(t, "> Current tickets")
 	term.typeKeys(t, keyEnter, true)
@@ -177,6 +179,7 @@ func TestWorkQuestionCountsNothingWhenBdCantSay(t *testing.T) {
 }
 
 func TestWorkQuestionTakesAMultiLineFeatureDescription(t *testing.T) {
+	t.Parallel()
 	term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
 	term.waitFor(t, "> Current tickets: 3 ready")
 	term.typeKeys(t, pickFeature, false)
@@ -194,6 +197,7 @@ func TestWorkQuestionTakesAMultiLineFeatureDescription(t *testing.T) {
 
 // Enter on nothing, or on spaces, says why and keeps the field open.
 func TestWorkQuestionRefusesAnEmptyDescription(t *testing.T) {
+	t.Parallel()
 	const refused = "describe the feature first, or press Esc to cancel"
 	for _, empty := range []string{"", "  " + keyNewLine} {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
@@ -212,6 +216,7 @@ func TestWorkQuestionRefusesAnEmptyDescription(t *testing.T) {
 // Ctrl+C or Esc, at the choice or at the description, ends the run before anything changes; so does
 // a stop signal, which ends ctx.
 func TestWorkQuestionCancelledExits130(t *testing.T) {
+	t.Parallel()
 	const stopped = "orchestra: stopped before the run started; nothing was changed.\n"
 	for _, cancelKey := range []string{keyEsc, keyCtrlC} {
 		term, answer := askWorkOn(context.Background(), t, fakeReady{n: 3})
@@ -243,6 +248,7 @@ func TestWorkQuestionCancelledExits130(t *testing.T) {
 }
 
 func TestAsksWorkOnlyWhenNothingSaysWhatToRun(t *testing.T) {
+	t.Parallel()
 	asked := options{}
 	asked.Limit = 40
 	for _, tc := range []struct {
@@ -269,6 +275,7 @@ func TestAsksWorkOnlyWhenNothingSaysWhatToRun(t *testing.T) {
 }
 
 func TestTicketsFlagSkipsTheQuestion(t *testing.T) {
+	t.Parallel()
 	env := func(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
 	for _, tc := range []struct {
 		name string

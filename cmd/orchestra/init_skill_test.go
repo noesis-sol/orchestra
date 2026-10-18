@@ -10,6 +10,7 @@ import (
 // Without a terminal there is no stage 2, so no choice files test work: init installs no skill,
 // whichever agent the workers are.
 func TestInitWithoutATerminalInstallsNoSkill(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	for _, args := range [][]string{
 		{"init", "--check", "make check", "-c", "1"},

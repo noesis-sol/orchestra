@@ -10,6 +10,7 @@ import (
 // 'orchestra hook' is the workers' hook: missing from the usage, and run by hand, without the cookie
 // the hook's command sets, it says what it is, writes nothing and exits 0.
 func TestHookCommandIsHidden(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	records := t.TempDir()
 	stdout, stderr, err := runIn(t, dir, nil, "hook", "Stop", records)

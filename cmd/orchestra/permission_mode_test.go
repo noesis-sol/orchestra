@@ -8,6 +8,7 @@ import (
 // A spec run, which nobody watches, starts its workers in auto unless the project's settings.json,
 // the flag or its variable choose another mode; any other run leaves the mode to Claude Code.
 func TestSpecRunsDefaultToAutoPermissionMode(t *testing.T) {
+	t.Parallel()
 	spec := []string{"--spec", "app.md"}
 	for _, tc := range []struct {
 		name     string

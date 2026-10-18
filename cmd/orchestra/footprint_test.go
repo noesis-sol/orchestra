@@ -7,6 +7,7 @@ import (
 )
 
 func TestConfigFootprint(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"concurrent": 2}`)
 	if c, p := loadWith(t); len(p) > 0 || c.NoFootprint {
 		t.Errorf("default: footprint off %v, %v", c.NoFootprint, p)

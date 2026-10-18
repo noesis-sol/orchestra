@@ -45,6 +45,7 @@ func filedUnder(run string) *featureTree {
 // The feature run is the run's start in UTC, to the second, and the session's first message names
 // it before the file with the description.
 func TestFeatureRunNamesTheRunsStart(t *testing.T) {
+	t.Parallel()
 	started := time.Date(2026, 10, 17, 11, 30, 5, 0, time.FixedZone("CEST", 2*3600))
 	if got := featureRun(started); got != paneRun {
 		t.Errorf("featureRun = %q, want %q", got, paneRun)
@@ -60,6 +61,7 @@ func TestFeatureRunNamesTheRunsStart(t *testing.T) {
 // the run on its epic. With nothing filed under the run it says nothing was filed; when bd can't
 // list it, it says so.
 func TestFeatureNotHandedBackSaysWhatWasFiled(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	for _, tc := range []struct {
 		name      string
@@ -94,6 +96,7 @@ func TestFeatureNotHandedBackSaysWhatWasFiled(t *testing.T) {
 // A stop during the session, before it handed the epic back, names the epic it filed under its
 // feature run, as bd has it, and how to start the run on it.
 func TestFeatureStoppedBeforeHandingBackNamesItsEpic(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

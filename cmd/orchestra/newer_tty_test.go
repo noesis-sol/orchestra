@@ -15,6 +15,8 @@ import (
 // date, on a dev build, with ORCHESTRA_NO_UPDATE_CHECK=1, or with plain output and stderr not a
 // terminal, it says nothing, and the check turned off writes no cache.
 func TestRunEndsSayingANewerReleaseIsOut(t *testing.T) {
+	// Not parallel: it sets the process's environment and this package's version and releases (cacheIn,
+	// latestRelease).
 	const line = "orchestra v0.6.0 is available (you have v0.5.1): orchestra update"
 	for _, tc := range []struct {
 		name    string

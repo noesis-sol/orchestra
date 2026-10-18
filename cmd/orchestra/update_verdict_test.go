@@ -5,6 +5,7 @@ import "testing"
 // A build is the latest release, newer, behind, or a build from a clone, which can be any of the
 // last two as well; dev, with no version, is behind.
 func TestVerdictOf(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		current string
 		want    verdict

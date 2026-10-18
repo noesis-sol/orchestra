@@ -28,13 +28,14 @@ func holdLock(t *testing.T, repo string, h project.Holder) {
 // the lock: a --feature request isn't talked through, and no log, worktree folder or git exclude is
 // written.
 func TestASecondRunIsRefused(t *testing.T) {
+	t.Parallel()
 	dir := featureTools(t)
 	repo := configFixture(t, `{"concurrent": 1}`)
 	started := time.Now().Truncate(time.Minute)
 	holdLock(t, repo, project.Holder{PID: 44497, Started: started, Branch: "main", Pane: "w2B:p60"})
 
 	var out, errOut strings.Builder
-	err := run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
+	err := run(testCtx(context.Background(), t), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	want := "(pid 44497, since " + started.Format("15:04") + ", main, pane w2B:p60). One run at a time"
 	if exitOf(err) != 2 || !strings.Contains(errOut.String(), "orchestra cannot start:\n  - orchestra is already running in ") ||
 		!strings.Contains(errOut.String(), want) {
@@ -56,6 +57,7 @@ func TestASecondRunIsRefused(t *testing.T) {
 
 // A run holds the lock while it runs and lets go as it ends, leaving its details in the file.
 func TestARunLeavesItsDetailsInTheLock(t *testing.T) {
+	t.Parallel()
 	featureTools(t)
 	setenv(t, "HERDR_PANE_ID", "w2B:p61")
 	repo, stdout, stderr, code := runFeatureIn(t, "--plain", "--ticket", "f-1")
@@ -77,6 +79,7 @@ func TestARunLeavesItsDetailsInTheLock(t *testing.T) {
 
 // orchestra plan --apply warns that a run is going, and adds the links anyway; the proposal alone doesn't.
 func TestPlanApplyWarnsOfARunningRun(t *testing.T) {
+	t.Parallel()
 	calls := fakePlanBd(t)
 	repo, _ := gitRepo(t)
 	holdLock(t, repo, project.Holder{PID: 44497, Branch: "main"})

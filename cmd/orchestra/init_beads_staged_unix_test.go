@@ -10,6 +10,7 @@ import (
 )
 
 func TestInitLeavesBdInitAloneWithChangesStaged(t *testing.T) {
+	t.Parallel()
 	dir := fakeBeadsTools(t, true)
 	repo, git := gitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "notes.md"), []byte("mine\n"), 0o644); err != nil {

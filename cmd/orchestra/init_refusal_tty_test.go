@@ -16,6 +16,7 @@ import (
 // A run that starts while init's form is answered stops init once it is: init looks again before
 // it changes anything.
 func TestInitIsRefusedByARunStartedDuringTheForm(t *testing.T) {
+	t.Parallel()
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 50, Col: 120}); err != nil {
 		t.Fatal(err)
@@ -41,7 +42,7 @@ func TestInitIsRefusedByARunStartedDuringTheForm(t *testing.T) {
 		"--setup", "", "--changelog-union=false", "--install-beads=false", "--verifier=false",
 		"--prefix", project.DefaultPrefix(repo)} // all but -c
 	go func() {
-		done <- runInit(testCtx(t, ctx), repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
+		done <- runInit(testCtx(ctx, t), repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()
 	t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 		cancel()

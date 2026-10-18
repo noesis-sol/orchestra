@@ -4,6 +4,7 @@ import "testing"
 
 // A session named with '.' is attached to as "name:": tmux reads "foo.bar" as window "foo", pane "bar".
 func TestConfigTmuxSessionNamedWithADotIsAttachedToAsASession(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": "tmux"}`)
 	fakeTmux(t)
 	c, p := loadWith(t, "--workspace", "foo.bar")

@@ -11,3 +11,6 @@ import (
 func lockFile(*os.File, bool) error {
 	return errors.ErrUnsupported
 }
+
+// unlockFile closes f, which holds no lock here.
+func unlockFile(f *os.File) error { return f.Close() }

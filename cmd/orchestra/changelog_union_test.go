@@ -8,6 +8,7 @@ import (
 )
 
 func TestInitAddsChangelogUnionOnlyWhenTold(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
 		t.Fatal(err)

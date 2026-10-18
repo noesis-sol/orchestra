@@ -479,8 +479,8 @@ func fillTemplate(t, check string) string {
 }
 
 // Prerequisites reports what orchestra needs and whether it is there, for the commands run with ctx.
-// getenv gives the environment where bd may be installed off the PATH (see LocateBd); has reports whether this machine has a command
-// (herdr, tmux, cmux, claude), wherever orchestra would find it.
+// getenv gives the environment where bd may be installed off the PATH (see LocateBd); has reports
+// whether this machine has a command (herdr, tmux, cmux, claude), wherever orchestra would find it.
 func Prerequisites(ctx context.Context, repo string, getenv func(string) string, has func(cmd string) bool) []Step {
 	var steps []Step
 	mark := func(ok bool, what, fix string) {

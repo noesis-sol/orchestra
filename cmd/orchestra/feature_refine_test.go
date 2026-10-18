@@ -105,6 +105,7 @@ func newFeatureTree() *featureTree {
 // metadata or acceptance criteria, and blocks cycles that hold one of its issues, are warnings; what
 // can't be read is a warning too, and leaves the tickets uncounted.
 func TestCheckFeatureWarnsOfWhatIsAmiss(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		epic     string
@@ -189,6 +190,7 @@ func talkFeatureThrough(t *testing.T, repo string, tree featureEpicTracker, epic
 // What is amiss in the epic handed back is said, and the run starts on it all the same; an ID that
 // isn't an epic's ends the run, exit 2, without running it.
 func TestFeatureRunsWhatIsHandedBackDespiteWarnings(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	r := talkFeatureThrough(t, repo, newFeatureTree(), "f-1")
 	if r.epic != "f-1" || r.code != dispatch.ExitOK {
@@ -212,6 +214,7 @@ func TestFeatureRunsWhatIsHandedBackDespiteWarnings(t *testing.T) {
 // Without a pane, the session takes orchestra's terminal; with neither, the run ends, exit 2, before
 // claude starts or anything is filed, naming --spec as the way to break a request down unattended.
 func TestFeatureNeedsATerminal(t *testing.T) {
+	t.Parallel()
 	repo := featureRepo(t)
 	tree := newFeatureTree()
 	var out, errOut strings.Builder
@@ -235,6 +238,8 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 // A feature typed at the start is talked through with Claude Code whatever agent the workers are:
 // with codex workers it goes to the session, not the organs.
 func TestTypedFeatureWithOtherWorkersIsTalkedThrough(t *testing.T) {
+	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
+	// beside it would catch too.
 	dir := interviewTools(t, "f-1")
 	term, repo, exit := runOnTerminal(t, "--agent", "codex")
 	describeFeature(t, term)
@@ -260,6 +265,8 @@ func TestTypedFeatureWithOtherWorkersIsTalkedThrough(t *testing.T) {
 // Without claude, a typed feature isn't talked through, nor planned by the organs: the run ends,
 // exit 2, saying so, with nothing filed.
 func TestTypedFeatureWithoutClaudeEndsSayingSo(t *testing.T) {
+	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
+	// beside it would catch too.
 	dir := interviewTools(t, "f-1")
 	if err := os.Remove(filepath.Join(dir, "claude")); err != nil {
 		t.Fatal(err)

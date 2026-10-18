@@ -14,6 +14,7 @@ import (
 // auto, a run picks the terminal it runs in, the innermost, which for Herdr's variables beside tmux's
 // or cmux's is Herdr only when Herdr says orchestra runs in the pane they name.
 func TestPickTerminalInnermost(t *testing.T) {
+	t.Parallel()
 	herdrPane := map[string]string{"HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1"}
 	with := func(env map[string]string, more ...string) map[string]string {
 		m := maps.Clone(env)
@@ -78,8 +79,9 @@ func herdrForeground(t *testing.T, group int, pids ...int) {
 // foreground, or Herdr names its process there; not when another program, a tmux client say, is, nor
 // when Herdr doesn't have the pane or answer.
 func TestOwnHerdrPane(t *testing.T) {
+	t.Parallel()
 	own := func(pane string) bool {
-		return ownHerdrPane(testCtx(t, t.Context()), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
+		return ownHerdrPane(testCtx(t.Context(), t), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
 	}
 	herdrForeground(t, processGroup(), processGroup())
 	if !own("w1:p1") {
@@ -109,6 +111,7 @@ func TestOwnHerdrPane(t *testing.T) {
 // In tmux started from a Herdr pane, which gave tmux's panes its HERDR_ENV and HERDR_PANE_ID, auto
 // picks tmux, where orchestra runs: its session and pane. In a Herdr pane inside tmux it picks Herdr.
 func TestConfigTmuxStartedFromAHerdrPane(t *testing.T) {
+	t.Parallel()
 	configFixture(t, "")
 	fakeTmux(t)
 	setenv(t, "HERDR_PANE_ID", "w7Q:p2")

@@ -168,6 +168,7 @@ func breakdownFixture(t *testing.T, help, body string) (repo, spec, tools string
 // and answers with its root epic and assumptions, and the run is scoped to that epic. Plain output
 // says each epic as it is filed, and the log has them, the session's cost and the assumptions.
 func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -217,6 +218,7 @@ func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 // before its loop: orchestra lists what was filed for the spec and says that running it again
 // carries on.
 func TestSpecBreakdownThatDoesNotFinishListsWhatItFiled(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools, per case, and waits out a time limit")
 	}
@@ -290,6 +292,7 @@ var testSpec = project.Spec{Path: ".orchestra/specs/app.md", SHA256: strings.Rep
 // denied, nothing that would ask allowed (--permission-prompts none only where claude lists it), the
 // answer's schema, the stream of what it does, and the effort; its first message names the spec.
 func TestSpecBreakdownCommandLine(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, help string
 		prompts    []string
@@ -303,7 +306,7 @@ func TestSpecBreakdownCommandLine(t *testing.T) {
 			fakeSession(t, tools, tc.help, answering(t, specAnswer{Root: "s-1"}))
 			onPath(t, tools)
 			var out strings.Builder
-			if _, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, context.Background()),
+			if _, err := specBreakdownIn(repo, &out).BreakDown(testCtx(context.Background(), t),
 				breakdownRequest{Spec: testSpec}); err != nil {
 				t.Fatal(err)
 			}
@@ -332,6 +335,7 @@ func TestSpecBreakdownCommandLine(t *testing.T) {
 // The schema asks for the root epic and the assumptions, and lets the session say why it filed no
 // root epic.
 func TestSpecSchema(t *testing.T) {
+	t.Parallel()
 	var s struct {
 		Properties map[string]struct {
 			Type string `json:"type"`
@@ -352,6 +356,7 @@ func TestSpecSchema(t *testing.T) {
 // can't be read are errors, and so is one stopped by ctx or the time limit. A session that gave no
 // answer still names the root epic it filed, as bd has it.
 func TestSpecBreakdownAnswers(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, body string
 		want       breakdownResult
@@ -380,7 +385,7 @@ func TestSpecBreakdownAnswers(t *testing.T) {
 			fakeSession(t, tools, "", tc.body)
 			onPath(t, tools)
 			var out strings.Builder
-			got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, context.Background()), breakdownRequest{Spec: testSpec})
+			got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(context.Background(), t), breakdownRequest{Spec: testSpec})
 			if tc.err == "" && err != nil || tc.err != "" && (err == nil || err.Error() != tc.err) {
 				t.Errorf("error %v, want %q", err, tc.err)
 			}
@@ -394,6 +399,7 @@ func TestSpecBreakdownAnswers(t *testing.T) {
 // A breakdown stopped by its context, Ctrl+C, ends with the context's error, and names the root epic
 // it filed before it stopped; its busy line ends as stopped.
 func TestSpecBreakdownStopped(t *testing.T) {
+	t.Parallel()
 	repo, tools := breakdownRepo(t), t.TempDir()
 	faketool.Write(t, tools, "bd", filingBd)
 	fakeSession(t, tools, "", filing(t, "toolu_1", "bd create --type epic --title 'An app' --metadata "+rootMeta+
@@ -411,7 +417,7 @@ func TestSpecBreakdownStopped(t *testing.T) {
 		}
 	}()
 	var out strings.Builder
-	got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, ctx), breakdownRequest{Spec: testSpec})
+	got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(ctx, t), breakdownRequest{Spec: testSpec})
 	if !errors.Is(err, context.Canceled) || got.Root != "s-1" {
 		t.Errorf("got %+v, %v", got, err)
 	}
@@ -440,6 +446,7 @@ func bashResult(id string, content any, isError bool) string {
 // filed, from the stream, as their results come, and ends saying what was filed and how long it took.
 // A call that failed, or whose result hasn't come, counts nothing.
 func TestSpecProgressOnATerminal(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		var b strings.Builder
 		p := startSpecProgress(tui.Terminal(&b, 160), nil, specCountEvery)
@@ -485,6 +492,7 @@ func TestSpecProgressOnATerminal(t *testing.T) {
 // A breakdown that ends without an answer ends its busy line with a warning saying what was filed;
 // one stopped says so.
 func TestSpecProgressEnds(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		var b strings.Builder
 		p := startSpecProgress(tui.Terminal(&b, 160), nil, specCountEvery)
@@ -507,6 +515,7 @@ func TestSpecProgressEnds(t *testing.T) {
 // In plain output a breakdown says that it starts, each epic as it is filed, with its ID when the
 // session's bd create printed it alone, and the counts every so often; the log gets each epic.
 func TestSpecProgressInPlainOutput(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		var b strings.Builder
 		dir := t.TempDir()
@@ -560,6 +569,7 @@ func TestSpecProgressInPlainOutput(t *testing.T) {
 // bdCreates finds each bd create in a command line, its type and title, wherever the line joins it
 // to others; text in quotes and here-documents is no command.
 func TestBdCreates(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		line string
 		want []filedIssue
@@ -656,6 +666,7 @@ func issue(id, kind, parent, metadata, acceptance string) dispatch.Ticket {
 // tickets without files metadata or acceptance criteria, and blocks cycles among the spec's issues are
 // warnings, and so is what can't be checked.
 func TestCheckBreakdownWarns(t *testing.T) {
+	t.Parallel()
 	spec := `"spec":".orchestra/specs/app.md"`
 	closed := issue("s-1.6", "task", "s-1", "{"+spec+"}", "")
 	closed.Status = dispatch.StatusClosed
@@ -715,6 +726,7 @@ func TestCheckBreakdownWarns(t *testing.T) {
 
 // A root epic that can't be read, isn't an epic, or is another spec's is no root epic to run.
 func TestCheckBreakdownRefusesARootThatIsNotTheSpecs(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		root dispatch.Ticket
 		err  string
@@ -737,6 +749,7 @@ func TestCheckBreakdownRefusesARootThatIsNotTheSpecs(t *testing.T) {
 // A spec run whose breakdown names a root epic that isn't the spec's ends with exit 2, listing what
 // was filed, and logs the check's warnings.
 func TestSpecRunRefusesARootThatIsNotAnEpic(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -763,6 +776,7 @@ func TestSpecRunRefusesARootThatIsNotAnEpic(t *testing.T) {
 
 // The checks' warnings are said on stderr and logged, and the run goes on.
 func TestSpecRunWarnsOfWhatIsAmissInTheTree(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -798,6 +812,7 @@ func TestSpecRunWarnsOfWhatIsAmissInTheTree(t *testing.T) {
 //
 //	SPEC_LIVE=1 go test -run TestLiveSpec -v -timeout 30m ./cmd/orchestra/
 func TestLiveSpec(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SPEC_LIVE") != "1" {
 		t.Skip("set SPEC_LIVE=1 to call the real claude")
 	}

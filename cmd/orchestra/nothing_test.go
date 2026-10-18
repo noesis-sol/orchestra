@@ -14,6 +14,7 @@ import (
 // to run, so the count stays; where bd can't say, the option gives no count. Either way, picking it
 // returns to the run, which checks again.
 func TestWorkQuestionSaysWhyNoneIsReady(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		ready  fakeReady
@@ -38,6 +39,7 @@ func TestWorkQuestionSaysWhyNoneIsReady(t *testing.T) {
 }
 
 func TestWorkQuestionCountsNothingWhenTheCheckCantSay(t *testing.T) {
+	t.Parallel()
 	term, answer := askWorkOn(context.Background(), t, fakeReady{checkErr: errors.New("bd: database is locked")})
 	term.waitFor(t, "> Current tickets")
 	term.typeKeys(t, keyEnter, true)

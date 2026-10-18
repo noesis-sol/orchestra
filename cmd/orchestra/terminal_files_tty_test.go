@@ -21,6 +21,7 @@ func (sizeThenQuit) View() string                          { return "" }
 // races none of the goroutines Bubble Tea leaves reading its descriptor: go test -race reported
 // checkResize's Fd against the terminal's Close in the question's terminal tests (orchestra-fze2).
 func TestTerminalClosedAfterAProgramRacesNothing(t *testing.T) {
+	t.Parallel()
 	for range 20 {
 		tty, _ := openTerminal(t)
 		p := tea.NewProgram(sizeThenQuit{}, tui.WithTerminal(tty, tty), tea.WithoutSignalHandler())

@@ -11,6 +11,7 @@ import (
 // init asks no time limit: a first init writes the defaults to settings.json, to edit there, and a
 // second keeps the ones edited by hand.
 func TestInitWritesTheDefaultTimeLimitsAndKeepsEditedOnes(t *testing.T) {
+	t.Parallel()
 	repo := initRepo(t)
 	if _, stderr, err := runIn(t, repo, nil, "init", "-c", "1", "--check-fast", "make check"); err != nil {
 		t.Fatalf("init: %v\n%s", err, stderr)

@@ -30,6 +30,7 @@ func fakePlanBd(t *testing.T) string {
 }
 
 func TestPlanProposesAndAppliesOnlyWithApply(t *testing.T) {
+	t.Parallel()
 	calls := fakePlanBd(t)
 	repo, _ := gitRepo(t)
 

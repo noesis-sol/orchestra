@@ -12,6 +12,7 @@ import (
 // option says none is ready, with how many are open. When the check can't say, the option counts
 // what bd ready lists.
 func TestWorkQuestionCountsHeldTicketsAsNoneReady(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		ready  fakeReady

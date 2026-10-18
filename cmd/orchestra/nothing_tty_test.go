@@ -26,6 +26,7 @@ const (
 // In a terminal the question says whether anything is ready; picking the current tickets with
 // nothing to run shows why in a box and exits 0, without the dashboard.
 func TestQuestionWithNothingToRunShowsWhy(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		b      backlog
@@ -67,6 +68,7 @@ func TestQuestionWithNothingToRunShowsWhy(t *testing.T) {
 
 // With tickets ready the option counts them, as before.
 func TestQuestionCountsTheReadyTickets(t *testing.T) {
+	t.Parallel()
 	nothingTools(t, backlog{ready: `[{"id":"k-1","status":"open","issue_type":"task"},` +
 		`{"id":"k-2","status":"open","issue_type":"task"}]`})
 	term, _, exit := runOnTerminal(t)
@@ -80,6 +82,7 @@ func TestQuestionCountsTheReadyTickets(t *testing.T) {
 // A run that doesn't ask, on a terminal, shows only the box, in place of the dashboard: no alternate
 // screen, and the screen isn't cleared.
 func TestNothingToRunOnATerminalShowsTheBox(t *testing.T) {
+	t.Parallel()
 	dir := nothingTools(t, backlog{})
 	term, repo, exit := runOnTerminal(t, "--tickets")
 	code, stderr := exit()

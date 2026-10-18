@@ -11,6 +11,7 @@ import (
 // next run, as it ends, so orchestra has it save them before it exits. A signal that only warns of
 // a merge under way saves nothing: the loop goes on to its own saving.
 func TestQuittingAtOnceSavesTheWorkersLeft(t *testing.T) {
+	t.Parallel()
 	loop := &windingLoop{running: []dispatch.Status{{Ticket: "a-1", Tab: "w1:2"}},
 		finishing: []dispatch.Finishing{{Ticket: "a-1", What: "merge"}}}
 	r := newQuitRig(t, loop)

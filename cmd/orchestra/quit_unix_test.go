@@ -14,6 +14,7 @@ import (
 // A real second SIGINT, caught while the stopped loop winds down with nothing to finish, ends
 // orchestra from the watch's own goroutine.
 func TestASecondRealSignalQuits(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	r := quitRigFor(t, &windingLoop{})
 	exited := make(chan int, 2)
 	q := r.quitter()

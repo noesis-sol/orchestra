@@ -16,6 +16,7 @@ import (
 
 // A terminal that says it has no columns, as a fresh pseudo-terminal can, is taken as 80 wide.
 func TestTermWidthOfATerminalWithoutColumns(t *testing.T) {
+	t.Parallel()
 	tty, _ := openTerminal(t)
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{}); err != nil {
 		t.Fatal(err)
@@ -27,6 +28,7 @@ func TestTermWidthOfATerminalWithoutColumns(t *testing.T) {
 
 // A busy line follows the terminal's width as it is resized during the step: each frame fits it.
 func TestBusyLineFollowsAResize(t *testing.T) {
+	t.Parallel()
 	tty, master := openTerminal(t)
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 40, Col: 200}); err != nil {
 		t.Fatal(err)

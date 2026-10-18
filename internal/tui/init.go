@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -229,8 +230,14 @@ type formField struct {
 func (f *formField) isHidden() bool { return f.hidden != nil && f.hidden() }
 
 // Update updates the field and, when it was just shown or hidden, has the form measure itself
-// again: huh sizes the form on a window size message only, so it would scroll its top away.
+// again: huh sizes the form on a window size message only, so it would scroll its top away. A key's
+// runes reach the field as a copy: a text field's sanitizer writes into them, and Bubble Tea gives
+// every space the same ones, which two forms at once, as in tests, would both write.
 func (f *formField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyMsg); ok && len(k.Runes) > 0 {
+		k.Runes = slices.Clone(k.Runes)
+		msg = k
+	}
 	m, cmd := f.Field.Update(msg)
 	f.Field = m.(huh.Field)
 	if hidden := f.isHidden(); hidden != f.wasHidden {

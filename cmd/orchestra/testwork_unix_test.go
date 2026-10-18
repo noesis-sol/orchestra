@@ -82,9 +82,10 @@ func branchOf(t *testing.T, repo string) string {
 }
 
 func TestInitFilesNoTestWorkForAManualCheck(t *testing.T) {
+	t.Parallel()
 	dir := trackerBd(t, false)
 	repo, _ := gitRepo(t)
-	if steps := fileTestWork(testCtx(t, context.Background()), repo, project.Choice{Tests: project.TestsManual}); steps != nil {
+	if steps := fileTestWork(testCtx(context.Background(), t), repo, project.Choice{Tests: project.TestsManual}); steps != nil {
 		t.Errorf("steps for a manual check:\n%s", details(steps))
 	}
 	if _, err := os.Stat(filepath.Join(dir, "n")); err == nil {
@@ -93,10 +94,11 @@ func TestInitFilesNoTestWorkForAManualCheck(t *testing.T) {
 }
 
 func TestInitFilesTheTestsFromScratchOnce(t *testing.T) {
+	t.Parallel()
 	dir := trackerBd(t, false)
 	repo, _ := gitRepo(t)
 	c := project.Choice{Tests: project.TestsScratch, Agent: "codex"}
-	steps := fileTestWork(testCtx(t, context.Background()), repo, c)
+	steps := fileTestWork(testCtx(context.Background(), t), repo, c)
 	want := "✓ filed t-1 (epic): The project's tests\n" +
 		"✓ filed t-2 (P1, solo): Set up the test harness and a first suite\n"
 	if got := details(steps); got != want {
@@ -113,7 +115,7 @@ func TestInitFilesTheTestsFromScratchOnce(t *testing.T) {
 		}
 	}
 
-	steps = fileTestWork(testCtx(t, context.Background()), repo, c)
+	steps = fileTestWork(testCtx(context.Background(), t), repo, c)
 	want = "• t-1 is open: The project's tests; not filed again\n" +
 		"• t-2 is open: Set up the test harness and a first suite; not filed again\n"
 	if got := details(steps); got != want {
@@ -125,10 +127,11 @@ func TestInitFilesTheTestsFromScratchOnce(t *testing.T) {
 }
 
 func TestInitFilesTheRunnersPassingForTheSuitesFound(t *testing.T) {
+	t.Parallel()
 	dir := trackerBd(t, false)
 	repo, _ := gitRepo(t)
 	base := branchOf(t, repo)
-	steps := fileTestWork(testCtx(t, context.Background()), repo, project.Choice{Tests: project.TestsFound})
+	steps := fileTestWork(testCtx(context.Background(), t), repo, project.Choice{Tests: project.TestsFound})
 	title := "Make scripts/check-fast.sh and scripts/check-full.sh pass on " + base
 	if got, want := details(steps), "✓ filed t-1 (P1, solo): "+title+"\n"; got != want {
 		t.Fatalf("steps:\n%s\nwant\n%s", got, want)
@@ -147,7 +150,7 @@ func TestInitFilesTheRunnersPassingForTheSuitesFound(t *testing.T) {
 
 	// With the untested areas, the same ticket goes under an epic, which init files now, and the map
 	// waits for it; the ticket already open isn't filed again.
-	steps = fileTestWork(testCtx(t, context.Background()), repo, project.Choice{Tests: project.TestsFound, FileUntested: true})
+	steps = fileTestWork(testCtx(context.Background(), t), repo, project.Choice{Tests: project.TestsFound, FileUntested: true})
 	want := "✓ filed t-2 (epic): The project's tests\n" +
 		"• t-1 is open: " + title + "; not filed again\n" +
 		"✓ filed t-3 (P2): Map the untested areas\n"
@@ -165,10 +168,11 @@ func TestInitFilesTheRunnersPassingForTheSuitesFound(t *testing.T) {
 }
 
 func TestInitFilesTheUntestedAreasUnderAnEpic(t *testing.T) {
+	t.Parallel()
 	dir := trackerBd(t, false)
 	repo, _ := gitRepo(t)
 	c := project.Choice{Tests: project.TestsFound, FileUntested: true}
-	steps := fileTestWork(testCtx(t, context.Background()), repo, c)
+	steps := fileTestWork(testCtx(context.Background(), t), repo, c)
 	if len(steps) != 3 {
 		t.Fatalf("steps:\n%s", details(steps))
 	}
@@ -177,16 +181,17 @@ func TestInitFilesTheUntestedAreasUnderAnEpic(t *testing.T) {
 		"--labels="+project.TestWorkLabel+","+dispatch.SoloLabel)
 	hasArgs(t, "t-3", created(t, dir, "t-3"), "--priority=2", "--parent=t-1", "--deps=blocked-by:t-2")
 
-	if got := details(fileTestWork(testCtx(t, context.Background()), repo, c)); strings.Contains(got, "✓") ||
+	if got := details(fileTestWork(testCtx(context.Background(), t), repo, c)); strings.Contains(got, "✓") ||
 		created(t, dir, "t-4") != "" {
 		t.Errorf("run again, init filed:\n%s", got)
 	}
 }
 
 func TestInitSaysWhichTestTicketsItCouldNotFile(t *testing.T) {
+	t.Parallel()
 	trackerBd(t, true)
 	repo, _ := gitRepo(t)
-	steps := fileTestWork(testCtx(t, context.Background()), repo, project.Choice{Tests: project.TestsScratch})
+	steps := fileTestWork(testCtx(context.Background(), t), repo, project.Choice{Tests: project.TestsScratch})
 	if len(steps) != 1 || steps[0].Kind != project.StepCaution {
 		t.Fatalf("steps:\n%s", details(steps))
 	}

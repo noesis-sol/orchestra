@@ -32,6 +32,7 @@ exec "` + gitPath + `" "$@"
 // A git that can't say where the repository's git directories are is a setup problem, not a
 // main checkout: two failed rev-parses would otherwise compare equal.
 func TestConfigSetupProblemWhenGitDirsAreUnreadable(t *testing.T) {
+	t.Parallel()
 	for _, flag := range []string{"--absolute-git-dir", "--git-common-dir"} {
 		t.Run(flag, func(t *testing.T) {
 			configFixture(t, "")

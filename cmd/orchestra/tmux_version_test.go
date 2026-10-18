@@ -9,6 +9,7 @@ import (
 
 // A tmux older than 3.0 is a setup problem naming its version; one tmux -V doesn't answer isn't.
 func TestConfigTmuxTooOld(t *testing.T) {
+	t.Parallel()
 	configFixture(t, `{"terminal": "tmux"}`)
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -V ] && { echo 'tmux 2.9a'; exit 0; }\nexit 1\n")

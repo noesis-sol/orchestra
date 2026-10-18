@@ -16,7 +16,7 @@ func runIn(t *testing.T, dir string, env map[string]string, args ...string) (str
 	t.Helper()
 	var stdout, stderr strings.Builder
 	getenv := func(k string) string { return env[k] }
-	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...),
+	err := run(testCtx(context.Background(), t), append([]string{"orchestra"}, args...),
 		cmdEnv{dir: dir, getenv: getenv, stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr})
 	return stdout.String(), stderr.String(), err
 }
@@ -32,6 +32,7 @@ func exitOf(err error) int {
 }
 
 func TestRunReportsSetupProblemsAndExits2(t *testing.T) {
+	t.Parallel()
 	_, stderr, err := runIn(t, t.TempDir(), map[string]string{"ORCHESTRA_TERMINAL": "herdr"})
 	if exitOf(err) != 2 {
 		t.Errorf("exit = %d (%v)", exitOf(err), err)
@@ -44,6 +45,7 @@ func TestRunReportsSetupProblemsAndExits2(t *testing.T) {
 }
 
 func TestRunVersionHelpAndBadFlags(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if stdout, _, err := runIn(t, dir, nil, "--version"); err != nil || !strings.HasPrefix(stdout, "orchestra ") {
 		t.Errorf("--version: %v %q", err, stdout)
@@ -60,6 +62,7 @@ func TestRunVersionHelpAndBadFlags(t *testing.T) {
 }
 
 func TestRunRefusesPositionalArguments(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, tc := range []struct {
 		args []string
@@ -87,6 +90,7 @@ func TestRunRefusesPositionalArguments(t *testing.T) {
 }
 
 func TestMainExitStatusMapping(t *testing.T) {
+	t.Parallel()
 	if status(dispatch.ExitOK) != nil {
 		t.Error("0 is success")
 	}
@@ -97,6 +101,7 @@ func TestMainExitStatusMapping(t *testing.T) {
 
 // The exit codes are part of orchestra's interface (scripts and the skill rely on them).
 func TestExitCodes(t *testing.T) {
+	t.Parallel()
 	for name, pair := range map[string][2]int{
 		"ok": {dispatch.ExitOK, 0}, "setup": {dispatch.ExitSetup, 2}, "stuck": {dispatch.ExitStuck, 3}, "tool": {dispatch.ExitTool, 4},
 		"dirty": {dispatch.ExitDirty, 5}, "merge": {dispatch.ExitMerge, 6}, "interrupted": {dispatch.ExitInterrupted, 130},

@@ -55,6 +55,7 @@ func terminalMessage(t *testing.T, repo, args string) string {
 // each time: a description that holds a closing tag, an ID guessed or one seen before, can't end
 // the block early.
 func TestPastedFeatureTagsTheDescription(t *testing.T) {
+	t.Parallel()
 	first := pastedFeature("\n" + paneRequest + "\n")
 	text, id := unpasted(t, first)
 	if text != paneRequest {

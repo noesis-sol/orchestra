@@ -28,6 +28,7 @@ func (f fakeOrgans) SaveReport(string) (string, error) {
 }
 
 func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		saveErr         error
 		printed, logged string

@@ -12,6 +12,7 @@ import (
 // Where the project has a lockfile, init offers the setup command: without a terminal or --setup it
 // writes none and says how; --setup sets it, init keeps it after, and --setup "" removes it.
 func TestInitOffersTheSetupCommandForALockfile(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra init twice on real git")
 	}

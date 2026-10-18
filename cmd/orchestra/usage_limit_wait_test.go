@@ -9,6 +9,7 @@ import (
 // A run waits for the usage limit to reset as long as settings.json's usage_limit_wait says, 6h
 // without it; a value it can't read is a setup problem naming it.
 func TestUsageLimitWaitSetting(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		settings string
 		want     time.Duration

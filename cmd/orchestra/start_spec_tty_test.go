@@ -31,12 +31,10 @@ func chosenSpecRun(t *testing.T) (spec string, asked func() (*fakeBreakdown, opt
 		f   *fakeBreakdown
 		cfg options
 	)
-	old := breakdownOf
-	breakdownOf = func(s *session) specBreakdown { // on the run's goroutine, which asked returns after
+	breakDownWith(t, func(s *session) specBreakdown { // on the run's goroutine, which asked returns after
 		f, cfg = &fakeBreakdown{repo: s.cfg.Repo, root: "s-1"}, s.cfg
 		return f
-	}
-	t.Cleanup(func() { breakdownOf = old })
+	})
 	return spec, func() (*fakeBreakdown, options) { return f, cfg }
 }
 
@@ -44,6 +42,7 @@ func chosenSpecRun(t *testing.T) (spec string, asked func() (*fakeBreakdown, opt
 // and refined first as asked, the run scoped to its root epic, with no ticket limit and workers in
 // auto permission mode. From the answer on, the run lock names the spec; so do the run's records.
 func TestRunAsksForASpecAndRunsIt(t *testing.T) {
+	t.Parallel()
 	spec, asked := chosenSpecRun(t)
 	term, repo, exit := runOnTerminal(t)
 	term.waitFor(t, "> Current tickets")
@@ -83,6 +82,7 @@ func TestRunAsksForASpecAndRunsIt(t *testing.T) {
 // Esc at the choice to refine ends orchestra with nothing done: nothing committed or broken down, no
 // run recorded.
 func TestRunStoppedAtTheChoiceToRefineDoesNothing(t *testing.T) {
+	t.Parallel()
 	spec, asked := chosenSpecRun(t)
 	term, repo, exit := runOnTerminal(t)
 	head := gitIn(t, repo, "rev-parse", "HEAD")

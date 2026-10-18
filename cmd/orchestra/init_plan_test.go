@@ -15,6 +15,7 @@ import (
 )
 
 func TestParseInitFlags(t *testing.T) {
+	t.Parallel()
 	env := func(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
 	for _, tc := range []struct {
 		name   string
@@ -73,6 +74,7 @@ func TestParseInitFlags(t *testing.T) {
 }
 
 func TestInitChoiceTakesTheFlagsOverTheProject(t *testing.T) {
+	t.Parallel()
 	given := func(v string) project.Given[string] { return project.Given[string]{Value: v, Given: true} }
 	for _, tc := range []struct {
 		name     string
@@ -138,6 +140,7 @@ func TestInitChoiceTakesTheFlagsOverTheProject(t *testing.T) {
 // Outside a terminal init asks nothing: what it offers as yes is declined, and the summary says how
 // to answer what it couldn't ask.
 func TestAskOrDefaultOutsideATerminalDeclinesTheOffers(t *testing.T) {
+	t.Parallel()
 	c := project.Choice{Union: true, InstallBeads: true, Verifier: true, Unasked: project.Questions{Concurrent: true}}
 	ask := project.Questions{Check: true, Concurrent: true, MCP: true, Union: true, Install: true, Verifier: true}
 	spent, err := askOrDefault(t.Context(), strings.NewReader(""), io.Discard, false, t.TempDir(), &c,
@@ -151,6 +154,7 @@ func TestAskOrDefaultOutsideATerminalDeclinesTheOffers(t *testing.T) {
 }
 
 func TestTakePrefix(t *testing.T) {
+	t.Parallel()
 	given := func(v string) project.Given[string] { return project.Given[string]{Value: v, Given: true} }
 	held := project.Choice{Prefix: "old", PrefixWas: "old", PrefixRefusal: "the last run left workers on old-1"}
 	for _, tc := range []struct {

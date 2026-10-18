@@ -165,6 +165,7 @@ func refineFixture(t *testing.T) string {
 // turn, the pane is closed, the tree is checked as after any breakdown (the root epic gets the spec's
 // SHA-256 and commit it lacks), and the run is scoped to the root epic, without asking.
 func TestRefineInAPaneRunsTheRootEpicItHandsBack(t *testing.T) {
+	t.Parallel()
 	repo := refineFixture(t)
 	synctest.Test(t, func(t *testing.T) {
 		tree := &filedTree{}
@@ -217,6 +218,7 @@ func TestRefineInAPaneRunsTheRootEpicItHandsBack(t *testing.T) {
 // more and ends the run: exit 0 when nothing was filed for the spec, else exit 2, listing what was
 // filed and how to carry on.
 func TestRefineLeftWithoutAHandBack(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: refines a spec on real git with fake tools")
 	}
@@ -278,6 +280,7 @@ func TestRefineLeftWithoutAHandBack(t *testing.T) {
 // from bd every few seconds: the count read shows at the next reading of the pane, until the next
 // count. The line is gone before orchestra goes on, which looks as it does without it.
 func TestRefineProgressCountsTheFiledIssues(t *testing.T) {
+	t.Parallel()
 	agent := []dispatch.AgentState{dispatch.StateWorking, dispatch.StateWorking, dispatch.StateBlocked,
 		dispatch.StateIdle, dispatch.StateWorking, "", dispatch.StateWorking, dispatch.StateWorking,
 		dispatch.StateWorking, dispatch.StateIdle}
@@ -335,6 +338,7 @@ func TestRefineProgressCountsTheFiledIssues(t *testing.T) {
 // closed, which ends claude, and the run stops, exit 130, naming the root epic filed so far, as bd has
 // it, and how to carry on.
 func TestRefineStopped(t *testing.T) {
+	t.Parallel()
 	repo := refineFixture(t)
 	synctest.Test(t, func(t *testing.T) {
 		ctx, stop := context.WithCancel(t.Context())
@@ -363,6 +367,7 @@ func TestRefineStopped(t *testing.T) {
 // Where orchestra runs in no pane, or the pane can't be opened, the refinement takes orchestra's own
 // terminal, with the same first message; what it hands back runs as from a pane.
 func TestRefineOnTheTerminal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		pane  bool
@@ -404,6 +409,7 @@ func TestRefineOnTheTerminal(t *testing.T) {
 // On orchestra's own terminal, the refinement needs one: run with input or output that isn't a
 // terminal, it starts no claude and says so.
 func TestRefineNeedsATerminal(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	var out strings.Builder
 	err := refineOnTerminal(t.Context(), nil, repo, "", "Break the spec down", project.RefineSpec,
@@ -421,6 +427,7 @@ func TestRefineNeedsATerminal(t *testing.T) {
 // terminal and outside any pane, the refinement can't take orchestra's terminal, and the run ends with
 // exit 2 once the spec is committed.
 func TestSpecRunWithRefine(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
 	}
@@ -432,13 +439,11 @@ func TestSpecRunWithRefine(t *testing.T) {
 				handBack(t, repo, "s-1")
 			}
 		}}
-	old := breakdownOf
-	t.Cleanup(func() { breakdownOf = old })
-	breakdownOf = func(s *session) specBreakdown {
-		b := old(s).(refineBreakdown)
+	breakDownWith(t, func(s *session) specBreakdown {
+		b := newRefineBreakdown(s)
 		b.panes = panes
 		return b
-	}
+	})
 	stdout, stderr, code := runSpecIn(t, repo, leaveWorker(t, "s-1.2"), "--spec", spec, "--plain", "--refine")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)

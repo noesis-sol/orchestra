@@ -44,6 +44,7 @@ var _ = faketool.Func("wind-down-after-pipe", windDownAfterPipe)
 // go to a pipe nobody reads. They are lost, but orchestra isn't: SIGPIPE doesn't end it before its
 // bookkeeping, and it exits 130 as a stopped run does.
 func TestABrokenPipeDoesNotEndTheWindingDown(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	bin := faketool.WriteFunc(t, dir, "wind-down-after-pipe")
 	left := filepath.Join(dir, "state.json")

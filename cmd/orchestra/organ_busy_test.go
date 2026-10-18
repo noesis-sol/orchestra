@@ -30,6 +30,7 @@ func (r slowReview) Review(ctx context.Context, _ int, _ string) (string, error)
 // On a terminal the run report's line spins while the reviewer works; Ctrl+C still skips the report
 // and leaves the line marked skipped, with no goroutine left drawing it.
 func TestCtrlCSkipsTheReportUnderItsBusyLine(t *testing.T) {
+	// Not parallel: goleak would take the goroutines of the tests beside it for this one's.
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	log, err := dispatch.OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {

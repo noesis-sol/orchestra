@@ -37,6 +37,7 @@ func assertUnchanged(t *testing.T, repo, tools string, git func(dir string, args
 // init while a run holds the lock changes nothing, naming the run: what it rewrites would leave the
 // run's tree dirty, and the run would take up the tickets it files.
 func TestInitIsRefusedDuringARun(t *testing.T) {
+	t.Parallel()
 	tools := fakeBeadsTools(t, true)
 	repo, git := gitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
@@ -59,6 +60,7 @@ func TestInitIsRefusedDuringARun(t *testing.T) {
 // init in a linked worktree, as a worker's, changes nothing there, saying what a run says: what it
 // writes would land on the worktree's branch.
 func TestInitIsRefusedInALinkedWorktree(t *testing.T) {
+	t.Parallel()
 	tools := fakeBeadsTools(t, true)
 	repo, git := gitRepo(t)
 	wt := filepath.Join(t.TempDir(), "k-1")

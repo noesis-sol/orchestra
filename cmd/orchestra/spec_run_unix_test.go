@@ -83,9 +83,7 @@ func (f *fakeBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (brea
 // useBreakdown has the spec runs of the test broken down by f.
 func useBreakdown(t *testing.T, f specBreakdown) {
 	t.Helper()
-	old := breakdownOf
-	breakdownOf = func(*session) specBreakdown { return f }
-	t.Cleanup(func() { breakdownOf = old })
+	breakDownWith(t, func(*session) specBreakdown { return f })
 }
 
 // specRunFixture is a repository set up for orchestra, inside a Herdr pane, without notifications,
@@ -111,7 +109,7 @@ func runSpecIn(t *testing.T, repo string, setup func(repo string), args ...strin
 	t.Helper()
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...), testCmdEnv(t, strings.NewReader(""), &out, &errOut))
+	err := run(testCtx(context.Background(), t), append([]string{"orchestra"}, args...), testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	return out.String(), errOut.String(), exitOf(err)
 }
 
@@ -130,6 +128,7 @@ func gitIn(t *testing.T, repo string, args ...string) string {
 // name the spec. Run again, the spec unchanged is not committed again, and --limit and --refine are
 // passed on.
 func TestSpecRunRunsTheRootEpic(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
 	}
@@ -202,6 +201,7 @@ func TestSpecRunRunsTheRootEpic(t *testing.T) {
 // A spec inside the repository, untracked, is committed where it is; the checkout must have nothing
 // else uncommitted, or nothing is committed or broken down.
 func TestSpecRunCommitsASpecInsideInPlace(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
 	}
@@ -238,6 +238,7 @@ func TestSpecRunCommitsASpecInsideInPlace(t *testing.T) {
 // A breakdown that names no root epic ends the run, exit 2, once the spec is committed; the run
 // doesn't start its loop.
 func TestSpecRunWithoutARootEpic(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -261,6 +262,7 @@ func TestSpecRunWithoutARootEpic(t *testing.T) {
 // Ctrl+C during the breakdown ends the run, exit 130, naming the root epic filed so far and how to
 // carry on; the run's records name the spec.
 func TestSpecRunCtrlCDuringTheBreakdown(t *testing.T) {
+	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}

@@ -10,6 +10,7 @@ import (
 
 // orchestra -h names every exit code a run can end with, each by its number.
 func TestHelpNamesEveryExitCode(t *testing.T) {
+	t.Parallel()
 	_, stderr, err := runIn(t, t.TempDir(), nil, "-h")
 	if err != nil {
 		t.Fatalf("-h: %v", err)

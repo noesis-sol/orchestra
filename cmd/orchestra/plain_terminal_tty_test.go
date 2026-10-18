@@ -14,6 +14,7 @@ import (
 // On a terminal that can't draw the dashboard (TERM=dumb, which the forms read for their accessible
 // form), the run prints its plain lines, as for a pipe: no alternate screen, no styled closing line.
 func TestDumbTerminalRunPrintsPlainLines(t *testing.T) {
+	t.Parallel()
 	nothingTools(t, backlog{})
 	setenv(t, "TERM", "dumb")
 	term, _, exit := runOnTerminal(t, "--tickets", "--done-so-far", "3", "--limit", "3")
@@ -33,6 +34,7 @@ func TestDumbTerminalRunPrintsPlainLines(t *testing.T) {
 // The dashboard reads its keys from stdin: a stdin that isn't a terminal gets plain lines, as a
 // stdout that isn't one does, and so do --plain and TERM=dumb.
 func TestPlainOutputWithoutTwoTerminals(t *testing.T) {
+	t.Parallel()
 	tty, _ := openTerminal(t)
 	pipeOut, pipeIn, err := os.Pipe()
 	if err != nil {

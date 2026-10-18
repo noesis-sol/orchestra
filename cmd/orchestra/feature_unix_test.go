@@ -72,6 +72,6 @@ func runFeatureAfter(
 	}
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...), testCmdEnv(t, in, &out, &errOut))
+	err := run(testCtx(context.Background(), t), append([]string{"orchestra"}, args...), testCmdEnv(t, in, &out, &errOut))
 	return repo, out.String(), errOut.String(), exitOf(err)
 }

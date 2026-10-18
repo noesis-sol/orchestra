@@ -16,6 +16,7 @@ import (
 // In a terminal, "Create from scratch" files the epic and the solo ticket that sets the tests up,
 // and init's summary lists them.
 func TestInitFromScratchFilesTheTestWorkAndListsIt(t *testing.T) {
+	t.Parallel()
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 50, Col: 120}); err != nil {
 		t.Fatal(err)
@@ -41,7 +42,7 @@ func TestInitFromScratchFilesTheTestWorkAndListsIt(t *testing.T) {
 	done := make(chan int, 1)
 	var errOut strings.Builder
 	go func() {
-		done <- runInit(testCtx(t, ctx), repo, []string{"--mcp", "", "--verifier=false"}, func(k string) string { return env[k] }, tty, tty, &errOut)
+		done <- runInit(testCtx(ctx, t), repo, []string{"--mcp", "", "--verifier=false"}, func(k string) string { return env[k] }, tty, tty, &errOut)
 	}()
 	t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 		cancel()

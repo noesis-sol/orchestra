@@ -24,6 +24,7 @@ const (
 const pickSpec = keyDown + keyEnter
 
 func TestWorkQuestionTakesASpec(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	spec := writeSpec(t, filepath.Join(repo, "docs", "app.md"), "# An app\n")
 	for _, tc := range []struct {
@@ -56,6 +57,7 @@ func TestWorkQuestionTakesASpec(t *testing.T) {
 // Esc or Ctrl+C at the spec's file or at the choice to refine it ends the run before anything
 // changes.
 func TestWorkQuestionCancelledAtASpecExits130(t *testing.T) {
+	t.Parallel()
 	const stopped = "orchestra: stopped before the run started; nothing was changed.\n"
 	repo := t.TempDir()
 	writeSpec(t, filepath.Join(repo, "app.md"), "# An app\n")
@@ -106,6 +108,7 @@ func chosenSession(t *testing.T, repo string, args ...string) (*session, *string
 // auto permission mode unless the flags say otherwise, and kept in the repository where --spec's
 // would be, as the run lock says from then on.
 func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
+	t.Parallel()
 	repo := specFixture(t)
 	setenv(t, "WORKER_PERMISSION_MODE", "")
 	spec := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n")
@@ -144,6 +147,7 @@ func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
 // A spec chosen where git wouldn't commit it ends the run, exit 2, as one given with --spec would
 // have stopped it from starting; the run lock doesn't name it.
 func TestSpecChosenWhereGitIgnoresIt(t *testing.T) {
+	t.Parallel()
 	repo := specFixture(t)
 	writeSpec(t, filepath.Join(repo, ".gitignore"), "private/\n")
 	ignored := writeSpec(t, filepath.Join(repo, "private", "app.md"), "# Mine\n")

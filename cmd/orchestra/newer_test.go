@@ -66,6 +66,8 @@ func hourAgo() string { return time.Now().Add(-time.Hour).Format(time.RFC3339Nan
 
 // Without a terminal, on stdout for the dashboard or on stderr, a newer release found goes unsaid.
 func TestNewerReleaseUnsaidOffATerminal(t *testing.T) {
+	// Not parallel: it sets the process's environment and this package's version and releases (cacheIn,
+	// latestRelease).
 	latestRelease(t, "v0.5.1", "v0.6.0")
 	cacheRelease(t, cacheIn(t), "v0.6.0")
 	for _, dashboard := range []bool{true, false} {
@@ -80,6 +82,8 @@ func TestNewerReleaseUnsaidOffATerminal(t *testing.T) {
 
 // ORCHESTRA_NO_UPDATE_CHECK=1 starts no check; 0 is as unset.
 func TestUpdateCheckTurnedOff(t *testing.T) {
+	// Not parallel: it sets the process's environment and this package's version and releases (cacheIn,
+	// latestRelease).
 	latestRelease(t, "v0.5.1", "v0.6.0")
 	cacheIn(t)
 	for value, off := range map[string]bool{"1": true, "0": false, "": false} {

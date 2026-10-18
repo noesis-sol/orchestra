@@ -101,7 +101,7 @@ func runNothing(t *testing.T, setup func(repo string), args ...string) (repo, st
 	}
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...), testCmdEnv(t, strings.NewReader(""), &out, &errOut))
+	err := run(testCtx(context.Background(), t), append([]string{"orchestra"}, args...), testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	return repo, out.String(), errOut.String(), exitOf(err)
 }
 
@@ -141,6 +141,7 @@ func noCalls(t *testing.T, dir string) {
 // A run that doesn't ask, with nothing in the backlog, says all is done and exits 0, before its
 // loop: no DIRTY_TREE for the uncommitted file, no triage or run report, no notification.
 func TestNothingToRunWhenAllIsDone(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--tickets"}, {"--plain"}} {
 		t.Run(args[0], func(t *testing.T) {
 			dir := nothingTools(t, backlog{})
@@ -164,6 +165,7 @@ func TestNothingToRunWhenAllIsDone(t *testing.T) {
 // With tickets left but none ready, the run says what holds them, and exits 0: epics, never run,
 // don't count, and the tickets closed but not merged do.
 func TestNothingReadyToRun(t *testing.T) {
+	t.Parallel()
 	dir := nothingTools(t, backlog{
 		unclosed: `[{"id":"k-q","status":"open","issue_type":"task","labels":["human"]},` +
 			`{"id":"k-1","status":"open","issue_type":"task"},{"id":"k-2","status":"blocked","issue_type":"bug"},` +
@@ -189,6 +191,7 @@ func TestNothingReadyToRun(t *testing.T) {
 // --ticket with nothing ready under it says why each of its tickets isn't done, in the message and,
 // as SCOPE_OPEN gives them, at the end of the done line.
 func TestNothingUnderTheScopeIsReady(t *testing.T) {
+	t.Parallel()
 	dir := nothingTools(t, backlog{
 		children: map[string]string{
 			"k-e": `[{"id":"k-e.1","status":"open","issue_type":"task","parent":"k-e"},` +
@@ -221,6 +224,7 @@ func TestNothingUnderTheScopeIsReady(t *testing.T) {
 // With nothing ready, a worker the last run left (in the scope) is still something to run: the
 // run goes to its loop as before, which ends READY_EMPTY and notifies.
 func TestNothingReadyButAWorkerLeftRuns(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
@@ -260,6 +264,7 @@ func TestNothingReadyButAWorkerLeftRuns(t *testing.T) {
 // What the check doesn't change: a run whose limit is reached ends LIMIT_REACHED, and one whose
 // bd ready fails goes to its loop, which reports it.
 func TestNothingToRunLeavesTheLoopsEnds(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git, its failing bd ready retried for about 7s")
 	}

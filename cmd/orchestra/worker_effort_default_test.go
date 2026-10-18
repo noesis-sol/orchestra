@@ -32,6 +32,7 @@ var workerEffortCases = []struct {
 // Claude workers start at high effort unless the project, WORKER_EFFORT or --worker-effort chooses
 // another; the organs and the headless breakdown keep their own efforts whatever the workers'.
 func TestClaudeWorkersStartAtHighEffortByDefault(t *testing.T) {
+	t.Parallel()
 	for _, tc := range workerEffortCases {
 		c, _, p := settle(t, tc.args, tc.env, tc.settings)
 		if len(p) > 0 || c.WorkerEffort != tc.want ||
@@ -49,6 +50,7 @@ func TestClaudeWorkersStartAtHighEffortByDefault(t *testing.T) {
 // The session that refines a spec or talks a feature through starts at the workers' effort, resolved
 // as theirs is, in a pane as on orchestra's terminal (see TestInterviewFilesTheFeatureAndRunsItsEpic).
 func TestRefineSessionStartsAtTheWorkersEffort(t *testing.T) {
+	t.Parallel()
 	tools := t.TempDir()
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
 	onPath(t, tools)

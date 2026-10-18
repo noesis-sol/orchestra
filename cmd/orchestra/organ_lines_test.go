@@ -22,6 +22,7 @@ func (failedReview) Review(context.Context, int, string) (string, error) {
 // On a terminal the organ phase's lines are sentences, and Claude and Ctrl+C are named as such;
 // the log keeps its wording.
 func TestOrganLinesAreSentencesOnATerminal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		orch    organs
 		printed []string

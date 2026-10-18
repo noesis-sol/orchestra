@@ -9,6 +9,7 @@ import (
 // Before tmux 3.8 the session for --workspace foo.bar is foo_bar (3.2 to 3.6 rename it, 3.0, 3.1 and
 // 3.7 refuse the name), so that is the session the hint attaches to; 3.8 keeps foo.bar.
 func TestConfigTmuxHintNamesTheSessionOldTmuxMakes(t *testing.T) {
+	t.Parallel()
 	for version, want := range map[string]string{
 		"tmux 3.4": "tmux attach -t foo_bar", "tmux 3.7": "tmux attach -t foo_bar", "tmux 3.8": "tmux attach -t foo.bar:",
 	} {

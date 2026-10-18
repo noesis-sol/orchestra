@@ -102,6 +102,8 @@ func screenOf(term *fakeTerminal) string {
 // as --feature runs the epic it files: with none of its tickets ready, as bd answers here, the run
 // says so, scoped to the epic.
 func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
+	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
+	// beside it would catch too.
 	dir := interviewTools(t, "f-1")
 	term, repo, exit := runOnTerminal(t)
 	describeFeature(t, term)
@@ -175,6 +177,8 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 // An interview that files nothing runs nothing and exits 0; a feature.json left by an earlier
 // interview doesn't count. One that names an epic bd doesn't know runs nothing either, exit 2.
 func TestInterviewThatFiledNothingRunsNothing(t *testing.T) {
+	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
+	// beside it would catch too.
 	for _, tc := range []struct {
 		name, epic, earlier, out, stderr string
 		code                             int

@@ -16,6 +16,7 @@ import (
 // for it: no run is left going on a closed terminal, in a repository removed and an environment
 // restored beneath it, where the race detector blames whichever test runs then.
 func TestTerminalRunStopsAsTheTestEnds(t *testing.T) {
+	// Not parallel: runsLeft counts the runs of every test in the process.
 	t.Run("ends while claude talks the feature through", func(t *testing.T) {
 		dir := featureTools(t)
 		// claude talks the feature through until it is stopped, in place of featureTools' claude.

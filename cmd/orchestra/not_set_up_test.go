@@ -10,6 +10,7 @@ import (
 // In a repository orchestra init never ran in, a run and a --feature request say to run it first,
 // in place of the missing worker prompt and Beads database it would fix, and exit 2.
 func TestRunSaysToRunInitFirst(t *testing.T) {
+	t.Parallel()
 	repo, git := gitRepo(t)
 	hostTools(t)
 	env := map[string]string{"HERDR_ENV": "1", "HERDR_WORKSPACE_ID": "w7Q"}
@@ -50,6 +51,7 @@ func TestRunSaysToRunInitFirst(t *testing.T) {
 // A project with settings but no worker prompt is set up, partly: the prompt is named as in the
 // repository, and orchestra init recreates it.
 func TestRunNamesAPartlySetUpProjectsMissingPrompt(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "{}")
 	if err := os.Remove(filepath.Join(repo, ".orchestra", "worker-prompt.md")); err != nil {
 		t.Fatal(err)
@@ -64,6 +66,7 @@ func TestRunNamesAPartlySetUpProjectsMissingPrompt(t *testing.T) {
 
 // A project set up before orchestra init, with its prompt in .claude/, runs as before.
 func TestConfigLegacyProjectIsSetUp(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	if err := os.RemoveAll(filepath.Join(repo, ".orchestra")); err != nil {
 		t.Fatal(err)
@@ -82,6 +85,7 @@ func TestConfigLegacyProjectIsSetUp(t *testing.T) {
 // A worker prompt of the run's own (--prompt, WORKER_PROMPT) needs no orchestra init; one that's
 // missing is named as given, without suggesting init, which wouldn't write it.
 func TestConfigOwnPromptNeedsNoInit(t *testing.T) {
+	t.Parallel()
 	repo := configFixture(t, "")
 	if err := os.RemoveAll(filepath.Join(repo, ".orchestra")); err != nil {
 		t.Fatal(err)

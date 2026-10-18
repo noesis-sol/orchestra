@@ -80,6 +80,7 @@ type cmdEnv struct {
 	getenv         func(string) string
 	stdin          io.Reader
 	stdout, stderr io.Writer
+	breakdown      func(s *session) specBreakdown // a spec run's breakdown, nil for breakdownOf's: tests give their own
 }
 
 // subcommand is a command of orchestra's other than a run, named by the argument after 'orchestra'.
