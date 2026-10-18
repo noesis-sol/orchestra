@@ -14,10 +14,10 @@ import (
 // runIn calls run with these arguments and environment, from dir, and returns its output and result.
 func runIn(t *testing.T, dir string, env map[string]string, args ...string) (string, string, error) {
 	t.Helper()
-	t.Chdir(dir)
 	var stdout, stderr strings.Builder
 	getenv := func(k string) string { return env[k] }
-	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: getenv, stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr})
+	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...),
+		cmdEnv{dir: dir, getenv: getenv, stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr})
 	return stdout.String(), stderr.String(), err
 }
 

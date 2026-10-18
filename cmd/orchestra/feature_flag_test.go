@@ -40,7 +40,7 @@ func TestConfigFeatureFlags(t *testing.T) {
 			t.Errorf("%q: problems %q, want %q", tc.args, p, tc.want)
 		}
 	}
-	t.Setenv("ORCHESTRA_TICKET", "k-1")
+	setenv(t, "ORCHESTRA_TICKET", "k-1")
 	if _, p := loadWith(t, "--feature", "Add a flag"); !strings.Contains(strings.Join(p, "\n"), "can't be combined") {
 		t.Errorf("ORCHESTRA_TICKET with --feature: problems %q", p)
 	}
@@ -60,7 +60,7 @@ func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
 		{nil, []string{"--limit", "3", "--done-so-far", "5"}},
 	} {
 		for k, v := range tc.env {
-			t.Setenv(k, v)
+			setenv(t, k, v)
 		}
 		_, p := loadWith(t, append([]string{"--feature", "Add a flag"}, tc.args...)...)
 		if len(p) != 1 || !strings.Contains(p[0], want) {
@@ -70,7 +70,7 @@ func TestFeatureNeedsRoomUnderTheLimit(t *testing.T) {
 			t.Errorf("%v %q without --feature: problems %q", tc.env, tc.args, p)
 		}
 		for k := range tc.env {
-			t.Setenv(k, "")
+			setenv(t, k, "")
 		}
 	}
 	if _, p := loadWith(t, "--feature", "Add a flag", "--limit", "3", "--done-so-far", "2"); len(p) > 0 {
@@ -91,7 +91,7 @@ func TestYesIsGone(t *testing.T) {
 		}
 	}
 	var help strings.Builder
-	if _, _, err := loadConfig(context.Background(), "", []string{"-h"}, os.Getenv, &help); err == nil ||
+	if _, _, err := loadConfig(testCtx(t, context.Background()), workDir(t), []string{"-h"}, getenv(t), &help); err == nil ||
 		strings.Contains(help.String(), "--yes") || !strings.Contains(help.String(), "--feature string") {
 		t.Errorf("the help (%v):\n%s", err, help.String())
 	}
@@ -180,7 +180,7 @@ func TestFeatureFlagIsTalkedThrough(t *testing.T) {
 // claude runs or anything is filed, naming --spec as the way to run a request unattended.
 func TestFeatureFlagWithoutATerminal(t *testing.T) {
 	dir := featureTools(t)
-	t.Setenv("HERDR_PANE_ID", "")
+	setenv(t, "HERDR_PANE_ID", "")
 	_, stdout, stderr, code := runFeatureIn(t, "--feature", "Add a --json flag", "--plain")
 	if want := "orchestra couldn't talk the feature through: talking the feature through needs you at a " +
 		"terminal, and orchestra's input or output isn't one: orchestra --spec <file> breaks a request written " +
@@ -206,7 +206,7 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut strings.Builder
-	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
+	err := run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	if exitOf(err) != dispatch.ExitDirty || !strings.Contains(errOut.String(), "uncommitted changes in") {
 		t.Errorf("dirty checkout: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}
@@ -214,10 +214,10 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 		t.Errorf("claude ran with a dirty checkout: %v", err)
 	}
 
-	t.Setenv("HERDR_ENV", "")
-	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
+	setenv(t, "HERDR_ENV", "")
+	setenv(t, "ORCHESTRA_TERMINAL", "herdr")
 	errOut.Reset()
-	err = run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
+	err = run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	if exitOf(err) != dispatch.ExitSetup || !strings.Contains(errOut.String(), "Not running inside a Herdr pane") {
 		t.Errorf("outside Herdr: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}

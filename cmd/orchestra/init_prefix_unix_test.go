@@ -40,7 +40,7 @@ list) case "$*" in
 rename-prefix) echo renamed ;;
 esac
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	return dir
 }
 

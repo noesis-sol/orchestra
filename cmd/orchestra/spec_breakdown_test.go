@@ -153,13 +153,13 @@ func breakdownFixture(t *testing.T, help, body string) (repo, spec, tools string
 	repo = specFixture(t)
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0", "ORCHESTRA_SPEC_TIMEOUT": "",
 		"ORCHESTRA_SPEC_EFFORT": ""} {
-		t.Setenv(k, v)
+		setenv(t, k, v)
 	}
 	tools = t.TempDir()
 	faketool.Write(t, tools, "bd", filingBd)
 	faketool.Write(t, tools, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
 	fakeSession(t, tools, help, body)
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	spec = writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n\nIt lists things, sorted.\n")
 	return repo, spec, tools
 }
@@ -301,9 +301,9 @@ func TestSpecBreakdownCommandLine(t *testing.T) {
 			repo, tools := breakdownRepo(t), t.TempDir()
 			faketool.Write(t, tools, "bd", filingBd)
 			fakeSession(t, tools, tc.help, answering(t, specAnswer{Root: "s-1"}))
-			t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+			onPath(t, tools)
 			var out strings.Builder
-			if _, err := specBreakdownIn(repo, &out).BreakDown(context.Background(),
+			if _, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, context.Background()),
 				breakdownRequest{Spec: testSpec}); err != nil {
 				t.Fatal(err)
 			}
@@ -378,9 +378,9 @@ func TestSpecBreakdownAnswers(t *testing.T) {
 			repo, tools := breakdownRepo(t), t.TempDir()
 			faketool.Write(t, tools, "bd", filingBd)
 			fakeSession(t, tools, "", tc.body)
-			t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+			onPath(t, tools)
 			var out strings.Builder
-			got, err := specBreakdownIn(repo, &out).BreakDown(context.Background(), breakdownRequest{Spec: testSpec})
+			got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, context.Background()), breakdownRequest{Spec: testSpec})
 			if tc.err == "" && err != nil || tc.err != "" && (err == nil || err.Error() != tc.err) {
 				t.Errorf("error %v, want %q", err, tc.err)
 			}
@@ -398,7 +398,7 @@ func TestSpecBreakdownStopped(t *testing.T) {
 	faketool.Write(t, tools, "bd", filingBd)
 	fakeSession(t, tools, "", filing(t, "toolu_1", "bd create --type epic --title 'An app' --metadata "+rootMeta+
 		" --silent")+"touch \"$d/filed-root\"\nexec sleep 30\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -411,7 +411,7 @@ func TestSpecBreakdownStopped(t *testing.T) {
 		}
 	}()
 	var out strings.Builder
-	got, err := specBreakdownIn(repo, &out).BreakDown(ctx, breakdownRequest{Spec: testSpec})
+	got, err := specBreakdownIn(repo, &out).BreakDown(testCtx(t, ctx), breakdownRequest{Spec: testSpec})
 	if !errors.Is(err, context.Canceled) || got.Root != "s-1" {
 		t.Errorf("got %+v, %v", got, err)
 	}

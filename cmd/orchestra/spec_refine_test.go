@@ -155,7 +155,7 @@ func refineFixture(t *testing.T) string {
 	repo, _ := gitRepo(t)
 	tools := t.TempDir()
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	return repo
 }
 
@@ -425,7 +425,7 @@ func TestSpecRunWithRefine(t *testing.T) {
 		t.Skip("skipped by -short: runs orchestra twice on real git with fake tools")
 	}
 	repo, spec, tools := specRunFixture(t)
-	t.Setenv("HERDR_PANE_ID", "w1:p1")
+	setenv(t, "HERDR_PANE_ID", "w1:p1")
 	panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateWorking, dispatch.StateIdle},
 		step: func(read int) {
 			if read == 2 {
@@ -461,7 +461,7 @@ func TestSpecRunWithRefine(t *testing.T) {
 		t.Errorf("the log:\n%s", log)
 	}
 
-	t.Setenv("HERDR_PANE_ID", "")
+	setenv(t, "HERDR_PANE_ID", "")
 	stdout, stderr, code = runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain", "--refine")
 	if code != 2 || !strings.Contains(stderr, "orchestra couldn't break the spec down: "+errRefineNeedsTerminal.Error()+
 		"\n") || strings.Contains(stdout, "START") {

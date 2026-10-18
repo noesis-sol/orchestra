@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -19,7 +18,7 @@ func TestConfigTmuxWorkspaceWithColonIsRenamed(t *testing.T) {
 [ "$1" = display-message ] && { echo 'foo:bar'; exit 0; }
 exit 1
 `)
-		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		onPath(t, dir)
 		c, p := loadWith(t, "--workspace", "foo:bar.baz")
 		if len(p) > 0 {
 			t.Fatalf("%s: problems: %v", version, p)
@@ -28,9 +27,9 @@ exit 1
 			t.Errorf("%s: session %q, watch %q, in sight %v", version, c.Workspace, c.Watch, c.where.inSight)
 		}
 
-		t.Setenv("HERDR_ENV", "")
-		t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
-		t.Setenv("TMUX_PANE", "%4")
+		setenv(t, "HERDR_ENV", "")
+		setenv(t, "TMUX", "/tmp/tmux-501/default,1,0")
+		setenv(t, "TMUX_PANE", "%4")
 		for _, args := range [][]string{nil, {"--workspace", "foo:bar"}} {
 			c, p = loadWith(t, args...)
 			if len(p) > 0 {

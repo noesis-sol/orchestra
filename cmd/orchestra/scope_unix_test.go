@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -23,7 +22,7 @@ k-q) echo '[{"id":"k-q","status":"open","labels":["human"]}]' ;;
 esac
 `
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 }
 
 // --ticket (or ORCHESTRA_TICKET) scopes the run; an unknown, closed or question ticket is a setup
@@ -37,11 +36,11 @@ func TestConfigTicketScope(t *testing.T) {
 	if c, p := loadWith(t, "--ticket", "k-open"); len(p) > 0 || c.Ticket != "k-open" {
 		t.Errorf("open ticket: %q %v", c.Ticket, p)
 	}
-	t.Setenv("ORCHESTRA_TICKET", "k-open")
+	setenv(t, "ORCHESTRA_TICKET", "k-open")
 	if c, p := loadWith(t); len(p) > 0 || c.Ticket != "k-open" {
 		t.Errorf("from the environment: %q %v", c.Ticket, p)
 	}
-	t.Setenv("ORCHESTRA_TICKET", "")
+	setenv(t, "ORCHESTRA_TICKET", "")
 	if c, p := loadWith(t); len(p) > 0 || c.Ticket != "" {
 		t.Errorf("unscoped: %q %v", c.Ticket, p)
 	}

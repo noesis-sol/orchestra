@@ -15,7 +15,7 @@ import (
 // form), the run prints its plain lines, as for a pipe: no alternate screen, no styled closing line.
 func TestDumbTerminalRunPrintsPlainLines(t *testing.T) {
 	nothingTools(t, backlog{})
-	t.Setenv("TERM", "dumb")
+	setenv(t, "TERM", "dumb")
 	term, _, exit := runOnTerminal(t, "--tickets", "--done-so-far", "3", "--limit", "3")
 	code, stderr := exit()
 	if code != dispatch.ExitOK || stderr != "" {

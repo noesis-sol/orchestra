@@ -36,7 +36,7 @@ func TestRunEndsSayingANewerReleaseIsOut(t *testing.T) {
 			if tc.cached != "" {
 				cacheRelease(t, cache, tc.cached)
 			}
-			t.Setenv(noUpdateCheck, tc.env)
+			setenv(t, noUpdateCheck, tc.env)
 			nothingTools(t, backlog{})
 			term, _, exit := runOnTerminal(t, append([]string{"--tickets"}, tc.args...)...)
 			code, stderr := exit()

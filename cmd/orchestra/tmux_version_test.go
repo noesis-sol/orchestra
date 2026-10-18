@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -13,7 +12,7 @@ func TestConfigTmuxTooOld(t *testing.T) {
 	configFixture(t, `{"terminal": "tmux"}`)
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -V ] && { echo 'tmux 2.9a'; exit 0; }\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	_, p := loadWith(t)
 	if len(p) != 1 || !strings.Contains(p[0], "tmux 2.9a is too old: orchestra needs tmux 3.0 or later") {
 		t.Errorf("tmux 2.9a: problems %v", p)

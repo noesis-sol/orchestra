@@ -35,12 +35,12 @@ func emptyRepoFixture(t *testing.T) (repo, spec, tools string) {
 	}
 	gitIn(t, repo, "update-ref", "-d", "HEAD") // main, and with it the fixture's only commit
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0"} {
-		t.Setenv(k, v)
+		setenv(t, k, v)
 	}
 	tools = t.TempDir()
 	faketool.Write(t, tools, "bd", setupBd)
 	faketool.Write(t, tools, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	spec = writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n\nIt lists things, sorted.\n")
 	return repo, spec, tools
 }
@@ -176,7 +176,7 @@ func TestSpecRunSetupProblems(t *testing.T) {
 	}
 	t.Run("not a repository", func(t *testing.T) {
 		_, spec, _ := emptyRepoFixture(t)
-		t.Chdir(t.TempDir())
+		chdir(t, t.TempDir())
 		_, stderr, code := runSpecIn(t, "", func(string) {}, "--spec", spec, "--plain")
 		if code != 2 || !strings.Contains(stderr, "  - "+noRepoForSpec+"\n") || strings.Contains(stderr, "orchestra init") {
 			t.Errorf("exit %d, stderr:\n%s", code, stderr)
@@ -192,7 +192,7 @@ func TestSpecRunSetupProblems(t *testing.T) {
 		if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("PATH", bin)
+		setenv(t, "PATH", bin)
 		_, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
 		if code != 2 || !strings.Contains(stderr, "  - Required command not found: bd\n") ||
 			strings.Contains(stderr, "isn't set up") {

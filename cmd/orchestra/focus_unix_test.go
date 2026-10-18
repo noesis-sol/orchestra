@@ -24,7 +24,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	script := "#!/bin/sh\nwhile [ ! -e '" + release + "' ]; do sleep 0.05; done\n" +
 		`echo '{"error":{"code":"tab_not_found","message":"tab w1:t9 not found"}}' >&2` + "\nexit 1\n"
 	faketool.Write(t, dir, "herdr", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	logPath := filepath.Join(dir, "orchestra.log")
 	log, err := dispatch.OpenLog(logPath, false, "t")
 	if err != nil {
@@ -32,7 +32,7 @@ func TestFocusTabRunsHerdrInTheBackgroundAndLogsAFailure(t *testing.T) {
 	}
 	defer func() { _ = log.Close() }() // the test reads the file itself
 
-	focusTab(context.Background(), log, herdr.Terminal{})("w1:t9")
+	focusTab(testCtx(t, context.Background()), log, herdr.Terminal{})("w1:t9")
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

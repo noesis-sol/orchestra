@@ -55,7 +55,7 @@ list) echo '[]' ;;
 rename-prefix) "$d/start-run" >> "$d/run"; echo renamed ;;
 esac
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	repo, _ := beadsRepo(t)
 
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "true", "--mcp", "", "--prefix", "orc")

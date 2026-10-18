@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -16,7 +15,7 @@ func TestConfigTmuxHintNamesTheSessionOldTmuxMakes(t *testing.T) {
 		configFixture(t, `{"terminal": "tmux"}`)
 		dir := t.TempDir()
 		faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -V ] && { echo '"+version+"'; exit 0; }\nexit 1\n")
-		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		onPath(t, dir)
 		c, p := loadWith(t, "--workspace", "foo.bar")
 		if len(p) > 0 {
 			t.Fatalf("%s: problems: %v", version, p)

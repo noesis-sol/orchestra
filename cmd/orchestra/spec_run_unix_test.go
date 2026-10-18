@@ -95,13 +95,13 @@ func specRunFixture(t *testing.T) (repo, spec, tools string) {
 	t.Helper()
 	repo = specFixture(t)
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0"} {
-		t.Setenv(k, v)
+		setenv(t, k, v)
 	}
 	tools = t.TempDir()
 	faketool.Write(t, tools, "bd", specTreeBd)
 	faketool.Write(t, tools, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	spec = writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n\nIt lists things, sorted.\n")
 	return repo, spec, tools
 }
@@ -111,7 +111,7 @@ func runSpecIn(t *testing.T, repo string, setup func(repo string), args ...strin
 	t.Helper()
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
+	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...), testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	return out.String(), errOut.String(), exitOf(err)
 }
 

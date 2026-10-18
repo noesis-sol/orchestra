@@ -37,7 +37,7 @@ func hostTools(t *testing.T) {
 	for _, name := range []string{"bd", "herdr"} {
 		faketool.Write(t, dir, name, "#!/bin/sh\necho '"+name+": not in this test' >&2\nexit 1\n")
 	}
-	t.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+dir)
+	setenv(t, "PATH", getenv(t)("PATH")+string(os.PathListSeparator)+dir)
 }
 
 func read(t *testing.T, p string) string {

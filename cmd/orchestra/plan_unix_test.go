@@ -25,7 +25,7 @@ func fakePlanBd(t *testing.T) string {
 		"dep) echo \"$@\" >> '" + calls + "' ;;\n" +
 		"*) exit 1 ;;\nesac\n"
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	return calls
 }
 

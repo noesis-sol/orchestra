@@ -22,9 +22,9 @@ func chosenSpecRun(t *testing.T) (spec string, asked func() (*fakeBreakdown, opt
 	tools := t.TempDir()
 	faketool.Write(t, tools, "bd", specTreeBd)
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	for _, k := range []string{"ORCHESTRA_SPEC", "ORCHESTRA_REFINE", "WORKER_PERMISSION_MODE"} {
-		t.Setenv(k, "")
+		setenv(t, k, "")
 	}
 	spec = writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n\nIt lists things, sorted.\n")
 	var (

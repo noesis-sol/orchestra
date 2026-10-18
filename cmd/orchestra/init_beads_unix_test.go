@@ -26,7 +26,7 @@ func fakeBeadsTools(t *testing.T, withBd bool) string {
 	if err := os.Symlink(gitPath, filepath.Join(tools, "git")); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", strings.Join([]string{dir, tools, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
+	setenv(t, "PATH", strings.Join([]string{dir, tools, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
 	for _, name := range []string{"bd", "brew"} {
 		if p, err := exec.LookPath(name); err == nil {
 			t.Skipf("%s is in /usr/bin or /bin: %s", name, p)

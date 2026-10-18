@@ -284,10 +284,6 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		s.log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
-	if err := os.Chdir(cfg.Repo); err != nil {
-		fmt.Fprintln(e.stderr, err)
-		return s, dispatch.ExitSetup
-	}
 	return s, dispatch.ExitOK
 }
 

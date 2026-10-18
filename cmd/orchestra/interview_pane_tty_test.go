@@ -15,7 +15,7 @@ import (
 // same first message, and what claude files runs as before.
 func TestInterviewFallsBackToTheTerminalWhenHerdrCantSplit(t *testing.T) {
 	dir := interviewTools(t, "f-1")
-	t.Setenv("HERDR_PANE_ID", "w1:p1")
+	setenv(t, "HERDR_PANE_ID", "w1:p1")
 	term, repo, exit := runOnTerminal(t)
 	describeFeature(t, term)
 	code, stderr := exit()

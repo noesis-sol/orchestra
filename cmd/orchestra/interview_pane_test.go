@@ -118,7 +118,7 @@ func featureRepo(t *testing.T) string {
 	repo, _ := gitRepo(t)
 	tools := t.TempDir()
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	return repo
 }
 

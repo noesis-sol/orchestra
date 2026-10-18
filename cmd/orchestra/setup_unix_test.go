@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -27,7 +26,7 @@ done
 exec "` + gitPath + `" "$@"
 `
 	faketool.Write(t, dir, "git", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 }
 
 // A git that can't say where the repository's git directories are is a setup problem, not a

@@ -92,7 +92,7 @@ func TestConfigOwnPromptNeedsNoInit(t *testing.T) {
 	if c, p := loadWith(t, "--prompt", "prompt.md"); c.notSetUp || len(p) > 0 {
 		t.Errorf("own prompt: not set up %v, problems %v", c.notSetUp, p)
 	}
-	t.Setenv("WORKER_PROMPT", "missing.md")
+	setenv(t, "WORKER_PROMPT", "missing.md")
 	const want = "Worker prompt not found: missing.md (from --prompt or WORKER_PROMPT)."
 	if c, p := loadWith(t); c.notSetUp || len(p) != 1 || p[0] != want {
 		t.Errorf("missing own prompt: not set up %v, problems %q", c.notSetUp, p)

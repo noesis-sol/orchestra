@@ -33,13 +33,13 @@ func configFixture(t *testing.T, settings string) string {
 			t.Fatal(err)
 		}
 	}
-	t.Chdir(repo)
+	chdir(t, repo)
 	for _, k := range []string{"WORKER_PROMPT", "NOTIFY", "WT_ROOT", "TRIAGE", "REVIEW", "ORGAN_MODEL", "ORGAN_EFFORT", "WORKER_EFFORT",
 		"PROMPT_AT_LAUNCH", "LIMIT", "DONE_SO_FAR", "AGENT_KIND", "ORCHESTRA_CONCURRENT", "TICKET_LIMIT", "ORCHESTRA_CHECK_TIMEOUT", "WORKSPACE", "ORCHESTRA_TICKET", "ORCHESTRA_TERMINAL", "TMUX", "TMUX_PANE", "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID"} {
-		t.Setenv(k, "")
+		setenv(t, k, "")
 	}
-	t.Setenv("HERDR_ENV", "1")
-	t.Setenv("HERDR_WORKSPACE_ID", "w7Q")
+	setenv(t, "HERDR_ENV", "1")
+	setenv(t, "HERDR_WORKSPACE_ID", "w7Q")
 	return repo
 }
 
@@ -61,7 +61,7 @@ func samePath(a, b string) bool {
 // loadWith runs loadConfig with these command-line arguments and the process's environment.
 func loadWith(t *testing.T, args ...string) (options, []string) {
 	t.Helper()
-	c, problems, err := loadConfig(context.Background(), "", args, os.Getenv, io.Discard)
+	c, problems, err := loadConfig(testCtx(t, context.Background()), workDir(t), args, getenv(t), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func loadWith(t *testing.T, args ...string) (options, []string) {
 // chose its MCP servers without it, and --chrome when it chose it.
 func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
 	configFixture(t, `{"concurrent": 1}`)
-	if err := os.WriteFile(".mcp.json", []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir(t), ".mcp.json"), []byte(`{"mcpServers": {"exa": {"type": "http", "url": "https://exa.example"}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ settings, want string }{
@@ -81,7 +81,7 @@ func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
 		{`{"mcp_servers": ["exa"]}`, "--no-chrome --effort high"},
 		{`{"mcp_servers": ["exa", "claude-in-chrome"]}`, "--chrome --effort high"},
 	} {
-		if err := os.WriteFile(".orchestra/settings.json", []byte(tc.settings), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(workDir(t), ".orchestra", "settings.json"), []byte(tc.settings), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if c, p := loadWith(t); len(p) > 0 || strings.Join(c.WorkerArgs, " ") != tc.want {
@@ -116,12 +116,12 @@ func TestConfigDefaultsAndLayout(t *testing.T) {
 	if c.Limit != 40 || c.DoneSoFar != 0 || !c.Triage || !c.Review || !c.LaunchPrompt || !c.Notify {
 		t.Errorf("defaults: %+v", c)
 	}
-	t.Setenv("LIMIT", "5")
-	t.Setenv("TRIAGE", "0")
+	setenv(t, "LIMIT", "5")
+	setenv(t, "TRIAGE", "0")
 	if c, _ := loadWith(t, "--workspace", "w1A"); c.Limit != 5 || c.Triage || c.Workspace != "w1A" {
 		t.Errorf("environment and flags: limit %d triage %v workspace %s", c.Limit, c.Triage, c.Workspace)
 	}
-	t.Setenv("WORKSPACE", "ignored")
+	setenv(t, "WORKSPACE", "ignored")
 	if c, _ := loadWith(t); c.Workspace != "w7Q" {
 		t.Errorf("WORKSPACE is no longer read: %s", c.Workspace)
 	}
@@ -153,10 +153,10 @@ func TestConfigSetupProblems(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(repo, ".beads")); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HERDR_ENV", "")
-	t.Setenv("HERDR_WORKSPACE_ID", "")
-	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
-	t.Setenv("LIMIT", "many")
+	setenv(t, "HERDR_ENV", "")
+	setenv(t, "HERDR_WORKSPACE_ID", "")
+	setenv(t, "ORCHESTRA_TERMINAL", "herdr")
+	setenv(t, "LIMIT", "many")
 	_, p := loadWith(t)
 	joined := strings.Join(p, "\n")
 	for _, want := range []string{"Not running inside a Herdr pane", "Worker prompt not found", "orchestra init",
@@ -175,11 +175,11 @@ func TestConfigRefusesALinkedWorktreeAndADetachedHead(t *testing.T) {
 	_, git := gitRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	git(repo, "worktree", "add", "-q", "-b", "other", wt)
-	t.Chdir(wt)
+	chdir(t, wt)
 	if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "linked worktree") {
 		t.Errorf("worktree: %v", p)
 	}
-	t.Chdir(repo)
+	chdir(t, repo)
 	git(repo, "checkout", "-q", "--detach")
 	if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "detached HEAD") {
 		t.Errorf("detached: %v", p)
@@ -193,8 +193,8 @@ func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "sub", "dir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(filepath.Join(repo, "sub", "dir"))
-	t.Setenv("WT_ROOT", "../wt")
+	chdir(t, filepath.Join(repo, "sub", "dir"))
+	setenv(t, "WT_ROOT", "../wt")
 	c, p := loadWith(t)
 	if want := filepath.Join(filepath.Dir(repo), "wt"); len(p) > 0 || !samePath(c.WTRoot, want) {
 		t.Errorf("WT_ROOT = %s, want %s (%v)", c.WTRoot, want, p)
@@ -216,13 +216,13 @@ func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
 		cases = append(cases, filepath.Join(strings.ToUpper(repo), "wt"))
 	}
 	for _, root := range cases {
-		t.Setenv("WT_ROOT", root)
+		setenv(t, "WT_ROOT", root)
 		if _, p := loadWith(t); !strings.Contains(strings.Join(p, "\n"), "must be outside the repository") {
 			t.Errorf("WT_ROOT=%s accepted: %v", root, p)
 		}
 	}
 	for _, root := range []string{repo + "-worktrees", filepath.Join(filepath.Dir(link), "elsewhere")} {
-		t.Setenv("WT_ROOT", root)
+		setenv(t, "WT_ROOT", root)
 		if _, p := loadWith(t); len(p) > 0 {
 			t.Errorf("WT_ROOT=%s refused: %v", root, p)
 		}
@@ -234,7 +234,7 @@ func TestConfigRefusesWorktreesInsideTheRepository(t *testing.T) {
 func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
 	repo := configFixture(t, `{"mcp_servers": ["postgres", "exa"]}`)
 	dir := t.TempDir()
-	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	setenv(t, "CLAUDE_CONFIG_DIR", dir)
 	user := `{"mcpServers": {"postgres": {"command": "pg-mcp"}}, "claudeAiMcpEverConnected": ["claude.ai Gmail"]}`
 	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(user), 0o644); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
 
 	settings := func(s string) {
 		t.Helper()
-		if err := os.WriteFile(".orchestra/settings.json", []byte(s), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(workDir(t), ".orchestra", "settings.json"), []byte(s), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -273,11 +273,11 @@ func TestConfigResolvesTheWorkersMCPServers(t *testing.T) {
 	if strings.Contains(p[0], "postgres") {
 		t.Errorf("names a resolved server: %q", p[0])
 	}
-	t.Setenv("AGENT_KIND", "codex") // not passed to it, so not resolved
+	setenv(t, "AGENT_KIND", "codex") // not passed to it, so not resolved
 	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 3 || (*c.MCP)[1].Definition != nil {
 		t.Errorf("another agent: %v %v", c.MCP, p)
 	}
-	t.Setenv("AGENT_KIND", "")
+	setenv(t, "AGENT_KIND", "")
 
 	settings(`{"mcp_servers": []}`)
 	if c, p := loadWith(t); len(p) > 0 || c.MCP == nil || len(*c.MCP) != 0 {

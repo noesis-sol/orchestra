@@ -15,7 +15,7 @@ import (
 func TestUpdateGoesOnDuringARun(t *testing.T) {
 	repo, _ := gitRepo(t)
 	holdLock(t, repo, project.Holder{PID: 44497, Branch: "main"})
-	t.Chdir(repo)
+	chdir(t, repo)
 	u, _ := releaseServer(t, "v0.6.0", false)
 	exe := oldBinary(t)
 

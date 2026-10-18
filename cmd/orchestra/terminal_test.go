@@ -57,7 +57,7 @@ func fakeTmux(t *testing.T) {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n"+
 		`[ "$1" = display-message ] && { echo work; exit 0; }`+"\necho 'tmux: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 }
 
 // withoutTmux leaves on PATH only git and the fake bd and herdr hostTools puts there, so that tmux
@@ -72,12 +72,12 @@ func withoutTmux(t *testing.T) {
 		t.Skip("tmux is installed beside git")
 	}
 	var path []string
-	for dir := range strings.SplitSeq(os.Getenv("PATH"), string(os.PathListSeparator)) {
+	for dir := range strings.SplitSeq(getenv(t)("PATH"), string(os.PathListSeparator)) {
 		if _, err := os.Stat(filepath.Join(dir, "herdr")); err == nil && strings.HasPrefix(dir, os.TempDir()) {
 			path = append(path, dir) // hostTools'
 		}
 	}
-	t.Setenv("PATH", strings.Join(append(path, filepath.Dir(git)), string(os.PathListSeparator)))
+	setenv(t, "PATH", strings.Join(append(path, filepath.Dir(git)), string(os.PathListSeparator)))
 }
 
 // Outside tmux, the workers' windows open in a detached session named after the repository, which
@@ -104,9 +104,9 @@ func TestConfigTmuxOutsideTmuxUsesASessionOfItsOwn(t *testing.T) {
 func TestConfigTmuxInsideTmuxUsesItsOwnSession(t *testing.T) {
 	configFixture(t, "")
 	fakeTmux(t)
-	t.Setenv("HERDR_ENV", "")
-	t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
-	t.Setenv("TMUX_PANE", "%4")
+	setenv(t, "HERDR_ENV", "")
+	setenv(t, "TMUX", "/tmp/tmux-501/default,1,0")
+	setenv(t, "TMUX_PANE", "%4")
 	c, p := loadWith(t)
 	if len(p) > 0 {
 		t.Fatalf("problems: %v", p)
@@ -128,7 +128,7 @@ func TestConfigTmuxInsideTmuxUsesItsOwnSession(t *testing.T) {
 func TestConfigTerminalPrecedence(t *testing.T) {
 	configFixture(t, `{"terminal": "tmux"}`)
 	fakeTmux(t)
-	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
+	setenv(t, "ORCHESTRA_TERMINAL", "herdr")
 	if c, p := loadWith(t); len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || !c.where.inSight {
 		t.Errorf("ORCHESTRA_TERMINAL: terminal %q, workspace %q, problems %v", c.Terminal, c.Workspace, p)
 	}
@@ -174,7 +174,7 @@ func TestConfigTerminalMissing(t *testing.T) {
 	if len(p) != 1 || !strings.Contains(p[0], "Required command not found: tmux") {
 		t.Errorf("tmux chosen: problems %v", p)
 	}
-	t.Setenv("HERDR_ENV", "")
+	setenv(t, "HERDR_ENV", "")
 	_, p = loadWith(t)
 	if len(p) != 1 || p[0] != noTerminal {
 		t.Errorf("neither: problems %v", p)
@@ -185,7 +185,7 @@ func TestConfigTerminalMissing(t *testing.T) {
 func TestConfigHerdrInAHerdrPane(t *testing.T) {
 	configFixture(t, "")
 	fakeTmux(t)
-	t.Setenv("HERDR_PANE_ID", "w7Q:p2")
+	setenv(t, "HERDR_PANE_ID", "w7Q:p2")
 	c, p := loadWith(t)
 	if len(p) > 0 || c.Terminal != project.TerminalHerdr || c.Workspace != "w7Q" || c.where.pane != "w7Q:p2" ||
 		!c.where.inSight || c.Watch != "" || c.ProbeHooks {

@@ -71,7 +71,7 @@ func herdrForeground(t *testing.T, group int, pids ...int) {
 		`{"foreground_process_group_id":`+strconv.Itoa(group)+`,"foreground_processes":[`+list+`],`+
 		`"pane_id":"w1:p1","shell_pid":1},"type":"pane_process_info"}}'; exit 0; }`+
 		"\necho 'herdr: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 }
 
 // orchestra runs in the Herdr pane HERDR_PANE_ID names when its process group is in the pane's
@@ -79,7 +79,7 @@ func herdrForeground(t *testing.T, group int, pids ...int) {
 // when Herdr doesn't have the pane or answer.
 func TestOwnHerdrPane(t *testing.T) {
 	own := func(pane string) bool {
-		return ownHerdrPane(t.Context(), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
+		return ownHerdrPane(testCtx(t, t.Context()), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
 	}
 	herdrForeground(t, processGroup(), processGroup())
 	if !own("w1:p1") {
@@ -100,7 +100,7 @@ func TestOwnHerdrPane(t *testing.T) {
 	faketool.Write(t, dir, "herdr", "#!/bin/sh\n"+
 		`echo '{"error":{"code":"pane_not_found","message":"pane w1:p1 not found"},"id":"cli:pane:process_info"}' >&2`+
 		"\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	if own("w1:p1") {
 		t.Error("a pane Herdr doesn't have: orchestra's")
 	}
@@ -111,9 +111,9 @@ func TestOwnHerdrPane(t *testing.T) {
 func TestConfigTmuxStartedFromAHerdrPane(t *testing.T) {
 	configFixture(t, "")
 	fakeTmux(t)
-	t.Setenv("HERDR_PANE_ID", "w7Q:p2")
-	t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
-	t.Setenv("TMUX_PANE", "%4")
+	setenv(t, "HERDR_PANE_ID", "w7Q:p2")
+	setenv(t, "TMUX", "/tmp/tmux-501/default,1,0")
+	setenv(t, "TMUX_PANE", "%4")
 	herdrForeground(t, 1<<30, 1<<30) // the tmux client
 	c, p := loadWith(t)
 	if len(p) > 0 || c.Terminal != project.TerminalTmux || c.Workspace != "work" || c.where.pane != "%4" || !c.where.inSight {

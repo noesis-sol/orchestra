@@ -38,7 +38,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	repo = configFixture(t, `{"concurrent": 1}`)
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0", "ORCHESTRA_TICKETS": ""} {
-		t.Setenv(k, v)
+		setenv(t, k, v)
 	}
 	// Sized, as a Herdr pane is: Bubble Tea draws nothing on a terminal 0 wide.
 	if err := unix.IoctlSetWinsize(int(tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 40, Col: 100}); err != nil {
@@ -61,7 +61,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	ended := make(chan struct{}) // closed once run has returned
 	go func() {
 		defer close(ended)
-		err := run(ctx, append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: tty, stdout: tty, stderr: &errOut})
+		err := run(testCtx(t, ctx), append([]string{"orchestra"}, args...), testCmdEnv(t, tty, tty, &errOut))
 		done <- exitOf(err)
 	}()
 	// A test that ends before orchestra exits, as one that fails a wait does, stops orchestra and waits

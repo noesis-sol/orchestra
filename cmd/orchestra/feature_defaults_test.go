@@ -72,8 +72,8 @@ func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 // then on.
 func TestFeatureChosenRunsAsFeatureGivenDoes(t *testing.T) {
 	repo := specFixture(t)
-	t.Setenv("WORKER_PERMISSION_MODE", "")
-	t.Setenv("LIMIT", "")
+	setenv(t, "WORKER_PERMISSION_MODE", "")
+	setenv(t, "LIMIT", "")
 	const request = "Add a --json flag"
 	for _, tc := range []struct {
 		name  string

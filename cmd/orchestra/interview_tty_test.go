@@ -75,8 +75,8 @@ ready|dep) echo '[]' ;;
 esac
 `)
 	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("HERDR_PANE_ID", "")
+	onPath(t, dir)
+	setenv(t, "HERDR_PANE_ID", "")
 	return dir
 }
 
@@ -221,10 +221,10 @@ func hideClaude(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	kept := []string{dir}
-	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+	for _, p := range filepath.SplitList(getenv(t)("PATH")) {
 		if _, err := os.Stat(filepath.Join(p, "claude")); err != nil {
 			kept = append(kept, p)
 		}
 	}
-	t.Setenv("PATH", strings.Join(kept, string(os.PathListSeparator)))
+	setenv(t, "PATH", strings.Join(kept, string(os.PathListSeparator)))
 }

@@ -37,7 +37,7 @@ list|ready) echo '[]' ;;
 esac
 `)
 	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 	return dir
 }
 
@@ -68,10 +68,10 @@ func runFeatureAfter(
 		t.Fatal(err)
 	}
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0"} {
-		t.Setenv(k, v)
+		setenv(t, k, v)
 	}
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: in, stdout: &out, stderr: &errOut})
+	err := run(testCtx(t, context.Background()), append([]string{"orchestra"}, args...), testCmdEnv(t, in, &out, &errOut))
 	return repo, out.String(), errOut.String(), exitOf(err)
 }

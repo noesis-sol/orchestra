@@ -34,6 +34,9 @@ func latestRelease(t *testing.T, v, tag string) *atomic.Int32 {
 }
 
 // cacheIn gives the test a user cache folder of its own and returns the check's cache folder in it.
+// It sets the process's environment, as update.CacheDir reads it (os.UserCacheDir): a test that calls
+// it runs serially, as does one that calls latestRelease, which sets this package's version and
+// releases.
 func cacheIn(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()

@@ -44,7 +44,7 @@ func TestInitIsCancelledByAStopSignalDuringTheForm(t *testing.T) {
 				"--mcp", "", "--setup", "", "--changelog-union=false", "--install-beads=false", "--verifier=false",
 				"--prefix", project.DefaultPrefix(repo)} // all but -c
 			go func() {
-				done <- runInit(ctx, repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
+				done <- runInit(testCtx(t, ctx), repo, args, func(k string) string { return env[k] }, tty, tty, &errOut)
 			}()
 			t.Cleanup(func() { // init still asking as the test ends, as one that fails a wait does
 				cancel()

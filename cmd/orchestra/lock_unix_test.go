@@ -34,7 +34,7 @@ func TestASecondRunIsRefused(t *testing.T) {
 	holdLock(t, repo, project.Holder{PID: 44497, Started: started, Branch: "main", Pane: "w2B:p60"})
 
 	var out, errOut strings.Builder
-	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
+	err := run(testCtx(t, context.Background()), []string{"orchestra", "--feature", "Add a flag"}, testCmdEnv(t, strings.NewReader(""), &out, &errOut))
 	want := "(pid 44497, since " + started.Format("15:04") + ", main, pane w2B:p60). One run at a time"
 	if exitOf(err) != 2 || !strings.Contains(errOut.String(), "orchestra cannot start:\n  - orchestra is already running in ") ||
 		!strings.Contains(errOut.String(), want) {
@@ -57,7 +57,7 @@ func TestASecondRunIsRefused(t *testing.T) {
 // A run holds the lock while it runs and lets go as it ends, leaving its details in the file.
 func TestARunLeavesItsDetailsInTheLock(t *testing.T) {
 	featureTools(t)
-	t.Setenv("HERDR_PANE_ID", "w2B:p61")
+	setenv(t, "HERDR_PANE_ID", "w2B:p61")
 	repo, stdout, stderr, code := runFeatureIn(t, "--plain", "--ticket", "f-1")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)

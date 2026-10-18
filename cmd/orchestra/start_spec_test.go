@@ -107,7 +107,7 @@ func chosenSession(t *testing.T, repo string, args ...string) (*session, *string
 // would be, as the run lock says from then on.
 func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
 	repo := specFixture(t)
-	t.Setenv("WORKER_PERMISSION_MODE", "")
+	setenv(t, "WORKER_PERMISSION_MODE", "")
 	spec := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n")
 	const kept = ".orchestra/specs/app.md"
 	for _, tc := range []struct {

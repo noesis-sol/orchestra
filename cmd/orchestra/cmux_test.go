@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,7 +39,7 @@ func fakeCmux(t *testing.T, script string) {
 	t.Helper()
 	dir := t.TempDir()
 	faketool.Write(t, dir, "cmux", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, dir)
 }
 
 // In a cmux terminal, auto picks cmux: orchestra's surface is its pane, its workspace is kept from
@@ -49,9 +48,9 @@ func fakeCmux(t *testing.T, script string) {
 func TestConfigCmuxInACmuxTerminal(t *testing.T) {
 	configFixture(t, "")
 	fakeCmux(t, "exit 0")
-	t.Setenv("HERDR_ENV", "")
-	t.Setenv("CMUX_WORKSPACE_ID", "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6")
-	t.Setenv("CMUX_SURFACE_ID", "7A1B2C3D-4E5F-4061-9728-394A5B6C7D8E")
+	setenv(t, "HERDR_ENV", "")
+	setenv(t, "CMUX_WORKSPACE_ID", "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6")
+	setenv(t, "CMUX_SURFACE_ID", "7A1B2C3D-4E5F-4061-9728-394A5B6C7D8E")
 	c, p := loadWith(t)
 	if len(p) > 0 {
 		t.Fatalf("problems: %v", p)
@@ -77,7 +76,7 @@ func TestConfigCmuxProblems(t *testing.T) {
 	if len(p) != 1 || !strings.Contains(p[0], "Not running inside a cmux terminal") {
 		t.Errorf("outside cmux: problems %v", p)
 	}
-	t.Setenv("CMUX_WORKSPACE_ID", "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6")
+	setenv(t, "CMUX_WORKSPACE_ID", "0F6C3A9E-1B2C-4D5E-8F90-A1B2C3D4E5F6")
 	_, p = loadWith(t)
 	if len(p) != 1 || !strings.Contains(p[0], "cmux doesn't answer") || !strings.Contains(p[0], "Socket not found") {
 		t.Errorf("cmux not answering: problems %v", p)

@@ -31,8 +31,8 @@ func writeSpec(t *testing.T, path, text string) string {
 func specFixture(t *testing.T) string {
 	t.Helper()
 	repo := configFixture(t, `{"concurrent": 1}`)
-	t.Setenv("ORCHESTRA_SPEC", "")
-	t.Setenv("ORCHESTRA_REFINE", "")
+	setenv(t, "ORCHESTRA_SPEC", "")
+	setenv(t, "ORCHESTRA_REFINE", "")
 	return repo
 }
 
@@ -84,7 +84,7 @@ func TestSpecPathInTheRepository(t *testing.T) {
 		t.Errorf("inside: file %q, kept at %q (%q)", c.specFile, c.Spec, problems)
 	}
 	outside := writeSpec(t, filepath.Join(t.TempDir(), "app spec.md"), "# An app\n")
-	t.Setenv("ORCHESTRA_SPEC", outside)
+	setenv(t, "ORCHESTRA_SPEC", outside)
 	if c, problems := loadWith(t); len(problems) > 0 || c.specFile != outside || c.Spec != ".orchestra/specs/app spec.md" {
 		t.Errorf("outside: file %q, kept at %q (%q)", c.specFile, c.Spec, problems)
 	}
@@ -127,7 +127,7 @@ func TestSpecFlagCombinations(t *testing.T) {
 // the file as given and where it came from.
 func TestSpecFileProblems(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
+	chdir(t, dir)
 	for _, tc := range []struct {
 		name, file, from, want string
 	}{
@@ -140,12 +140,12 @@ func TestSpecFileProblems(t *testing.T) {
 			"The spec app.png (--spec) isn't text: give a Markdown or plain-text file, in UTF-8."},
 	} {
 		c := options{specFile: tc.file}
-		if p := checkSpecFile(&c, "", tc.from); len(p) != 1 || p[0] != tc.want {
+		if p := checkSpecFile(&c, workDir(t), tc.from); len(p) != 1 || p[0] != tc.want {
 			t.Errorf("%s: problems %q, want %q", tc.name, p, tc.want)
 		}
 	}
 	c := options{specFile: filepath.Base(writeSpec(t, filepath.Join(dir, "app.md"), "# An app\n"))}
-	if p := checkSpecFile(&c, "", "--spec"); len(p) > 0 || !samePath(c.specFile, filepath.Join(dir, "app.md")) {
+	if p := checkSpecFile(&c, workDir(t), "--spec"); len(p) > 0 || !samePath(c.specFile, filepath.Join(dir, "app.md")) {
 		t.Errorf("a spec: problems %q, file %q", p, c.specFile)
 	}
 	if os.Getuid() != 0 { // root reads it all the same
@@ -154,7 +154,7 @@ func TestSpecFileProblems(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := options{specFile: locked}
-		if p := checkSpecFile(&c, "", "--spec"); len(p) != 1 ||
+		if p := checkSpecFile(&c, workDir(t), "--spec"); len(p) != 1 ||
 			p[0] != "Cannot read the spec "+locked+" (--spec): permission denied." {
 			t.Errorf("unreadable: problems %q", p)
 		}
@@ -167,14 +167,14 @@ func TestSpecPathProblems(t *testing.T) {
 	repo := specFixture(t)
 	writeSpec(t, filepath.Join(repo, ".gitignore"), "private/\n")
 	ignored := writeSpec(t, filepath.Join(repo, "private", "app.md"), "# Mine\n")
-	t.Setenv("LIMIT", "lots")
+	setenv(t, "LIMIT", "lots")
 	_, p := loadWith(t, "--spec", ignored)
 	if len(p) != 2 || !strings.Contains(p[0], "LIMIT must be a whole number") ||
 		!strings.HasPrefix(p[1], "git ignores private/app.md, where the spec (--spec) is kept, "+
 			"and workers only see committed files: move the spec, or stop ignoring that path") {
 		t.Errorf("ignored: problems %q", p)
 	}
-	t.Setenv("LIMIT", "")
+	setenv(t, "LIMIT", "")
 	inGit := writeSpec(t, filepath.Join(repo, ".git", "app.md"), "# Mine\n")
 	if _, p := loadWith(t, "--spec", inGit); len(p) != 1 ||
 		!strings.HasPrefix(p[0], "The spec .git/app.md (--spec) is in the repository's .git folder") {

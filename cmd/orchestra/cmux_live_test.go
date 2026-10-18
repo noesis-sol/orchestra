@@ -34,7 +34,7 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 	repo, _ := gitRepo(t)
 	bin, claudeDir := t.TempDir(), t.TempDir()
 	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, bin)
 	script := []string{"start", "sleep 2s", "write " + project.RunPath(project.FeatureName) + ` {"epic":"f-1"}`, "stop",
 		"idle"}
 	if err := os.WriteFile(filepath.Join(claudeDir, "script"), []byte(strings.Join(script, "\n")+"\n"), 0o644); err != nil {

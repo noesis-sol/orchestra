@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -52,7 +51,7 @@ func TestClaudeWorkersStartAtHighEffortByDefault(t *testing.T) {
 func TestRefineSessionStartsAtTheWorkersEffort(t *testing.T) {
 	tools := t.TempDir()
 	faketool.Write(t, tools, "claude", "#!/bin/sh\necho 'claude: not in this test' >&2\nexit 1\n")
-	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	onPath(t, tools)
 	for _, tc := range workerEffortCases {
 		c, _, _ := settle(t, tc.args, tc.env, tc.settings)
 		var out strings.Builder
