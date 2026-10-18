@@ -4,6 +4,16 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A worker that loses its agent name is also found in its pane and named
+  again when it was left in its tab as its ticket was set aside, so its later
+  close still merges (`LATE_CLOSE`), and when its finished ticket is handed
+  back to it, rather than the ticket being set aside because "its worker is
+  gone" (`MERGE_CONFLICT`, `CHECKS_FAILED`).
+
 ## [0.8.2] - 2026-10-18
 
 ### Changed

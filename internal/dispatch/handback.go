@@ -38,14 +38,15 @@ func (o *Loop) whyNotHandBack(ctx context.Context, r rebaseStop, handedBack int)
 	case r.onto == "" || r.head == "" || r.own < 1 || len(r.files) == 0:
 		return "git could not say what the rebase stopped on"
 	}
-	return o.workerAway(ctx, r.id)
+	return o.workerAway(ctx, r.worker)
 }
 
-// workerAway says why ticket id's worker can't be handed its finished ticket back, or "" when it is
-// idle in its tab, or at the account's usage limit there: it is handed it back once the run's hold
-// says it carries on (see waitResolved).
-func (o *Loop) workerAway(ctx context.Context, id string) string {
-	switch st, err := o.agents.Status(ctx, o.agentName(id)); {
+// workerAway says why the worker w can't be handed its finished ticket back, or "" when it is idle in
+// its tab, or at the account's usage limit there: it is handed it back once the run's hold says it
+// carries on (see waitResolved). One the terminal has no agent under its name for is looked for in its
+// pane (see workerState).
+func (o *Loop) workerAway(ctx context.Context, w worker) string {
+	switch st, err := o.workerState(ctx, w); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
 	case st == StateGone:
@@ -136,7 +137,8 @@ func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line
 // not counting toward limit: one limited as it is handed back is given prompt where the hold tells it
 // to carry on, or once it goes idle by itself, and one limited later is told to carry on. It returns
 // the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the hold's once it has lasted
-// Config.UsageLimitWait. Each status read goes to report.
+// Config.UsageLimitWait. Each status read goes to report; one the terminal has no agent under its name
+// for is looked for in its pane (see workerState).
 func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadline time.Time, limit time.Duration,
 	report func(context.Context, AgentState, error)) (why string, stop *stopReason) {
 	var lw limitWait
@@ -150,7 +152,7 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		given = true
 		return ""
 	}
-	if st, err := o.agents.Status(ctx, w.agent); err == nil && st == StateLimited {
+	if st, err := o.workerState(ctx, w); err == nil && st == StateLimited {
 		o.info("  %s's worker is at the usage limit: it is handed back once the limit lifts, the wait not counting "+
 			"toward the %s", w.id, command.ShortDuration(limit))
 	} else if why := give(); why != "" {
@@ -160,7 +162,7 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
 			return "", errInterrupted
 		}
-		st, err := o.agents.Status(ctx, w.agent)
+		st, err := o.workerState(ctx, w)
 		report(ctx, st, err)
 		switch {
 		case err != nil:

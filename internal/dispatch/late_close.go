@@ -100,7 +100,8 @@ type lateClose struct {
 // followLeft reads the tickets set aside with their workers left in their tabs, and returns those
 // closed there since whose workers have settled: idle or done, or gone. A worker at work, or one the
 // terminal can't tell about, is read again at the next poll, as is one bd or the terminal fails to
-// say anything of; one gone with its ticket not closed is no longer followed. bd lists the tickets
+// say anything of; one gone with its ticket not closed is no longer followed. A worker the terminal
+// has no agent under its name for is looked for in its pane first (see workerState). bd lists the tickets
 // not closed in one call, and only one missing from the list is shown.
 func (r *runState) followLeft() []lateClose {
 	o, ctx := r.o, r.ctx
@@ -140,7 +141,7 @@ func (r *runState) followLeft() []lateClose {
 				continue
 			}
 		}
-		st, err := o.readStatus(ctx, lo.w.agent, 1)
+		st, err := o.workerState(ctx, lo.w)
 		switch {
 		case ctx.Err() != nil:
 			return late

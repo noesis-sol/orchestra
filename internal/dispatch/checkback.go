@@ -128,7 +128,7 @@ func (o *Loop) whyNotFixCheck(ctx context.Context, r rebaseStop, res checked, fi
 	if noMore != "" {
 		return noMore
 	}
-	return o.workerAway(ctx, r.id)
+	return o.workerAway(ctx, r.worker)
 }
 
 // times says how many times something was done, as in "twice".
