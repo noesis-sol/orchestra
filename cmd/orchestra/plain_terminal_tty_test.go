@@ -31,7 +31,7 @@ func TestDumbTerminalRunPrintsPlainLines(t *testing.T) {
 }
 
 // The dashboard reads its keys from stdin: a stdin that isn't a terminal gets plain lines, as a
-// stdout that isn't one does, and so do -plain and TERM=dumb.
+// stdout that isn't one does, and so do --plain and TERM=dumb.
 func TestPlainOutputWithoutTwoTerminals(t *testing.T) {
 	tty, _ := openTerminal(t)
 	pipeOut, pipeIn, err := os.Pipe()
@@ -56,7 +56,7 @@ func TestPlainOutputWithoutTwoTerminals(t *testing.T) {
 		plain  bool
 	}{
 		{"terminals", false, "xterm-256color", tty, tty, false},
-		{"-plain", true, "xterm-256color", tty, tty, true},
+		{"--plain", true, "xterm-256color", tty, tty, true},
 		{"TERM=dumb", false, "dumb", tty, tty, true},
 		{"stdin a pipe", false, "xterm-256color", pipeOut, tty, true},
 		{"stdout a pipe", false, "xterm-256color", tty, pipeIn, true},

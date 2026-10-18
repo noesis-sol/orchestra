@@ -222,7 +222,7 @@ func checkTerminal(ctx context.Context, c *options, settings project.Settings, g
 // hookWorkers is the problem of a run in the hook-driven terminal whose workers are agent, whose
 // sessions don't report through hooks (hookterm.Reports): it names those that do.
 func hookWorkers(terminal, agent string) string {
-	return "Workers in " + terminal + " must be Claude Code (got -agent " + agent + ", or AGENT_KIND): " +
+	return "Workers in " + terminal + " must be Claude Code (got --agent " + agent + ", or AGENT_KIND): " +
 		"only Claude workers report through hooks, which tell orchestra what they are doing. " +
 		"Run from a Herdr pane for other agents."
 }

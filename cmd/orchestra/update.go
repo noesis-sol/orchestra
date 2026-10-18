@@ -46,7 +46,7 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 			"Replace this orchestra with the latest GitHub Release's binary, its SHA-256 checked against the\n"+
 			"release's checksums.txt. A build from a clone is replaced only with --force. A run going\n"+
 			"keeps the build it started with; the next run starts the new one.\n\n")
-		fs.PrintDefaults()
+		printFlags(fs)
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 updated or nothing to do (--check: none newer), "+
 			"1 --check: a newer release is out,\n2 refused (flags, a build from a clone, "+
 			"a folder it can't write in), 4 the update failed.\n")

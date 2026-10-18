@@ -79,7 +79,7 @@ func TestConfigLegacyProjectIsSetUp(t *testing.T) {
 	}
 }
 
-// A worker prompt of the run's own (-prompt, WORKER_PROMPT) needs no orchestra init; one that's
+// A worker prompt of the run's own (--prompt, WORKER_PROMPT) needs no orchestra init; one that's
 // missing is named as given, without suggesting init, which wouldn't write it.
 func TestConfigOwnPromptNeedsNoInit(t *testing.T) {
 	repo := configFixture(t, "")
@@ -89,11 +89,11 @@ func TestConfigOwnPromptNeedsNoInit(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "prompt.md"), []byte("Work on TICKET_ID."), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if c, p := loadWith(t, "-prompt", "prompt.md"); c.notSetUp || len(p) > 0 {
+	if c, p := loadWith(t, "--prompt", "prompt.md"); c.notSetUp || len(p) > 0 {
 		t.Errorf("own prompt: not set up %v, problems %v", c.notSetUp, p)
 	}
 	t.Setenv("WORKER_PROMPT", "missing.md")
-	const want = "Worker prompt not found: missing.md (from -prompt or WORKER_PROMPT)."
+	const want = "Worker prompt not found: missing.md (from --prompt or WORKER_PROMPT)."
 	if c, p := loadWith(t); c.notSetUp || len(p) != 1 || p[0] != want {
 		t.Errorf("missing own prompt: not set up %v, problems %q", c.notSetUp, p)
 	}

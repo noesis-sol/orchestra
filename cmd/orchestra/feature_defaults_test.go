@@ -13,7 +13,7 @@ import (
 
 // A feature run, like a spec run, runs unwatched once its plan is filed: its workers start in auto
 // unless the project's settings.json, the flag or its variable choose another mode, and it has no
-// ticket limit unless -limit or LIMIT gives one.
+// ticket limit unless --limit or LIMIT gives one.
 
 func TestFeatureRunsDefaultToAutoPermissionMode(t *testing.T) {
 	feature := []string{"--feature", "Add a flag"}
@@ -48,7 +48,7 @@ func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 	}{
 		{"a feature", feature, nil, dispatch.NoLimit},
 		{"with DONE_SO_FAR", feature, map[string]string{"DONE_SO_FAR": "80"}, dispatch.NoLimit},
-		{"-limit", append(slices.Clone(feature), "--limit", "5"), nil, 5},
+		{"--limit", append(slices.Clone(feature), "--limit", "5"), nil, 5},
 		{"LIMIT", feature, map[string]string{"LIMIT": "7"}, 7},
 		{"no feature", nil, nil, 40},
 	} {
@@ -61,9 +61,9 @@ func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 	_, problems, _ := readFlags(append(slices.Clone(feature), "--limit", "3", "--done-so-far", "3"), specEnv(nil),
 		io.Discard)
 	if len(problems) != 1 || !strings.Contains(problems[0], "--feature would file a plan and run none of it: "+
-		"-done-so-far (3) has reached -limit (3). Raise -limit [LIMIT], lower -done-so-far [DONE_SO_FAR], "+
+		"--done-so-far (3) has reached --limit (3). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
 		"or leave both out.") {
-		t.Errorf("-limit reached: %q", problems)
+		t.Errorf("--limit reached: %q", problems)
 	}
 }
 

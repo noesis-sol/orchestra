@@ -17,7 +17,7 @@ import (
 var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
 // pipeSignals are what a write to stdout or stderr gets once nothing reads it, as with
-// orchestra -plain | tee and Ctrl+C, which ends tee too: SIGPIPE. Go's default ends orchestra at that
+// orchestra --plain | tee and Ctrl+C, which ends tee too: SIGPIPE. Go's default ends orchestra at that
 // write, in the middle of winding down; caught, the write fails with EPIPE instead (and the printer
 // drops it), and the run ends as it would have. Caught rather than ignored (signal.Ignore), as a
 // program orchestra starts would inherit the ignoring.

@@ -23,8 +23,8 @@ import (
 
 // asksWork reports whether the run c asks what to work on. terminal says whether stdin and stdout
 // are both a terminal, as the form is drawn on stdout. --feature, --spec (or ORCHESTRA_SPEC), --ticket
-// (or ORCHESTRA_TICKET), --tickets (or ORCHESTRA_TICKETS=1) and -plain say already. So does a run
-// whose -limit is reached: it starts nothing, and a feature would be filed with none of it run.
+// (or ORCHESTRA_TICKET), --tickets (or ORCHESTRA_TICKETS=1) and --plain say already. So does a run
+// whose --limit is reached: it starts nothing, and a feature would be filed with none of it run.
 func asksWork(c options, terminal bool) bool {
 	return terminal && c.Feature == "" && c.specFile == "" && c.Ticket == "" && !c.Tickets && !c.Plain &&
 		c.DoneSoFar < c.Limit
@@ -112,7 +112,7 @@ func (q workQuestion) ask(ctx context.Context) (tui.Work, int) {
 const specChosenFrom = "chosen at the start"
 
 // plannedDefaults gives the run c, on a spec or a feature chosen at the question, what --spec or
-// --feature would have: no ticket limit unless -limit or LIMIT gives one, and workers in auto
+// --feature would have: no ticket limit unless --limit or LIMIT gives one, and workers in auto
 // permission mode unless the flag, its variable or the project's settings give one.
 func plannedDefaults(c *options) {
 	if !c.limitGiven {

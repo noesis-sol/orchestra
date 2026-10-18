@@ -142,7 +142,7 @@ func noCalls(t *testing.T, dir string) {
 // A run that doesn't ask, with nothing in the backlog, says all is done and exits 0, before its
 // loop: no DIRTY_TREE for the uncommitted file, no triage or run report, no notification.
 func TestNothingToRunWhenAllIsDone(t *testing.T) {
-	for _, args := range [][]string{{"--tickets"}, {"-plain"}} {
+	for _, args := range [][]string{{"--tickets"}, {"--plain"}} {
 		t.Run(args[0], func(t *testing.T) {
 			dir := nothingTools(t, backlog{})
 			repo, stdout, stderr, code := runNothing(t, func(repo string) {
@@ -232,7 +232,7 @@ func TestNothingReadyButAWorkerLeftRuns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := nothingTools(t, backlog{show: map[string]string{"k-e": `[{"id":"k-e","status":"open","issue_type":"epic"}]`}})
 			// The report would be claude's: not this test's.
-			repo, stdout, stderr, code := runNothing(t, leaveWorker(t, tc.left), append(tc.args, "-review=false")...)
+			repo, stdout, stderr, code := runNothing(t, leaveWorker(t, tc.left), append(tc.args, "--review=false")...)
 			if code != dispatch.ExitOK {
 				t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 			}
@@ -271,7 +271,7 @@ func TestNothingToRunLeavesTheLoopsEnds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			nothingTools(t, tc.b)
-			_, stdout, stderr, code := runNothing(t, func(string) {}, append(tc.args, "-review=false")...)
+			_, stdout, stderr, code := runNothing(t, func(string) {}, append(tc.args, "--review=false")...)
 			if code != tc.code || !strings.Contains(stdout, tc.final) || strings.Contains(stdout, "✓ All done") {
 				t.Errorf("exit %d, want %d and %s; stderr:\n%s\nstdout:\n%s", code, tc.code, tc.final, stderr, stdout)
 			}

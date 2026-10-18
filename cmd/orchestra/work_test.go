@@ -256,9 +256,9 @@ func TestAsksWorkOnlyWhenNothingSaysWhatToRun(t *testing.T) {
 		{"--feature", func(c *options) { c.Feature = "Add a flag" }, true, false},
 		{"--ticket", func(c *options) { c.Ticket = "orchestra-1" }, true, false},
 		{"--tickets", func(c *options) { c.Tickets = true }, true, false},
-		{"-plain", func(c *options) { c.Plain = true }, true, false},
-		{"-limit reached", func(c *options) { c.DoneSoFar = 40 }, true, false},
-		{"-limit 0", func(c *options) { c.Limit = 0 }, true, false},
+		{"--plain", func(c *options) { c.Plain = true }, true, false},
+		{"--limit reached", func(c *options) { c.DoneSoFar = 40 }, true, false},
+		{"--limit 0", func(c *options) { c.Limit = 0 }, true, false},
 	} {
 		c := asked
 		tc.change(&c)

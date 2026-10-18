@@ -63,7 +63,7 @@ func (s *ProgramSink) Handoff(next dispatch.Sink, received int) {
 }
 
 // Printer prints each event as a line to Out: styled for a terminal (after the live view has
-// closed), or as the plain log line for pipes and -plain.
+// closed), or as the plain log line for pipes and --plain.
 type Printer struct {
 	Out    io.Writer
 	Styled bool // colours and the rendered report, for a terminal

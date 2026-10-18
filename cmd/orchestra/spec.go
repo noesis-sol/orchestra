@@ -23,7 +23,7 @@ import (
 // can read it (see project.CommitSpec), and has it broken down into Beads tickets: a root epic,
 // child epics where the spec has separable parts, and tickets of one worker session each, which the
 // breakdown files itself. The run is then scoped to the root epic, as a --feature run is to its
-// epic, and starts without asking. It has no ticket limit unless -limit or LIMIT gives one. Run again,
+// epic, and starts without asking. It has no ticket limit unless --limit or LIMIT gives one. Run again,
 // it carries on with the root epic an earlier run filed rather than break the spec down again, and
 // with the spec changed since, the breakdown only updates that tree for the change (spec_carry.go).
 

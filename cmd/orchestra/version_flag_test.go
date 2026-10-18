@@ -22,7 +22,7 @@ func TestHelpListsVAsTheVersionShorthand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("-h: %v", err)
 	}
-	for _, line := range []string{"  -v\tshorthand for --version\n", "  -version\n    \tprint the version and exit\n"} {
+	for _, line := range []string{"  -v\tshorthand for --version\n", "  --version\n    \tprint the version and exit\n"} {
 		if !strings.Contains(stderr, line) {
 			t.Errorf("-h lacks %q:\n%s", line, stderr)
 		}

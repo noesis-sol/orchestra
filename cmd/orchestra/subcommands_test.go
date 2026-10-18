@@ -83,15 +83,15 @@ func TestSubcommandSynopsisShownEverywhere(t *testing.T) {
 			t.Errorf("orchestra %s -h: %v\n%s", c.name, err, own)
 		}
 		want := "orchestra: " + c.name + " comes before its flags:\n" + usageLines("  ", c.name, c.synopsis)
-		if _, hint, err := runIn(t, dir, nil, "-plain", c.name); exitOf(err) != 2 || hint != want {
-			t.Errorf("orchestra -plain %s: exit %d\n%s", c.name, exitOf(err), hint)
+		if _, hint, err := runIn(t, dir, nil, "--plain", c.name); exitOf(err) != 2 || hint != want {
+			t.Errorf("orchestra --plain %s: exit %d\n%s", c.name, exitOf(err), hint)
 		}
 	}
 }
 
 // A subcommand's synopsis names each of its flags, its aliases and shorthands aside.
 func TestSubcommandSynopsisNamesEveryFlag(t *testing.T) {
-	flagLine := regexp.MustCompile(`(?m)^  -(\S+).*\n\s+(.*)$`)
+	flagLine := regexp.MustCompile(`(?m)^  -+(\S+).*\n\s+(.*)$`)
 	named := regexp.MustCompile(`\[--([a-z-]+)`)
 	for _, c := range subcommands {
 		_, help, err := runIn(t, t.TempDir(), nil, c.name, "-h")

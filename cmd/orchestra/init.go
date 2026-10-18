@@ -197,7 +197,7 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 	}
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), usageLines("Usage: ", "init", initSynopsis)+"\n"+initAbout)
-		fs.PrintDefaults()
+		printFlags(fs)
 	}
 	if code, ok := parseArgs(fs, args, "init"); !ok {
 		return f, code, false

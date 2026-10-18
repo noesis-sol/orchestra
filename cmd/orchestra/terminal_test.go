@@ -156,11 +156,11 @@ func TestConfigRefusesAnUnknownTerminalSetting(t *testing.T) {
 func TestConfigTmuxRefusesWorkersOtherThanClaude(t *testing.T) {
 	configFixture(t, "")
 	fakeTmux(t)
-	_, p := loadWith(t, "--terminal", "tmux", "-agent", "codex")
-	if len(p) != 1 || !strings.Contains(p[0], "Workers in tmux must be Claude Code (got -agent codex") {
+	_, p := loadWith(t, "--terminal", "tmux", "--agent", "codex")
+	if len(p) != 1 || !strings.Contains(p[0], "Workers in tmux must be Claude Code (got --agent codex") {
 		t.Errorf("problems %v", p)
 	}
-	if _, p := loadWith(t, "--terminal", "herdr", "-agent", "codex"); len(p) > 0 {
+	if _, p := loadWith(t, "--terminal", "herdr", "--agent", "codex"); len(p) > 0 {
 		t.Errorf("Herdr runs any agent: problems %v", p)
 	}
 }

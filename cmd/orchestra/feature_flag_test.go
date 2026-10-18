@@ -89,7 +89,7 @@ func TestYesIsGone(t *testing.T) {
 	}
 	var help strings.Builder
 	if _, _, err := loadConfig(context.Background(), []string{"-h"}, os.Getenv, &help); err == nil ||
-		strings.Contains(help.String(), "-yes") || !strings.Contains(help.String(), "-feature string") {
+		strings.Contains(help.String(), "--yes") || !strings.Contains(help.String(), "--feature string") {
 		t.Errorf("the help (%v):\n%s", err, help.String())
 	}
 

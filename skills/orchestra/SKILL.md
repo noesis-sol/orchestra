@@ -67,7 +67,7 @@ Where the project's orchestra files are:
 | only `.claude/worker-prompt.md` | before `orchestra init` | `.claude/worker-prompt.md` | `.claude/orchestrate.log` | `.claude/orchestrate-reports/` |
 | neither | not set up | run `orchestra init` | | |
 
-`-prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
+`--prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
 `.orchestra/settings.json` holds the checks, `check_fast` (the merge check, `scripts/check-fast.sh`)
 and `check_full` (everything, `scripts/check-full.sh`, run once at the end of a run), `mcp_servers` (the MCP servers workers get, by
 name; see [Workers' MCP servers](#workers-mcp-servers)) and `concurrent`, how many tickets run at the
@@ -239,7 +239,7 @@ When the user wants a feature or a whole app built from a spec (a Markdown or pl
 describes it), launch `orchestra --spec <file>` in a pane, as above, in place of `--tickets`. It asks
 nothing: it commits the spec (one outside the repository as a copy in `.orchestra/specs/<name>`), has
 `claude -p` break it down into a root epic, child epics and tickets, each carrying the metadata `spec`,
-and runs them as `--ticket <root epic>` would, with no ticket limit (unless `-limit` / `LIMIT`) and
+and runs them as `--ticket <root epic>` would, with no ticket limit (unless `--limit` / `LIMIT`) and
 workers in Claude Code's `auto` permission mode. In Herdr, for example:
 
 ```

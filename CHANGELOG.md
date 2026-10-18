@@ -21,6 +21,13 @@ All notable changes to orchestra are documented here. The format follows
   `setup_files` where needed), and asks about a tool it can't install. An
   update files one for a change that needs a new tool. It replaces the
   scaffold ticket of a project with no code.
+- orchestra writes a long flag with two dashes everywhere: `orchestra -h`
+  and the subcommands' `-h` list `--limit`, `--plain` and the rest (the
+  shorthands `-c` and `-v` keep one), as do its messages, the docs and the
+  skill. A long flag still takes one dash too, so scripts written either way
+  keep working. `--limit` and `--resolve-conflicts` give their default once,
+  `--organ-effort` names the organs there are, and `--tickets` says the
+  question it skips offers a spec or a new feature.
 
 ## [0.8.1] - 2026-10-18
 

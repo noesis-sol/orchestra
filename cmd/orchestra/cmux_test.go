@@ -83,8 +83,8 @@ func TestConfigCmuxProblems(t *testing.T) {
 		t.Errorf("cmux not answering: problems %v", p)
 	}
 	fakeCmux(t, "exit 0")
-	_, p = loadWith(t, "--workspace", "w2", "-agent", "codex")
-	if len(p) != 2 || !strings.Contains(p[0], "Workers in cmux must be Claude Code (got -agent codex") ||
+	_, p = loadWith(t, "--workspace", "w2", "--agent", "codex")
+	if len(p) != 2 || !strings.Contains(p[0], "Workers in cmux must be Claude Code (got --agent codex") ||
 		!strings.Contains(p[1], "--workspace has no use under cmux") {
 		t.Errorf("--workspace and codex: problems %v", p)
 	}

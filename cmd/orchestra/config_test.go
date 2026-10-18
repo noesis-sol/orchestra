@@ -199,8 +199,8 @@ func TestConfigRelativeWorktreesFromASubdirectory(t *testing.T) {
 	if want := filepath.Join(filepath.Dir(repo), "wt"); len(p) > 0 || !samePath(c.WTRoot, want) {
 		t.Errorf("WT_ROOT = %s, want %s (%v)", c.WTRoot, want, p)
 	}
-	if c, _ := loadWith(t, "-worktrees", "../wt2"); !samePath(c.WTRoot, filepath.Join(filepath.Dir(repo), "wt2")) {
-		t.Errorf("-worktrees = %s", c.WTRoot)
+	if c, _ := loadWith(t, "--worktrees", "../wt2"); !samePath(c.WTRoot, filepath.Join(filepath.Dir(repo), "wt2")) {
+		t.Errorf("--worktrees = %s", c.WTRoot)
 	}
 }
 

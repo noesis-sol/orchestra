@@ -17,7 +17,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
-// windDownAfterPipe is a run's stop as orchestra -plain | tee meets it: it catches the stop
+// windDownAfterPipe is a run's stop as orchestra --plain | tee meets it: it catches the stop
 // signals, says it is ready on stdout, and once Ctrl+C has stopped it (and ended tee, the reader
 // of its stdout) it shows the lines of its winding down, then does its bookkeeping: it writes the
 // file its one argument names, as leaveBehind saves the workers it leaves, and exits 130.
@@ -40,7 +40,7 @@ func windDownAfterPipe(args []string) int {
 
 var _ = faketool.Func("wind-down-after-pipe", windDownAfterPipe)
 
-// Ctrl+C on orchestra -plain | tee ends tee as well, so the lines orchestra shows as it winds down
+// Ctrl+C on orchestra --plain | tee ends tee as well, so the lines orchestra shows as it winds down
 // go to a pipe nobody reads. They are lost, but orchestra isn't: SIGPIPE doesn't end it before its
 // bookkeeping, and it exits 130 as a stopped run does.
 func TestABrokenPipeDoesNotEndTheWindingDown(t *testing.T) {

@@ -73,7 +73,7 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 		t.Error("init should say what it did")
 	}
 
-	// A second run leaves the prompt alone; -force replaces it.
+	// A second run leaves the prompt alone; --force replaces it.
 	if err := os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != promptTemplate {
-		t.Error("-force should restore the template")
+		t.Error("--force should restore the template")
 	}
 }
 

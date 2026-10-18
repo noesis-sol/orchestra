@@ -182,7 +182,7 @@ func TestSpecPathProblems(t *testing.T) {
 	}
 }
 
-// A spec run has no ticket limit unless -limit or LIMIT gives one; one given is held to, and one
+// A spec run has no ticket limit unless --limit or LIMIT gives one; one given is held to, and one
 // already reached is a setup problem, as a feature run's is.
 func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 	spec := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), "# An app\n")
@@ -194,7 +194,7 @@ func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 	}{
 		{"a spec", []string{"--spec", spec}, nil, dispatch.NoLimit},
 		{"with DONE_SO_FAR", []string{"--spec", spec}, map[string]string{"DONE_SO_FAR": "80"}, dispatch.NoLimit},
-		{"-limit", []string{"--spec", spec, "--limit", "5"}, nil, 5},
+		{"--limit", []string{"--spec", spec, "--limit", "5"}, nil, 5},
 		{"LIMIT", []string{"--spec", spec}, map[string]string{"LIMIT": "7"}, 7},
 		{"no spec", nil, nil, 40},
 	} {
@@ -205,8 +205,8 @@ func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 	}
 	_, problems, _ := readFlags([]string{"--spec", spec, "--limit", "3", "--done-so-far", "3"}, specEnv(nil), io.Discard)
 	if len(problems) != 1 || !strings.Contains(problems[0], "--spec would break the spec down and run none of it: "+
-		"-done-so-far (3) has reached -limit (3).") {
-		t.Errorf("-limit reached: %q", problems)
+		"--done-so-far (3) has reached --limit (3).") {
+		t.Errorf("--limit reached: %q", problems)
 	}
 	if got := dispatch.LimitLabel(dispatch.NoLimit) + " " + dispatch.Progress(3, dispatch.NoLimit); got != "none 3" {
 		t.Errorf("no limit reads %q", got)

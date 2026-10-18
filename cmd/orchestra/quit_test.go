@@ -36,7 +36,7 @@ type quitRig struct {
 	exits   []int
 }
 
-// newQuitRig returns a rig whose stop watch knows how to quit from the start, as with -plain.
+// newQuitRig returns a rig whose stop watch knows how to quit from the start, as with --plain.
 func newQuitRig(t *testing.T, loop *windingLoop) *quitRig {
 	t.Helper()
 	r := quitRigFor(t, loop)

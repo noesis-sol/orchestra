@@ -45,8 +45,8 @@ func TestRunReportsSetupProblemsAndExits2(t *testing.T) {
 
 func TestRunVersionHelpAndBadFlags(t *testing.T) {
 	dir := t.TempDir()
-	if stdout, _, err := runIn(t, dir, nil, "-version"); err != nil || !strings.HasPrefix(stdout, "orchestra ") {
-		t.Errorf("-version: %v %q", err, stdout)
+	if stdout, _, err := runIn(t, dir, nil, "--version"); err != nil || !strings.HasPrefix(stdout, "orchestra ") {
+		t.Errorf("--version: %v %q", err, stdout)
 	}
 	if _, stderr, err := runIn(t, dir, nil, "-h"); err != nil || !strings.Contains(stderr, "Usage: orchestra") || !strings.Contains(stderr, "Exit codes") {
 		t.Errorf("-h: %v %q", err, stderr)
@@ -66,7 +66,7 @@ func TestRunRefusesPositionalArguments(t *testing.T) {
 		want string
 	}{
 		{[]string{"-c", "2", "init"}, "init comes before its flags"},
-		{[]string{"-plain", "init", "--check", "make test"}, "init comes before its flags"},
+		{[]string{"--plain", "init", "--check", "make test"}, "init comes before its flags"},
 		{[]string{"-c", "2", "plan", "--apply"}, "plan comes before its flags"},
 		{[]string{"foo"}, `unexpected argument "foo"`},
 	} {

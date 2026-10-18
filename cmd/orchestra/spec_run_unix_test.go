@@ -128,7 +128,7 @@ func gitIn(t *testing.T, repo string, args ...string) string {
 
 // A spec run commits the spec, has it broken down, and runs the root epic the breakdown names,
 // without asking and with no ticket limit; the lock, the START line, the log and the start record
-// name the spec. Run again, the spec unchanged is not committed again, and -limit and --refine are
+// name the spec. Run again, the spec unchanged is not committed again, and --limit and --refine are
 // passed on.
 func TestSpecRunRunsTheRootEpic(t *testing.T) {
 	if testing.Short() {

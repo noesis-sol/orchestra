@@ -170,7 +170,7 @@ func run(
 }
 
 // configure reads a run's flags in args and its setup, and reports what stops it before it starts:
-// after -h or -version, or with a problem, ok is false and the run ends with code, all said.
+// after -h or --version, or with a problem, ok is false and the run ends with code, all said.
 func configure(ctx context.Context, args []string, e cmdEnv) (cfg options, code int, ok bool) {
 	cfg, problems, err := loadConfig(ctx, args, e.getenv, e.stderr)
 	switch {
@@ -364,7 +364,7 @@ func (s *session) runLoop(ctx context.Context) int {
 }
 
 // plainOutput reports whether the run prints plain lines rather than drawing its dashboard: when
-// asked to (-plain), when stdout isn't a terminal, when the terminal can't draw one (TERM=dumb, as the
+// asked to (--plain), when stdout isn't a terminal, when the terminal can't draw one (TERM=dumb, as the
 // forms read it for their accessible form), or when stdin isn't one, as the dashboard's keys come in
 // on it.
 func plainOutput(asked bool, getenv func(string) string, stdin io.Reader, stdout io.Writer) bool {

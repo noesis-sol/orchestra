@@ -46,9 +46,9 @@ func TestTerminalChoices(t *testing.T) {
 // the agent and those that do, as it always has.
 func TestHookWorkers(t *testing.T) {
 	for _, tc := range []struct{ terminal, agent, want string }{
-		{"tmux", "codex", "Workers in tmux must be Claude Code (got -agent codex, or AGENT_KIND): only Claude " +
+		{"tmux", "codex", "Workers in tmux must be Claude Code (got --agent codex, or AGENT_KIND): only Claude " +
 			"workers report through hooks, which tell orchestra what they are doing. Run from a Herdr pane for other agents."},
-		{"cmux", "aider", "Workers in cmux must be Claude Code (got -agent aider, or AGENT_KIND): only Claude " +
+		{"cmux", "aider", "Workers in cmux must be Claude Code (got --agent aider, or AGENT_KIND): only Claude " +
 			"workers report through hooks, which tell orchestra what they are doing. Run from a Herdr pane for other agents."},
 	} {
 		if got := hookWorkers(tc.terminal, tc.agent); got != tc.want {

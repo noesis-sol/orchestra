@@ -27,7 +27,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 			"the other: the higher-priority ticket first. Tickets are linked when they name the same\n"+
 			"function, or work on the same file of at most %d lines, unless both name functions it\n"+
 			"mentions and none is the same. Without --apply it only prints the proposal.\n\n", dispatch.SmallFileLines)
-		fs.PrintDefaults()
+		printFlags(fs)
 	}
 	if code, ok := parseArgs(fs, args, "plan"); !ok {
 		return code

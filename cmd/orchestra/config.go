@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -126,7 +127,7 @@ func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) *
 	b := bindEnv(e, e.fs.IntVar, dst, name, env, def, parseWhole, usage)
 	b.check = func(string) string {
 		if *dst < 0 {
-			return fmt.Sprintf("-%s must be a whole number (got %d).", name, *dst)
+			return fmt.Sprintf("--%s must be a whole number (got %d).", name, *dst)
 		}
 		return ""
 	}
@@ -174,7 +175,7 @@ func (e *envFlags) settle() (set map[string]bool, problems []string) {
 type options struct {
 	dispatch.Config
 	WorkerPrompt string
-	ownPrompt    bool // WorkerPrompt came from -prompt or WORKER_PROMPT, not the project
+	ownPrompt    bool // WorkerPrompt came from --prompt or WORKER_PROMPT, not the project
 	notSetUp     bool // the project was never set up (see project.IsSetUp): run says to run orchestra init first
 	Notify       bool
 	Plain        bool
@@ -186,7 +187,7 @@ type options struct {
 	yes          bool   // --yes, which is gone: a run given it ends saying so
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
-	limitGiven   bool   // -limit or LIMIT gave Config.Limit, which a spec or feature run otherwise hasn't
+	limitGiven   bool   // --limit or LIMIT gave Config.Limit, which a spec or feature run otherwise hasn't
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
@@ -272,14 +273,14 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 			fmt.Fprint(fs.Output(), usageLines("       ", c.name, c.synopsis))
 		}
 		fmt.Fprint(fs.Output(), "\n"+
-			"Work through 'bd ready' (or, with -ticket, one ticket and its subtickets), as many tickets at once "+
+			"Work through 'bd ready' (or, with --ticket, one ticket and its subtickets), as many tickets at once "+
 			"as --concurrent allows, one worker (a coding agent) per tab and git worktree.\n"+
 			"With --feature, talk the request through with you in a Claude Code session first, which files it as an "+
 			"epic and its tickets, and run those.\n"+
 			"With --spec, commit the spec and break it down into an epic and its tickets first, and run those.\n"+
-			"In a terminal, without --feature, --spec, --ticket, --tickets or -plain, it first asks which: "+
+			"In a terminal, without --feature, --spec, --ticket, --tickets or --plain, it first asks which: "+
 			"the current tickets, a spec you pick (as --spec runs it), or a new feature you describe.\n\n")
-		printDefaults(fs, "yes")
+		printFlags(fs, "yes")
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
 			"4 terminal (Herdr, tmux or cmux), Beads or git failure,\n5 main checkout dirty or off its branch, 6 merge failed, "+
 			"7 environment failing workers, 8 usage limit held too long, 130 Ctrl+C.\n")
@@ -310,18 +311,57 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 	return f, append(problems, checkFlagCombos(f)...), nil
 }
 
-// printDefaults prints the flags of fs as fs.PrintDefaults does, without those named in hidden: flags
-// that are gone, kept only to say so.
-func printDefaults(fs *flag.FlagSet, hidden ...string) {
-	shown := flag.NewFlagSet(fs.Name(), flag.ContinueOnError)
-	shown.SetOutput(fs.Output())
+// printFlags lists the flags of fs as fs.PrintDefaults does, but with two dashes before a long flag's name
+// (--limit) and one before a shorthand's (-c), and without those named in hidden: flags that are gone, kept
+// only to say so. A flag whose usage gives its default, "(default: …)", isn't followed by the flag package's.
+func printFlags(fs *flag.FlagSet, hidden ...string) {
 	fs.VisitAll(func(f *flag.Flag) {
-		if !slices.Contains(hidden, f.Name) {
-			shown.Var(f.Value, f.Name, f.Usage)
-			shown.Lookup(f.Name).DefValue = f.DefValue // as defined, not as parsed so far
+		if slices.Contains(hidden, f.Name) {
+			return
 		}
+		line := "  " + flagName(f.Name)
+		kind, usage := flag.UnquoteUsage(f)
+		if kind != "" {
+			line += " " + kind
+		}
+		if len(line) <= len("  -v") { // a one-letter bool: its usage on the same line, as PrintDefaults has it
+			line += "\t"
+		} else {
+			line += "\n    \t"
+		}
+		line += strings.ReplaceAll(usage, "\n", "\n    \t")
+		if def := listedDefault(f); def != "" && !strings.Contains(usage, "(default:") {
+			line += " (default " + def + ")"
+		}
+		fmt.Fprintln(fs.Output(), line)
 	})
-	shown.PrintDefaults()
+}
+
+// flagName is the flag called name as orchestra writes it: --name, or -c for a one-letter shorthand.
+func flagName(name string) string {
+	if len(name) == 1 {
+		return "-" + name
+	}
+	return "--" + name
+}
+
+// listedDefault is f's default as PrintDefaults gives it, quoted for a string: "" where it is the zero
+// value of f's type.
+func listedDefault(f *flag.Flag) string {
+	t := reflect.TypeOf(f.Value)
+	zero := reflect.Zero(t)
+	if t.Kind() == reflect.Pointer {
+		zero = reflect.New(t.Elem())
+	}
+	if f.DefValue == zero.Interface().(flag.Value).String() {
+		return ""
+	}
+	if g, ok := f.Value.(flag.Getter); ok {
+		if _, isText := g.Get().(string); isText {
+			return strconv.Quote(f.DefValue)
+		}
+	}
+	return f.DefValue
 }
 
 // defineRunFlags defines a run's flags in fs, each bound to the environment variable it defaults
@@ -337,10 +377,10 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
 	bindWhole(e, &c.Limit, "limit", "LIMIT", 40,
-		"stop after this many tickets in total (default: none for a --spec or --feature run) [LIMIT]",
+		"stop after this many tickets in total; none for a --spec or --feature run unless given [LIMIT]",
 	).given = &f.limitGiven
 	bindWhole(e, &c.DoneSoFar, "done-so-far", "DONE_SO_FAR", 0,
-		"tickets dispatched in earlier runs, counted toward -limit [DONE_SO_FAR]")
+		"tickets dispatched in earlier runs, counted toward --limit [DONE_SO_FAR]")
 	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", "claude", parseText,
 		"agent kind for the workers: claude, or another Herdr agent kind (Herdr only) [AGENT_KIND]")
 	bindEnv(e, fs.StringVar, &c.WorkerPrompt, "prompt", "WORKER_PROMPT", "", parseText,
@@ -353,7 +393,7 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
 	bindEnv(e, fs.StringVar, &c.OrganEffort, "organ-effort", "ORGAN_EFFORT", "", parseText,
 		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
-			"else low for triage, the predictor and screening, medium for the run report, high for planning) [ORGAN_EFFORT]")
+			"else low for triage and the predictor, medium for the reviewer and init's scout) [ORGAN_EFFORT]")
 	bindEnv(e, fs.StringVar, &c.WorkerEffort, "worker-effort", "WORKER_EFFORT", "", parseText,
 		"effort Claude workers, and a spec's or feature's talk-through, start at: low, medium, high, xhigh or max "+
 			"(default: .orchestra/settings.json, else high) [WORKER_EFFORT]")
@@ -390,8 +430,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.BoolVar, &c.Review, "review", "REVIEW", true, parseOnOff,
 		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
 	bindEnv(e, fs.BoolVar, &c.Tickets, "tickets", "ORCHESTRA_TICKETS", false, parseOnOff,
-		"run the current tickets without first asking, in a terminal, whether to plan a new feature instead "+
-			"[ORCHESTRA_TICKETS=1]")
+		"run the current tickets without first asking, in a terminal, whether to run a spec or talk a new feature "+
+			"through instead [ORCHESTRA_TICKETS=1]")
 	bindEnv(e, fs.BoolVar, &c.LaunchPrompt, "prompt-at-launch", "PROMPT_AT_LAUNCH", true, parseOnOff,
 		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	fs.StringVar(&c.Feature, "feature", "",
@@ -441,10 +481,10 @@ func checkFlagCombos(f *runFlags) []string {
 		return []string{"--feature can't be combined with --tickets: " +
 			"one runs a new feature, the other the current tickets."}
 	case feature && f.Limit >= 0 && f.DoneSoFar >= f.Limit:
-		// Only with -limit or LIMIT, as for a spec: the loop would end at once, the plan filed and none
+		// Only with --limit or LIMIT, as for a spec: the loop would end at once, the plan filed and none
 		// of it started.
 		return []string{fmt.Sprintf("--feature would file a plan and run none of it: "+
-			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT], lower -done-so-far [DONE_SO_FAR], "+
+			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
 			"or leave both out.",
 			f.DoneSoFar, f.Limit)}
 	}
@@ -470,9 +510,9 @@ func checkSpecCombos(f *runFlags) string {
 	case !spec && !f.set["feature"] && f.set["refine"] && f.Refine:
 		return "--refine only applies with --spec or --feature."
 	case spec && f.DoneSoFar >= f.Limit:
-		// Only with -limit or LIMIT: a spec run has none otherwise.
+		// Only with --limit or LIMIT: a spec run has none otherwise.
 		return fmt.Sprintf("%s would break the spec down and run none of it: "+
-			"-done-so-far (%d) has reached -limit (%d). Raise -limit [LIMIT], lower -done-so-far [DONE_SO_FAR], "+
+			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
 			"or leave both out.", from, f.DoneSoFar, f.Limit)
 	}
 	return ""
@@ -630,7 +670,7 @@ func checkCheckout(ctx context.Context, c *options) []string {
 	switch {
 	case c.notSetUp, c.specSetup != nil && !c.ownPrompt: // to be written
 	case err != nil && c.ownPrompt:
-		problems = append(problems, "Worker prompt not found: "+prompt+" (from -prompt or WORKER_PROMPT).")
+		problems = append(problems, "Worker prompt not found: "+prompt+" (from --prompt or WORKER_PROMPT).")
 	case err != nil:
 		problems = append(problems, "Worker prompt not found: "+prompt+". Recreate it with: orchestra init")
 	case !strings.Contains(string(b), "TICKET_ID"):
