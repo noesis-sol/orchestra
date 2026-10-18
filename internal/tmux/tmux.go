@@ -98,20 +98,21 @@ func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, tar
 	var ce *command.Error
 	var ee *exec.ExitError
 	if errors.As(err, &ce) && !ce.Stopped && errors.As(ce.Err, &ee) {
-		e.NoServer = noServer(t.socketPath())
+		e.NoServer = noServer(t.socketPath(ctx))
 	}
 	return out, e
 }
 
-// socketPath is the path of the socket of the tmux server t talks to, found as tmux finds it.
-func (t Terminal) socketPath() string {
+// socketPath is the path of the socket of the tmux server t talks to, found as tmux finds it, in
+// the environment of the commands run with ctx (command.Getenv).
+func (t Terminal) socketPath(ctx context.Context) string {
 	if t.Socket == "" {
-		if env := os.Getenv("TMUX"); env != "" {
+		if env := command.Getenv(ctx, "TMUX"); env != "" {
 			path, _, _ := strings.Cut(env, ",")
 			return path
 		}
 	}
-	dir := os.Getenv("TMUX_TMPDIR")
+	dir := command.Getenv(ctx, "TMUX_TMPDIR")
 	if dir == "" {
 		dir = "/tmp"
 	}

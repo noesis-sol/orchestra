@@ -101,8 +101,7 @@ func runNothing(t *testing.T, setup func(repo string), args ...string) (repo, st
 	}
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, strings.NewReader(""),
-		&out, &errOut)
+	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
 	return repo, out.String(), errOut.String(), exitOf(err)
 }
 

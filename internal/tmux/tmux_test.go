@@ -40,14 +40,14 @@ func TestSocketNamesTheServer(t *testing.T) {
 		t.Errorf("tmux got %q", got)
 	}
 	uid := strconv.Itoa(os.Getuid())
-	if got, want := (Terminal{Socket: "orch-test"}).socketPath(), filepath.Join(os.Getenv("TMUX_TMPDIR"), "tmux-"+uid, "orch-test"); got != want {
+	if got, want := (Terminal{Socket: "orch-test"}).socketPath(bg), filepath.Join(os.Getenv("TMUX_TMPDIR"), "tmux-"+uid, "orch-test"); got != want {
 		t.Errorf("socket %q, want %q", got, want)
 	}
 	t.Setenv("TMUX", "/private/tmp/tmux-501/work,1234,0")
-	if got := (Terminal{}).socketPath(); got != "/private/tmp/tmux-501/work" {
+	if got := (Terminal{}).socketPath(bg); got != "/private/tmp/tmux-501/work" {
 		t.Errorf("inside tmux, its server: %q", got)
 	}
-	if got := (Terminal{Socket: "x"}).socketPath(); !strings.HasSuffix(got, "/x") {
+	if got := (Terminal{Socket: "x"}).socketPath(bg); !strings.HasSuffix(got, "/x") {
 		t.Errorf("a socket named overrides $TMUX: %q", got)
 	}
 }

@@ -72,9 +72,11 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 	"  orchestra init\n" +
 	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
 
-// cmdEnv is what a command reads and writes besides its arguments: the environment and the three
-// standard streams.
+// cmdEnv is what a command reads and writes besides its arguments: the working directory, the
+// environment and the three standard streams. The commands it runs get the environment the context
+// gives them (command.WithEnv).
 type cmdEnv struct {
+	dir            string // relative paths, such as --spec's, are relative to it
 	getenv         func(string) string
 	stdin          io.Reader
 	stdout, stderr io.Writer
@@ -92,10 +94,10 @@ type subcommand struct {
 // subcommands are orchestra's subcommands, in the order the main usage lists them.
 var subcommands = []subcommand{
 	{"init", initSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runInit(ctx, ".", args, e.getenv, e.stdin, e.stdout, e.stderr)
+		return runInit(ctx, e.dir, args, e.getenv, e.stdin, e.stdout, e.stderr)
 	}},
 	{"plan", planSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runPlan(ctx, ".", args, e.stdout, e.stderr)
+		return runPlan(ctx, e.dir, args, e.stdout, e.stderr)
 	}},
 	{"update", updateSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
 		return runUpdateHere(ctx, args, e.stdout, e.stderr)
@@ -142,13 +144,10 @@ func parseArgs(fs *flag.FlagSet, args []string, cmd string) (code int, ok bool) 
 // A run reads its configuration, opens its session (held until it ends: the lock, the stop
 // signals' watch, the log), settles what it works on (the question, and a feature typed there or
 // given with --feature), then runs its loop and the organ phase after it.
-func run(
-	ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
-) (err error) {
-	e := cmdEnv{getenv: getenv, stdin: stdin, stdout: stdout, stderr: stderr}
+func run(ctx context.Context, args []string, e cmdEnv) (err error) {
 	if len(args) > 1 {
 		if args[1] == "hook" { // hidden: Claude Code runs it as a worker's hook, which package claude serves itself
-			return status(claude.Hook(args[2:], getenv, stdin, stderr))
+			return status(claude.Hook(args[2:], e.getenv, e.stdin, e.stderr))
 		}
 		if c, ok := findSubcommand(args[1]); ok {
 			return status(c.run(ctx, args[2:], e))
@@ -172,7 +171,7 @@ func run(
 // configure reads a run's flags in args and its setup, and reports what stops it before it starts:
 // after -h or --version, or with a problem, ok is false and the run ends with code, all said.
 func configure(ctx context.Context, args []string, e cmdEnv) (cfg options, code int, ok bool) {
-	cfg, problems, err := loadConfig(ctx, args, e.getenv, e.stderr)
+	cfg, problems, err := loadConfig(ctx, e.dir, args, e.getenv, e.stderr)
 	switch {
 	case errors.Is(err, flag.ErrHelp):
 		return cfg, dispatch.ExitOK, false
@@ -266,7 +265,7 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	s.stops = catchStops()
 	s.onClose(func(error) { s.stops.release() })
 	var err error
-	if s.log, err = dispatch.OpenLog(cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo)); err != nil {
+	if s.log, err = dispatch.OpenLogContext(ctx, cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo)); err != nil {
 		fmt.Fprintln(e.stderr, "orchestra cannot open its log:", err)
 		return s, dispatch.ExitSetup
 	}
@@ -350,13 +349,15 @@ func (s *session) runLoop(ctx context.Context) int {
 		return dispatch.ExitOK
 	}
 
-	organCtx, cancelOrgans := context.WithCancel(context.Background())
+	// The organs outlast the loop's context, keeping only the environment it gives commands.
+	base := context.WithoutCancel(ctx)
+	organCtx, cancelOrgans := context.WithCancel(base)
 	defer cancelOrgans()
 	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()
 	}
-	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, cancelOrgans: cancelOrgans}
+	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, base: base, cancelOrgans: cancelOrgans}
 	if plain {
 		return runPlain(ctx, r, e.stdout)
 	}
@@ -416,7 +417,7 @@ func termWidth(out *os.File) int {
 // its organs advising under organCtx. Organs that can't run are turned off in cfg, and the log says so.
 func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt string) *dispatch.Loop {
 	cfg.Version = buildVersion()
-	organsOff := organ.Unavailable("claude")
+	organsOff := organ.Unavailable(organCtx, "claude")
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, terminalOf(*cfg), git.Git{}
 	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{

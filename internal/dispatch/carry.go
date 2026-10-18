@@ -303,7 +303,11 @@ func (o *Loop) SaveLeft() {
 	o.leftMu.Lock()
 	defer o.leftMu.Unlock()
 	if o.carriedIn && !o.leftSaved {
-		o.saveCarried(context.Background(), stopInterrupted)
+		ctx := context.Background()
+		if o.organCtx != nil {
+			ctx = context.WithoutCancel(o.organCtx) // for the environment it gives commands (command.WithEnv)
+		}
+		o.saveCarried(ctx, stopInterrupted)
 	}
 }
 

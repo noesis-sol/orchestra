@@ -63,13 +63,16 @@ var breakdownOf = func(s *session) specBreakdown {
 
 // checkSpecFile checks the spec --spec (or ORCHESTRA_SPEC, as from says) gives, c.specFile: a file
 // of text with something in it (see project.ReadSpec). It makes c.specFile absolute, as the working
-// directory has it.
-func checkSpecFile(c *options, from string) []string {
+// directory dir has it.
+func checkSpecFile(c *options, dir, from string) []string {
 	if c.specFile == "" {
 		return nil
 	}
 	given := c.specFile
-	if abs, err := filepath.Abs(given); err == nil {
+	if !filepath.IsAbs(given) {
+		c.specFile = filepath.Join(dir, given)
+	}
+	if abs, err := filepath.Abs(c.specFile); err == nil {
 		c.specFile = abs
 	}
 	_, err := project.ReadSpec(c.specFile)

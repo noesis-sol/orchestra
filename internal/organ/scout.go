@@ -138,7 +138,7 @@ func (g Client) Scout(ctx context.Context, root string) (Scouting, error) {
 }
 
 func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Scouting, error) {
-	if why := Unavailable(g.Bin); why != "" {
+	if why := Unavailable(ctx, g.Bin); why != "" {
 		return Scouting{}, &ScoutError{ScoutNoClaude, errors.New(why)}
 	}
 	// In the repository's root, where Claude Code lets the read-only tools read without asking; safe

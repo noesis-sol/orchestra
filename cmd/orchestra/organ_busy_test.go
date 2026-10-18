@@ -44,7 +44,7 @@ func TestCtrlCSkipsTheReportUnderItsBusyLine(t *testing.T) {
 		stops.deliver(os.Interrupt)
 	}()
 	var b strings.Builder
-	organPhase(orch, options{Triage: true, Review: true}, stops, log, dispatch.ExitOK, "", tui.Terminal(&b, 80),
+	organPhase(context.Background(), orch, options{Triage: true, Review: true}, stops, log, dispatch.ExitOK, "", tui.Terminal(&b, 80),
 		func() {})
 	out := ansi.Strip(b.String())
 	for _, want := range []string{"◆ Triage finished\n", "Writing the run report with Claude… 0:00 (Ctrl+C skips)",

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestInitFormAsksToInstallBeadsOfferingYes(t *testing.T) {
 }
 
 func TestInstallFieldNamesTheMethodAndCommandWithYesSelected(t *testing.T) {
-	c := project.Choice{InstallBeads: true, Install: project.FindBeadsInstall("freebsd")}
+	c := project.Choice{InstallBeads: true, Install: project.FindBeadsInstall(context.Background(), "freebsd")}
 	view := ansi.Strip(installField(&c).WithTheme(huh.ThemeBase()).View())
 	for _, want := range []string{"Install Beads with the Beads install script?", c.Install.Command, "Install it"} {
 		if !strings.Contains(strings.Join(strings.Fields(view), " "), want) {

@@ -42,7 +42,7 @@ func TestReportIsShownWhenItCannotBeSaved(t *testing.T) {
 		}
 		var b strings.Builder
 		stops := catchStops()
-		organPhase(fakeOrgans{tc.saveErr}, options{Review: true}, stops, log, dispatch.ExitOK, "", tui.Printer{Out: &b},
+		organPhase(context.Background(), fakeOrgans{tc.saveErr}, options{Review: true}, stops, log, dispatch.ExitOK, "", tui.Printer{Out: &b},
 			func() {})
 		stops.release()
 		if out := b.String(); !strings.Contains(out, "ALL MERGED") || !strings.Contains(out, tc.printed) {

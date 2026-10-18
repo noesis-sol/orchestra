@@ -86,7 +86,7 @@ func newRefineBreakdown(s *session) refineBreakdown {
 // or failing, it names the root epic the session filed, if any, as bd has it; ended by the user
 // without a hand-back, it is errNotHandedBack.
 func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error) {
-	if why := organ.Unavailable("claude"); why != "" {
+	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
 	prompt, err := project.WriteRefinePrompt(b.repo, refineMode(r.Update != nil))

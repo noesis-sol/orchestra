@@ -53,7 +53,7 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	if entry.Dir != "" {
 		script.WriteString("cd " + command.ShellQuote(entry.Dir) + " || exit\n")
 	}
-	script.WriteString("PATH=" + command.ShellQuote(os.Getenv("PATH")) + "\nexport PATH\n")
+	script.WriteString("PATH=" + command.ShellQuote(command.Getenv(ctx, "PATH")) + "\nexport PATH\n")
 	script.WriteString("CMUX_CLAUDE_HOOKS_DISABLED=1\nexport CMUX_CLAUDE_HOOKS_DISABLED\n")
 	script.WriteString("echo $$ > " + command.ShellQuote(t.launchPath(surface, ".pid")) + "\n")
 	script.WriteString("exec " + command.ShellQuote(kind))

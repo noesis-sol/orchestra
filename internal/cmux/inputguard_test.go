@@ -148,7 +148,7 @@ func TestFeaturesAreAskedOncePerCLI(t *testing.T) {
 		t.Errorf("the same CLI asked again: %+v", got)
 	}
 	later := time.Now().Add(time.Hour)
-	if err := os.Chtimes(Bin(), later, later); err != nil {
+	if err := os.Chtimes(Bin(bg), later, later); err != nil {
 		t.Fatal(err)
 	}
 	if got := term.features(bg); got != (features{force: true, paste: true}) {

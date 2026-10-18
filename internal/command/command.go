@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -81,9 +80,8 @@ func runTo(ctx context.Context, limit time.Duration, dir string, env []string, s
 		ctx, cancel = context.WithTimeoutCause(ctx, limit, timedOut(limit))
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := newCmd(ctx, env, name, args)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...) // of two entries with one name, the last wins
 	g := inGroup(cmd, stopGrace)
 	cmd.WaitDelay = stopGrace
 	var stderr bytes.Buffer
@@ -171,7 +169,7 @@ func GroupOutput(ctx context.Context, grace time.Duration, dir, name string, arg
 // prints them, from one goroutine, instead of holding them: for a command whose output may have no
 // end, such as a project's check. out has had all of it once GroupRun returns.
 func GroupRun(ctx context.Context, grace time.Duration, dir string, out io.Writer, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := newCmd(ctx, nil, name, args)
 	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = out // the same writer: exec copies both through one pipe
@@ -205,7 +203,7 @@ const interactiveGrace = 5 * time.Second
 // terminal.
 func Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string,
 	args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := newCmd(ctx, nil, name, args)
 	cmd.Dir = dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.Cancel = func() error { return terminate(cmd.Process) }

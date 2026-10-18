@@ -140,12 +140,12 @@ func TestSpecFileProblems(t *testing.T) {
 			"The spec app.png (--spec) isn't text: give a Markdown or plain-text file, in UTF-8."},
 	} {
 		c := options{specFile: tc.file}
-		if p := checkSpecFile(&c, tc.from); len(p) != 1 || p[0] != tc.want {
+		if p := checkSpecFile(&c, "", tc.from); len(p) != 1 || p[0] != tc.want {
 			t.Errorf("%s: problems %q, want %q", tc.name, p, tc.want)
 		}
 	}
 	c := options{specFile: filepath.Base(writeSpec(t, filepath.Join(dir, "app.md"), "# An app\n"))}
-	if p := checkSpecFile(&c, "--spec"); len(p) > 0 || !samePath(c.specFile, filepath.Join(dir, "app.md")) {
+	if p := checkSpecFile(&c, "", "--spec"); len(p) > 0 || !samePath(c.specFile, filepath.Join(dir, "app.md")) {
 		t.Errorf("a spec: problems %q, file %q", p, c.specFile)
 	}
 	if os.Getuid() != 0 { // root reads it all the same
@@ -154,7 +154,7 @@ func TestSpecFileProblems(t *testing.T) {
 			t.Fatal(err)
 		}
 		c := options{specFile: locked}
-		if p := checkSpecFile(&c, "--spec"); len(p) != 1 ||
+		if p := checkSpecFile(&c, "", "--spec"); len(p) != 1 ||
 			p[0] != "Cannot read the spec "+locked+" (--spec): permission denied." {
 			t.Errorf("unreadable: problems %q", p)
 		}

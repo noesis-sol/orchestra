@@ -110,10 +110,10 @@ func signOff(
 	ctx context.Context, ui tui.InitScreen, repo string, steps []project.Step, c project.Choice, workerEffort string,
 	getenv func(string) string,
 ) {
-	pre := project.Prerequisites(repo, getenv, onHost)
+	pre := project.Prerequisites(ctx, repo, getenv, onHost(ctx))
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
-	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort, onHost))
+	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort, onHost(ctx)))
 	ui.SignOff(!slices.ContainsFunc(pre, func(p project.Step) bool { return p.Kind == project.StepMissing }))
 }
 
@@ -232,8 +232,8 @@ func planInit(
 	c := initChoice(repo, f, existing)
 	c.Servers, c.ServersErr = mcp.Discover(mcp.UserConfig(getenv), project.ConfigRoots(ctx, repo)...)
 	c.SetupOffer, c.SetupFrom = project.FindSetup(repo)
-	c.Install = project.FindBeadsInstall(runtime.GOOS)
-	bd, onPath := project.LocateBd(getenv)
+	c.Install = project.FindBeadsInstall(ctx, runtime.GOOS)
+	bd, onPath := project.LocateBd(ctx, getenv)
 	q := project.Questions{
 		// Stage 2's choice of checks, unless a flag gives one of them.
 		Check:      !f.checkFast.Given && !f.checkFull.Given,
@@ -341,7 +341,10 @@ func askOrDefault(
 	if ask.Check {
 		// By the scout's goroutine, which AskInit waits for before it returns.
 		scout.Spent = func(s organ.Spend) { spent = append(spent, s) }
-		ask.Scout = func(ctx context.Context) (organ.Scouting, error) { return scout.Scout(ctx, repo) }
+		// The form runs the scout under a context of its own, which lacks the environment ctx gives commands.
+		ask.Scout = func(scoutCtx context.Context) (organ.Scouting, error) {
+			return scout.Scout(command.WithEnvOf(scoutCtx, ctx), repo)
+		}
 	}
 	err = tui.AskInit(ctx, in, out, c, ask)
 	return spent, err

@@ -73,7 +73,7 @@ func (f *fakeTmux) after(op, script string) { f.write("after-"+op, script) }
 // serve has a tmux server listen on the default socket, as far as a connection to it can tell.
 func (f *fakeTmux) serve() {
 	f.t.Helper()
-	path := Terminal{}.socketPath()
+	path := Terminal{}.socketPath(bg)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		f.t.Fatal(err)
 	}

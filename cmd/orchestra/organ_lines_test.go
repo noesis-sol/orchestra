@@ -41,7 +41,7 @@ func TestOrganLinesAreSentencesOnATerminal(t *testing.T) {
 		}
 		var b strings.Builder
 		stops := catchStops()
-		organPhase(tc.orch, options{Triage: true, Review: true}, stops, log, dispatch.ExitOK, "",
+		organPhase(context.Background(), tc.orch, options{Triage: true, Review: true}, stops, log, dispatch.ExitOK, "",
 			tui.Printer{Out: &b, Styled: true, Width: 80}, func() {})
 		stops.release()
 		out := ansi.Strip(b.String())

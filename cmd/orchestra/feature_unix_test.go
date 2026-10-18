@@ -72,6 +72,6 @@ func runFeatureAfter(
 	}
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, in, &out, &errOut)
+	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: in, stdout: &out, stderr: &errOut})
 	return repo, out.String(), errOut.String(), exitOf(err)
 }

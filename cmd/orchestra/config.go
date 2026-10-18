@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
 	"github.com/noesis-sol/orchestra/internal/mcp"
@@ -222,20 +222,20 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 // the commands a run calls; then, in a repository, the project's settings and layout, its checkout,
 // and where the spec is kept there.
 func loadConfig(
-	ctx context.Context, args []string, getenv func(string) string, output io.Writer,
+	ctx context.Context, dir string, args []string, getenv func(string) string, output io.Writer,
 ) (options, []string, error) {
 	f, problems, err := readFlags(args, getenv, output)
 	c := f.options
 	if err != nil || c.showVersion {
 		return c, nil, err
 	}
-	specProblems := checkSpecFile(&c, f.specFrom())
+	specProblems := checkSpecFile(&c, dir, f.specFrom())
 	problems = append(problems, specProblems...)
-	problems = append(problems, findRepo(ctx, &c)...)
+	problems = append(problems, findRepo(ctx, &c, dir)...)
 	settings, unreadable := loadSettings(c.Repo)
 	settings = planSpecSetup(&c, f.concurrency, settings)
 	problems = append(problems, checkTerminal(ctx, &c, settings, getenv)...)
-	problems = append(problems, checkTools()...)
+	problems = append(problems, checkTools(ctx)...)
 	if c.Repo != "" {
 		problems = append(problems, unreadable...)
 		problems = append(problems, resolveProject(ctx, &c, f, settings, getenv)...)
@@ -526,9 +526,9 @@ func (f *runFlags) specFrom() string {
 	return "ORCHESTRA_SPEC"
 }
 
-// findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory.
-func findRepo(ctx context.Context, c *options) []string {
-	repo, err := (git.Git{}).TopLevel(ctx, "")
+// findRepo finds the repository orchestra runs in (c.Repo), the one around the working directory dir.
+func findRepo(ctx context.Context, c *options, dir string) []string {
+	repo, err := (git.Git{}).TopLevel(ctx, dir)
 	switch {
 	case err != nil && c.specFile != "":
 		return []string{noRepoForSpec}
@@ -553,10 +553,10 @@ func loadSettings(repo string) (project.Settings, []string) {
 }
 
 // checkTools checks that the commands a run calls, whatever its terminal, are installed.
-func checkTools() []string {
+func checkTools(ctx context.Context) []string {
 	var problems []string
 	for _, cmd := range []string{"bd", "git"} {
-		if !installed(cmd) {
+		if !installed(ctx, cmd) {
 			problems = append(problems, "Required command not found: "+cmd)
 		}
 	}
@@ -688,7 +688,7 @@ func checkCheckout(ctx context.Context, c *options) []string {
 		if !c.notSetUp && c.specSetup == nil {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
 		}
-	} else if _, err := exec.LookPath("bd"); err == nil && c.Ticket != "" && idProblem == "" {
+	} else if _, err := command.LookPath(ctx, "bd"); err == nil && c.Ticket != "" && idProblem == "" {
 		if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
 			problems = append(problems, p)
 		}

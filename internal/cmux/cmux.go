@@ -47,9 +47,10 @@ type Terminal struct {
 // appBin is where the cmux app keeps its CLI, which is on the PATH only in cmux's own terminals.
 var appBin = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 
-// Bin is the cmux CLI: cmux on the PATH, else the app's; "" when there is neither.
-func Bin() string {
-	if path, err := exec.LookPath("cmux"); err == nil {
+// Bin is the cmux CLI: cmux on the PATH of the commands run with ctx (command.LookPath), else the
+// app's; "" when there is neither.
+func Bin(ctx context.Context) string {
+	if path, err := command.LookPath(ctx, "cmux"); err == nil {
 		return path
 	}
 	if fi, err := os.Stat(appBin); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
@@ -100,7 +101,7 @@ func (t Terminal) run(ctx context.Context, op, target string, json bool, args ..
 // runWithInput runs the cmux command op as run does, with input on its stdin.
 func (t Terminal) runWithInput(ctx context.Context, op, target string, json bool, input string,
 	args ...string) (string, error) {
-	bin := Bin()
+	bin := Bin(ctx)
 	if bin == "" {
 		return "", &Error{Tool: tool, Op: op, Target: target, Err: errors.New("cmux is not installed")}
 	}
@@ -119,7 +120,7 @@ func (t Terminal) runWithInput(ctx context.Context, op, target string, json bool
 	var ce *command.Error
 	var ee *exec.ExitError
 	if errors.As(err, &ce) && !ce.Stopped && errors.As(ce.Err, &ee) {
-		e.NoServer = noServer(socketPath())
+		e.NoServer = noServer(socketPath(ctx))
 	}
 	return out, e
 }
@@ -131,14 +132,14 @@ func (t Terminal) Ping(ctx context.Context) error {
 	return err
 }
 
-// socketPath is the path of cmux's socket as the environment names it, which cmux sets in its
-// terminals; "" when it names none. Without one the CLI looks in ~/.local/state/cmux/cmux.sock, and
-// then for the sockets of cmux's other builds (tagged, debug, nightly, staging), so a socket missing
-// from one place doesn't say that no cmux runs: a failed call is then an error, not NoServer, and
-// cmux's workspaces don't all read as closed.
-func socketPath() string {
+// socketPath is the path of cmux's socket as the environment of the commands run with ctx names it
+// (command.Getenv), which cmux sets in its terminals; "" when it names none. Without one the CLI looks
+// in ~/.local/state/cmux/cmux.sock, and then for the sockets of cmux's other builds (tagged, debug,
+// nightly, staging), so a socket missing from one place doesn't say that no cmux runs: a failed call
+// is then an error, not NoServer, and cmux's workspaces don't all read as closed.
+func socketPath(ctx context.Context) string {
 	for _, env := range []string{"CMUX_SOCKET_PATH", "CMUX_SOCKET"} {
-		if path := os.Getenv(env); path != "" {
+		if path := command.Getenv(ctx, env); path != "" {
 			return path
 		}
 	}

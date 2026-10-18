@@ -206,7 +206,7 @@ func TestTheSignalAfterTheOneThatSkipsTheOrgansQuits(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	organPhase(skippedOrgans{stops: r.stops, skipped: &skipped, reviewed: &reviewed}, options{Triage: true, Review: true},
+	organPhase(context.Background(), skippedOrgans{stops: r.stops, skipped: &skipped, reviewed: &reviewed}, options{Triage: true, Review: true},
 		r.stops, log, dispatch.ExitOK, "", tui.Printer{Out: &b}, func() {})
 	if !skipped || reviewed {
 		t.Errorf("the first signal should skip the organs: skipped %v, reviewed %v", skipped, reviewed)

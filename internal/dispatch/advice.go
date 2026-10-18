@@ -151,8 +151,8 @@ func (o *Loop) triage(d queuedDeferral) {
 	}
 	t, err := o.organs().Triage(o.organCtx, d.Deferral)
 	// The verdict is written down even if the organs are skipped meanwhile, each bd call within its
-	// time limit.
-	ctx := context.Background()
+	// time limit, with the environment the organs' context gives its commands (command.WithEnv).
+	ctx := context.WithoutCancel(o.organCtx)
 	if err != nil {
 		switch why := LimitRefusal(err); {
 		case o.organCtx.Err() != nil:

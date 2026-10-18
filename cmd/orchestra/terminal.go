@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -176,19 +175,21 @@ func ownHerdrPane(ctx context.Context, getenv func(string) string) bool {
 	return err == nil && (group == processGroup() || slices.Contains(pids, os.Getpid()))
 }
 
-// installed reports whether cmd is on the PATH.
-func installed(cmd string) bool {
-	_, err := exec.LookPath(cmd)
+// installed reports whether cmd is on the PATH of the commands run with ctx (command.LookPath).
+func installed(ctx context.Context, cmd string) bool {
+	_, err := command.LookPath(ctx, cmd)
 	return err == nil
 }
 
 // onHost reports whether this machine has cmd: on the PATH or, for cmux, in its app (cmux.Bin), its
 // CLI being on the PATH only in cmux's own terminals.
-func onHost(cmd string) bool {
-	if cmd == "cmux" {
-		return cmux.Bin() != ""
+func onHost(ctx context.Context) func(cmd string) bool {
+	return func(cmd string) bool {
+		if cmd == "cmux" {
+			return cmux.Bin(ctx) != ""
+		}
+		return installed(ctx, cmd)
 	}
-	return installed(cmd)
 }
 
 // checkTerminal chooses the run's terminal (c.Terminal) as c.terminalAsked, the project's settings and
@@ -202,7 +203,7 @@ func checkTerminal(ctx context.Context, c *options, settings project.Settings, g
 	if err != nil {
 		return []string{err.Error() + "."}
 	}
-	t, problem := pickTerminal(choice, getenv, installed,
+	t, problem := pickTerminal(choice, getenv, func(cmd string) bool { return installed(ctx, cmd) },
 		func(k terminalKind) bool { return k.ownPane(ctx, getenv) })
 	if problem != "" {
 		return []string{problem}
@@ -243,7 +244,7 @@ func checkHerdr(ctx context.Context, c *options, getenv func(string) string) []s
 			"Not running inside a Herdr pane (HERDR_ENV is not 1). Start 'herdr' and run this from a pane, "+
 				"or choose tmux: orchestra --terminal tmux")
 	}
-	if !installed("herdr") {
+	if !installed(ctx, "herdr") {
 		problems = append(problems, "Required command not found: herdr (the workers' terminal)")
 	}
 	return problems
@@ -254,7 +255,7 @@ func checkHerdr(ctx context.Context, c *options, getenv func(string) string) []s
 // it opens its first window.
 func checkTmux(ctx context.Context, c *options, getenv func(string) string) []string {
 	var problems []string
-	if !installed("tmux") {
+	if !installed(ctx, "tmux") {
 		problems = append(problems, "Required command not found: tmux (the workers' terminal). "+
 			"Install it (brew install tmux, apt install tmux), or run orchestra from a Herdr pane with --terminal herdr.")
 	} else if v := tmux.TooOld(ctx); v != "" {
@@ -314,7 +315,7 @@ func checkCmux(ctx context.Context, c *options, getenv func(string) string) []st
 	}
 	c.where = runsIn{pane: getenv("CMUX_SURFACE_ID"), cmuxWorkspace: getenv("CMUX_WORKSPACE_ID"), inSight: true}
 	switch {
-	case cmux.Bin() == "":
+	case cmux.Bin(ctx) == "":
 		problems = append(problems, "Required command not found: cmux (the workers' terminal). Install cmux "+
 			"(https://cmux.com), or choose another: orchestra --terminal tmux")
 	case c.where.cmuxWorkspace == "":

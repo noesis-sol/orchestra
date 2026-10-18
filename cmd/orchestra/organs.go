@@ -21,15 +21,16 @@ type organs interface {
 // then it waits for pending triage and has the reviewer write the run report. Ctrl+C, or another of
 // stopSignals, skips whatever is left, and one that came while the loop wound down skips it all; so
 // does SIGTERM or SIGHUP at any time in the run. The one after the signal that skipped it ends
-// orchestra (see stopWatch.further).
-func organPhase(orch organs, c options, stops *stopWatch, log *dispatch.Log, code int, final string, out tui.Printer,
-	cancelOrgans func(),
+// orchestra (see stopWatch.further). Its commands run with the environment ctx gives them
+// (command.WithEnv), and only the signals cancel it, not ctx.
+func organPhase(ctx context.Context, orch organs, c options, stops *stopWatch, log *dispatch.Log, code int,
+	final string, out tui.Printer, cancelOrgans func(),
 ) {
 	full := orch.FullCheckDue(code)
 	if !full && !c.Triage && !c.Review || stops.leaving() {
 		return
 	}
-	ctx, stop := stops.context(context.Background())
+	ctx, stop := stops.context(context.WithoutCancel(ctx))
 	defer stop()
 	if ctx.Err() != nil {
 		return

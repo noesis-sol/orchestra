@@ -111,8 +111,7 @@ func runSpecIn(t *testing.T, repo string, setup func(repo string), args ...strin
 	t.Helper()
 	setup(repo)
 	var out, errOut strings.Builder
-	err := run(context.Background(), append([]string{"orchestra"}, args...), os.Getenv, strings.NewReader(""),
-		&out, &errOut)
+	err := run(context.Background(), append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
 	return out.String(), errOut.String(), exitOf(err)
 }
 

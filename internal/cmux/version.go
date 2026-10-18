@@ -68,7 +68,7 @@ var (
 // once for each version of the file. A CLI that can't be asked is taken to have none of them, as
 // cmux 0.64.22, and is asked again next time.
 func (t Terminal) features(ctx context.Context) features {
-	bin := Bin()
+	bin := Bin(ctx)
 	if bin == "" {
 		return features{}
 	}

@@ -61,7 +61,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	ended := make(chan struct{}) // closed once run has returned
 	go func() {
 		defer close(ended)
-		err := run(ctx, append([]string{"orchestra"}, args...), os.Getenv, tty, tty, &errOut)
+		err := run(ctx, append([]string{"orchestra"}, args...), cmdEnv{dir: ".", getenv: os.Getenv, stdin: tty, stdout: tty, stderr: &errOut})
 		done <- exitOf(err)
 	}()
 	// A test that ends before orchestra exits, as one that fails a wait does, stops orchestra and waits

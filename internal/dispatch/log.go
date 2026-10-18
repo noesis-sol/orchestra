@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -33,15 +32,22 @@ type Log struct {
 // OpenLog opens the log file at path for appending. With notify, Notify shows macOS notifications
 // titled with title.
 func OpenLog(path string, notify bool, title string) (*Log, error) {
+	return OpenLogContext(context.Background(), path, notify, title)
+}
+
+// OpenLogContext is OpenLog showing the notifications with osascript as found, and run, with the
+// environment ctx gives commands (command.WithEnv): ctx's cancellation stops none of them.
+func OpenLogContext(ctx context.Context, path string, notify bool, title string) (*Log, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
 	l := &Log{f: f, project: title}
-	if _, err := exec.LookPath("osascript"); notify && err == nil { // notifications need macOS
+	ctx = context.WithoutCancel(ctx)
+	if _, err := command.LookPath(ctx, "osascript"); notify && err == nil { // notifications need macOS
 		l.alert = l.inBackground(func(args []string) {
 			// Best effort: the line is in the log already, a notification that fails is only not shown.
-			_, _ = command.Output(context.Background(), notifyLimit, "", "osascript", args...)
+			_, _ = command.Output(ctx, notifyLimit, "", "osascript", args...)
 		})
 	}
 	return l, nil

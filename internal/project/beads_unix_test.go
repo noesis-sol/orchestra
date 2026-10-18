@@ -112,7 +112,7 @@ const bdInitCall = "bd init --non-interactive --role maintainer --init-if-missin
 func TestSetUpBeadsInstallsWithHomebrewThenRunsBdInit(t *testing.T) {
 	dir := fakeBeadsTools(t, false, true)
 	repo, _ := gitRepo(t)
-	c := Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true}
+	c := Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true}
 	steps, working := setUpBeads(t, repo, c)
 	if got := calls(t, dir); got != "brew install beads\n"+bdInitCall {
 		t.Errorf("calls:\n%s", got)
@@ -134,7 +134,7 @@ func TestSetUpBeadsInstallsWithHomebrewThenRunsBdInit(t *testing.T) {
 		!strings.Contains(working[1], "bd init --non-interactive") {
 		t.Errorf("working: %q", working)
 	}
-	pre := Prerequisites(repo, os.Getenv, onPath)
+	pre := Prerequisites(context.Background(), repo, os.Getenv, onPath)
 	if pre[0].Kind != StepDone || pre[1].Kind != StepDone {
 		t.Errorf("prerequisites: %+v", pre[:2])
 	}
@@ -147,7 +147,7 @@ func TestSetUpBeadsInstallsWithHomebrewThenRunsBdInit(t *testing.T) {
 func TestSetUpBeadsRunsOnlyBdInitWhereBdIsInstalled(t *testing.T) {
 	dir := fakeBeadsTools(t, true, true)
 	repo, _ := gitRepo(t)
-	steps, _ := setUpBeads(t, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true})
+	steps, _ := setUpBeads(t, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true})
 	if got := calls(t, dir); got != bdInitCall {
 		t.Errorf("calls:\n%s", got)
 	}
@@ -162,7 +162,7 @@ func TestSetUpBeadsDoesNothingWhereBeadsIsSetUp(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(repo, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	steps, working := setUpBeads(t, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true})
+	steps, working := setUpBeads(t, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true})
 	if got := calls(t, dir); got != "" || len(steps) != 0 || len(working) != 0 {
 		t.Errorf("calls %q, steps %+v, working %q", got, steps, working)
 	}
@@ -171,7 +171,7 @@ func TestSetUpBeadsDoesNothingWhereBeadsIsSetUp(t *testing.T) {
 func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 	dir := fakeBeadsTools(t, false, true)
 	repo, _ := gitRepo(t)
-	in := FindBeadsInstall("linux")
+	in := FindBeadsInstall(context.Background(), "linux")
 	for _, tc := range []struct {
 		c    Choice
 		want string
@@ -179,7 +179,7 @@ func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 		{Choice{Install: in, Unasked: Questions{Install: true}},
 			"not installed; not asked (no terminal): --install-beads installs it with Homebrew (brew install beads)"},
 		{Choice{Install: in}, "not installed (declined); install it with brew install beads"},
-		{Choice{Install: FindBeadsInstall("windows"), InstallBeads: true}, "orchestra can't install it here; " +
+		{Choice{Install: FindBeadsInstall(context.Background(), "windows"), InstallBeads: true}, "orchestra can't install it here; " +
 			"install it in PowerShell: irm https://raw.githubusercontent.com/gastownhall/beads/main/install.ps1 | iex"},
 	} {
 		steps, _ := setUpBeads(t, repo, tc.c)
@@ -191,7 +191,7 @@ func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 	if got := calls(t, dir); got != "" {
 		t.Errorf("calls:\n%s", got)
 	}
-	pre := Prerequisites(repo, os.Getenv, onPath)
+	pre := Prerequisites(context.Background(), repo, os.Getenv, onPath)
 	if !same(pre[0], Step{Kind: StepMissing, Label: "bd", Detail: "install Beads"}) ||
 		!same(pre[1], Step{Kind: StepMissing, Label: "Beads", Detail: "set it up here: bd init"}) {
 		t.Errorf("prerequisites: %+v", pre[:2])
@@ -201,7 +201,7 @@ func TestSetUpBeadsInstallsNothingWithoutConsent(t *testing.T) {
 func TestSetUpBeadsSaysWhereTheInstallScriptPutBd(t *testing.T) {
 	dir := fakeBeadsTools(t, false, false)
 	repo, _ := gitRepo(t)
-	in := FindBeadsInstall("linux")
+	in := FindBeadsInstall(context.Background(), "linux")
 	if in.Method != "the Beads install script" ||
 		in.Command != "curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash" {
 		t.Fatalf("install = %+v", in)
@@ -216,7 +216,7 @@ func TestSetUpBeadsSaysWhereTheInstallScriptPutBd(t *testing.T) {
 	if len(steps) != 1 || !same(steps[0], Step{Kind: StepMissing, Label: "bd", Detail: want}) {
 		t.Errorf("steps = %+v", steps)
 	}
-	pre := Prerequisites(repo, os.Getenv, onPath)
+	pre := Prerequisites(context.Background(), repo, os.Getenv, onPath)
 	if pre[0].Kind != StepMissing || !strings.HasPrefix(pre[0].Detail, "it is in "+bin+", which isn't on your PATH") {
 		t.Errorf("prerequisites: %+v", pre[0])
 	}
@@ -239,7 +239,7 @@ func TestSetUpBeadsShowsWhyItFailed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "brew-fails"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true}
+	c := Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true}
 	steps, _ := setUpBeads(t, repo, c)
 	want := "brew install beads failed (exit status 1): ==> Fetching beads Error: beads: no bottle available!; " +
 		"install it by hand: see " + beadsDocs
@@ -259,7 +259,7 @@ func TestSetUpBeadsShowsWhyItFailed(t *testing.T) {
 	if len(steps) != 2 || !same(steps[1], Step{Kind: StepMissing, Label: "Beads", Detail: want}) {
 		t.Errorf("steps = %+v", steps)
 	}
-	pre := Prerequisites(repo, os.Getenv, onPath)
+	pre := Prerequisites(context.Background(), repo, os.Getenv, onPath)
 	if next := NextSteps(context.Background(), repo, steps, pre, Choice{}, "", onPath); next[0] !=
 		"Fix what's missing above (Beads: set it up here: bd init)." {
 		t.Errorf("next: %q", next)
@@ -276,7 +276,7 @@ func TestSetUpBeadsStopsTheWholeInstallWhenCancelled(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(300*time.Millisecond, cancel)
 	start := time.Now()
-	steps := SetUpBeads(ctx, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true}, os.Getenv,
+	steps := SetUpBeads(ctx, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true}, os.Getenv,
 		func(string) {})
 	// brew's sleep holds the output open: only stopping the whole group ends the wait before its grace.
 	if took := time.Since(start); took > 4*time.Second {
@@ -291,17 +291,17 @@ func TestFindBeadsInstall(t *testing.T) {
 	fakeBeadsTools(t, false, true)
 	for goos, method := range map[string]string{"darwin": "Homebrew", "linux": "Homebrew",
 		"freebsd": "the Beads install script"} {
-		if in := FindBeadsInstall(goos); in.Method != method || in.Command == "" {
+		if in := FindBeadsInstall(context.Background(), goos); in.Method != method || in.Command == "" {
 			t.Errorf("%s with brew: %+v", goos, in)
 		}
 	}
 	for _, goos := range []string{"windows", "plan9"} {
-		if in := FindBeadsInstall(goos); in.Command != "" || in.Manual == "" {
+		if in := FindBeadsInstall(context.Background(), goos); in.Command != "" || in.Manual == "" {
 			t.Errorf("%s: %+v", goos, in)
 		}
 	}
 	t.Setenv("PATH", "/usr/bin:/bin")
-	if in := FindBeadsInstall("darwin"); in.Method != "the Beads install script" {
+	if in := FindBeadsInstall(context.Background(), "darwin"); in.Method != "the Beads install script" {
 		t.Errorf("darwin without brew: %+v", in)
 	}
 }
@@ -315,10 +315,10 @@ func TestLocateBdLooksWhereGoInstallPutsIt(t *testing.T) {
 	}
 	faketool.Write(t, bin, "bd", "#!/bin/sh\n")
 	env := map[string]string{"GOPATH": gopath + string(os.PathListSeparator) + t.TempDir()}
-	if path, onPath := LocateBd(func(k string) string { return env[k] }); path != filepath.Join(bin, "bd") || onPath {
+	if path, onPath := LocateBd(context.Background(), func(k string) string { return env[k] }); path != filepath.Join(bin, "bd") || onPath {
 		t.Errorf("LocateBd = %q, %v", path, onPath)
 	}
-	if path, _ := LocateBd(func(string) string { return "" }); path != "" {
+	if path, _ := LocateBd(context.Background(), func(string) string { return "" }); path != "" {
 		t.Errorf("without GOPATH or HOME: %q", path)
 	}
 }

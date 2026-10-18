@@ -372,7 +372,7 @@ func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	repo, git := gitRepo(t)
 	steps, _ := Init(context.Background(), repo, "make check", false)
-	next := NextSteps(context.Background(), repo, steps, Prerequisites(repo, os.Getenv, onPath), Choice{}, "", onPath)
+	next := NextSteps(context.Background(), repo, steps, Prerequisites(context.Background(), repo, os.Getenv, onPath), Choice{}, "", onPath)
 	joined := strings.Join(next, "\n")
 	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
 		t.Errorf("fresh init: %q", next)

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"slices"
@@ -38,7 +39,7 @@ func onPath(cmd string) bool {
 // the has given finds), has a terminal for the workers.
 func TestPrerequisitesTakeCmuxAlone(t *testing.T) {
 	terminal := func(installed ...string) Step {
-		for _, s := range Prerequisites(t.TempDir(), os.Getenv, func(cmd string) bool {
+		for _, s := range Prerequisites(context.Background(), t.TempDir(), os.Getenv, func(cmd string) bool {
 			return slices.Contains(installed, cmd)
 		}) {
 			if s.Label == "herdr, tmux or cmux" {

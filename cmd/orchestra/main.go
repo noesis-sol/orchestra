@@ -27,7 +27,8 @@ import (
 )
 
 func main() {
-	if err := run(context.Background(), os.Args, os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
+	e := cmdEnv{dir: ".", getenv: os.Getenv, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	if err := run(context.Background(), os.Args, e); err != nil {
 		if !errors.As(err, new(exitStatus)) {
 			fmt.Fprintln(os.Stderr, "orchestra:", err)
 		}

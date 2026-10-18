@@ -193,8 +193,8 @@ func TestCmuxNotRunning(t *testing.T) {
 func TestCmuxMissing(t *testing.T) {
 	newFakeCmux(t)
 	t.Setenv("PATH", t.TempDir())
-	if Bin() != "" {
-		t.Fatalf("found %s", Bin())
+	if Bin(bg) != "" {
+		t.Fatalf("found %s", Bin(bg))
 	}
 	if err := (Terminal{}).Ping(bg); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Errorf("ping: %v", err)
@@ -204,8 +204,8 @@ func TestCmuxMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	appBin = app
-	if Bin() != app {
-		t.Errorf("the app's cmux: %q", Bin())
+	if Bin(bg) != app {
+		t.Errorf("the app's cmux: %q", Bin(bg))
 	}
 }
 

@@ -103,7 +103,7 @@ func (s *session) talkFeature(ctx context.Context) (string, int) {
 }
 
 func (f featureTalk) run(ctx context.Context) (string, int) {
-	if why := organ.Unavailable("claude"); why != "" {
+	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		fmt.Fprintf(f.err, "orchestra can't talk the feature through: it needs Claude Code, and %s.\n", why)
 		f.logLine("FEATURE not talked through: " + why)
 		return "", dispatch.ExitSetup

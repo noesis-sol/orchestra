@@ -85,7 +85,7 @@ func newHeadlessBreakdown(s *session) headlessBreakdown {
 // assumptions it made. A session that fails, runs out of time or is stopped gives no answer: the root
 // epic is then the one it filed, as bd has it, if any.
 func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error) {
-	if why := organ.Unavailable("claude"); why != "" {
+	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
 	prompt, err := project.WriteSpecPrompt(h.repo, r.Update != nil)

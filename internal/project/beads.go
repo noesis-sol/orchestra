@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -40,11 +39,12 @@ type BeadsInstall struct {
 }
 
 // FindBeadsInstall returns how init installs bd on goos (runtime.GOOS): with Homebrew where brew is
-// on the PATH (macOS or Linux), the way Beads recommends, otherwise with the Beads install script
-// (macOS, Linux, FreeBSD), which checks what it downloads and falls back to go install. On Windows
-// and other systems init installs nothing: Manual says how to.
-func FindBeadsInstall(goos string) BeadsInstall {
-	if _, err := exec.LookPath("brew"); err == nil && (goos == "darwin" || goos == "linux") {
+// on the PATH of the commands run with ctx (command.LookPath), on macOS or Linux, the way Beads
+// recommends, otherwise with the Beads install script (macOS, Linux, FreeBSD), which checks what it
+// downloads and falls back to go install. On Windows and other systems init installs nothing: Manual
+// says how to.
+func FindBeadsInstall(ctx context.Context, goos string) BeadsInstall {
+	if _, err := command.LookPath(ctx, "brew"); err == nil && (goos == "darwin" || goos == "linux") {
 		return BeadsInstall{Method: "Homebrew", Command: "brew install beads"}
 	}
 	switch goos {
@@ -58,11 +58,11 @@ func FindBeadsInstall(goos string) BeadsInstall {
 	return BeadsInstall{Manual: "as " + beadsDocs + " says"}
 }
 
-// LocateBd finds bd on the PATH or, failing that, where the Beads install script and go install put
-// it, which may be off the PATH: ~/.local/bin, GOBIN or GOPATH/bin, and /usr/local/bin. path is ""
-// when bd is in none of them.
-func LocateBd(getenv func(string) string) (path string, onPath bool) {
-	if p, err := exec.LookPath("bd"); err == nil {
+// LocateBd finds bd on the PATH of the commands run with ctx (command.LookPath) or, failing that,
+// where the Beads install script and go install put it, which may be off the PATH: ~/.local/bin,
+// GOBIN or GOPATH/bin, and /usr/local/bin. path is "" when bd is in none of them.
+func LocateBd(ctx context.Context, getenv func(string) string) (path string, onPath bool) {
+	if p, err := command.LookPath(ctx, "bd"); err == nil {
 		return p, true
 	}
 	home := getenv("HOME")
@@ -102,7 +102,7 @@ func SetUpBeads(
 	ctx context.Context, repo string, c Choice, getenv func(string) string, working func(string),
 ) []Step {
 	var steps []Step
-	path, onPath := LocateBd(getenv)
+	path, onPath := LocateBd(ctx, getenv)
 	if path != "" && !onPath {
 		return nil // installed, off the PATH: Prerequisites says how to add it
 	}
@@ -144,7 +144,7 @@ func installBd(
 	}
 	working("installing Beads with " + in.Method + ", which can take a few minutes: " + in.Command)
 	failed := runInstall(ctx, repo, in)
-	if path, onPath := LocateBd(getenv); onPath {
+	if path, onPath := LocateBd(ctx, getenv); onPath {
 		return Step{Kind: StepDone, Label: "bd", Detail: "installed with " + in.Method + " (" + in.Command + ")"}, true
 	} else if path != "" {
 		return missing("installed with " + in.Method + ", but " + offPath(path))

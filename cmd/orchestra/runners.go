@@ -15,18 +15,20 @@ import (
 )
 
 // loopRun is what the two ways of running the loop, plain and under the dashboard, share: the loop
-// and its configuration, the stop signals' watch, the log, and how to cancel the organs' context.
+// and its configuration, the stop signals' watch, the log, the context of the organ phase, and how to
+// cancel the organs' context.
 type loopRun struct {
 	orch         *dispatch.Loop
 	cfg          options
 	stops        *stopWatch
 	log          *dispatch.Log
+	base         context.Context // the run's, without its cancellation
 	cancelOrgans func()
 }
 
 // organs runs the organ phase after the loop ended with code and its final line.
 func (r loopRun) organs(code int, final string, out tui.Printer) {
-	organPhase(r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
+	organPhase(r.base, r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
 }
 
 // runPlain runs the loop printing plain log lines (with --plain, or when stdout isn't a terminal),

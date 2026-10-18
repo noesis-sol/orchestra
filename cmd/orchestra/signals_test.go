@@ -51,7 +51,7 @@ func organRun(t *testing.T, stops *stopWatch) string {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	organPhase(fakeOrgans{}, options{Review: true}, stops, log, dispatch.ExitInterrupted, "", tui.Printer{Out: &b},
+	organPhase(context.Background(), fakeOrgans{}, options{Review: true}, stops, log, dispatch.ExitInterrupted, "", tui.Printer{Out: &b},
 		func() {})
 	return b.String()
 }

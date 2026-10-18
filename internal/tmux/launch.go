@@ -2,7 +2,6 @@ package tmux
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -39,7 +38,7 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 		}
 	}
 	_, err := t.run(ctx, command.ReadLimit, "respawn-pane", pane,
-		"-k", "-t", pane, "-e", "PATH="+os.Getenv("PATH"), "/bin/sh", "-c", script.String(),
+		"-k", "-t", pane, "-e", "PATH="+command.Getenv(ctx, "PATH"), "/bin/sh", "-c", script.String(),
 		";", "set-option", "-p", "-F", "-t", pane, pidOption, "#{pane_pid}")
 	return err
 }

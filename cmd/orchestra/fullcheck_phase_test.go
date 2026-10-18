@@ -47,7 +47,7 @@ func fullCheckPhase(t *testing.T, orch organs, opts options, stops *stopWatch, c
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	organPhase(orch, opts, stops, log, code, "", tui.Printer{Out: &b, Styled: true, Width: 80}, func() {})
+	organPhase(context.Background(), orch, opts, stops, log, code, "", tui.Printer{Out: &b, Styled: true, Width: 80}, func() {})
 	return b.String()
 }
 

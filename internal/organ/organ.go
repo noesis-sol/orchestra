@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -363,9 +362,10 @@ func Section(id, title, body string) string {
 	return "## " + title + "\n\n<evidence id=\"" + id + "\">\n" + body + "\n</evidence id=\"" + id + "\">\n\n"
 }
 
-// Unavailable explains why the organs can't run, or returns "".
-func Unavailable(bin string) string {
-	if _, err := exec.LookPath(bin); err != nil {
+// Unavailable explains why the organs can't run with ctx, bin not being on the PATH of its commands
+// (command.LookPath), or returns "".
+func Unavailable(ctx context.Context, bin string) string {
+	if _, err := command.LookPath(ctx, bin); err != nil {
 		return bin + " not found"
 	}
 	return ""

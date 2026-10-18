@@ -91,7 +91,7 @@ func TestYesIsGone(t *testing.T) {
 		}
 	}
 	var help strings.Builder
-	if _, _, err := loadConfig(context.Background(), []string{"-h"}, os.Getenv, &help); err == nil ||
+	if _, _, err := loadConfig(context.Background(), "", []string{"-h"}, os.Getenv, &help); err == nil ||
 		strings.Contains(help.String(), "--yes") || !strings.Contains(help.String(), "--feature string") {
 		t.Errorf("the help (%v):\n%s", err, help.String())
 	}
@@ -206,8 +206,7 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut strings.Builder
-	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, os.Getenv,
-		strings.NewReader(""), &out, &errOut)
+	err := run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
 	if exitOf(err) != dispatch.ExitDirty || !strings.Contains(errOut.String(), "uncommitted changes in") {
 		t.Errorf("dirty checkout: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}
@@ -218,8 +217,7 @@ func TestFeatureStartupProblemsComeFirst(t *testing.T) {
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("ORCHESTRA_TERMINAL", "herdr")
 	errOut.Reset()
-	err = run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, os.Getenv,
-		strings.NewReader(""), &out, &errOut)
+	err = run(context.Background(), []string{"orchestra", "--feature", "Add a flag"}, cmdEnv{dir: ".", getenv: os.Getenv, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
 	if exitOf(err) != dispatch.ExitSetup || !strings.Contains(errOut.String(), "Not running inside a Herdr pane") {
 		t.Errorf("outside Herdr: exit %d, stderr:\n%s", exitOf(err), errOut.String())
 	}

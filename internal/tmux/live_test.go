@@ -415,7 +415,7 @@ func TestLiveServerGone(t *testing.T) {
 	tab, pane := l.tab("x-1")
 	l.tmux("kill-server")
 	// kill-server returns before the server has gone: a call meanwhile can find it exiting.
-	l.eventually("the server never went", func() bool { return noServer(l.term.socketPath()) })
+	l.eventually("the server never went", func() bool { return noServer(l.term.socketPath(bg)) })
 	if _, open, err := l.term.TabLabel(bg, tab); open || err != nil {
 		t.Errorf("TabLabel = %v %v", open, err)
 	}

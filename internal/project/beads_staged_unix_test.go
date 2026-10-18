@@ -3,6 +3,7 @@
 package project
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ func TestSetUpBeadsLeavesBdInitAloneWithChangesStaged(t *testing.T) {
 	git(repo, "add", "src", "notes.md")
 	head := git(repo, "rev-parse", "HEAD")
 
-	steps, working := setUpBeads(t, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true})
+	steps, working := setUpBeads(t, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true})
 	if got := calls(t, dir); got != "" {
 		t.Errorf("bd ran with changes staged:\n%s", got)
 	}
@@ -42,7 +43,7 @@ func TestSetUpBeadsLeavesBdInitAloneWithChangesStaged(t *testing.T) {
 
 	// Unstaged, the same changes stay out of bd's commit.
 	git(repo, "reset", "-q")
-	steps, _ = setUpBeads(t, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true})
+	steps, _ = setUpBeads(t, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true})
 	if got := calls(t, dir); got != bdInitCall || len(steps) != 1 || steps[0].Kind != StepDone {
 		t.Fatalf("calls %q, steps %+v", got, steps)
 	}
@@ -55,7 +56,7 @@ func TestSetUpBeadsLeavesBdInitAloneWithChangesStaged(t *testing.T) {
 func TestSetUpBeadsLeavesBdInitAloneWhenGitCantTell(t *testing.T) {
 	dir := fakeBeadsTools(t, true, true)
 	repo := t.TempDir() // not a repository: git diff --cached fails
-	steps, _ := setUpBeads(t, repo, Choice{Install: FindBeadsInstall("darwin"), InstallBeads: true})
+	steps, _ := setUpBeads(t, repo, Choice{Install: FindBeadsInstall(context.Background(), "darwin"), InstallBeads: true})
 	if got := calls(t, dir); got != "" {
 		t.Errorf("bd ran:\n%s", got)
 	}
