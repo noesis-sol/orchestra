@@ -43,17 +43,42 @@ var (
 // TestingM is a package's tests, as its TestMain gets them: a *testing.M.
 type TestingM interface{ Run() int }
 
-// Main returns m with the dispatcher removed once its tests have run. A package whose tests call
-// Write runs them through it, from its TestMain:
+// Main returns m with the dispatcher removed once its tests have run, and with no race exit sleep
+// in the processes they start (quietRaceExit). A package whose tests call Write, or start the test
+// binary as a process of its own, runs them through it, from its TestMain:
 //
 //	func TestMain(m *testing.M) { os.Exit(faketool.Main(m).Run()) }
 func Main(m TestingM) TestingM { return tests{m} }
 
 type tests struct{ m TestingM }
 
+// goraceVar holds the race runtime's options, read by a program built with -race as it starts.
+const goraceVar = "GORACE"
+
+// quietRaceExit returns the race runtime's options gorace with atexit_sleep_ms=0 added, unless they
+// set it already. Main sets them in the tests' environment, which every process they start
+// inherits: the test binary run as a hook or a fake tool (WriteFunc), which under -race would
+// otherwise sleep for a second as it exits, so that another goroutine's race report can finish. The
+// test binary's own exit keeps the sleep, as its race runtime read GORACE when it started. A race in
+// a process the tests start is still reported, as the race runtime prints its report when it finds
+// the race; only a report racing that process's exit could be cut short.
+func quietRaceExit(gorace string) string {
+	// The race runtime separates its options by spaces, commas or colons.
+	for _, opt := range strings.FieldsFunc(gorace, func(r rune) bool { return strings.ContainsRune(" ,:\t\n\r", r) }) {
+		if strings.HasPrefix(opt, "atexit_sleep_ms=") {
+			return gorace
+		}
+	}
+	return strings.TrimSpace(gorace + " atexit_sleep_ms=0")
+}
+
 func (ts tests) Run() int {
 	if name, ok := os.LookupEnv(funcVar); ok {
 		os.Exit(runFunc(name)) // a fake tool's run, not the tests: nothing of the tests' must run after it
+	}
+	if err := os.Setenv(goraceVar, quietRaceExit(os.Getenv(goraceVar))); err != nil {
+		fmt.Fprintln(os.Stderr, "faketool:", err)
+		return 1
 	}
 	inMain, tempDir = true, os.TempDir()
 	code := ts.m.Run()
