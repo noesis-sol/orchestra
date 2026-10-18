@@ -103,6 +103,7 @@ const (
 	heldBlocked           // a ticket blocking it has not merged, or bd can't say which block it
 	heldFollowUp          // the ticket it was discovered from has not merged
 	heldOverlap           // its footprint overlaps a running ticket's, with a slot free (see overlapsRunning)
+	heldSetup             // the setup failed in its worktree (see leaveSetupFailed)
 )
 
 // hold is why a ready ticket can't start yet, and what holds it; why is "" when nothing does.

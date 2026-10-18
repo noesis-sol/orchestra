@@ -28,10 +28,11 @@ type HeldBack struct {
 	Parent  int // their subtickets are not all closed and merged
 	Merge   int // a ticket blocking them, or the one they were filed from, has not merged
 	Solo    int // a solo ticket runs, or is next and waits for the running tickets to finish
+	Setup   int // the setup failed in their worktrees; they wait for a ticket to merge, or for a probe
 }
 
 // Total is how many tickets h holds back.
-func (h HeldBack) Total() int { return h.Overlap + h.Parent + h.Merge + h.Solo }
+func (h HeldBack) Total() int { return h.Overlap + h.Parent + h.Merge + h.Solo + h.Setup }
 
 // add counts one ticket held back by kind.
 func (h *HeldBack) add(kind holdKind) {
@@ -41,6 +42,8 @@ func (h *HeldBack) add(kind holdKind) {
 		h.Overlap++
 	case heldParent:
 		h.Parent++
+	case heldSetup:
+		h.Setup++
 	default:
 		h.Merge++
 	}
@@ -592,7 +595,7 @@ func (r *runState) end() int {
 	default:
 		end = fmt.Sprintf("READY_EMPTY after %d tickets", r.count)
 	}
-	o.emit(Event{Kind: EvDone, N: r.count, Limit: c.Limit, Text: end + o.endScope(r.keep)})
+	o.emit(Event{Kind: EvDone, N: r.count, Limit: c.Limit, Text: end + o.setupWaits() + o.endScope(r.keep)})
 	return ExitOK
 }
 
@@ -757,11 +760,6 @@ func (r *runState) pick() (*Ticket, queue, error) {
 	for _, id := range o.keptOutIDs() {
 		skip[id] = true
 	}
-	// A ticket whose worktree's setup failed waits for what may bring what the setup needs: taken
-	// again at once, its setup would fail again (see leaveSetupFailed).
-	for _, id := range o.failedSetupIDs() {
-		skip[id] = true
-	}
 	// A ticket whose ID isn't a plain name is set aside before its ID is made a path or a branch.
 	o.setAsideBadIDs(context.WithoutCancel(ctx), ready, skip)
 	// With a free slot, a ticket whose footprint overlaps a running ticket's is skipped for the next
@@ -779,6 +777,11 @@ func (r *runState) pick() (*Ticket, queue, error) {
 		r.queuePredictions(ready, skip)
 	}
 	held := func(t Ticket) holdKind {
+		// A ticket whose worktree's setup failed waits for what may bring what the setup needs: taken
+		// again at once, its setup would fail again (see leaveSetupFailed).
+		if _, failed := o.failedSetupOf(t.ID); failed {
+			return heldSetup
+		}
 		if k := o.held(ctx, t, running, parents); k != notHeld {
 			return k
 		}

@@ -202,7 +202,7 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, wt, run.err))
 	output := o.keepOutput(wt, setupLogName, "the setup's", run.out)
 	o.mu.Lock()
-	o.failedSetups[id] = true
+	o.failedSetups[id] = output
 	o.mu.Unlock()
 	if r.t.Status != StatusOpen {
 		if err := o.notes.Reopen(keep, id); err != nil {
@@ -217,12 +217,36 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
 		"  SETUP_FAILED: '%s' %s in %s for %s; the whole output is in %s", cmd, run.how(), wt, id, output)})
 }
 
-// failedSetupIDs are the tickets whose worktree's setup failed, kept out of the run for now (see
-// leaveSetupFailed).
-func (o *Loop) failedSetupIDs() []string {
+// failedSetupOf reports whether ticket id's worktree's setup failed, keeping it out of the run for now
+// (see leaveSetupFailed), and where the whole output is.
+func (o *Loop) failedSetupOf(id string) (output string, failed bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return slices.Collect(maps.Keys(o.failedSetups))
+	output, failed = o.failedSetups[id]
+	return output, failed
+}
+
+// setupWaits is what the run's end line adds for the tickets kept out of it as their worktrees' setup
+// failed (see leaveSetupFailed), each still ready and waiting on a setup that works: SETUP_WAITS,
+// naming them and where each one's output is, for the maintainer to fix the setup and run again; ""
+// for none.
+func (o *Loop) setupWaits() string {
+	o.mu.Lock()
+	ids := slices.Sorted(maps.Keys(o.failedSetups))
+	outputs := make([]string, len(ids))
+	for i, id := range ids {
+		outputs[i] = o.failedSetups[id]
+	}
+	o.mu.Unlock()
+	switch len(ids) {
+	case 0:
+		return ""
+	case 1:
+		return fmt.Sprintf("; SETUP_WAITS: %s waits on the setup that failed in its worktree (the whole output is in %s); "+
+			"fix the setup, then run again", ids[0], outputs[0])
+	}
+	return fmt.Sprintf("; SETUP_WAITS: %s wait on the setups that failed in their worktrees (the whole output is in "+
+		"%s); fix the setup, then run again", strings.Join(ids, ", "), strings.Join(outputs, ", "))
 }
 
 // retrySetups lets the tickets whose worktree's setup failed be taken again: a ticket merged, which

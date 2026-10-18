@@ -222,22 +222,25 @@ func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 }
 
 // scopeView is what is read to say where a scope stands: the tracker, the run's settings, and why
-// a ticket is closed but not merged, whether it was set aside in the run and whether the run closed
-// it. A Loop has them from its run (scopeView); the nothing-to-run check, before any Loop, has the
-// tickets labelled UnmergedLabel and none set aside or closed.
+// a ticket is closed but not merged, whether it was set aside in the run, whether the run closed it
+// and whether the setup failed in its worktree. A Loop has them from its run (scopeView); the
+// nothing-to-run check, before any Loop, has the tickets labelled UnmergedLabel and none set aside,
+// closed or failing its setup.
 type scopeView struct {
 	tickets  Tickets
 	cfg      Config
 	unmerged func(id string) string // why the ticket is closed but not merged, or ""
 	aside    func(id string) bool   // whether the ticket was set aside in this run; nil for none
 	closed   func(id string) bool   // whether the run closed the epic, its subtickets merged; nil for none
+	setup    func(id string) string // the output of the setup that failed in its worktree (see leaveSetupFailed)
 }
 
 // scopeView is where the run's scope stands, as the run knows it.
 func (o *Loop) scopeView() scopeView {
 	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
 		aside:  func(id string) bool { return slices.Contains(o.asideList(), id) },
-		closed: func(id string) bool { return o.doneSaid.last(id) == epicClosed }}
+		closed: func(id string) bool { return o.doneSaid.last(id) == epicClosed },
+		setup:  func(id string) string { output, _ := o.failedSetupOf(id); return output }}
 }
 
 // end is scopeEnd's line.
@@ -353,6 +356,11 @@ func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool,
 	}
 	if v.aside != nil && v.aside(t.ID) {
 		return "set aside in this run"
+	}
+	if v.setup != nil {
+		if output := v.setup(t.ID); output != "" {
+			return "its setup failed; the whole output is in " + output
+		}
 	}
 	switch t.Status {
 	case StatusDeferred:

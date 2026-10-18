@@ -84,6 +84,7 @@ type heldRecord struct {
 	Parent  int `json:"parent,omitempty"`
 	Merge   int `json:"merge,omitempty"`
 	Solo    int `json:"solo,omitempty"`
+	Setup   int `json:"setup,omitempty"`
 }
 
 // soloRecord is a SoloState.
@@ -154,7 +155,8 @@ func (l *Log) Record(ev Event) {
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
 		if h := ev.Held; h.Total() > 0 {
-			r.Held, r.HeldBy = h.Total(), &heldRecord{Overlap: h.Overlap, Parent: h.Parent, Merge: h.Merge, Solo: h.Solo}
+			r.Held, r.HeldBy = h.Total(), &heldRecord{Overlap: h.Overlap, Parent: h.Parent, Merge: h.Merge, Solo: h.Solo,
+				Setup: h.Setup}
 		}
 		if ev.Unclosed >= 0 {
 			r.Unclosed = &ev.Unclosed

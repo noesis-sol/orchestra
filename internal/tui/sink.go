@@ -209,15 +209,20 @@ func renderEvent(ev dispatch.Event) string {
 
 // closing is a terminal's line for a run that ended by itself (ev, an EvDone), in place of its log
 // line: a headline in the done colour, with the ♪ of init's sign-off, then, quieter, how many
-// tickets and how long the run took (took, when known). A scoped run's SCOPE_ part follows on its
-// own line: in the done colour when the scope is finished, else in the deferred colour, as work left.
+// tickets and how long the run took (took, when known). The SETUP_WAITS part, naming the tickets
+// whose worktree's setup failed, follows on its own line in the deferred colour, as work left, then a
+// scoped run's SCOPE_ part: in the done colour when the scope is finished, else in the deferred colour.
 func closing(ev dispatch.Event, took time.Duration) string {
 	text, scope, scoped := strings.Cut(ev.Text, "; SCOPE_")
+	text, setup, waits := strings.Cut(text, "; SETUP_WAITS")
 	facts := ticketCount(ev.N)
 	if took >= time.Second {
 		facts += " · " + runTime(took)
 	}
 	line := doneStyle.Bold(true).Render("♪ "+headline(text, ev.Limit)) + "  " + dimStyle.Render(facts)
+	if waits {
+		line += "\n" + deferredStyle.Render("  SETUP_WAITS"+setup)
+	}
 	if !scoped {
 		return line
 	}

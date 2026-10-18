@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A run that ends with tickets kept out because the setup failed in their
+  worktrees names them in its last line, each with where its output is
+  (`SETUP_WAITS: …; fix the setup, then run again`), rather than leaving them
+  unnamed in bd ready; the dashboard's **In queue** counts them apart
+  (`· 1 setup failed`), the event stream as `held_by.setup`, and `SCOPE_OPEN`
+  says `its setup failed` in place of `not started`.
 - A worker that loses its agent name is also found in its pane and named
   again when it was left in its tab as its ticket was set aside, so its later
   close still merges (`LATE_CLOSE`), and when its finished ticket is handed

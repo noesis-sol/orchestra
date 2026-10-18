@@ -302,12 +302,20 @@ func (m Dashboard) queueCount() (n, of string) {
 
 // heldBack is what follows the queue's count while ready tickets are held back, waiting for
 // something besides a slot (an overlap with a running ticket, their subtickets, a ticket to merge, a
-// solo ticket): " · 4 held back", or "" with none.
+// solo ticket): " · 4 held back", and those whose worktree's setup failed, waiting for a ticket to
+// merge or a probe: " · 1 setup failed"; or "" with none.
 func (m Dashboard) heldBack() string {
-	if n := m.held.Total(); n > 0 && m.queued >= 0 {
-		return heldBackStyle.Render(fmt.Sprintf(" · %d held back", n))
+	if m.queued < 0 {
+		return ""
 	}
-	return ""
+	var s string
+	if n := m.held.Total() - m.held.Setup; n > 0 {
+		s = heldBackStyle.Render(fmt.Sprintf(" · %d held back", n))
+	}
+	if n := m.held.Setup; n > 0 {
+		s += deferredStyle.Render(fmt.Sprintf(" · %d setup failed", n))
+	}
+	return s
 }
 
 // statsTable is the run's totals as one strip: a column per total, label over value, in the

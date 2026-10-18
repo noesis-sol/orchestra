@@ -423,6 +423,7 @@ ended with, say why it ended:
 | `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached; `READY_EMPTY after 0 tickets: everything is done` (or `: nothing ready`) is a run that had nothing to run, which showed why in place of the dashboard and wrote no report | Read the report; the next step is usually the batch PR. With nothing to run, there is no report: relay the box (close the epics it names, answer the questions in `bd human list`, see what `bd blocked` holds). |
 | `DRAINED`, after a `DRAIN: stopping after …` line | 0 | the user pressed s in the dashboard (or orchestra got SIGUSR1): no new tickets started, the running ones finished and merged | As for `READY_EMPTY`; the queue may still hold tickets for the next run. A `DRAIN cancelled` line means the user took it back. |
 | `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
+| `…; SETUP_WAITS: …` | 0 | ready tickets the run kept out because the project's `setup` failed in their worktrees (`SETUP_FAILED`), each with its output | Read each output with the user, fix the setup (a missing tool, the network, a wrong command), then run again. |
 | `…; SCOPE_OPEN: …` | 0 | a `--ticket` run with subtickets not done; each is named with why | Handle each reason: answer a question, merge or rebase an unmerged one, unblock or rerun. The report lists follow-ups filed outside the scope. |
 | any of the lines below, after a `HOLD: …` line | as below | with several tickets at once, a stop first holds: no new tickets, the running ones finish | Handle the reason as below; the `HOLD` line names the ticket. |
 | `PAUSED` | 3 | a worker was idle for 10 minutes with its ticket still `in_progress`, or is gone from its tab with no session to resume, or gone again after its session was resumed (`its worker gone from tab …`) | Read its tab. Relay any question to the user. If the worker finishes later, the next run merges it; one gone after a resume is resumed again by the next run. |
@@ -561,7 +562,8 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   worktree before its worker could start. No worker started and the ticket is open, not set aside: it
   is taken again once a ticket merges, and setups failing ticket after ticket hold the run
   (`ENVIRONMENT`). Read the output the line names (`.orchestra/run/setup.log` in that worktree) with
-  the user: a missing tool, the network or a registry, or a setup command that is wrong.
+  the user: a missing tool, the network or a registry, or a setup command that is wrong. A run that
+  ends with such tickets still out names them in its last line (`…; SETUP_WAITS: …`).
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
   means the check hung or ran past `check_fast_timeout` and was stopped: a hang, or a limit set too low,
