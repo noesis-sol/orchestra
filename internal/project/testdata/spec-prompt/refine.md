@@ -109,15 +109,42 @@ agrees, and hand the root epic's ID back to orchestra.
   that is how orchestra and its workers know where it comes from.
 - No ticket asks anything, and none carries the label `human`: nobody will answer.
 
-## A project with no code yet
+## The environment first
 
-When the repository has no code yet (only orchestra's and Beads' files, the spec, perhaps a README),
-the first ticket scaffolds the project: its layout, its build, a first test, its lint, and its test
-suites, lint and build wired into the project's two check runners, the commands that
-`.orchestra/settings.json` names as `check_fast` (run on every ticket before it merges) and
-`check_full` (run at the end of a run), by default `scripts/check-fast.sh` and
-`scripts/check-full.sh`. It carries the label `solo` and priority 0, and every other ticket waits
-for it: file it first, and give every other ticket a blocks link to it.
+When the spec needs a tool that the repository doesn't have yet (a language runtime, a package
+manager, a database, a CLI the build calls), or the repository has no code yet (only orchestra's and
+Beads' files, the spec, perhaps a README), the first ticket sets the project up: one ticket for all
+of its basic setup, the environment included. It carries the label `solo` and priority 0, and every
+other ticket waits for it: file it first, and give every other ticket a blocks link to it. Its
+description asks its worker for:
+
+- The toolchain: each tool that the tickets after it need, at the version they need, checked with
+  its version command and installed where it is missing, with a user-level package manager or the
+  tool's own installer (Homebrew, mise, rustup, the Bun or uv installer), never with `sudo`. The
+  versions are pinned in the ecosystem's own file where it has one, committed (`mise.toml` or
+  `.tool-versions`, `rust-toolchain.toml`, `.nvmrc`, the `toolchain` line of `go.mod`,
+  `.python-version`), so that installing them again is one command.
+- A tool that needs `sudo`, a GUI installer or a licence that the worker can't accept is not
+  installed: the worker asks the maintainer about it with a question, the way its instructions say,
+  so that the run waits for the answer rather than build on a guess.
+- Where the repository has no code yet, the scaffold. First the generators the stack starts from
+  (`create-next-app`, `cargo new`, `bun init`, `shadcn init`, …), run with their non-interactive
+  flags and at pinned versions, their output committed. Then the project's layout, its build, a
+  first test, its lint, and its test suites, lint and build wired into the project's two check
+  runners: the commands that `.orchestra/settings.json` names as `check_fast` (run on every ticket
+  before it merges) and `check_full` (run at the end of a run), by default `scripts/check-fast.sh`
+  and `scripts/check-full.sh`.
+- The project's dependencies installed, and `setup` in `.orchestra/settings.json` set to the command
+  that installs them in a fresh worktree (`bun install --frozen-lockfile`, `npm ci`,
+  `uv sync --frozen`, `go mod download`, …), with `setup_files` set where orchestra's default list
+  of manifests and lockfiles misses the project's. orchestra runs `setup` in each new worktree
+  before its worker starts, so no later ticket installs dependencies itself.
+- The repository's CLAUDE.md or AGENTS.md, in its Build & Test section, and its README saying what
+  to install and how, with the versions.
+
+A spec that adds a tool to a repository with code, such as Postgres to an existing app, gets the
+ticket all the same, without the scaffold. A spec that needs no tool the repository doesn't have,
+in a repository with code, gets none.
 
 ## Tickets that run side by side
 

@@ -138,6 +138,34 @@ and much of it may be built and merged by now. Update it for the change alone:
   that is how orchestra and its workers know where it comes from.
 - No ticket asks anything, and none carries the label `human`: nobody will answer.
 
+## The environment first
+
+When the change needs a tool that the repository doesn't have yet (a language runtime, a package
+manager, a database, a CLI the build calls), the update's first ticket sets it up. It carries the
+label `solo` and priority 0, and the update's other tickets wait for it: file it first, and give
+each ticket the update files, and each open one you update to use the tool, a blocks link to it.
+Where the tree's own environment setup ticket is still open, update that one for the tool instead
+of filing another. Its description asks its worker for:
+
+- The toolchain: each tool that the tickets after it need, at the version they need, checked with
+  its version command and installed where it is missing, with a user-level package manager or the
+  tool's own installer (Homebrew, mise, rustup, the Bun or uv installer), never with `sudo`. The
+  versions are pinned in the ecosystem's own file where it has one, committed (`mise.toml` or
+  `.tool-versions`, `rust-toolchain.toml`, `.nvmrc`, the `toolchain` line of `go.mod`,
+  `.python-version`), so that installing them again is one command.
+- A tool that needs `sudo`, a GUI installer or a licence that the worker can't accept is not
+  installed: the worker asks the maintainer about it with a question, the way its instructions say,
+  so that the run waits for the answer rather than build on a guess.
+- The project's dependencies installed, and `setup` in `.orchestra/settings.json` set to the command
+  that installs them in a fresh worktree (`bun install --frozen-lockfile`, `npm ci`,
+  `uv sync --frozen`, `go mod download`, …), with `setup_files` set where orchestra's default list
+  of manifests and lockfiles misses the project's. orchestra runs `setup` in each new worktree
+  before its worker starts, so no later ticket installs dependencies itself.
+- The repository's CLAUDE.md or AGENTS.md, in its Build & Test section, and its README saying what
+  to install and how, with the versions.
+
+A change that needs no new tool gets no such ticket.
+
 ## Tickets that run side by side
 
 - Follow the repository's conventions, from its CLAUDE.md or AGENTS.md.

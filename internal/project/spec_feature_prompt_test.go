@@ -60,7 +60,7 @@ func TestSpecModesRenderAsTheirGoldenFiles(t *testing.T) {
 // understanding, then a go-ahead before filing. It files one root epic holding the description in
 // full and the decisions, with the spec's rules for tickets, filing and checking the tree, and hands
 // the epic back in feature.json; nothing of a spec's (its metadata, an earlier breakdown of it, a
-// project with no code) is left. WriteRefinePrompt removes the feature.json an earlier breakdown
+// project's environment) is left. WriteRefinePrompt removes the feature.json an earlier breakdown
 // left, so that FiledFeature only reads this one's, and leaves spec.json alone.
 func TestFeatureModeRendersTheFeatureSections(t *testing.T) {
 	want := []string{
@@ -92,7 +92,7 @@ func TestFeatureModeRendersTheFeatureSections(t *testing.T) {
 	}
 	gone := []string{
 		"spec_sha256", "spec_commit", `"spec":"<path>"`, "the metadata `spec`", "--metadata-field spec=",
-		"Their root epic (the epic among them with no parent)", "## A project with no code yet", "`check_fast`",
+		"Their root epic (the epic among them with no parent)", "## The environment first", "`check_fast`",
 		"## Questions", "The spec is mostly settled", "the sections of the spec", "the spec's sections",
 		"orchestra committed the spec", "The spec's own path", "spec.json", "## Updating the tree",
 		"## Answering", "`assumptions`", "never ask one", "{{",

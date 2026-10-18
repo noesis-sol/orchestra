@@ -13,6 +13,14 @@ All notable changes to orchestra are documented here. The format follows
   level, rather than at Claude Code's own default. The session that refines
   a spec (`--spec --refine`) or talks a feature through (`--feature`, New
   feature) starts at the same effort, resolved the same way.
+- A spec's breakdown files one environment setup ticket first, which every
+  other ticket waits for, whenever the spec needs a tool the repository
+  doesn't have or the repository has no code yet: it installs the toolchain
+  without `sudo`, pins its versions in a committed file, scaffolds a project
+  with no code, installs the dependencies and sets `setup` (and
+  `setup_files` where needed), and asks about a tool it can't install. An
+  update files one for a change that needs a new tool. It replaces the
+  scaffold ticket of a project with no code.
 
 ## [0.8.1] - 2026-10-18
 

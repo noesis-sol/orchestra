@@ -28,7 +28,8 @@ func TestSpecPromptsInUpdateMode(t *testing.T) {
 		"--set-metadata spec_sha256=<sha256> --set-metadata spec_commit=<commit>",
 		"carries the metadata `spec`", "never put a file name in text that many tickets share",
 	}
-	gone := []string{"## A project with no code yet", "bd create --type epic --priority <its most urgent", "{{",
+	gone := []string{"Where the repository has no code yet, the scaffold",
+		"bd create --type epic --priority <its most urgent", "{{",
 		"the root epic first and each epic before its tickets", "Their root epic (the epic among them with no parent)"}
 	for _, tc := range []struct {
 		name  string
