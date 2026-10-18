@@ -14,6 +14,10 @@ All notable changes to orchestra are documented here. The format follows
   unnamed in bd ready; the dashboard's **In queue** counts them apart
   (`· 1 setup failed`), the event stream as `held_by.setup`, and `SCOPE_OPEN`
   says `its setup failed` in place of `not started`.
+- A ticket's footprint leaves out the files the full check's command
+  (`check_full`) names, as it does the merge check's (`check_fast`): tickets
+  asking for `scripts/check-full.sh` to pass, or for a `scripts/check.sh` the
+  merge check calls through its own script, no longer overlap for it.
 - A worker that loses its agent name is also found in its pane and named
   again when it was left in its tab as its ticket was set aside, so its later
   close still merges (`LATE_CLOSE`), and when its finished ticket is handed

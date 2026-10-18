@@ -217,6 +217,9 @@ func TestRefineInAPaneRunsTheRootEpicItHandsBack(t *testing.T) {
 // more and ends the run: exit 0 when nothing was filed for the spec, else exit 2, listing what was
 // filed and how to carry on.
 func TestRefineLeftWithoutAHandBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: refines a spec on real git with fake tools")
+	}
 	for _, tc := range []struct {
 		name   string
 		filed  bool

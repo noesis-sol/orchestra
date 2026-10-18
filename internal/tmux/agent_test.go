@@ -279,6 +279,9 @@ func TestSendKeysByHerdrsNames(t *testing.T) {
 }
 
 func TestWaits(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits several polls for the fake panes' states")
+	}
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%5", agent: "idle", kind: "claude", records: idleRecords(t), command: "2.1.0"},
 		paneLine{id: "%6", agent: "working", kind: "claude", records: workingRecords(t), command: "2.1.0"},

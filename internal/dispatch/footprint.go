@@ -24,7 +24,7 @@ import (
 // Footprint is where a ticket works: the files and functions its text names, its area labels and
 // the files its metadata lists. Two tickets whose footprints overlap are likely to conflict when
 // they run at the same time, so the loop doesn't start one beside the other. The files the
-// project's check command names, specs under .orchestra/specs/ and the spec a ticket's own metadata
+// project's check commands name, specs under .orchestra/specs/ and the spec a ticket's own metadata
 // names (SpecKey), count only when the metadata lists them: nearly every ticket names the check,
 // asking for it to pass, and every ticket broken down from a spec cites it, without changing them.
 type Footprint struct {
@@ -138,13 +138,13 @@ func setOf(s string) map[string]bool {
 
 // repoFiles are the repository's files, to tell a path named in a ticket from other words and to
 // find the file a bare name (run.go) or a partial path (dispatch/run.go) means, and the files the
-// project's check command names. Names are compared in one Unicode form, NFC: a name with é written
+// project's check commands name. Names are compared in one Unicode form, NFC: a name with é written
 // as e and U+0301 (NFD, as Finder gives it) means the file git lists with é, and the reverse.
 type repoFiles struct {
 	files  map[string][]string // the files as git lists them, by their NFC form; nil when git couldn't list them
 	byBase map[string][]string // the files' NFC forms, by base name
 	dirs   map[string]bool     // the folders' NFC forms
-	check  map[string]bool     // the files the check command names (scripts/check.sh)
+	check  map[string]bool     // the files the check commands name (scripts/check.sh)
 	// read gives a repository file's contents, to find the functions it mentions; nil when they
 	// can't be read.
 	read  func(file string) ([]byte, error)
@@ -153,7 +153,7 @@ type repoFiles struct {
 }
 
 // newRepoFiles indexes the files git tracks (nil when git couldn't list them) and finds the files
-// the check command names among them.
+// the check commands (check) name among them.
 func newRepoFiles(tracked []string, check string) *repoFiles {
 	r := &repoFiles{check: map[string]bool{}}
 	if tracked != nil {
@@ -587,7 +587,7 @@ func funcName(s string) string {
 // TicketFootprint is where ticket t works: the files and functions named in its title and text,
 // its area labels and the files its metadata lists; with none of these, the files predicted for it
 // (PredictedKey). Paths are checked against the repository's files (git ls-files), nil when they
-// aren't known. The files the project's check command (check) names, specs under .orchestra/specs/
+// aren't known. The files the project's check commands (check, one a line) name, specs under .orchestra/specs/
 // and the spec its metadata names (SpecKey) count only when its files metadata lists them. With
 // nothing named or predicted it is empty, and the ticket runs beside anything.
 func TicketFootprint(t Ticket, tracked []string, check string) Footprint {
@@ -882,9 +882,14 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 // reading those compared by function from the checkout.
 func (r *runState) readFiles(ctx context.Context) {
 	c := r.o.cfg
-	r.files = newRepoFiles(r.o.checkout.TrackedFiles(ctx, c.Repo), c.Check)
+	r.files = newRepoFiles(r.o.checkout.TrackedFiles(ctx, c.Repo), checkCommands(c))
 	r.files.read = func(file string) ([]byte, error) { return ReadSource(c.Repo, file) }
 }
+
+// checkCommands are the project's check commands, the merge check's and the full check's, one a
+// line, whose files footprints leave out: a ticket asks for both to pass, and a merge check that
+// calls the full one (scripts/check.sh -short) names only its own script.
+func checkCommands(c Config) string { return c.Check + "\n" + c.CheckFull }
 
 // maxSource is the most of a file read for the functions it mentions.
 const maxSource = 4 << 20

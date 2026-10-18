@@ -90,6 +90,9 @@ func TestSaysFailedIsWhatTheRegexpsMatch(t *testing.T) {
 // A line without end, a flood of failures each said once, and a flood of FLAKY: lines are each held
 // to a bound, and still counted.
 func TestCheckOutputBoundsWhatItHolds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: writes floods of output through the check's reader")
+	}
 	t.Parallel()
 	c := &checkOutput{}
 	endless := strings.Repeat("x", 4*maxLineBytes)

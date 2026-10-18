@@ -1,10 +1,22 @@
 #!/bin/sh
 # The project's full check: vet, ShellCheck, the race tests and the linters in .golangci.yml. Orchestra
-# runs it before merging a rebased ticket (.orchestra/settings.json), and workers run it before closing one.
+# runs it once at the end of a run that merged a ticket (check_full in .orchestra/settings.json), and
+# workers run it before closing one. With -short it is the merge check, scripts/check-fast.sh, which
+# orchestra runs before merging a rebased ticket (check_fast): the same, but the tests run with -short,
+# without those that take over a second.
 # gotestsum and golangci-lint run through go run at pinned versions, so a machine needs only Go; ShellCheck
 # is downloaded once at a pinned version (scripts/shellcheck.sh). The tests that run the real tmux skip
 # where it isn't installed, unless ORCHESTRA_REQUIRE_TMUX=1 (CI sets it), when they fail instead.
 set -e
+short=
+case "${1-}" in
+-short) short=-short ;;
+"") ;;
+*)
+	echo "usage: scripts/check.sh [-short]" >&2
+	exit 2
+	;;
+esac
 go vet ./...
 # Every tracked shell script, through ShellCheck: offline with nothing cached, it says it skipped, and
 # passes, except under CI=true.
@@ -29,7 +41,7 @@ trap 'rm -f "$events"' EXIT
 # '(outside its tests)' for a race in TestMain or after its test ended (docs/development.md).
 GOTOOLCHAIN="$(go env GOVERSION)" go run gotest.tools/gotestsum@v1.13.0 --format=standard-quiet \
 	--packages=./... --jsonfile="$events" --rerun-fails=1 --rerun-fails-max-failures=3 \
-	--rerun-fails-abort-on-data-race -- -race -shuffle="$seed" || {
+	--rerun-fails-abort-on-data-race -- -race $short -shuffle="$seed" || {
 	awk -v module="$(go list -m)" '
 		BEGIN { prefix = length("\"Package\":\"" module) }
 		/"Output":"WARNING: DATA RACE\\n"/ {

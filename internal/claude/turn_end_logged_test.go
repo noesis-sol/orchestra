@@ -48,6 +48,9 @@ func TestTranscriptLogsTheTurnsEnd(t *testing.T) {
 // and in the last report the loop reads (Ending), for turnEndWait at most; once logged, the notice tells the
 // limit.
 func TestStopWaitsForTheTurnsEndToBeLogged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: plays a turn's hooks for each case")
+	}
 	t.Parallel()
 	steps := func(p string) []hookStep {
 		return []hookStep{stepAt("SessionStart", sessionInput(testID, p)), stepPrompt, stepUseBash, stepUsedIt, stepStop}

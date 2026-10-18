@@ -135,6 +135,9 @@ func TestLongFlagTakesOneDashToo(t *testing.T) {
 // source's strings and comments, the docs, the skills, the prompts, nor the changelog's unreleased section
 // (released ones stay as they were).
 func TestNoTextWritesALongFlagWithOneDash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra for each help text and reads the docs")
+	}
 	top, err := filepath.Abs("../..") // before runIn moves into its folder
 	if err != nil {
 		t.Fatal(err)

@@ -99,6 +99,9 @@ func TestInitInstallsBeadsThenRunsBdInit(t *testing.T) {
 }
 
 func TestInitRunsBdInitOnlyWhereBdIsInstalled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra init on real git with fake tools")
+	}
 	dir := fakeBeadsTools(t, true)
 	repo, _ := gitRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "--check", "make check")

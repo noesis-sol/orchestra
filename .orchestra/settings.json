@@ -1,6 +1,8 @@
 {
-  "check": "scripts/check.sh",
-  "check_timeout": "30m",
+  "check_fast": "scripts/check-fast.sh",
+  "check_full": "scripts/check.sh",
   "concurrent": 4,
+  "check_fast_timeout": "15m",
+  "check_full_timeout": "30m",
   "mcp_servers": []
 }

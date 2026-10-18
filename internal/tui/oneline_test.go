@@ -68,6 +68,9 @@ func TestOverlayBlanksAWideCharacterTheBoxCuts(t *testing.T) {
 
 // With wide characters under the question's box, the view stays within the pane at any size.
 func TestDrainQuestionOverWideCharactersFitsThePane(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: draws the dashboard at every width and three heights")
+	}
 	var calls []bool
 	cancelled := false
 	base := drainDashboard(&calls, &cancelled)

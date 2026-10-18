@@ -17,6 +17,9 @@ import (
 // --feature makes its own scope, so --ticket with it is a setup problem, as is an empty request.
 // --refine goes with it, and changes nothing: a feature is always talked through.
 func TestConfigFeatureFlags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: loads the configuration on real git per case")
+	}
 	configFixture(t, `{"concurrent": 1}`)
 	if c, p := loadWith(t, "--feature", "  Add a --json flag \n"); len(p) > 0 || c.Feature != "Add a --json flag" {
 		t.Errorf("feature: %q, problems %v", c.Feature, p)

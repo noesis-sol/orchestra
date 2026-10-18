@@ -12,6 +12,9 @@ import (
 // A --check-fast that runs a runner is left out with a note, and one that is just the runner, run by
 // bash or by an absolute path, keeps it as it is: init never writes a runner that runs itself.
 func TestInitLeavesOutACheckThatRunsARunner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra init four times on real git")
+	}
 	repo := initRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "-c", "1", "--check-fast", "make unit && "+project.FullRunner)
 	if err != nil {

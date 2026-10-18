@@ -36,6 +36,9 @@ func TestOutcomes(t *testing.T) {
 }
 
 func TestStatusUnreadableSaysWhy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: waits out the failing bd's retries, 3s apart")
+	}
 	o, _, logged, code := brokenBdRun(t, promptAgents{})
 	if code != ExitTool {
 		t.Errorf("exit code %d, want %d", code, ExitTool)

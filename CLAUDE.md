@@ -62,6 +62,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ```bash
 scripts/check.sh                       # the full check: go vet, go test -race, golangci-lint (pinned, via go run)
+scripts/check-fast.sh                  # the merge check: the same with go test -race -short
 go test -short ./internal/dispatch/... # one package while iterating, without its slow tests
 go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
 ```
@@ -72,9 +73,11 @@ go build -o /tmp/orchestra ./cmd/orchestra && /tmp/orchestra --version
   the skill's "A new build of orchestra" say how to read the version.
 - `-short` skips the tests that take over a second: real git in `internal/dispatch` (`gitRepo`), runs on a
   pseudo-terminal (`openTerminal`) and the others, each skipped where it starts. Drop it to run a package in full;
-  `scripts/check.sh` never uses it.
-- `scripts/check.sh` is also orchestra's merge check for this repository (`.orchestra/settings.json`): a change that
-  fails lint is not merged. Run it in full before closing a ticket.
+  the full check never uses it, the merge check does.
+- `scripts/check-fast.sh` is orchestra's merge check for this repository (`check_fast` in
+  `.orchestra/settings.json`): `scripts/check.sh -short`, so a change that fails lint is not merged, and a test over
+  a second under `-race` that doesn't skip under `-short` holds every merge. `scripts/check.sh` is the full check
+  (`check_full`), which orchestra runs once at the end of a run and a worker runs in full before closing a ticket.
 - The check runs the tests through gotestsum, which reruns a failed test once: one that passes then prints
   `FLAKY: <package> <test>` and the check passes. A FLAKY line is a bug to file and fix (docs/development.md).
 - go.mod requires Go 1.26 (`go 1.26.0`) and pins `toolchain go1.27.1`, the version the project builds

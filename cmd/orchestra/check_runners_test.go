@@ -25,6 +25,9 @@ func settingsOf(t *testing.T, repo string) map[string]any {
 }
 
 func TestInitWritesTheRunnersFromTheCheckFlags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra init on real git per case")
+	}
 	repo := initRepo(t)
 	stdout, stderr, err := runIn(t, repo, nil, "init", "-c", "1", "--check-fast", "make unit",
 		"--check-full", "make e2e", "--check-fast-timeout", "2m", "--check-full-timeout", "90m")
@@ -109,6 +112,9 @@ func TestInitCallsTheProjectsCheckScript(t *testing.T) {
 }
 
 func TestInitReportsADifferingRunnerAndKeepsIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra init three times on real git")
+	}
 	repo := initRepo(t)
 	if _, stderr, err := runIn(t, repo, nil, "init", "--check-fast", "make unit"); err != nil {
 		t.Fatalf("init: %v\n%s", err, stderr)

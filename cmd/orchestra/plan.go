@@ -54,7 +54,8 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.CheckFast,
+	checks := settings.CheckFast + "\n" + settings.CheckFull // a footprint leaves out the files either names
+	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), checks,
 		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) })
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",

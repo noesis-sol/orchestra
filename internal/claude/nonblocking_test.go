@@ -18,6 +18,9 @@ import (
 // under sh and under dash (sh on Debian and Ubuntu), which exits 2, Claude Code's "block", when a
 // redirection fails. The hooks don't make the folder again.
 func TestHooksNeverBlockTheWorker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs every hook under each shell")
+	}
 	wt := filepath.Join(t.TempDir(), "it's a worktree")
 	if err := os.Mkdir(wt, 0o755); err != nil {
 		t.Fatal(err)

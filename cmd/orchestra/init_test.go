@@ -57,6 +57,9 @@ func TestInitSavesTheCheckTimeout(t *testing.T) {
 }
 
 func TestInitChoosesWorkersMCPServersWithoutATerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped by -short: runs orchestra init on real git per case")
+	}
 	repo := initRepo(t)
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{
