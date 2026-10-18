@@ -29,6 +29,14 @@ All notable changes to orchestra are documented here. The format follows
   `--organ-effort` names the organs there are, and `--tickets` says the
   question it skips offers a spec or a new feature.
 
+### Fixed
+
+- A worker whose terminal drops its agent name while it works, as Herdr does
+  when a Claude Code the worker starts in its pane reports itself as the
+  pane's agent, is found unnamed in its pane and named again, rather than
+  taken for gone and its session resumed in a second tab beside it, which
+  then stopped the run (`PAUSED`) at the next loss of the name.
+
 ## [0.8.1] - 2026-10-18
 
 ### Fixed

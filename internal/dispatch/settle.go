@@ -13,7 +13,9 @@ import (
 // its prompts; stop if it stays blocked for 4 minutes, or in a status the terminal can't tell (unknown)
 // for 5 (see stuck). An idle worker has settled only once idleSettled says so: the terminal takes a
 // worker for idle while it starts up, and while it waits on its own background command. begun is when
-// it was confirmed started on its prompt. A status the terminal fails to read says nothing about the
+// it was confirmed started on its prompt. A worker the terminal has no agent under its name for is
+// looked for in its pane, and named again should it have lost the name there (see workerState); one
+// not there either has settled, gone. A status the terminal fails to read says nothing about the
 // worker, so the wait goes on through maxFailedReads of them in a row before the run stops; so does one
 // of its ticket's that bd fails to read while the worker is idle, which neither settles it nor tells it
 // to continue. A worker going on too long stops the run, or is reported (see overTime). Each status
@@ -40,7 +42,7 @@ func (o *Loop) waitSettled(
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
 			return time.Time{}, errInterrupted
 		}
-		st, err := o.agents.Status(ctx, w.agent)
+		st, err := o.workerState(ctx, w)
 		if report != nil {
 			report(ctx, st, err)
 		}
@@ -87,6 +89,41 @@ func (o *Loop) waitSettled(
 			return time.Time{}, stop
 		}
 	}
+}
+
+// workerState reads the status of the worker w by its name, looking for it in its pane should the
+// terminal have no agent under the name (see nameLost).
+func (o *Loop) workerState(ctx context.Context, w worker) (AgentState, error) {
+	st, err := o.agents.Status(ctx, w.agent)
+	if err != nil || st != StateGone {
+		return st, err
+	}
+	return o.nameLost(ctx, w)
+}
+
+// nameLost looks in its pane for the worker w, which the terminal has no agent under its name for: a
+// program the worker runs can take the name from it while it works, as a Claude Code started there with
+// the pane's Herdr variables does, Herdr's hook taking that one for the pane's agent. Found there
+// unnamed (see unnamedInPane), it is named again and its state returned; StateGone otherwise, and when
+// the terminal refuses the name, which is logged. The error is the terminal not saying what is there.
+func (o *Loop) nameLost(ctx context.Context, w worker) (AgentState, error) {
+	if w.pane == "" || o.namer == nil {
+		return StateGone, nil
+	}
+	st, err := o.unnamedInPane(ctx, w.id, w.tab, w.pane)
+	if err != nil || st == StateGone {
+		return st, err
+	}
+	if err := o.namer.RenameAgent(ctx, w.pane, w.agent); err != nil {
+		if ctx.Err() != nil {
+			return "", err // cut short, not refused
+		}
+		o.log.Raw("", fmt.Errorf("%s's worker lost its name in tab %s and can't be named %s again, so it is taken "+
+			"for gone: %w", w.id, w.tab, w.agent, err))
+		return StateGone, nil
+	}
+	o.info("  %s's worker lost its name in tab %s; named it %s again", w.id, w.tab, w.agent)
+	return st, nil
 }
 
 // unreadStatus is waitSettled's turn on the worker w's status that the terminal failed to read, the

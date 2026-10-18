@@ -43,9 +43,10 @@ func (o *Loop) claimSessionResume(id string) bool {
 	return true
 }
 
-// workerGone reports whether Herdr has no worker named agent; a status it can't read says nothing.
-func (o *Loop) workerGone(ctx context.Context, agent string) bool {
-	st, err := o.agents.Status(ctx, agent)
+// workerGone reports whether the terminal has no worker w, under its name or in its pane (see
+// workerState); a status it can't read says nothing.
+func (o *Loop) workerGone(ctx context.Context, w worker) bool {
+	st, err := o.workerState(ctx, w)
 	return err == nil && st == StateGone
 }
 

@@ -201,34 +201,44 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 // earlierState reads the state of ticket id's earlier worker by its Herdr name, as readStatus does
 // with tries; w says where it was left (zero if it wasn't). One whose start a run cut short before
 // Herdr saw it came up without that name (see nameLeft): with no agent under the name, an unnamed
-// agent of the configured kind in w's pane is named, and its state returned. Herdr numbers tabs and
-// panes afresh when it restarts, so the pane is looked in only while Herdr has w's tab labelled
-// with the ticket's ID, as merging checks before closing it. The error is Herdr not saying what is
-// there, or not taking the name.
+// agent of the configured kind in w's pane (see unnamedInPane) is named, and its state returned. The
+// error is Herdr not saying what is there, or not taking the name.
 func (o *Loop) earlierState(ctx context.Context, id string, w workerSpot, tries int) (AgentState, error) {
 	agent := o.agentName(id)
 	st, err := o.readStatus(ctx, agent, tries)
 	if err != nil || st != StateGone || w.pane == "" {
 		return st, err
 	}
-	label, open, err := o.tabs.TabLabel(ctx, w.tab)
+	if st, err = o.unnamedInPane(ctx, id, w.tab, w.pane); err != nil || st == StateGone {
+		return st, err
+	}
+	if err := o.namer.RenameAgent(ctx, w.pane, agent); err != nil {
+		return "", fmt.Errorf("cannot give %s's worker, unnamed in tab %s, the name %s: %w", id, w.tab, agent, err)
+	}
+	o.info("  %s's worker in tab %s came up without its name; named it %s", id, w.tab, agent)
+	return st, nil
+}
+
+// unnamedInPane returns the state of the agent of the configured kind without a name in pane, which
+// is ticket id's worker gone from under its name, or StateGone when there is none: nothing there, or
+// another's. Herdr numbers tabs and panes afresh when it restarts, so the pane is looked in only while
+// the terminal has its tab open and labelled with the ticket's ID, as merging checks before closing
+// it. The error is the terminal not saying what is there.
+func (o *Loop) unnamedInPane(ctx context.Context, id, tab, pane string) (AgentState, error) {
+	label, open, err := o.tabs.TabLabel(ctx, tab)
 	if err != nil {
-		return "", fmt.Errorf("cannot tell whether tab %s is still %s's, to look for its worker there: %w", w.tab, id, err)
+		return "", fmt.Errorf("cannot tell whether tab %s is still %s's, to look for its worker there: %w", tab, id, err)
 	}
 	if !open || label != id {
 		return StateGone, nil
 	}
-	name, kind, st, err := o.namer.PaneAgent(ctx, w.pane)
+	name, kind, st, err := o.namer.PaneAgent(ctx, pane)
 	switch {
 	case err != nil:
 		return "", err
 	case st == StateGone || kind != o.cfg.AgentKind || name != "":
 		return StateGone, nil // nothing there, or another's
 	}
-	if err := o.namer.RenameAgent(ctx, w.pane, agent); err != nil {
-		return "", fmt.Errorf("cannot give %s's worker, unnamed in tab %s, the name %s: %w", id, w.tab, agent, err)
-	}
-	o.info("  %s's worker in tab %s came up without its name; named it %s", id, w.tab, agent)
 	return st, nil
 }
 

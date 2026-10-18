@@ -355,15 +355,15 @@ func (r *ticketRun) start(ctx context.Context, wt string) *stopReason {
 			failed: id + "'s worker never started on its prompt, and bd could not defer it",
 			then:   fmt.Sprintf("worktree %s and tab %s left open", wt, tab),
 		})
-		o.leaveOpen(r.keep, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, started: started,
-			hooks: launched.hooks})
+		o.leaveOpen(r.keep, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, pane: launched.pane,
+			started: started, hooks: launched.hooks})
 		return nil
 	}
 
 	stopWatch() // the settle loop reports from here on
 	// It has begun on its prompt now, and reports through hooks only if it was started with them.
-	return r.conclude(ctx, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, started: started,
-		hooks: launched.hooks}, head, w.report)
+	return r.conclude(ctx, worker{id: id, br: r.br, wt: wt, tab: tab, agent: r.agent, pane: launched.pane,
+		started: started, hooks: launched.hooks}, head, w.report)
 }
 
 // workerSetup is what a worker is started with: its arguments and, for a new worker (not resumed),
@@ -479,7 +479,7 @@ func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adop
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.
-	return r.conclude(ctx, worker{id: id, br: r.br, wt: w.wt, tab: w.tab, agent: r.agent,
+	return r.conclude(ctx, worker{id: id, br: r.br, wt: w.wt, tab: w.tab, agent: r.agent, pane: w.pane,
 		started: base.Started, hooks: w.hooks, since: adopted}, head, o.newWatcher(w.wt, base).report)
 }
 
@@ -593,9 +593,10 @@ func (w workerSpot) told() string {
 }
 
 // worker is a ticket's worker as the run waits on it and merges its work: the ticket, its branch
-// and worktree, the Herdr tab it runs in and its name there, and how to read its hooks.
+// and worktree, the Herdr tab and pane it runs in and its name there, and how to read its hooks.
 type worker struct {
 	id, br, wt, tab, agent string
+	pane                   string    // its pane, looked in should it lose its name (see nameLost); "" if not known
 	started                time.Time // when it was started on the ticket, or adopted
 	hooks                  bool      // it reports what it does through hooks
 	since                  time.Time // its hooks' reports count from then on (zero: any report counts)
@@ -670,7 +671,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 			o.dropNothingDone(keep, w)
 		}
 	case outcomePaused:
-		if o.workerGone(keep, w.agent) {
+		if o.workerGone(keep, w) {
 			return r.pausedGone(ctx, w)
 		}
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.

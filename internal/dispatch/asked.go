@@ -120,7 +120,7 @@ func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w workerSpot) {
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
 	o.leaveOpen(context.WithoutCancel(ctx), worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab,
-		agent: o.agentName(id), hooks: w.hooks})
+		agent: o.agentName(id), pane: w.pane, hooks: w.hooks})
 	if o.triageTaking(ctx) {
 		o.offerTriage(ctx, o.gatherDeferral(ctx, id, "the worker deferred it", w.wt))
 	}
