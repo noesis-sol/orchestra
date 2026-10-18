@@ -414,7 +414,9 @@ func TestAnAdoptedWorkerRunsNoSetup(t *testing.T) {
 		h.beads.add("B", "answers", 2)
 		answered := make(chan struct{})
 		h.worker("A", asksThenCarriesOn(hooks, answered, finishes("a.txt")))
-		h.worker("B", answersAfter(5*time.Minute, answered, time.Minute, "b.txt"))
+		// B answers between two polls, so A's worker has closed its ticket by the next: one answered on a
+		// poll might be seen idle first and told the news, starting it again.
+		h.worker("B", answersAfter(5*time.Minute+7*time.Second, answered, time.Minute, "b.txt"))
 		o, code := h.run()
 		if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
@@ -424,6 +426,9 @@ func TestAnAdoptedWorkerRunsNoSetup(t *testing.T) {
 		}
 		if starts := len(h.herdr.argsFor("A")); starts != 1 || !strings.Contains(h.sink.text(), "adopting it") {
 			t.Errorf("A's worker started %d times; want once, and adopted after\n%s", starts, h.sink.text())
+		}
+		if got := h.herdr.pastedTo(); len(got) != 0 {
+			t.Errorf("pasted to %v; a worker that closed its ticket has nothing to be told", got)
 		}
 		if got := slices.Sorted(slices.Values(setUpIn(t, log))); !equal(got, []string{"A", "B"}) {
 			t.Errorf("the setup ran in %v, want A's and B's new worktrees alone\n%s", got, h.sink.text())
