@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 )
@@ -33,18 +34,13 @@ func TestEnvBool(t *testing.T) {
 // ORCHESTRA_NO_UPDATE_CHECK takes the same values: on turns the check off, off leaves it on, and an
 // unknown value, reported as a setup problem, turns it off too.
 func TestUpdateCheckTurnedOffByAnyOn(t *testing.T) {
-	// Not parallel: it sets the process's environment and this package's version and releases (cacheIn,
-	// latestRelease).
+	t.Parallel()
 	latestRelease(t, "v0.5.1", "v0.6.0")
 	cacheIn(t)
 	for value, off := range map[string]bool{"true": true, "yes": true, "ON": true, "false": false, "off": false,
 		"sometimes": true} {
-		check := startUpdateCheck(context.Background(), func(k string) string {
-			if k == noUpdateCheck {
-				return value
-			}
-			return ""
-		})
+		setenv(t, noUpdateCheck, value)
+		check := startUpdateCheck(context.Background(), testCmdEnv(t, nil, io.Discard, io.Discard))
 		if (check == nil) != off {
 			t.Errorf("%s=%q: check %v, want off %v", noUpdateCheck, value, check, off)
 		}

@@ -14,11 +14,10 @@ import (
 // refuses the split, orchestra says why in one line and hands claude its terminal as before, the
 // same first message, and what claude files runs as before.
 func TestInterviewFallsBackToTheTerminalWhenHerdrCantSplit(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	dir := interviewTools(t, "f-1")
 	setenv(t, "HERDR_PANE_ID", "w1:p1")
-	term, repo, exit := runOnTerminal(t)
+	term, repo, exit := runApartOnTerminal(t)
 	describeFeature(t, term)
 	code, stderr := exit()
 	if want := "orchestra couldn't open the interview in a pane beside its own, so claude takes this terminal: " +

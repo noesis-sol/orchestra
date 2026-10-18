@@ -30,8 +30,9 @@ const interviewChildren = `[` +
 // and its children, and a herdr that fails; no Herdr pane is known (HERDR_PANE_ID), so the session
 // is on the terminal. claude records its arguments (claude-args, one per
 // line in brackets), its folder, process group and instructions (claude-prompt), and whether it
-// had the terminal; sends orchestra SIGINT, as Ctrl+C at the terminal does; and, given an epic,
-// names it in .orchestra/run/feature.json as the instructions say. bd records its calls in
+// had the terminal; sends orchestra SIGINT, as Ctrl+C at the terminal does, so that a test it runs
+// in runs orchestra in a process of its own (runApartOnTerminal); and, given an epic, names it in
+// .orchestra/run/feature.json as the instructions say. bd records its calls in
 // bd-calls, each argument followed by |. It returns the folder they keep their files in.
 func interviewTools(t *testing.T, epic string) string {
 	t.Helper()
@@ -102,10 +103,9 @@ func screenOf(term *fakeTerminal) string {
 // as --feature runs the epic it files: with none of its tickets ready, as bd answers here, the run
 // says so, scoped to the epic.
 func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	dir := interviewTools(t, "f-1")
-	term, repo, exit := runOnTerminal(t)
+	term, repo, exit := runApartOnTerminal(t)
 	describeFeature(t, term)
 	code, stderr := exit()
 	if code != dispatch.ExitOK || stderr != "" {
@@ -177,8 +177,7 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 // An interview that files nothing runs nothing and exits 0; a feature.json left by an earlier
 // interview doesn't count. One that names an epic bd doesn't know runs nothing either, exit 2.
 func TestInterviewThatFiledNothingRunsNothing(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	for _, tc := range []struct {
 		name, epic, earlier, out, stderr string
 		code                             int
@@ -188,8 +187,9 @@ func TestInterviewThatFiledNothingRunsNothing(t *testing.T) {
 			"can't read f-9, the epic it named: bd show f-9 --json: exit status 1", dispatch.ExitSetup},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := interviewTools(t, tc.epic)
-			term, repo, exit := runOnTerminal(t)
+			term, repo, exit := runApartOnTerminal(t)
 			if tc.earlier != "" {
 				if err := os.MkdirAll(filepath.Join(repo, project.Dir, project.RunName), 0o755); err != nil {
 					t.Fatal(err)

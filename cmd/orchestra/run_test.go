@@ -17,7 +17,8 @@ func runIn(t *testing.T, dir string, env map[string]string, args ...string) (str
 	var stdout, stderr strings.Builder
 	getenv := func(k string) string { return env[k] }
 	err := run(testCtx(context.Background(), t), append([]string{"orchestra"}, args...),
-		cmdEnv{dir: dir, getenv: getenv, stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr})
+		cmdEnv{dir: dir, getenv: getenv, stdin: strings.NewReader(""), stdout: &stdout, stderr: &stderr,
+			version: buildVersion()})
 	return stdout.String(), stderr.String(), err
 }
 

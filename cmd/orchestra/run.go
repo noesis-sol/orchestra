@@ -21,6 +21,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
+	"github.com/noesis-sol/orchestra/internal/update"
 
 	"golang.org/x/term"
 )
@@ -73,13 +74,15 @@ const notSetUpMessage = "orchestra isn't set up in this repository yet. Run this
 	"It writes " + project.Dir + "/ (the worker prompt and settings) and sets up Beads if needed."
 
 // cmdEnv is what a command reads and writes besides its arguments: the working directory, the
-// environment and the three standard streams. The commands it runs get the environment the context
-// gives them (command.WithEnv).
+// environment, the three standard streams, this build's version and where its releases are. The
+// commands it runs get the environment the context gives them (command.WithEnv).
 type cmdEnv struct {
 	dir            string // relative paths, such as --spec's, are relative to it
 	getenv         func(string) string
 	stdin          io.Reader
 	stdout, stderr io.Writer
+	version        string                         // this build's version, buildVersion's
+	releases       update.Updater                 // where the latest release is read: GitHub for the zero Updater
 	breakdown      func(s *session) specBreakdown // a spec run's breakdown, nil for breakdownOf's: tests give their own
 }
 
@@ -101,7 +104,7 @@ var subcommands = []subcommand{
 		return runPlan(ctx, e.dir, args, e.stdout, e.stderr)
 	}},
 	{"update", updateSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runUpdateHere(ctx, args, e.stdout, e.stderr)
+		return runUpdateHere(ctx, args, e)
 	}},
 }
 
@@ -179,7 +182,7 @@ func configure(ctx context.Context, args []string, e cmdEnv) (cfg options, code 
 	case err != nil:
 		return cfg, dispatch.ExitSetup, false
 	case cfg.showVersion:
-		fmt.Fprintln(e.stdout, "orchestra", buildVersion())
+		fmt.Fprintln(e.stdout, "orchestra", e.version)
 		return cfg, dispatch.ExitOK, false
 	}
 	if cfg.notSetUp || len(problems) > 0 {
@@ -233,7 +236,7 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	// and branch. Taken before anything changes, a --feature request's session included, and held
 	// until orchestra exits, after the organ phase.
 	s.holder = project.Holder{
-		PID: os.Getpid(), Started: s.started, Version: buildVersion(), Branch: cfg.Base,
+		PID: os.Getpid(), Started: s.started, Version: e.version, Branch: cfg.Base,
 		Ticket: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Pane: cfg.where.pane,
 	}
 	lock, lockErr := project.LockRun(ctx, cfg.Repo, s.holder)
@@ -280,8 +283,8 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 		s.log.Line(time.Now(), "no run lock on "+runtime.GOOS+": nothing stops a second run in this repository")
 	}
 	// A newer release is looked for while the run goes, and mentioned as it ends (newer.go).
-	check := startUpdateCheck(ctx, e.getenv)
-	s.onClose(func(error) { showNewer(check, !cfg.Plain && isTerminal(e.stdout), e.stdout, e.stderr) })
+	check := startUpdateCheck(ctx, e)
+	s.onClose(func(error) { showNewer(check, !cfg.Plain && isTerminal(e.stdout), e) })
 	if err := project.EnsureRunExcluded(ctx, cfg.Repo); err != nil {
 		s.log.Raw("", fmt.Errorf("cannot keep %s/%s/ out of git: %w", project.Dir, project.RunName, err))
 	}
@@ -328,7 +331,7 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	case cfg.Feature != "": // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
 		cfg.Ticket, filedCode = s.talkFeature(ctx)
 	}
-	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: buildVersion(), Repo: cfg.Repo,
+	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: s.e.version, Repo: cfg.Repo,
 		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})
 	if (cfg.Feature != "" || cfg.specFile != "") && cfg.Ticket == "" { // nothing filed to run
 		return filedCode, false
@@ -350,6 +353,7 @@ func (s *session) runLoop(ctx context.Context) int {
 	base := context.WithoutCancel(ctx)
 	organCtx, cancelOrgans := context.WithCancel(base)
 	defer cancelOrgans()
+	cfg.Version = s.e.version
 	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()
@@ -413,7 +417,6 @@ func termWidth(out *os.File) int {
 // newLoop makes the run's loop on Beads, the terminal (Herdr or tmux), git and the workers' reports,
 // its organs advising under organCtx. Organs that can't run are turned off in cfg, and the log says so.
 func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt string) *dispatch.Loop {
-	cfg.Version = buildVersion()
 	organsOff := organ.Unavailable(organCtx, "claude")
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, terminalOf(*cfg), git.Git{}

@@ -238,10 +238,9 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 // A feature typed at the start is talked through with Claude Code whatever agent the workers are:
 // with codex workers it goes to the session, not the organs.
 func TestTypedFeatureWithOtherWorkersIsTalkedThrough(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	dir := interviewTools(t, "f-1")
-	term, repo, exit := runOnTerminal(t, "--agent", "codex")
+	term, repo, exit := runApartOnTerminal(t, "--agent", "codex")
 	describeFeature(t, term)
 	code, stderr := exit()
 	if code != dispatch.ExitOK || stderr != "" {
@@ -265,8 +264,7 @@ func TestTypedFeatureWithOtherWorkersIsTalkedThrough(t *testing.T) {
 // Without claude, a typed feature isn't talked through, nor planned by the organs: the run ends,
 // exit 2, saying so, with nothing filed.
 func TestTypedFeatureWithoutClaudeEndsSayingSo(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	dir := interviewTools(t, "f-1")
 	if err := os.Remove(filepath.Join(dir, "claude")); err != nil {
 		t.Fatal(err)

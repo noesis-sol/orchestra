@@ -3,9 +3,11 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
@@ -25,14 +27,41 @@ const (
 // CacheName is the cache file's name, in CacheDir.
 const CacheName = "latest-release.json"
 
-// CacheDir is the folder of the check's cache, orchestra's in the user's cache folder
-// (os.UserCacheDir: ~/Library/Caches on macOS, $XDG_CACHE_HOME or ~/.cache on Linux).
-func CacheDir() (string, error) {
-	dir, err := os.UserCacheDir()
+// CacheDir is the folder of the check's cache, orchestra's in the user's cache folder, in the
+// environment getenv reads: ~/Library/Caches on macOS, $XDG_CACHE_HOME or ~/.cache on Linux, as
+// os.UserCacheDir has it in the process's.
+func CacheDir(getenv func(string) string) (string, error) {
+	dir, err := userCacheDir(getenv)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "orchestra"), nil
+}
+
+// userCacheDir is os.UserCacheDir in the environment getenv reads.
+func userCacheDir(getenv func(string) string) (string, error) {
+	switch runtime.GOOS {
+	case "windows":
+		if dir := getenv("LocalAppData"); dir != "" {
+			return dir, nil
+		}
+		return "", errors.New("%LocalAppData% is not defined")
+	case "darwin", "ios":
+		if home := getenv("HOME"); home != "" {
+			return home + "/Library/Caches", nil
+		}
+		return "", errors.New("$HOME is not defined")
+	}
+	if dir := getenv("XDG_CACHE_HOME"); dir != "" {
+		if !filepath.IsAbs(dir) {
+			return "", errors.New("path in $XDG_CACHE_HOME is relative")
+		}
+		return dir, nil
+	}
+	if home := getenv("HOME"); home != "" {
+		return home + "/.cache", nil
+	}
+	return "", errors.New("neither $XDG_CACHE_HOME nor $HOME are defined")
 }
 
 // cached is the cache file: the latest release's tag, as of when GitHub was last asked.

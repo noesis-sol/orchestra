@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,32 @@ func (s *screen) cut(text string) {
 // ends is stopped.
 func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo string, exit func() (int, string)) {
 	t.Helper()
+	return onTerminal(t, inProcess, args)
+}
+
+// startOrchestra starts orchestra with args in t's environment and working directory, on tty, its input and
+// output, writing its stderr to stderr. done gets its exit code once it has exited, and ended closes
+// then; ctx's end stops it.
+type startOrchestra func(ctx context.Context, t *testing.T, args []string, tty *os.File,
+	stderr io.Writer) (done <-chan int, ended <-chan struct{})
+
+// inProcess starts orchestra in the test's process (startOrchestra).
+func inProcess(ctx context.Context, t *testing.T, args []string, tty *os.File, stderr io.Writer) (<-chan int,
+	<-chan struct{}) {
+	done := make(chan int, 1)
+	ended := make(chan struct{})
+	go func() {
+		defer close(ended)
+		err := run(testCtx(ctx, t), append([]string{"orchestra"}, args...), testCmdEnv(t, tty, tty, stderr))
+		done <- exitOf(err)
+	}()
+	return done, ended
+}
+
+// onTerminal is runOnTerminal with orchestra started by start.
+func onTerminal(t *testing.T, start startOrchestra, args []string) (term *fakeTerminal, repo string,
+	exit func() (int, string)) {
+	t.Helper()
 	tty, master := openTerminal(t) // first, so that go test -short skips the test before any setup
 	repo = configFixture(t, `{"concurrent": 1}`)
 	for k, v := range map[string]string{"NOTIFY": "0", "TRIAGE": "0", "REVIEW": "0", "ORCHESTRA_TICKETS": ""} {
@@ -57,13 +84,7 @@ func runOnTerminal(t *testing.T, args ...string) (term *fakeTerminal, repo strin
 	}()
 	var errOut strings.Builder
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	ended := make(chan struct{}) // closed once run has returned
-	go func() {
-		defer close(ended)
-		err := run(testCtx(ctx, t), append([]string{"orchestra"}, args...), testCmdEnv(t, tty, tty, &errOut))
-		done <- exitOf(err)
-	}()
+	done, ended := start(ctx, t, args, tty, &errOut)
 	// A test that ends before orchestra exits, as one that fails a wait does, stops orchestra and waits
 	// for it before the terminal closes and the environment, the working directory and the repository
 	// go: orchestra still uses them. Registered after them, this cleanup runs first.

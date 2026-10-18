@@ -117,8 +117,7 @@ func TestYesIsGone(t *testing.T) {
 // first and nothing asked of the organs. Once it hands the epic back, orchestra says what was filed
 // and runs it without asking; the lock and the run's start name the feature.
 func TestFeatureFlagIsTalkedThrough(t *testing.T) {
-	// Not parallel: its claude (interviewTools) sends the test's process SIGINT, which the runs of tests
-	// beside it would catch too.
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -127,8 +126,9 @@ func TestFeatureFlagIsTalkedThrough(t *testing.T) {
 		{"with --refine", []string{"--refine"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := interviewTools(t, "f-1")
-			term, repo, exit := runOnTerminal(t, append([]string{"--feature", paneRequest}, tc.args...)...)
+			term, repo, exit := runApartOnTerminal(t, append([]string{"--feature", paneRequest}, tc.args...)...)
 			code, stderr := exit()
 			if code != dispatch.ExitOK || stderr != "" {
 				t.Fatalf("exit %d, stderr:\n%s\nthe terminal:\n%s", code, stderr, screenOf(term))

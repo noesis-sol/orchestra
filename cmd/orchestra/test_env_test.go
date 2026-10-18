@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/command"
+	"github.com/noesis-sol/orchestra/internal/update"
 )
 
 // A test's environment is what it runs orchestra in, in place of the process's environment and
@@ -22,11 +23,19 @@ var (
 )
 
 // testEnv is the environment one test set: its variables, over its parent's, its working
-// directory, "" for its parent's, and the breakdown of its spec runs, nil for its parent's.
+// directory, "" for its parent's, the breakdown of its spec runs, nil for its parent's, and the build
+// orchestra is, nil for its parent's.
 type testEnv struct {
 	vars      map[string]string
 	dir       string
 	breakdown func(s *session) specBreakdown
+	build     *testBuild
+}
+
+// testBuild is the build a test's orchestra is, as cmdEnv has it: its version and where its releases are.
+type testBuild struct {
+	version  string
+	releases update.Updater
 }
 
 // envOf is the environment t sets, made if need be, for setenv and chdir.
@@ -127,16 +136,22 @@ func workDir(t testing.TB) string {
 
 // testCtx is ctx giving the commands run with it t's environment (command.WithEnv).
 func testCtx(ctx context.Context, t testing.TB) context.Context {
+	return command.WithEnv(ctx, testVars(t)...)
+}
+
+// testVars is the variables setenv set for t and the tests it is a subtest of, as KEY=value each,
+// the outermost test's first, so that t's own win.
+func testVars(t testing.TB) []string {
 	envs := lineage(t)
 	testEnvsMu.Lock()
 	defer testEnvsMu.Unlock()
 	var vars []string
-	for _, e := range slices.Backward(envs) { // the outermost test's first, so that t's own win
+	for _, e := range slices.Backward(envs) {
 		for k, v := range e.vars {
 			vars = append(vars, k+"="+v)
 		}
 	}
-	return command.WithEnv(ctx, vars...)
+	return vars
 }
 
 // breakDownWith has t's spec runs broken down by the breakdown b gives, as cmdEnv.breakdown.
@@ -148,15 +163,32 @@ func breakDownWith(t testing.TB, b func(s *session) specBreakdown) {
 	e.breakdown = b
 }
 
+// buildOf makes t's orchestra the build of version v, its releases read from releases, as cmdEnv's
+// version and releases; else it is this build, its releases GitHub's.
+func buildOf(t testing.TB, v string, releases update.Updater) {
+	t.Helper()
+	e := envOf(t)
+	testEnvsMu.Lock()
+	defer testEnvsMu.Unlock()
+	e.build = &testBuild{version: v, releases: releases}
+}
+
 // testCmdEnv is orchestra's cmdEnv in t's environment and working directory, with these streams.
 func testCmdEnv(t testing.TB, stdin io.Reader, stdout, stderr io.Writer) cmdEnv {
-	e := cmdEnv{dir: workDir(t), getenv: getenv(t), stdin: stdin, stdout: stdout, stderr: stderr}
+	e := cmdEnv{dir: workDir(t), getenv: getenv(t), stdin: stdin, stdout: stdout, stderr: stderr,
+		version: buildVersion()}
 	envs := lineage(t)
 	testEnvsMu.Lock()
 	defer testEnvsMu.Unlock()
 	for _, te := range envs {
 		if te.breakdown != nil {
 			e.breakdown = te.breakdown
+			break
+		}
+	}
+	for _, te := range envs {
+		if te.build != nil {
+			e.version, e.releases = te.build.version, te.build.releases
 			break
 		}
 	}

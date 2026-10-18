@@ -19,14 +19,15 @@ const exitUpdateAvailable = 1
 // updateSynopsis is orchestra update's flags, as its usage line gives them (see subcommand).
 const updateSynopsis = "[--check] [--force]"
 
-// runUpdateHere is orchestra update on the binary running, of this build's version. It returns the exit code.
-func runUpdateHere(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+// runUpdateHere is orchestra update on the binary running, of this build's version, from e's releases. It
+// returns the exit code.
+func runUpdateHere(ctx context.Context, args []string, e cmdEnv) int {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(stderr, "orchestra update: cannot find this binary:", err)
+		fmt.Fprintln(e.stderr, "orchestra update: cannot find this binary:", err)
 		return dispatch.ExitSetup
 	}
-	return runUpdate(ctx, args, buildVersion(), exe, update.Updater{}, stdout, stderr)
+	return runUpdate(ctx, args, e.version, exe, e.releases, e.stdout, e.stderr)
 }
 
 // runUpdate replaces the binary at exe, orchestra of version current, with the latest release's, which
