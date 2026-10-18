@@ -11,10 +11,12 @@ import (
 
 // ---- Git -----------------------------------------------------------------------------
 
-// fakeCommit is a commit: a hash, its subject, and the files it adds.
+// fakeCommit is a commit: a hash, its subject, and the files it adds, with the content of those it
+// was given one for (see commitFile).
 type fakeCommit struct {
 	hash, subject string
 	files         []string
+	content       map[string]string
 }
 
 // fakeGit is one repository in memory, for scenarios whose subject is timing rather than git: no
@@ -69,6 +71,20 @@ func (g *fakeGit) commitIn(wt, subject string, files ...string) error {
 		return fmt.Errorf("fatal: not a git repository: %s", wt)
 	}
 	g.commit(br, subject, files...)
+	return nil
+}
+
+// commitFile adds a commit to the branch the worktree is on that writes content to file.
+func (g *fakeGit) commitFile(wt, subject, file, content string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	br, ok := g.worktrees[wt]
+	if !ok {
+		return fmt.Errorf("fatal: not a git repository: %s", wt)
+	}
+	c := g.newCommit(subject, file)
+	c.content = map[string]string{file: content}
+	g.branches[br] = append(g.branches[br], c)
 	return nil
 }
 
@@ -173,6 +189,19 @@ func (g *fakeGit) Head(ctx context.Context, repo, rev string) string {
 		return cs[len(cs)-1].hash
 	}
 	return ""
+}
+
+// FileAt is the content the latest commit in rev's history that adds file gave it: "" when that
+// commit was given none.
+func (g *fakeGit) FileAt(ctx context.Context, repo, rev, file string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, c := range slices.Backward(g.resolve(rev)) {
+		if slices.Contains(c.files, file) {
+			return c.content[file], nil
+		}
+	}
+	return "", fmt.Errorf("fatal: path '%s' does not exist in '%s'", file, rev)
 }
 
 func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) []string {
@@ -350,7 +379,9 @@ func (g *fakeGit) Rebase(ctx context.Context, worktree, onto string) (string, er
 	}
 	rebased := g.resolve(onto)
 	for _, c := range g.only(onto, br) {
-		rebased = append(rebased, g.newCommit(c.subject, c.files...))
+		r := g.newCommit(c.subject, c.files...)
+		r.content = c.content
+		rebased = append(rebased, r)
 	}
 	g.branches[br] = rebased
 	return "", nil

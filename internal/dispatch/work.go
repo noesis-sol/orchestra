@@ -104,10 +104,15 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 		return stop
 	}
 	o.setAsked(id, nil) // back from a question: set aside again once this worker settles, it stays out
-	wt, done, stop := r.prepare()
+	p, done, stop := r.prepare()
 	if done {
 		return stop
 	}
+	// The worker starts with the project's dependencies installed (see setUpWorktree).
+	if done, stop := r.setUpWorktree(ctx, p); done {
+		return stop
+	}
+	wt := p.wt
 	// Back from a question with its earlier worker gone from its tab, the ticket has that worker's
 	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
 	if asked && st == StateGone {
@@ -284,18 +289,19 @@ func (r *ticketRun) renameEarlier(ctx context.Context) *stopReason {
 	return nil
 }
 
-// prepare makes the ticket's worktree, wt: one per ticket, and a ticket that comes back (deferral
-// ended) resumes its old branch. It reports whether the ticket's run is over, with the reason the
-// run must stop, if any: a branch that conflicts with Base sets the ticket aside.
-func (r *ticketRun) prepare() (string, bool, *stopReason) {
+// prepare makes the ticket's worktree: one per ticket, and a ticket that comes back (deferral ended)
+// resumes its old branch. It reports whether the ticket's run is over, with the reason the run must
+// stop, if any: a branch that conflicts with Base sets the ticket aside.
+func (r *ticketRun) prepare() (preparedWorktree, bool, *stopReason) {
 	o, c, id, br := r.o, r.o.cfg, r.id, r.br
-	wt, conflicts, s := o.prepareWorktree(r.keep, id, br)
+	p, conflicts, s := o.prepareWorktree(r.keep, id, br)
 	if s != nil {
-		return wt, true, s
+		return p, true, s
 	}
+	wt := p.wt
 	o.footprintWorktree(id, wt)
 	if !conflicts {
-		return wt, false, nil
+		return p, false, nil
 	}
 	// A worker is told not to rebase, so it would work on a stale base and its merge would end
 	// in MERGE_CONFLICT anyway: set the ticket aside until its branch is rebased by hand.
@@ -312,7 +318,7 @@ func (r *ticketRun) prepare() (string, bool, *stopReason) {
 		failed: fmt.Sprintf("%s conflicts with %s, and bd could not defer %s", br, c.Base, id),
 		then:   "rebase it in " + wt,
 	})
-	return wt, true, nil
+	return p, true, nil
 }
 
 // start starts a new worker on the ticket in worktree wt, and once it has begun on its prompt,

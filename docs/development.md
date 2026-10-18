@@ -108,7 +108,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `checkback.go` | handing a check that fails on a rebased branch back to the ticket's worker to fix, and checking what it committed |
 | `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution; the hand-back itself (`handBackTo`) and putting the branch back after one is rejected (`restoreBranch`), shared with `checkback.go` |
 | `checkoutput.go` | what is kept of the output of the check, the setup and the full check as they print it: the whole in a temporary file, saved when they fail, and in memory its end, what failed, its `FLAKY:` lines and suite, each bounded |
-| `setup.go` | the setup command (`setup`), run before the check on a rebased branch whose rebase changed a dependency file |
+| `setup.go` | the setup command (`setup`): run in a ticket's new worktree before its worker starts, and a setup that fails there (`SETUP_FAILED`); run before the check on a rebased branch when a dependency file changed since it last ran; taken from `.orchestra/settings.json` as a merge changes it |
 | `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets; `pendingWhy`, the one rule for whether a ticket has merged |
 | `unmerged.go` | tickets closed but not merged: the `unmerged` label, those earlier runs left, whether one has merged since by hand |
 | `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
@@ -123,7 +123,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `log.go` | the log file and notifications |
 | `eventstream.go` | the event stream (`events.jsonl`), and what a notification says of an event (`Notice`) |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
-| `environment.go` | holding the run when workers keep failing at once or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
+| `environment.go` | holding the run when workers keep failing at once, setups keep failing in new worktrees or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
 | `usagelimit.go` | holding the run while workers wait on the account's usage limit, telling them to carry on once it resets, and stopping the run (`USAGE_LIMIT`) when it holds longer than `usage_limit_wait` |
 | `advice.go` | triage and the run review |
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |

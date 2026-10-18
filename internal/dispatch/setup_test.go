@@ -19,8 +19,9 @@ import (
 
 // setupHarness is a run of a repository with a lockfile, package-lock.json, whose installed
 // dependencies are deps.lock, a copy of it that git ignores. The setup installs them, noting each
-// run in dir, and fails, printing "npm ERR! offline", until dir holds the file online; the check
-// fails unless they are installed for the lockfile.
+// run in dir, and fails, printing "npm ERR! offline", in the worktree of a ticket dir marks offline
+// (see offline) until dir holds the file online; the check fails unless they are installed for the
+// lockfile.
 func setupHarness(t *testing.T, dir string) *harness {
 	t.Helper()
 	h := newHarness(t)
@@ -31,11 +32,20 @@ func setupHarness(t *testing.T, dir string) *harness {
 	}
 	h.git(h.repo, "add", ".")
 	h.git(h.repo, "commit", "-q", "-m", "lockfile")
-	h.cfg.Setup = fmt.Sprintf(`echo run >> '%s'/setup.runs; if test -f '%s'/online; `+
-		`then cp package-lock.json deps.lock; else echo 'npm ERR! offline'; exit 1; fi`, dir, dir)
+	h.cfg.Setup = fmt.Sprintf(`echo run >> '%s'/setup.runs; `+
+		`if test -f '%s'/online || ! test -f '%s'/offline-"$(basename "$PWD")"; `+
+		`then cp package-lock.json deps.lock; else echo 'npm ERR! offline'; exit 1; fi`, dir, dir, dir)
 	h.cfg.SetupFiles = project.DefaultSetupFiles
 	h.cfg.Check = "cmp package-lock.json deps.lock"
 	return h
+}
+
+// offline has setupHarness's setup fail in ticket id's worktree from now on.
+func offline(t *testing.T, dir, id string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "offline-"+id), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // online lets setupHarness's setup succeed.
@@ -82,15 +92,16 @@ func bumpedMeanwhile(repo, file string) behaviour {
 }
 
 // A ticket rebased over a lockfile change has its dependencies set up again before its check, and
-// merges; one rebased over other changes doesn't.
+// merges; one rebased over other changes doesn't. Each has them set up once before, as its worker
+// starts in its new worktree.
 func TestTheSetupRunsBeforeTheCheckWhenTheRebaseChangesALockfile(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, file string
 		runs       int
 	}{
-		{"lockfile changed", "package-lock.json", 1},
-		{"no dependency file changed", "README.md", 0},
+		{"lockfile changed", "package-lock.json", 2},
+		{"no dependency file changed", "README.md", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -110,8 +121,8 @@ func TestTheSetupRunsBeforeTheCheckWhenTheRebaseChangesALockfile(t *testing.T) {
 				t.Errorf("the setup ran %d times, want %d\n%s", n, tc.runs, h.sink.text())
 			}
 			ev := h.sink.text()
-			said := "A: package-lock.json changed in the rebase; running '" + h.cfg.Setup + "' before the check\n"
-			if strings.Contains(ev, said) != (tc.runs > 0) {
+			said := "A: package-lock.json changed since its dependencies were last set up; running '" + h.cfg.Setup + "' before the check\n"
+			if strings.Contains(ev, said) != (tc.runs > 1) {
 				t.Errorf("events should say %q only when the setup runs:\n%s", said, ev)
 			}
 			if want := "'cmp package-lock.json deps.lock' passes on the rebased wt/A"; !strings.Contains(ev, want) {
@@ -124,14 +135,17 @@ func TestTheSetupRunsBeforeTheCheckWhenTheRebaseChangesALockfile(t *testing.T) {
 // A setup that fails sets the ticket aside as a failing check does, its output kept beside the
 // check's. Checked again once Base moves on, the ticket has its setup run again, though that
 // rebase changes no dependency file: the dependencies are still as they were before the lockfile
-// changed.
+// changed. The setup works in its worktree as its worker starts, and fails there from then on.
 func TestAFailedSetupSetsTheTicketAsideUntilItsRecheck(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	h := setupHarness(t, dir)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
-	h.worker("A", bumpedMeanwhile(h.repo, "package-lock.json"))
+	h.worker("A", func(w *fakeWorker) AgentState {
+		offline(t, dir, "A")
+		return bumpedMeanwhile(h.repo, "package-lock.json")(w)
+	})
 	h.worker("B", func(w *fakeWorker) AgentState {
 		if !unmergedLabel(t, h, "A") {
 			t.Error("A should be labelled unmerged while it is set aside")
@@ -150,8 +164,9 @@ func TestAFailedSetupSetsTheTicketAsideUntilItsRecheck(t *testing.T) {
 	if got := closedIDs(h); !equal(got, []string{"B", "A"}) {
 		t.Errorf("merged %v, want B, then A checked again\n%s", got, h.sink.text())
 	}
-	if n := setupRuns(t, dir); n != 2 {
-		t.Errorf("the setup ran %d times, want 2: as A merged and as it was checked again\n%s", n, h.sink.text())
+	if n := setupRuns(t, dir); n != 4 {
+		t.Errorf("the setup ran %d times, want 4: in A's and B's new worktrees, as A merged and as it was "+
+			"checked again\n%s", n, h.sink.text())
 	}
 	ev := h.sink.text()
 	for _, want := range []string{
@@ -159,7 +174,7 @@ func TestAFailedSetupSetsTheTicketAsideUntilItsRecheck(t *testing.T) {
 			"rebased onto main; ",
 		filepath.Join(".orchestra", "run", setupLogName) + "); checked once more if main moves on in this run\n",
 		"RECHECK: A's check failed on main at ",
-		"A: package-lock.json changed in the rebase; running '",
+		"A: package-lock.json changed since its dependencies were last set up; running '",
 		"'cmp package-lock.json deps.lock' passes on the rebased wt/A",
 	} {
 		if !strings.Contains(ev, want) {
@@ -199,13 +214,14 @@ func TestTheSetupRunsBeforeAResolvedRebaseIsChecked(t *testing.T) {
 	if got := closedIDs(h); !equal(got, []string{"A"}) {
 		t.Errorf("merged %v, want A\n%s", got, h.sink.text())
 	}
-	if n := setupRuns(t, dir); n != 1 {
-		t.Errorf("the setup ran %d times, want once, before the resolution was checked\n%s", n, h.sink.text())
+	if n := setupRuns(t, dir); n != 2 {
+		t.Errorf("the setup ran %d times, want twice: in its new worktree, and before the resolution was checked\n%s",
+			n, h.sink.text())
 	}
 	ev := h.sink.text()
 	for _, want := range []string{
 		"RESOLVING: wt/A conflicts with main in shared.txt",
-		"A: package-lock.json changed in the rebase; running '",
+		"A: package-lock.json changed since its dependencies were last set up; running '",
 		"passes on wt/A as its worker resolved it",
 	} {
 		if !strings.Contains(ev, want) {
@@ -214,7 +230,8 @@ func TestTheSetupRunsBeforeAResolvedRebaseIsChecked(t *testing.T) {
 	}
 }
 
-// A resolution whose setup fails is set aside as one whose check fails.
+// A resolution whose setup fails is set aside as one whose check fails. The setup works in its
+// worktree as its worker starts, and fails there from then on.
 func TestAResolvedRebaseWhoseSetupFailsIsSetAside(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -228,6 +245,7 @@ func TestAResolvedRebaseWhoseSetupFailsIsSetAside(t *testing.T) {
 	h.cfg.ResolveTimeout = patience
 	h.beads.add("A", "first", 1)
 	h.worker("A", func(w *fakeWorker) AgentState {
+		offline(t, dir, "A")
 		installs(w)
 		landsOnMain(w, h.repo, "package-lock.json", "v2\n")
 		return conflicting(h.repo)(w)

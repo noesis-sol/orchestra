@@ -177,6 +177,7 @@ func (m *mergeRun) fastForward() *stopReason {
 		return s
 	}
 	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
+	before := o.checkout.Head(keep, c.Repo, c.Base)
 	out, err := o.merger.FastForward(keep, c.Repo, br)
 	o.log.Raw(out, err)
 	if err != nil {
@@ -187,6 +188,9 @@ func (m *mergeRun) fastForward() *stopReason {
 	}
 	o.clearUnmerged(keep, id)
 	o.countMerge()
+	// What it brought may be what a setup that failed needed, or a new setup (see leaveSetupFailed).
+	o.retrySetups()
+	o.takeSettings(keep, id, before)
 	cleaned := o.removeWorktree(keep, id, wt, br)
 	m.repo.unlock()
 	hash, _, _ := strings.Cut(commit, " ")

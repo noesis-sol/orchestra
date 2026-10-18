@@ -30,23 +30,23 @@ func (o *Loop) checkTimeout() time.Duration {
 // noteCheckFailed); runCheck returns where the output is. When it passes, each FLAKY: line it printed
 // is a warning (see reportFlaky).
 func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, error) {
-	run, output := o.runIn(ctx, w, onto, false)
+	run, output := o.runIn(ctx, w, onto, "")
 	if run.err == nil {
 		o.reportFlaky(w.id, "", run.out)
 	}
 	return output, run.err
 }
 
-// runIn runs the check in w's worktree, or its setup when setup is set, and returns how it ran. It
-// gives up after checkTimeout, stopping everything it started, and run.err wraps errCheckTimedOut
-// then. When it fails, the end of its output goes in the log, the whole of it in the worktree's
+// runIn runs the check in w's worktree, or the setup command setup when it is set, and returns how it
+// ran. It gives up after checkTimeout, stopping everything it started, and run.err wraps
+// errCheckTimedOut then. When it fails, the end of its output goes in the log, the whole of it in the worktree's
 // checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
 // cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch rebased
 // onto the commit onto. Only what is said of the output is kept in memory (see checkOutput).
-func (o *Loop) runIn(ctx context.Context, w worker, onto string, setup bool) (run commandRun, output string) {
-	cmd, logName, setupCmd := o.cfg.Check, checkLogName, ""
-	if setup {
-		cmd, logName, setupCmd = o.cfg.Setup, setupLogName, o.cfg.Setup
+func (o *Loop) runIn(ctx context.Context, w worker, onto, setup string) (run commandRun, output string) {
+	cmd, logName := o.cfg.Check, checkLogName
+	if setup != "" {
+		cmd, logName = setup, setupLogName
 	}
 	run, _ = runLimited(ctx, w.wt, o.checkTimeout(), cmd)
 	defer run.out.close()
@@ -56,7 +56,7 @@ func (o *Loop) runIn(ctx context.Context, w worker, onto string, setup bool) (ru
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
 	output = o.keepOutput(w.wt, logName, "the check's", run.out)
 	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
-		o.noteCheckFailed(ctx, w, onto, output, run, setupCmd)
+		o.noteCheckFailed(ctx, w, onto, output, run, setup)
 	}
 	return run, output
 }

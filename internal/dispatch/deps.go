@@ -184,6 +184,8 @@ type Checkout interface {
 	Changes(ctx context.Context, repo string, paths ...string) map[string]string
 	CurrentBranch(ctx context.Context, repo string) (string, error) // "" on a detached HEAD
 	Head(ctx context.Context, repo, rev string) string
+	// the content of the file at path, from the repository's top, in commit rev; git's error when it has none
+	FileAt(ctx context.Context, repo, rev, path string) (string, error)
 	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them
 }
 

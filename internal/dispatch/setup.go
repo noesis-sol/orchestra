@@ -3,53 +3,91 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"maps"
+	"os"
 	"path"
+	"path/filepath"
+	"slices"
 	"strings"
+
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// A finished ticket's worktree has the dependencies its worker installed for the code as it closed the
-// ticket. Its rebase onto Base can bring in a changed lockfile, from a ticket that merged meanwhile,
-// and the check would then run the rebased code against dependencies installed for the code before.
-// So before the check on a rebased branch (merge, RECHECK and a hand-back's verification), the
-// project's setup command (setup in .orchestra/settings.json, such as npm ci) runs in the worktree
+// A ticket's new worktree has nothing installed in it, so before its worker starts there the
+// project's setup command (setup in .orchestra/settings.json, such as npm ci) runs in it (see
+// setUpWorktree): workers start with their dependencies installed rather than each installing them
+// itself. A setup that fails there isn't the ticket's fault: no worker starts, and the ticket goes
+// back in the queue, counting toward the hold for the environment (see leaveSetupFailed).
+//
+// A finished ticket's worktree has the dependencies set up for the code as it was then. Its rebase
+// onto Base can bring in a changed lockfile, from a ticket that merged meanwhile, and the check would
+// then run the rebased code against dependencies installed for the code before. So before the check
+// on a rebased branch (merge, RECHECK and a hand-back's verification), the setup runs in the worktree
 // when the commits since its dependencies were last set up change a file setup_files names. A setup
 // that fails fails the check, its output kept in the worktree's setupLogName.
+//
+// A merge that changes settings.json on Base has the run take setup and setup_files from it from
+// then on (see takeSettings): the environment ticket a spec's breakdown files first sets them.
 
 // setupLogName is the file in a worktree's .orchestra/run/ that holds the whole output of the last
-// setup that failed there.
+// setup that failed there; a setup before a worker that works there removes it (see setupFailedIn).
 const setupLogName = "setup.log"
+
+// setupConf is the project's setup command and the globs of the files it reads: setup and
+// setup_files in .orchestra/settings.json.
+type setupConf struct {
+	cmd   string
+	files []string
+}
+
+// setupNow is the setup as the run has it now: Config's, unless a merge in this run committed
+// others to Base's settings.json (see takeSettings).
+func (o *Loop) setupNow() setupConf {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.setupSet != nil {
+		return *o.setupSet
+	}
+	return setupConf{cmd: o.cfg.Setup, files: o.cfg.SetupFiles}
+}
 
 // setUp runs the setup command in w's worktree, its branch rebased onto the commit onto from before,
 // when the commits since its dependencies were last set up in this run, or since before if they
-// weren't, change a file Config.SetupFiles matches; when git can't say what they change, it runs it
-// anyway. It returns as runCheck does: where the output of a setup that failed is, and
+// weren't, change a file the setup's globs match (see setupDue); when git can't say what they change,
+// it runs it anyway. It returns as runCheck does: where the output of a setup that failed is, and
 // errCheckTimedOut for one stopped at the check's time limit.
 func (o *Loop) setUp(ctx context.Context, w worker, before, onto string) (string, error) {
-	c := o.cfg
-	if c.Setup == "" {
+	s := o.setupNow()
+	if s.cmd == "" {
 		return "", nil
 	}
 	keep := context.WithoutCancel(ctx) // a read cut short would look like no change
-	from := o.setUpFrom(w.id, before)
-	now := o.checkout.Head(keep, c.Repo, w.br)
-	what := "git could not say what the rebase changed"
-	if from != "" && now != "" {
-		changed := setupFilesIn(o.history.ChangedFiles(keep, c.Repo, from, now), c.SetupFiles)
-		if len(changed) == 0 {
-			return "", nil
-		}
-		what = fileList(changed) + " changed in the rebase"
+	now := o.checkout.Head(keep, o.cfg.Repo, w.br)
+	what := o.setupDue(keep, w.id, before, now, s.files)
+	if what == "" {
+		return "", nil
 	}
-	o.info("  %s: %s; running '%s' before the check", w.id, what, c.Setup)
-	if run, output := o.runIn(ctx, w, onto, true); run.err != nil {
+	o.info("  %s: %s; running '%s' before the check", w.id, what, s.cmd)
+	if run, output := o.runIn(ctx, w, onto, s.cmd); run.err != nil {
 		return output, run.err
 	}
-	if now != "" {
-		o.mu.Lock()
-		o.setUpFor[w.id] = now
-		o.mu.Unlock()
-	}
+	o.setUpAt(w.id, now)
 	return "", nil
+}
+
+// setupDue says why the setup runs for ticket id's branch at commit now: the files globs match that the
+// commits since its dependencies were last set up change (see setUpFrom), its worker's own included, or
+// that git can't say what they change; "" when they change none.
+func (o *Loop) setupDue(ctx context.Context, id, before, now string, globs []string) string {
+	from := o.setUpFrom(id, before)
+	if from == "" || now == "" {
+		return "git could not say what changed since its dependencies were last set up"
+	}
+	changed := setupFilesIn(o.history.ChangedFiles(ctx, o.cfg.Repo, from, now), globs)
+	if len(changed) == 0 {
+		return ""
+	}
+	return fileList(changed) + " changed since its dependencies were last set up"
 }
 
 // setUpFrom is the commit ticket id's dependencies were last set up for in this run; before, its
@@ -65,6 +103,180 @@ func (o *Loop) setUpFrom(id, before string) string {
 		o.setUpFor[id] = before
 	}
 	return before
+}
+
+// setUpAt records that ticket id's dependencies are set up for commit at; "" (git couldn't say)
+// records nothing.
+func (o *Loop) setUpAt(id, at string) {
+	if at == "" {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.setUpFor[id] = at
+}
+
+// setUpWorktree runs the setup command in the ticket's worktree p before its worker starts there,
+// within the check's time limit: always in a new one, where nothing is installed, and in one reused
+// when the last setup there failed (see setupFailedIn) or the commits since its dependencies were
+// last set up change a file the setup's globs match, as before the check (see setUp). It records the
+// commit it set up for, so that the check after the ticket sets them up again only for what changes
+// since. A worker adopted, or handed its ticket back, is in its worktree already: this runs only for
+// one about to start. It reports whether the ticket's run is over, as its setup failed (see
+// leaveSetupFailed), or Ctrl+C came, the reason the run stops for then.
+func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool, *stopReason) {
+	o, id := r.o, r.id
+	s := o.setupNow()
+	if s.cmd == "" {
+		return false, nil
+	}
+	now := o.checkout.Head(r.keep, o.cfg.Repo, r.br)
+	what, failedThere := "running '"+s.cmd+"' in its new worktree", setupFailedIn(p.wt)
+	switch {
+	case p.fresh:
+		o.forgetSetUp(id) // a worktree it had before, since removed, was set up for itself
+	case failedThere:
+		what = "the last setup in its worktree failed; running '" + s.cmd + "' there again"
+	default:
+		why := o.setupDue(r.keep, id, p.before, now, s.files)
+		if why == "" {
+			return false, nil
+		}
+		what = why + "; running '" + s.cmd + "' in its worktree"
+	}
+	o.info("  %s: %s before its worker starts", id, what)
+	run, _ := runLimited(ctx, p.wt, o.checkTimeout(), s.cmd)
+	defer run.out.close()
+	switch {
+	case run.err == nil:
+		o.setUpAt(id, now)
+		if failedThere {
+			o.dropSetupLog(p.wt)
+		}
+		return false, nil
+	case ctx.Err() != nil:
+		return true, errInterrupted // stopped by Ctrl+C, it says nothing of the setup
+	}
+	r.leaveSetupFailed(s.cmd, p.wt, run)
+	return true, nil
+}
+
+// setupFailedIn reports whether the last setup in worktree wt failed, in this run or an earlier one:
+// the whole output it kept is there (see keepOutput), until a setup before a worker works there (see
+// dropSetupLog). Its dependencies may then be missing, or half installed.
+func setupFailedIn(wt string) bool {
+	_, err := os.Lstat(filepath.Join(wt, project.RunPath(setupLogName)))
+	return err == nil
+}
+
+// dropSetupLog removes the output a setup that failed in worktree wt kept, now that one has worked
+// there. A failure is logged: the setup then runs again when the worktree is next taken up.
+func (o *Loop) dropSetupLog(wt string) {
+	root, err := project.OpenRun(wt)
+	if err == nil {
+		err = project.RemoveRun(root, wt, project.RunPath(setupLogName))
+		_ = root.Close() // nothing written through it
+	}
+	if err != nil {
+		o.log.Raw("", fmt.Errorf("cannot remove the output of a setup that failed earlier in %s: %w", wt, err))
+	}
+}
+
+// forgetSetUp forgets what ticket id's dependencies were set up for: its worktree is new.
+func (o *Loop) forgetSetUp(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.setUpFor, id)
+}
+
+// leaveSetupFailed puts the ticket back in the queue, open, as the setup cmd failed in its worktree wt
+// (run) before its worker could start: its environment failed, not the ticket, so it isn't set aside.
+// Its worktree is kept, with the whole output, for the next worker to take up. It stays out of the run
+// until a ticket merges, which may bring what the setup needs, or a probe ends a hold for the
+// environment (see retrySetups): taken again at once, it would fail again. It counts toward that hold
+// as a worker failing at once does (see countSettling), so that setups failing ticket after ticket
+// hold the run rather than leave the queue to them.
+func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
+	o, id, keep := r.o, r.id, r.keep
+	r.how = setupFailed
+	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, wt, run.err))
+	output := o.keepOutput(wt, setupLogName, "the setup's", run.out)
+	o.mu.Lock()
+	o.failedSetups[id] = true
+	o.mu.Unlock()
+	if r.t.Status != StatusOpen {
+		if err := o.notes.Reopen(keep, id); err != nil {
+			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+				"  REOPEN_FAILED: %s stays %s, so it won't be back in the queue after its setup failed%s; "+
+					"reopen it with: bd update %s --status open", id, r.t.Status, because(err), id)})
+		}
+	}
+	o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the setup '%s' %s in worktree %s, so no worker was started; "+
+		"back in the queue (the whole output is in %s).", cmd, run.how(), wt, output))
+	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		"  SETUP_FAILED: '%s' %s in %s for %s; the whole output is in %s", cmd, run.how(), wt, id, output)})
+}
+
+// failedSetupIDs are the tickets whose worktree's setup failed, kept out of the run for now (see
+// leaveSetupFailed).
+func (o *Loop) failedSetupIDs() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Collect(maps.Keys(o.failedSetups))
+}
+
+// retrySetups lets the tickets whose worktree's setup failed be taken again: a ticket merged, which
+// may bring what the setup needs, or a probe found the machine working after a hold.
+func (o *Loop) retrySetups() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	clear(o.failedSetups)
+}
+
+// takeSettings has the run take setup and setup_files from settings.json as ticket id's merge
+// committed it to Base, when the merge, from before, changed it: a setup set during the run counts
+// from then on, as the environment ticket a spec's breakdown files first sets it for the tickets after
+// it. One git can't read, or that doesn't parse, is warned of, and the setup stays as it was. The
+// caller holds repoMu, so Base stays where the merge left it.
+func (o *Loop) takeSettings(ctx context.Context, id, before string) {
+	c := o.cfg
+	now := o.checkout.Head(ctx, c.Repo, c.Base)
+	if before == "" || now == "" ||
+		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
+		return
+	}
+	was := o.setupNow()
+	text, err := o.checkout.FileAt(ctx, c.Repo, now, project.SettingsFile)
+	var s project.Settings
+	if err == nil {
+		s, err = project.ParseSettings([]byte(text))
+	}
+	var files []string
+	if err == nil {
+		files, err = project.ResolveSetupFiles(s)
+	}
+	if err != nil {
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  SETTINGS_UNREAD: %s's merge changed %s on %s, but it could not be read%s; the setup stays %s",
+			id, project.SettingsFile, c.Base, because(err), setupSaid(was.cmd))})
+		return
+	}
+	if s.Setup == was.cmd && slices.Equal(files, was.files) {
+		return
+	}
+	o.mu.Lock()
+	o.setupSet = &setupConf{cmd: s.Setup, files: files}
+	o.mu.Unlock()
+	o.info("  SETUP: %s's merge changed %s on %s: the setup is %s from now on",
+		id, project.SettingsFile, c.Base, setupSaid(s.Setup))
+}
+
+// setupSaid names the setup command cmd for a line: quoted, or "none".
+func setupSaid(cmd string) string {
+	if cmd == "" {
+		return "none"
+	}
+	return "'" + cmd + "'"
 }
 
 // setupFilesIn lists the files that one of globs matches: its name, or its path from the

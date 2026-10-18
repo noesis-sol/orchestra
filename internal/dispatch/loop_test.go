@@ -65,6 +65,9 @@ func (cleanCheckout) CurrentBranch(ctx context.Context, repo string) (string, er
 }
 func (cleanCheckout) Head(ctx context.Context, repo, rev string) string      { return "abc" }
 func (cleanCheckout) TrackedFiles(ctx context.Context, repo string) []string { return nil }
+func (cleanCheckout) FileAt(ctx context.Context, repo, rev, path string) (string, error) {
+	return "", fmt.Errorf("fatal: path '%s' does not exist in '%s'", path, rev)
+}
 
 // newWorktrees creates every worktree.
 type newWorktrees struct{}

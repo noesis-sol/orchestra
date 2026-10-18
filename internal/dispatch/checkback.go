@@ -99,7 +99,7 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 // before it.
 func (o *Loop) failedWhat(setup bool) string {
 	if setup {
-		return "the setup '" + o.cfg.Setup + "', run before the check,"
+		return "the setup '" + o.setupNow().cmd + "', run before the check,"
 	}
 	return "'" + o.cfg.Check + "'"
 }

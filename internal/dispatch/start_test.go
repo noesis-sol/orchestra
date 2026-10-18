@@ -95,10 +95,11 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.orch.cfg.WTRoot = t.TempDir()
-	wt, conflicts, s := f.orch.prepareWorktree(context.Background(), "k-1", "wt/k-1")
-	if s != nil || conflicts {
-		t.Fatalf("stop %v, conflicts %v", s, conflicts)
+	p, conflicts, s := f.orch.prepareWorktree(context.Background(), "k-1", "wt/k-1")
+	if s != nil || conflicts || !p.fresh {
+		t.Fatalf("stop %v, conflicts %v, fresh %v", s, conflicts, p.fresh)
 	}
+	wt := p.wt
 	if want := filepath.Join(f.orch.cfg.WTRoot, "k-1"); wt != want {
 		t.Errorf("worktree = %q, want a fresh one at %q", wt, want)
 	}

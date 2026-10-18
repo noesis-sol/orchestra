@@ -36,6 +36,16 @@ All notable changes to orchestra are documented here. The format follows
   pane's agent, is found unnamed in its pane and named again, rather than
   taken for gone and its session resumed in a second tab beside it, which
   then stopped the run (`PAUSED`) at the next loss of the name.
+- The project's `setup` runs in each new worktree before its worker starts,
+  within the check's time limit, and again in a reused one whose rebase
+  changes a file it reads, so workers start with the dependencies installed,
+  and their standing rules say so. The check after the ticket runs it again
+  only for a file it reads that changed since. A setup that fails there
+  starts no worker (`SETUP_FAILED`): the ticket goes back in the queue, open
+  and not set aside, until a ticket merges, and setups failing ticket after
+  ticket hold the run for the environment. A merge that changes `setup` or
+  `setup_files` in `.orchestra/settings.json` has the run use them from then
+  on.
 
 ## [0.8.1] - 2026-10-18
 

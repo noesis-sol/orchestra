@@ -302,6 +302,13 @@ func (Git) Head(ctx context.Context, repo, rev string) string {
 	return strings.TrimSpace(out) // "" on failure, as documented
 }
 
+// FileAt returns the content of the file at path, from the repository's top, in commit rev, as
+// committed. It returns git's error when rev has no such file, or git can't say.
+func (Git) FileAt(ctx context.Context, repo, rev, path string) (string, error) {
+	// cat-file, not show: the blob as committed, without the filters and text conversions show may apply.
+	return readGit(ctx, repo, "cat-file", "blob", rev+":"+path)
+}
+
 // TrackedFiles lists the files git tracks in repo, or nil if git can't.
 func (Git) TrackedFiles(ctx context.Context, repo string) []string {
 	out, err := readGit(ctx, repo, "ls-files", "-z")

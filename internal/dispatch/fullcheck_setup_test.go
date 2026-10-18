@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,11 +47,17 @@ func TestFullCheckSetupFailureFilesNoTicket(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
-		ran := filepath.Join(t.TempDir(), "ran")
-		h.cfg.Setup = "echo 'SUITE: e2e'; echo 'npm ERR! offline'; exit 1"
+		dir := t.TempDir()
+		ran, offline := filepath.Join(dir, "ran"), filepath.Join(dir, "offline")
+		h.cfg.Setup = "! test -f " + offline + " || { echo 'SUITE: e2e'; echo 'npm ERR! offline'; exit 1; }"
 		h.cfg.CheckFull = "touch " + ran
 		h.beads.add("A", "first", 1)
-		h.worker("A", finishes("a.txt"))
+		h.worker("A", func(w *fakeWorker) AgentState { // the setup worked in its worktree, and fails from now on
+			if err := os.WriteFile(offline, nil, 0o644); err != nil {
+				t.Error(err)
+			}
+			return finishes("a.txt")(w)
+		})
 		o, code := h.runAndCheck(t.Context())
 		if code != ExitOK {
 			t.Fatalf("exit %d\n%s", code, h.sink.text())

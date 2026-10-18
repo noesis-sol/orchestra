@@ -16,15 +16,30 @@ import (
 // foreground. Workers of other kinds get the whole prompt as their first message.
 
 // workerRules are ticket id's worker's standing rules: the worker prompt with its TICKET_ID filled
-// in, and what the run adds for the whole of the ticket (its scope, its time limit, the usage limit).
+// in, and what the run adds for the whole of the ticket (its scope, its setup, its time limit, the
+// usage limit).
 func (o *Loop) workerRules(id string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.budgetNote() + o.limitNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.budgetNote() +
+		o.limitNote()
 }
 
 // fullPrompt is ticket id's whole prompt as one first message, for a worker without its rules in
 // its system prompt: the worker prompt, then first (see firstNotes) and the run's notes.
 func (o *Loop) fullPrompt(id, first string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.budgetNote() + o.limitNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.setupNote() +
+		o.budgetNote() + o.limitNote()
+}
+
+// setupNote tells a worker that its worktree's dependencies are installed with the project's setup
+// command (see setUpWorktree), so that it doesn't install them again itself, but does after changing
+// what they are installed from; "" when the project has none.
+func (o *Loop) setupNote() string {
+	cmd := o.setupNow().cmd
+	if cmd == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n\nThis worktree's dependencies are installed with '%s'. Run it again only after "+
+		"changing a file it reads, such as a manifest or a lockfile.\n", cmd)
 }
 
 // limitNote tells a Claude worker what to do at the account's usage limit, which Claude Code may let its

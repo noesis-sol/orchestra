@@ -77,10 +77,19 @@ func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 	}
 }
 
+// preparedWorktree is a ticket's worktree as prepareWorktree left it: where it is, and whether it is
+// new, or else its branch's commit before it was brought up to date with Base.
+type preparedWorktree struct {
+	wt     string
+	fresh  bool   // made now: nothing is installed in it
+	before string // a reused one's branch's commit before its rebase onto Base; "" when git can't say
+}
+
 // prepareWorktree creates the ticket's worktree, or reuses the one left by an earlier attempt and
 // brings its branch up to date, holding the repository lock. conflicts reports a branch that could
 // not be rebased onto Base.
-func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, conflicts bool, stop *stopReason) {
+func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWorktree, conflicts bool,
+	stop *stopReason) {
 	c := o.cfg
 	defer o.markFinishing(id, finishWorktree)()
 	o.repoMu.Lock()
@@ -89,23 +98,24 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (wt string, c
 	// When git can't list the worktrees, none is reused, and adding one fails with git's reason.
 	if wt, _ := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
-		return wt, !o.refreshBranch(ctx, wt, br), nil
+		p = preparedWorktree{wt: wt, before: o.checkout.Head(ctx, c.Repo, br)}
+		return p, !o.refreshBranch(ctx, wt, br), nil
 	}
-	wt = filepath.Join(c.WTRoot, id)
+	p = preparedWorktree{wt: filepath.Join(c.WTRoot, id), fresh: true}
 	var out string
 	var err error
 	if o.worktrees.HasBranch(ctx, c.Repo, br) {
-		out, err = o.worktrees.AddWorktree(ctx, c.Repo, wt, br)
+		out, err = o.worktrees.AddWorktree(ctx, c.Repo, p.wt, br)
 	} else {
-		out, err = o.worktrees.NewWorktree(ctx, c.Repo, wt, br, c.Base)
+		out, err = o.worktrees.NewWorktree(ctx, c.Repo, p.wt, br, c.Base)
 	}
 	o.log.Raw(out, err)
 	if err != nil {
-		return "", false, halt(ExitTool, stopWorktreeFailed, " for %s at %s (git output is in %s)",
-			id, wt, c.LogPath).causedBy(err)
+		return preparedWorktree{}, false, halt(ExitTool, stopWorktreeFailed, " for %s at %s (git output is in %s)",
+			id, p.wt, c.LogPath).causedBy(err)
 	}
-	o.info("  worktree %s on %s", wt, br)
-	return wt, !o.refreshBranch(ctx, wt, br), nil
+	o.info("  worktree %s on %s", p.wt, br)
+	return p, !o.refreshBranch(ctx, p.wt, br), nil
 }
 
 // earlierNote tells a new worker what an earlier attempt at its ticket left on branch br and in

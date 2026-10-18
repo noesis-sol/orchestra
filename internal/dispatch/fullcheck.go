@@ -95,22 +95,22 @@ func (o *Loop) FullCheck(ctx context.Context) {
 		return
 	}
 	defer o.removeFullCheckWorktree(keep, wt)
-	limit := o.fullCheckTimeout()
+	limit, setup := o.fullCheckTimeout(), o.setupNow().cmd
 	what := "'" + c.CheckFull + "'"
-	if c.Setup != "" {
-		what = fmt.Sprintf("'%s', then %s,", c.Setup, what)
+	if setup != "" {
+		what = fmt.Sprintf("'%s', then %s,", setup, what)
 	}
 	o.info("  FULL_CHECK: running %s on %s at %s in %s (time limit %s)",
 		what, c.Base, short(f.at), wt, command.ShortDuration(limit))
 	began := time.Now()
 	cmds := []string{c.CheckFull}
-	if c.Setup != "" { // always: nothing is installed in a new worktree
-		cmds = []string{c.Setup, c.CheckFull}
+	if setup != "" { // always: nothing is installed in a new worktree
+		cmds = []string{setup, c.CheckFull}
 	}
 	run, failed := runLimited(ctx, wt, limit, cmds...)
 	defer run.out.close()
-	if c.Setup != "" && failed == 0 {
-		f.setup = c.Setup
+	if setup != "" && failed == 0 {
+		f.setup = setup
 	}
 	f.took = time.Since(began).Round(time.Second)
 	switch {

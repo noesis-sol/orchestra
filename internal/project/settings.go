@@ -38,7 +38,8 @@ type Settings struct {
 	// CheckFullTimeout is how long CheckFull may run, unless --check-full-timeout says otherwise.
 	// Empty: DefaultCheckFullTimeout.
 	CheckFullTimeout string `json:"check_full_timeout,omitempty"`
-	// Setup installs the project's dependencies in a worktree, such as "npm ci". orchestra runs it before
+	// Setup installs the project's dependencies in a worktree, such as "npm ci". orchestra runs it in
+	// each new worktree before its worker starts, so the worker finds them installed, and before
 	// CheckFast on a finished ticket whose rebase changed one of SetupFiles, so the check doesn't run
 	// against dependencies installed for the code before the rebase. Empty: never run.
 	Setup string `json:"setup,omitempty"`
@@ -165,6 +166,9 @@ var DefaultSetupFiles = []string{
 // SettingsPath is where the project's settings.json is.
 func SettingsPath(repo string) string { return filepath.Join(repo, Dir, SettingsName) }
 
+// SettingsFile is settings.json's path from the repository's top, as git names it.
+const SettingsFile = Dir + "/" + SettingsName
+
 // LoadSettings reads the project's settings; ok is false if there are none. The old check and
 // check_timeout are read as check_fast and check_fast_timeout, where those aren't set.
 func LoadSettings(repo string) (s Settings, ok bool, err error) {
@@ -175,8 +179,18 @@ func LoadSettings(repo string) (s Settings, ok bool, err error) {
 	if err != nil {
 		return Settings{}, false, err
 	}
-	if err := json.Unmarshal(b, &s); err != nil {
+	if s, err = ParseSettings(b); err != nil {
 		return Settings{}, false, fmt.Errorf("%s: %w", SettingsPath(repo), err)
+	}
+	return s, true, nil
+}
+
+// ParseSettings reads settings, the content of a settings.json, as LoadSettings does: a run reads the
+// one a merge commits this way (see SettingsFile).
+func ParseSettings(settings []byte) (Settings, error) {
+	var s Settings
+	if err := json.Unmarshal(settings, &s); err != nil {
+		return Settings{}, err
 	}
 	if s.CheckFast == "" {
 		s.CheckFast = s.Check
@@ -184,7 +198,7 @@ func LoadSettings(repo string) (s Settings, ok bool, err error) {
 	if s.CheckFastTimeout == "" {
 		s.CheckFastTimeout = s.CheckTimeout
 	}
-	return s, true, nil
+	return s, nil
 }
 
 // SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know, and

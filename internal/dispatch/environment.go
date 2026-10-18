@@ -48,29 +48,63 @@ const (
 	settledFast                 // it failed at once, as one its environment fails does
 	settledSlow                 // any other way, which ends the row
 	requeued                    // back in the queue, to wait for a ticket to merge: as unsettled
+	// no worker started, as the setup failed in its worktree: as settledFast, its ticket back in the
+	// queue already (see leaveSetupFailed)
+	setupFailed
 )
 
-// countSettling counts a settled worker toward the hold: one that failed at once adds to the tickets
-// failing in a row, and any other ends the row. A ticket failing this way once the run holds is
-// reopened too. Run calls it with each result.
+// fastFail is a ticket in the row failing at once, and whether that was its worktree's setup failing.
+type fastFail struct {
+	id    string
+	setup bool
+}
+
+// countSettling counts a settled worker toward the hold: one that failed at once, or a setup that
+// failed before it could start, adds to the tickets failing in a row, and any other ends the row. A
+// ticket whose worker fails this way once the run holds is reopened too. Run calls it with each
+// result.
 func (o *Loop) countSettling(ctx context.Context, id string, how settling) {
 	n := o.cfg.EnvHoldCount
 	if n == 0 || how == unsettled || how == requeued {
 		return
 	}
-	if how != settledFast {
+	if how != settledFast && how != setupFailed {
 		o.fastFails = nil
 		return
 	}
-	o.fastFails = append(o.fastFails, id)
+	o.fastFails = append(o.fastFails, fastFail{id: id, setup: how == setupFailed})
 	switch {
 	case o.envStop != nil:
-		o.reopenFailed(ctx, id)
+		if how == settledFast {
+			o.reopenFailed(ctx, id)
+		}
 	case len(o.fastFails) >= n:
-		o.holdForEnvironment(ctx, fmt.Sprintf(
-			"the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
-			len(o.fastFails), strings.Join(o.fastFails, ", "), command.ShortDuration(o.cfg.EnvHoldWindow)))
+		o.holdForEnvironment(ctx, o.fastFailsWhy())
 	}
+}
+
+// fastFailsWhy says why the row of tickets failing at once holds the run: their workers settled at
+// once, the setup failed in their worktrees, or some of each.
+func (o *Loop) fastFailsWhy() string {
+	ids, setups := make([]string, len(o.fastFails)), 0
+	for i, f := range o.fastFails {
+		ids[i] = f.id
+		if f.setup {
+			setups++
+		}
+	}
+	n, list, window := len(ids), strings.Join(ids, ", "), command.ShortDuration(o.cfg.EnvHoldWindow)
+	switch setups {
+	case 0:
+		return fmt.Sprintf("the last %d tickets (%s) each settled within %s of starting without being claimed or changed",
+			n, list, window)
+	case n:
+		return fmt.Sprintf("the setup %s failed in the worktrees of the last %d tickets (%s)",
+			setupSaid(o.setupNow().cmd), n, list)
+	}
+	return fmt.Sprintf("the last %d tickets (%s) each failed at once: the setup %s failed in their worktree, "+
+		"or their worker settled within %s of starting without being claimed or changed",
+		n, list, setupSaid(o.setupNow().cmd), window)
 }
 
 // verdict is triage's verdict on a deferred ticket, as the hold counts it, with the hold's
@@ -114,15 +148,18 @@ func (o *Loop) triaged(ctx context.Context, v verdict) {
 }
 
 // holdForEnvironment holds the run, once, and reopens the tickets in the current row of workers
-// that failed at once. Run picks the reason up before it starts another ticket.
+// that failed at once; those whose setup failed are back in the queue already. Run picks the reason up
+// before it starts another ticket.
 func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 	if o.envStop != nil {
 		return
 	}
 	o.envWhy = why
 	o.envStop = halt(ExitEnvironment, stopEnvironment, ": %s; check the machine, then restart", why)
-	for _, id := range o.fastFails {
-		o.reopenFailed(ctx, id)
+	for _, f := range o.fastFails {
+		if !f.setup {
+			o.reopenFailed(ctx, f.id)
+		}
 	}
 }
 
@@ -193,9 +230,11 @@ func (o *Loop) probeEnvironment(
 			o.envWhy, command.ShortDuration(after), err).causedBy(err)
 	}
 	o.closeTab(ctx, tab)
-	// Triage's verdicts still to come on the tickets queued so far are forgotten with the row.
+	// Triage's verdicts still to come on the tickets queued so far are forgotten with the row, and the
+	// tickets whose setup failed are taken again, as those reopened are.
 	o.envGen.Add(1)
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
+	o.retrySetups()
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
 		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again",
 		command.ShortDuration(after))})

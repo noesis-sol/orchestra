@@ -519,8 +519,8 @@ func (r *runState) returned(res result) {
 	o.stoppedBy(res.id, res.stop)
 	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
-	if res.counted && res.how == requeued {
-		r.count-- // it started too early, and counts once it starts again
+	if res.counted && (res.how == requeued || res.how == setupFailed) {
+		r.count-- // it started too early, or not at all, and counts once it starts again
 	}
 	if res.id == r.solo.running {
 		r.solo.running = ""
@@ -755,6 +755,11 @@ func (r *runState) pick() (*Ticket, queue, error) {
 	// A ticket whose worker the last run left, kept for a later run, is that worker's: its question
 	// answered, it would otherwise get a second worker in the same worktree.
 	for _, id := range o.keptOutIDs() {
+		skip[id] = true
+	}
+	// A ticket whose worktree's setup failed waits for what may bring what the setup needs: taken
+	// again at once, its setup would fail again (see leaveSetupFailed).
+	for _, id := range o.failedSetupIDs() {
 		skip[id] = true
 	}
 	// A ticket whose ID isn't a plain name is set aside before its ID is made a path or a branch.

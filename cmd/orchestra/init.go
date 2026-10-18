@@ -167,8 +167,8 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 		"how long check-full may run at the end of a run, e.g. 90m (default "+
 			project.DefaultCheckFullTimeoutText+")").check = positive(&f.fullTimeout.Value)
 	bindGiven(e, fs.StringVar, &f.setup, "setup", "", "", parseText, "the command that installs the dependencies "+
-		"in a worktree, run before check-fast when a rebase changes a lockfile, e.g. \"npm ci\"; \"\" for none "+
-		"(offered for a lockfile when omitted; an existing setting is kept)")
+		"in a worktree, run in each new one before its worker starts and before check-fast when a rebase changes a "+
+		"lockfile, e.g. \"npm ci\"; \"\" for none (offered for a lockfile when omitted; an existing setting is kept)")
 	fs.BoolVar(&f.force, "force", false, "replace an existing .orchestra/worker-prompt.md with the template")
 	bindGiven(e, fs.BoolVar, &f.union, "changelog-union", "", false, parseOnOff, "add 'CHANGELOG.md merge=union' "+
 		"to .gitattributes, so two tickets' changelog entries don't conflict (asked when omitted; =false declines)")

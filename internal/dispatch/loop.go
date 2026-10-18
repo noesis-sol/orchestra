@@ -142,7 +142,12 @@ type ledger struct {
 	checkSaid map[string]checkFail // what each ticket's last check in this run said, if it failed
 	rechecks  []recheck            // tickets set aside for a failed check, to check again once Base moves on
 	rechecked map[string]bool      // tickets taken up to be checked again (see dueRecheck)
-	setUpFor  map[string]string    // the commit each finished ticket's dependencies were set up for (see setUp)
+	setUpFor  map[string]string    // the commit each ticket's dependencies were set up for (see setUp, setUpWorktree)
+	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
+	// nil for Config's. failedSetups: the tickets whose worktree's setup failed, kept out of the run until
+	// a ticket merges or a probe ends a hold (see setUpWorktree).
+	setupSet     *setupConf
+	failedSetups map[string]bool
 	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
 	// many times pick has read bd ready; baseAt, the commit Base was on as a pick last read it (see
 	// pickHead).
@@ -180,7 +185,8 @@ func newLedger() ledger {
 	return ledger{
 		active: map[string]Status{}, finishing: map[string]string{}, unmerged: map[string]string{},
 		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
-		setUpFor: map[string]string{}, blockers: map[string]blockLinks{}, askedIDs: map[string]workerSpot{},
+		setUpFor: map[string]string{}, failedSetups: map[string]bool{}, blockers: map[string]blockLinks{},
+		askedIDs: map[string]workerSpot{},
 		leftOpen: map[string]leftOpen{}, placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
 		parentOf: map[string]string{}, footprints: map[string]*runFootprint{},
 	}
@@ -212,15 +218,15 @@ type triageQueue struct {
 }
 
 // envHold is the hold for the environment, Run's own until Run has returned (runDone), then
-// triage's: the tickets whose workers failed at once in a row, the tickets triage blamed on the
-// environment in a row, the reason once the run holds, with why, and whether the machine was probed
-// in this run. Workers say how they settled on their result; triage hands its verdicts over on
+// triage's: the tickets whose workers failed at once, or whose setup failed, in a row, the tickets
+// triage blamed on the environment in a row, the reason once the run holds, with why, and whether the
+// machine was probed in this run. Workers say how they settled on their result; triage hands its verdicts over on
 // verdicts until Run has returned, then counts them itself, as nothing else does by then. envGen
 // counts the holds a probe has ended: each deferral is stamped with it as it is queued for triage,
 // and its verdict counts toward the hold only while envGen is unchanged. Only Run changes it, but
 // workers read it as they defer: atomic.
 type envHold struct {
-	fastFails   []string
+	fastFails   []fastFail
 	envVerdicts []string
 	envStop     *stopReason
 	envWhy      string
@@ -486,9 +492,11 @@ type Config struct {
 	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.
 	CheckFull        string
 	CheckFullTimeout time.Duration
-	// Setup installs the project's dependencies (setup), run before Check on a rebased branch when the
-	// rebase changed a file SetupFiles matches, for at most CheckTimeout, and always before CheckFull,
-	// within its time limit; "" for none (see setUp and FullCheck).
+	// Setup installs the project's dependencies (setup), run in a ticket's new worktree before its worker
+	// starts, and before Check on a rebased branch when the rebase changed a file SetupFiles matches, for
+	// at most CheckTimeout each, and always before CheckFull, within its time limit; "" for none (see
+	// setUpWorktree, setUp and FullCheck). A merge that commits others to Base's settings.json replaces
+	// them from then on (see takeSettings).
 	Setup      string
 	SetupFiles []string
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
