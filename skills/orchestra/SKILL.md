@@ -118,7 +118,8 @@ Where the project keeps a `CHANGELOG.md`, ask whether to add `CHANGELOG.md merge
 `--changelog-union` or `--changelog-union=false`; without either, `init` leaves it alone.
 Where the repository has a lockfile, pass `--setup "<command>"`, the command that installs its dependencies
 (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync`, `bundle install`, …; the summary names the one it found),
-which orchestra runs before the merge check when a rebase changes a lockfile; `--setup ""` for none.
+which orchestra runs in each new worktree before its worker starts, and before the merge check when a
+rebase changes a lockfile; `--setup ""` for none.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 
@@ -270,6 +271,12 @@ committed where it is. Run again later, the same command carries on with what is
   sets it up itself as `init` does without a terminal (bd init, the worker prompt, runners that check
   nothing yet, no MCP servers for workers) and commits that with the spec. Outside a git repository
   it says to run `git init` first: ask the user before you do. It never installs `bd`.
+- **The environment setup ticket comes first**, P0 and `solo`, every other ticket waiting for it, when
+  the spec needs a tool the repository doesn't have or there is no code yet: its worker installs the
+  toolchain without `sudo`, scaffolds a project with no code, installs the dependencies and sets
+  `setup`, which the run then runs in each new worktree (`SETUP: <id>'s merge changed
+  .orchestra/settings.json …`). A tool it can't install without `sudo`, a GUI installer or a licence
+  is a question for the user (`bd human list`): the run waits on it. Relay it; don't install it yourself.
 - **Run again, the same command carries on**: with the spec unchanged, it runs what is left under the
   root epic (`the spec <path> is unchanged; carrying on with <root>`), or says `✓ <path> is built
   (<root>)` and exits 0; with the spec changed, it commits it and the breakdown files tickets for the
@@ -422,7 +429,7 @@ ended with, say why it ended:
 | `BLOCKED >4min` | 3 | a worker sat on an approval or question dialog | Show the user the dialog; don't answer it yourself. |
 | `UNKNOWN >5min` | 3 | the terminal couldn't tell what a worker was doing for 5 minutes (Herdr from its screen, or in tmux and cmux its hooks) | Read its tab: it may be hung, or its status undetectable for its agent kind. Tell the user what you see. |
 | `TICKET_LIMIT` | 3 | a worker was still going after the ticket limit | Read its tab: a hung command, or a big ticket. Tell the user; if the worker finishes later, the next run merges it. |
-| `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
+| `ENVIRONMENT` | 7 | the last tickets' workers all failed at once (settled soon after dispatch without claiming or changing anything, or the setup failed in their new worktrees before they could start), or triage blamed the environment for each with high confidence: the machine, not the tickets | If the line says a probe failed too, read the probe's tab (`orchestra-probe`) first: the run already waited and tried once more. Check the machine: read the workers' tabs and the triage notes for the cause (a refused permission or safety check, a missing tool, the network). Tell the user what you find. Tickets that failed at once were reopened already, and those whose setup failed are open; reopen triaged ones with `bd update <id> --status open` once the cause is fixed. Then restart the run. |
 | `USAGE_LIMIT` | 8 | a worker reached the account's usage limit, and the run held for it longer than `usage_limit_wait` (6h by default) | Nothing to fix: the limited workers are left in their tabs, noted on their tickets. Tell the user when the limit resets (the line says); the next run carries the workers over and tells them to carry on once it has. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
@@ -550,6 +557,11 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 - `INTERRUPTED: … (tab …, resolving conflicts: its rebase is left in progress …)`: the run stopped
   during a hand-back. The worker may still finish the rebase in its tab; once `git status` in its
   worktree shows no rebase, run the check there and merge the branch by hand (see below).
+- `SETUP_FAILED`: the project's `setup` failed (or ran past `check_fast_timeout`) in a ticket's
+  worktree before its worker could start. No worker started and the ticket is open, not set aside: it
+  is taken again once a ticket merges, and setups failing ticket after ticket hold the run
+  (`ENVIRONMENT`). Read the output the line names (`.orchestra/run/setup.log` in that worktree) with
+  the user: a missing tool, the network or a registry, or a setup command that is wrong.
 - `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
   means the check hung or ran past `check_fast_timeout` and was stopped: a hang, or a limit set too low,

@@ -23,10 +23,10 @@ import (
 // In a repository orchestra init hasn't set up, the run sets it up itself, with init's defaults as
 // init takes them without a terminal (specSetupChoice): bd init where Beads isn't set up, the
 // worker prompt, runners that check nothing yet and the settings. It files no test work and installs
-// no skill: the breakdown's first ticket scaffolds the project and its checks. It then commits what
-// it wrote, with the spec, as a ticket's worktree has only what is committed; in a repository with
-// no commit yet, that is the first. Nothing is installed unattended: bd missing is a setup problem,
-// as is a folder that isn't a git repository.
+// no skill: the breakdown's first ticket, the environment setup, scaffolds the project and its
+// checks. It then commits what it wrote, with the spec, as a ticket's worktree has only what is
+// committed; in a repository with no commit yet, that is the first. Nothing is installed unattended:
+// bd missing is a setup problem, as is a folder that isn't a git repository.
 
 // noRepoForSpec is a spec run's setup problem outside a git repository.
 const noRepoForSpec = "Not inside a git repository: cd into the project first, or for a new one, " +
