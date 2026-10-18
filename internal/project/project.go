@@ -529,7 +529,7 @@ func NextSteps(
 		}
 	}
 	if workerEffort == "" {
-		next = append(next, "Workers run at Claude Code's default effort. To choose one, set \"worker_effort\" ("+
+		next = append(next, "Workers run at "+DefaultWorkerEffort+" effort. To choose another, set \"worker_effort\" ("+
 			strings.Join(Efforts, ", ")+") in "+Dir+"/"+SettingsName+", or run with --worker-effort.")
 	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.

@@ -506,7 +506,7 @@ type Config struct {
 	// handed back to its worker to fix (see checkRebased), within ResolveTimeout each; 0 for never.
 	CheckHandBacks int
 	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome, and
-	// --effort when the project sets one.
+	// --effort.
 	WorkerArgs []string
 	// WorkerPermissionMode is the permission mode Claude workers start in (claude --permission-mode),
 	// when the workers' claude lists it (see permissionArgs); "" for Claude Code's own default.

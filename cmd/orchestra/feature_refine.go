@@ -249,8 +249,9 @@ func (b refineBreakdown) talkFeature(ctx context.Context, request, run string) (
 	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, project.RefineFeature) }
 	session := terminal
 	if b.pane != "" {
-		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, fallback: terminal,
-			out: b.out, err: b.err, progress: b.line, about: featureSubject{first: message, tracker: b.epics}}.talk
+		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, effort: b.effort,
+			fallback: terminal, out: b.out, err: b.err, progress: b.line,
+			about: featureSubject{first: message, tracker: b.epics}}.talk
 	}
 	err = session(ctx, prompt)
 	epic, fileErr := project.FiledFeature(b.repo)

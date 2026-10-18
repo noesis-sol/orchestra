@@ -76,10 +76,10 @@ func TestConfigKeepsChromeOutOfWorkersUnlessChosen(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ settings, want string }{
-		{`{}`, ""}, // not chosen: whatever Claude Code finds
-		{`{"mcp_servers": []}`, "--no-chrome"},
-		{`{"mcp_servers": ["exa"]}`, "--no-chrome"},
-		{`{"mcp_servers": ["exa", "claude-in-chrome"]}`, "--chrome"},
+		{`{}`, "--effort high"}, // not chosen: whatever Claude Code finds
+		{`{"mcp_servers": []}`, "--no-chrome --effort high"},
+		{`{"mcp_servers": ["exa"]}`, "--no-chrome --effort high"},
+		{`{"mcp_servers": ["exa", "claude-in-chrome"]}`, "--chrome --effort high"},
 	} {
 		if err := os.WriteFile(".orchestra/settings.json", []byte(tc.settings), 0o644); err != nil {
 			t.Fatal(err)

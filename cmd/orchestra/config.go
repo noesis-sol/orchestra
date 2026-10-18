@@ -182,7 +182,7 @@ type options struct {
 	Review       bool   // reviewer organ when the loop stops
 	OrganModel   string // model for the organs; "" uses the claude CLI's default
 	OrganEffort  string // effort for every organ; "" gives each its own
-	WorkerEffort string // effort for Claude workers; "" is Claude Code's default
+	WorkerEffort string // effort for Claude workers and the refine session, resolved as project.ResolveWorkerEffort
 	yes          bool   // --yes, which is gone: a run given it ends saying so
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
@@ -355,8 +355,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
 			"else low for triage, the predictor and screening, medium for the run report, high for planning) [ORGAN_EFFORT]")
 	bindEnv(e, fs.StringVar, &c.WorkerEffort, "worker-effort", "WORKER_EFFORT", "", parseText,
-		"effort Claude workers start at: low, medium, high, xhigh or max "+
-			"(default: .orchestra/settings.json, else Claude Code's default) [WORKER_EFFORT]")
+		"effort Claude workers, and a spec's or feature's talk-through, start at: low, medium, high, xhigh or max "+
+			"(default: .orchestra/settings.json, else high) [WORKER_EFFORT]")
 	bindEnv(e, fs.StringVar, &c.WorkerPermissionMode, "worker-permission-mode", "WORKER_PERMISSION_MODE", "",
 		parseText, "permission mode Claude workers start in: default (or manual, its name in newer Claude Code), "+
 			"acceptEdits or auto, where Claude Code's classifier decides and asks only when it can't (default: "+
@@ -566,8 +566,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
-	ok := keep(&problems, &c.WorkerEffort)(project.ResolveEffort(c.WorkerEffort, "worker_effort", settings.WorkerEffort))
-	if ok && c.WorkerEffort != "" {
+	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(c.WorkerEffort, settings)) {
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
 	}
 	keep(&problems, &c.WorkerPermissionMode)(

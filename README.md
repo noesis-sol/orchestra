@@ -75,7 +75,7 @@ How a run goes:
 | `--feature "<request>"` | talk a request through with you in Claude Code, which files it as an epic and its tickets, and run them |
 | `--spec <file>` | commit a spec, break it down into an epic and its tickets, and run them, unattended; `--refine` breaks it down with you |
 | `--ticket-limit 2h` | stop if a worker is still going this long after its ticket started |
-| `--worker-effort medium` | Claude workers' effort (`low` … `max`) |
+| `--worker-effort medium` | Claude workers' effort (`low` … `max`; `high` if unset) |
 | `-plain` | log lines instead of the dashboard |
 | `LIMIT=40`, `NOTIFY=0`, `TRIAGE=0`, `REVIEW=0` | tickets per run, macOS notifications, the triage and report organs |
 

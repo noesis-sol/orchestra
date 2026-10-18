@@ -75,7 +75,7 @@ type Settings struct {
 	// server Claude Code finds; [] gives them none.
 	MCPServers *[]string `json:"mcp_servers,omitempty"`
 	// WorkerEffort is the effort Claude workers are started at (claude --effort), unless
-	// --worker-effort says otherwise. Empty: Claude Code's own default.
+	// --worker-effort says otherwise. Empty: DefaultWorkerEffort.
 	WorkerEffort string `json:"worker_effort,omitempty"`
 	// WorkerPermissionMode is the permission mode Claude workers are started in (claude
 	// --permission-mode), one of PermissionModes, unless --worker-permission-mode says otherwise.
@@ -131,6 +131,9 @@ const (
 	// DefaultSpecEffort is the effort of a spec's breakdown when settings.json sets none: made once
 	// per spec, it decides the whole run.
 	DefaultSpecEffort = "high"
+	// DefaultWorkerEffort is the effort Claude workers, and the session that refines a spec or talks a
+	// feature through with the user, start at when settings.json sets none.
+	DefaultWorkerEffort = "high"
 )
 
 // The environment hold when settings.json doesn't set it: two tickets in a row, workers failing
@@ -412,6 +415,16 @@ func ResolveSpecEffort(flagValue string, s Settings) (string, error) {
 	effort, err := ResolveEffort(flagValue, "spec_effort", s.SpecEffort)
 	if err == nil && effort == "" {
 		effort = DefaultSpecEffort
+	}
+	return effort, err
+}
+
+// ResolveWorkerEffort picks the effort Claude workers start at: --worker-effort (or WORKER_EFFORT)
+// when given, else the project's setting, else DefaultWorkerEffort.
+func ResolveWorkerEffort(flagValue string, s Settings) (string, error) {
+	effort, err := ResolveEffort(flagValue, "worker_effort", s.WorkerEffort)
+	if err == nil && effort == "" {
+		effort = DefaultWorkerEffort
 	}
 	return effort, err
 }

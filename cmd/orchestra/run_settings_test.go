@@ -76,7 +76,7 @@ func TestPrecedence(t *testing.T) {
 		{"--resolve-conflicts=false", []string{"--resolve-conflicts=false"}, "", "", `{"resolve_conflicts": true}`,
 			func(c options, _ project.Settings) any { return c.ResolveConflicts }, true, true, nil, false},
 		{"--worker-effort", []string{"--worker-effort", "xhigh"}, "WORKER_EFFORT", "max", `{"worker_effort": "medium"}`,
-			func(c options, _ project.Settings) any { return c.WorkerEffort }, "", "medium", "max", "xhigh"},
+			func(c options, _ project.Settings) any { return c.WorkerEffort }, "high", "medium", "max", "xhigh"},
 		{"--worker-permission-mode", []string{"--worker-permission-mode", "acceptEdits"}, "WORKER_PERMISSION_MODE",
 			"default", `{"worker_permission_mode": "auto"}`,
 			func(c options, _ project.Settings) any { return c.WorkerPermissionMode }, "", "auto", "default", "acceptEdits"},
@@ -234,14 +234,14 @@ func TestRunSettingsFromTheProject(t *testing.T) {
 		t.Errorf("resolving in settings: on %v, limit %s, %v", c.ResolveConflicts, c.ResolveTimeout, p)
 	}
 
-	// Claude workers start at the effort given, else Claude Code's default without --effort.
+	// Claude workers start at the effort given, else at high.
 	for _, tc := range []struct {
 		args     []string
 		env      map[string]string
 		settings string
 		want     string
 	}{
-		{nil, nil, `{"mcp_servers": []}`, "--no-chrome"},
+		{nil, nil, `{"mcp_servers": []}`, "--no-chrome --effort high"},
 		{nil, nil, `{"mcp_servers": [], "worker_effort": "medium"}`, "--no-chrome --effort medium"},
 		{[]string{"--worker-effort", "xhigh"}, nil, `{"mcp_servers": [], "worker_effort": "medium"}`,
 			"--no-chrome --effort xhigh"},

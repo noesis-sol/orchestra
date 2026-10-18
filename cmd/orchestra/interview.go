@@ -48,6 +48,7 @@ type paneSession struct {
 	// state from them (tmux, cmux) needs them.
 	hooks    bool
 	repo     string                                         // the main checkout, where claude runs
+	effort   string                                         // claude's --effort; "" for Claude Code's default
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
 	// Where the session stands, on a line under the fixed message, when out is a terminal (nil
@@ -127,7 +128,7 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	args := []string{"--append-system-prompt-file", prompt}
+	args := append([]string{"--append-system-prompt-file", prompt}, effortArgs(p.effort)...)
 	if p.hooks {
 		report, err := claude.Reporter{}.ReportArgsIn(p.repo, project.InterviewRun)
 		if err != nil {

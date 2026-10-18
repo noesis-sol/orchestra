@@ -403,8 +403,8 @@ func TestRefineOnTheTerminal(t *testing.T) {
 func TestRefineNeedsATerminal(t *testing.T) {
 	repo := t.TempDir()
 	var out strings.Builder
-	err := refineOnTerminal(t.Context(), nil, repo, "Break the spec down", project.RefineSpec, strings.NewReader(""), &out,
-		&out)
+	err := refineOnTerminal(t.Context(), nil, repo, "", "Break the spec down", project.RefineSpec,
+		strings.NewReader(""), &out, &out)
 	if !errors.Is(err, errRefineNeedsTerminal) || out.Len() > 0 {
 		t.Errorf("got %v; output:\n%s", err, out.String())
 	}

@@ -4,6 +4,16 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Claude workers start at `--effort high` unless `--worker-effort`,
+  `WORKER_EFFORT` or `"worker_effort"` in `settings.json` chooses another
+  level, rather than at Claude Code's own default. The session that refines
+  a spec (`--spec --refine`) or talks a feature through (`--feature`, New
+  feature) starts at the same effort, resolved the same way.
+
 ## [0.8.1] - 2026-10-18
 
 ### Fixed
