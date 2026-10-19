@@ -302,6 +302,9 @@ type runState struct {
 	files    *repoFiles
 	skipSaid sayOnce
 	warned   map[string]bool
+	// The files git merges by union, or not, as git said in this run (mergesByUnion).
+	unionMu sync.Mutex
+	unions  map[string]bool
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
@@ -309,7 +312,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
 		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
-		warned: map[string]bool{},
+		warned: map[string]bool{}, unions: map[string]bool{},
 	}
 }
 

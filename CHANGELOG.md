@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The files git merges by union (`merge=union` in `.gitattributes`, as
+  `orchestra init` offers for `CHANGELOG.md`) are left out of footprints,
+  both a ready ticket's and the files running workers edit, and out of
+  `LIKELY_CONFLICT` warnings: two tickets' lines in one can't conflict, git
+  keeps both. A ticket naming the changelog no longer waits for every worker
+  that has added an entry to it; footprint skips had left 0.45 slot-hours
+  idle on the changelog alone since 2026-10-13.
 - The verifier reuses the worker's passing check: the worker prompt's Verify
   section has the worker give it the commit at which `check-fast.sh` passed,
   whether `check-full.sh` ran there too, and the file their output is in, and

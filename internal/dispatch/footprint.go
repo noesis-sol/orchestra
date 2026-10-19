@@ -27,6 +27,8 @@ import (
 // project's check commands name, specs under .orchestra/specs/ and the spec a ticket's own metadata
 // names (SpecKey), count only when the metadata lists them: nearly every ticket names the check,
 // asking for it to pass, and every ticket broken down from a spec cites it, without changing them.
+// The files git merges by union (merge=union, as init offers for the changelog) never count: two
+// tickets' lines in one can't conflict, git keeps both.
 type Footprint struct {
 	// Files are paths in the repository, sorted. A folder the files metadata lists is kept as one,
 	// ending in /, beside the tracked files under it: it holds the files under it, those another ticket
@@ -147,7 +149,9 @@ type repoFiles struct {
 	check  map[string]bool     // the files the check commands name (scripts/check.sh)
 	// read gives a repository file's contents, to find the functions it mentions; nil when they
 	// can't be read.
-	read  func(file string) ([]byte, error)
+	read func(file string) ([]byte, error)
+	// union reports whether git merges a repository file by union; nil when it isn't asked.
+	union func(file string) bool
 	mu    sync.Mutex
 	words map[string]map[string]bool // the identifiers in each file read, nil for one that can't be
 }
@@ -221,6 +225,12 @@ const specsDir = project.Dir + "/specs/"
 func (r *repoFiles) inPassing(f, spec string) bool {
 	c := path.Clean(f)
 	return r != nil && r.check[f] || strings.HasPrefix(c, specsDir) || spec != "" && norm.NFC.String(c) == spec
+}
+
+// unioned reports whether git merges f, a file, by union (merge=union in .gitattributes): two
+// tickets' lines in it can't conflict, as git keeps both, so it is no reason to keep them apart.
+func (r *repoFiles) unioned(f string) bool {
+	return r != nil && r.union != nil && !strings.HasSuffix(f, "/") && r.union(f)
 }
 
 // specFile is the path in the repository of the spec ticket t comes from (SpecKey), in NFC as
@@ -656,6 +666,7 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 			globs[g] = true
 		}
 	}
+	maps.DeleteFunc(files, func(f string, _ bool) bool { return repo.unioned(f) })
 	var fp Footprint
 	for _, l := range t.Labels {
 		if strings.HasPrefix(l, AreaPrefix) && len(l) > len(AreaPrefix) {
@@ -723,12 +734,12 @@ func codeSpansIn(text string) map[string]bool {
 }
 
 // predictedFootprint is the footprint of a ticket from spec (specFile) naming nothing, from the files
-// predicted for it but those named in passing (inPassing).
+// predicted for it but those named in passing (inPassing) and those git merges by union (unioned).
 func predictedFootprint(predicted []string, repo *repoFiles, spec string) Footprint {
 	files := map[string]bool{}
 	for _, f := range predicted {
 		for _, p := range repo.resolve(f, false) {
-			if !repo.inPassing(p, spec) {
+			if !repo.inPassing(p, spec) && !repo.unioned(p) {
 				files[p] = true
 			}
 		}
@@ -884,6 +895,23 @@ func (r *runState) readFiles(ctx context.Context) {
 	c := r.o.cfg
 	r.files = newRepoFiles(r.o.checkout.TrackedFiles(ctx, c.Repo), checkCommands(c))
 	r.files.read = func(file string) ([]byte, error) { return ReadSource(c.Repo, file) }
+	r.files.union = r.mergesByUnion
+}
+
+// mergesByUnion reports whether git merges repository file f by union, as .gitattributes says
+// (git check-attr merge), asking git once a file a run. An answer git couldn't give isn't kept.
+func (r *runState) mergesByUnion(f string) bool {
+	r.unionMu.Lock()
+	defer r.unionMu.Unlock()
+	if u, ok := r.unions[f]; ok {
+		return u
+	}
+	merge, err := r.o.checkout.Attribute(r.ctx, r.o.cfg.Repo, "merge", f)
+	if err != nil {
+		return false
+	}
+	r.unions[f] = merge == "union"
+	return r.unions[f]
 }
 
 // checkCommands are the project's check commands, the merge check's and the full check's, one a
@@ -959,7 +987,7 @@ func (r *runState) endFootprint(id string) {
 
 // readEdits brings each running ticket's edited files up to date from its worker's reports, and
 // warns once when two running workers edit the same file: the second to merge is likely to
-// conflict.
+// conflict. The files git merges by union are left out: both workers' lines are kept.
 func (r *runState) readEdits() {
 	o := r.o
 	if o.reporter == nil {
@@ -975,9 +1003,11 @@ func (r *runState) readEdits() {
 	o.mu.Unlock()
 	edited := map[string][]string{}
 	for id, wt := range wts {
-		files := o.reporter.EditedFiles(wt)
-		for i, f := range files {
-			files[i] = r.files.file(f) // in the form the footprints' files are in
+		var files []string
+		for _, f := range o.reporter.EditedFiles(wt) {
+			if f = r.files.file(f); !r.files.unioned(f) { // in the form the footprints' files are in
+				files = append(files, f)
+			}
 		}
 		edited[id] = files
 	}

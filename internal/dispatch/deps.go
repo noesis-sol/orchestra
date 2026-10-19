@@ -187,6 +187,8 @@ type Checkout interface {
 	// the content of the file at path, from the repository's top, in commit rev; git's error when it has none
 	FileAt(ctx context.Context, repo, rev, path string) (string, error)
 	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them
+	// the value .gitattributes gives attr for path ("unspecified", "set", "unset" or its value), as git check-attr says
+	Attribute(ctx context.Context, repo, attr, path string) (string, error)
 }
 
 // Worktrees manages the per-ticket worktrees and their branches.

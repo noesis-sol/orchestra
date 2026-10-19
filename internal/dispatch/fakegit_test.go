@@ -33,6 +33,7 @@ type fakeGit struct {
 	conflicts map[string][]string     // the files each of these branches' rebases stops on
 	rebasing  map[string]bool         // worktree folders with a rebase stopped in them
 	dirty     map[string]string       // the uncommitted changes in these worktree folders, as git status shows them
+	unions    map[string]bool         // the files .gitattributes merges by union (merge=union)
 }
 
 func newFakeGit(base string) *fakeGit {
@@ -213,6 +214,25 @@ func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) []string {
 	}
 	slices.Sort(files)
 	return slices.Compact(files)
+}
+
+// mergeByUnion has .gitattributes merge file by union.
+func (g *fakeGit) mergeByUnion(file string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.unions == nil {
+		g.unions = map[string]bool{}
+	}
+	g.unions[file] = true
+}
+
+func (g *fakeGit) Attribute(ctx context.Context, repo, attr, path string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if attr == "merge" && g.unions[path] {
+		return "union", nil
+	}
+	return "unspecified", nil
 }
 
 // Worktrees
