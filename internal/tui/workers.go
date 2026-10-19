@@ -32,13 +32,18 @@ func (m Dashboard) workerList(w int) string {
 	if len(running) == 0 {
 		return m.workerPanels(w)
 	}
+	// Each row's cells are read once, so that the widths and what is drawn come from one reading of the
+	// clock: a time that gains a digit between two readings would otherwise be wider than its column.
+	cells := make([]headCells, len(running))
 	var cols headColumns
-	for _, st := range running {
-		cols = cols.fit(m.headCells(st))
+	for i, st := range running {
+		cells[i] = m.headCells(st)
+		cols = cols.fit(cells[i])
 	}
 	var lines []string
 	for i, st := range running {
-		lines = append(lines, ansi.Truncate(m.alignedHead(i+1, st, cols)+"  "+oneLine(st.Title), boxInner(w), "…"))
+		head := m.alignedHead(i+1, st, cells[i], cols)
+		lines = append(lines, ansi.Truncate(head+"  "+oneLine(st.Title), boxInner(w), "…"))
 	}
 	return box(w, 0, workerBorder(running...), strings.Join(lines, "\n"))
 }
@@ -50,17 +55,16 @@ const numbered = 9
 // memory its process tree takes, once read. A worker beyond the ninth gets no number, only the room
 // for one.
 func (m Dashboard) workerHead(n int, st dispatch.Status) string {
-	return m.alignedHead(n, st, headColumns{})
+	return m.alignedHead(n, st, m.headCells(st), headColumns{})
 }
 
-// alignedHead is workerHead with its ID and status padded to cols and its time and memory
-// right-aligned in cols, so that their digits line up with the other lines'.
-func (m Dashboard) alignedHead(n int, st dispatch.Status, cols headColumns) string {
+// alignedHead is workerHead made of the cells c, its ID and status padded to cols and its time and
+// memory right-aligned in cols, so that their digits line up with the other lines'.
+func (m Dashboard) alignedHead(n int, st dispatch.Status, c headCells, cols headColumns) string {
 	num := "  "
 	if n <= numbered {
 		num = keyStyle.Render(fmt.Sprint(n)) + " "
 	}
-	c := m.headCells(st)
 	head := fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), c.id+padding(c.id, cols.id),
 		c.status+padding(c.status, cols.status), padding(c.time, cols.time)+c.time)
 	if c.mem != "" || cols.mem > 0 {
