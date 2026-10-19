@@ -121,6 +121,9 @@ func depsFrom(d Deps) deps {
 // tallies is where the run's events go and what they counted, all under sinkMu: workers and triage
 // emit from goroutines of their own.
 type tallies struct {
+	// emitMu is held over the whole of an emit, so the log, the event stream and the sink each get the
+	// events in one order, whichever goroutines emit them. It is taken before sinkMu and the log's.
+	emitMu sync.Mutex
 	sinkMu sync.Mutex
 	sink   Sink
 	final  string // the stop or done line

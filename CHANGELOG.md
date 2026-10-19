@@ -123,6 +123,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The log and the event stream (`events.jsonl`) give events emitted at once,
+  such as a merge's closed line and the next ticket's dispatch, in one order,
+  as the dashboard does: they could disagree on which came first.
 - A hook whose tool input has an argument of another type than orchestra
   reads, such as an MCP tool's `"command": ["kubectl", "get"]` or a numeric
   `file_path`, loses only that argument rather than the whole input: the

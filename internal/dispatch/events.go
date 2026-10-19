@@ -134,6 +134,8 @@ type Sink interface {
 }
 
 func (o *Loop) emit(ev Event) {
+	o.emitMu.Lock()
+	defer o.emitMu.Unlock()
 	ev.Time = time.Now()
 	o.tally(&ev)
 	if ev.Kind != EvQueue {
