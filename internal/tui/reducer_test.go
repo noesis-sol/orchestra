@@ -202,7 +202,7 @@ func TestWorkerLook(t *testing.T) {
 		{dispatch.Status{Agent: dispatch.StateDone, Unreadable: true}, "unreadable", "", "•"},
 		{dispatch.Status{Agent: dispatch.StateDone, Resolving: true}, "resolving", "⟳ resolving", ""},
 		{dispatch.Status{Agent: dispatch.StateDone, Fixing: true}, "fixing check", "⟳ fixing", ""},
-		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeQueued}, "to merge", "◷ to merge", "◷"},
+		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeQueued}, "to merge", "◼ to merge", "◼"},
 		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeRunning}, "merging", "◆ merging", "◆"},
 		{dispatch.Status{Agent: "rebooting"}, "rebooting", "", ""}, // a state with no look of its own
 	} {

@@ -33,6 +33,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard marks a finished ticket waiting in the merge queue with a
+  square, like a stop button: `◼ to merge` in the tickets table and `◼` on its
+  line in Current, in place of the clock `◷`, which now only means a ticket
+  waiting for another to merge (`◷ waiting`). It is one column wide, so
+  Current's columns stay aligned, and differs from the winding-down line's `■`.
 - A ticket handed back to its worker, to resolve its rebase (`RESOLVING`) or
   fix its failing check (`FIXING`), is checked once when the worker is done,
   on the base it merges onto: when other tickets merged meanwhile, its branch

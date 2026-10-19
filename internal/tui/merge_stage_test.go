@@ -44,7 +44,7 @@ func TestFinishedTicketsShowTheirMergeStage(t *testing.T) {
 	view := ansi.Strip(mergeDashboard(t).View())
 	for _, want := range []string{
 		"◆ merging", "◆  kinieta-m1  merging ", // the table's row, then Current's head
-		"◷ to merge", "◷  kinieta-q2  to merge (2nd) ",
+		"◼ to merge", "◼  kinieta-q2  to merge (2nd) ",
 		"▶ working", "kinieta-w3  working ",
 	} {
 		if !strings.Contains(view, want) {
@@ -70,7 +70,7 @@ func TestFinishedWorkerHasNoSpinner(t *testing.T) {
 		{dispatch.Status{Agent: dispatch.StateIdle, Resolving: true}, ""},
 		{dispatch.Status{Agent: dispatch.StateWorking, Fixing: true}, ""},
 		{dispatch.Status{Agent: dispatch.StateDone}, "• "},
-		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeQueued, Place: 1}, "◷ "},
+		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeQueued, Place: 1}, "◼ "},
 		{dispatch.Status{Agent: dispatch.StateDone, Merge: dispatch.MergeRunning}, "◆ "},
 	} {
 		got := m.mark(c.st)
@@ -100,7 +100,7 @@ func TestHandedBackTicketJoinsTheMergeQueueAgain(t *testing.T) {
 		}, "⟳ fixing", "kinieta-m1  fixing check "},
 		{"back in line once fixed", func(s *dispatch.Status) {
 			s.Merge, s.Place, s.Fixing, s.Agent = dispatch.MergeQueued, 1, false, dispatch.StateDone
-		}, "◷ to merge", "kinieta-m1  to merge (1st) "},
+		}, "◼ to merge", "kinieta-m1  to merge (1st) "},
 		{"handed back to resolve conflicts", func(s *dispatch.Status) {
 			s.Merge, s.Place, s.Resolving, s.Agent = dispatch.MergeNone, 0, true, dispatch.StateIdle
 		}, "⟳ resolving", "kinieta-m1  resolving "},
@@ -133,7 +133,7 @@ func TestMergeStagesHaveColoursOfTheirOwn(t *testing.T) {
 	if toMergeStyle.GetForeground() == mergingStyle.GetForeground() {
 		t.Error("to merge and merging should have colours of their own")
 	}
-	if v := mergeDashboard(t).View(); !strings.Contains(v, toMergeStyle.Render("◷ to merge")) ||
+	if v := mergeDashboard(t).View(); !strings.Contains(v, toMergeStyle.Render("◼ to merge")) ||
 		!strings.Contains(v, mergingStyle.Render("◆ merging")) {
 		t.Errorf("the table should show the merge stages in their colours:\n%q", v)
 	}

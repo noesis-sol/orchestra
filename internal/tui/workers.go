@@ -278,7 +278,7 @@ var workerLooks = map[string]look{
 	fixingLabel: {status: styledText{fixingLabel, deferredStyle},
 		row: styledText{"⟳ fixing", deferredStyle}, spins: true},
 	toMergeLabel: {status: styledText{toMergeLabel, toMergeStyle},
-		row: styledText{"◷ " + toMergeLabel, toMergeStyle}, mark: styledText{"◷", toMergeStyle}},
+		row: styledText{"◼ " + toMergeLabel, toMergeStyle}, mark: styledText{"◼", toMergeStyle}},
 	mergingLabel: {status: styledText{mergingLabel, mergingStyle},
 		row: styledText{"◆ " + mergingLabel, mergingStyle}, mark: styledText{"◆", mergingStyle}},
 	unreadableLabel: {status: styledText{unreadableLabel, deferredStyle}},
