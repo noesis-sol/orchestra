@@ -36,7 +36,10 @@ const SuiteMarker = "SUITE:"
 type Suite struct {
 	Name    string // such as "unit tests"; it names the suite's lock
 	Command string // run from the repository's root, such as "npm test"
-	FoundIn string // where it was found, such as "package.json:7", or "--check-fast"
+	// Targeted runs it on part of the project, with a placeholder for the part, such as
+	// "go test ./<package>/..."; "" where it runs only whole. The worker prompt gives it.
+	Targeted string
+	FoundIn  string // where it was found, such as "package.json:7", or "--check-fast"
 	// Serial is set for a suite that isn't parallel_safe: two copies at once, in two worktrees,
 	// would collide (a fixed port, a shared database). It runs through the lock, taking turns.
 	Serial bool

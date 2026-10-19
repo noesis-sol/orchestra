@@ -32,7 +32,7 @@ func TestResolveEffort(t *testing.T) {
 // orchestra init says workers run at high effort until the project chooses one.
 func TestNextStepsMentionWorkerEffortUntilSet(t *testing.T) {
 	repo, _ := gitRepo(t)
-	steps, _ := Init(context.Background(), repo, "make check", false)
+	steps, _ := Init(context.Background(), repo, PromptChecks{Check: "make check"}, false)
 	if next := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, "", onPath), "\n"); !strings.Contains(next, `"worker_effort"`) ||
 		!strings.Contains(next, "Workers run at high effort.") {
 		t.Errorf("unset: %q", next)

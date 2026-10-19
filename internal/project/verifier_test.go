@@ -16,7 +16,7 @@ func verifierRepo(t *testing.T, fast, full []Suite) string {
 	if err := os.MkdirAll(filepath.Join(repo, Dir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prompt := []byte(fillTemplate(promptTemplate, FastRunner))
+	prompt := []byte(fillTemplate(promptTemplate, PromptChecks{Check: FastRunner}))
 	if err := os.WriteFile(filepath.Join(repo, Dir, promptName), prompt, 0o644); err != nil {
 		t.Fatal(err)
 	}

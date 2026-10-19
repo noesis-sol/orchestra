@@ -33,10 +33,11 @@ func Apply(ctx context.Context, repo string, c Choice, force bool) ([]Step, erro
 	return steps, nil
 }
 
-// initPrompt is Init as an Applier: the worker prompt, with the runner as its check command.
+// initPrompt is Init as an Applier: the worker prompt, with the runner as its check command and the
+// choice's suites.
 func initPrompt(force bool) Applier {
-	return func(ctx context.Context, repo string, _ Choice) ([]Step, error) {
-		return Init(ctx, repo, FastRunner, force)
+	return func(ctx context.Context, repo string, c Choice) ([]Step, error) {
+		return Init(ctx, repo, PromptChecks{Check: FastRunner, Fast: c.Fast, Full: c.Full}, force)
 	}
 }
 

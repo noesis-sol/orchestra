@@ -9,7 +9,7 @@ import (
 // target, which Claude Code's safety check holds for a person, stalling the ticket.
 func TestPromptsKeepRemovalsOffVariablesAndGlobs(t *testing.T) {
 	for name, text := range map[string]string{
-		"worker prompt": fillTemplate(promptTemplate, FastRunner),
+		"worker prompt": fillTemplate(promptTemplate, PromptChecks{Check: FastRunner}),
 		"verifier":      VerifierText(nil, nil, nil),
 	} {
 		for _, want := range []string{"leave them there", "Never `rm` a target", "safety check"} {

@@ -3,11 +3,14 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - You are in your own git worktree on branch wt/TICKET_ID. Commit there. Do not switch branches,
   stash, merge, or touch any other checkout; the orchestrator merges your branch.
 - Claim it with `bd update TICKET_ID --claim`, then read it with `bd show TICKET_ID`.
-- Check your work with `<check command>`, the check orchestra runs on each ticket before it merges
-  it. <What it runs, e.g. lint, build and the fast test suites.>
-  While iterating, run only the checks you need, e.g. `<a quicker subset>`.
-- When your change touches what the slower suites cover, also run `scripts/check-full.sh`: every
-  check, `<check command>` then the slower suites. orchestra runs it once at the end of a run.
+- Check your own change before you close the ticket: run the project's suites on what it touches
+  (the modules or packages it changes and their tests, existing ones included), the slower suites
+  too where they cover it, and lint and type checks on the files you changed. While iterating, run
+  only the checks you need.
+<How to run each suite on part of the project.>
+- Leave the whole suite to orchestra: its merge check, `<check command>`, runs on every ticket
+  before it merges it, and hands the ticket back to you when your change breaks something you
+  didn't consider; the full check, `scripts/check-full.sh`, runs every suite once at the end of a run.
 - Run the checks in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
 - Where the project has test suites, a ticket that changes behaviour adds or updates tests for it,
@@ -39,10 +42,10 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   `--labels solo`, so it runs with no other ticket beside it.
 
 ## Close
-- Close the ticket only when `<check command>` passes after your last change.
+- Close the ticket only when your checks pass after your last change.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
-  local checks don't cover), close the ticket once `<check command>` passes, with a note naming the
-  CI job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
+  local checks don't cover), close the ticket once your checks pass, with a note naming the CI
+  job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
   before anything reaches the main branch.
 - If the ticket needs a decision only the maintainer can make, ask it as a question and stop; don't
   wait for an answer in this session. Commit any finished work first, then run

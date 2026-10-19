@@ -287,10 +287,14 @@ func RunnerSuites(check, from, path string) *[]Suite {
 	return &[]Suite{{Command: check, FoundIn: from}}
 }
 
-// DetectCheck finds the check command in a worker prompt ("Check your work with `…`").
+// DetectCheck finds the check command in a worker prompt: the merge check it names ("its merge
+// check, `…`"), or in a prompt written before workers checked only their own change, the check they
+// ran ("Check your work with `…`").
 func DetectCheck(prompt string) string {
-	const marker = "Check your work with `"
-	_, rest, ok := strings.Cut(prompt, marker)
+	_, rest, ok := strings.Cut(prompt, "its merge check, `")
+	if !ok {
+		_, rest, ok = strings.Cut(prompt, "Check your work with `")
+	}
 	if !ok {
 		return ""
 	}
@@ -301,8 +305,17 @@ func DetectCheck(prompt string) string {
 	return check
 }
 
+// PromptChecks are what the worker prompt says of the checks: Check, the merge check's command, and
+// the suites FastRunner and FullRunner run (Full's after FastRunner), for it to say how to run each on
+// part of the project. Fast or Full is nil where init doesn't know that runner's suites: one kept as it
+// is, or a check command that isn't the runner.
+type PromptChecks struct {
+	Check      string
+	Fast, Full *[]Suite
+}
+
 // Init creates .orchestra/ in repo, with the worker prompt and its .gitignore.
-func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
+func Init(ctx context.Context, repo string, checks PromptChecks, force bool) ([]Step, error) {
 	var done []Step
 	dir := filepath.Join(repo, Dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -322,7 +335,7 @@ func Init(ctx context.Context, repo, check string, force bool) ([]Step, error) {
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt", Detail: "moved " + legacyPrompt + " to " + rel})
 	default:
-		if err := writeFile(prompt, []byte(fillTemplate(promptTemplate, check)), 0o644); err != nil {
+		if err := writeFile(prompt, []byte(fillTemplate(promptTemplate, checks)), 0o644); err != nil {
 			return done, err
 		}
 		done = append(done, Step{Kind: StepDone, Label: "worker prompt",
@@ -461,21 +474,62 @@ func movePrompt(ctx context.Context, repo, from, to string) error {
 	return os.Rename(from, to)
 }
 
-// fillTemplate puts the check command into the template's placeholders.
-func fillTemplate(t, check string) string {
-	if check == "" {
+// fillTemplate puts the checks into the template's placeholders: the merge check's command, and how
+// to run each suite on part of the project (suiteLines). With no check command it is the template.
+func fillTemplate(t string, checks PromptChecks) string {
+	if checks.Check == "" {
 		return t
 	}
-	const what = " <What it runs, e.g. lint, build and the fast test suites.>"
-	if isRunner(check, FastRunner) {
-		// The runner lists its suites, a command a line: one of them is the quicker subset.
-		t = strings.Replace(t, what, " It runs the project's fast suites, a command a line.", 1)
-		t = strings.ReplaceAll(t, "`<a quicker subset>`", "a suite's command from `<check command>`")
+	t = strings.Replace(t, suitesPlaceholder+"\n", suiteLines(checks), 1)
+	return strings.ReplaceAll(t, "<check command>", checks.Check)
+}
+
+// suitesPlaceholder is the template's line for how to run each suite on part of the project.
+const suitesPlaceholder = "<How to run each suite on part of the project.>"
+
+// suiteLines are the worker prompt's lines on how to run each suite on part of the project: a line a
+// suite where init knows them all, the command the scout gave for part of the project or else the
+// whole suite, the slower ones where the change touches what they cover. A suite that isn't
+// parallel_safe is left to the merge check, which takes turns on it with the other worktrees' checks.
+// Where init doesn't know them, the lines say where the suites are and how to run them.
+func suiteLines(checks PromptChecks) string {
+	if !isRunner(checks.Check, FastRunner) {
+		return "  Run what `" + checks.Check + "` runs on part of the project where its tools allow it\n" +
+			"  (`go test ./<package>/...`, `pytest <paths>`, `eslint <files>`), and whole where they don't.\n"
 	}
-	t = strings.ReplaceAll(t, "<check command>", check)
-	t = strings.ReplaceAll(t, "<a quicker subset>", check)
-	// The sentence describing another check is the project's to write; drop the placeholder.
-	return strings.Replace(t, what, "", 1)
+	var fast, full []Suite
+	if checks.Fast != nil && checks.Full != nil {
+		fast, _ = WithoutRunners(*checks.Fast)
+		full, _ = WithoutRunners(*checks.Full)
+	}
+	if len(fast)+len(full) == 0 {
+		return "  The suites are the commands `" + FastRunner + "` and `" + FullRunner + "` list, a command a\n" +
+			"  line: run each on part of the project where its tool allows it (`go test ./<package>/...`,\n" +
+			"  `pytest <paths>`, `eslint <files>`), and whole where it doesn't.\n"
+	}
+	var b strings.Builder
+	b.WriteString("  The suites, and how to run each on part of the project:\n")
+	for i, s := range append(fast, full...) {
+		slower := i >= len(fast)
+		name, whole := strings.TrimSpace(s.Name), "`"+s.Command+"`, whole"
+		if name == "" {
+			name, whole = "`"+s.Command+"`", "whole"
+		}
+		if slower {
+			name += " (slower)"
+		}
+		switch {
+		case s.Serial:
+			fmt.Fprintf(&b, "  - %s: leave it to the merge check; two copies at once, in two worktrees, collide\n", name)
+		case s.Targeted != "":
+			fmt.Fprintf(&b, "  - %s: `%s`\n", name, s.Targeted)
+		case slower:
+			fmt.Fprintf(&b, "  - %s: %s, where your change touches what it covers\n", name, whole)
+		default:
+			fmt.Fprintf(&b, "  - %s: %s, as it doesn't run on part of the project\n", name, whole)
+		}
+	}
+	return b.String()
 }
 
 // Prerequisites reports what orchestra needs and whether it is there, for the commands run with ctx.

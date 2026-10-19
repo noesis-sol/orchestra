@@ -40,10 +40,11 @@ const ScoutBudget = 2.0
 
 const scoutSchema = `{"type":"object","properties":{"suites":{"type":"array","items":{"type":"object",` +
 	`"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["unit","integration","e2e",` +
-	`"lint","typecheck","build","other"]},"command":{"type":"string"},"found_in":{"type":"string"},` +
+	`"lint","typecheck","build","other"]},"command":{"type":"string"},"targeted":{"type":"string"},` +
+	`"found_in":{"type":"string"},` +
 	`"tier":{"type":"string","enum":["fast","full"]},"parallel_safe":{"type":"boolean"},` +
 	`"needs":{"type":"array","items":{"type":"string"}}},` +
-	`"required":["name","kind","command","found_in","tier","parallel_safe","needs"]}},` +
+	`"required":["name","kind","command","targeted","found_in","tier","parallel_safe","needs"]}},` +
 	`"stack":{"type":"array","items":{"type":"string"}},"note":{"type":"string"}},` +
 	`"required":["suites","stack","note"]}`
 
@@ -75,13 +76,16 @@ const (
 
 // Suite is one check the scout found.
 type Suite struct {
-	Name         string    `json:"name"`
-	Kind         SuiteKind `json:"kind"`
-	Command      string    `json:"command"`  // as the project runs it, from the repository's root
-	FoundIn      string    `json:"found_in"` // path:line
-	Tier         Tier      `json:"tier"`
-	ParallelSafe bool      `json:"parallel_safe"` // false: a fixed port, a shared database and the like
-	Needs        []string  `json:"needs"`         // services, a browser, credentials; empty for none
+	Name    string    `json:"name"`
+	Kind    SuiteKind `json:"kind"`
+	Command string    `json:"command"` // as the project runs it, from the repository's root
+	// Targeted runs the suite on part of the project, a <placeholder> for the part, such as
+	// "go test ./<package>/..." or "pytest <paths>"; "" where its tool can only run it whole.
+	Targeted     string   `json:"targeted"`
+	FoundIn      string   `json:"found_in"` // path:line
+	Tier         Tier     `json:"tier"`
+	ParallelSafe bool     `json:"parallel_safe"` // false: a fixed port, a shared database and the like
+	Needs        []string `json:"needs"`         // services, a browser, credentials; empty for none
 }
 
 // Scouting is the scout's answer.
@@ -241,8 +245,8 @@ func parseScouting(r Result) (Scouting, error) {
 	}
 	suites := []Suite{}
 	for _, su := range s.Suites {
-		su.Name, su.Command, su.FoundIn = strings.TrimSpace(su.Name), strings.TrimSpace(su.Command),
-			strings.TrimSpace(su.FoundIn)
+		su.Name, su.Command, su.Targeted, su.FoundIn = strings.TrimSpace(su.Name), strings.TrimSpace(su.Command),
+			strings.TrimSpace(su.Targeted), strings.TrimSpace(su.FoundIn)
 		switch {
 		case su.Name == "" || su.Command == "":
 			return Scouting{}, fmt.Errorf("a suite with no name or no command: %+v", su)
@@ -250,6 +254,9 @@ func parseScouting(r Result) (Scouting, error) {
 			return Scouting{}, fmt.Errorf("suite %q has an unknown kind %q", su.Name, su.Kind)
 		case su.Tier != TierFast && su.Tier != TierFull:
 			return Scouting{}, fmt.Errorf("suite %q has an unknown tier %q", su.Name, su.Tier)
+		}
+		if !hasPlaceholder(su.Targeted) { // it would run the whole suite, or nothing the worker can fill in
+			su.Targeted = ""
 		}
 		needs := []string{}
 		for _, n := range su.Needs {
@@ -267,4 +274,12 @@ func parseScouting(r Result) (Scouting, error) {
 		}
 	}
 	return Scouting{Suites: suites, Stack: stack, Note: strings.TrimSpace(s.Note)}, nil
+}
+
+// hasPlaceholder reports whether a targeted command has a placeholder for the part it runs on, such
+// as <paths> or ./<package>/...
+func hasPlaceholder(command string) bool {
+	_, rest, ok := strings.Cut(command, "<")
+	name, _, closed := strings.Cut(rest, ">")
+	return ok && closed && strings.TrimSpace(name) != ""
 }

@@ -40,7 +40,7 @@ func read(t *testing.T, p string) string {
 
 func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	repo, git := gitRepo(t)
-	steps, err := Init(context.Background(), repo, "make check", false)
+	steps, err := Init(context.Background(), repo, PromptChecks{Check: "make check"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,13 +77,13 @@ func TestInitWritesTheTemplateAndIgnoresOrchestrasFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".orchestra", "worker-prompt.md"), []byte("mine TICKET_ID"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(context.Background(), repo, "", false); err != nil {
+	if _, err := Init(context.Background(), repo, PromptChecks{}, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != "mine TICKET_ID" {
 		t.Errorf("init overwrote an existing prompt: %q", got)
 	}
-	if _, err := Init(context.Background(), repo, "", true); err != nil {
+	if _, err := Init(context.Background(), repo, PromptChecks{}, true); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(repo, ".orchestra", "worker-prompt.md")); got != promptTemplate {
@@ -110,7 +110,7 @@ func TestInitMovesALegacyPromptAndFixesTheOldExclude(t *testing.T) {
 	if Layout := Locate(repo); !Layout.Legacy {
 		t.Error("before init the legacy Layout should be used")
 	}
-	steps, err := Init(context.Background(), repo, "", false)
+	steps, err := Init(context.Background(), repo, PromptChecks{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 
 func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	repo, git := gitRepo(t)
-	steps, _ := Init(context.Background(), repo, "make check", false)
+	steps, _ := Init(context.Background(), repo, PromptChecks{Check: "make check"}, false)
 	next := NextSteps(context.Background(), repo, steps, Prerequisites(context.Background(), repo, os.Getenv, onPath), Choice{}, "", onPath)
 	joined := strings.Join(next, "\n")
 	if !strings.Contains(joined, "Commit .orchestra/") || !strings.Contains(joined, "orchestra") {
@@ -385,7 +385,7 @@ func TestNextStepsOnlyListWhatIsLeft(t *testing.T) {
 	}
 	git(repo, "add", ".orchestra")
 	git(repo, "commit", "-q", "-m", "setup")
-	steps, _ = Init(context.Background(), repo, "", false)
+	steps, _ = Init(context.Background(), repo, PromptChecks{}, false)
 	if joined := strings.Join(NextSteps(context.Background(), repo, steps, nil, Choice{}, "", onPath), "\n"); strings.Contains(joined, "Commit") || strings.Contains(joined, "Read ") {
 		t.Errorf("nothing to commit or read on a second run: %q", joined)
 	}

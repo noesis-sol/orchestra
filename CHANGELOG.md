@@ -19,6 +19,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The worker prompt `orchestra init` writes has a worker check its own
+  change, and leave the whole suite to the merge check and the full check:
+  before closing, it runs the suites on what its change touches, the slower
+  ones too where they cover it, and lint and type checks on the files it
+  changed. The scout now says how to run each suite on part of the project
+  (`go test ./<package>/...`, `pytest <paths>`), and the prompt lists each
+  suite with that command, or the whole one where there is none. An existing
+  project keeps its prompt: `orchestra init --force` writes it afresh from
+  the template, or copy the check section by hand (docs/workers.md says
+  which bullets).
 - The files git merges by union (`merge=union` in `.gitattributes`, as
   `orchestra init` offers for `CHANGELOG.md`) are left out of footprints,
   both a ready ticket's and the files running workers edit, and out of

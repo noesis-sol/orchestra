@@ -531,7 +531,8 @@ func (s *checksStage) chosen() (fast, full []project.Suite, ok bool) {
 
 // runnerSuite is a suite the scout found as a runner's line.
 func runnerSuite(su organ.Suite) project.Suite {
-	return project.Suite{Name: su.Name, Command: su.Command, FoundIn: su.FoundIn, Serial: !su.ParallelSafe}
+	return project.Suite{Name: su.Name, Command: su.Command, Targeted: su.Targeted, FoundIn: su.FoundIn,
+		Serial: !su.ParallelSafe}
 }
 
 // filesTestWork reports whether the answers so far file test work, as Choice.FilesTestWork does.
