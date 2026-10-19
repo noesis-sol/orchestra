@@ -1,6 +1,6 @@
 # Workers
 
-What a worker starts with, the worker prompt, the MCP servers workers get, the permission mode they start in, their hooks and run files, workers in tmux and cmux, and other agent kinds. Back to the [README](../README.md).
+What a worker starts with, the worker prompt, the MCP servers workers get, the permission mode they start in, the tools they go without, their hooks and run files, workers in tmux and cmux, and other agent kinds. Back to the [README](../README.md).
 
 ## What a worker starts with
 
@@ -11,6 +11,7 @@ Each worker starts in a tab of its own (Herdr's, a tmux window or a cmux workspa
 - **The project's toolchain**, which is the machine's, not the worktree's: a spec's breakdown files an [environment setup ticket](running.md#the-breakdown) first, which installs the tools the spec needs and sets `"setup"`, and every other ticket waits for it.
 - **Its prompt** (below): the standing rules in its system prompt, and a first message for this start.
 - **The MCP servers** the project chose ([MCP servers for workers](#mcp-servers-for-workers)), the [permission mode](#permission-mode) and, for Claude workers, the hooks that report what it does (below).
+- **For Claude workers, only the tools they use** ([Tools left out](#tools-left-out)): not Artifact, ListAgents, ReportFindings, ScheduleWakeup, SendFeedback or Workflow, and not Skill, with the listing of your skills, unless the project has skills of its own.
 
 ## Worker prompt
 
@@ -98,6 +99,16 @@ In cmux, orchestra addresses each worker's workspace and terminal by their UUIDs
 `bypassPermissions` and `plan` are setup problems (exit code 2), with why: a worker in `bypassPermissions` would run every command unchecked, where `auto` has Claude Code's classifier check them, and one in `plan` only plans, never changing a file. Without a mode, workers start in the one your Claude Code settings give, as before the setting existed; a [spec run](running.md#a-whole-app-from-a-spec) (`--spec`, `ORCHESTRA_SPEC`, or a spec chosen at the start) starts them in `auto`, as nobody is there to answer a prompt.
 
 Claude workers get `--permission-mode <mode>` after `--no-chrome` (or `--chrome`) and `--effort`, when their session is resumed too, and the environment probe's worker after `--strict-mcp-config`; workers of another agent kind never get it. The `START` line adds the mode after the agent, `agent: claude, permission mode: auto`, or `, permission mode: not passed to codex workers` for another kind, and nothing without a mode. As the run begins, it reads `claude --help` once: where its `--permission-mode` choices don't list the mode, the run warns, `  PERMISSION_MODE: claude --help doesn't list the permission mode auto; workers start without it, in the mode Claude Code's settings give (claude update may bring it)`, or, when `claude --help` fails, `  PERMISSION_MODE: cannot read claude --help to tell whether it takes the permission mode auto (<error>); workers start without it, …`. A `claude` that doesn't know a mode refuses to start with it, so workers start without it rather than not at all.
+
+## Tools left out
+
+Claude Code describes each tool it offers in every request a worker makes, and these descriptions came to about 75,000 characters a call, half of them Artifact's, with a listing of the user's skills on top. No worker in 484 sessions called Artifact, ListAgents, ReportFindings, ScheduleWakeup, SendFeedback, Workflow or Skill. So Claude workers start with `--disallowedTools=Artifact,ListAgents,ReportFindings,ScheduleWakeup,SendFeedback,Workflow,Skill` after `--permission-mode`, when their session is resumed too, and so does the environment probe's worker: a denied tool isn't described to the model, and denying Skill drops the skill listing with it. Measured on Claude Code 2.1.303, a worker's first call opened with 11,926 tokens rather than 39,180.
+
+They keep the rest, and any tool a later Claude Code adds: Bash, Read, Edit and Write; Agent, which runs the verifier; AskUserQuestion, how orchestra sees a worker ask; ToolSearch, which loads the tools of the project's MCP servers; and the deferred tools such as Monitor.
+
+A project with skills of its own, anything in `.claude/skills` (as `orchestra init` installs the create-check-suite skill there) or `.claude/commands` (which Claude Code runs as skills), keeps Skill, as its workers reach those skills only through it; the listing then names your own skills too. `--disable-slash-commands` would drop the project's skills with the rest, so orchestra doesn't use it. The run says which, as it begins: `  workers start without the tools they never use: Artifact, ListAgents, ReportFindings, ScheduleWakeup, SendFeedback, Workflow (Skill and the skill listing, as the project has no skills)`, or `(the project's skills kept)`.
+
+The run passes the flag only when `claude --help`, which it reads once as it begins, lists `--disallowedTools`, so an older `claude` still starts; workers of another agent kind never get it.
 
 ## MCP servers for workers
 

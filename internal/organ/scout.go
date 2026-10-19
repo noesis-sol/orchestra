@@ -195,12 +195,21 @@ func budget(help string) []string {
 }
 
 // ListsFlag tells whether help, a command's --help, lists flag: a line that starts with it, or with
-// its short form and then it ("-p, --print").
+// other names of the option and then it ("-p, --print"), or with it and then its other names
+// ("--disallowedTools, --disallowed-tools"). A flag starts with "-", so no line of a description does.
 func ListsFlag(help, flag string) bool {
 	for line := range strings.Lines(help) {
-		f := strings.Fields(line)
-		if len(f) > 0 && (f[0] == flag || len(f) > 1 && strings.HasSuffix(f[0], ",") && f[1] == flag) {
-			return true
+		for f := range strings.FieldsSeq(line) {
+			name, more := strings.CutSuffix(f, ",")
+			if !strings.HasPrefix(name, "-") { // past the option's names, or a line of its description
+				break
+			}
+			if name == flag {
+				return true
+			}
+			if !more {
+				break
+			}
 		}
 	}
 	return false

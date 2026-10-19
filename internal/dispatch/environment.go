@@ -298,14 +298,14 @@ func (o *Loop) freeProbeName(ctx context.Context, agent string) error {
 }
 
 // probeArgs are the probe worker's arguments. It runs one echo, so a Claude probe starts without
-// MCP servers, in the workers' permission mode, reporting what it does when the project asks for
-// that (Config.ProbeHooks).
+// MCP servers, in the workers' permission mode and without the tools they never use, reporting what
+// it does when the project asks for that (Config.ProbeHooks).
 func (o *Loop) probeArgs() ([]string, error) {
 	c := o.cfg
 	if !c.ClaudeWorkers() {
 		return nil, nil
 	}
-	args := append([]string{"--strict-mcp-config"}, o.permission...)
+	args := append(append([]string{"--strict-mcp-config"}, o.permission...), o.unusedTools...)
 	if c.ProbeHooks && o.reporter != nil {
 		report, err := o.reporter.ReportArgsIn(c.Repo, project.ProbeRun)
 		if err != nil {

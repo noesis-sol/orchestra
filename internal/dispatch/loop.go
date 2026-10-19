@@ -57,6 +57,9 @@ type Loop struct {
 	// permission is --permission-mode and Config.WorkerPermissionMode, which every Claude worker
 	// starts with when its claude takes the mode, as the run found as it began; nil for none.
 	permission []string
+	// unusedTools is the --disallowedTools that keeps the tools Claude workers never use out of
+	// their requests, when their claude takes it, as the run found as it began; nil for none.
+	unusedTools []string
 
 	// repoMu serialises git writes to the main repository (worktrees, rebases, merges, branch
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.

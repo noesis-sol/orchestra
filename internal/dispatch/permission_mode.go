@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,20 +22,16 @@ func (c Config) permissionLabel() string {
 }
 
 // permissionArgs are the arguments that start Claude workers in Config.WorkerPermissionMode, which
-// begin asks the workers' claude about once, as the run starts: --permission-mode and the mode
-// where its --help lists the mode, by its name or the one Claude Code renamed it from or to
-// (default and manual), which is then the name passed. Where it doesn't, or its help can't be
-// read, the run says so and workers start without them, in the mode Claude Code's settings give:
-// a claude that doesn't know the mode refuses it, and no worker would start.
-func (o *Loop) permissionArgs(ctx context.Context) []string {
+// begin finds from help, the workers' claude's --help as it read it once (err: it couldn't):
+// --permission-mode and the mode where help lists the mode, by its name or the one Claude Code
+// renamed it from or to (default and manual), which is then the name passed. Where it doesn't, or
+// its help couldn't be read, the run says so and workers start without them, in the mode Claude
+// Code's settings give: a claude that doesn't know the mode refuses it, and no worker would start.
+func (o *Loop) permissionArgs(ctx context.Context, help string, err error) []string {
 	c := o.cfg
 	mode := c.WorkerPermissionMode
 	if mode == "" || !c.ClaudeWorkers() {
 		return nil
-	}
-	help, err := "", errors.New("nothing to ask it with")
-	if o.help != nil {
-		help, err = o.help.Help(ctx)
 	}
 	listed := listedPermissionMode(help, mode)
 	switch {

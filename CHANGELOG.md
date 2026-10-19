@@ -6,6 +6,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Claude workers, and the environment probe's, start without the tools they
+  never use (`--disallowedTools` Artifact, ListAgents, ReportFindings,
+  ScheduleWakeup, SendFeedback, Workflow, and Skill with the listing of your
+  skills unless the project has skills of its own), when their `claude --help`
+  lists the flag: a worker's first call opened with about 11.9k tokens rather
+  than 39.2k on Claude Code 2.1.303.
+
 ### Fixed
 
 - A release's GitHub Release now carries its changelog section as its notes:

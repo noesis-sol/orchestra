@@ -179,15 +179,17 @@ func TestWorkersStartWithoutAModeWhenClaudeCannotBeAsked(t *testing.T) {
 	})
 }
 
-// Without a mode, workers start as before, in Claude Code's own default, and claude isn't asked.
-// Another kind of agent gets no mode, as it isn't Claude Code's, and the START line says so.
+// Without a mode, workers start as before, in Claude Code's own default, claude asked only for the
+// tools they go without. Another kind of agent gets no mode, as it isn't Claude Code's, and the START
+// line says so; its claude isn't asked.
 func TestNoPermissionModeAsksNothing(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		kind, mode, label string
+		asked             int
 	}{
-		{"claude", "", ", agent: claude, worktrees: "},
-		{"codex", "auto", ", agent: codex, permission mode: not passed to codex workers, worktrees: "},
+		{"claude", "", ", agent: claude, worktrees: ", 1},
+		{"codex", "auto", ", agent: codex, permission mode: not passed to codex workers, worktrees: ", 0},
 	} {
 		synctest.Test(t, func(t *testing.T) {
 			h := newTimedHarness(t)
@@ -203,7 +205,7 @@ func TestNoPermissionModeAsksNothing(t *testing.T) {
 					t.Errorf("%s: a worker started with %q", tc.kind, args)
 				}
 			}
-			if ev := h.sink.text(); !strings.Contains(ev, tc.label) || help.asked != 0 || len(permissionWarnings(h)) > 0 {
+			if ev := h.sink.text(); !strings.Contains(ev, tc.label) || help.asked != tc.asked || len(permissionWarnings(h)) > 0 {
 				t.Errorf("%s: claude asked %d times, events:\n%s", tc.kind, help.asked, ev)
 			}
 		})

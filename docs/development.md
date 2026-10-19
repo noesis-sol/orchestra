@@ -98,6 +98,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
 | `mcp.go` | the MCP servers a Claude worker starts with, and the warning the run gives once about them |
 | `permission_mode.go` | the permission mode Claude workers start in (`--permission-mode`), as the `START` line says it, and whether their `claude --help` lists it |
+| `unused_tools.go` | the tools Claude workers start without (`--disallowedTools`), Skill unless the project has skills of its own, when their `claude --help` lists it |
 | `screen.go` | reading a worker's screen: its prompt still unsent in the input box, its latest action |
 | `work.go` | one ticket from start to outcome (`ticketRun`): its earlier worker, its worktree, its worker's files, starting or adopting the worker, and the outcome: asked, deferred, paused or closed |
 | `asked.go` | tickets waiting on a question that don't come back through `bd ready`: where each left its worker, adopting a worker that claimed or closed its ticket in its tab, one it deferred or left, labelling what is left as the run ends |

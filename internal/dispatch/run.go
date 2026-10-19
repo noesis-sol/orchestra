@@ -225,8 +225,8 @@ func (o *Loop) Run(ctx context.Context) int {
 	}
 }
 
-// begin notes when the run starts and Base's commit then, says how it runs, and finds whether the
-// workers' claude takes their permission mode.
+// begin notes when the run starts and Base's commit then, says how it runs, and finds from the
+// workers' claude's --help whether it takes their permission mode and the tools they go without.
 func (o *Loop) begin(ctx context.Context) {
 	c := o.cfg
 	o.started = time.Now()
@@ -254,7 +254,21 @@ func (o *Loop) begin(ctx context.Context) {
 		o.info("  spec: epic %s, broken down from: %s", c.Ticket, c.Spec)
 	}
 	o.sayMCP()
-	o.permission = o.permissionArgs(ctx)
+	help, err := o.claudeHelp(ctx)
+	o.permission = o.permissionArgs(ctx, help, err)
+	o.unusedTools = o.unusedToolArgs(help)
+}
+
+// claudeHelp is the workers' claude's --help, read once as the run begins: "" with no error for
+// workers of another kind, which aren't Claude Code's.
+func (o *Loop) claudeHelp(ctx context.Context) (string, error) {
+	switch {
+	case !o.cfg.ClaudeWorkers():
+		return "", nil
+	case o.help == nil:
+		return "", errors.New("nothing to ask it with")
+	}
+	return o.help.Help(ctx)
 }
 
 // runState is what Run owns: only its goroutine reads or changes it. Its methods are Run's steps.
