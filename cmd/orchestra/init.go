@@ -161,7 +161,7 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 	bindGiven(e, fs.StringVar, &f.checkFull, "check-full", "", "", parseText, "the slower suites' command, which "+
 		project.FullRunner+" runs after check-fast.sh, once at the end of a run; \"\" for none")
 	bindGiven(e, fs.DurationVar, &f.fastTimeout, "check-fast-timeout", "", 0, time.ParseDuration,
-		"how long check-fast may run on a rebased ticket, e.g. 5m (default "+
+		"how long check-fast may run on a ticket before it merges, e.g. 5m (default "+
 			project.DefaultCheckTimeoutText+")").alias("check-timeout").check = positive(&f.fastTimeout.Value)
 	bindGiven(e, fs.DurationVar, &f.fullTimeout, "check-full-timeout", "", 0, time.ParseDuration,
 		"how long check-full may run at the end of a run, e.g. 90m (default "+

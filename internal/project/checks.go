@@ -15,7 +15,7 @@ import (
 // A project's checks are two runners, shell scripts init writes in the project from its suites and
 // the project then owns:
 //
-//	scripts/check-fast.sh   the merge check, run on every ticket rebased before it merges
+//	scripts/check-fast.sh   the merge check, run on every ticket before it merges
 //	scripts/check-full.sh   everything: check-fast.sh, then the slower suites, run once at the end of a run
 //
 // A runner lists the suites' commands, one line each; each framework finds its own test files, so
@@ -51,7 +51,7 @@ const runnerHeader = "#!/bin/sh\n" +
 	"# the script, and its cd leaves the next suite at the root.\n"
 
 const (
-	fastPurpose = "orchestra's merge check, run on every ticket rebased onto work merged while it ran."
+	fastPurpose = "orchestra's merge check, run on every ticket before it merges."
 	fullPurpose = "every check, " + FastRunner + " then the slower suites. orchestra runs it once at\n" +
 		"# the end of a run."
 )

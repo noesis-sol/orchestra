@@ -28,7 +28,7 @@ In the project's repository:
 orchestra init
 ```
 
-`init` offers to install Beads if it's missing and runs `bd init` where the repository has no `.beads/`. It writes `.orchestra/` (the worker prompt, `settings.json` and a `.gitignore`) and the project's two checks: `scripts/check-fast.sh`, run on each rebased ticket before it merges, and `scripts/check-full.sh`, run once at the end of a run. It asks in two steps, **Workers** then **Checks**, and writes nothing until the last one is submitted. Commit `.orchestra/` and `scripts/` afterwards: a ticket's worktree has only what is committed.
+`init` offers to install Beads if it's missing and runs `bd init` where the repository has no `.beads/`. It writes `.orchestra/` (the worker prompt, `settings.json` and a `.gitignore`) and the project's two checks: `scripts/check-fast.sh`, run on each ticket before it merges, and `scripts/check-full.sh`, run once at the end of a run. It asks in two steps, **Workers** then **Checks**, and writes nothing until the last one is submitted. Commit `.orchestra/` and `scripts/` afterwards: a ticket's worktree has only what is committed.
 
 **Checks** starts with the scout, an organ that looks through the repository for its test suites, lints, type checks and builds. You then use them as they are, ticking which run on every merge and which at the end of a run; create them from scratch with the create-check-suite skill; or give the one command the merge check runs. It can also file tickets for the areas without tests, and offers a **verifier**: a subagent that checks each ticket's change against the ticket before its worker closes it.
 
@@ -59,7 +59,7 @@ In a terminal, `orchestra` first asks what the run should work on. **Current tic
 
 How a run goes:
 - **Dispatch.** Each ready ticket in `bd ready` goes to its own worker, up to `concurrent` at a time. Tickets that touch the same files or functions don't run side by side, and a ticket labelled `solo` runs alone.
-- **Merge.** A finished ticket is rebased onto the branch and the check runs again before it merges. A conflict goes back to its worker to resolve. A ticket that still can't merge is set aside for review.
+- **Merge.** A finished ticket is rebased onto the branch if it moved on, and the check runs on every ticket before it merges. A conflict goes back to its worker to resolve. A ticket that still can't merge is set aside for review.
 - **Set aside.** A ticket whose worker stops without closing it is deferred for review; a worker left in its tab that closes it later is merged then.
 - **Questions.** A worker that needs your decision files a question (a ticket labelled `human`), and the run goes on. Answer it with `bd human respond <question> --response "…"`.
 - **Nothing to run.** A run with nothing ready (or only tickets it would hold back, such as a parent waiting for its subtickets), and no worker the last run left to carry on with, shows `✓ All done` or what holds the tickets left (questions for you, tickets waiting on others, in progress, deferred, closed but not merged), and exits 0 without opening the dashboard.

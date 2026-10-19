@@ -17,7 +17,7 @@ import (
 // so everyone running orchestra on the project shares it.
 type Settings struct {
 	// CheckFast is the project's merge check, normally FastRunner (lint, build, the fast suites).
-	// orchestra runs it again on a finished ticket that had to be rebased onto work merged while it ran.
+	// orchestra runs it again on every finished ticket before it merges.
 	CheckFast string `json:"check_fast,omitempty"`
 	// CheckFull is every check, normally FullRunner: CheckFast, then the slower suites. orchestra runs
 	// it once at the end of a run.
@@ -31,7 +31,7 @@ type Settings struct {
 	// TicketLimit is how long a ticket's worker may go on, from dispatch, before the run stops for
 	// it, as a duration such as "2h", unless --ticket-limit says otherwise. Empty or "0": no limit.
 	TicketLimit string `json:"ticket_limit,omitempty"`
-	// CheckFastTimeout is how long CheckFast may run on a rebased ticket before orchestra stops it
+	// CheckFastTimeout is how long CheckFast may run on a ticket before it merges: orchestra then stops it
 	// and sets the ticket aside, as a duration such as "5m", unless --check-timeout says otherwise.
 	// Empty: DefaultCheckTimeout.
 	CheckFastTimeout string `json:"check_fast_timeout,omitempty"`
@@ -60,8 +60,8 @@ type Settings struct {
 	// ResolveTimeout is how long the worker may take to resolve it, as a duration such as "20m".
 	// Empty: DefaultResolveTimeout.
 	ResolveTimeout string `json:"resolve_timeout,omitempty"`
-	// CheckHandBacks is how many times a finished ticket whose check fails on its branch rebased onto
-	// work merged while it ran is handed back to its worker to fix, before it is set aside for review.
+	// CheckHandBacks is how many times a finished ticket whose check fails on its branch, rebased onto
+	// work merged while it ran or not, is handed back to its worker to fix, before it is set aside for review.
 	// Absent: DefaultCheckHandBacks; 0 sets it aside at once.
 	CheckHandBacks *int `json:"check_hand_backs,omitempty"`
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
@@ -124,8 +124,8 @@ const (
 	// DefaultResolveTimeout is how long a worker may take to resolve its rebase's conflicts when
 	// settings.json sets no limit.
 	DefaultResolveTimeout = 20 * time.Minute
-	// DefaultCheckHandBacks is how many times a failed check on a rebased ticket is handed back to its
-	// worker when settings.json doesn't say.
+	// DefaultCheckHandBacks is how many times a ticket's failed check before it merges is handed back to
+	// its worker when settings.json doesn't say.
 	DefaultCheckHandBacks = 2
 	// DefaultSpecTimeout is how long a spec's breakdown may take when settings.json sets no limit.
 	DefaultSpecTimeout = 60 * time.Minute

@@ -35,7 +35,7 @@ func doneOnMain(h *harness, file, onMain string, revert bool) behaviour {
 func netEmptyRun(t *testing.T, onMain string, revert bool, want string) {
 	t.Helper()
 	h := newHarness(t)
-	h.cfg.Check = "exit 1" // any check run on A's code would set it aside
+	h.cfg.Check = failsOnlyFor("A", "exit 1") // any check run on A's code would set it aside
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.beads.link("B", "A", "blocks")

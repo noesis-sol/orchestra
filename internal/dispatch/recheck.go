@@ -71,7 +71,7 @@ func (o *Loop) dueRecheck(ctx context.Context, running map[string]bool) (recheck
 		if running[rc.w.id] {
 			continue // taken up once its merge has returned
 		}
-		// On, not merely elsewhere: on a Base moved back, its branch would fast-forward unchecked.
+		// On, not merely elsewhere: a Base moved back brings nothing that could fix its check.
 		if base == rc.onto || !o.merger.IsAncestor(ctx, c.Repo, rc.onto, c.Base) {
 			continue
 		}

@@ -27,11 +27,13 @@ type checked struct {
 	output string   // where its whole output is
 	tries  []string // what came of each hand-back of a failure to the ticket's worker, in turn
 	not    string   // why the last failure wasn't handed back, when hand-backs are on
+	at     string   // the branch's commit the check passed on, once it passes; "" when git can't say
 }
 
-// checkRebased sets up and checks the branch of r's ticket, rebased onto r.onto from r.head, and hands
-// a failure back to its worker to fix while it can (see whyNotFixCheck), *fixes counting the hand-backs
-// in the ticket's merge; resolved says its worker resolved the rebase. The caller holds the merge queue,
+// checkRebased sets up and checks the branch of r's ticket, rebased onto r.onto from r.head (or on top
+// of it already, at r.head, as r.onTop says), and hands a failure back to its worker to fix while it
+// can (see whyNotFixCheck), *fixes counting the hand-backs in the ticket's merge; resolved says its
+// worker resolved the rebase. The caller holds the merge queue,
 // which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
 // is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's stop during a hand-back,
 // the worker's work left as it is.
@@ -44,11 +46,12 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 	// committedNothing when it found nothing to fix.
 	fixed := ""
 	for {
+		at := o.checkout.Head(keep, c.Repo, r.br)
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
-		output, err := o.setUp(ctx, r.worker, r.head, r.onto)
+		output, err := o.setUp(ctx, r)
 		setup := err != nil
 		if !setup {
-			output, err = o.runCheck(ctx, r.worker, r.onto)
+			output, err = o.runCheck(ctx, r)
 		}
 		if err != nil && ctx.Err() != nil {
 			return res, errInterrupted
@@ -73,10 +76,12 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 				o.info("  '%s' passes on %s as its worker fixed it", c.Check, r.br)
 			case resolved:
 				o.info("  '%s' passes on %s as its worker resolved it", c.Check, r.br)
+			case r.onTop:
+				o.info("  '%s' passes on %s", c.Check, r.branchOn(c.Base))
 			default:
 				o.info("  '%s' passes on the rebased %s", c.Check, r.br)
 			}
-			return checked{tries: res.tries}, nil
+			return checked{tries: res.tries, at: at}, nil
 		}
 		res.err, res.setup, res.output = err, setup, output
 		if c.CheckHandBacks == 0 {
@@ -86,7 +91,6 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			res.not = "its worker found nothing to fix"
 			return res, nil
 		}
-		at := o.checkout.Head(keep, c.Repo, r.br)
 		if res.not = o.whyNotFixCheck(keep, r, res, *fixes, at); res.not != "" {
 			return res, nil
 		}
@@ -165,8 +169,8 @@ func times(n int) string {
 func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checked, n int) (fixed, why string,
 	stop *stopReason) {
 	c := o.cfg
-	line := fmt.Sprintf("  FIXING: %s on %s rebased onto %s; handed back to its worker in tab %s to fix "+
-		"(%d of %d, up to %s)", o.failedHow(res.setup, res.err), r.br, c.Base, r.tab, n, c.CheckHandBacks,
+	line := fmt.Sprintf("  FIXING: %s on %s; handed back to its worker in tab %s to fix "+
+		"(%d of %d, up to %s)", o.failedHow(res.setup, res.err), r.branchOn(c.Base), r.tab, n, c.CheckHandBacks,
 		command.ShortDuration(o.handBackLimit()))
 	prompt := o.fixPrompt(context.WithoutCancel(ctx), r, res)
 	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, func() string {
@@ -181,7 +185,8 @@ func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checke
 const maxLanded = 30
 
 // fixPrompt is what the worker is asked to do with a failure on its rebased branch, as res says: what
-// failed, what the output says (see noteCheckFailed), and what the rebase brought in from Base.
+// failed, what the output says (see noteCheckFailed), and what the rebase brought in from Base; or on
+// its branch on top of Base already, which brought in nothing.
 func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string {
 	c := o.cfg
 	said := "it printed nothing"
@@ -191,6 +196,16 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 			said = "these lines say what failed:"
 		}
 		said += "\n" + strings.Join(f.said, "\n")
+	}
+	if r.onTop {
+		return fmt.Sprintf("Before %s merges into %s, %s on it. Its whole output is in %s; %s\n\n"+
+			"Fix %s so that the check passes. "+
+			"Run '%s' in the foreground until it passes, then commit the fix on %s with %s in the commit message. "+
+			"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket "+
+			"changes, and no uncommitted changes left. Say DONE when the fix is committed. If the check passes "+
+			"without a change, the failure not coming from %s, commit nothing and say DONE: orchestra runs it again.",
+			r.br, c.Base, o.failedHow(res.setup, res.err), res.output, said,
+			r.br, c.Check, r.br, r.id, r.br)
 	}
 	landed := strings.TrimSpace(o.history.OneLineLog(ctx, c.Repo, r.head+".."+r.onto))
 	if landed == "" {

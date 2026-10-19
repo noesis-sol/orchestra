@@ -408,7 +408,7 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
 	bindGiven(e, fs.DurationVar, &f.checkTimeout, "check-timeout", "ORCHESTRA_CHECK_TIMEOUT", 0,
 		project.ParseCheckTimeout,
-		"stop the merge check (check-fast) on a rebased ticket after this long and set the ticket aside, e.g. 5m "+
+		"stop the merge check (check-fast) on a ticket before it merges after this long and set the ticket aside, e.g. 5m "+
 			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
 	bindGiven(e, fs.DurationVar, &f.checkFullTimeout, "check-full-timeout", "ORCHESTRA_CHECK_FULL_TIMEOUT", 0,
 		project.ParseCheckTimeout,

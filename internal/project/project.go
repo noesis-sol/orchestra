@@ -392,7 +392,7 @@ func settingsStep(repo string, c Choice) (Step, error) {
 	unchecked := c.Fast != nil && len(fast) == 0
 	switch {
 	case unchecked:
-		detail += " · check-fast checks nothing yet: a rebased ticket merges unchecked (--check-fast sets a command)"
+		detail += " · check-fast checks nothing yet: every ticket merges unchecked (--check-fast sets a command)"
 	case c.Fast == nil:
 		detail += " · check-fast: " + FastRunner + " as it is"
 	default:

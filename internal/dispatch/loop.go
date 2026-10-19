@@ -496,10 +496,10 @@ type Config struct {
 	CheckFull        string
 	CheckFullTimeout time.Duration
 	// Setup installs the project's dependencies (setup), run in a ticket's new worktree before its worker
-	// starts, and before Check on a rebased branch when the rebase changed a file SetupFiles matches, for
-	// at most CheckTimeout each, and always before CheckFull, within its time limit; "" for none (see
-	// setUpWorktree, setUp and FullCheck). A merge that commits others to Base's settings.json replaces
-	// them from then on (see takeSettings).
+	// starts, and before Check on a finished ticket's branch when the commits since changed a file
+	// SetupFiles matches, for at most CheckTimeout each, and always before CheckFull, within its time
+	// limit; "" for none (see setUpWorktree, setUp and FullCheck). A merge that commits others to Base's
+	// settings.json replaces them from then on (see takeSettings).
 	Setup      string
 	SetupFiles []string
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
@@ -513,7 +513,7 @@ type Config struct {
 	ResolveConflicts bool
 	// ResolveTimeout is how long the worker may take to resolve it; 0 for DefaultResolveTimeout.
 	ResolveTimeout time.Duration
-	// CheckHandBacks is how many times a finished ticket whose check fails on its rebased branch is
+	// CheckHandBacks is how many times a finished ticket whose check fails on its branch, rebased or not, is
 	// handed back to its worker to fix (see checkRebased), within ResolveTimeout each; 0 for never.
 	CheckHandBacks int
 	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome, and

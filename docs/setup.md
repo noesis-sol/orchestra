@@ -25,7 +25,7 @@ This creates `.orchestra/`, where everything `orchestra` owns in a project lives
 and the project's two checks, the runners, in `scripts/`:
 
 ```
-scripts/check-fast.sh         committed: the merge check, run on every ticket rebased onto work merged while it ran
+scripts/check-fast.sh         committed: the merge check, run on every ticket before it merges
 scripts/check-full.sh         committed: every check, check-fast.sh then the slower suites, run once at the end of a run
 ```
 
@@ -83,7 +83,7 @@ Nothing outside Beads is renamed, so the rename is refused while something still
 
 A project has two checks, each a shell script `init` writes in `scripts/` and the project then owns:
 
-- **`scripts/check-fast.sh`**, the merge check: orchestra runs it on every finished ticket that had to be rebased onto work merged while it ran, and workers run it before they close a ticket. `settings.json` names it as `check_fast`, with `check_fast_timeout` (default 30m; `--check-timeout` on a run overrides it).
+- **`scripts/check-fast.sh`**, the merge check: orchestra runs it on every finished ticket before it merges, rebased onto work merged while it ran or not, and workers run it before they close a ticket. `settings.json` names it as `check_fast`, with `check_fast_timeout` (default 30m; `--check-timeout` on a run overrides it).
 - **`scripts/check-full.sh`**, everything: it runs `scripts/check-fast.sh` first, then the slower suites. orchestra runs it once at the end of a run that merged a ticket ([The full check](running.md#the-full-check)). `settings.json` names it as `check_full`, with `check_full_timeout` (default 60m; `--check-full-timeout` on a run overrides it).
 
 A runner lists the suites' commands, one line each, run from the repository's root, each in a subshell, `(` and `)` on the lines around it, so that a command failing anywhere in a suite (`cd web && npm test`) fails the runner and its `cd` doesn't carry over to the next suite. Each is under a comment naming where the suite was found, after a line printing `SUITE: <its name>` (or its command), which names the suite a failing full check failed in. Each framework finds its own test files, so a new test in an existing suite needs no edit there; a new suite is a new line. A suite that can't run in two worktrees at once (a fixed port, a shared database) runs between `lock <name>` and `unlock`: checks running at once in several worktrees take turns on it. The lock is a directory in the temp directory, named for the repository and the suite and holding its holder's PID, taken over once that process is gone (macOS has no `flock`). A runner with no suites is just `exit 0`, with a comment saying it checks nothing yet; `check-full.sh` with no suites of its own runs `check-fast.sh`. An existing `scripts/check.sh` is never edited: `check-fast.sh` calls it as a suite, the line `scripts/check.sh`, and `init` without a check command finds it there.

@@ -79,7 +79,7 @@ func TestASkippedCommitMergesTheRest(t *testing.T) {
 func TestEveryCommitSkippedClosesUnchanged(t *testing.T) {
 	t.Parallel()
 	h := conflictHarness(t)
-	h.cfg.Check = "exit 1" // any check run on A's code would set it aside
+	h.cfg.Check = failsOnlyFor("A", "exit 1") // any check run on A's code would set it aside
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.beads.link("B", "A", "blocks")
@@ -94,7 +94,7 @@ func TestEveryCommitSkippedClosesUnchanged(t *testing.T) {
 		"and skipped them in the rebase, so there is nothing to merge; worktree, branch and tab removed") {
 		t.Errorf("want A closed with no change:\n%s", ev)
 	}
-	for _, not := range []string{"MERGE_CONFLICT", "CHECKS_FAILED", "checking it with"} {
+	for _, not := range []string{"MERGE_CONFLICT", "CHECKS_FAILED", "A's worker finished the rebase; checking it with"} {
 		if strings.Contains(ev, not) {
 			t.Errorf("A should be neither checked nor set aside (%q):\n%s", not, ev)
 		}

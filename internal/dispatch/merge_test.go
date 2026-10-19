@@ -65,7 +65,7 @@ func (f *mergeFixture) onMain(t *testing.T, file, content string) {
 }
 
 func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
-	f := newMergeFixture(t, "exit 1") // must not run: nothing to re-check
+	f := newMergeFixture(t, "true") // checked as it is, without a rebase
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
@@ -76,8 +76,9 @@ func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
 	if _, err := os.Stat(wt); !os.IsNotExist(err) {
 		t.Error("the worktree should be removed after merging")
 	}
-	if !strings.Contains(f.sink.text(), "k-1 closed") {
-		t.Errorf("events:\n%s", f.sink.text())
+	if ev := f.sink.text(); !strings.Contains(ev, "wt/k-1 is on top of main already: checking it with 'true'") ||
+		!strings.Contains(ev, "k-1 closed") || strings.Contains(ev, "rebased") {
+		t.Errorf("events:\n%s", ev)
 	}
 }
 

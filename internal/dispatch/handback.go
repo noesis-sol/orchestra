@@ -16,12 +16,23 @@ const maxHandBacks = 2
 
 // rebaseStop is a rebase stopped on conflicts in a finished ticket's worktree, as merge found it:
 // the ticket's worker, the commit it was rebasing onto, the branch's commit before it and how many
-// commits of its own it had then.
+// commits of its own it had then. The branch of a ticket checked before it merges, rebased or on top
+// of Base already (onTop: onto is then Base's commit under it, and head the branch's own), is one too.
 type rebaseStop struct {
 	worker
 	onto, head string
 	own        int
 	files      []string
+	onTop      bool
+}
+
+// branchOn names r's branch as it is checked, for a line about it: "wt/A rebased onto main", or
+// "wt/A on top of main" when it was on top of base already.
+func (r rebaseStop) branchOn(base string) string {
+	if r.onTop {
+		return r.br + " on top of " + base
+	}
+	return r.br + " rebased onto " + base
 }
 
 // whyNotHandBack says why a stopped rebase can't be handed back to the ticket's worker, or "" if

@@ -95,7 +95,7 @@ func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 	switch {
 	case activity != "":
 	case stage == MergeRunning:
-		activity = "merging into " + o.cfg.Base + ", rebased and checked again first if it moved on"
+		activity = "merging into " + o.cfg.Base + " once checked, rebased onto it first if it moved on"
 	default:
 		activity = "waiting for its turn to merge into " + o.cfg.Base
 	}

@@ -40,12 +40,13 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 	return nil
 }
 
-// merge brings w's finished ticket's branch onto Base, one ticket at a time. When other tickets
-// merged while it ran, the branch is rebased first and, since the rebased code is untested, the
-// project's check command runs again before it merges. A rebase that stops on conflicts is handed
-// back to the ticket's worker to resolve, when it can be (see whyNotHandBack), without holding up
-// the merge queue meanwhile, and so is a check that fails on the rebased branch, to fix (see
-// checkRebased). A conflict left unresolved or a failing check leaves the ticket for review and the
+// merge brings w's finished ticket's branch onto Base, one ticket at a time, once the project's check
+// command passes on it: its worker checked its own change, and the merge check tests everything, so
+// no ticket reaches Base unchecked. When other tickets merged while it ran, the branch is rebased
+// first, and checked as rebased; one on top of Base already is checked as it is (see checkOnTop). A
+// rebase that stops on conflicts is handed back to the ticket's worker to resolve, when it can be (see
+// whyNotHandBack), without holding up the merge queue meanwhile, and so is a check that fails on the
+// branch, to fix (see checkRebased). A conflict left unresolved or a failing check leaves the ticket for review and the
 // run goes on; a failing check is tried once more after Base moves on (see recheck).
 // A branch whose commits, taken together, change nothing, before its rebase or after (by git, or by
 // its worker skipping those Base has already), has nothing to merge and is cleaned up as such (see
@@ -120,12 +121,13 @@ type mergeRun struct {
 	w           worker
 	keep        context.Context
 	repo, queue *lockGuard
-	handedBack  int // its rebase's conflicts handed back to its worker to resolve
-	fixes       int // its failing check handed back to its worker to fix
+	handedBack  int    // its rebase's conflicts handed back to its worker to resolve
+	fixes       int    // its failing check handed back to its worker to fix
+	checked     string // the branch's commit the check last passed on, on top of Base: it merges as it is
 }
 
-// pass merges the ticket's branch if it is on top of Base, or rebases it onto Base and checks it when
-// it may (rebase), and says what is left to do.
+// pass merges the ticket's branch if it is on top of Base and checked there, or checks it there
+// first, or rebases it onto Base and checks it when it may (rebase), and says what is left to do.
 func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReason) {
 	c := m.o.cfg
 	m.repo.lock()
@@ -135,7 +137,12 @@ func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReaso
 		return mergeDone, nil
 	}
 	if m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br) {
-		return mergeDone, m.fastForward()
+		if c.Check == "" || m.isChecked() {
+			return mergeDone, m.fastForward()
+		}
+		if rebase {
+			return m.checkOnTop(ctx)
+		}
 	}
 	if !rebase {
 		m.repo.unlock()
@@ -162,6 +169,44 @@ func (m *mergeRun) dropUnchanged(onto, why string) bool {
 	m.repo.unlock()
 	m.o.closedUnchanged(m.keep, m.w, why, m.repo)
 	return true
+}
+
+// isChecked reports whether the check has passed on the ticket's branch as it is now, in this merge:
+// a fast-forward then brings onto Base the very code checked. It is called with repo held.
+func (m *mergeRun) isChecked() bool {
+	at := m.o.checkout.Head(m.keep, m.o.cfg.Repo, m.w.br)
+	return at != "" && at == m.checked
+}
+
+// checkOnTop checks the ticket's branch, on top of Base already as its worker left it, before it
+// merges, as checkClean does a rebased one: a failure is handed back to its worker to fix or sets the
+// ticket aside. It is called with repo held.
+func (m *mergeRun) checkOnTop(ctx context.Context) (mergeStep, *stopReason) {
+	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
+	r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, w.br),
+		onTop: true}
+	m.repo.unlock()
+	o.info("  %s is on top of %s already: checking it with '%s' before it merges", w.br, c.Base, c.Check)
+	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
+	return m.afterCheck(r, res, stop)
+}
+
+// afterCheck says what is left to do once the check on r's branch has come out as res, or stopped
+// the run (stop), setting the ticket aside when it failed. repo is not held.
+func (m *mergeRun) afterCheck(r rebaseStop, res checked, stop *stopReason) (mergeStep, *stopReason) {
+	switch {
+	case stop != nil:
+		return mergeDone, stop
+	case res.err != nil:
+		m.o.checksFailed(m.keep, r, res)
+		return mergeDone, nil
+	}
+	m.checked = res.at
+	if len(res.tries) > 0 {
+		return mergeAgainAfterWorker, nil // fixed: the queue was let go of while its worker worked
+	}
+	// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
+	return mergeAgain, nil
 }
 
 // fastForward merges the ticket's branch, on top of Base, into it and cleans up after it, or returns
@@ -274,7 +319,9 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 		if res, stop = o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, true); stop != nil {
 			return mergeDone, stop // Ctrl+C or the usage limit: a fix under way is left as it is
 		}
-		why = o.failedResolved(r, res)
+		if why = o.failedResolved(r, res); why == "" {
+			m.checked = res.at
+		}
 	}
 	if why != "" {
 		m.repo.lock()
@@ -304,17 +351,7 @@ func (m *mergeRun) checkClean(ctx context.Context, r rebaseStop) (mergeStep, *st
 		return mergeAgain, nil
 	}
 	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
-	switch {
-	case stop != nil:
-		return mergeDone, stop
-	case res.err != nil:
-		o.checksFailed(m.keep, r, res)
-		return mergeDone, nil
-	case len(res.tries) > 0:
-		return mergeAgainAfterWorker, nil // fixed: the queue was let go of while its worker worked
-	}
-	// Lock again and merge; if Base moved once more meanwhile, rebase and check again.
-	return mergeAgain, nil
+	return m.afterCheck(r, res, stop)
 }
 
 // notFastForwarded is the reason to stop when w's branch, on top of Base, did not fast-forward onto
@@ -428,7 +465,8 @@ func (o *Loop) failedResolved(r rebaseStop, res checked) string {
 	return why
 }
 
-// checksFailed sets aside the ticket of r, rebased onto r.onto, as its check failed there (res), and
+// checksFailed sets aside the ticket of r, rebased onto r.onto or on top of it already, as its check
+// failed there (res), and
 // keeps it to be checked once more after Base moves on (see recheck), unless this was that once.
 func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
 	c := o.cfg
@@ -438,8 +476,8 @@ func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
 	switch h := res.handedBack(); {
 	case h != "":
 		tried = fmt.Sprintf(", after it was handed back to its worker to fix %s (see its notes)", times(len(res.tries)))
-		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s on %s rebased onto %s (output is in %s); it was %s; "+
-			"so %s was set aside for review.", o.failedHow(res.setup, res.err), r.br, c.Base, res.output, h, id))
+		o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: %s on %s (output is in %s); it was %s; "+
+			"so %s was set aside for review.", o.failedHow(res.setup, res.err), r.branchOn(c.Base), res.output, h, id))
 	case res.not != "":
 		tried = "; not handed back to its worker: " + res.not
 	}
@@ -449,8 +487,8 @@ func (o *Loop) checksFailed(ctx context.Context, r rebaseStop, res checked) {
 		again, later = "", o.awaitRecheck(ctx, r.worker, r.onto)
 	}
 	o.leaveFor(ctx, id, asideChecksFailed, why+again, "", fmt.Sprintf(
-		"%s closed, but %s%s on %s rebased onto %s%s; worktree %s and tab %s left for review (output is in %s)%s",
-		id, o.failedHow(res.setup, res.err), again, r.br, c.Base, tried, r.wt, r.tab, res.output, later))
+		"%s closed, but %s%s on %s%s; worktree %s and tab %s left for review (output is in %s)%s",
+		id, o.failedHow(res.setup, res.err), again, r.branchOn(c.Base), tried, r.wt, r.tab, res.output, later))
 }
 
 // checksFailedDetail is the dashboard's short why for a ticket set aside as its check, or the setup

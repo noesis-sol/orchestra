@@ -22,7 +22,8 @@ import (
 // A finished ticket's worktree has the dependencies set up for the code as it was then. Its rebase
 // onto Base can bring in a changed lockfile, from a ticket that merged meanwhile, and the check would
 // then run the rebased code against dependencies installed for the code before. So before the check
-// on a rebased branch (merge, RECHECK and a hand-back's verification), the setup runs in the worktree
+// on a rebased branch (merge, RECHECK and a hand-back's verification), or one on top of Base already
+// whose worker changed one, the setup runs in the worktree
 // when the commits since its dependencies were last set up change a file setup_files names. A setup
 // that fails fails the check, its output kept in the worktree's setupLogName.
 //
@@ -51,24 +52,25 @@ func (o *Loop) setupNow() setupConf {
 	return setupConf{cmd: o.cfg.Setup, files: o.cfg.SetupFiles}
 }
 
-// setUp runs the setup command in w's worktree, its branch rebased onto the commit onto from before,
-// when the commits since its dependencies were last set up in this run, or since before if they
-// weren't, change a file the setup's globs match (see setupDue); when git can't say what they change,
-// it runs it anyway. It returns as runCheck does: where the output of a setup that failed is, and
-// errCheckTimedOut for one stopped at the check's time limit.
-func (o *Loop) setUp(ctx context.Context, w worker, before, onto string) (string, error) {
+// setUp runs the setup command in the worktree of r's ticket, its branch rebased onto the commit r.onto
+// from r.head (or on top of it already), when the commits since its dependencies were last set up in
+// this run, or since r.head if they weren't, change a file the setup's globs match (see setupDue);
+// when git can't say what they change, it runs it anyway. It returns as runCheck does: where the
+// output of a setup that failed is, and errCheckTimedOut for one stopped at the check's time limit.
+func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
+	w := r.worker
 	s := o.setupNow()
 	if s.cmd == "" {
 		return "", nil
 	}
 	keep := context.WithoutCancel(ctx) // a read cut short would look like no change
 	now := o.checkout.Head(keep, o.cfg.Repo, w.br)
-	what := o.setupDue(keep, w.id, before, now, s.files)
+	what := o.setupDue(keep, w.id, r.head, now, s.files)
 	if what == "" {
 		return "", nil
 	}
 	o.info("  %s: %s; running '%s' before the check", w.id, what, s.cmd)
-	if run, output := o.runIn(ctx, w, onto, s.cmd); run.err != nil {
+	if run, output := o.runIn(ctx, r, s.cmd); run.err != nil {
 		return output, run.err
 	}
 	o.setUpAt(w.id, now)

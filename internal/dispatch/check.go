@@ -23,27 +23,28 @@ func (o *Loop) checkTimeout() time.Duration {
 	return orDefault(o.cfg.CheckTimeout, project.DefaultCheckTimeout)
 }
 
-// runCheck runs the project's check command in w's worktree, its branch rebased onto the commit
-// onto. It gives up after checkTimeout, stopping everything the check started, and returns
-// errCheckTimedOut then. When the check fails, the end of its output goes in the log and the whole of
-// it in the worktree's checkLogName (see keepOutput), and what it said goes to the reviewer (see
-// noteCheckFailed); runCheck returns where the output is. When it passes, each FLAKY: line it printed
-// is a warning (see reportFlaky).
-func (o *Loop) runCheck(ctx context.Context, w worker, onto string) (string, error) {
-	run, output := o.runIn(ctx, w, onto, "")
+// runCheck runs the project's check command in the worktree of r's ticket, its branch rebased onto the
+// commit r.onto, or on top of it already. It gives up after checkTimeout, stopping everything the
+// check started, and returns errCheckTimedOut then. When the check fails, the end of its output goes
+// in the log and the whole of it in the worktree's checkLogName (see keepOutput), and what it said
+// goes to the reviewer (see noteCheckFailed); runCheck returns where the output is. When it passes,
+// each FLAKY: line it printed is a warning (see reportFlaky).
+func (o *Loop) runCheck(ctx context.Context, r rebaseStop) (string, error) {
+	run, output := o.runIn(ctx, r, "")
 	if run.err == nil {
-		o.reportFlaky(w.id, "", run.out)
+		o.reportFlaky(r.id, "", run.out)
 	}
 	return output, run.err
 }
 
-// runIn runs the check in w's worktree, or the setup command setup when it is set, and returns how it
+// runIn runs the check in the worktree of r's ticket, or the setup command setup when it is set, and returns how it
 // ran. It gives up after checkTimeout, stopping everything it started, and run.err wraps
 // errCheckTimedOut then. When it fails, the end of its output goes in the log, the whole of it in the worktree's
 // checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
-// cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch rebased
-// onto the commit onto. Only what is said of the output is kept in memory (see checkOutput).
-func (o *Loop) runIn(ctx context.Context, w worker, onto, setup string) (run commandRun, output string) {
+// cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch as r has
+// it. Only what is said of the output is kept in memory (see checkOutput).
+func (o *Loop) runIn(ctx context.Context, r rebaseStop, setup string) (run commandRun, output string) {
+	w := r.worker
 	cmd, logName := o.cfg.Check, checkLogName
 	if setup != "" {
 		cmd, logName = setup, setupLogName
@@ -56,7 +57,7 @@ func (o *Loop) runIn(ctx context.Context, w worker, onto, setup string) (run com
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
 	output = o.keepOutput(w.wt, logName, "the check's", run.out)
 	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
-		o.noteCheckFailed(ctx, w, onto, output, run, setup)
+		o.noteCheckFailed(ctx, r, output, run, setup)
 	}
 	return run, output
 }
@@ -149,6 +150,7 @@ func (o *Loop) keepOutput(dir, logName, what string, out *checkOutput) string {
 // failed, and whether in code the ticket changed, without sending the maintainer to the log.
 type checkFail struct {
 	br, onto string   // the branch checked, rebased onto Base at onto
+	onTop    bool     // it was on top of Base at onto already, not rebased
 	how      string   // as checkHow says
 	output   string   // where the whole output is, as keepOutput returned it
 	said     []string // the lines of the output that say what failed (see checkOutput.failures)
@@ -161,17 +163,22 @@ type checkFail struct {
 const maxDirs = 20
 
 // evidence is what the reviewer is told of ticket id's failed check, check, which ran on its branch
-// rebased onto base: how it failed, the lines that say what failed and the directories the ticket's
-// own commits change, so the reviewer can tell a failure in its code from one elsewhere.
+// rebased onto base, or on top of it already: how it failed, the lines that say what failed and the
+// directories the ticket's own commits change, so the reviewer can tell a failure in its code from one
+// elsewhere.
 func (f checkFail) evidence(id, check, base string) string {
 	var b strings.Builder
+	on, changed := "rebased onto", "the rebase changed"
+	if f.onTop {
+		on, changed = "on top of", "its commits change"
+	}
 	if f.setup != "" {
-		fmt.Fprintf(&b, "%s: the setup '%s', run before the check as the rebase changed the project's dependency "+
-			"files, %s on %s rebased onto %s at %s, so the check did not run; its output is in %s.\n",
-			id, f.setup, f.how, f.br, base, short(f.onto), f.output)
+		fmt.Fprintf(&b, "%s: the setup '%s', run before the check as %s the project's dependency "+
+			"files, %s on %s %s %s at %s, so the check did not run; its output is in %s.\n",
+			id, f.setup, changed, f.how, f.br, on, base, short(f.onto), f.output)
 	} else {
-		fmt.Fprintf(&b, "%s: '%s' %s on %s rebased onto %s at %s; its output is in %s.\n",
-			id, check, f.how, f.br, base, short(f.onto), f.output)
+		fmt.Fprintf(&b, "%s: '%s' %s on %s %s %s at %s; its output is in %s.\n",
+			id, check, f.how, f.br, on, base, short(f.onto), f.output)
 	}
 	switch {
 	case len(f.said) == 0:
@@ -237,12 +244,13 @@ func (f checkFail) ownFailures() []string {
 	return own
 }
 
-// noteCheckFailed keeps for the reviewer what w's check said as it failed (run), or its setup when
-// setup is the setup command: the lines of its output that say what failed (see commandRun.said),
-// where the output is kept (output), and the directories that the ticket's commits on top of onto
-// change.
-func (o *Loop) noteCheckFailed(ctx context.Context, w worker, onto, output string, run commandRun, setup string) {
-	f := checkFail{br: w.br, onto: onto, how: run.how(), output: output, setup: setup}
+// noteCheckFailed keeps for the reviewer what the check of r's ticket said as it failed (run), or its
+// setup when setup is the setup command: the lines of its output that say what failed (see
+// commandRun.said), where the output is kept (output), and the directories that the ticket's commits
+// on top of r.onto change.
+func (o *Loop) noteCheckFailed(ctx context.Context, r rebaseStop, output string, run commandRun, setup string) {
+	w, onto := r.worker, r.onto
+	f := checkFail{br: w.br, onto: onto, onTop: r.onTop, how: run.how(), output: output, setup: setup}
 	f.said, f.saidEnd = run.said()
 	f.dirs = o.ownDirs(context.WithoutCancel(ctx), w.br, onto) // a read cut short would look like no change
 	o.mu.Lock()

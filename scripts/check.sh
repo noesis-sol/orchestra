@@ -2,7 +2,7 @@
 # The project's full check: vet, ShellCheck, the race tests and the linters in .golangci.yml. Orchestra
 # runs it once at the end of a run that merged a ticket (check_full in .orchestra/settings.json), and
 # workers run it before closing one. With -short it is the merge check, scripts/check-fast.sh, which
-# orchestra runs before merging a rebased ticket (check_fast): the same, but the tests run with -short,
+# orchestra runs before merging each ticket (check_fast): the same, but the tests run with -short,
 # without those that take over a second.
 # gotestsum and golangci-lint run through go run at pinned versions, so a machine needs only Go; ShellCheck
 # is downloaded once at a pinned version (scripts/shellcheck.sh). The tests that run the real tmux skip

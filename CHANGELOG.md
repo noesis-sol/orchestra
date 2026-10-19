@@ -33,6 +33,14 @@ All notable changes to orchestra are documented here. The format follows
   exit status, then ran it again to learn whether it passed. This
   repository's `scripts/check.sh` ends with a verdict line, `PASS` or `FAIL
   in <step>` (vet, shellcheck, tests or lint).
+- Every merge is checked: a finished ticket whose branch is on top of the base
+  already, as when nothing merged while it ran, gets the merge check (and the
+  setup first when a `setup_files` file changed) before it fast-forwards,
+  rather than merging unchecked (`wt/<id> is on top of <base> already: checking
+  it with …`). A failure there is handed back to its worker (`FIXING`) or sets
+  the ticket aside (`CHECKS_FAILED`), as on a rebased branch; a branch whose
+  commits change nothing still merges without one. The check runs in the merge
+  queue, so it adds its running time to about a third more merges.
 - A run has no ticket limit unless `--limit` or `LIMIT` gives one, as a
   `--spec` or `--feature` run already had: a plain run no longer stops after 40
   tickets with `LIMIT_REACHED`. A limit given still caps a run of any kind,

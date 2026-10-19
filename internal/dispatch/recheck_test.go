@@ -122,7 +122,7 @@ func TestATicketWhoseCheckFailsAgainStaysSetAside(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		dir := t.TempDir()
-		h.cfg.Check = countedCheck(dir, "") // never fixed
+		h.cfg.Check = failsOnlyFor("A", countedCheck(dir, "")) // never fixed
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
 		h.beads.add("C", "third", 3)

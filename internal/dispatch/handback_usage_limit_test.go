@@ -68,6 +68,7 @@ func TestAWorkerLimitedInAHandBackHoldsTheRunUntilTheReset(t *testing.T) {
 			return reachesLimit(hooks, false, reset)(w)
 		}, commitsFix(dir, "admin_test.go", true))
 		h.reporter = hooks
+		h.cfg.Check = failsOnlyFor("A", h.cfg.Check) // B, on top of main, passes
 		h.cfg.Concurrency = 2
 		h.cfg.UsageLimitWait = 6 * time.Hour
 		h.worker("B", finishes("b.txt"))
@@ -136,7 +137,7 @@ func TestAHandBackToALimitedWorkerWaitsForTheReset(t *testing.T) {
 				start := time.Now()
 				reset := start.Add(2 * time.Hour)
 				h := newTimedHarness(t)
-				h.cfg.Check = countedCheck(dir, `--- FAIL: TestAdmin (0.01s)\n`)
+				h.cfg.Check = failsOnlyFor("A", countedCheck(dir, `--- FAIL: TestAdmin (0.01s)\n`))
 				h.cfg.CheckHandBacks = 2
 				h.cfg.Concurrency = 2
 				h.cfg.UsageLimitWait = 6 * time.Hour

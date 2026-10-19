@@ -74,7 +74,7 @@ name; see [Workers' MCP servers](#workers-mcp-servers)) and `concurrent`, how ma
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
 `--ticket-limit` / `TICKET_LIMIT` overrides it, `0` for none), `check_fast_timeout`, how long the
-merge check may run on a rebased ticket before it is stopped and the ticket set aside (`"5m"`, default
+merge check may run on a ticket before it is stopped and the ticket set aside (`"5m"`, default
 30m; `--check-timeout` / `ORCHESTRA_CHECK_TIMEOUT` overrides it), `check_full_timeout`, the same for
 check-full (default 60m; `--check-full-timeout` / `ORCHESTRA_CHECK_FULL_TIMEOUT`), and `exclude_types`, the issue
 types never dispatched (default `["epic"]`; `[]` dispatches every type), and `environment_hold`,
@@ -545,7 +545,8 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   return once answered. Reopen it with the command on the line.
 - `rebased … onto …, which moved on while it ran` and `'<check>' passes on the rebased …`: other
   tickets merged first; the branch was rebased and re-checked before merging. Normal with several
-  at once.
+  at once. `wt/<id> is on top of <base> already: checking it with …` and `'<check>' passes on wt/<id>
+  on top of <base>`: nothing merged meanwhile; the branch was checked as it is. Every merge is checked.
 - `RESOLVING: wt/<id> conflicts with <base> in <files>; handed back to its worker`: the rebase
   stopped on conflicts and the ticket's own worker was asked to resolve it (the dashboard shows
   `⟳ resolving`). Normal; other tickets merge meanwhile. Leave its tab alone: orchestra checks the
@@ -566,7 +567,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   (`ENVIRONMENT`). Read the output the line names (`.orchestra/run/setup.log` in that worktree) with
   the user: a missing tool, the network or a registry, or a setup command that is wrong. A run that
   ends with such tickets still out names them in its last line (`…; SETUP_WAITS: …`).
-- `CHECKS_FAILED`: closed, but the check command fails on the rebased branch (output in the log).
+- `CHECKS_FAILED`: closed, but the check command fails on its branch, rebased or not (output in the log).
   Not merged: fix in its worktree or reopen the ticket, with the user. `did not finish within 5m`
   means the check hung or ran past `check_fast_timeout` and was stopped: a hang, or a limit set too low,
   rather than a failing test.

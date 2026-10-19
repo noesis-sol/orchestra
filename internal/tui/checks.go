@@ -333,7 +333,7 @@ func addChecks(stage *initStage, c *project.Choice, ask Ask, accessible bool) *c
 	hide(stage.add(huh.NewInput().
 		Title("Check command").
 		Description("Lint, build and tests, the one command "+project.FastRunner+" runs. Workers run it before "+
-			"they close a ticket, and orchestra runs it again on a ticket rebased onto work merged meanwhile. "+
+			"they close a ticket, and orchestra runs it again on every ticket before it merges. "+
 			empty).
 		Placeholder("e.g. make check").
 		Value(&s.check)), is(choseManual))
@@ -341,7 +341,7 @@ func addChecks(stage *initStage, c *project.Choice, ask Ask, accessible bool) *c
 	// Not filterable: Esc, which ends a filter, cancels the form.
 	s.fastList = huh.NewMultiSelect[int]().
 		Title("On every merge (check-fast)").
-		Description(project.FastRunner + " runs these on every ticket rebased before it merges: the quick ones.").
+		Description(project.FastRunner + " runs these on every ticket before it merges: the quick ones.").
 		Filterable(false).
 		Value(&s.fast)
 	hide(stage.add(s.fastList), func() bool { return is(choseFound)() || len(s.suites) == 0 })
