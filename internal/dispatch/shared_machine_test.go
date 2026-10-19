@@ -196,11 +196,11 @@ func TestMachineCapHoldsFreeSlot(t *testing.T) {
 					t.Errorf("B1 dispatched at %v, want beside the first run's two workers, before A1 closed (%v)",
 						b1, a1Closed)
 				}
-				// The second run's polls fall on A1's close (a minute after the first started, every
-				// readyPoll), so B2 may start in that same instant: after it, as the first run writes its
-				// count only once A1 has closed.
-				if b2.Before(a1Closed) || !b2.Before(a2Closed) || b2.Sub(a1Closed) > readyPoll+time.Second {
-					t.Errorf("B2 dispatched at %v, want within a poll of A1 closing (%v), while A2 runs (closed %v)",
+				// The second run's looks while it holds (every machinePoll) may fall on A1's close, so B2
+				// may start in that same instant: after it, as the first run writes its count only once A1
+				// has closed.
+				if b2.Before(a1Closed) || !b2.Before(a2Closed) || b2.Sub(a1Closed) > machinePoll {
+					t.Errorf("B2 dispatched at %v, want within a look of A1 closing (%v), while A2 runs (closed %v)",
 						b2, a1Closed, a2Closed)
 				}
 				if !slices.ContainsFunc(s.eventsOf(EvQueue), func(ev Event) bool { return ev.MachineFull && ev.Queued == 1 }) {

@@ -33,6 +33,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A run held at the machine's cap on workers (`HOLD: MACHINE`) reads the other
+  runs every 2 seconds while it holds, so the slot another run's worker frees
+  is filled within seconds rather than at its next 30-second poll.
 - The dashboard marks a finished ticket waiting in the merge queue with a
   square, like a stop button: `◼ to merge` in the tickets table and `◼` on its
   line in Current, in place of the clock `◷`, which now only means a ticket

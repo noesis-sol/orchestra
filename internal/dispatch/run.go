@@ -161,6 +161,10 @@ func pronoun(under []Finishing) string {
 // for a running ticket to finish before picking them up.
 const readyPoll = 30 * time.Second
 
+// machinePoll is how often a run held for Config.MachineWorkers reads the other runs (see heldPoll), so
+// that a slot another run's worker frees is filled within seconds rather than at the next readyPoll.
+const machinePoll = 2 * time.Second
+
 // result is what a worker returns to Run.
 type result struct {
 	id      string
@@ -214,24 +218,32 @@ func (o *Loop) Run(ctx context.Context) int {
 			return r.end()
 		}
 		reset, stopReset := o.resetTimer()
-		select {
-		case res := <-r.results:
-			r.returned(res)
-		case v := <-o.verdicts:
-			o.triaged(r.keep, v) // a hold is picked up above
-		case req := <-o.drainReqs:
-			r.hear(req)
-		case <-o.liftWake: // the usage limit lifted: tickets start again above
-		case <-o.merges.joined: // a ticket went to merge: its slot may be free above
-		case <-reset:
-			o.liftAtReset() // and tickets start again above
-		case <-poll.C:
-			r.polled()
-		case <-ctx.Done():
-			stopReset()
-			return r.end()
+		held, stopHeld := r.heldPoll()
+		for waiting := true; waiting; {
+			waiting = false
+			select {
+			case res := <-r.results:
+				r.returned(res)
+			case v := <-o.verdicts:
+				o.triaged(r.keep, v) // a hold is picked up above
+			case req := <-o.drainReqs:
+				r.hear(req)
+			case <-o.liftWake: // the usage limit lifted: tickets start again above
+			case <-o.merges.joined: // a ticket went to merge: its slot may be free above
+			case <-reset:
+				o.liftAtReset() // and tickets start again above
+			case <-poll.C:
+				r.polled()
+			case <-held:
+				waiting = r.stillHeld() // waits on while the machine is full; once a slot frees, starts it above
+			case <-ctx.Done():
+				stopReset()
+				stopHeld()
+				return r.end()
+			}
 		}
 		stopReset()
+		stopHeld()
 	}
 }
 

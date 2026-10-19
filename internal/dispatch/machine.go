@@ -19,10 +19,11 @@ import (
 // that changes, and removed as the run ends. A run reads the others' as it goes: it says once of
 // each other run that it is going (SHARED_MACHINE), and that it has ended; with
 // Config.MachineWorkers, a free slot waits while the workers running across all the runs are at that
-// cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others. A
-// file whose PID is gone, or is a process that started after the run did (the PID taken again since),
-// is a run that ended without removing it: it is ignored and removed. A folder that can't be read
-// holds no run, and one removed under the runs (a cache cleaner) is made again as each next writes.
+// cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others: every
+// machinePoll while it holds. A file whose PID is gone, or is a process that started after the run did
+// (the PID taken again since), is a run that ended without removing it: it is ignored and removed. A
+// folder that can't be read holds no run, and one removed under the runs (a cache cleaner) is made
+// again as each next writes.
 
 // registration is a run's file in the machine's folder of runs.
 type registration struct {
@@ -294,4 +295,22 @@ func (r *runState) machineFull() bool {
 			workersCount(own+m.others), own, limit)})
 	}
 	return true
+}
+
+// heldPoll returns a channel that ticks every machinePoll while the run holds a free slot for
+// Config.MachineWorkers, nil (which never ticks) while it doesn't, and the function that stops it.
+func (r *runState) heldPoll() (<-chan time.Time, func()) {
+	if !r.machine.full || !r.taking() {
+		return nil, func() {}
+	}
+	t := time.NewTicker(machinePoll)
+	return t.C, t.Stop
+}
+
+// stillHeld reads the other runs as heldPoll ticks (see lookAround), and reports whether the run still
+// holds for Config.MachineWorkers: only once it doesn't does Run go round to start the next ticket,
+// reading bd ready, which it would otherwise do every machinePoll.
+func (r *runState) stillHeld() bool {
+	r.lookAround()
+	return r.machine.full
 }
