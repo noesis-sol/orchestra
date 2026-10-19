@@ -100,6 +100,10 @@ All notable changes to orchestra are documented here. The format follows
   since 0.6.0 they were published empty, because the GoReleaser configuration
   disabled the changelog, which also drops the notes passed with
   `--release-notes`.
+- Workers keep Skill when the project enables a plugin in its committed
+  Claude settings (`enabledPlugins` in `.claude/settings.json`), as they reach
+  its skills only through it: a project with no skills of its own had them
+  denied. The run reads this once, as it begins.
 
 ## [0.8.4] - 2026-10-19
 
