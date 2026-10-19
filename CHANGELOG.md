@@ -14,6 +14,11 @@ All notable changes to orchestra are documented here. The format follows
   skills unless the project has skills of its own), when their `claude --help`
   lists the flag: a worker's first call opened with about 11.9k tokens rather
   than 39.2k on Claude Code 2.1.303.
+- The spec breakdown, the refinement and the feature interview start Claude
+  Code with the MCP servers the project's workers get, and none when it chose
+  none or hasn't chosen (`--strict-mcp-config`), rather than every server on
+  the machine: one breakdown carried 259 MCP tools it never called, about
+  200,000 tokens in each of its requests.
 
 ### Fixed
 

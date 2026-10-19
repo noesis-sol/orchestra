@@ -192,8 +192,8 @@ func TestRefineInAPaneRunsTheRootEpicItHandsBack(t *testing.T) {
 		head := gitIn(t, repo, "rev-parse", "HEAD")
 		sum := sha256.Sum256([]byte(refineSpecText))
 		prompt := filepath.Join(repo, project.RunPath("spec-prompt.md"))
-		if want := []string{"--append-system-prompt-file", prompt, "--", "Break the spec at " + refineSpecPath +
-			" down into Beads tickets with me (sha256 " + hex.EncodeToString(sum[:]) + ", commit " + head + ")."}; !slices.Equal(panes.launched, want) {
+		if want := []string{"--append-system-prompt-file", prompt, "--strict-mcp-config", "--",
+			"Break the spec at " + refineSpecPath + " down into Beads tickets with me (sha256 " + hex.EncodeToString(sum[:]) + ", commit " + head + ")."}; !slices.Equal(panes.launched, want) {
 			t.Errorf("claude started with %q, want %q", panes.launched, want)
 		}
 		if b, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(b), "## Questions") ||
@@ -412,7 +412,7 @@ func TestRefineNeedsATerminal(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	var out strings.Builder
-	err := refineOnTerminal(t.Context(), nil, repo, "", "Break the spec down", project.RefineSpec,
+	err := refineOnTerminal(t.Context(), nil, repo, "", nil, "Break the spec down", project.RefineSpec,
 		strings.NewReader(""), &out, &out)
 	if !errors.Is(err, errRefineNeedsTerminal) || out.Len() > 0 {
 		t.Errorf("got %v; output:\n%s", err, out.String())

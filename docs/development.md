@@ -96,7 +96,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
-| `mcp.go` | the MCP servers a Claude worker starts with, and the warning the run gives once about them |
+| `mcp.go` | the MCP servers a Claude worker starts with, and orchestra's own sessions (`SessionMCP`), and the warning the run gives once about them |
 | `permission_mode.go` | the permission mode Claude workers start in (`--permission-mode`), as the `START` line says it, and whether their `claude --help` lists it |
 | `unused_tools.go` | the tools Claude workers start without (`--disallowedTools`), Skill unless the project has skills of its own, when their `claude --help` lists it |
 | `screen.go` | reading a worker's screen: its prompt still unsent in the input box, its latest action |

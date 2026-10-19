@@ -162,3 +162,19 @@ func WriteMCPConfig(wt string, servers []mcp.Server) (string, error) {
 	}
 	return filepath.Join(wt, rel), nil
 }
+
+// MCPArgs are the arguments that start claude in dir with servers and no other MCP servers:
+// --strict-mcp-config alone for none, else their definitions, which WriteMCPConfig writes there:
+// they never go on the command line, which shows in a terminal's tab and in ps.
+func MCPArgs(dir string, servers []mcp.Server) ([]string, error) {
+	if len(servers) == 0 {
+		return []string{"--strict-mcp-config"}, nil
+	}
+	path, err := WriteMCPConfig(dir, servers)
+	if err != nil {
+		return nil, fmt.Errorf("cannot write its MCP servers to %s/%s/%s: %w", Dir, RunName, MCPConfigName, err)
+	}
+	// --mcp-config takes any number of files, up to the next flag: --strict-mcp-config ends the
+	// list, so the arguments after these, such as the prompt, aren't read as more files.
+	return []string{"--mcp-config", path, "--strict-mcp-config"}, nil
+}

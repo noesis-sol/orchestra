@@ -217,7 +217,7 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 		}
 		prompt := filepath.Join(repo, project.RunPath("spec-prompt.md"))
 		request := project.RunPath("feature-request.md")
-		if want := []string{"--append-system-prompt-file", prompt, "--",
+		if want := []string{"--append-system-prompt-file", prompt, "--strict-mcp-config", "--",
 			"Here is the feature I'd like to talk through (feature run " + paneRun + "): @" + request}; !slices.Equal(panes.launched, want) {
 			t.Errorf("claude started with %q, want %q", panes.launched, want)
 		}

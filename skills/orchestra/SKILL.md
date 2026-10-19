@@ -379,7 +379,9 @@ A setup problem (exit 2) naming the workers' MCP servers means a chosen name can
 - `Cannot read Claude Code's MCP config …`: `~/.claude.json` or `.mcp.json` isn't valid JSON; the
   message names the file. Tell the user; don't edit `~/.claude.json` yourself.
 
-Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never get any server.
+Workers of another agent kind (`--agent`) don't get `mcp_servers`; organs never get any server. The
+sessions that break a spec down (`--spec`, with `--refine` or not) or talk a feature through get the
+Claude workers' servers, and none when `mcp_servers` is unset, empty, or for workers of another kind.
 
 ## Reading a run's events
 

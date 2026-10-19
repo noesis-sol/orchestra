@@ -16,6 +16,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -23,11 +24,12 @@ import (
 
 // The headless breakdown (orchestra --spec without --refine) takes the spec as complete and final,
 // with nobody there to ask: claude -p in the main checkout, with the user's own Claude Code setup
-// (the project's CLAUDE.md and settings, as a feature's session has), breaks it down. Its
-// instructions (internal/project's spec-prompt.md) are appended to its system prompt; its first
-// message names the committed spec. It reads with Read, Glob, Grep and Agent, files the tickets with
-// bd through Bash, which runs nothing else but read-only git, and answers with the root epic and the
-// assumptions it made (--json-schema), streaming what it does (stream-json) for the progress shown.
+// (the project's CLAUDE.md and settings, as a feature's session has) but no MCP servers besides a
+// worker's (dispatch.Config.SessionMCP), breaks it down. Its instructions (internal/project's
+// spec-prompt.md) are appended to its system prompt; its first message names the committed spec. It
+// reads with Read, Glob, Grep and Agent, files the tickets with bd through Bash, which runs nothing
+// else but read-only git, and answers with the root epic and the assumptions it made (--json-schema),
+// streaming what it does (stream-json) for the progress shown.
 
 // specSchema is the breakdown's answer: the root epic's ID, the assumptions it made, and, with no
 // root epic, why it filed none.
@@ -62,8 +64,10 @@ type headlessBreakdown struct {
 	repo   string        // the main checkout, where claude runs
 	limit  time.Duration // how long the session may take
 	effort string
-	say    tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
-	log    *dispatch.Log // nil in tests
+	// servers are the MCP servers it gets, and no others: none but the project's chosen ones
+	servers []mcp.Server
+	say     tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
+	log     *dispatch.Log // nil in tests
 	// bd, which has what a session that gave no answer filed
 	tracker    specLister
 	countEvery time.Duration // specCountEvery; tests give their own
@@ -77,8 +81,8 @@ func newHeadlessBreakdown(s *session) headlessBreakdown {
 	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
 		say = tui.Terminal(out, termWidth(out))
 	}
-	return headlessBreakdown{repo: c.Repo, limit: c.SpecTimeout, effort: c.SpecEffort, say: say, log: s.log,
-		tracker: beads.Tracker{Repo: c.Repo}, countEvery: specCountEvery}
+	return headlessBreakdown{repo: c.Repo, limit: c.SpecTimeout, effort: c.SpecEffort, servers: c.SessionMCP(),
+		say: say, log: s.log, tracker: beads.Tracker{Repo: c.Repo}, countEvery: specCountEvery}
 }
 
 // BreakDown runs the session on the spec r names, and returns the root epic its answer names and the
@@ -92,8 +96,12 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the breakdown's instructions: %w", err)
 	}
+	servers, err := project.MCPArgs(h.repo, h.servers)
+	if err != nil {
+		return breakdownResult{}, fmt.Errorf("the breakdown %w", err)
+	}
 	effort := cmp.Or(h.effort, project.DefaultSpecEffort)
-	args := specArgs(prompt, effort, claudeHelp(ctx))
+	args := specArgs(prompt, servers, effort, claudeHelp(ctx))
 	h.logLine(fmt.Sprintf("SPEC: breaking %s down with claude (effort %s, time limit %s)", r.Path, effort,
 		command.ShortDuration(h.limit)))
 	progress := startSpecProgress(h.say, h.log, h.countEvery)
@@ -111,15 +119,15 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	return breakdownResult(answer), nil
 }
 
-// specArgs is the session's command line, past claude, for the instructions in prompt: its tools and
-// their rules, nothing that would ask for a permission (help, claude's --help, says whether it has
-// --permission-prompts), its answer's schema and the stream of what it does. Its first message comes
-// on stdin: an argument after the rules' list would be read as one of them. dontAsk denies whatever
-// the rules don't allow, whatever mode the user's settings start Claude Code in; --permission-prompts
-// none denies what would still prompt.
-func specArgs(prompt, effort, help string) []string {
-	args := []string{"-p", "--append-system-prompt-file", prompt, "--tools", specTools,
-		"--allowedTools"}
+// specArgs is the session's command line, past claude, for the instructions in prompt: its tools, its
+// MCP servers (servers, from project.MCPArgs), the tools' rules, nothing that would ask for a
+// permission (help, claude's --help, says whether it has --permission-prompts), its answer's schema
+// and the stream of what it does. Its first message comes on stdin: an argument after the rules' list
+// would be read as one of them. dontAsk denies whatever the rules don't allow, whatever mode the
+// user's settings start Claude Code in; --permission-prompts none denies what would still prompt.
+func specArgs(prompt string, servers []string, effort, help string) []string {
+	args := slices.Concat([]string{"-p", "--append-system-prompt-file", prompt, "--tools", specTools}, servers,
+		[]string{"--allowedTools"})
 	args = append(args, specAllowed...)
 	args = append(args, "--disallowedTools")
 	args = append(args, specDenied...)

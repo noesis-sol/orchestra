@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
 
@@ -49,6 +51,7 @@ type paneSession struct {
 	hooks    bool
 	repo     string                                         // the main checkout, where claude runs
 	effort   string                                         // claude's --effort; "" for Claude Code's default
+	servers  []mcp.Server                                   // the MCP servers claude gets, and no others
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
 	// Where the session stands, on a line under the fixed message, when out is a terminal (nil
@@ -128,7 +131,11 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"--append-system-prompt-file", prompt}, effortArgs(p.effort)...)
+	mcpArgs, err := project.MCPArgs(p.repo, p.servers)
+	if err != nil {
+		return "", err
+	}
+	args := slices.Concat([]string{"--append-system-prompt-file", prompt}, effortArgs(p.effort), mcpArgs)
 	if p.hooks {
 		report, err := claude.Reporter{}.ReportArgsIn(p.repo, project.InterviewRun)
 		if err != nil {

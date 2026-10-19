@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -52,6 +54,8 @@ type refineBreakdown struct {
 	// effort is the effort the session starts at (claude --effort), the workers' own; "" for Claude
 	// Code's default.
 	effort string
+	// servers are the MCP servers the session gets, and no others: none but the project's chosen ones
+	servers []mcp.Server
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
 	tracker specLister  // bd, which counts what the session files, and has its root epic if it stops
@@ -68,8 +72,8 @@ type refineBreakdown struct {
 func newRefineBreakdown(s *session) refineBreakdown {
 	c, e := s.cfg, s.e
 	tracker := beads.Tracker{Repo: c.Repo}
-	b := refineBreakdown{repo: c.Repo, pane: s.holder.Pane, effort: c.WorkerEffort, tracker: tracker, epics: tracker,
-		log: s.log, out: e.stdout, err: e.stderr}
+	b := refineBreakdown{repo: c.Repo, pane: s.holder.Pane, effort: c.WorkerEffort, servers: c.SessionMCP(),
+		tracker: tracker, epics: tracker, log: s.log, out: e.stdout, err: e.stderr}
 	if b.pane != "" {
 		b.panes, b.hooks = terminalOf(c), terminalNamed(c.Terminal).hookDriven
 	}
@@ -77,7 +81,8 @@ func newRefineBreakdown(s *session) refineBreakdown {
 		b.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
 	b.terminal = func(ctx context.Context, message string, m project.RefineMode) error {
-		return refineOnTerminal(ctx, s.stops, c.Repo, c.WorkerEffort, message, m, e.stdin, e.stdout, e.stderr)
+		return refineOnTerminal(ctx, s.stops, c.Repo, c.WorkerEffort, b.servers, message, m, e.stdin, e.stdout,
+			e.stderr)
 	}
 	return b
 }
@@ -100,7 +105,7 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, effort: b.effort,
-			fallback: terminal, out: b.out, err: b.err, progress: b.line,
+			servers: b.servers, fallback: terminal, out: b.out, err: b.err, progress: b.line,
 			about: refineSubject{spec: r.Spec, update: r.Update, tracker: b.tracker, every: refineCountEvery}}.talk
 	}
 	b.logLine("SPEC: refining " + r.Path + " with claude and you")
@@ -150,13 +155,13 @@ func refineMode(update bool) project.RefineMode {
 }
 
 // refineOnTerminal runs a breakdown with the user in mode m (a spec's refinement, or a feature's) on
-// orchestra's own terminal, at effort ("" for Claude Code's default), message its first message,
-// until the user exits it. orchestra can't end
-// the session there once it has handed back, as it does in a pane, so its instructions, rewritten for
-// the terminal, have claude say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears
+// orchestra's own terminal, at effort ("" for Claude Code's default) with the MCP servers servers and
+// no others, message its first message, until the user exits it. orchestra can't end the session
+// there once it has handed back, as it does in a pane, so its instructions, rewritten for the
+// terminal, have claude say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears
 // with it.
-func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort, message string, m project.RefineMode,
-	stdin io.Reader, stdout, stderr io.Writer) error {
+func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort string, servers []mcp.Server,
+	message string, m project.RefineMode, stdin io.Reader, stdout, stderr io.Writer) error {
 	if !isTerminal(stdin) || !isTerminal(stdout) {
 		if m == project.RefineFeature {
 			return errFeatureNeedsTerminal
@@ -166,6 +171,10 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort, messa
 	prompt, err := project.WriteTerminalRefine(repo, m)
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
+	}
+	mcpArgs, err := project.MCPArgs(repo, servers)
+	if err != nil {
+		return err
 	}
 	if m == project.RefineFeature {
 		fmt.Fprintln(stdout, "Talking the feature through with claude, which files it as tickets once you agree. "+
@@ -177,8 +186,9 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort, messa
 	defer stops.dropInterrupts()()
 	defer keepTerminal(stdin)()
 	// -- ends claude's options: the message after it is none of them.
-	err = command.Interactive(ctx, repo, stdin, stdout, stderr,
-		"claude", append(append([]string{"--append-system-prompt-file", prompt}, effortArgs(effort)...), "--", message)...)
+	err = command.Interactive(ctx, repo, stdin, stdout, stderr, "claude",
+		slices.Concat([]string{"--append-system-prompt-file", prompt}, effortArgs(effort), mcpArgs,
+			[]string{"--", message})...)
 	if e, ok := errors.AsType[*command.Error](err); ok && !errors.As(err, new(*exec.ExitError)) {
 		e.Args = nil // the instructions' path and the message would bury why it failed
 		return fmt.Errorf("couldn't start %w", e)

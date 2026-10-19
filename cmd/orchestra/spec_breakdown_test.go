@@ -288,7 +288,7 @@ func breakdownRepo(t *testing.T) string {
 var testSpec = project.Spec{Path: ".orchestra/specs/app.md", SHA256: strings.Repeat("ab", 32), Commit: "c0ffee"}
 
 // The session is claude -p in the main checkout with the breakdown's instructions, its tools Read,
-// Glob, Grep, Agent and Bash, Bash allowed only bd and read-only git, Edit, Write and NotebookEdit
+// Glob, Grep, Agent and Bash, no MCP servers (the project chose none), Bash allowed only bd and read-only git, Edit, Write and NotebookEdit
 // denied, nothing that would ask allowed (--permission-prompts none only where claude lists it), the
 // answer's schema, the stream of what it does, and the effort; its first message names the spec.
 func TestSpecBreakdownCommandLine(t *testing.T) {
@@ -312,7 +312,7 @@ func TestSpecBreakdownCommandLine(t *testing.T) {
 			}
 			prompt := filepath.Join(repo, project.Dir, project.RunName, "spec-prompt.md")
 			want := slices.Concat([]string{"-p", "--append-system-prompt-file", prompt, "--tools", "Read,Glob,Grep,Agent,Bash",
-				"--allowedTools", "Bash(bd *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)",
+				"--strict-mcp-config", "--allowedTools", "Bash(bd *)", "Bash(git log *)", "Bash(git show *)", "Bash(git diff *)",
 				"Bash(git status *)", "Bash(git ls-files *)", "Bash(git ls-tree *)", "Bash(git grep *)",
 				"Bash(git blame *)", "Bash(git rev-parse *)", "Bash(git cat-file *)",
 				"--disallowedTools", "Edit", "Write", "NotebookEdit", "--permission-mode", "dontAsk"}, tc.prompts,

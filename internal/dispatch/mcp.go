@@ -1,9 +1,9 @@
 package dispatch
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -50,23 +50,23 @@ func (o *Loop) sayMCP() {
 }
 
 // mcpArgs are the arguments that start a Claude worker in worktree wt with the project's MCP
-// servers and no others, whose definitions it writes to .orchestra/run/mcp.json there: they never
-// go on the command line, which shows in the worker's tab and in ps. There are none when the
-// project hasn't chosen, or for another kind of agent.
+// servers and no others, whose definitions it writes to .orchestra/run/mcp.json there. There are
+// none when the project hasn't chosen, or for another kind of agent.
 func (o *Loop) mcpArgs(wt string) ([]string, error) {
 	c := o.cfg
-	switch {
-	case c.MCP == nil || !c.ClaudeWorkers():
+	if c.MCP == nil || !c.ClaudeWorkers() {
 		return nil, nil
-	case len(*c.MCP) == 0:
-		return []string{"--strict-mcp-config"}, nil
 	}
-	path, err := project.WriteMCPConfig(wt, *c.MCP)
-	if err != nil {
-		return nil, fmt.Errorf("cannot write its MCP servers to %s/%s/%s: %w", project.Dir, project.RunName,
-			project.MCPConfigName, err)
+	return project.MCPArgs(wt, *c.MCP)
+}
+
+// SessionMCP are the MCP servers orchestra's own Claude Code sessions get (the spec's breakdown, its
+// refinement, a feature's interview), and no others: a Claude worker's, or none when the project
+// hasn't chosen them, or chose them for workers of another kind, of which orchestra has only the
+// names. project.MCPArgs gives them.
+func (c Config) SessionMCP() []mcp.Server {
+	if c.MCP == nil || !c.ClaudeWorkers() {
+		return nil
 	}
-	// --mcp-config takes any number of files, up to the next flag: --strict-mcp-config ends the
-	// list, so the arguments after these, such as the prompt, aren't read as more files.
-	return []string{"--mcp-config", path, "--strict-mcp-config"}, nil
+	return *c.MCP
 }

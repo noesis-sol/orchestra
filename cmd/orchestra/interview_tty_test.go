@@ -114,7 +114,7 @@ func TestInterviewFilesTheFeatureAndRunsItsEpic(t *testing.T) {
 
 	prompt := filepath.Join(realPath(repo), project.RunPath("spec-prompt.md")) // the repository as git names it
 	args := read(t, filepath.Join(dir, "claude-args"))
-	if !strings.HasPrefix(args, "[--append-system-prompt-file]\n["+prompt+"]\n[--effort]\n[high]\n[--]\n[") {
+	if !strings.HasPrefix(args, "[--append-system-prompt-file]\n["+prompt+"]\n[--effort]\n[high]\n[--strict-mcp-config]\n[--]\n[") {
 		t.Errorf("claude ran with:\n%s", args)
 	}
 	if text := terminalMessage(t, repo, args); text != "- Add a --json flag\n- to the list command" {

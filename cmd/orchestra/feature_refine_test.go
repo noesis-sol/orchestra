@@ -220,7 +220,7 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 	var out, errOut strings.Builder
 	b := refineBreakdown{repo: repo, out: &out, err: &errOut,
 		terminal: func(ctx context.Context, message string, m project.RefineMode) error {
-			return refineOnTerminal(ctx, nil, repo, "", message, m, strings.NewReader(""), &out, &errOut)
+			return refineOnTerminal(ctx, nil, repo, "", nil, message, m, strings.NewReader(""), &out, &errOut)
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: tree, out: &out,
 		err: &errOut}.run(testCtx(t.Context(), t))
