@@ -47,8 +47,12 @@ func inputHolds(screen, prompt string) bool {
 	return false
 }
 
-// Claude Code marks tool calls with ⏺ and its working spinner with one of these glyphs.
-var activityMarks = []string{"⏺", "✻", "✶", "✳", "✢", "✽"}
+// MessageBullets are the bullets Claude Code starts its messages and tool calls with on the screen: ⏺ on macOS,
+// ● elsewhere (its BLACK_CIRCLE).
+var MessageBullets = []string{"⏺", "●"}
+
+// Claude Code marks tool calls with a message bullet and its working spinner with one of these glyphs.
+var activityMarks = append(slices.Clone(MessageBullets), "✻", "✶", "✳", "✢", "✽")
 
 // lastActivity returns the worker's most recent action or spinner line, skipping the input box
 // and status bar at the bottom of its screen.

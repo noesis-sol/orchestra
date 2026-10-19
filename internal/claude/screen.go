@@ -155,7 +155,7 @@ func ShowsUsageLimit(screen string) bool {
 		return false
 	}
 	for _, l := range lines[last+1:] {
-		if l = strings.TrimSpace(l); strings.HasPrefix(l, "⏺") && !strings.Contains(l, "Usage limit reached") {
+		if _, ok := bulleted(l); ok && !strings.Contains(l, "Usage limit reached") {
 			return false // a message after the words: the session went on
 		}
 	}
@@ -166,6 +166,18 @@ func ShowsUsageLimit(screen string) bool {
 // itself once the usage limit resets: "⏺ Usage limit reached · continuing automatically at 7:41pm · esc to
 // cancel", or "… reached again · …".
 func showsContinue(l string) bool {
+	m, ok := bulleted(l)
+	return ok && strings.HasPrefix(m, " Usage limit reached") && strings.Contains(m, "continuing automatically")
+}
+
+// bulleted is l, a line of the screen, after the bullet Claude Code starts a message with (one of
+// dispatch.MessageBullets: ⏺ on macOS, ● elsewhere), and whether l starts with one.
+func bulleted(l string) (string, bool) {
 	l = strings.TrimSpace(l)
-	return strings.HasPrefix(l, "⏺ Usage limit reached") && strings.Contains(l, "continuing automatically")
+	for _, b := range dispatch.MessageBullets {
+		if m, ok := strings.CutPrefix(l, b); ok {
+			return m, true
+		}
+	}
+	return "", false
 }
