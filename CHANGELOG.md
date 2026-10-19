@@ -137,6 +137,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Ctrl+C no longer lets a finished ticket waiting in the merge queue take its
+  turn and rebase its branch after the stop. One whose rebase stopped on
+  conflicts was then marked as handed back to its worker (`RESOLVING: …`),
+  which was never prompted, its worktree left mid-rebase and the ticket not
+  carried over to the next run; the same held for a failing check (`FIXING`).
+  A merge now ends at the stop, a rebase stopped on conflicts is aborted, and
+  the next run carries the ticket over and merges it.
 - A file renamed or copied in the work tree (`git status`'s ` R` or ` C`, as
   after `git add -N` of a moved file) no longer adds a mangled path, made of
   its old name, to what a setup commits or to a worktree's uncommitted files:

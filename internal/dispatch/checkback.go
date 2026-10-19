@@ -71,6 +71,9 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 	fixed := fx.pending
 	fx.pending, fx.tries = "", nil
 	for {
+		if ctx.Err() != nil {
+			return res, errInterrupted
+		}
 		at := o.checkout.Head(keep, c.Repo, r.br)
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
 		output, err := o.setUp(ctx, r)
@@ -119,6 +122,9 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 		}
 		if res.not = o.whyNotFixCheck(keep, r, res, fx.n, at); res.not != "" {
 			return res, nil
+		}
+		if ctx.Err() != nil {
+			return res, errInterrupted // its worker, which could no longer be prompted, isn't handed it
 		}
 		fx.n++
 		// The worker takes minutes: let the other finished tickets merge meanwhile.

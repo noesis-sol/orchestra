@@ -78,11 +78,14 @@ type mergeWaits struct {
 // and waits for its turn, Unlock passes the queue on to the next in line. Each shows the stage it
 // leaves the tickets in on the dashboard (see showMerge).
 type mergeTurn struct {
-	o  *Loop
-	id string
+	o    *Loop
+	id   string
+	stop <-chan struct{} // closed as the run stops (its context's Done): Lock gives up waiting then
 }
 
-// Lock waits for id's turn to merge, showing it as to merge meanwhile, then as merging.
+// Lock waits for id's turn to merge, showing it as to merge meanwhile, then as merging. It gives up
+// waiting as the run stops, leaving the line without the queue, for the caller to see the stop and
+// return: a merge must not begin after it (see mergeRun.pass).
 func (t mergeTurn) Lock() {
 	q := &t.o.merges
 	q.mu.Lock()
@@ -96,7 +99,27 @@ func (t mergeTurn) Lock() {
 	q.line = append(q.line, mergeWaits{id: t.id, turn: turn})
 	t.o.showMerge(t.id, MergeQueued, len(q.line))
 	q.mu.Unlock()
-	<-turn
+	select {
+	case <-turn:
+	case <-t.stop:
+		t.leaveLine()
+	}
+}
+
+// leaveLine takes id out of the line as the run stops, and moves those behind it up; unless its turn
+// came meanwhile, as the run stopped: it holds the queue then.
+func (t mergeTurn) leaveLine() {
+	q := &t.o.merges
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	i := slices.IndexFunc(q.line, func(w mergeWaits) bool { return w.id == t.id })
+	if i < 0 {
+		return
+	}
+	q.line = slices.Delete(q.line, i, i+1)
+	for j := i; j < len(q.line); j++ {
+		t.o.showMerge(q.line[j].id, MergeQueued, j+1)
+	}
 }
 
 // Unlock passes the queue on to the next ticket in line, if any, and moves the others up. id, which
@@ -106,6 +129,9 @@ func (t mergeTurn) Unlock() {
 	q := &t.o.merges
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.holder != t.id {
+		return // it gave up waiting for its turn as the run stopped (see Lock)
+	}
 	if len(q.line) == 0 {
 		q.holder = ""
 		return

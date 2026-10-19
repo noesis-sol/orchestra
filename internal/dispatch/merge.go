@@ -62,11 +62,11 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 		keep: context.WithoutCancel(ctx),
 		// let go of even if the merge panics
-		repo: &lockGuard{mu: &o.repoMu}, queue: &lockGuard{mu: mergeTurn{o: o, id: w.id}},
+		repo: &lockGuard{mu: &o.repoMu}, queue: &lockGuard{mu: mergeTurn{o: o, id: w.id, stop: ctx.Done()}},
 	}
 	defer m.repo.release()
 	m.queue.lock()
-	defer m.queue.release() // held on every return; a hand-back lets go of it and takes it again
+	defer m.queue.release() // held on every return but a stop's; a hand-back lets go of it and takes it again
 	stop, done := mergePasses(func(rebase bool) (mergeStep, *stopReason) { return m.pass(ctx, rebase) })
 	if !done {
 		o.leaveFor(m.keep, w.id, asideConflict, c.Base+" kept changing", c.Base+" kept changing", fmt.Sprintf(
@@ -130,8 +130,13 @@ type mergeRun struct {
 
 // pass merges the ticket's branch if it is on top of Base and checked there, or checks it there
 // first, or rebases it onto Base and checks it when it may (rebase), and says what is left to do.
+// Once the run has stopped it does none of that, the ticket left finished and unmerged for the next
+// run: what follows a stop, the queue's turn included (see mergeTurn.Lock), mustn't rebase the branch.
 func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReason) {
 	c := m.o.cfg
+	if ctx.Err() != nil {
+		return mergeDone, errInterrupted
+	}
 	m.repo.lock()
 	// Its commits may undo each other, as when its worker found the change on Base already and
 	// reverted its own: rebasing them would replay the revert onto Base's change.
@@ -301,6 +306,9 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 		o.leaveConflict(keep, r, "not handed back to its worker: "+why)
 		return mergeDone, nil
 	}
+	if ctx.Err() != nil {
+		return m.stoppedRebase(r)
+	}
 	m.repo.unlock()
 	m.handedBack++
 	m.fixes.overtaken(c.Base)
@@ -311,6 +319,9 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 	m.queue.lock()
 	if stop != nil {
 		return mergeDone, stop // Ctrl+C or the usage limit: the rebase is left as it is, as the stop says
+	}
+	if why == "" && ctx.Err() != nil {
+		return mergeDone, errInterrupted // the run stopped as the queue was taken again: the branch is left resolved
 	}
 	if why == "" {
 		m.repo.lock()
@@ -345,6 +356,20 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 		return mergeDone, nil
 	}
 	return mergeAgainAfterWorker, nil // resolved and checked: merge, or rebase again if Base moved meanwhile
+}
+
+// stoppedRebase ends the merge as the run stops with r's rebase stopped on conflicts, before it is
+// handed back to the ticket's worker, which could no longer be prompted: the rebase is aborted, so
+// that the next run carries the ticket over as its worker left it. One that can't be aborted sets the
+// ticket aside, its worktree left mid-rebase. It is called with repo held, and lets go of it.
+func (m *mergeRun) stoppedRebase(r rebaseStop) (mergeStep, *stopReason) {
+	err := m.o.abortRebase(m.keep, r.wt)
+	m.repo.unlock()
+	if err != nil {
+		m.o.leaveConflict(m.keep, r, "not handed back to its worker, as the run stopped; its rebase could not be "+
+			"aborted, so "+r.wt+" is left mid-rebase")
+	}
+	return mergeDone, errInterrupted
 }
 
 // checkClean checks the ticket's branch, rebased onto Base without conflicts as r says, or closes
