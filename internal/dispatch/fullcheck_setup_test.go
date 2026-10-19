@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -102,17 +103,22 @@ func TestFullCheckSetupFailureFilesNoTicket(t *testing.T) {
 }
 
 // The setup and check_full share the full check's time limit: a check that would finish within it
-// alone is stopped once the setup has used most of it.
+// alone is stopped once the setup has used most of it. It runs on the real clock, as the setup and
+// the check are real processes, so the check would reach its end a whole second past the limit: on a
+// loaded machine the stop can come well after the limit (orchestra-2wwc).
 func TestFullCheckSetupCountsInItsTimeLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits out a 2s time limit")
+	}
 	t.Parallel()
-	h := newTimedHarness(t) // on the real clock: the setup and the check are real processes
+	h := newTimedHarness(t)
 	ran := filepath.Join(t.TempDir(), "ran")
-	h.cfg.CheckFullTimeout = 300 * time.Millisecond
-	h.cfg.Setup = "sleep 0.2"
-	h.cfg.CheckFull = "sleep 0.2; touch " + ran
+	h.cfg.CheckFullTimeout = 2 * time.Second
+	h.cfg.Setup = "sleep 1.5"
+	h.cfg.CheckFull = "sleep 1.5; touch " + ran
 	h.loop().FullCheck(t.Context())
 	if got := h.sink.fullChecks(); len(got) != 1 || !strings.HasPrefix(got[0], FullCheckTimedOut+" ") ||
-		!strings.Contains(got[0], "did not finish within 300ms") {
+		!strings.Contains(got[0], "did not finish within "+command.ShortDuration(h.cfg.CheckFullTimeout)) {
 		t.Errorf("full check events %q", got)
 	}
 	if exists(ran) {
