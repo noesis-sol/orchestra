@@ -34,6 +34,13 @@ import (
 // setup that failed there; a setup before a worker that works there removes it (see setupFailedIn).
 const setupLogName = "setup.log"
 
+// setupMarkName is the file in a worktree's .orchestra/run/ that says a setup began there and hasn't
+// worked since: made before the setup runs before a worker (see setUpWorktree), it is removed once
+// one works there. One that Ctrl+C, or the end of orchestra's process, cut short leaves it, its
+// dependencies half installed or missing (npm ci removes node_modules first), and the next run that
+// takes the worktree up runs the setup again (see setupCutShortIn).
+const setupMarkName = "setup.started"
+
 // setupConf is the project's setup command and the globs of the files it reads: setup and
 // setup_files in .orchestra/settings.json.
 type setupConf struct {
@@ -120,8 +127,9 @@ func (o *Loop) setUpAt(id, at string) {
 
 // setUpWorktree runs the setup command in the ticket's worktree p before its worker starts there,
 // within the check's time limit: always in a new one, where nothing is installed, and in one reused
-// when the last setup there failed (see setupFailedIn) or the commits since its dependencies were
-// last set up change a file the setup's globs match, as before the check (see setUp). It records the
+// when the last setup there failed (see setupFailedIn) or was cut short (see setupCutShortIn), or the
+// commits since its dependencies were last set up change a file the setup's globs match, as before the
+// check (see setUp). It records the
 // commit it set up for, so that the check after the ticket sets them up again only for what changes
 // since. A worker adopted, or handed its ticket back, is in its worktree already: this runs only for
 // one about to start. It reports whether the ticket's run is over, as its setup failed (see
@@ -139,6 +147,8 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 		o.forgetSetUp(id) // a worktree it had before, since removed, was set up for itself
 	case failedThere:
 		what = "the last setup in its worktree failed; running '" + s.cmd + "' there again"
+	case setupCutShortIn(p.wt):
+		what = "the last setup in its worktree didn't finish; running '" + s.cmd + "' there again"
 	default:
 		why := o.setupDue(r.keep, id, p.before, now, s.files)
 		if why == "" {
@@ -147,17 +157,20 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 		what = why + "; running '" + s.cmd + "' in its worktree"
 	}
 	o.info("  %s: %s before its worker starts", id, what)
+	o.markSetup(p.wt)
 	run, _ := runLimited(ctx, p.wt, o.checkTimeout(), s.cmd)
 	defer run.out.close()
 	switch {
 	case run.err == nil:
 		o.setUpAt(id, now)
 		if failedThere {
-			o.dropSetupLog(p.wt)
+			o.dropRunFile(p.wt, setupLogName, "the output of a setup that failed earlier")
 		}
+		o.dropRunFile(p.wt, setupMarkName, "the mark of a setup under way")
 		return false, nil
 	case ctx.Err() != nil:
-		return true, errInterrupted // stopped by Ctrl+C, it says nothing of the setup
+		// Stopped by Ctrl+C, it says nothing of the setup; its mark stays, for the next run to set up again.
+		return true, errInterrupted
 	}
 	r.leaveSetupFailed(s.cmd, p.wt, run)
 	return true, nil
@@ -165,22 +178,44 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 
 // setupFailedIn reports whether the last setup in worktree wt failed, in this run or an earlier one:
 // the whole output it kept is there (see keepOutput), until a setup before a worker works there (see
-// dropSetupLog). Its dependencies may then be missing, or half installed.
+// dropRunFile). Its dependencies may then be missing, or half installed.
 func setupFailedIn(wt string) bool {
 	_, err := os.Lstat(filepath.Join(wt, project.RunPath(setupLogName)))
 	return err == nil
 }
 
-// dropSetupLog removes the output a setup that failed in worktree wt kept, now that one has worked
-// there. A failure is logged: the setup then runs again when the worktree is next taken up.
-func (o *Loop) dropSetupLog(wt string) {
+// setupCutShortIn reports whether a setup began in worktree wt, in an earlier run, and neither worked
+// nor failed there: its mark is there (see setupMarkName). A failure keeps the mark too, but
+// setupFailedIn says so first.
+func setupCutShortIn(wt string) bool {
+	_, err := os.Lstat(filepath.Join(wt, project.RunPath(setupMarkName)))
+	return err == nil
+}
+
+// markSetup marks that a setup begins in worktree wt (see setupMarkName). A failure is logged: the
+// setup runs all the same, and only Ctrl+C cutting it short would go unnoticed by the next run.
+func (o *Loop) markSetup(wt string) {
 	root, err := project.OpenRun(wt)
 	if err == nil {
-		err = project.RemoveRun(root, wt, project.RunPath(setupLogName))
+		err = project.WriteRun(root, wt, project.RunPath(setupMarkName), nil, 0o644)
+		_ = root.Close() // WriteRun closed its file
+	}
+	if err != nil {
+		o.log.Raw("", fmt.Errorf("cannot mark the setup under way in %s: %w", wt, err))
+	}
+}
+
+// dropRunFile removes the file name, what, from worktree wt's .orchestra/run/, now that a setup has
+// worked there: the output of one that failed (setupLogName), or the mark of one under way
+// (setupMarkName). A failure is logged: the setup then runs again when the worktree is next taken up.
+func (o *Loop) dropRunFile(wt, name, what string) {
+	root, err := project.OpenRun(wt)
+	if err == nil {
+		err = project.RemoveRun(root, wt, project.RunPath(name))
 		_ = root.Close() // nothing written through it
 	}
 	if err != nil {
-		o.log.Raw("", fmt.Errorf("cannot remove the output of a setup that failed earlier in %s: %w", wt, err))
+		o.log.Raw("", fmt.Errorf("cannot remove %s in %s: %w", what, wt, err))
 	}
 }
 

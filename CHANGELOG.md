@@ -136,6 +136,12 @@ All notable changes to orchestra are documented here. The format follows
   after `git add -N` of a moved file) no longer adds a mangled path, made of
   its old name, to what a setup commits or to a worktree's uncommitted files:
   the setup failed to commit (`cannot commit the setup`).
+- A setup that Ctrl+C cut short in a worktree runs again when the next run
+  takes that worktree up (`<id>: the last setup in its worktree didn't finish;
+  running 'npm ci' there again before its worker starts`): the worker started
+  in it with its dependencies half installed or missing when no file the setup
+  reads had changed. A setup under way leaves `.orchestra/run/setup.started`
+  in the worktree until one works there.
 - A ticket back from a question whose worktree's setup then fails is back in
   the queue, no longer set aside: a merge or the end of a hold lets it be
   taken again, and the run's end names it under `SETUP_WAITS`. It was never
