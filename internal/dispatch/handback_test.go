@@ -45,7 +45,9 @@ func (w *fakeWorker) write(dir, file, content string) {
 	}
 }
 
-// landsOnMain commits content to file on main, as a ticket merged meanwhile would.
+// landsOnMain commits content to file on main, as a ticket merged meanwhile would. It commits while
+// the run polls the main checkout, so it fails on .git/index.lock if one of the run's reads of git
+// takes that lock: a regression in the reads (internal/git's readGit), not a flake to retry.
 func landsOnMain(w *fakeWorker, repo, file, content string) {
 	w.write(repo, file, content)
 	w.gitIn(repo, "add", file)
