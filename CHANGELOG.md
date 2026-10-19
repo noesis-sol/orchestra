@@ -36,6 +36,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A check handed back to its worker, who finds nothing to fix and commits
+  nothing (a failure from timeouts on a loaded machine, say), is run a second
+  time rather than set aside at once: a pass merges the ticket, and a second
+  failure sets it aside with no further hand-back, its note saying its worker
+  committed nothing.
 - A release's GitHub Release now carries its changelog section as its notes:
   since 0.6.0 they were published empty, because the GoReleaser configuration
   disabled the changelog, which also drops the notes passed with

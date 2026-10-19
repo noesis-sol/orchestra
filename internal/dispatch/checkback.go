@@ -16,7 +16,9 @@ import (
 // landed, as it is asked to resolve conflicts (see handBack): up to Config.CheckHandBacks times in the
 // ticket's merge, while the run takes on work. It commits the fix on the branch, each commit naming
 // the ticket, and orchestra checks the branch again itself. A failure it can't fix leaves the ticket
-// set aside as before.
+// set aside as before. A worker that finds nothing to fix, the failure not coming from the change (a
+// test timing out on a loaded machine, say), commits nothing: orchestra then runs the check once more,
+// and a second failure sets the ticket aside without another hand-back.
 
 // checked is how the check on a finished ticket's rebased branch came out (see checkRebased).
 type checked struct {
@@ -38,7 +40,9 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failure
 	var res checked
-	fixed := "" // what the worker committed on its last hand-back, until the check says whether it fixed it
+	// What the worker committed on its last hand-back, until the check says whether it fixed it, or
+	// committedNothing when it found nothing to fix.
+	fixed := ""
 	for {
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
 		output, err := o.setUp(ctx, r.worker, r.head, r.onto)
@@ -49,16 +53,22 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 		if err != nil && ctx.Err() != nil {
 			return res, errInterrupted
 		}
-		if fixed != "" {
-			if err == nil {
-				res.tries = append(res.tries, "its worker committed "+fixed+" and the check passes")
-			} else {
-				res.tries = append(res.tries, fmt.Sprintf("its worker committed %s, but %s still (output is in %s)",
-					fixed, o.failedHow(setup, err), output))
-			}
+		switch {
+		case fixed == committedNothing && err == nil:
+			res.tries = append(res.tries, "its worker committed nothing and the check passes on a second run")
+		case fixed == committedNothing:
+			res.tries = append(res.tries, fmt.Sprintf("its worker committed nothing, and %s again (output is in %s)",
+				o.failedHow(setup, err), output))
+		case fixed != "" && err == nil:
+			res.tries = append(res.tries, "its worker committed "+fixed+" and the check passes")
+		case fixed != "":
+			res.tries = append(res.tries, fmt.Sprintf("its worker committed %s, but %s still (output is in %s)",
+				fixed, o.failedHow(setup, err), output))
 		}
 		if err == nil {
 			switch {
+			case fixed == committedNothing:
+				o.info("  '%s' passes on %s on a second run; its worker committed nothing", c.Check, r.br)
 			case fixed != "":
 				o.info("  '%s' passes on %s as its worker fixed it", c.Check, r.br)
 			case resolved:
@@ -70,6 +80,10 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 		}
 		res.err, res.setup, res.output = err, setup, output
 		if c.CheckHandBacks == 0 {
+			return res, nil
+		}
+		if fixed == committedNothing {
+			res.not = "its worker found nothing to fix"
 			return res, nil
 		}
 		at := o.checkout.Head(keep, c.Repo, r.br)
@@ -190,17 +204,22 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 		"Fix %s so that the check passes, keeping the intent of both your change and what landed on %s. "+
 		"Run '%s' in the foreground until it passes, then commit the fix on %s with %s in the commit message. "+
 		"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket "+
-		"changes, and no uncommitted changes left. Say DONE when the fix is committed.",
+		"changes, and no uncommitted changes left. Say DONE when the fix is committed. If the check passes "+
+		"without a change, the failure not coming from %s, commit nothing and say DONE: orchestra runs it again.",
 		c.Base, r.br, o.failedHow(res.setup, res.err), res.output, said,
 		c.Base, short(r.head), short(r.onto), landed,
-		r.br, c.Base, c.Check, r.br, r.id)
+		r.br, c.Base, c.Check, r.br, r.id, r.br)
 }
+
+// committedNothing is what verifyFixed returns as committed when the worker found nothing to fix.
+const committedNothing = "nothing"
 
 // verifyFixed checks what the worker left after a hand-back of a failed check on r's branch at commit
 // at, without taking its word for it: no rebase in progress, the worktree clean and on the branch, and
-// the branch at with new commits on top, each naming the ticket. It returns what was committed, as in
-// "2 commits", or why it is rejected. The check runs next (see checkRebased), on what the worktree has
-// checked out, and the merge then brings in the branch: they must be the same.
+// the branch at with new commits on top, each naming the ticket, or still at at. It returns what was
+// committed, as in "2 commits", committedNothing for the branch still at at, or why it is rejected.
+// The check runs next (see checkRebased), on what the worktree has checked out, and the merge then
+// brings in the branch: they must be the same.
 func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed, why string) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed fix
@@ -219,8 +238,8 @@ func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed,
 	switch other, err := o.merger.CommitNotNaming(keep, c.Repo, at+".."+r.br, r.id); {
 	case n < 0 || err != nil:
 		return "", "git could not say what its worker committed" + because(err)
-	case n == 0:
-		return "", "its worker committed nothing"
+	case n == 0: // with at an ancestor, the branch is at at: the worker found nothing to fix
+		return committedNothing, ""
 	case other != "":
 		return "", fmt.Sprintf("its worker's commit %s does not name %s", other, r.id)
 	}

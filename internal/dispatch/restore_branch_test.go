@@ -207,7 +207,7 @@ func TestVerifyFixed(t *testing.T) {
 		{stubGit{commits: -1}, "", "git could not say what its worker committed"},
 		{stubGit{commits: 1, notNamingErr: errors.New("exit status 128")}, "",
 			"git could not say what its worker committed: exit status 128"},
-		{stubGit{}, "", "its worker committed nothing"},
+		{stubGit{}, "nothing", ""}, // nothing to fix: the check runs again
 		{stubGit{commits: 2, notNaming: "abc123 fix the test"}, "",
 			"its worker's commit abc123 fix the test does not name k-1"},
 	} {
