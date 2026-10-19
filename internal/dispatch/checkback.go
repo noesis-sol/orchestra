@@ -106,6 +106,7 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			default:
 				o.info("  '%s' passes on the rebased %s", c.Check, r.br)
 			}
+			o.forgetCheckFailed(r.id)
 			return checked{tries: res.tries, at: at}, nil
 		}
 		res.err, res.setup, res.output = err, setup, output
