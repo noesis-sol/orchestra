@@ -23,14 +23,16 @@ import (
 const specTreeBd = `#!/bin/sh
 d=$(dirname "$0")
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
-cmd=$1 parent=
+cmd=$1 first=$2 parent=
 while [ $# -gt 0 ]; do [ "$1" = --parent ] && parent=$2; shift; done
 case "$cmd" in
 create)
 	n=$(cat "$d/bd-n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$d/bd-n"
 	case $n in 1) id=s-1 ;; 2) id=s-1.1 ;; 3) id=s-1.1.1 ;; *) id=s-1.2 ;; esac
 	echo "{\"id\":\"$id\"}" ;;
-show) echo '[{"id":"s-1","status":"open","issue_type":"epic"}]' ;;
+show)
+	case "$first" in s-1|s-1.1) type=epic ;; *) type=task ;; esac
+	echo "[{\"id\":\"$first\",\"status\":\"open\",\"issue_type\":\"$type\"}]" ;;
 list)
 	case "$parent" in
 	s-1) echo '[{"id":"s-1.1","status":"open","issue_type":"epic"},{"id":"s-1.2","status":"open","issue_type":"task"}]' ;;

@@ -203,6 +203,10 @@ All notable changes to orchestra are documented here. The format follows
   that ticket, so orchestra read its status, labels and parent for the deleted
   one, and its closes, labels and notes went to it. Now the deleted ticket is
   not found, and orchestra writes nothing to bd for it.
+- A ticket filed under a deleted parent, or waiting for a deleted ticket, is
+  no longer linked to a ticket whose ID starts with the deleted one's: orchestra
+  files nothing and says bd has no such ticket. The organs' evidence no longer
+  describes such a ticket for a deleted one either.
 
 ## [0.8.4] - 2026-10-19
 

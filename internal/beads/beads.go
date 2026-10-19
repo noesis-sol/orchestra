@@ -435,8 +435,12 @@ func (b Tracker) Defer(ctx context.Context, id, reason string) error {
 	return err
 }
 
-// Describe returns 'bd show' for the ticket, as a person reads it.
+// Describe returns 'bd show' for the ticket, as a person reads it. For an ID bd has no ticket by, it
+// says so rather than describe the ticket bd would show for it.
 func (b Tracker) Describe(ctx context.Context, id string) string {
+	if err := b.exists(ctx, id); err != nil {
+		return fmt.Sprintf("(bd show %s failed: %v)", id, err)
+	}
 	out, err := b.bd(ctx, command.ReadLimit, "show", id)
 	if err != nil {
 		return fmt.Sprintf("(bd show %s failed: %v)", id, err)
@@ -520,7 +524,16 @@ func (b Tracker) FileBug(ctx context.Context, title, description, label string) 
 
 // Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
 // which footprint scheduling reads. When bd's output can't be read, the error carries bd's stderr.
+// When bd has no ticket by the parent's ID or one it waits for, it files nothing: bd would link the
+// ticket to one whose ID starts with it.
 func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
+	linked := t.BlockedBy
+	if t.Parent != "" {
+		linked = append([]string{t.Parent}, linked...)
+	}
+	if err := b.exists(ctx, linked...); err != nil {
+		return "", err
+	}
 	args := []string{"create", "--json", "--title=" + t.Title, "--description=" + t.Description,
 		"--type=" + t.Type, "--priority=" + fmt.Sprint(t.Priority)}
 	if t.Acceptance != "" {
