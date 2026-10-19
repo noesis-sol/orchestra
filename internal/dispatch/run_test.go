@@ -349,18 +349,15 @@ func TestInterruptStopsAWorkerWaitingOnAHungCommand(t *testing.T) {
 	})
 }
 
-// interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded,
-// which then takes slow.
+// interruptingMerger is git, but Ctrl+C comes as a finished ticket's branch is fast-forwarded.
 type interruptingMerger struct {
 	Merger
 	t      *testing.T
 	cancel context.CancelCauseFunc
-	slow   time.Duration
 }
 
 func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string) (string, error) {
 	m.cancel(InterruptedError("with Ctrl+C"))
-	time.Sleep(m.slow)
 	if ctx.Err() != nil {
 		m.t.Error("the merge was cut short by Ctrl+C")
 	}
@@ -415,7 +412,10 @@ func TestInterruptNamesTheMergeItWaitsFor(t *testing.T) {
 		o := h.loop()
 		ctx, cancel := context.WithCancelCause(t.Context())
 		defer cancel(nil)
-		o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel, slow: 2 * settleSay}
+		o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel}
+		// The merge's last step is slow, with the repository let go of: Run, which reads the checkout
+		// as the ticket goes to merge, waits on no lock held by a merge waiting on the bubble's clock.
+		o.tabs = slowTabClose{fakeHerdr: h.herdr, ticket: "A", takes: 2 * settleSay}
 		if code := o.Run(ctx); code != ExitInterrupted {
 			t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
 		}

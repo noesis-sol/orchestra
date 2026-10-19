@@ -90,12 +90,17 @@ func TestARunRecordsItsEvents(t *testing.T) {
 		}
 
 		recs := records(t, h.repo)
+		// A ticket's closed record may come after the next ticket's dispatch, which takes its slot as it
+		// merges: the closed records are in each ticket's own records, and left out of the run's.
 		var kinds, texts []string
-		byKind := map[string][]map[string]any{}
+		byKind, byTicket := map[string][]map[string]any{}, map[string][]string{}
 		for _, r := range recs {
 			kind, _ := r["kind"].(string)
-			if kind != "info" {
+			if kind != "info" && kind != "closed" {
 				kinds = append(kinds, kind)
+			}
+			if ticket, _ := r["ticket"].(string); ticket != "" && kind != "info" {
+				byTicket[ticket] = append(byTicket[ticket], kind)
 			}
 			byKind[kind] = append(byKind[kind], r)
 			if text, ok := r["text"].(string); ok {
@@ -110,9 +115,16 @@ func TestARunRecordsItsEvents(t *testing.T) {
 				t.Errorf("%s record: time %q isn't RFC 3339: %v", kind, s, err)
 			}
 		}
-		want := []string{"start", "dispatch", "queue", "closed", "dispatch", "closed", "dispatch", "deferred", "done", "end"}
+		want := []string{"start", "dispatch", "queue", "dispatch", "dispatch", "deferred", "done", "end"}
 		if !equal(kinds, want) {
-			t.Fatalf("kinds, info left out:\n%s\nwant:\n%s", strings.Join(kinds, " "), strings.Join(want, " "))
+			t.Fatalf("kinds, info and closed left out:\n%s\nwant:\n%s", strings.Join(kinds, " "), strings.Join(want, " "))
+		}
+		for ticket, want := range map[string][]string{
+			"A": {"dispatch", "closed"}, "B": {"dispatch", "closed"}, "C": {"dispatch", "deferred"},
+		} {
+			if got := byTicket[ticket]; !equal(got, want) {
+				t.Errorf("%s's kinds, info left out: %v, want %v", ticket, got, want)
+			}
 		}
 		if len(byKind["info"]) == 0 {
 			t.Error("no info records, the START line's among them")

@@ -80,8 +80,9 @@ func TestScopedRunTakesOnlyTheTicketAndItsSubtickets(t *testing.T) {
 	for _, d := range h.sink.of(EvDispatch) {
 		order = append(order, strings.Fields(d)[0])
 	}
-	if !equal(order, []string{"R.1.1", "R.1", "R.2", "R"}) {
-		t.Errorf("dispatched %v, want R.1.1 R.1 R.2 R", order)
+	// R.2 may take R.1.1's slot as it merges, while R.1 waits for that merge.
+	if !equal(order, []string{"R.1.1", "R.1", "R.2", "R"}) && !equal(order, []string{"R.1.1", "R.2", "R.1", "R"}) {
+		t.Errorf("dispatched %v, want R.1.1, then R.1 and R.2, then R", order)
 	}
 	if st, _ := h.beads.Status(context.Background(), "U"); st != "open" {
 		t.Errorf("U is %s; a scoped run must leave it alone", st)
@@ -122,8 +123,9 @@ func TestParentsRunLastInEveryRun(t *testing.T) {
 	for _, d := range h.sink.of(EvDispatch) {
 		order = append(order, strings.Fields(d)[0])
 	}
-	if !equal(order, []string{"C", "P", "F"}) {
-		t.Errorf("dispatched %v, want C P F", order)
+	// F may take C's slot as it merges, while P waits for that merge.
+	if !equal(order, []string{"C", "P", "F"}) && !equal(order, []string{"C", "F", "P"}) {
+		t.Errorf("dispatched %v, want C, then P and F", order)
 	}
 	if ev, want := h.sink.text(), "closed epic E: its 1 subticket is merged"; !strings.Contains(ev, want) {
 		t.Errorf("events lack %q:\n%s", want, ev)

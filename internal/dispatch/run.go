@@ -220,6 +220,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		case req := <-o.drainReqs:
 			r.hear(req)
 		case <-o.liftWake: // the usage limit lifted: tickets start again above
+		case <-o.merges.joined: // a ticket went to merge: its slot may be free above
 		case <-poll.C:
 			r.polled()
 		case <-ctx.Done():
@@ -280,15 +281,18 @@ type runState struct {
 	ctx  context.Context // the run's: Ctrl+C cancels it
 	keep context.Context // for reopening tickets as the run holds
 
-	// results: workers' results, buffered to Concurrency so a worker hands its result in without
-	// waiting on Run's other steps; any beyond it (adoptions, rechecks) wait for Run or awaitInflight, which
-	// takes every one in flight
-	results  chan result
-	inflight map[string]bool // the tickets whose workers haven't returned
-	count    int             // the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar)
-	stops    stops           // the reasons the run stops for, first to last
-	envSaid  bool            // the hold for the environment is taken up
-	drained  bool            // the maintainer asked to stop after the running tickets, as last said
+	// results: workers' results, buffered to twice Concurrency (the workers at work and as many
+	// tickets merging) so a worker hands its result in without waiting on Run's other steps; any beyond
+	// it (adoptions, rechecks, merges past the cap) wait for Run or awaitInflight, which takes every one
+	// in flight
+	results chan result
+	// inflight: the tickets whose goroutines haven't returned, those gone to merge included (see
+	// slotsTaken)
+	inflight map[string]bool
+	count    int   // the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar)
+	stops    stops // the reasons the run stops for, first to last
+	envSaid  bool  // the hold for the environment is taken up
+	drained  bool  // the maintainer asked to stop after the running tickets, as last said
 
 	solo soloQueue // the tickets labelled SoloLabel
 	// The queue last reported, its queued -1 before the first, and the solo ticket and the tickets
@@ -316,7 +320,7 @@ type runState struct {
 func newRunState(ctx context.Context, o *Loop) *runState {
 	return &runState{
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
-		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
+		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
 		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(),
 	}
@@ -419,10 +423,23 @@ func (r *runState) heedEnvironment() {
 	r.sayHold(s, "")
 }
 
+// slotsTaken is how many of the Concurrency slots the tickets in flight take. A ticket whose worker
+// has settled and that has gone to merge takes none while it waits for its turn, merges or has its
+// worker resolve or fix its branch (see goToMerge), so the next ticket starts meanwhile; but no more
+// than Concurrency of them go without one, so that a slow merge check can't let finished tickets
+// pile up without end: beyond that cap, each takes a slot until a merge ends.
+func (r *runState) slotsTaken() int {
+	merging := r.o.goneToMerge(r.inflight)
+	return len(r.inflight) - merging + max(0, merging-r.o.cfg.Concurrency)
+}
+
+// slotFree reports whether a slot is free for another ticket (see slotsTaken).
+func (r *runState) slotFree() bool { return r.slotsTaken() < r.o.cfg.Concurrency }
+
 // startTickets starts tickets while there are free slots, unless something has stopped the run or
 // the maintainer asked it to wind down.
 func (r *runState) startTickets() {
-	for r.taking() && r.ctx.Err() == nil && len(r.inflight) < r.o.cfg.Concurrency {
+	for r.taking() && r.ctx.Err() == nil && r.slotFree() {
 		t, q, s := r.next()
 		if s != nil {
 			r.stops.add(s)
@@ -547,6 +564,7 @@ func (r *runState) goOnWhenEmpty() bool {
 func (r *runState) returned(res result) {
 	o := r.o
 	delete(r.inflight, res.id)
+	o.doneMerging(res.id)
 	o.stoppedBy(res.id, res.stop)
 	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
@@ -579,8 +597,8 @@ func (r *runState) polled() {
 	}
 	// With a free slot, Run reads bd ready again as it starts tickets. With none, the queue count is
 	// brought up to date; a failed read waits for the next poll, as nothing depends on it.
-	if r.taking() && len(r.inflight) >= o.cfg.Concurrency {
-		if t, q, err := r.pick(); err == nil {
+	if r.taking() && !r.slotFree() {
+		if t, q, err := r.pick(false); err == nil {
 			if t != nil {
 				q.queued++
 			}
@@ -640,6 +658,7 @@ func (o *Loop) awaitInflight(ctx context.Context, results <-chan result, infligh
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
+			o.doneMerging(r.id)
 			o.stoppedBy(r.id, r.stop)
 			o.countSettling(ctx, r.id, r.how)
 		case <-slow.C:
@@ -677,10 +696,16 @@ func (r *runState) next() (*Ticket, queue, *stopReason) {
 	if ctx.Err() != nil {
 		return nil, queue{}, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
 	}
+	if s != nil && len(r.inflight) >= o.cfg.Concurrency && o.goneToMerge(r.inflight) > 0 {
+		// The slot is free only as tickets merge (see slotsTaken), and their merges meet the checkout as
+		// it is: they stop the run, saying which ticket it keeps from merging. Nothing starts meanwhile,
+		// and the queue stays as last reported.
+		return nil, r.queued, nil
+	}
 	if s != nil {
 		return nil, queue{}, s
 	}
-	t, q, err := r.pickTries()
+	t, q, err := r.pickTries(r.slotFree())
 	if ctx.Err() != nil {
 		return nil, queue{}, nil
 	}
@@ -700,10 +725,10 @@ const readyTries = 3
 // pickTries is pick, tried up to readyTries times a poll apart while bd fails, as when a worker's bd
 // (a claim, a close) holds the database: bd failing once or twice doesn't stop the run. It logs each
 // failure it tries again after.
-func (r *runState) pickTries() (*Ticket, queue, error) {
+func (r *runState) pickTries(slot bool) (*Ticket, queue, error) {
 	o, ctx := r.o, r.ctx
 	for try := 1; ; try++ {
-		t, q, err := r.pick()
+		t, q, err := r.pick(slot)
 		if err == nil || try == readyTries || ctx.Err() != nil || !sleep(ctx, o.pollEvery()) {
 			return t, q, err
 		}
@@ -734,8 +759,9 @@ func (q *soloQueue) state() SoloState {
 // (see pickNext), whether a slot was free, the ticket to start, if any, and how many others are
 // ready. It returns why tickets wait for a solo ticket when that has changed since it was last
 // said, or "". A solo ticket holds something back only when a slot is free; with every slot taken
-// (always, with one worker) the tickets wait for a slot as they would anyway. It still goes ahead
-// of a recheck when a slot frees, which recheckTickets decides before the next pick.
+// (with one worker, whenever a worker is at work) the tickets wait for a slot as they would anyway.
+// It still goes ahead of a recheck when a slot frees, which recheckTickets decides before the next
+// pick.
 func (q *soloQueue) update(next string, slot bool, t *Ticket, queued int) (why string) {
 	q.first = next
 	if !slot {
@@ -758,9 +784,10 @@ func (q *soloQueue) update(next string, slot bool, t *Ticket, queued int) (why s
 
 // pick reads bd ready (in a scoped run, the scope's part of it) and returns the highest-priority
 // ticket that can start, with how many others could and how many are held back, by what holds
-// them. With a free slot and none to start, those that could wait for a solo ticket, and count as
-// held back. It says once why they wait, keeping the solo tickets in runState.solo.
-func (r *runState) pick() (*Ticket, queue, error) {
+// them. With a free slot (slot, as the caller found it: a ticket going to merge may free one
+// meanwhile) and none to start, those that could wait for a solo ticket, and count as held back. It
+// says once why they wait, keeping the solo tickets in runState.solo.
+func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 	o, ctx, running, solo := r.o, r.ctx, r.inflight, &r.solo
 	ready, err := o.tickets.Ready(ctx, o.cfg.Ticket)
 	if err != nil {
@@ -792,7 +819,6 @@ func (r *runState) pick() (*Ticket, queue, error) {
 	o.setAsideBadIDs(context.WithoutCancel(ctx), ready, skip)
 	// With a free slot, a ticket whose footprint overlaps a running ticket's is skipped for the next
 	// one that doesn't; with none free, the tickets wait for a slot anyway.
-	slot := len(running) < o.cfg.Concurrency
 	overlaps := func(Ticket) bool { return false }
 	if slot && o.footprintOn() {
 		r.readFiles(ctx)

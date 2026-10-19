@@ -261,8 +261,21 @@ func (m Dashboard) totals() []total {
 		{label: "Completed", mark: "✓", n: m.closed, style: closedStyle},
 		{label: "Set aside", mark: "↷", n: m.setAside(), style: deferredStyle, extra: verdicts},
 		{label: "Needs you", mark: "?", n: m.needsYou(), style: stopStyle},
-		{label: "Workers", mark: "▶", n: len(m.active), style: pickedStyle, of: m.slots()},
+		{label: "Workers", mark: "▶", n: m.inSlots(), style: pickedStyle, of: m.slots()},
 	}
+}
+
+// inSlots is how many of the running tickets have their workers at work, in the run's slots. One
+// merging, waiting to merge or handed back to its worker to resolve or fix its branch isn't counted:
+// it frees its slot as it goes to merge, and the Current list shows it beside them.
+func (m Dashboard) inSlots() int {
+	n := 0
+	for _, st := range m.active {
+		if st.Merge == dispatch.MergeNone && !st.Resolving && !st.Fixing {
+			n++
+		}
+	}
+	return n
 }
 
 // cell is t in the strip: a count out of something in full, a zero faint (out of something or not),

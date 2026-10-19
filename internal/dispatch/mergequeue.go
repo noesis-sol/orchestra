@@ -23,6 +23,49 @@ type mergeQueue struct {
 	mu     sync.Mutex
 	holder string       // the ticket whose merge is under way; "" when none is
 	line   []mergeWaits // the tickets waiting for their turn, next first
+	// gone: the tickets whose workers have settled and that have gone to merge, until their goroutines
+	// return, a hand-back to their workers included; up to Concurrency of them hold no slot (see
+	// runState.slotsTaken). Run hears of each on joined (buffered 1), as a slot may be free.
+	gone   map[string]bool
+	joined chan struct{}
+}
+
+// goToMerge says that ticket id's worker has settled and the ticket goes to merge: Run no longer
+// counts it among the workers at work.
+func (o *Loop) goToMerge(id string) {
+	q := &o.merges
+	q.mu.Lock()
+	if q.gone == nil {
+		q.gone = map[string]bool{}
+	}
+	q.gone[id] = true
+	q.mu.Unlock()
+	select {
+	case q.joined <- struct{}{}:
+	default: // Run has yet to hear an earlier one, and counts this one with it
+	}
+}
+
+// doneMerging says that ticket id's goroutine has returned: merged, set aside or stopped.
+func (o *Loop) doneMerging(id string) {
+	q := &o.merges
+	q.mu.Lock()
+	delete(q.gone, id)
+	q.mu.Unlock()
+}
+
+// goneToMerge is how many of the tickets in flight have gone to merge (see goToMerge).
+func (o *Loop) goneToMerge(inflight map[string]bool) int {
+	q := &o.merges
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	n := 0
+	for id := range q.gone {
+		if inflight[id] {
+			n++
+		}
+	}
+	return n
 }
 
 // mergeWaits is a ticket waiting in the merge queue: turn is closed when it is its turn.

@@ -249,6 +249,7 @@ func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
 		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
 		usageHold: usageHold{liftWake: make(chan struct{}, 1)},
+		merges:    mergeQueue{joined: make(chan struct{}, 1)},
 		drainReqs: make(chan drainRequest, 1),
 	}
 }

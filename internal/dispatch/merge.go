@@ -53,6 +53,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // closedUnchanged).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 	c := o.cfg
+	o.goToMerge(w.id) // its slot is free for the next ticket while it waits for its turn and merges
 	defer o.markFinishing(w.id, finishMerge)()
 	m := &mergeRun{
 		o: o, w: w,

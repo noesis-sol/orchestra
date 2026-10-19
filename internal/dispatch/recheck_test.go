@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,6 +25,19 @@ func landsMeanwhile(file string) behaviour {
 		w.commit(file)
 		w.close()
 		return "idle"
+	}
+}
+
+// afterSetAside is b once ticket id is set aside, labelled unmerged. A ticket merging holds no slot,
+// so the next one starts as its check runs: a fix b lands before then would be in that check.
+func afterSetAside(h *harness, id string, b behaviour) behaviour {
+	return func(w *fakeWorker) AgentState {
+		for {
+			if tk, err := h.beads.Show(context.Background(), id); err == nil && HasLabel(tk, UnmergedLabel) {
+				return b(w)
+			}
+			time.Sleep(time.Second)
+		}
 	}
 }
 
@@ -72,13 +86,10 @@ func TestATicketSetAsideForAFailedCheckMergesOnceAnotherFixesIt(t *testing.T) {
 		h.beads.add("D", "builds on A", 3)
 		h.beads.link("D", "A", "blocks")
 		h.worker("A", landsMeanwhile("a.txt"))
-		h.worker("B", func(w *fakeWorker) AgentState {
-			if !unmergedLabel(t, h, "A") {
-				t.Error("A should be labelled unmerged while it is set aside")
-			}
+		h.worker("B", afterSetAside(h, "A", func(w *fakeWorker) AgentState {
 			w.write(dir, "fixed", "")
 			return finishes("b.txt")(w)
-		})
+		}))
 		h.worker("D", finishes("d.txt"))
 		o, code := h.run()
 		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
@@ -97,7 +108,7 @@ func TestATicketSetAsideForAFailedCheckMergesOnceAnotherFixesIt(t *testing.T) {
 		for _, want := range []string{
 			"CHECKS_FAILED: A closed, but '" + h.cfg.Check + "' fails on wt/A rebased onto main; ",
 			"/check.log); checked once more if main moves on in this run\n",
-			"D waits: A closed but not merged (CHECKS_FAILED)",
+			"D waits: ", // for A to merge, or, once it is set aside, as it is closed but not merged
 			"RECHECK: A's check failed on main at ",
 			", which has moved on since; rebasing wt/A and checking it once more\n",
 			"'" + h.cfg.Check + "' passes on the rebased wt/A",
@@ -116,7 +127,7 @@ func TestATicketSetAsideForAFailedCheckMergesOnceAnotherFixesIt(t *testing.T) {
 }
 
 // A ticket whose check fails again stays set aside, and isn't checked a third time once Base moves
-// on again. Its check takes the only slot: C starts once it is done.
+// on again. Its check takes no slot, as a merge doesn't: C starts beside it.
 func TestATicketWhoseCheckFailsAgainStaysSetAside(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -127,7 +138,7 @@ func TestATicketWhoseCheckFailsAgainStaysSetAside(t *testing.T) {
 		h.beads.add("B", "second", 2)
 		h.beads.add("C", "third", 3)
 		h.worker("A", landsMeanwhile("a.txt"))
-		h.worker("B", finishes("b.txt"))
+		h.worker("B", afterSetAside(h, "A", finishes("b.txt")))
 		h.worker("C", finishes("c.txt"))
 		o, code := h.run()
 		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
@@ -153,9 +164,9 @@ func TestATicketWhoseCheckFailsAgainStaysSetAside(t *testing.T) {
 		}
 		ev := h.sink.text()
 		again := "CHECKS_FAILED: A closed, but '" + h.cfg.Check + "' fails again on wt/A rebased onto main; "
-		recheck, failed, next := strings.Index(ev, "RECHECK: A"), strings.Index(ev, again), strings.Index(ev, "C dispatching")
-		if recheck < 0 || failed < recheck || next < failed {
-			t.Errorf("want A checked again and failing again before C starts:\n%s", ev)
+		recheck, failed := strings.Index(ev, "RECHECK: A"), strings.Index(ev, again)
+		if recheck < 0 || failed < recheck {
+			t.Errorf("want A checked again and failing again:\n%s", ev)
 		}
 		if _, line, _ := strings.Cut(ev[max(failed, 0):], "; "); strings.Contains(strings.SplitN(line, "\n", 2)[0], "once more") {
 			t.Errorf("the second CHECKS_FAILED promises another check: %s", line)
@@ -196,11 +207,11 @@ func TestATicketTakenUpSinceItsCheckFailedIsNotCheckedAgain(t *testing.T) {
 				h.beads.add("A", "first", 1)
 				h.beads.add("B", "the fix", 2)
 				h.worker("A", landsMeanwhile("a.txt"))
-				h.worker("B", func(w *fakeWorker) AgentState {
+				h.worker("B", afterSetAside(h, "A", func(w *fakeWorker) AgentState {
 					tc.touch(h)
 					w.write(dir, "fixed", "")
 					return finishes("b.txt")(w)
-				})
+				}))
 				o, code := h.run()
 				if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 					t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
@@ -233,10 +244,10 @@ func TestATicketWhoseCheckFailedInItsOwnCodeIsNotCheckedAgain(t *testing.T) {
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
 		h.worker("A", landsMeanwhile("internal/a/a.go"))
-		h.worker("B", func(w *fakeWorker) AgentState {
+		h.worker("B", afterSetAside(h, "A", func(w *fakeWorker) AgentState {
 			w.write(dir, "fixed", "") // would pass now
 			return finishes("b.txt")(w)
-		})
+		}))
 		o, code := h.run()
 		if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())

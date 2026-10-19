@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 )
@@ -68,9 +69,20 @@ func TestUnclosedCountsOnlyTheScope(t *testing.T) {
 		if code != ExitOK {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
+		// While a ticket merges its slot is free, and the queue may be reported with its parent held:
+		// those reports count the scope as the dispatch after them does.
+		var got []string
+		counts := h.sink.queueCounts()
+		for i, c := range counts {
+			if !strings.HasPrefix(c, "queue ") || i == len(counts)-1 {
+				got = append(got, c)
+			} else if c != "queue 0/2" && c != "queue 0/1" {
+				t.Errorf("a queue report between dispatches counts %s", c)
+			}
+		}
 		want := []string{"R.1.1 0/3", "R.1 0/2", "R 0/1", "queue 0/0"}
-		if got := h.sink.queueCounts(); !equal(got, want) {
-			t.Errorf("counts %v, want %v", got, want)
+		if !equal(got, want) {
+			t.Errorf("counts %v, want %v", counts, want)
 		}
 	})
 }

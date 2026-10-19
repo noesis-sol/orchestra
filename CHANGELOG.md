@@ -51,6 +51,15 @@ All notable changes to orchestra are documented here. The format follows
 - `orchestra plan` leaves the files git merges by union out of footprints
   too, as a run does: two tickets that both name a short `CHANGELOG.md`
   merged by union are no longer proposed a blocks link.
+- A finished ticket frees its slot as it goes to merge, once its worker has
+  settled: the next ready ticket starts while it waits for its turn, is
+  rebased and checked, or has its worker resolve or fix its branch. It still
+  holds back the tickets it blocks, its follow-ups and those overlapping its
+  footprint until it merges. Up to `concurrent` tickets merge or wait to
+  merge without a slot; beyond that a finished ticket keeps its slot until a
+  merge ends. Ready tickets had waited for merges for 4-7% of a run's
+  slot-hours at 4 workers. The dashboard's **Workers** counts the workers at
+  work; Current still shows the merging tickets.
 - The verifier reuses the worker's passing check: the worker prompt's Verify
   section has the worker give it the commit at which `check-fast.sh` passed,
   whether `check-full.sh` ran there too, and the file their output is in, and

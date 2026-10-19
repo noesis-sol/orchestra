@@ -352,9 +352,10 @@ func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 	})
 }
 
-// With one worker at a time a solo label changes nothing: tickets run in priority order, and
-// nothing is said about waiting.
-func TestSoloTicketWithOneWorkerChangesNothing(t *testing.T) {
+// With one worker at a time a solo label changes nothing while a worker is at work: tickets run in
+// priority order, and nothing is said about waiting. Only once a ticket merges, its slot free, may
+// a solo ticket next in line be said to wait for it, and the ticket after a solo one for its merge.
+func TestSoloTicketWithOneWorkerWaitsOnlyForMerges(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
@@ -377,13 +378,12 @@ func TestSoloTicketWithOneWorkerChangesNothing(t *testing.T) {
 		if got := h.sink.dispatched(); !equal(got, []string{"A", "S", "B"}) {
 			t.Errorf("dispatched %v", got)
 		}
-		if log := h.logged(); strings.Contains(log, "waiting for solo") || strings.Contains(log, "is next") {
-			t.Errorf("a solo wait was logged with one worker:\n%s", log)
+		log := h.logged()
+		if next := strings.Index(log, "is next"); next >= 0 && next < strings.Index(log, "A settled") {
+			t.Errorf("S was said to be next while A's worker was at work:\n%s", log)
 		}
-		for _, s := range h.sink.soloStates() {
-			if s.Next {
-				t.Errorf("the dashboard was told a solo ticket waits: %v", h.sink.soloStates())
-			}
+		if waits := strings.Index(log, "waiting for solo"); waits >= 0 && waits < strings.Index(log, "S settled") {
+			t.Errorf("B was said to wait for S while S's worker was at work:\n%s", log)
 		}
 	})
 }

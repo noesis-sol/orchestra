@@ -353,6 +353,8 @@ func TestAMergeThatSetsTheSetupHasTheNextWorktreeSetUp(t *testing.T) {
 		h.beads.add("A", "the environment", 1)
 		h.beads.add("B", "after it", 2)
 		h.beads.add("C", "last", 3)
+		h.beads.link("B", "A", "blocks") // each started once the one before has merged, not as it merges
+		h.beads.link("C", "B", "blocks")
 		h.worker("A", func(w *fakeWorker) AgentState {
 			w.claim()
 			if err := h.mem.commitFile(w.wt, "A: set the setup", project.SettingsFile, settings); err != nil {
