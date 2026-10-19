@@ -132,6 +132,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A file renamed or copied in the work tree (`git status`'s ` R` or ` C`, as
+  after `git add -N` of a moved file) no longer adds a mangled path, made of
+  its old name, to what a setup commits or to a worktree's uncommitted files:
+  the setup failed to commit (`cannot commit the setup`).
 - A ticket back from a question whose worktree's setup then fails is back in
   the queue, no longer set aside: a merge or the end of a hold lets it be
   taken again, and the run's end names it under `SETUP_WAITS`. It was never

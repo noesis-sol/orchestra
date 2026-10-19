@@ -86,7 +86,8 @@ func (Git) Changes(ctx context.Context, repo string, paths ...string) map[string
 }
 
 // parseStatus reads 'git status --porcelain -z': a two-letter code, a space and the path, with a
-// renamed or copied file's former path in the next field.
+// renamed or copied file's former path in the next field, whether it was renamed or copied in the
+// index (R or C first) or in the work tree (R or C second, as after 'git add -N' of a moved file).
 func parseStatus(out string) map[string]string {
 	status := map[string]string{}
 	entries := strings.Split(out, "\x00")
@@ -96,7 +97,7 @@ func parseStatus(out string) map[string]string {
 			continue
 		}
 		status[e[3:]] = e[:2]
-		if e[0] == 'R' || e[0] == 'C' {
+		if strings.ContainsAny(e[:2], "RC") {
 			i++ // the path it was renamed or copied from
 		}
 	}
