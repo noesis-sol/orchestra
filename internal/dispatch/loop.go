@@ -486,6 +486,7 @@ type Config struct {
 	TicketLimit    time.Duration // a worker still going this long after dispatch stops the run; 0 for none
 	Check          string        // the project's merge check (check_fast), from .orchestra/settings.json
 	CheckTimeout   time.Duration // how long Check may run before it is stopped; 0 for project.DefaultCheckTimeout
+	CheckOwn       string        // a worker's check of its own change (check_own), which its rules name; "" for Check
 	Version        string        // orchestra's version, for the log
 	NoFootprint    bool          // start tickets side by side even when their footprints overlap
 	Predict        bool          // have the predictor organ guess the files of ready tickets naming none

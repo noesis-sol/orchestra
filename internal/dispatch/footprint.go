@@ -914,10 +914,10 @@ func (r *runState) mergesByUnion(f string) bool {
 	return r.unions[f]
 }
 
-// checkCommands are the project's check commands, the merge check's and the full check's, one a
-// line, whose files footprints leave out: a ticket asks for both to pass, and a merge check that
-// calls the full one (scripts/check.sh -short) names only its own script.
-func checkCommands(c Config) string { return c.Check + "\n" + c.CheckFull }
+// checkCommands are the project's check commands, the merge check's, the full check's and a worker's
+// own, one a line, whose files footprints leave out: a ticket asks for them to pass, and a merge
+// check that calls the full one (scripts/check.sh -short) names only its own script.
+func checkCommands(c Config) string { return c.Check + "\n" + c.CheckFull + "\n" + c.CheckOwn }
 
 // maxSource is the most of a file read for the functions it mentions.
 const maxSource = 4 << 20

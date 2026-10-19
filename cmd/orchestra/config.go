@@ -599,7 +599,7 @@ func resolveProject(
 // override them; it reads nothing else, so the precedence of each can be tested on its own.
 func resolveSettings(c *options, f *runFlags, settings project.Settings) []string {
 	var problems []string
-	c.Check, c.CheckFull = settings.CheckFast, settings.CheckFull
+	c.Check, c.CheckFull, c.CheckOwn = settings.CheckFast, settings.CheckFull, settings.CheckOwn
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)

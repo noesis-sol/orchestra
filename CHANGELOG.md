@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- `check_own` in `.orchestra/settings.json` names a worker's check of its
+  own change, such as `scripts/check-own.sh`: a worker's rules name it as the
+  check to run once with its output kept, in place of the merge check
+  (`check_fast`) that orchestra runs itself. Its files are left out of
+  footprints, as the other checks' are.
 - A run says when another orchestra run shares the machine, as their checks
   slow each other down: `SHARED_MACHINE: another orchestra run is going in
   <repository> with <n> workers`, once for each, and the dashboard's title

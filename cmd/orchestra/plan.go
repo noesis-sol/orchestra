@@ -54,7 +54,8 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	checks := settings.CheckFast + "\n" + settings.CheckFull // a footprint leaves out the files either names
+	// a footprint leaves out the files any of the checks names
+	checks := settings.CheckFast + "\n" + settings.CheckFull + "\n" + settings.CheckOwn
 	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), checks,
 		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(ctx, repo))
 	if len(links) == 0 {

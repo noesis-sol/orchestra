@@ -1,6 +1,7 @@
 {
   "check_fast": "scripts/check-fast.sh",
   "check_full": "scripts/check.sh",
+  "check_own": "scripts/check-own.sh",
   "concurrent": 4,
   "check_fast_timeout": "15m",
   "check_full_timeout": "30m",

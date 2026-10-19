@@ -22,6 +22,10 @@ type Settings struct {
 	// CheckFull is every check, normally FullRunner: CheckFast, then the slower suites. orchestra runs
 	// it once at the end of a run.
 	CheckFull string `json:"check_full,omitempty"`
+	// CheckOwn is the check a worker runs on its own change before it closes its ticket, such as one
+	// limited to what its branch changed. orchestra never runs it: its workers' standing rules name it
+	// as the check to run once with its output kept. Empty: CheckFast.
+	CheckOwn string `json:"check_own,omitempty"`
 	// Check and CheckTimeout are the names of CheckFast and CheckFastTimeout before there were two
 	// checks. LoadSettings reads them as those, and SaveSettings writes them under the new names.
 	Check        string `json:"check,omitempty"`

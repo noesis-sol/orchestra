@@ -49,10 +49,13 @@ const workerCheckLog = "worker-check.log"
 // checkNote tells a worker to run a check once, keeping its whole output in a file git ignores and
 // printing its exit status, then to read the file, rather than to run the check again to see what it
 // said: workers piped a check through tail, which hides its exit status, then ran it again, minutes
-// of a full check each time, to learn whether it passed. Its example is the project's merge check
-// (check_fast) when it has one.
+// of a full check each time, to learn whether it passed. Its example is the worker's own check
+// (check_own) when the project has one, else its merge check (check_fast).
 func (o *Loop) checkNote() string {
-	cmd := o.cfg.Check
+	cmd := o.cfg.CheckOwn
+	if cmd == "" {
+		cmd = o.cfg.Check
+	}
 	if cmd == "" {
 		cmd = "<the check>"
 	}

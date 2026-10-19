@@ -69,7 +69,8 @@ Where the project's orchestra files are:
 
 `--prompt` / `WORKER_PROMPT` can point elsewhere; the log's `START` line records what a run used.
 `.orchestra/settings.json` holds the checks, `check_fast` (the merge check, `scripts/check-fast.sh`)
-and `check_full` (everything, `scripts/check-full.sh`, run once at the end of a run), `mcp_servers` (the MCP servers workers get, by
+and `check_full` (everything, `scripts/check-full.sh`, run once at the end of a run), optionally `check_own`
+(a worker's check of its own change, which its rules name in place of `check_fast`), `mcp_servers` (the MCP servers workers get, by
 name; see [Workers' MCP servers](#workers-mcp-servers)) and `concurrent`, how many tickets run at the
 same time by default (`--concurrent N` / `-c N` / `ORCHESTRA_CONCURRENT` overrides it for a run),
 and optionally `ticket_limit`, how long a worker may go on before the run stops for it (`"2h"`;
