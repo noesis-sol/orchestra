@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/update"
@@ -50,13 +51,23 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 		printFlags(fs)
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 updated or nothing to do (--check: none newer), "+
 			"1 --check: a newer release is out,\n2 refused (flags, a build from a clone, "+
-			"a folder it can't write in), 4 the update failed.\n")
+			"a folder it can't write in), 4 the update failed, 130 Ctrl+C.\n")
 	}
 	if code, ok := parseArgs(fs, args, "update"); !ok {
 		return code
 	}
+	// A stop signal cancels the requests and the new binary's --version, so that Install removes its
+	// temporary file as it fails, rather than the signal ending orchestra with the file left beside exe.
+	parent := ctx
+	ctx, stop := signal.NotifyContext(ctx, stopSignals...)
+	defer stop()
+	stopped := func() bool { return ctx.Err() != nil && parent.Err() == nil }
 
 	rel, err := u.Latest(ctx)
+	if stopped() {
+		fmt.Fprintln(stderr, "orchestra update: stopped.")
+		return dispatch.ExitInterrupted
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra update:", err)
 		return dispatch.ExitTool
@@ -104,6 +115,10 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 		fmt.Fprintf(stderr, "orchestra update: cannot replace %s: %v\n"+
 			"Run it as the folder's owner instead: sudo orchestra update\n", path, notWritable)
 		return dispatch.ExitSetup
+	}
+	if err != nil && stopped() {
+		fmt.Fprintf(stderr, "orchestra update: stopped; %s is unchanged.\n", path)
+		return dispatch.ExitInterrupted
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "orchestra update: %v\n%s is unchanged.\n", err, path)

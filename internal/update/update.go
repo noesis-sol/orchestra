@@ -290,11 +290,17 @@ func (u Updater) fetchVerified(ctx context.Context, a releaseAssets, keys []ed25
 	return archive, nil
 }
 
-// stage writes the binary in archive, the file called name, to tmp and closes it, makes it
+// stage writes the binary in archive, the file called name, to tmp, syncs and closes it, makes it
 // executable, and checks that it runs and names the release tag as its version.
 func (u Updater) stage(ctx context.Context, tmp *os.File, archive []byte, name, tag string) error {
 	if err := extract(archive, tmp); err != nil {
 		return fmt.Errorf("cannot extract orchestra from %s: %w", name, err)
+	}
+	// On disk before the rename makes it the binary: otherwise a power loss soon after could keep
+	// the rename and lose the data, an empty orchestra in place of the old one. The folder isn't
+	// synced after the rename: a rename lost leaves the old binary, whole.
+	if err := tmp.Sync(); err != nil {
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err

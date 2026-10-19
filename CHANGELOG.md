@@ -107,6 +107,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- Ctrl+C (or SIGTERM, SIGHUP) during `orchestra update` stops it, exit code
+  130, rather than killing it: the download is cancelled and the
+  `.orchestra-update-…` file it was writing beside the binary removed, where
+  it had stayed behind. The new binary is also synced to disk before it
+  replaces the old one, so a power loss soon after an update can't leave an
+  empty orchestra.
 - Away from macOS, where Claude Code starts its messages with ● rather than
   ⏺, a worker's screen no longer reads as limited once its usage limit has
   reset and it went on, and Claude Code's notice that it continues by itself
