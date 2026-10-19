@@ -73,14 +73,18 @@ esac
 // helpWithPrompts is the line of claude's --help that lists --permission-prompts.
 const helpWithPrompts = "  --permission-prompts <target>         Who answers permission prompts with\n"
 
-// fakeSession writes into dir a claude that answers --help with help and, as a session, keeps its
-// arguments, one a line, in claude-args, and its first message in claude-in, sets spec, sha and
-// commit to what the message gives, then runs body, a shell script that prints the session's stream.
+// fakeSession writes into dir a claude that answers --help with help, having first run dir's
+// on-help, a shell script, if there is one, and, as a session, keeps its arguments, one a line, in
+// claude-args, and its first message in claude-in, sets spec, sha and commit to what the message
+// gives, then runs body, a shell script that prints the session's stream.
 func fakeSession(t *testing.T, dir, help, body string) {
 	t.Helper()
 	faketool.Write(t, dir, "claude", `#!/bin/sh
 d='`+dir+`'
-if [ "$1" = --help ]; then printf '%s' '`+help+`'; exit 0; fi
+if [ "$1" = --help ]; then
+	if [ -f "$d/on-help" ]; then sh "$d/on-help" > /dev/null; fi
+	printf '%s' '`+help+`'; exit 0
+fi
 printf '%s\n' "$@" > "$d/claude-args"
 cat > "$d/claude-in"
 spec=$(sed -n 's/^- path: //p' "$d/claude-in")
@@ -224,33 +228,43 @@ func TestSpecBreakdownThatDoesNotFinishListsWhatItFiled(t *testing.T) {
 	}
 	failure := streamed(t, map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true,
 		"errors": []string{"API Error: 529 overloaded"}, "session_id": "sess-1"})
+	// The session that times out has filed its tree before it starts, when orchestra asks claude for
+	// its --help, so that the time limit, which counts from the session's start, can't stop it
+	// halfway through the filing on a loaded machine.
+	filedFirst := "[ -f \"$d/filed\" ] && exit 0\nspec=.orchestra/specs/app.md sha= commit=\n" + fileTree(t)
 	for _, tc := range []struct {
 		name, body string
+		onHelp     string // the fake claude's on-help (see fakeSession)
 		args       []string
 		want       []string
 	}{
-		{"timed out", fileTree(t) + "exec sleep 30\n", []string{"--spec-timeout", "1s"}, []string{
+		{"timed out", "exec sleep 30\n", filedFirst, []string{"--spec-timeout", "1s"}, []string{
 			"orchestra couldn't break the spec down: claude timed out after 1s\n",
 			"It filed 2 epics and 2 tickets for .orchestra/specs/app.md, under s-1:\n  s-1  epic  An app\n" +
 				"  s-1.1  epic  Listing\n  s-1.1.1  task  List the things\n  s-1.2  task  Sort the things\n",
 		}},
-		{"failed", fileTree(t) + "cat <<'EOS'\n" + failure + "\nEOS\nexit 1\n", nil, []string{
+		{"failed", fileTree(t) + "cat <<'EOS'\n" + failure + "\nEOS\nexit 1\n", "", nil, []string{
 			"orchestra couldn't break the spec down: claude failed during the call: API Error: 529 overloaded\n",
 			"It filed 2 epics and 2 tickets for .orchestra/specs/app.md, under s-1:\n",
 		}},
 		{"no root epic", filing(t, "toolu_1", "bd create --type epic --title 'An app' --metadata "+rootMeta+" --silent") +
-			answering(t, specAnswer{Problem: "The spec\ndescribes nothing to build."}), nil, []string{
+			answering(t, specAnswer{Problem: "The spec\ndescribes nothing to build."}), "", nil, []string{
 			"orchestra: the spec's breakdown named no root epic, so there is nothing to run.\n" +
 				"It says: The spec describes nothing to build.\n",
 			"It filed 1 epic and 0 tickets for .orchestra/specs/app.md, under s-1:\n  s-1  epic  An app\n",
 		}},
-		{"nothing filed", answering(t, specAnswer{}), nil, []string{
+		{"nothing filed", answering(t, specAnswer{}), "", nil, []string{
 			"orchestra: the spec's breakdown named no root epic, so there is nothing to run.\n" +
 				"It filed nothing for .orchestra/specs/app.md.\n",
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, spec, _ := breakdownFixture(t, "", tc.body)
+			repo, spec, tools := breakdownFixture(t, "", tc.body)
+			if tc.onHelp != "" {
+				if err := os.WriteFile(filepath.Join(tools, "on-help"), []byte("d='"+tools+"'\n"+tc.onHelp), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			stdout, stderr, code := runSpecIn(t, repo, func(string) {}, append([]string{"--spec", spec, "--plain"},
 				tc.args...)...)
 			if code != 2 || strings.Contains(stdout, "START") {
