@@ -7,11 +7,13 @@ import (
 	"time"
 )
 
-// asksAndGoes claims the ticket and asks the maintainer Q, then is gone from its tab, its ticket in
-// progress: its tab closed while it waited, say.
+// asksAndGoes claims the ticket and asks the maintainer Q, then is gone from its tab a minute later,
+// its ticket in progress: its tab closed while it waited, say. The minute keeps it from going before
+// orchestra sees a resumed worker start on its message, which no real one could.
 func asksAndGoes(w *fakeWorker) AgentState {
 	w.claim()
 	w.ask("Q", "which way?")
+	time.Sleep(time.Minute)
 	return StateGone
 }
 
