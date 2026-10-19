@@ -90,7 +90,7 @@ func TestTheVerifierIsAddedOnce(t *testing.T) {
 }
 
 func TestTheVerifierWithNothingToGoOn(t *testing.T) {
-	agent := VerifierText(nil, nil, nil)
+	agent := VerifierText(nil, nil, nil, nil, nil)
 	for _, want := range []string{"scout didn't describe the stack", "runs:\n  - nothing yet.\n",
 		"then:\n  - nothing more.\n"} {
 		if !strings.Contains(agent, want) {

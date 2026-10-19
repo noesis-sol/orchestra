@@ -488,29 +488,37 @@ func fillTemplate(t string, checks PromptChecks) string {
 const suitesPlaceholder = "<How to run each suite on part of the project.>"
 
 // suiteLines are the worker prompt's lines on how to run each suite on part of the project: a line a
-// suite where init knows them all, the command the scout gave for part of the project or else the
-// whole suite, the slower ones where the change touches what they cover. A suite that isn't
-// parallel_safe is left to the merge check, which takes turns on it with the other worktrees' checks.
-// Where init doesn't know them, the lines say where the suites are and how to run them.
+// suite where init knows them all (suiteBullets). Where init doesn't know them, the lines say where
+// the suites are and how to run them.
 func suiteLines(checks PromptChecks) string {
 	if !isRunner(checks.Check, FastRunner) {
 		return "  Run what `" + checks.Check + "` runs on part of the project where its tools allow it\n" +
 			"  (`go test ./<package>/...`, `pytest <paths>`, `eslint <files>`), and whole where they don't.\n"
 	}
-	var fast, full []Suite
-	if checks.Fast != nil && checks.Full != nil {
-		fast, _ = WithoutRunners(*checks.Fast)
-		full, _ = WithoutRunners(*checks.Full)
-	}
-	if len(fast)+len(full) == 0 {
+	bullets := suiteBullets(checks.Fast, checks.Full)
+	if bullets == "" {
 		return "  The suites are the commands `" + FastRunner + "` and `" + FullRunner + "` list, a command a\n" +
 			"  line: run each on part of the project where its tool allows it (`go test ./<package>/...`,\n" +
 			"  `pytest <paths>`, `eslint <files>`), and whole where it doesn't.\n"
 	}
+	return "  The suites, and how to run each on part of the project:\n" + bullets
+}
+
+// suiteBullets are the lines on how to run each of the suites FastRunner and FullRunner run on part of
+// the project, a line a suite: the command the scout gave for part of the project or else the whole
+// suite, the slower ones where the change touches what they cover. A suite that isn't parallel_safe
+// is left to the merge check, which takes turns on it with the other worktrees' checks. "" where init
+// doesn't know the suites (fast or full nil) or there are none. The worker prompt and the verifier
+// give the same lines.
+func suiteBullets(fast, full *[]Suite) string {
+	if fast == nil || full == nil {
+		return ""
+	}
+	f, _ := WithoutRunners(*fast)
+	l, _ := WithoutRunners(*full)
 	var b strings.Builder
-	b.WriteString("  The suites, and how to run each on part of the project:\n")
-	for i, s := range append(fast, full...) {
-		slower := i >= len(fast)
+	for i, s := range append(f, l...) {
+		slower := i >= len(f)
 		name, whole := strings.TrimSpace(s.Name), "`"+s.Command+"`, whole"
 		if name == "" {
 			name, whole = "`"+s.Command+"`", "whole"
@@ -524,7 +532,7 @@ func suiteLines(checks PromptChecks) string {
 		case s.Targeted != "":
 			fmt.Fprintf(&b, "  - %s: `%s`\n", name, s.Targeted)
 		case slower:
-			fmt.Fprintf(&b, "  - %s: %s, where your change touches what it covers\n", name, whole)
+			fmt.Fprintf(&b, "  - %s: %s, where the change touches what it covers\n", name, whole)
 		default:
 			fmt.Fprintf(&b, "  - %s: %s, as it doesn't run on part of the project\n", name, whole)
 		}

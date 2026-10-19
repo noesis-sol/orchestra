@@ -27,14 +27,14 @@ var verifierText = template.Must(template.New("verifier").Parse(verifierTemplate
 
 // verifierSection is what init appends to the worker prompt: TICKET_ID is filled in per ticket.
 const verifierSection = "\n## Verify\n" +
-	"- Before you close the ticket, once `" + FastRunner + "` passes after your last commit, have the\n" +
-	"  verifier subagent (" + VerifierPath + ") check your change: give it the ticket's ID, TICKET_ID,\n" +
-	"  the commit at which the check passed (`git rev-parse HEAD`), whether you ran `" + FullRunner + "`\n" +
-	"  there too, and the file their output is in where you kept one, so that it needn't run them again;\n" +
-	"  nothing of your reasoning. Run it in the foreground and wait for its answer.\n" +
-	"- Fix each gap it reports that affects correctness or the ticket's requirements, commit, run the\n" +
-	"  check again, and ask it again with the new commit. The rest is optional: note on the ticket any\n" +
-	"  you leave.\n" +
+	"- Before you close the ticket, once your checks pass after your last commit, have the verifier\n" +
+	"  subagent (" + VerifierPath + ") check your change: give it the ticket's ID, TICKET_ID, the\n" +
+	"  commit at which your checks passed (`git rev-parse HEAD`), the commands you ran there, and the\n" +
+	"  file their output is in where you kept one, so that it needn't run them again; nothing of your\n" +
+	"  reasoning. Run it in the foreground and wait for its answer.\n" +
+	"- Fix each gap it reports that affects correctness or the ticket's requirements, commit, run your\n" +
+	"  checks again, and ask it again with the new commit and commands. The rest is optional: note on\n" +
+	"  the ticket any you leave.\n" +
 	"- After three rounds that still end in FAIL, note its findings on the ticket. Close the ticket only\n" +
 	"  when you judge them outside the ticket's requirements; otherwise defer it, as under Close.\n"
 
@@ -55,14 +55,16 @@ func OffersVerifier(repo, agent string) bool {
 }
 
 // VerifierText is the verifier subagent for a project built with stack, whose runners run fast and
-// full (check-full's own suites, after check-fast).
-func VerifierText(stack, fast, full []string) string {
+// full (check-full's own suites, after check-fast). chosenFast and chosenFull are the suites init
+// chose for them, as it passes them to the worker prompt, for how to run each on part of the project;
+// nil where init doesn't know them.
+func VerifierText(stack, fast, full []string, chosenFast, chosenFull *[]Suite) string {
 	var b strings.Builder
 	// The template is fixed and its data plain strings: it can't fail.
 	_ = verifierText.Execute(&b, struct {
-		Stack, Fast, Full      []string
-		FastRunner, FullRunner string
-	}{stack, fast, full, FastRunner, FullRunner})
+		Stack, Fast, Full             []string
+		Parts, FastRunner, FullRunner string
+	}{stack, fast, full, suiteBullets(chosenFast, chosenFull), FastRunner, FullRunner})
 	return b.String()
 }
 
@@ -118,7 +120,7 @@ func ApplyVerifier(_ context.Context, repo string, c Choice) ([]Step, error) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return nil, err
 		}
-		if err := writeFile(p, []byte(VerifierText(c.Stack, fast, full)), 0o644); err != nil {
+		if err := writeFile(p, []byte(VerifierText(c.Stack, fast, full, c.Fast, c.Full)), 0o644); err != nil {
 			return nil, err
 		}
 		did = append(did, "wrote "+VerifierPath)

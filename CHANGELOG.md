@@ -19,6 +19,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The verifier `orchestra init` writes checks only what a change touches,
+  as workers do, and leaves the whole suite to the merge check: the worker
+  gives it the commit at which its own checks passed and the commands it ran
+  there, which it quotes when `HEAD` is that commit and the worktree is
+  clean, running only a suite they leave out that covers the change;
+  otherwise it runs the suites on what the change touches, as its Its checks
+  section lists them with the worker prompt's commands for part of the
+  project. It had still run `check-fast.sh`, the whole fast suite, once a
+  ticket. `orchestra init` keeps a verifier and a Verify section that are
+  there: for the new ones, remove `.claude/agents/verifier.md` and the
+  worker prompt's Verify section and run `orchestra init --verifier` again,
+  or copy them by hand (see the verifier in `docs/setup.md`).
 - The worker prompt `orchestra init` writes has a worker check its own
   change, and leave the whole suite to the merge check and the full check:
   before closing, it runs the suites on what its change touches, the slower

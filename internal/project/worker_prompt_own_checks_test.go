@@ -30,7 +30,7 @@ func TestWorkerPromptChecksTheWorkersOwnChange(t *testing.T) {
 		"  - the project's own check: `" + CheckScript + "`, whole, as it doesn't run on part of the project\n" +
 		"  - `make vet`: whole, as it doesn't run on part of the project\n" +
 		"  - e2e (slower): `npx playwright test <paths>`\n" +
-		"  - build (slower): `make build`, whole, where your change touches what it covers\n" +
+		"  - build (slower): `make build`, whole, where the change touches what it covers\n" +
 		"  - integration (slower): leave it to the merge check; two copies at once, in two worktrees, collide\n" +
 		"- Leave the whole suite to orchestra: its merge check, `" + FastRunner + "`, runs on every ticket\n"
 	if !strings.Contains(prompt, "only the checks you need.\n"+want) {

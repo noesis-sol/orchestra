@@ -10,7 +10,7 @@ import (
 func TestPromptsKeepRemovalsOffVariablesAndGlobs(t *testing.T) {
 	for name, text := range map[string]string{
 		"worker prompt": fillTemplate(promptTemplate, PromptChecks{Check: FastRunner}),
-		"verifier":      VerifierText(nil, nil, nil),
+		"verifier":      VerifierText(nil, nil, nil, nil, nil),
 	} {
 		for _, want := range []string{"leave them there", "Never `rm` a target", "safety check"} {
 			if !strings.Contains(strings.Join(strings.Fields(text), " "), want) {
