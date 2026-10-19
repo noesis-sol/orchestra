@@ -36,6 +36,9 @@ All notable changes to orchestra are documented here. The format follows
   keeps both. A ticket naming the changelog no longer waits for every worker
   that has added an entry to it; footprint skips had left 0.45 slot-hours
   idle on the changelog alone since 2026-10-13.
+- `orchestra plan` leaves the files git merges by union out of footprints
+  too, as a run does: two tickets that both name a short `CHANGELOG.md`
+  merged by union are no longer proposed a blocks link.
 - The verifier reuses the worker's passing check: the worker prompt's Verify
   section has the worker give it the commit at which `check-fast.sh` passed,
   whether `check-full.sh` ran there too, and the file their output is in, and

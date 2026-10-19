@@ -56,7 +56,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	}
 	checks := settings.CheckFast + "\n" + settings.CheckFull // a footprint leaves out the files either names
 	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), checks,
-		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) })
+		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(ctx, repo))
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",
 			plural(len(open), "open ticket"))
@@ -100,6 +100,21 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintf(stdout, "Added %s.\n", plural(len(links), "link"))
 	}
 	return dispatch.ExitOK
+}
+
+// mergesByUnion reports whether git merges a file of repo by union, as .gitattributes says (git
+// check-attr merge), asking git once a file. A file git can't answer for isn't merged by union.
+func mergesByUnion(ctx context.Context, repo string) func(file string) bool {
+	unions := map[string]bool{}
+	return func(file string) bool {
+		u, ok := unions[file]
+		if !ok {
+			merge, err := git.Git{}.Attribute(ctx, repo, "merge", file)
+			u = err == nil && merge == "union"
+			unions[file] = u
+		}
+		return u
+	}
 }
 
 // plural is n and the noun, which takes an s unless n is 1.

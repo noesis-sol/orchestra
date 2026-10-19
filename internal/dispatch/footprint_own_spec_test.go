@@ -163,14 +163,14 @@ func TestPlanLinksLeaveOutTheOwnSpec(t *testing.T) {
 	for i := range open {
 		open[i].Metadata = []byte(`{"spec": "docs/shop-spec.md"}`)
 	}
-	if got := PlanLinks(open, nil, trackedWithOwnSpec, "", sourceOf(nil)); len(got) != 0 {
+	if got := PlanLinks(open, nil, trackedWithOwnSpec, "", sourceOf(nil), nil); len(got) != 0 {
 		t.Errorf("links %q, want none", linkList(got))
 	}
 
 	for i := range open {
 		open[i].Metadata = []byte(`{"spec": "docs/shop-spec.md", "files": ["docs/shop-spec.md"]}`)
 	}
-	got := linkList(PlanLinks(open, nil, trackedWithOwnSpec, "", sourceOf(nil)))
+	got := linkList(PlanLinks(open, nil, trackedWithOwnSpec, "", sourceOf(nil), nil))
 	if want := []string{"a>b:docs/shop-spec.md"}; !slices.Equal(got, want) {
 		t.Errorf("both listing the spec: links %q, want %q", got, want)
 	}

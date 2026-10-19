@@ -26,13 +26,15 @@ const SmallFileLines = 200
 // function it names, and two tickets that both name functions a file mentions, none the same, work
 // in different places in it. read gives a repository file's contents, for its line count and the
 // functions it mentions; a file it can't read (one that doesn't exist yet) is small and mentions
-// none. Area labels, predicted files, and the files the check commands (check, one a line) name, specs under
-// .orchestra/specs/ and the spec a ticket's metadata names (SpecKey), unless its files metadata
-// lists them, don't link tickets, and a pair already ordered by existing links, directly or through
-// other tickets, gets none; each ticket is linked to the nearest one before it first, so tickets
+// none. union reports whether git merges a repository file by union (nil: none is): both tickets'
+// lines are kept, so such a file never links them. Area labels, predicted files, and the files the
+// check commands (check, one a line) name, specs under .orchestra/specs/ and the spec a ticket's
+// metadata names (SpecKey), unless its files metadata lists them, don't link tickets either, and a
+// pair already ordered by existing links, directly or through other tickets, gets none; each ticket
+// is linked to the nearest one before it first, so tickets
 // touching one function form a chain.
 func PlanLinks(open []Ticket, existing []Link, tracked []string, check string,
-	read func(file string) ([]byte, error)) []Link {
+	read func(file string) ([]byte, error), union func(file string) bool) []Link {
 	ts := slices.Clone(open)
 	slices.SortStableFunc(ts, func(a, b Ticket) int {
 		return cmp.Or(
@@ -43,6 +45,7 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, check string,
 	})
 	repo := newRepoFiles(tracked, check)
 	repo.read = read
+	repo.union = union
 	fps := make([]Footprint, len(ts))
 	for i, t := range ts {
 		// A predicted footprint is a guess: good enough to keep two tickets apart for a while, not

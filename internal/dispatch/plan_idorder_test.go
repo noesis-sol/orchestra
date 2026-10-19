@@ -12,7 +12,7 @@ func TestPlanLinksSameSecondTicketsByIDNumber(t *testing.T) {
 		planTicket("e.10", 2, "2026-10-04T09:00:00Z", "Retry in `Loop.merge` (internal/dispatch/merge.go)."),
 		planTicket("e.2", 2, "2026-10-04T09:00:00Z", "Log each rebase in Loop.merge()."),
 	}
-	got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil)))
+	got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), nil))
 	if want := []string{"e.2>e.10:Loop.merge"}; !slices.Equal(got, want) {
 		t.Errorf("links %q, want %q", got, want)
 	}

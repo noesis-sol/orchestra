@@ -119,7 +119,7 @@ func TestPlanLinksAListedNameWithABracketToThatFile(t *testing.T) {
 		for i, p := range []int{1, 2, 3} {
 			open[i].Priority = &p
 		}
-		got := linkList(PlanLinks(open, nil, tracked, "", sourceOf(nil)))
+		got := linkList(PlanLinks(open, nil, tracked, "", sourceOf(nil), nil))
 		if want := []string{"a>b:pages/[id].tsx"}; !slices.Equal(got, want) {
 			t.Errorf("files %v: links %q, want %q", tracked, got, want)
 		}

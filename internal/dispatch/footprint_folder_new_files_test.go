@@ -111,17 +111,17 @@ func TestPlanLinksAListedFolderToANewFileInIt(t *testing.T) {
 	open := prioritise([]Ticket{listing("a", "internal/dispatch/"), listing("b", "internal/dispatch/cart.go"),
 		listing("c", "internal/dispatchx/a.go")})
 	for _, lines := range []int{50, 500} {
-		got, want := linkList(PlanLinks(open, nil, trackedNested, "", read(lines))), []string{"a>b:internal/dispatch/cart.go"}
+		got, want := linkList(PlanLinks(open, nil, trackedNested, "", read(lines), nil)), []string{"a>b:internal/dispatch/cart.go"}
 		if !slices.Equal(got, want) {
 			t.Errorf("files of %d lines: links %q, want %q", lines, got, want)
 		}
 	}
 
 	both := prioritise([]Ticket{listing("a", "internal/dispatch/"), listing("b", "internal/dispatch/")})
-	if got := PlanLinks(both, nil, trackedNested, "", read(500)); len(got) != 0 {
+	if got := PlanLinks(both, nil, trackedNested, "", read(500), nil); len(got) != 0 {
 		t.Errorf("two tickets listing a folder of large files: links %q, want none", linkList(got))
 	}
-	small, want := linkList(PlanLinks(both, nil, trackedNested, "", read(50))), []string{"a>b:internal/dispatch/loop.go"}
+	small, want := linkList(PlanLinks(both, nil, trackedNested, "", read(50), nil)), []string{"a>b:internal/dispatch/loop.go"}
 	if !slices.Equal(small, want) {
 		t.Errorf("two tickets listing a folder of small files: links %q, want %q", small, want)
 	}
@@ -129,7 +129,7 @@ func TestPlanLinksAListedFolderToANewFileInIt(t *testing.T) {
 	byFunction := prioritise([]Ticket{listing("a", "pkg/"), listing("b", "pkg/")})
 	byFunction[0].Description, byFunction[1].Description = "Change Foo().", "Change Bar()."
 	source := sourceOf(map[string]string{"pkg/x.go": "package pkg\n\nfunc Foo() {}\n\nfunc Bar() {}\n"})
-	if got := PlanLinks(byFunction, nil, []string{"pkg/x.go"}, "", source); len(got) != 0 {
+	if got := PlanLinks(byFunction, nil, []string{"pkg/x.go"}, "", source, nil); len(got) != 0 {
 		t.Errorf("two tickets listing a folder, naming different functions in its file: links %q, want none", linkList(got))
 	}
 }

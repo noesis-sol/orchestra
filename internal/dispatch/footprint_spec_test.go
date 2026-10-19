@@ -73,13 +73,13 @@ func TestPlanLinksLeaveOutTheSpec(t *testing.T) {
 		planTicket("a", 1, "", "Build the cart, as .orchestra/specs/shop.md says under Cart."),
 		planTicket("b", 2, "", "Build checkout, as .orchestra/specs/shop.md says under Checkout."),
 	}
-	if got := PlanLinks(open, nil, trackedWithSpec, "", sourceOf(nil)); len(got) != 0 {
+	if got := PlanLinks(open, nil, trackedWithSpec, "", sourceOf(nil), nil); len(got) != 0 {
 		t.Errorf("links %q, want none", linkList(got))
 	}
 
 	open[0].Metadata = []byte(`{"files": [".orchestra/specs/shop.md"]}`)
 	open[1].Metadata = open[0].Metadata
-	got := linkList(PlanLinks(open, nil, trackedWithSpec, "", sourceOf(nil)))
+	got := linkList(PlanLinks(open, nil, trackedWithSpec, "", sourceOf(nil), nil))
 	if want := []string{"a>b:.orchestra/specs/shop.md"}; !slices.Equal(got, want) {
 		t.Errorf("both listing the spec: links %q, want %q", got, want)
 	}
