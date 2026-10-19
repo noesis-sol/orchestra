@@ -132,6 +132,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket back from a question whose worktree's setup then fails is back in
+  the queue, no longer set aside: a merge or the end of a hold lets it be
+  taken again, and the run's end names it under `SETUP_WAITS`. It was never
+  taken again in the run. A ticket bd failed to reopen after its setup failed
+  is no longer listed under `SETUP_WAITS` as ready.
 - The log and the event stream (`events.jsonl`) give events emitted at once,
   such as a merge's closed line and the next ticket's dispatch, in one order,
   as the dashboard does: they could disagree on which came first.

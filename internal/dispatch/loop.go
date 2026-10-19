@@ -159,9 +159,10 @@ type ledger struct {
 	setUpFor  map[string]string    // the commit each ticket's dependencies were set up for (see setUp, setUpWorktree)
 	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
 	// nil for Config's. failedSetups: the tickets whose worktree's setup failed, with where its whole
-	// output is, kept out of the run until a ticket merges or a probe ends a hold (see setUpWorktree).
+	// output is and whether bd reopened them, kept out of the run until a ticket merges or a probe ends a
+	// hold (see leaveSetupFailed).
 	setupSet     *setupConf
-	failedSetups map[string]string
+	failedSetups map[string]failedSetup
 	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
 	// many times pick has read bd ready; baseAt, the commit Base was on as a pick last read it (see
 	// pickHead).
@@ -199,7 +200,7 @@ func newLedger() ledger {
 	return ledger{
 		active: map[string]Status{}, finishing: map[string]string{}, unmerged: map[string]string{},
 		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
-		setUpFor: map[string]string{}, failedSetups: map[string]string{}, blockers: map[string]blockLinks{},
+		setUpFor: map[string]string{}, failedSetups: map[string]failedSetup{}, blockers: map[string]blockLinks{},
 		askedIDs: map[string]workerSpot{},
 		leftOpen: map[string]leftOpen{}, placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
 		parentOf: map[string]string{}, footprints: map[string]*runFootprint{},
