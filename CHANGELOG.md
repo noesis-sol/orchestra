@@ -19,6 +19,9 @@ All notable changes to orchestra are documented here. The format follows
   none or hasn't chosen (`--strict-mcp-config`), rather than every server on
   the machine: one breakdown carried 259 MCP tools it never called, about
   200,000 tokens in each of its requests.
+- The dashboard's compact Current list lines up its workers' ticket IDs,
+  statuses and times as columns, the times right-aligned, each as wide as the
+  widest on screen, so the titles start at one column; spaces only, no lines.
 
 ### Fixed
 

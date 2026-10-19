@@ -24,15 +24,20 @@ func withCurrentLabel(panels string) string {
 // indented and in style, which is bold.
 func sectionLabel(name string, style lipgloss.Style) string { return "  " + style.Render(name) }
 
-// workerList is the compact form of the worker boxes: one box, one line per running worker.
+// workerList is the compact form of the worker boxes: one box, one line per running worker, its ID,
+// status and time lined up in columns with the other lines', each as wide as the widest on screen.
 func (m Dashboard) workerList(w int) string {
 	running := m.Running()
 	if len(running) == 0 {
 		return m.workerPanels(w)
 	}
+	var cols headColumns
+	for _, st := range running {
+		cols = cols.fit(m.headCells(st))
+	}
 	var lines []string
 	for i, st := range running {
-		lines = append(lines, ansi.Truncate(m.workerHead(i+1, st)+"  "+oneLine(st.Title), boxInner(w), "…"))
+		lines = append(lines, ansi.Truncate(m.alignedHead(i+1, st, cols)+"  "+oneLine(st.Title), boxInner(w), "…"))
 	}
 	return box(w, 0, workerBorder(running...), strings.Join(lines, "\n"))
 }
@@ -42,19 +47,44 @@ const numbered = 9
 
 // workerHead is the nth running worker's first line: its number, ID, worker status and time. A
 // worker beyond the ninth gets no number, only the room for one.
-func (m Dashboard) workerHead(n int, st dispatch.Status) string {
+func (m Dashboard) workerHead(n int, st dispatch.Status) string { return m.alignedHead(n, st, headColumns{}) }
+
+// alignedHead is workerHead with its ID and status padded to cols and its time right-aligned in
+// cols, so that its digits line up with the other lines'.
+func (m Dashboard) alignedHead(n int, st dispatch.Status, cols headColumns) string {
 	num := "  "
 	if n <= numbered {
 		num = keyStyle.Render(fmt.Sprint(n)) + " "
 	}
-	elapsed := m.since(st.Started).Truncate(time.Second)
+	c := m.headCells(st)
+	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), c.id+padding(c.id, cols.id),
+		c.status+padding(c.status, cols.status), padding(c.time, cols.time)+c.time)
+}
+
+// headCells are the cells of a worker's first line after its number and mark, in style.
+type headCells struct{ id, status, time string }
+
+// headCells are the worker's ticket ID, worker status and time.
+func (m Dashboard) headCells(st dispatch.Status) headCells {
 	label := workerLook(st).status.render()
 	if st.Merge == dispatch.MergeQueued && st.Place > 0 {
 		label = toMergeStyle.Render(fmt.Sprintf("%s (%s)", toMergeLabel, ordinal(st.Place)))
 	}
-	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), pickedStyle.Render(oneLine(st.Ticket)), label,
-		dimStyle.Render(elapsed.String()))
+	return headCells{id: pickedStyle.Render(oneLine(st.Ticket)), status: label,
+		time: dimStyle.Render(m.since(st.Started).Truncate(time.Second).String())}
 }
+
+// headColumns are the widths of the compact list's columns: the widest ID, status and time on screen.
+type headColumns struct{ id, status, time int }
+
+// fit widens the columns to hold c.
+func (cols headColumns) fit(c headCells) headColumns {
+	return headColumns{max(cols.id, lipgloss.Width(c.id)), max(cols.status, lipgloss.Width(c.status)),
+		max(cols.time, lipgloss.Width(c.time))}
+}
+
+// padding is the spaces that make s, styles not counted, w wide; none if it is as wide or wider.
+func padding(s string, w int) string { return strings.Repeat(" ", max(0, w-lipgloss.Width(s))) }
 
 // mark is what heads a worker's line: the spinner while its worker is at work, a hand-back included,
 // and once it has finished, its look's static mark, so that motion means a worker at work. It is as
