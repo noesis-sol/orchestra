@@ -125,7 +125,7 @@ func TestRunIgnoresRegistrationWhoseProcessIsGone(t *testing.T) {
 		h.worker("A", slowly(10*time.Minute, "a.txt"))
 		h.worker("B", slowly(10*time.Minute, "b.txt"))
 		o := h.loop()
-		o.alive = func(pid int) bool { return pid != 999999 }
+		o.process = func(pid int) (time.Time, bool) { return time.Time{}, pid != 999999 }
 		if code := o.Run(context.Background()); code != ExitOK {
 			t.Fatalf("exit %d\n%s", code, h.sink.text())
 		}

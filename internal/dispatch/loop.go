@@ -83,9 +83,9 @@ type Loop struct {
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
 	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
 	poll time.Duration
-	// alive reports whether the process of a run registered on the machine runs (see machine);
-	// processAlive when nil. Tests give their own.
-	alive func(pid int) bool
+	// process reports whether the process of a run registered on the machine runs and when it started,
+	// the zero time when unknown (see machine.gone); runningProcess when nil. Tests give their own.
+	process func(pid int) (start time.Time, alive bool)
 	// sampler reads the machine's load for the dashboard (see watchLoad): load.NewSampler of orchestra's
 	// own process when nil. Tests give their own.
 	sampler *load.Sampler

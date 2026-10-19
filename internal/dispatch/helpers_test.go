@@ -125,6 +125,9 @@ func (h *harness) loop() *Loop {
 	o.SetSink(h.sink)
 	if h.mem == nil {
 		o.poll = time.Millisecond // git takes real time: the loop's clock is the real one
+	} else {
+		// The bubble's clock isn't the processes': the runs registered are judged by their PID alone.
+		o.process = func(pid int) (time.Time, bool) { return time.Time{}, processAlive(pid) }
 	}
 	return o
 }

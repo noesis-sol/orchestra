@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,7 +20,9 @@ import (
 // each other run that it is going (SHARED_MACHINE), and that it has ended; with
 // Config.MachineWorkers, a free slot waits while the workers running across all the runs are at that
 // cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others. A
-// file whose PID is gone is a run that ended without removing it: it is ignored and removed.
+// file whose PID is gone, or is a process that started after the run did (the PID taken again since),
+// is a run that ended without removing it: it is ignored and removed. A folder that can't be read
+// holds no run, and one removed under the runs (a cache cleaner) is made again as each next writes.
 
 // registration is a run's file in the machine's folder of runs.
 type registration struct {
@@ -42,17 +45,17 @@ type machine struct {
 	seen    map[string]registration // the other runs' files, by name, as last read
 	others  int                     // the workers running in the other runs, as last read
 	full    bool                    // the run holds a free slot for Config.MachineWorkers, as last said
-	alive   func(pid int) bool
+	process func(pid int) (start time.Time, alive bool)
 }
 
 // register registers the run in Config.Machine, if it has one, and returns its machine; a folder or
 // file it can't make is logged, and the run goes on without one, still reading the others'.
 func (o *Loop) register() *machine {
 	c := o.cfg
-	m := &machine{dir: c.Machine, seen: map[string]registration{}, alive: o.alive,
+	m := &machine{dir: c.Machine, seen: map[string]registration{}, process: o.process,
 		me: registration{PID: os.Getpid(), Repo: c.Repo, Concurrent: c.Concurrency, Started: o.started}}
-	if m.alive == nil {
-		m.alive = processAlive
+	if m.process == nil {
+		m.process = runningProcess
 	}
 	if m.dir == "" {
 		return m
@@ -83,14 +86,20 @@ func createRegistration(dir string, pid int) (string, error) {
 }
 
 // write writes the run's registration to its file, through a file beside it renamed over it, so that
-// a run reading it never finds it half written.
+// a run reading it never finds it half written; a folder removed under the run is made again.
 func (m *machine) write() error {
 	b, err := json.Marshal(m.me)
 	if err != nil {
 		return err
 	}
 	tmp := m.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	err = os.WriteFile(tmp, b, 0o644)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err = os.MkdirAll(m.dir, 0o755); err == nil {
+			err = os.WriteFile(tmp, b, 0o644)
+		}
+	}
+	if err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, m.path); err != nil {
@@ -120,31 +129,43 @@ func (m *machine) unregister() {
 	m.path = ""
 }
 
-// look reads the other runs' files, removing those whose PID is gone, and returns the events that say
-// which runs started and ended since it last read them, those that started first by when they started.
+// look reads the other runs' files, removing those whose run is gone (see gone), and returns the
+// events that say which runs started and ended since it last read them, those that started first by
+// when they started. A folder it can't read counts no other run's workers, and says nothing of the
+// runs last seen in it: they are heard of again once it can be read.
 func (m *machine) look() []Event {
 	if m.dir == "" {
 		return nil
 	}
 	entries, err := os.ReadDir(m.dir)
 	if err != nil {
-		return nil // no folder yet: no other run has registered
+		// No folder yet, as no run has registered, or one removed under the runs: the run's own file
+		// is written again, the folder with it (see write).
+		m.others, m.written = 0, false
+		return nil
 	}
 	now := map[string]registration{}
+	mine := false
 	for _, e := range entries {
 		name := e.Name()
 		path := filepath.Join(m.dir, name)
+		if path == m.path {
+			mine = true
+		}
 		if !strings.HasSuffix(name, registrationExt) || path == m.path {
 			continue
 		}
 		reg, ok := readRegistration(path)
 		switch {
 		case !ok: // one being made, or not orchestra's
-		case !m.alive(reg.PID):
+		case m.gone(reg):
 			_ = os.Remove(path) // another run may have removed it first
 		default:
 			now[name] = reg
 		}
+	}
+	if !mine {
+		m.written = false // removed under the run: written again as it next writes
 	}
 	var started []string
 	m.others = 0
@@ -198,6 +219,30 @@ func workersCount(n int) string {
 	return fmt.Sprintf("%d workers", n)
 }
 
+// startSlack is how far a process's start time, as the platform gives it, may fall after the
+// Started of its run's registration: Linux gives it to the second.
+const startSlack = 2 * time.Second
+
+// gone reports whether reg's run has ended: its PID runs no process, or a process that started after
+// the run did, which took the PID once the run had ended. A start time that can't be read doesn't say.
+func (m *machine) gone(reg registration) bool {
+	start, alive := m.process(reg.PID)
+	return !alive || !start.IsZero() && start.After(reg.Started.Add(startSlack))
+}
+
+// runningProcess reports whether process pid runs (see processAlive) and, when it can be read, when it
+// started; the zero time when it can't.
+func runningProcess(pid int) (time.Time, bool) {
+	if !processAlive(pid) {
+		return time.Time{}, false
+	}
+	start, err := processStart(pid)
+	if err != nil {
+		return time.Time{}, true // another user's, or gone since: judged by its PID alone
+	}
+	return start, true
+}
+
 // processAlive reports whether process pid runs: one that can't be signalled for want of permission
 // does, as another user's.
 func processAlive(pid int) bool {
@@ -210,7 +255,8 @@ func processAlive(pid int) bool {
 }
 
 // lookAround reads the other runs on the machine, saying which started and ended, and writes how
-// many of the run's own workers run. The hold for Config.MachineWorkers ends once they are under it.
+// many of the run's own workers run. The hold for Config.MachineWorkers ends once they are under it,
+// and the dashboard hears so then, whether or not the run goes on taking tickets.
 func (r *runState) lookAround() {
 	r.machine.running(len(r.inflight))
 	for _, ev := range r.machine.look() {
@@ -218,6 +264,9 @@ func (r *runState) lookAround() {
 	}
 	if !r.atCap() {
 		r.machine.full = false
+		if r.fullShown {
+			r.reportQueue(r.queued)
+		}
 	}
 }
 

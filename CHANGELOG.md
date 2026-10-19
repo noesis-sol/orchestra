@@ -135,6 +135,13 @@ All notable changes to orchestra are documented here. The format follows
 - The log and the event stream (`events.jsonl`) give events emitted at once,
   such as a merge's closed line and the next ticket's dispatch, in one order,
   as the dashboard does: they could disagree on which came first.
+- A run on a machine shared with other orchestra runs no longer counts a run
+  that is gone: a registration whose PID a process started since has taken
+  (after a reboot, or a run killed without removing its file) is ignored and
+  removed, a runs' folder that can't be read counts no other run's workers
+  (and is made again as the run writes its own), and `· machine full` and the
+  event stream's `machine_full` clear once the hold ends, even when the run
+  has stopped taking tickets meanwhile.
 - A hook whose tool input has an argument of another type than orchestra
   reads, such as an MCP tool's `"command": ["kubectl", "get"]` or a numeric
   `file_path`, loses only that argument rather than the whole input: the
