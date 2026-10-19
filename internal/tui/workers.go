@@ -47,7 +47,9 @@ const numbered = 9
 
 // workerHead is the nth running worker's first line: its number, ID, worker status and time. A
 // worker beyond the ninth gets no number, only the room for one.
-func (m Dashboard) workerHead(n int, st dispatch.Status) string { return m.alignedHead(n, st, headColumns{}) }
+func (m Dashboard) workerHead(n int, st dispatch.Status) string {
+	return m.alignedHead(n, st, headColumns{})
+}
 
 // alignedHead is workerHead with its ID and status padded to cols and its time right-aligned in
 // cols, so that its digits line up with the other lines'.

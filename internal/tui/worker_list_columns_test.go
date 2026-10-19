@@ -28,11 +28,11 @@ func ago(d time.Duration) time.Time { return time.Time{}.Add(d) }
 
 // column is the screen column s starts at in line, or -1 if line lacks it.
 func column(line, s string) int {
-	i := strings.Index(line, s)
-	if i < 0 {
+	before, _, ok := strings.Cut(line, s)
+	if !ok {
 		return -1
 	}
-	return ansi.StringWidth(line[:i])
+	return ansi.StringWidth(before)
 }
 
 // The compact list lines up its workers' IDs, statuses and times as columns, the times right-aligned,
