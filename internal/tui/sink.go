@@ -198,6 +198,8 @@ func renderEvent(ev dispatch.Event) string {
 		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
 	case dispatch.EvLimited: // the run waits for it, as it does when winding down
 		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+Tildify(ev.Text)))
+	case dispatch.EvShared, dispatch.EvMachine: // the machine is shared, which slows the run down
+		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+Tildify(strings.TrimSpace(ev.Text))))
 	case dispatch.EvFullCheck: // after the run: passed, or something to look at
 		if ev.Detail == dispatch.FullCheckPassed {
 			return fmt.Sprintf("%s %s", ts, closedStyle.Render("✓ "+Tildify(strings.TrimSpace(ev.Text))))

@@ -1,0 +1,248 @@
+package dispatch
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// Runs share the machine, and their checks slow each other down. Each run registers itself while it
+// runs, a file of its own in Config.Machine (orchestra's folder in the user's cache folder, runs/)
+// with its PID, repository, concurrent, start time and how many of its workers run, written again as
+// that changes, and removed as the run ends. A run reads the others' as it goes: it says once of
+// each other run that it is going (SHARED_MACHINE), and that it has ended; with
+// Config.MachineWorkers, a free slot waits while the workers running across all the runs are at that
+// cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others. A
+// file whose PID is gone is a run that ended without removing it: it is ignored and removed.
+
+// registration is a run's file in the machine's folder of runs.
+type registration struct {
+	PID        int       `json:"pid"`
+	Repo       string    `json:"repo"`
+	Concurrent int       `json:"concurrent"`
+	Started    time.Time `json:"started"`
+	Running    int       `json:"running"` // its workers running, merges and checks included
+}
+
+// registrationExt ends a registration's name; one being written ends in .tmp until it is renamed.
+const registrationExt = ".json"
+
+// machine is the run's registration and what it knows of the other runs: Run's own.
+type machine struct {
+	dir     string
+	path    string // the run's file; "" when there is no folder, or it couldn't be made
+	me      registration
+	written bool                    // me is in its file as it is
+	seen    map[string]registration // the other runs' files, by name, as last read
+	others  int                     // the workers running in the other runs, as last read
+	full    bool                    // the run holds a free slot for Config.MachineWorkers, as last said
+	alive   func(pid int) bool
+}
+
+// register registers the run in Config.Machine, if it has one, and returns its machine; a folder or
+// file it can't make is logged, and the run goes on without one, still reading the others'.
+func (o *Loop) register() *machine {
+	c := o.cfg
+	m := &machine{dir: c.Machine, seen: map[string]registration{}, alive: o.alive,
+		me: registration{PID: os.Getpid(), Repo: c.Repo, Concurrent: c.Concurrency, Started: o.started}}
+	if m.alive == nil {
+		m.alive = processAlive
+	}
+	if m.dir == "" {
+		return m
+	}
+	path, err := createRegistration(m.dir, m.me.PID)
+	if err != nil {
+		o.info("  could not register the run among the machine's orchestra runs: %v", err)
+		return m
+	}
+	m.path = path
+	if err := m.write(); err != nil {
+		o.info("  could not register the run among the machine's orchestra runs: %v", err)
+	}
+	return m
+}
+
+// createRegistration makes a new, empty registration file in dir, for the run of process pid, and
+// returns its path: a name of its own, as runs in one process (tests) share a PID.
+func createRegistration(dir string, pid int) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, fmt.Sprintf("run-%d-*%s", pid, registrationExt))
+	if err != nil {
+		return "", err
+	}
+	return f.Name(), f.Close()
+}
+
+// write writes the run's registration to its file, through a file beside it renamed over it, so that
+// a run reading it never finds it half written.
+func (m *machine) write() error {
+	b, err := json.Marshal(m.me)
+	if err != nil {
+		return err
+	}
+	tmp := m.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, m.path); err != nil {
+		return err
+	}
+	m.written = true
+	return nil
+}
+
+// running writes that n of the run's workers run, when that changed; a failed write is tried again
+// the next time.
+func (m *machine) running(n int) {
+	if m.path == "" || m.written && m.me.Running == n {
+		return
+	}
+	m.me.Running = n
+	m.written = false
+	_ = m.write() // the others go on reading the count last written; this one is written again next time
+}
+
+// unregister removes the run's file, as the run ends.
+func (m *machine) unregister() {
+	if m.path == "" {
+		return
+	}
+	_ = os.Remove(m.path) // one left behind is a run whose PID is gone: the others remove it
+	m.path = ""
+}
+
+// look reads the other runs' files, removing those whose PID is gone, and returns the events that say
+// which runs started and ended since it last read them, those that started first by when they started.
+func (m *machine) look() []Event {
+	if m.dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(m.dir)
+	if err != nil {
+		return nil // no folder yet: no other run has registered
+	}
+	now := map[string]registration{}
+	for _, e := range entries {
+		name := e.Name()
+		path := filepath.Join(m.dir, name)
+		if !strings.HasSuffix(name, registrationExt) || path == m.path {
+			continue
+		}
+		reg, ok := readRegistration(path)
+		switch {
+		case !ok: // one being made, or not orchestra's
+		case !m.alive(reg.PID):
+			_ = os.Remove(path) // another run may have removed it first
+		default:
+			now[name] = reg
+		}
+	}
+	var started []string
+	m.others = 0
+	for name, reg := range now {
+		m.others += reg.Running
+		if _, ok := m.seen[name]; !ok {
+			started = append(started, name)
+		}
+	}
+	slices.SortFunc(started, func(a, b string) int {
+		if c := now[a].Started.Compare(now[b].Started); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	var evs []Event
+	for name, reg := range m.seen {
+		if _, ok := now[name]; !ok {
+			evs = append(evs, Event{Kind: EvShared, Shared: len(now),
+				Text: fmt.Sprintf("  the other orchestra run in %s has ended", reg.Repo)})
+		}
+	}
+	for _, name := range started {
+		reg := now[name]
+		evs = append(evs, Event{Kind: EvShared, Shared: len(now), Text: fmt.Sprintf(
+			"SHARED_MACHINE: another orchestra run is going in %s with %s; their checks slow each other down",
+			reg.Repo, workersCount(reg.Concurrent))})
+	}
+	m.seen = now
+	return evs
+}
+
+// readRegistration reads the registration in path, and reports whether it is one.
+func readRegistration(path string) (registration, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return registration{}, false
+	}
+	var reg registration
+	if json.Unmarshal(b, &reg) != nil || reg.PID <= 0 {
+		return registration{}, false
+	}
+	return reg, true
+}
+
+// workersCount is "1 worker" or "<n> workers".
+func workersCount(n int) string {
+	if n == 1 {
+		return "1 worker"
+	}
+	return fmt.Sprintf("%d workers", n)
+}
+
+// processAlive reports whether process pid runs: one that can't be signalled for want of permission
+// does, as another user's.
+func processAlive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = p.Signal(syscall.Signal(0))
+	return err == nil || !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH)
+}
+
+// lookAround reads the other runs on the machine, saying which started and ended, and writes how
+// many of the run's own workers run. The hold for Config.MachineWorkers ends once they are under it.
+func (r *runState) lookAround() {
+	r.machine.running(len(r.inflight))
+	for _, ev := range r.machine.look() {
+		r.o.emit(ev)
+	}
+	if !r.atCap() {
+		r.machine.full = false
+	}
+}
+
+// atCap reports whether the workers running across the machine's runs, as last read, this run's
+// included, are at Config.MachineWorkers, with one of this run's among them: a run never holds with no
+// worker of its own running, so that one at the cap with others' workers alone still gets on.
+func (r *runState) atCap() bool {
+	limit, own := r.o.cfg.MachineWorkers, len(r.inflight)
+	return limit > 0 && own > 0 && own+r.machine.others >= limit
+}
+
+// machineFull reports whether the ticket to start waits for a free slot across the machine (see
+// atCap), and says HOLD: MACHINE once as the run begins to hold.
+func (r *runState) machineFull() bool {
+	m, limit, own := r.machine, r.o.cfg.MachineWorkers, len(r.inflight)
+	if !r.atCap() {
+		m.full = false
+		return false
+	}
+	if !m.full {
+		m.full = true
+		r.o.emit(Event{Kind: EvMachine, Text: fmt.Sprintf(
+			"HOLD: MACHINE: the machine's orchestra runs have %s running, %d of them this run's, at the cap of %d "+
+				"(ORCHESTRA_MACHINE_WORKERS); the next ticket starts once one of them finishes",
+			workersCount(own+m.others), own, limit)})
+	}
+	return true
+}

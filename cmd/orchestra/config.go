@@ -403,6 +403,9 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindGiven(e, fs.IntVar, &f.concurrency, "concurrent", "ORCHESTRA_CONCURRENT", 0, parseWhole,
 		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]").
 		short("c")
+	bindWhole(e, &c.MachineWorkers, "machine-workers", "ORCHESTRA_MACHINE_WORKERS", 0,
+		"start no ticket while this many workers run across the machine's orchestra runs, this one's included; "+
+			"0 for no cap (default: none) [ORCHESTRA_MACHINE_WORKERS]")
 	bindGiven(e, fs.DurationVar, &f.ticketLimit, "ticket-limit", "TICKET_LIMIT", 0, parseLimit,
 		"stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none "+
 			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")

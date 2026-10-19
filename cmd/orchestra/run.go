@@ -353,7 +353,7 @@ func (s *session) runLoop(ctx context.Context) int {
 	base := context.WithoutCancel(ctx)
 	organCtx, cancelOrgans := context.WithCancel(base)
 	defer cancelOrgans()
-	cfg.Version = s.e.version
+	cfg.Version, cfg.Machine = s.e.version, runsDir(e.getenv)
 	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()

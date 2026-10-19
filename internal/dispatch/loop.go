@@ -82,6 +82,9 @@ type Loop struct {
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
 	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
 	poll time.Duration
+	// alive reports whether the process of a run registered on the machine runs (see machine);
+	// processAlive when nil. Tests give their own.
+	alive func(pid int) bool
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
 	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
@@ -532,6 +535,11 @@ type Config struct {
 	// UsageLimitWait is how long the run waits for the account's usage limit to reset, from when it
 	// began to hold for it, before the workers still limited stop it (USAGE_LIMIT); 0 for not at all.
 	UsageLimitWait time.Duration
+	// Machine is the folder the machine's orchestra runs register in (see machine); "" for none.
+	// MachineWorkers caps the workers running across them: a free slot waits while they are at it;
+	// 0 for no cap.
+	Machine        string
+	MachineWorkers int
 	// MCP is the MCP servers Claude workers get and no others: those mcp_servers in
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.

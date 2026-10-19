@@ -29,6 +29,8 @@ type Dashboard struct {
 	stopping    bool                       // something stopped the run; the running ones are finishing
 	limited     bool                       // the run holds for the account's usage limit
 	limitReset  time.Time                  // when that limit resets; zero when not known
+	shared      int                        // the other orchestra runs going on the machine
+	machineFull bool                       // a free slot waits: the machine's runs are at their cap on workers
 	draining    bool                       // the maintainer asked to stop after the running tickets
 	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
 	asking      bool                       // the question whether to stop after them, or to go on, is open
@@ -300,7 +302,8 @@ func shortVersion(v string) string {
 }
 
 // titleLine is the Orchestra pill, the version, whether the run is stopping, whether it holds for the
-// usage limit and when that resets, the solo ticket running alone or next, the branch, the ticket a
+// usage limit and when that resets, whether other runs share the machine and whether the run holds for
+// their cap on workers, the solo ticket running alone or next, the branch, the ticket a
 // scoped run works on and how long the run has gone. The states come first so a narrow pane cuts the
 // branch and time instead. A run winding down says so on its own line above the hint.
 func (m Dashboard) titleLine(w int) string {
@@ -315,6 +318,12 @@ func (m Dashboard) titleLine(w int) string {
 		}
 		line += deferredStyle.Render(limit)
 	}
+	if m.shared > 0 {
+		line += deferredStyle.Render(sharedLabel(m.shared))
+	}
+	if m.machineFull {
+		line += deferredStyle.Render("  · machine full")
+	}
 	switch {
 	case m.solo.Next:
 		line += deferredStyle.Render("  · solo " + oneLine(m.solo.Ticket) + " next")
@@ -324,6 +333,14 @@ func (m Dashboard) titleLine(w int) string {
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
 		m.cfg.Base, dispatch.ScopeLabel(m.cfg), runTime(m.since(m.began))))
 	return ansi.Truncate(line, w, "…")
+}
+
+// sharedLabel is the title line's note that n other orchestra runs share the machine.
+func sharedLabel(n int) string {
+	if n == 1 {
+		return "  · shared with 1 run"
+	}
+	return fmt.Sprintf("  · shared with %d runs", n)
 }
 
 // since is how long ago t was by the dashboard's clock; a dashboard made without NewDashboard reads

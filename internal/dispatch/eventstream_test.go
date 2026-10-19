@@ -151,6 +151,7 @@ func TestKindNames(t *testing.T) {
 		EvWarn: "warn", EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
 		EvReopened: "reopened", EvHold: "hold", EvDrain: "drain", EvResume: "resume", EvQueue: "queue",
 		EvProbed: "probed", EvLimited: "usage_limit", EvLimitLift: "usage_limit_lifted", EvAnswered: "answered",
+		EvShared: "shared_machine", EvMachine: "machine_hold",
 		EvFullCheck: "full_check"}
 	if len(kindNames) != len(want) {
 		t.Errorf("%d names for %d kinds", len(kindNames), len(want))

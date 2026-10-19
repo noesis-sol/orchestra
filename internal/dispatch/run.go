@@ -194,6 +194,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	defer o.startPredicting()()
 
 	r := newRunState(ctx, o)
+	defer r.machine.unregister()
 	poll := time.NewTicker(readyPoll)
 	defer poll.Stop()
 	r.follow() // the workers carried over from the last run that closed their tickets, or work on them again
@@ -201,8 +202,10 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.takeDrainRequest()
 		r.heedEnvironment()
 		r.sayNoMore()
+		r.lookAround()
 		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
+		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {
 			if r.goOnWhenEmpty() {
 				continue
@@ -293,6 +296,7 @@ type runState struct {
 	queued       queue
 	soloShown    SoloState
 	unclosedSaid int
+	fullShown    bool // the machine's runs at Config.MachineWorkers, as last reported (see machineFull)
 	// unclosed: the tickets not closed that the run draws from, as pick last read them (see
 	// countUnclosed); -1 before the first read.
 	unclosed int
@@ -305,6 +309,8 @@ type runState struct {
 	// The files git merges by union, or not, as git said in this run (mergesByUnion).
 	unionMu sync.Mutex
 	unions  map[string]bool
+
+	machine *machine // the run's registration among the machine's orchestra runs
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
@@ -312,7 +318,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, o.cfg.Concurrency), inflight: map[string]bool{},
 		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
-		warned: map[string]bool{}, unions: map[string]bool{},
+		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(),
 	}
 }
 
@@ -427,6 +433,11 @@ func (r *runState) startTickets() {
 			r.reportQueue(q)
 			return // nothing ready that isn't already running, or it waits for a solo ticket
 		}
+		if r.machineFull() {
+			q.queued++ // t waits for a slot across the machine
+			r.reportQueue(q)
+			return
+		}
 		if r.takeDrainRequest() {
 			return
 		}
@@ -447,8 +458,8 @@ func (r *runState) start(t Ticket, q queue) {
 		o.emit(Event{Kind: EvAnswered, Ticket: t.ID, Title: t.Title, Detail: w.question + ": " + w.title, Text: fmt.Sprintf(
 			"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 	}
-	r.queued, r.soloShown, r.unclosedSaid = q, r.solo.state(), r.unclosed
-	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
+	r.queued, r.soloShown, r.unclosedSaid, r.fullShown = q, r.solo.state(), r.unclosed, r.machine.full
+	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, MachineFull: r.fullShown,
 		Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
 		Text: fmt.Sprintf("[%s] %s %s: %s", Progress(r.count, c.Limit), t.ID, how, t.Title)})
 	r.startFootprint(t)
@@ -579,15 +590,15 @@ func (r *runState) polled() {
 }
 
 // reportQueue tells the dashboard how many ready tickets wait for a slot and how many are held back
-// (q), which solo ticket runs or is next, and how many tickets aren't closed, when any of that has
-// changed.
+// (q), which solo ticket runs or is next, how many tickets aren't closed and whether the run holds for
+// the machine's cap on workers (see machineFull), when any of that has changed.
 func (r *runState) reportQueue(q queue) {
-	solo, unclosed := r.solo.state(), r.unclosed
-	if q == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid {
+	solo, unclosed, full := r.solo.state(), r.unclosed, r.machine.full
+	if q == r.queued && solo == r.soloShown && unclosed == r.unclosedSaid && full == r.fullShown {
 		return
 	}
-	r.queued, r.soloShown, r.unclosedSaid = q, solo, unclosed
-	r.o.emit(Event{Kind: EvQueue, Queued: q.queued, Held: q.held, Solo: solo, Unclosed: unclosed})
+	r.queued, r.soloShown, r.unclosedSaid, r.fullShown = q, solo, unclosed, full
+	r.o.emit(Event{Kind: EvQueue, Queued: q.queued, Held: q.held, Solo: solo, Unclosed: unclosed, MachineFull: full})
 }
 
 // end ends the run, once nothing runs or Ctrl+C came, and returns its exit code. It leaves behind

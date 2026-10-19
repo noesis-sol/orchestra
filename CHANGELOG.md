@@ -6,6 +6,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A run says when another orchestra run shares the machine, as their checks
+  slow each other down: `SHARED_MACHINE: another orchestra run is going in
+  <repository> with <n> workers`, once for each, and the dashboard's title
+  line says `· shared with 1 run` while it lasts. Each run registers itself,
+  a small file in `runs/` in orchestra's cache folder, for as long as it
+  runs. `--machine-workers N` (or `ORCHESTRA_MACHINE_WORKERS`, off by default)
+  caps the workers across the machine's runs: a free slot waits at the cap,
+  saying `HOLD: MACHINE` once, until one of them finishes.
+
 ### Changed
 
 - The files git merges by union (`merge=union` in `.gitattributes`, as

@@ -56,8 +56,8 @@ type startRecord struct {
 
 // eventRecord is an Event. Queued, Held, Unclosed and Solo are given for EvDispatch and EvQueue, N
 // and Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
-// once read, the tickets held back only when there are some, the limit only when the run has one.
-// Reset is given for EvLimited, when known.
+// once read, the tickets held back only when there are some, the limit only when the run has one,
+// MachineFull only when set. Reset is given for EvLimited, when known, and Shared for EvShared.
 type eventRecord struct {
 	recordHead
 	Ticket   string      `json:"ticket,omitempty"`
@@ -76,6 +76,8 @@ type eventRecord struct {
 	HeldBy   *heldRecord `json:"held_by,omitempty"`
 	Unclosed *int        `json:"unclosed,omitempty"`
 	Solo     *soloRecord `json:"solo,omitempty"`
+	Machine  bool        `json:"machine_full,omitempty"`
+	Shared   *int        `json:"shared,omitempty"`
 }
 
 // heldRecord is a HeldBack: how many ready tickets each reason holds back.
@@ -152,6 +154,9 @@ func (l *Log) Record(ev Event) {
 	if ev.Kind == EvLimited && !ev.Reset.IsZero() {
 		r.Reset = &ev.Reset
 	}
+	if ev.Kind == EvShared {
+		r.Shared = &ev.Shared
+	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
 		if h := ev.Held; h.Total() > 0 {
@@ -164,6 +169,7 @@ func (l *Log) Record(ev Event) {
 		if ev.Solo != (SoloState{}) {
 			r.Solo = &soloRecord{Ticket: ev.Solo.Ticket, Next: ev.Solo.Next}
 		}
+		r.Machine = ev.MachineFull
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

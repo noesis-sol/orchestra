@@ -207,6 +207,9 @@ going that long after dispatch; `0` for none, overriding `settings.json`), `--ch
 `ORCHESTRA_CHECK_TIMEOUT` (the merge check's time limit, overriding `settings.json`),
 `--check-full-timeout 90m` / `ORCHESTRA_CHECK_FULL_TIMEOUT` (check-full's). `orchestra -h` lists
 them all.
+`--machine-workers N` / `ORCHESTRA_MACHINE_WORKERS` caps the workers across every orchestra run on
+the machine (none by default: a free slot waits at the cap, `HOLD: MACHINE`); a run beside another
+says `SHARED_MACHINE` once for it, as their checks slow each other down.
 
 When the user wants one piece of work finished (an epic and its children, a ticket broken into
 subtickets) rather than the whole backlog, run `orchestra --ticket <id>` (or `ORCHESTRA_TICKET`):

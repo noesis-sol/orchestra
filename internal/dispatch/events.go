@@ -30,6 +30,8 @@ const (
 	EvProbed                // a probe found the machine working after an environment hold: tickets start again
 	EvLimited               // a worker or organ met the account's usage limit: no new tickets until it resets (Reset)
 	EvLimitLift             // the usage limit reset, or a worker went on past it: tickets start again
+	EvShared                // another orchestra run on the machine started, or ended (Shared: those going)
+	EvMachine               // a free slot waits: the workers across the machine's runs are at Config.MachineWorkers
 	EvAnswered              // an asked ticket's question was answered: it comes back, dispatched next
 	EvFullCheck             // the full check (check_full) at the end of the run: Detail says how it went
 )
@@ -40,7 +42,8 @@ var kindNames = [...]string{
 	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
 	EvReopened: "reopened", EvHold: "hold",
 	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed",
-	EvLimited: "usage_limit", EvLimitLift: "usage_limit_lifted", EvAnswered: "answered",
+	EvLimited: "usage_limit", EvLimitLift: "usage_limit_lifted", EvShared: "shared_machine",
+	EvMachine: "machine_hold", EvAnswered: "answered",
 	EvFullCheck: "full_check",
 }
 
@@ -68,6 +71,11 @@ type Event struct {
 	// Unclosed: for EvDispatch and EvQueue, the tickets not closed that the run draws from (in a
 	// scoped run, the scope's); -1 before the run could read them.
 	Unclosed int
+	// MachineFull: for EvDispatch and EvQueue, a free slot waits while the workers across the machine's
+	// orchestra runs are at Config.MachineWorkers (see EvMachine).
+	MachineFull bool
+	// Shared: for EvShared, how many other orchestra runs are going on the machine.
+	Shared int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
 	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
 	// the tickets it waits for, as in "A, B"; for EvReopened, why it is back in the queue; for
