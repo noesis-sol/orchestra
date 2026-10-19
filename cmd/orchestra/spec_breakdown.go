@@ -66,6 +66,7 @@ type headlessBreakdown struct {
 	effort string
 	// servers are the MCP servers it gets, and no others: none but the project's chosen ones
 	servers []mcp.Server
+	chrome  []string      // --chrome or --no-chrome, as workers get Chrome (dispatch.Config.SessionChrome)
 	say     tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
 	log     *dispatch.Log // nil in tests
 	// bd, which has what a session that gave no answer filed
@@ -82,7 +83,8 @@ func newHeadlessBreakdown(s *session) headlessBreakdown {
 		say = tui.Terminal(out, termWidth(out))
 	}
 	return headlessBreakdown{repo: c.Repo, limit: c.SpecTimeout, effort: c.SpecEffort, servers: c.SessionMCP(),
-		say: say, log: s.log, tracker: beads.Tracker{Repo: c.Repo}, countEvery: specCountEvery}
+		chrome: c.SessionChrome(), say: say, log: s.log, tracker: beads.Tracker{Repo: c.Repo},
+		countEvery: specCountEvery}
 }
 
 // BreakDown runs the session on the spec r names, and returns the root epic its answer names and the
@@ -96,7 +98,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the breakdown's instructions: %w", err)
 	}
-	servers, err := project.MCPArgs(h.repo, h.servers)
+	servers, err := sessionMCPArgs(h.repo, h.servers, h.chrome)
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("the breakdown %w", err)
 	}
@@ -120,8 +122,8 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 }
 
 // specArgs is the session's command line, past claude, for the instructions in prompt: its tools, its
-// MCP servers (servers, from project.MCPArgs), the tools' rules, nothing that would ask for a
-// permission (help, claude's --help, says whether it has --permission-prompts), its answer's schema
+// MCP servers and Chrome (servers, from sessionMCPArgs), the tools' rules, nothing that would ask for
+// a permission (help, claude's --help, says whether it has --permission-prompts), its answer's schema
 // and the stream of what it does. Its first message comes on stdin: an argument after the rules' list
 // would be read as one of them. dontAsk denies whatever the rules don't allow, whatever mode the
 // user's settings start Claude Code in; --permission-prompts none denies what would still prompt.

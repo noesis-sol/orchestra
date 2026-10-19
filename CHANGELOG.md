@@ -73,6 +73,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- orchestra's own Claude Code sessions, the spec's breakdown, its refinement
+  and a feature's interview, get Chrome as Claude workers do: `--no-chrome`
+  when the project's `mcp_servers` leave `claude-in-chrome` out, `--chrome`
+  when they choose it. They had only the servers, and Claude Code turns
+  Chrome on by itself, past `--strict-mcp-config`, once it is set up.
 - A check handed back to its worker, who finds nothing to fix and commits
   nothing (a failure from timeouts on a loaded machine, say), is run a second
   time rather than set aside at once: a pass merges the ticket, and a second

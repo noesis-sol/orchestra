@@ -56,6 +56,7 @@ type refineBreakdown struct {
 	effort string
 	// servers are the MCP servers the session gets, and no others: none but the project's chosen ones
 	servers []mcp.Server
+	chrome  []string // --chrome or --no-chrome, as workers get Chrome (dispatch.Config.SessionChrome)
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
 	tracker specLister  // bd, which counts what the session files, and has its root epic if it stops
@@ -73,7 +74,7 @@ func newRefineBreakdown(s *session) refineBreakdown {
 	c, e := s.cfg, s.e
 	tracker := beads.Tracker{Repo: c.Repo}
 	b := refineBreakdown{repo: c.Repo, pane: s.holder.Pane, effort: c.WorkerEffort, servers: c.SessionMCP(),
-		tracker: tracker, epics: tracker, log: s.log, out: e.stdout, err: e.stderr}
+		chrome: c.SessionChrome(), tracker: tracker, epics: tracker, log: s.log, out: e.stdout, err: e.stderr}
 	if b.pane != "" {
 		b.panes, b.hooks = terminalOf(c), terminalNamed(c.Terminal).hookDriven
 	}
@@ -81,8 +82,8 @@ func newRefineBreakdown(s *session) refineBreakdown {
 		b.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
 	b.terminal = func(ctx context.Context, message string, m project.RefineMode) error {
-		return refineOnTerminal(ctx, s.stops, c.Repo, c.WorkerEffort, b.servers, message, m, e.stdin, e.stdout,
-			e.stderr)
+		return refineOnTerminal(ctx, s.stops, c.Repo, c.WorkerEffort, b.servers, b.chrome, message, m, e.stdin,
+			e.stdout, e.stderr)
 	}
 	return b
 }
@@ -105,7 +106,7 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, effort: b.effort,
-			servers: b.servers, fallback: terminal, out: b.out, err: b.err, progress: b.line,
+			servers: b.servers, chrome: b.chrome, fallback: terminal, out: b.out, err: b.err, progress: b.line,
 			about: refineSubject{spec: r.Spec, update: r.Update, tracker: b.tracker, every: refineCountEvery}}.talk
 	}
 	b.logLine("SPEC: refining " + r.Path + " with claude and you")
@@ -156,12 +157,12 @@ func refineMode(update bool) project.RefineMode {
 
 // refineOnTerminal runs a breakdown with the user in mode m (a spec's refinement, or a feature's) on
 // orchestra's own terminal, at effort ("" for Claude Code's default) with the MCP servers servers and
-// no others, message its first message, until the user exits it. orchestra can't end the session
-// there once it has handed back, as it does in a pane, so its instructions, rewritten for the
-// terminal, have claude say how to. Ctrl+C is Claude Code's meanwhile, which interrupts and clears
-// with it.
+// no others, and Chrome as chrome has it (sessionMCPArgs), message its first message, until the user
+// exits it. orchestra can't end the session there once it has handed back, as it does in a pane, so
+// its instructions, rewritten for the terminal, have claude say how to. Ctrl+C is Claude Code's
+// meanwhile, which interrupts and clears with it.
 func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort string, servers []mcp.Server,
-	message string, m project.RefineMode, stdin io.Reader, stdout, stderr io.Writer) error {
+	chrome []string, message string, m project.RefineMode, stdin io.Reader, stdout, stderr io.Writer) error {
 	if !isTerminal(stdin) || !isTerminal(stdout) {
 		if m == project.RefineFeature {
 			return errFeatureNeedsTerminal
@@ -172,7 +173,7 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, repo, effort string
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
-	mcpArgs, err := project.MCPArgs(repo, servers)
+	mcpArgs, err := sessionMCPArgs(repo, servers, chrome)
 	if err != nil {
 		return err
 	}
@@ -202,6 +203,17 @@ func effortArgs(effort string) []string {
 		return nil
 	}
 	return []string{"--effort", effort}
+}
+
+// sessionMCPArgs are the arguments that start one of orchestra's own Claude Code sessions in dir with
+// the MCP servers servers and no others (project.MCPArgs), and with Chrome as chrome, --chrome or
+// --no-chrome (dispatch.Config.SessionChrome), has it, as workers do.
+func sessionMCPArgs(dir string, servers []mcp.Server, chrome []string) ([]string, error) {
+	args, err := project.MCPArgs(dir, servers)
+	if err != nil {
+		return nil, err
+	}
+	return append(args, chrome...), nil
 }
 
 // notHandedBack ends a spec run whose refinement the user left without it handing a root epic back

@@ -52,6 +52,7 @@ type paneSession struct {
 	repo     string                                         // the main checkout, where claude runs
 	effort   string                                         // claude's --effort; "" for Claude Code's default
 	servers  []mcp.Server                                   // the MCP servers claude gets, and no others
+	chrome   []string                                       // --chrome or --no-chrome (sessionMCPArgs)
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
 	// Where the session stands, on a line under the fixed message, when out is a terminal (nil
@@ -131,7 +132,7 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	mcpArgs, err := project.MCPArgs(p.repo, p.servers)
+	mcpArgs, err := sessionMCPArgs(p.repo, p.servers, p.chrome)
 	if err != nil {
 		return "", err
 	}

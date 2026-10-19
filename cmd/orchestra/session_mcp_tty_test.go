@@ -20,7 +20,7 @@ func TestTerminalSessionGetsTheProjectsMCPServers(t *testing.T) {
 	faketool.Write(t, tools, "claude", "#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+tools+"/claude-args'\n")
 	onPath(t, tools)
 	var out strings.Builder
-	if err := refineOnTerminal(testCtx(t.Context(), t), &stopWatch{}, repo, "", sessionServers,
+	if err := refineOnTerminal(testCtx(t.Context(), t), &stopWatch{}, repo, "", sessionServers, nil,
 		"Break the spec down", project.RefineSpec, tty, tty, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}

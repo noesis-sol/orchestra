@@ -250,7 +250,7 @@ func (b refineBreakdown) talkFeature(ctx context.Context, request, run string) (
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, repo: b.repo, effort: b.effort,
-			servers: b.servers, fallback: terminal, out: b.out, err: b.err, progress: b.line,
+			servers: b.servers, chrome: b.chrome, fallback: terminal, out: b.out, err: b.err, progress: b.line,
 			about: featureSubject{first: message, tracker: b.epics}}.talk
 	}
 	err = session(ctx, prompt)

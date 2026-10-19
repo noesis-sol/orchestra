@@ -70,3 +70,18 @@ func (c Config) SessionMCP() []mcp.Server {
 	}
 	return *c.MCP
 }
+
+// SessionChrome are the arguments that give orchestra's own Claude Code sessions Chrome as a Claude
+// worker gets it (WorkerArgs, from mcp.ChromeArgs): --chrome when the project chose it, --no-chrome
+// when its chosen servers leave it out, whatever kind its workers are, and none when it hasn't chosen.
+// Claude Code turns Chrome on by itself, past --strict-mcp-config, once it is set up.
+func (c Config) SessionChrome() []string {
+	if c.MCP == nil {
+		return nil
+	}
+	names := make([]string, len(*c.MCP))
+	for i, s := range *c.MCP {
+		names[i] = s.Name
+	}
+	return mcp.ChromeArgs(&names)
+}
