@@ -4,6 +4,15 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A release's GitHub Release now carries its changelog section as its notes:
+  since 0.6.0 they were published empty, because the GoReleaser configuration
+  disabled the changelog, which also drops the notes passed with
+  `--release-notes`.
+
 ## [0.8.4] - 2026-10-19
 
 ### Fixed

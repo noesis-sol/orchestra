@@ -58,9 +58,8 @@ signs:
     signature: "${artifact}.sig"
 
 # The release notes are the version's section of CHANGELOG.md (scripts/release-notes.sh), passed
-# with --release-notes.
-changelog:
-  disable: true
+# with --release-notes: given a notes file, GoReleaser uses it in place of a changelog of its own.
+# Don't set changelog.disable: it skips the notes file too, and the Release gets empty notes.
 
 release:
   github:

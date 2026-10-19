@@ -189,7 +189,7 @@ goreleaser check
 goreleaser release --snapshot --clean --skip=sign
 ```
 
-The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints). Without `--skip=sign` it signs `checksums.txt` too, and fails without the release key in `ORCHESTRA_RELEASE_KEY` (below), as the release would.
+The snapshot builds the four archives and `checksums.txt` in `dist/` (git-ignored), versioned after the last tag (`v0.5.2-snapshot` after `v0.5.1`, which `--version` prints). Without `--skip=sign` it signs `checksums.txt` too, and fails without the release key in `ORCHESTRA_RELEASE_KEY` (below), as the release would. A snapshot has no release notes: GoReleaser skips its changelog step for one, `--release-notes` included, and the notes reach only the Release.
 
 ### The release key
 
