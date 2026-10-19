@@ -1,9 +1,9 @@
 #!/bin/sh
 # The project's full check: vet, ShellCheck, the race tests and the linters in .golangci.yml. Orchestra
-# runs it once at the end of a run that merged a ticket (check_full in .orchestra/settings.json), and
-# workers run it before closing one. With -short it is the merge check, scripts/check-fast.sh, which
-# orchestra runs before merging each ticket (check_fast): the same, but the tests run with -short,
-# without those that take over a second.
+# runs it once at the end of a run that merged a ticket (check_full in .orchestra/settings.json). With
+# -short it is the merge check, scripts/check-fast.sh, which orchestra runs before merging each ticket
+# (check_fast): the same, but the tests run with -short, without those that take over a second. A worker
+# checks its own change, before closing its ticket, with scripts/check-own.sh.
 # gotestsum and golangci-lint run through go run at pinned versions, so a machine needs only Go; ShellCheck
 # is downloaded once at a pinned version (scripts/shellcheck.sh). The tests that run the real tmux skip
 # where it isn't installed, unless ORCHESTRA_REQUIRE_TMUX=1 (CI sets it), when they fail instead.
@@ -19,13 +19,10 @@ case "${1-}" in
 esac
 # The last line says whether the check passed, or the step it failed in, its exit status unchanged:
 # 'scripts/check.sh: PASS', 'scripts/check.sh -short: FAIL in tests (exit 1)'. Its end alone then
-# answers, through tail or not. A failed test run keeps go test's events (below).
+# answers, through tail or not.
 step=vet
-events=
-keep=
 finish() {
 	status=$?
-	if [ -z "$keep" ] && [ -n "$events" ]; then rm -f "$events"; fi
 	if [ "$status" -eq 0 ]; then
 		echo "scripts/check.sh${short:+ $short}: PASS"
 	else
@@ -39,74 +36,10 @@ step=shellcheck
 # Every tracked shell script, through ShellCheck: offline with nothing cached, it says it skipped, and
 # passes, except under CI=true.
 scripts/shellcheck.sh
-# The race tests run through gotestsum, which runs a failed test once more, on its own: one that passes
-# then failed only under load (several workers' checks at once) or after another test (below), so the
-# check passes, printing a FLAKY: line for it that orchestra warns of. A test that fails its rerun fails
-# the check, and so, without a rerun, do more than three failed tests (a real breakage), a data race, a
-# panic and a package that fails outside its tests (below). gotestsum is built with the project's own Go
-# (see golangci-lint below), and its go test runs with it.
-# The tests run shuffled, in a new order each check, to find one that passes or fails only after another:
-# go test orders every package's tests by the one seed the check picks (-shuffle=on would pick one for
-# each package and print them without the package's name). Each FLAKY: line and the end of a failed
-# check's output name the seed, and -shuffle=<seed> repeats the order (docs/development.md).
+# The race tests, shuffled, through gotestsum, with its reruns and its FLAKY: and DATA RACE: lines
+# (scripts/race-tests.sh, which scripts/check-own.sh runs too). A failed run keeps go test's events.
 step=tests
-seed="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
-events="$(mktemp)"
-# A failed run keeps go test -json's events, every test's output, in a file it names: above all for
-# the race detector's reports, as a data race stops the check without a rerun and may never recur, and
-# gotestsum prints them amid the failed tests' output, which a long check's reader may not keep. Its end
-# names each test that raced, 'DATA RACE: <package> <test>', as the FLAKY: lines below do, or
-# '(outside its tests)' for a race in TestMain or after its test ended (docs/development.md).
-GOTOOLCHAIN="$(go env GOVERSION)" go run gotest.tools/gotestsum@v1.13.0 --format=standard-quiet \
-	--packages=./... --jsonfile="$events" --rerun-fails=1 --rerun-fails-max-failures=3 \
-	--rerun-fails-abort-on-data-race -- -race $short -shuffle="$seed" || {
-	awk -v module="$(go list -m)" '
-		BEGIN { prefix = length("\"Package\":\"" module) }
-		/"Output":"WARNING: DATA RACE\\n"/ {
-			pkg = test = ""
-			if (match($0, /"Package":"[^"]*"/)) pkg = "." substr($0, RSTART + prefix, RLENGTH - prefix - 1)
-			if (match($0, /"Test":"([^"\\]|\\.)*"/)) test = substr($0, RSTART + 8, RLENGTH - 9)
-			if (test == "") test = "(outside its tests)"
-			if (!seen[pkg " " test]++) print "DATA RACE: " pkg " " test
-		}' "$events"
-	keep=1
-	echo "go test's events (go test -json) are kept in $events"
-	echo "The tests ran in the order of -shuffle=$seed"
-	exit 1
-}
-# gotestsum passed, so each test that failed passed its rerun: 'FLAKY: <package> <test>
-# (-shuffle=<seed>)', the package relative to the module, but for a subtest's parent, which failed with
-# it. Not so a package that failed with none of its tests failing, in TestMain (goleak's check) or an
-# init: gotestsum reruns it with no test, which passes. go test -json's events, of the first run and the
-# rerun, open each run of a package with a start.
-awk -v module="$(go list -m)" -v seed="$seed" '
-	BEGIN { prefix = length("\"Package\":\"" module) }
-	{
-		pkg = test = ""
-		if (match($0, /"Package":"[^"]*"/)) pkg = "." substr($0, RSTART + prefix, RLENGTH - prefix - 1)
-		if (match($0, /"Test":"([^"\\]|\\.)*"/)) test = substr($0, RSTART + 8, RLENGTH - 9)
-	}
-	/"Action":"start"/ { failedTest[pkg] = 0 }
-	/"Action":"fail"/ && test != "" { failedTest[pkg] = 1; failed[++n] = pkg " " test }
-	/"Action":"fail"/ && test == "" && !failedTest[pkg] {
-		print "FAIL: " pkg " failed outside its tests, in TestMain or an init"
-		outside = 1
-	}
-	END {
-		if (outside) exit 1
-		for (i = 1; i <= n; i++) {
-			parent = 0
-			for (j = 1; j <= n; j++) if (index(failed[j], failed[i] "/") == 1) parent = 1
-			if (!parent) print "FLAKY: " failed[i] " (-shuffle=" seed ")"
-		}
-	}' "$events"
-# Built with the project's own Go: golangci-lint refuses to check code that targets a newer Go than it
-# was built with, and go run would otherwise build it with the older Go its own module asks for.
-# golangci-lint locks a file in the system temp directory, one for every worktree, and by default fails
-# ('parallel golangci-lint is running') when another run still holds it after 5s, but orchestra runs
-# several workers' checks and its own merge checks at once. --allow-serial-runners waits for the lock
-# instead, a few seconds with a warm cache. Not --allow-parallel-runners: its docs don't say parallel
-# runs share the lint cache safely, and one lint at a time eases the load on the race tests beside it.
+scripts/race-tests.sh ./... ${short:+"$short"}
+# golangci-lint at its pinned version (scripts/lint.sh, which scripts/check-own.sh runs too).
 step=lint
-GOTOOLCHAIN="$(go env GOVERSION)" go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run \
-	--allow-serial-runners ./...
+scripts/lint.sh ./...

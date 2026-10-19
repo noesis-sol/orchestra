@@ -3,10 +3,14 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - You are in your own git worktree on branch wt/TICKET_ID. Commit there. Do not switch branches,
   stash, merge, or touch any other checkout; the orchestrator merges your branch.
 - Claim it with `bd update TICKET_ID --claim`, then read it with `bd show TICKET_ID`.
-- Check your work with `scripts/check.sh`: go vet, the race tests and golangci-lint.
-  While iterating, run only the checks you need, e.g. `go test -short ./internal/<package>/...` (without
-  the tests that take over a second) or `go vet ./...`.
-- Run `scripts/check.sh` in the foreground, never in the background: while you wait on a background
+- Check your work with `scripts/check-own.sh`: for each Go package your change touches, go vet, its
+  race tests, the slow ones too, and golangci-lint; ShellCheck on the shell scripts it changes; and the
+  tests that read the docs, the skill and the changelog it changes. Leave the whole suite to orchestra:
+  its merge check (`scripts/check-fast.sh`) runs before your branch merges and hands the ticket back to
+  you when your change breaks something elsewhere, and the full check (`scripts/check.sh`) runs at the
+  end of the run. While iterating, run only the checks you need, e.g.
+  `go test -short ./internal/<package>/...` (without the tests that take over a second) or `go vet ./...`.
+- Run `scripts/check-own.sh` in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
 - Where the project has test suites, a ticket that changes behaviour adds or updates tests for it,
   in those suites and their frameworks. Never add a new test framework: setting one up is a ticket
@@ -37,11 +41,11 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   `--labels solo`, so it runs with no other ticket beside it.
 
 ## Close
-- Close the ticket only when a full `scripts/check.sh` run passes after your last change.
+- Close the ticket only when `scripts/check-own.sh` passes after your last change.
 - Before closing, read the tickets that depend on this one (`bd show TICKET_ID` lists them, then
   `bd show <id>` each) and make sure your change gives them what they expect.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
-  local checks don't cover), close the ticket once `scripts/check.sh` passes, with a note naming the
+  local checks don't cover), close the ticket once `scripts/check-own.sh` passes, with a note naming the
   CI job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
   before anything reaches the main branch.
 - If the ticket needs a decision only the maintainer can make, ask it as a question and stop; don't
