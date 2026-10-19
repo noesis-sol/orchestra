@@ -52,7 +52,7 @@ func TestFeatureRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 		{"with DONE_SO_FAR", feature, map[string]string{"DONE_SO_FAR": "80"}, dispatch.NoLimit},
 		{"--limit", append(slices.Clone(feature), "--limit", "5"), nil, 5},
 		{"LIMIT", feature, map[string]string{"LIMIT": "7"}, 7},
-		{"no feature", nil, nil, 40},
+		{"no feature", nil, nil, dispatch.NoLimit},
 	} {
 		f, problems, err := readFlags(tc.args, specEnv(tc.env), io.Discard)
 		if err != nil || len(problems) > 0 || f.Limit != tc.want {

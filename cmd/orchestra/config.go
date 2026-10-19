@@ -187,7 +187,6 @@ type options struct {
 	yes          bool   // --yes, which is gone: a run given it ends saying so
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
-	limitGiven   bool   // --limit or LIMIT gave Config.Limit, which a spec or feature run otherwise hasn't
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	showVersion  bool
 	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
@@ -305,9 +304,6 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		problems = append(problems, problem) // no flag: the variable alone turns the check off
 	}
 	f.Feature = strings.TrimSpace(f.Feature)
-	if (f.specFile != "" || f.Feature != "") && !f.limitGiven {
-		f.Limit = dispatch.NoLimit // a whole app, or a feature, can take far more tickets than a run's default
-	}
 	return f, append(problems, checkFlagCombos(f)...), nil
 }
 
@@ -376,9 +372,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.StringVar, &c.terminalAsked, "terminal", "ORCHESTRA_TERMINAL", "", parseText,
 		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
-	bindWhole(e, &c.Limit, "limit", "LIMIT", 40,
-		"stop after this many tickets in total; none for a --spec or --feature run unless given [LIMIT]",
-	).given = &f.limitGiven
+	bindWhole(e, &c.Limit, "limit", "LIMIT", dispatch.NoLimit,
+		"stop after this many tickets in total (default: none) [LIMIT]")
 	bindWhole(e, &c.DoneSoFar, "done-so-far", "DONE_SO_FAR", 0,
 		"tickets dispatched in earlier runs, counted toward --limit [DONE_SO_FAR]")
 	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", "claude", parseText,
@@ -481,8 +476,7 @@ func checkFlagCombos(f *runFlags) []string {
 		return []string{"--feature can't be combined with --tickets: " +
 			"one runs a new feature, the other the current tickets."}
 	case feature && f.Limit >= 0 && f.DoneSoFar >= f.Limit:
-		// Only with --limit or LIMIT, as for a spec: the loop would end at once, the plan filed and none
-		// of it started.
+		// Only with --limit or LIMIT: the loop would end at once, the plan filed and none of it started.
 		return []string{fmt.Sprintf("--feature would file a plan and run none of it: "+
 			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
 			"or leave both out.",
@@ -510,7 +504,7 @@ func checkSpecCombos(f *runFlags) string {
 	case !spec && !f.set["feature"] && f.set["refine"] && f.Refine:
 		return "--refine only applies with --spec or --feature."
 	case spec && f.DoneSoFar >= f.Limit:
-		// Only with --limit or LIMIT: a spec run has none otherwise.
+		// Only with --limit or LIMIT: a run has none otherwise.
 		return fmt.Sprintf("%s would break the spec down and run none of it: "+
 			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
 			"or leave both out.", from, f.DoneSoFar, f.Limit)

@@ -112,12 +112,9 @@ func (q workQuestion) ask(ctx context.Context) (tui.Work, int) {
 const specChosenFrom = "chosen at the start"
 
 // plannedDefaults gives the run c, on a spec or a feature chosen at the question, what --spec or
-// --feature would have: no ticket limit unless --limit or LIMIT gives one, and workers in auto
-// permission mode unless the flag, its variable or the project's settings give one.
+// --feature would have: workers in auto permission mode unless the flag, its variable or the
+// project's settings give one.
 func plannedDefaults(c *options) {
-	if !c.limitGiven {
-		c.Limit = dispatch.NoLimit
-	}
 	// The mode given, checked already, kept; else a planned run's, as no one answers a permission prompt.
 	if mode, err := project.ResolvePermissionMode(c.WorkerPermissionMode, project.Settings{}, true); err == nil {
 		c.WorkerPermissionMode = mode

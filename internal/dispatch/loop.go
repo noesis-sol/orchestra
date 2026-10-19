@@ -538,7 +538,7 @@ type Config struct {
 	MCP *[]mcp.Server
 }
 
-// NoLimit is Config.Limit for a run with no ticket limit, as a spec run has unless one is given.
+// NoLimit is Config.Limit for a run with no ticket limit, as a run has unless --limit or LIMIT gives one.
 const NoLimit = math.MaxInt
 
 // LimitLabel is the ticket limit, as the log and the dashboard say it: the number, or none.

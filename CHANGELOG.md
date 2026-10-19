@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A run has no ticket limit unless `--limit` or `LIMIT` gives one, as a
+  `--spec` or `--feature` run already had: a plain run no longer stops after 40
+  tickets with `LIMIT_REACHED`. A limit given still caps a run of any kind,
+  counting `DONE_SO_FAR`.
 - Claude workers, and the environment probe's, start without the tools they
   never use (`--disallowedTools` Artifact, ListAgents, ReportFindings,
   ScheduleWakeup, SendFeedback, Workflow, and Skill with the listing of your

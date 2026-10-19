@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -86,7 +87,7 @@ func TestPrecedence(t *testing.T) {
 		{"--terminal", []string{"--terminal", "tmux"}, "ORCHESTRA_TERMINAL", "herdr", `{"terminal": "cmux"}`,
 			terminal, project.TerminalAuto, project.TerminalCmux, project.TerminalHerdr, project.TerminalTmux},
 		{"--limit", []string{"--limit", "5"}, "LIMIT", "7", "",
-			func(c options, _ project.Settings) any { return c.Limit }, 40, nil, 7, 5},
+			func(c options, _ project.Settings) any { return c.Limit }, dispatch.NoLimit, nil, 7, 5},
 		{"--done-so-far", []string{"--done-so-far", "1"}, "DONE_SO_FAR", "2", "",
 			func(c options, _ project.Settings) any { return c.DoneSoFar }, 0, nil, 2, 1},
 		{"--agent", []string{"--agent", "codex"}, "AGENT_KIND", "pi", "",

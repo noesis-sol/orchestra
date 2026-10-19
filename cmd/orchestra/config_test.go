@@ -115,7 +115,7 @@ func TestConfigDefaultsAndLayout(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
 	}
-	if c.Limit != 40 || c.DoneSoFar != 0 || !c.Triage || !c.Review || !c.LaunchPrompt || !c.Notify {
+	if c.Limit != dispatch.NoLimit || c.DoneSoFar != 0 || !c.Triage || !c.Review || !c.LaunchPrompt || !c.Notify {
 		t.Errorf("defaults: %+v", c)
 	}
 	setenv(t, "LIMIT", "5")

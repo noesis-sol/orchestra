@@ -202,7 +202,7 @@ func TestSpecRunHasNoTicketLimitUnlessGiven(t *testing.T) {
 		{"with DONE_SO_FAR", []string{"--spec", spec}, map[string]string{"DONE_SO_FAR": "80"}, dispatch.NoLimit},
 		{"--limit", []string{"--spec", spec, "--limit", "5"}, nil, 5},
 		{"LIMIT", []string{"--spec", spec}, map[string]string{"LIMIT": "7"}, 7},
-		{"no spec", nil, nil, 40},
+		{"no spec", nil, nil, dispatch.NoLimit},
 	} {
 		f, problems, err := readFlags(tc.args, specEnv(tc.env), io.Discard)
 		if err != nil || len(problems) > 0 || f.Limit != tc.want {

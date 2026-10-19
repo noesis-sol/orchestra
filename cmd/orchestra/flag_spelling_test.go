@@ -108,8 +108,7 @@ func TestHelpOfLimitTicketsAndOrganEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"  --limit int\n    \tstop after this many tickets in total; none for a --spec or --feature run unless given " +
-			"[LIMIT] (default 40)\n",
+		"  --limit int\n    \tstop after this many tickets in total (default: none) [LIMIT]\n",
 		"whether to run a spec or talk a new feature through instead [ORCHESTRA_TICKETS=1]\n",
 		"else low for triage and the predictor, medium for the reviewer and init's scout) [ORGAN_EFFORT]\n",
 	} {
@@ -117,7 +116,7 @@ func TestHelpOfLimitTicketsAndOrganEffort(t *testing.T) {
 			t.Errorf("-h lacks %q:\n%s", want, help)
 		}
 	}
-	for _, stale := range []string{"screening", "planning", "plan a new feature"} {
+	for _, stale := range []string{"screening", "planning", "plan a new feature", "9223372036854775807"} {
 		if strings.Contains(help, stale) {
 			t.Errorf("-h still says %q:\n%s", stale, help)
 		}

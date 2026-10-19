@@ -199,7 +199,7 @@ tickets left (`○ Nothing under <id> is ready to run` and each ticket's reason,
 exits 0 without a report. Tell the user what it says.
 
 Useful settings (environment variable or flag): `--concurrent N` / `-c N` (tickets at the same
-time, overriding `settings.json`), `LIMIT` (tickets per run, default 40),
+time, overriding `settings.json`), `LIMIT` (stop after so many tickets; none by default),
 `DONE_SO_FAR` (count earlier tickets toward the limit), `TRIAGE=0` / `REVIEW=0` (no organs),
 `ORGAN_MODEL`, `NOTIFY=0` (no macOS notifications), `PROMPT_AT_LAUNCH=0` (paste the prompt instead
 of starting the worker with it), `--ticket-limit 2h` / `TICKET_LIMIT` (stop when a worker is still
@@ -240,8 +240,8 @@ When the user wants a feature or a whole app built from a spec (a Markdown or pl
 describes it), launch `orchestra --spec <file>` in a pane, as above, in place of `--tickets`. It asks
 nothing: it commits the spec (one outside the repository as a copy in `.orchestra/specs/<name>`), has
 `claude -p` break it down into a root epic, child epics and tickets, each carrying the metadata `spec`,
-and runs them as `--ticket <root epic>` would, with no ticket limit (unless `--limit` / `LIMIT`) and
-workers in Claude Code's `auto` permission mode. In Herdr, for example:
+and runs them as `--ticket <root epic>` would, with workers in Claude Code's `auto` permission mode. In Herdr, for
+example:
 
 ```
 herdr pane run "$P" "orchestra --spec ~/specs/shop.md"
