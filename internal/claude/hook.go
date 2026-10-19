@@ -100,6 +100,24 @@ type toolArgs struct {
 	NotebookPath string `json:"notebook_path,omitzero"`
 }
 
+// UnmarshalJSON reads the arguments that are strings and leaves the others empty: an MCP tool's
+// arguments are its own, and one of another type ("command": ["kubectl", "get"]) or arguments that are
+// no object lose only what can't be read, not the hook's whole input.
+func (a *toolArgs) UnmarshalJSON(b []byte) error {
+	var args map[string]json.RawMessage
+	if json.Unmarshal(b, &args) != nil {
+		*a = toolArgs{}
+		return nil
+	}
+	str := func(name string) string {
+		var s string
+		_ = json.Unmarshal(args[name], &s) // missing or not a string: empty
+		return s
+	}
+	*a = toolArgs{Command: str("command"), FilePath: str("file_path"), NotebookPath: str("notebook_path")}
+	return nil
+}
+
 // editTools are the tools whose file the hook adds to editsName before they run.
 var editTools = []string{"Edit", "MultiEdit", "Write", "NotebookEdit"}
 

@@ -123,6 +123,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A hook whose tool input has an argument of another type than orchestra
+  reads, such as an MCP tool's `"command": ["kubectl", "get"]` or a numeric
+  `file_path`, loses only that argument rather than the whole input: the
+  permission prompt it asks names its tool, is flagged and logged on Herdr,
+  and a subagent's prompt is cleared by its stop.
 - Ctrl+C (or SIGTERM, SIGHUP) during `orchestra update` stops it, exit code
   130, rather than killing it: the download is cancelled and the
   `.orchestra-update-…` file it was writing beside the binary removed, where
