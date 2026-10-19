@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker's rules have it run a check once, its whole output saved to a
+  file in `.orchestra/run/` and its exit status printed, naming the project's
+  `check_fast` where it has one, and read the file rather than run the check
+  again to see what it said: workers piped a check through `tail`, hiding its
+  exit status, then ran it again to learn whether it passed. This
+  repository's `scripts/check.sh` ends with a verdict line, `PASS` or `FAIL
+  in <step>` (vet, shellcheck, tests or lint).
 - A run has no ticket limit unless `--limit` or `LIMIT` gives one, as a
   `--spec` or `--feature` run already had: a plain run no longer stops after 40
   tickets with `LIMIT_REACHED`. A limit given still caps a run of any kind,

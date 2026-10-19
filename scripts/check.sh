@@ -17,7 +17,25 @@ case "${1-}" in
 	exit 2
 	;;
 esac
+# The last line says whether the check passed, or the step it failed in, its exit status unchanged:
+# 'scripts/check.sh: PASS', 'scripts/check.sh -short: FAIL in tests (exit 1)'. Its end alone then
+# answers, through tail or not. A failed test run keeps go test's events (below).
+step=vet
+events=
+keep=
+finish() {
+	status=$?
+	if [ -z "$keep" ] && [ -n "$events" ]; then rm -f "$events"; fi
+	if [ "$status" -eq 0 ]; then
+		echo "scripts/check.sh${short:+ $short}: PASS"
+	else
+		echo "scripts/check.sh${short:+ $short}: FAIL in $step (exit $status)"
+	fi
+	exit "$status"
+}
+trap finish EXIT
 go vet ./...
+step=shellcheck
 # Every tracked shell script, through ShellCheck: offline with nothing cached, it says it skipped, and
 # passes, except under CI=true.
 scripts/shellcheck.sh
@@ -31,9 +49,9 @@ scripts/shellcheck.sh
 # go test orders every package's tests by the one seed the check picks (-shuffle=on would pick one for
 # each package and print them without the package's name). Each FLAKY: line and the end of a failed
 # check's output name the seed, and -shuffle=<seed> repeats the order (docs/development.md).
+step=tests
 seed="$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')"
 events="$(mktemp)"
-trap 'rm -f "$events"' EXIT
 # A failed run keeps go test -json's events, every test's output, in a file it names: above all for
 # the race detector's reports, as a data race stops the check without a rerun and may never recur, and
 # gotestsum prints them amid the failed tests' output, which a long check's reader may not keep. Its end
@@ -51,7 +69,7 @@ GOTOOLCHAIN="$(go env GOVERSION)" go run gotest.tools/gotestsum@v1.13.0 --format
 			if (test == "") test = "(outside its tests)"
 			if (!seen[pkg " " test]++) print "DATA RACE: " pkg " " test
 		}' "$events"
-	trap - EXIT
+	keep=1
 	echo "go test's events (go test -json) are kept in $events"
 	echo "The tests ran in the order of -shuffle=$seed"
 	exit 1
@@ -89,5 +107,6 @@ awk -v module="$(go list -m)" -v seed="$seed" '
 # several workers' checks and its own merge checks at once. --allow-serial-runners waits for the lock
 # instead, a few seconds with a warm cache. Not --allow-parallel-runners: its docs don't say parallel
 # runs share the lint cache safely, and one lint at a time eases the load on the race tests beside it.
+step=lint
 GOTOOLCHAIN="$(go env GOVERSION)" go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run \
 	--allow-serial-runners ./...

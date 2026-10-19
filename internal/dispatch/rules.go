@@ -19,15 +19,15 @@ import (
 // in, and what the run adds for the whole of the ticket (its scope, its setup, its time limit, the
 // usage limit).
 func (o *Loop) workerRules(id string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.budgetNote() +
-		o.limitNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.checkNote() +
+		o.budgetNote() + o.limitNote()
 }
 
 // fullPrompt is ticket id's whole prompt as one first message, for a worker without its rules in
 // its system prompt: the worker prompt, then first (see firstNotes) and the run's notes.
 func (o *Loop) fullPrompt(id, first string) string {
 	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.setupNote() +
-		o.budgetNote() + o.limitNote()
+		o.checkNote() + o.budgetNote() + o.limitNote()
 }
 
 // setupNote tells a worker that its worktree's dependencies are installed with the project's setup
@@ -40,6 +40,27 @@ func (o *Loop) setupNote() string {
 	}
 	return fmt.Sprintf("\n\nThis worktree's dependencies are installed with '%s'. Run it again only after "+
 		"changing a file it reads, such as a manifest or a lockfile.\n", cmd)
+}
+
+// workerCheckLog is the file in a worktree's .orchestra/run/ that checkNote has a worker save a check's
+// whole output to: not checkLogName, which holds the output of the run's own check that failed there.
+const workerCheckLog = "worker-check.log"
+
+// checkNote tells a worker to run a check once, keeping its whole output in a file git ignores and
+// printing its exit status, then to read the file, rather than to run the check again to see what it
+// said: workers piped a check through tail, which hides its exit status, then ran it again, minutes
+// of a full check each time, to learn whether it passed. Its example is the project's merge check
+// (check_fast) when it has one.
+func (o *Loop) checkNote() string {
+	cmd := o.cfg.Check
+	if cmd == "" {
+		cmd = "<the check>"
+	}
+	return fmt.Sprintf("\n\nRun a check (tests, linters, a build) once, its whole output saved to a file in "+
+		"%s (never committed) and its exit status printed, as in '%s > %s 2>&1; echo \"exit $?\"', then read "+
+		"the file's end or search it, rather than running the check again to see its output or whether it "+
+		"passed. Piping a check through tail hides its exit status.\n",
+		project.RunPath(""), cmd, project.RunPath(workerCheckLog))
 }
 
 // limitNote tells a Claude worker what to do at the account's usage limit, which Claude Code may let its
