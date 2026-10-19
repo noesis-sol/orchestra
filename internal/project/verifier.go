@@ -29,9 +29,12 @@ var verifierText = template.Must(template.New("verifier").Parse(verifierTemplate
 const verifierSection = "\n## Verify\n" +
 	"- Before you close the ticket, once `" + FastRunner + "` passes after your last commit, have the\n" +
 	"  verifier subagent (" + VerifierPath + ") check your change: give it the ticket's ID, TICKET_ID,\n" +
-	"  and nothing of your reasoning. Run it in the foreground and wait for its answer.\n" +
+	"  the commit at which the check passed (`git rev-parse HEAD`), whether you ran `" + FullRunner + "`\n" +
+	"  there too, and the file their output is in where you kept one, so that it needn't run them again;\n" +
+	"  nothing of your reasoning. Run it in the foreground and wait for its answer.\n" +
 	"- Fix each gap it reports that affects correctness or the ticket's requirements, commit, run the\n" +
-	"  check again, and ask it again. The rest is optional: note on the ticket any you leave.\n" +
+	"  check again, and ask it again with the new commit. The rest is optional: note on the ticket any\n" +
+	"  you leave.\n" +
 	"- After three rounds that still end in FAIL, note its findings on the ticket. Close the ticket only\n" +
 	"  when you judge them outside the ticket's requirements; otherwise defer it, as under Close.\n"
 

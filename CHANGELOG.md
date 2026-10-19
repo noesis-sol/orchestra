@@ -8,6 +8,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The verifier reuses the worker's passing check: the worker prompt's Verify
+  section has the worker give it the commit at which `check-fast.sh` passed,
+  whether `check-full.sh` ran there too, and the file their output is in, and
+  the verifier runs a check only when `HEAD` isn't that commit, the worktree
+  has changes, or the change touches the slower suites and `check-full.sh`
+  didn't run; otherwise it quotes the worker's result. In 176 of 182 rounds
+  it had repeated a check the worker had just passed, about 39% of its time.
+  `orchestra init` keeps a verifier and a Verify section that are there: for
+  the new ones, remove `.claude/agents/verifier.md` and the Verify section and
+  run `orchestra init --verifier` again, or copy them by hand (see the
+  verifier in `docs/setup.md`).
 - A worker's rules have it run a check once, its whole output saved to a
   file in `.orchestra/run/` and its exit status printed, naming the project's
   `check_fast` where it has one, and read the file rather than run the check
