@@ -182,7 +182,7 @@ func talkFeatureThrough(t *testing.T, repo string, tree featureEpicTracker, epic
 		}}
 	var r talkedThrough
 	r.epic, r.code = featureTalk{request: paneRequest, runID: paneRun, repo: repo, breakdown: b, tracker: tree,
-		out: &out, err: &errOut}.run(t.Context())
+		out: &out, err: &errOut}.run(testCtx(t.Context(), t))
 	r.out, r.err = out.String(), errOut.String()
 	return r
 }
@@ -223,7 +223,7 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 			return refineOnTerminal(ctx, nil, repo, "", message, m, strings.NewReader(""), &out, &errOut)
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: tree, out: &out,
-		err: &errOut}.run(t.Context())
+		err: &errOut}.run(testCtx(t.Context(), t))
 	if want := "orchestra couldn't talk the feature through: talking the feature through needs you at a " +
 		"terminal, and orchestra's input or output isn't one: orchestra --spec <file> breaks a request written " +
 		"to a file down unattended\n"; epic != "" || code != dispatch.ExitSetup || errOut.String() != want ||

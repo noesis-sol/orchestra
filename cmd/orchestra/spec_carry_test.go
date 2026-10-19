@@ -116,7 +116,7 @@ type carryOutcome struct {
 func carry(t *testing.T, repo, file string, tree specTracker, b specBreakdown) carryOutcome {
 	t.Helper()
 	var out, errOut strings.Builder
-	root, code := specRun{file: file, repo: repo, breakdown: b, tracker: tree, out: &out, err: &errOut}.run(t.Context())
+	root, code := specRun{file: file, repo: repo, breakdown: b, tracker: tree, out: &out, err: &errOut}.run(testCtx(t.Context(), t))
 	return carryOutcome{root, code, out.String(), errOut.String()}
 }
 
@@ -403,7 +403,7 @@ func TestSpecRootEpicUnread(t *testing.T) {
 		"earlier run filed: bd list: database is locked\n" {
 		t.Errorf("exit %d, broken down %v; stderr:\n%s", o.code, b.asked, o.err)
 	}
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(testCtx(t.Context(), t))
 	cancel()
 	var out, errOut strings.Builder
 	if _, code := (specRun{file: file, repo: repo, breakdown: b, tracker: failingLister{tree}, out: &out,

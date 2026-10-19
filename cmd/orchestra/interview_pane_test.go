@@ -170,7 +170,7 @@ func interviewInPaneOn(ctx context.Context, t *testing.T, repo string, panes *fa
 		b.line = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
 	}
 	o.epic, o.code = featureTalk{request: paneRequest, runID: paneRun, repo: repo, breakdown: b, tracker: filedEpic{},
-		out: &out, err: &errOut}.run(ctx)
+		out: &out, err: &errOut}.run(testCtx(ctx, t))
 	o.out, o.err = out.String(), errOut.String()
 	return o
 }

@@ -51,7 +51,7 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 			return nil
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: filedEpic{}, out: &out,
-		err: &errOut}.run(t.Context())
+		err: &errOut}.run(testCtx(t.Context(), t))
 	logged, _ := os.ReadFile(filepath.Join(claudeDir, "log")) // none reads as nothing
 	if epic != "f-1" || code != dispatch.ExitOK || errOut.Len() > 0 {
 		t.Fatalf("the interview filed %q, exit %d; stderr:\n%s\nclaude's log:\n%s", epic, code, errOut.String(), logged)

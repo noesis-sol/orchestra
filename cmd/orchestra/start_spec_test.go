@@ -126,7 +126,7 @@ func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
 			true, 5, project.PermissionAcceptEdits},
 	} {
 		s, errOut := chosenSession(t, repo, tc.args...)
-		code := s.specChosen(t.Context(), tui.Work{Kind: tui.WorkSpec, Spec: spec, Refine: tc.refine})
+		code := s.specChosen(testCtx(t.Context(), t), tui.Work{Kind: tui.WorkSpec, Spec: spec, Refine: tc.refine})
 		c := s.cfg
 		if code != dispatch.ExitOK || errOut.Len() > 0 {
 			t.Fatalf("%s: exit %d, stderr:\n%s", tc.name, code, errOut)
@@ -152,7 +152,7 @@ func TestSpecChosenWhereGitIgnoresIt(t *testing.T) {
 	writeSpec(t, filepath.Join(repo, ".gitignore"), "private/\n")
 	ignored := writeSpec(t, filepath.Join(repo, "private", "app.md"), "# Mine\n")
 	s, errOut := chosenSession(t, repo)
-	if code := s.specChosen(t.Context(), tui.Work{Kind: tui.WorkSpec, Spec: ignored}); code != dispatch.ExitSetup {
+	if code := s.specChosen(testCtx(t.Context(), t), tui.Work{Kind: tui.WorkSpec, Spec: ignored}); code != dispatch.ExitSetup {
 		t.Errorf("exit %d, want %d", code, dispatch.ExitSetup)
 	}
 	if want := "orchestra cannot run that spec:\n  - git ignores private/app.md, where the spec (chosen at the start) " +

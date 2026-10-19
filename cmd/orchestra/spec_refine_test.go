@@ -143,7 +143,7 @@ func refineSpec(ctx context.Context, t *testing.T, repo string, panes *fakePanes
 		b.line = &tui.InterviewLine{Out: &out, Width: func() int { return width }}
 	}
 	root, code := specRun{file: spec, repo: repo, refine: true, breakdown: b, tracker: tree, out: &out,
-		err: &errOut}.run(ctx)
+		err: &errOut}.run(testCtx(ctx, t))
 	o.root, o.code, o.out, o.err = root, code, out.String(), errOut.String()
 	return o
 }
