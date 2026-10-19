@@ -180,7 +180,7 @@ func continuesItself(hooks *hookReporter, leave func(w *fakeWorker), reset time.
 }
 
 // A worker Claude Code continues by itself after the reset is at work, and isn't told to carry on, nor sent
-// the Escape that would cancel it: going on, it lifts the hold, and it finishes and merges. A ticket it
+// the Escape that would cancel it: the hold lifts at the reset, and it finishes and merges. A ticket it
 // deferred as it stopped is in progress again by then.
 func TestAWorkerContinuedByClaudeCodeIsNotToldAgain(t *testing.T) {
 	t.Parallel()
@@ -218,7 +218,7 @@ func TestAWorkerContinuedByClaudeCodeIsNotToldAgain(t *testing.T) {
 					t.Errorf("A was %s as Claude Code continued its worker, want in progress", seen)
 				}
 				lifted := h.sink.eventsOf(EvLimitLift)
-				if len(lifted) != 1 || !strings.Contains(lifted[0].Text, "A's worker went on past the limit") {
+				if len(lifted) != 1 || !strings.Contains(lifted[0].Text, "the limit reset at "+ResetLabel(reset, start)) {
 					t.Errorf("lifted: %+v", lifted)
 				}
 				if b := h.sink.dispatchedAt("B"); b.Before(reset) {

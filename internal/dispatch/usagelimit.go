@@ -48,7 +48,7 @@ const (
 )
 
 // usageHold is the run's hold for the usage limit, all under limitMu: the workers' polls (see
-// limitPoll) and Run (see waitOutLimit) share it. Run hears on liftWake (buffered 1) that a hold
+// limitPoll) and Run (see waitOutLimit, liftAtReset) share it. Run hears on liftWake (buffered 1) that a hold
 // lifted, to take tickets again.
 type usageHold struct {
 	limitMu     sync.Mutex
@@ -76,6 +76,48 @@ func (h *usageHold) limitDue() time.Time {
 		return later(h.limitReset.Add(resetGrace), h.limitLifted.Add(limitRetry))
 	}
 	return later(h.limitSince, h.limitTried).Add(limitRetry)
+}
+
+// resetDue is when the hold lifts at its known reset (limitDue), as Run waits for it while workers run;
+// zero when the run doesn't hold, the reset isn't known, or the hold gives up first, after wait
+// (Config.UsageLimitWait). The caller holds limitMu.
+func (h *usageHold) resetDue(wait time.Duration) time.Time {
+	if !h.limitOn || h.limitReset.IsZero() {
+		return time.Time{}
+	}
+	if due := h.limitDue(); due.Before(h.limitSince.Add(wait)) {
+		return due
+	}
+	return time.Time{}
+}
+
+// resetTimer is Run's timer for the hold's reset while workers run (see resetDue): fire fires then, for
+// Run to lift the hold (see liftAtReset), as no limited worker's poll may: the hold an organ started,
+// or one whose workers went on with room left, or are in long commands, never limited. fire is nil
+// when there is none to wait for; stop stops it.
+func (o *Loop) resetTimer() (fire <-chan time.Time, stop func() bool) {
+	o.limitMu.Lock()
+	due := o.resetDue(o.cfg.UsageLimitWait)
+	o.limitMu.Unlock()
+	if due.IsZero() {
+		return nil, func() bool { return false }
+	}
+	t := time.NewTimer(time.Until(due))
+	return t.C, t.Stop
+}
+
+// liftAtReset is Run's turn as resetTimer fires: the hold lifts, if it holds still and is due, to take
+// tickets again; the workers still limited are told to carry on at their next poll (see limitTurn).
+func (o *Loop) liftAtReset() {
+	var say []Event
+	defer func() { o.emitAll(say) }()
+	o.limitMu.Lock()
+	defer o.limitMu.Unlock()
+	now := time.Now()
+	if due := o.resetDue(o.cfg.UsageLimitWait); !due.IsZero() && !now.Before(due) {
+		say = append(say, o.liftLimit(now, fmt.Sprintf("the limit reset at %s; taking tickets again",
+			ResetLabel(o.limitReset, now))))
+	}
 }
 
 // liftLimit lifts the hold at now, for why, waking Run, and returns the event that says so. The

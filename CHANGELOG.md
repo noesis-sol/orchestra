@@ -111,6 +111,10 @@ All notable changes to orchestra are documented here. The format follows
   ⏺, a worker's screen no longer reads as limited once its usage limit has
   reset and it went on, and Claude Code's notice that it continues by itself
   at the reset counts as the limit, as it does on macOS.
+- A usage-limit hold lifts at its reset while workers run: one that triage or
+  another organ started, or whose workers never showed limited, held new
+  tickets back until every running worker had finished, and could stop the run
+  with USAGE_LIMIT long after the limit had reset.
 - orchestra's own Claude Code sessions, the spec's breakdown, its refinement
   and a feature's interview, get Chrome as Claude workers do: `--no-chrome`
   when the project's `mcp_servers` leave `claude-in-chrome` out, `--chrome`

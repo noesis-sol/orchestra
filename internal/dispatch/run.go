@@ -212,6 +212,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 			return r.end()
 		}
+		reset, stopReset := o.resetTimer()
 		select {
 		case res := <-r.results:
 			r.returned(res)
@@ -221,11 +222,15 @@ func (o *Loop) Run(ctx context.Context) int {
 			r.hear(req)
 		case <-o.liftWake: // the usage limit lifted: tickets start again above
 		case <-o.merges.joined: // a ticket went to merge: its slot may be free above
+		case <-reset:
+			o.liftAtReset() // and tickets start again above
 		case <-poll.C:
 			r.polled()
 		case <-ctx.Done():
+			stopReset()
 			return r.end()
 		}
+		stopReset()
 	}
 }
 
