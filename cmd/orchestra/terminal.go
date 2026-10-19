@@ -331,13 +331,14 @@ func checkCmux(ctx context.Context, c *options, getenv func(string) string) []st
 	return problems
 }
 
-// workerTerminal is the terminal as a run uses it: the run loop's tabs and agents, the dashboard's
+// workerTerminal is the terminal as a run uses it: the run loop's tabs and agents and their processes, the dashboard's
 // number keys and the feature interview's pane.
 type workerTerminal interface {
 	dispatch.Tabs
 	dispatch.Starter
 	dispatch.Namer
 	dispatch.Agents
+	dispatch.PaneProcesses
 	interviewPanes
 	FocusTab(ctx context.Context, tab string) error
 }

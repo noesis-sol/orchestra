@@ -13,10 +13,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/load"
 )
 
 type eventMsg dispatch.Event
 type statusMsg dispatch.Status
+type loadMsg load.Reading
 
 // Finished tells the dashboard the run has returned, so it quits.
 type Finished struct{}
@@ -30,6 +32,7 @@ type Dashboard struct {
 	limited     bool                       // the run holds for the account's usage limit
 	limitReset  time.Time                  // when that limit resets; zero when not known
 	shared      int                        // the other orchestra runs going on the machine
+	load        *load.Reading              // the machine's load as last read; nil until the loop first reads it
 	machineFull bool                       // a free slot waits: the machine's runs are at their cap on workers
 	draining    bool                       // the maintainer asked to stop after the running tickets
 	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
@@ -90,6 +93,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case statusMsg:
 		m.applyStatus(dispatch.Status(msg))
+	case loadMsg:
+		r := load.Reading(msg)
+		m.load = &r
 	case eventMsg:
 		if m.apply(dispatch.Event(msg)) {
 			return m, tea.Quit
@@ -118,7 +124,8 @@ func (m *Dashboard) setDraining(on bool) {
 // frame this wide, and the run's summary is printed at least this wide.
 const minFrameWidth = 30
 
-// View is the whole display: title, totals, the tickets of this run, and the current tickets. It is
+// View is the whole display: title, the load line and totals, the tickets of this run, and the
+// current tickets. It is
 // drawn on the alternate screen, which closes with the program; main then prints the run's summary
 // on the normal screen (Printer.Summary).
 func (m Dashboard) View() string {
@@ -227,7 +234,8 @@ func (m Dashboard) slots() int { return max(m.cfg.Concurrency, 1) }
 // workers come, report and go; it is left out of a pane too short for it and one line per worker the
 // run may have. The workers get what is left: a box each, or one line each, chosen with room for the
 // winding-down line so that line doesn't change it. Below that the layout gives way step by step: the
-// totals on one line, then the Current label and the Tickets label with it, then cut, keeping footer.
+// totals on one line, without the load line, which has the workers they then carry, then the Current
+// label and the Tickets label with it, then cut, keeping footer.
 // An empty footer takes no line.
 func (m Dashboard) layout(w int, title, footer string) string {
 	var foot []string
@@ -239,7 +247,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	steady := m.height - max(len(foot), m.footLines())
 	fits := func(room int, parts ...string) bool { return lineCount(stack(parts...)) <= room }
 	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
-	stats := m.statsTable(w)
+	stats := stack(m.loadLine(w), m.statsTable(w))
 	panels, list := withCurrentLabel(m.workerPanels(w)), withCurrentLabel(m.workerList(w))
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
 	need := lineCount(title) + lineCount(stats) + m.slots() + sectionChrome + m.footLines()

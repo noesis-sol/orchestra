@@ -248,10 +248,13 @@ type total struct {
 	style lipgloss.Style // the count's colour
 	of    int            // what it counts out of (the workers' slots), or 0 for nothing
 	extra string         // what follows it in the strip, styled: triage's verdicts
+	// lineOnly: only the one-line form for a short pane shows it; the strip has the load line above it,
+	// which does (the workers).
+	lineOnly bool
 }
 
 // totals are the run's counted totals: the tickets completed, set aside and waiting on the
-// maintainer, and the running workers.
+// maintainer, and the running workers, which the strip leaves to the load line.
 func (m Dashboard) totals() []total {
 	var verdicts string
 	if m.triaged > 0 {
@@ -261,7 +264,7 @@ func (m Dashboard) totals() []total {
 		{label: "Completed", mark: "✓", n: m.closed, style: closedStyle},
 		{label: "Set aside", mark: "↷", n: m.setAside(), style: deferredStyle, extra: verdicts},
 		{label: "Needs you", mark: "?", n: m.needsYou(), style: stopStyle},
-		{label: "Workers", mark: "▶", n: m.inSlots(), style: pickedStyle, of: m.slots()},
+		{label: "Workers", mark: "▶", n: m.inSlots(), style: pickedStyle, of: m.slots(), lineOnly: true},
 	}
 }
 
@@ -278,15 +281,9 @@ func (m Dashboard) inSlots() int {
 	return n
 }
 
-// cell is t in the strip: a count out of something in full, a zero faint (out of something or not),
-// the others with their mark.
+// cell is t in the strip: a zero faint, the others with their mark.
 func (t total) cell() string {
-	switch {
-	case t.of > 0 && t.n == 0: // no worker running: faint, like the strip's other zeros
-		return dimStyle.Render(fmt.Sprintf("0 of %d", t.of))
-	case t.of > 0:
-		return t.style.Render(fmt.Sprint(t.n)) + dimStyle.Render(fmt.Sprintf(" of %d", t.of))
-	case t.n == 0:
+	if t.n == 0 {
 		return dimStyle.Render("0") + t.extra
 	}
 	return t.style.Render(fmt.Sprintf("%s %d", t.mark, t.n)) + t.extra
@@ -331,12 +328,20 @@ func (m Dashboard) heldBack() string {
 	return s
 }
 
+// queueRoom is the width the strip keeps for In queue's count whatever it says now, so that the strip
+// doesn't give way to the one-line form, a line shorter, as the count grows from "—" to
+// "12 of 345 · held", and the tickets table below doesn't move.
+const queueRoom = 16
+
 // statsTable is the run's totals as one strip: a column per total, label over value, in the
-// events' colours. Too narrow a pane gets the one-line form instead.
+// events' colours; the workers are on the load line above it. Too narrow a pane gets the one-line
+// form instead, without them too.
 func (m Dashboard) statsTable(w int) string {
 	var labels, values []string
 	for _, t := range m.totals() {
-		labels, values = append(labels, t.label), append(values, t.cell())
+		if !t.lineOnly {
+			labels, values = append(labels, t.label), append(values, t.cell())
+		}
 	}
 	n, of := m.queueCount()
 	queued := n + dimStyle.Render(of)
@@ -352,8 +357,9 @@ func (m Dashboard) statsTable(w int) string {
 	for i := range labels {
 		need += max(ansi.StringWidth(labels[i]), ansi.StringWidth(values[i])) + cellPadding
 	}
+	need += max(queueRoom-ansi.StringWidth(queued), 0)
 	if w < need {
-		return m.statsLine(w)
+		return m.totalsLine(w, false)
 	}
 	return table.New().
 		Border(lipgloss.RoundedBorder()).
@@ -372,12 +378,19 @@ func (m Dashboard) statsTable(w int) string {
 		Render()
 }
 
-// statsLine is the totals on one line, for a pane too narrow or too short for the strip. The
-// branch, running time and stopping state are on the title line, the winding down above the hint.
-func (m Dashboard) statsLine(w int) string {
+// statsLine is the totals on one line, the workers among them, for a pane too short for the strip and
+// the load line. The branch, running time and stopping state are on the title line, the winding down
+// above the hint.
+func (m Dashboard) statsLine(w int) string { return m.totalsLine(w, true) }
+
+// totalsLine is the totals on one line, the workers among them or, under the load line, which has
+// them, not.
+func (m Dashboard) totalsLine(w int, workers bool) string {
 	var parts []string
 	for _, t := range m.totals() {
-		parts = append(parts, t.part())
+		if workers || !t.lineOnly {
+			parts = append(parts, t.part())
+		}
 	}
 	n, of := m.queueCount()
 	queue := dimStyle.Render("queue "+n+of) + m.heldBack()

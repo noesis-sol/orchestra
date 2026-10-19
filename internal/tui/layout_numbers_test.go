@@ -54,7 +54,7 @@ func TestBoxInnerIsTheContentsRoom(t *testing.T) {
 	}
 }
 
-// A total reads in the strip as its mark and count, faint at zero, or as a count out of its slots;
+// A total reads in the strip as its mark and count, faint at zero;
 // on the one-line form always with its mark, and its slots after a slash.
 func TestTotalCellAndPart(t *testing.T) {
 	for _, tc := range []struct {
@@ -66,10 +66,11 @@ func TestTotalCellAndPart(t *testing.T) {
 		{"some", total{mark: "✓", n: 3, style: closedStyle}, "✓ 3", "✓ 3"},
 		{"zero with verdicts", total{mark: "↷", style: deferredStyle, extra: " ◆ 2"}, "0 ◆ 2", "↷ 0"},
 		{"some with verdicts", total{mark: "↷", n: 1, style: deferredStyle, extra: " ◆ 2"}, "↷ 1 ◆ 2", "↷ 1"},
-		{"out of slots", total{mark: "▶", n: 2, style: pickedStyle, of: 4}, "2 of 4", "▶ 2/4"},
-		{"none of slots", total{mark: "▶", style: pickedStyle, of: 1}, "0 of 1", "▶ 0/1"},
+		// The workers are on the one-line form alone, the strip leaving them to the load line.
+		{"out of slots", total{mark: "▶", n: 2, style: pickedStyle, of: 4, lineOnly: true}, "", "▶ 2/4"},
+		{"none of slots", total{mark: "▶", style: pickedStyle, of: 1, lineOnly: true}, "", "▶ 0/1"},
 	} {
-		if got := ansi.Strip(tc.t.cell()); got != tc.cell {
+		if got := ansi.Strip(tc.t.cell()); !tc.t.lineOnly && got != tc.cell {
 			t.Errorf("%s: cell %q, want %q", tc.name, got, tc.cell)
 		}
 		if got := ansi.Strip(tc.t.part()); got != tc.part {

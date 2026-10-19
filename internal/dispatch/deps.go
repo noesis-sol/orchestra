@@ -161,6 +161,14 @@ type Reporter interface {
 	ReportArgsIn(dir, folder string) ([]string, error)
 }
 
+// PaneProcesses says which processes a terminal's pane runs: the roots of its worker's process tree,
+// whose memory the dashboard shows.
+type PaneProcesses interface {
+	// the IDs of the processes at the root of what the pane runs, its worker's agent among them or above
+	// them; an error when the terminal can't say
+	PaneProcesses(ctx context.Context, pane string) ([]int, error)
+}
+
 // AgentHelp reads what the workers' agent says it takes.
 type AgentHelp interface {
 	// Help is claude --help: its options, and the values it lists for them
@@ -245,8 +253,9 @@ type Deps struct {
 	Starter   Starter
 	Namer     Namer
 	Agents    Agents
-	Reporter  Reporter  // nil: no reports
-	Help      AgentHelp // nil: the workers' claude can't be asked what it takes
+	Processes PaneProcesses // nil: no worker's memory is known
+	Reporter  Reporter      // nil: no reports
+	Help      AgentHelp     // nil: the workers' claude can't be asked what it takes
 	Checkout  Checkout
 	Worktrees Worktrees
 	Merger    Merger

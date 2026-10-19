@@ -13,6 +13,15 @@ All notable changes to orchestra are documented here. The format follows
   check to run once with its output kept, in place of the merge check
   (`check_fast`) that orchestra runs itself. Its files are left out of
   footprints, as the other checks' are.
+- The dashboard says whether the workers are overloading the machine, on a
+  line of its own above the totals: `▶ 4 of 4 workers · memory 6.2 GB
+  (workers 4.8, merge check 1.4) · pressure normal · CPU 9.8/10 cores`, the
+  memory each worker's process tree takes (also on its line in Current) and
+  orchestra's own commands', the kernel's memory pressure, swapping while it
+  is under way, and the load against the cores, read every 5 seconds. It
+  turns amber once the load passes 1.5 times the cores or the machine swaps,
+  and red at memory pressure warn or a load above 3 times the cores for a
+  minute. The totals' strip loses its Workers column to it.
 - A run says when another orchestra run shares the machine, as their checks
   slow each other down: `SHARED_MACHINE: another orchestra run is going in
   <repository> with <n> workers`, once for each, and the dashboard's title

@@ -55,15 +55,16 @@ func TestTheTicketsLabelSavesTheWorkersALine(t *testing.T) {
 	}
 	var focused []string
 	m := numberedDashboard(3, &focused)
-	// 35 lines held the table and one line per worker; now a box each fits under the same 7 tickets.
+	// 35 lines held the table and one line per worker; now a box each fits under the same 7 tickets,
+	// below the title, the load line and the strip.
 	m.width, m.height = 66, 35
 	view := m.View()
 	checkWithinPane(t, view, 66, 35)
 	if form := workerForm(view); form != "label true, 3 boxes" {
 		t.Errorf("66x35: the workers show as %s, want 3 boxes:\n%s", form, ansi.Strip(view))
 	}
-	if top, height := tableSpan(view); top != 6 || height != 10 {
-		t.Errorf("66x35: the table at line %d, %d lines, want line 6, 10 lines:\n%s", top, height, ansi.Strip(view))
+	if top, height := tableSpan(view); top != 7 || height != 10 {
+		t.Errorf("66x35: the table at line %d, %d lines, want line 7, 10 lines:\n%s", top, height, ansi.Strip(view))
 	}
 }
 
@@ -75,7 +76,7 @@ func TestTheTicketsLabelGoesWithCurrent(t *testing.T) {
 	m := numberedDashboard(3, &focused)
 	m.cfg.Concurrency = 2
 	m.width = 66
-	for h, want := range map[int]string{19: "label false, 1 boxes; table 5 lines", 18: "label true, 1 boxes; table 0 lines"} {
+	for h, want := range map[int]string{20: "label false, 1 boxes; table 5 lines", 19: "label true, 1 boxes; table 0 lines"} {
 		m.height = h
 		view := m.View()
 		checkWithinPane(t, view, 66, h)

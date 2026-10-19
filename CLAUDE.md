@@ -115,6 +115,8 @@ the orchestra skill's opening define both terms; use them consistently.
   the test's own), `internal/watchdog` (stops what such a test started once the test binary exits, however it
   exits), `internal/gittest`.
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
+- `internal/load`: the machine's load for the dashboard's load line: each worker's process-tree memory from one `ps`
+  listing, the kernel's memory pressure, swapping and CPU load (macOS and Linux), and the thresholds that colour it.
 - `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`
   (settings, worker prompt, init, per-ticket files). `internal/tui`: the Bubble Tea dashboard and init's screen.
 

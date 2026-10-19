@@ -192,6 +192,7 @@ func (o *Loop) Run(ctx context.Context) int {
 	o.leftMu.Unlock()
 	o.sayDeferredFree(ctx) // knowing what is carried over and unmerged
 	defer o.startPredicting()()
+	defer o.watchLoad(ctx)() // for the dashboard
 
 	r := newRunState(ctx, o)
 	defer r.machine.unregister()

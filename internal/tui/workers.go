@@ -25,7 +25,8 @@ func withCurrentLabel(panels string) string {
 func sectionLabel(name string, style lipgloss.Style) string { return "  " + style.Render(name) }
 
 // workerList is the compact form of the worker boxes: one box, one line per running worker, its ID,
-// status and time lined up in columns with the other lines', each as wide as the widest on screen.
+// status, time and memory lined up in columns with the other lines', each as wide as the widest on
+// screen.
 func (m Dashboard) workerList(w int) string {
 	running := m.Running()
 	if len(running) == 0 {
@@ -45,44 +46,54 @@ func (m Dashboard) workerList(w int) string {
 // numbered is how many running workers get a number, the key that goes to their tab.
 const numbered = 9
 
-// workerHead is the nth running worker's first line: its number, ID, worker status and time. A
-// worker beyond the ninth gets no number, only the room for one.
+// workerHead is the nth running worker's first line: its number, ID, worker status, time and the
+// memory its process tree takes, once read. A worker beyond the ninth gets no number, only the room
+// for one.
 func (m Dashboard) workerHead(n int, st dispatch.Status) string {
 	return m.alignedHead(n, st, headColumns{})
 }
 
-// alignedHead is workerHead with its ID and status padded to cols and its time right-aligned in
-// cols, so that its digits line up with the other lines'.
+// alignedHead is workerHead with its ID and status padded to cols and its time and memory
+// right-aligned in cols, so that their digits line up with the other lines'.
 func (m Dashboard) alignedHead(n int, st dispatch.Status, cols headColumns) string {
 	num := "  "
 	if n <= numbered {
 		num = keyStyle.Render(fmt.Sprint(n)) + " "
 	}
 	c := m.headCells(st)
-	return fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), c.id+padding(c.id, cols.id),
+	head := fmt.Sprintf("%s%s %s  %s  %s", num, m.mark(st), c.id+padding(c.id, cols.id),
 		c.status+padding(c.status, cols.status), padding(c.time, cols.time)+c.time)
+	if c.mem != "" || cols.mem > 0 {
+		head += "  " + padding(c.mem, cols.mem) + c.mem
+	}
+	return head
 }
 
 // headCells are the cells of a worker's first line after its number and mark, in style.
-type headCells struct{ id, status, time string }
+type headCells struct{ id, status, time, mem string }
 
-// headCells are the worker's ticket ID, worker status and time.
+// headCells are the worker's ticket ID, worker status, time and memory ("" before it is read).
 func (m Dashboard) headCells(st dispatch.Status) headCells {
 	label := workerLook(st).status.render()
 	if st.Merge == dispatch.MergeQueued && st.Place > 0 {
 		label = toMergeStyle.Render(fmt.Sprintf("%s (%s)", toMergeLabel, ordinal(st.Place)))
 	}
+	var mem string
+	if s := m.workerMemory(st.Ticket); s != "" {
+		mem = dimStyle.Render(s)
+	}
 	return headCells{id: pickedStyle.Render(oneLine(st.Ticket)), status: label,
-		time: dimStyle.Render(m.since(st.Started).Truncate(time.Second).String())}
+		time: dimStyle.Render(m.since(st.Started).Truncate(time.Second).String()), mem: mem}
 }
 
-// headColumns are the widths of the compact list's columns: the widest ID, status and time on screen.
-type headColumns struct{ id, status, time int }
+// headColumns are the widths of the compact list's columns: the widest ID, status, time and memory on
+// screen.
+type headColumns struct{ id, status, time, mem int }
 
 // fit widens the columns to hold c.
 func (cols headColumns) fit(c headCells) headColumns {
 	return headColumns{max(cols.id, lipgloss.Width(c.id)), max(cols.status, lipgloss.Width(c.status)),
-		max(cols.time, lipgloss.Width(c.time))}
+		max(cols.time, lipgloss.Width(c.time)), max(cols.mem, lipgloss.Width(c.mem))}
 }
 
 // padding is the spaces that make s, styles not counted, w wide; none if it is as wide or wider.

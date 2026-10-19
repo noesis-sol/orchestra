@@ -9,7 +9,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// The Workers box counts the workers at work against the slots: a ticket merging, waiting to merge
+// The load line counts the workers at work against the slots: a ticket merging, waiting to merge
 // or handed back to its worker frees its slot, and is shown in the Current list all the same.
 func TestWorkersCountsOnlyThoseAtWork(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Concurrency: 2}, func() {}, func(bool) {}, func(string) {})
@@ -20,8 +20,8 @@ func TestWorkersCountsOnlyThoseAtWork(t *testing.T) {
 		"bd-3": {Ticket: "bd-3", Title: "Waiting to merge", Merge: dispatch.MergeQueued, Place: 1},
 		"bd-4": {Ticket: "bd-4", Title: "Resolving", Resolving: true},
 	}
-	if table := ansi.Strip(m.statsTable(120)); !strings.Contains(table, "1 of 2") {
-		t.Errorf("the Workers box doesn't read \"1 of 2\": %q", table)
+	if line := ansi.Strip(m.loadLine(120)); !strings.Contains(line, "▶ 1 of 2 workers") {
+		t.Errorf("the load line doesn't read \"▶ 1 of 2 workers\": %q", line)
 	}
 	view := ansi.Strip(m.View())
 	for _, title := range []string{"At work", "Merging", "Waiting to merge", "Resolving"} {

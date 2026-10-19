@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/load"
 )
 
 // The loop's sinks: the dashboard program, and lines printed once it has closed or for pipes.
@@ -48,6 +49,16 @@ func (s *ProgramSink) Status(st dispatch.Status) {
 		return
 	}
 	s.p.Send(statusMsg(st))
+}
+
+// Load sends the machine's load to the dashboard; after Handoff it is dropped, as plain output has no
+// place for it.
+func (s *ProgramSink) Load(r load.Reading) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.next == nil {
+		s.p.Send(loadMsg(r))
+	}
 }
 
 // Handoff sends next the events after the first received (the final dashboard's Received: those it

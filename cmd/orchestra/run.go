@@ -427,6 +427,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 		Starter:   terminal,
 		Namer:     terminal,
 		Agents:    terminal,
+		Processes: terminal,
 		Reporter:  claude.NewReporter(func(text string) { log.Line(time.Now(), text) }),
 		Help:      claude.CLI{Bin: "claude"},
 		Checkout:  repo,

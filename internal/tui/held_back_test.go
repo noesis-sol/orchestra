@@ -22,9 +22,9 @@ func TestTheTotalsCountTheTicketsHeldBack(t *testing.T) {
 	}{
 		{120, "0 of 29 · 4 held back"},
 		{80, "0 of 29 · 4 held back"},
-		{64, "queue 0 of 29 · 4 held back"},
+		{64, "0 of 29 · 4 held back"},
 		{56, "queue 0 of 29 · 4 held back"},
-		{40, "queue 0 of 2…"},
+		{40, "queue 0 of 29 · 4 he…"},
 	} {
 		m.width = tc.w
 		view := m.View()

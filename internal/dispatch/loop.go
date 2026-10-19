@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/load"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -85,6 +86,9 @@ type Loop struct {
 	// alive reports whether the process of a run registered on the machine runs (see machine);
 	// processAlive when nil. Tests give their own.
 	alive func(pid int) bool
+	// sampler reads the machine's load for the dashboard (see watchLoad): load.NewSampler of orchestra's
+	// own process when nil. Tests give their own.
+	sampler *load.Sampler
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
 	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
@@ -99,6 +103,7 @@ type deps struct {
 	starter   Starter
 	namer     Namer
 	agents    Agents
+	processes PaneProcesses
 	reporter  Reporter
 	help      AgentHelp
 	checkout  Checkout
@@ -113,8 +118,8 @@ type deps struct {
 func depsFrom(d Deps) deps {
 	return deps{
 		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
-		reporter: d.Reporter, help: d.Help, checkout: d.Checkout, worktrees: d.Worktrees, merger: d.Merger,
-		history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
+		processes: d.Processes, reporter: d.Reporter, help: d.Help, checkout: d.Checkout, worktrees: d.Worktrees,
+		merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
 	}
 }
 

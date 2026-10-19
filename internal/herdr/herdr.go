@@ -611,6 +611,24 @@ func PaneForeground(ctx context.Context, pane string) (group int, pids []int, er
 	return info.Group, pids, nil
 }
 
+// PaneProcesses returns the processes at the root of what the pane runs: the shell Herdr started in
+// it, which runs the worker's agent, and the processes in its terminal's foreground, the agent among
+// them.
+func (Terminal) PaneProcesses(ctx context.Context, pane string) ([]int, error) {
+	info, err := paneProcesses(ctx, pane)
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	if info.Shell > 0 {
+		pids = append(pids, info.Shell)
+	}
+	for _, p := range info.Processes {
+		pids = append(pids, p.PID)
+	}
+	return pids, nil
+}
+
 // processInfo is what 'herdr pane process-info' says of a pane's terminal.
 type processInfo struct {
 	Group     int `json:"foreground_process_group_id"` // the process group in its foreground
