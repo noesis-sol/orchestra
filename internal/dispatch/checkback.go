@@ -28,23 +28,48 @@ type checked struct {
 	tries  []string // what came of each hand-back of a failure to the ticket's worker, in turn
 	not    string   // why the last failure wasn't handed back, when hand-backs are on
 	at     string   // the branch's commit the check passed on, once it passes; "" when git can't say
+	moved  bool     // Base moved on while its worker fixed the branch: not checked, to be rebased and checked
+}
+
+// fixes is what came of the hand-backs of a failing check to a ticket's worker in its merge (see
+// checkRebased).
+type fixes struct {
+	n int // the hand-backs so far
+	// What its worker committed on the last one, as checkRebased's fixed, when Base moved on meanwhile:
+	// the check on the branch rebased onto Base says whether it fixed it. tries is what came of those
+	// before it.
+	pending string
+	tries   []string
+}
+
+// overtaken records that the fix pending, if any, was not checked, as the rebase onto Base that
+// followed it stopped on conflicts: what its worker resolves is checked with it.
+func (f *fixes) overtaken(base string) {
+	if f.pending != "" {
+		f.tries = append(f.tries, fmt.Sprintf("its worker committed %s, but rebasing it onto %s, which moved on "+
+			"meanwhile, stopped on conflicts", f.pending, base))
+		f.pending = ""
+	}
 }
 
 // checkRebased sets up and checks the branch of r's ticket, rebased onto r.onto from r.head (or on top
 // of it already, at r.head, as r.onTop says), and hands a failure back to its worker to fix while it
-// can (see whyNotFixCheck), *fixes counting the hand-backs in the ticket's merge; resolved says its
-// worker resolved the rebase. The caller holds the merge queue,
+// can (see whyNotFixCheck), fx keeping the hand-backs in the ticket's merge; resolved says its
+// worker resolved the rebase. A fix its worker commits while Base moves on isn't checked here: it
+// returns moved, and fx keeps the fix for the check on the branch rebased onto Base (see
+// mergeRun.pass), so that a hand-back costs one check. The caller holds the merge queue,
 // which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
 // is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's stop during a hand-back,
 // the worker's work left as it is.
-func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fixes *int,
+func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fx *fixes,
 	resolved bool) (checked, *stopReason) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failure
-	var res checked
+	res := checked{tries: fx.tries}
 	// What the worker committed on its last hand-back, until the check says whether it fixed it, or
 	// committedNothing when it found nothing to fix.
-	fixed := ""
+	fixed := fx.pending
+	fx.pending, fx.tries = "", nil
 	for {
 		at := o.checkout.Head(keep, c.Repo, r.br)
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
@@ -91,13 +116,13 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			res.not = "its worker found nothing to fix"
 			return res, nil
 		}
-		if res.not = o.whyNotFixCheck(keep, r, res, *fixes, at); res.not != "" {
+		if res.not = o.whyNotFixCheck(keep, r, res, fx.n, at); res.not != "" {
 			return res, nil
 		}
-		*fixes++
+		fx.n++
 		// The worker takes minutes: let the other finished tickets merge meanwhile.
 		queue.unlock()
-		f, why, stop := o.fixCheck(ctx, r, at, res, *fixes)
+		f, why, stop := o.fixCheck(ctx, r, at, res, fx.n)
 		queue.lock()
 		if stop != nil {
 			return res, stop
@@ -110,7 +135,21 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			return res, nil
 		}
 		fixed = f
+		if o.baseMoved(keep, r) {
+			o.info("  %s's worker committed %s, but %s moved on meanwhile: rebasing %s onto it before checking it",
+				r.id, fixed, c.Base, r.br)
+			fx.pending, fx.tries = fixed, res.tries
+			return checked{tries: res.tries, moved: true}, nil
+		}
 	}
+}
+
+// baseMoved reports whether Base has moved on from r.onto, the commit r's branch was rebased onto or
+// on top of, as when other tickets merged while its worker worked on a hand-back; false when git can't
+// say, the check then running on the branch as it is, and the merge rebasing it after if need be.
+func (o *Loop) baseMoved(ctx context.Context, r rebaseStop) bool {
+	now := o.checkout.Head(ctx, o.cfg.Repo, o.cfg.Base)
+	return now != "" && r.onto != "" && now != r.onto
 }
 
 // failedWhat names what failed on a rebased branch, for a line about it: the check, or the setup
@@ -199,13 +238,9 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 	}
 	if r.onTop {
 		return fmt.Sprintf("Before %s merges into %s, %s on it. Its whole output is in %s; %s\n\n"+
-			"Fix %s so that the check passes. "+
-			"Run '%s' in the foreground until it passes, then commit the fix on %s with %s in the commit message. "+
-			"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket "+
-			"changes, and no uncommitted changes left. Say DONE when the fix is committed. If the check passes "+
-			"without a change, the failure not coming from %s, commit nothing and say DONE: orchestra runs it again.",
+			"Fix %s so that the check passes. "+fixSteps,
 			r.br, c.Base, o.failedHow(res.setup, res.err), res.output, said,
-			r.br, c.Check, r.br, r.id, r.br)
+			r.br, r.br, r.id, c.Check, r.br)
 	}
 	landed := strings.TrimSpace(o.history.OneLineLog(ctx, c.Repo, r.head+".."+r.onto))
 	if landed == "" {
@@ -216,15 +251,21 @@ func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string 
 	return fmt.Sprintf("%s moved on while you worked, and %s was rebased onto it; now %s on it. "+
 		"Its whole output is in %s; %s\n\n"+
 		"What landed on %s since your branch was cut (git log --oneline %s..%s):\n%s\n\n"+
-		"Fix %s so that the check passes, keeping the intent of both your change and what landed on %s. "+
-		"Run '%s' in the foreground until it passes, then commit the fix on %s with %s in the commit message. "+
-		"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket "+
-		"changes, and no uncommitted changes left. Say DONE when the fix is committed. If the check passes "+
-		"without a change, the failure not coming from %s, commit nothing and say DONE: orchestra runs it again.",
+		"Fix %s so that the check passes, keeping the intent of both your change and what landed on %s. "+fixSteps,
 		c.Base, r.br, o.failedHow(res.setup, res.err), res.output, said,
 		c.Base, short(r.head), short(r.onto), landed,
-		r.br, c.Base, c.Check, r.br, r.id, r.br)
+		r.br, c.Base, r.br, r.id, c.Check, r.br)
 }
+
+// fixSteps is how a fix prompt goes on, given the branch, the ticket, the check and the branch: the
+// worker runs what failed and the tests of its change, and leaves the whole check to the merge that
+// follows.
+const fixSteps = "Run what failed (the tests or other checks the output names) and the tests of the code " +
+	"you changed in the foreground until they pass, then commit the fix on %s with %s in the commit message. " +
+	"Leave the whole check, '%s', to orchestra: it runs it on the branch next. " +
+	"Don't do anything else: no rebase, no amending or rewriting of commits, no merge, no push, no ticket " +
+	"changes, and no uncommitted changes left. Say DONE when the fix is committed. If what failed passes " +
+	"without a change, the failure not coming from %s, commit nothing and say DONE: orchestra runs the check again."
 
 // committedNothing is what verifyFixed returns as committed when the worker found nothing to fix.
 const committedNothing = "nothing"

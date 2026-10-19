@@ -10,8 +10,9 @@ import (
 // A worker resolving a stopped rebase skips the commits whose change Base has already: its branch
 // merges with the commits left, or, with none left, closes with no change.
 
-// The hand-back asks for the check once the rebase has finished, since commits that apply cleanly
-// after a resolved one may break it, and says to skip a commit whose change Base has already.
+// The hand-back asks for the tests of the change once the rebase has finished, since commits that apply
+// cleanly after a resolved one may break them, leaves the whole check to orchestra, and says to skip a
+// commit whose change Base has already.
 func TestTheResolvePromptChecksAfterTheRebaseAndSkipsWhatLanded(t *testing.T) {
 	t.Parallel()
 	o := &Loop{cfg: Config{Base: "main", Check: "make check"}}
@@ -19,15 +20,17 @@ func TestTheResolvePromptChecksAfterTheRebaseAndSkipsWhatLanded(t *testing.T) {
 	for _, want := range []string{
 		"rebasing wt/A onto it stopped on conflicts in a.go, b.go",
 		"If main has a commit's change already, wholly or as the part that conflicts, run git rebase --skip",
-		"Once the rebase has finished, run 'make check' in the foreground until it passes",
+		"Once the rebase has finished, run the tests of the code you changed and of the files that conflicted " +
+			"in the foreground until they pass",
 		"git commit --amend --no-edit",
-		"Say DONE when the rebase is complete and the check passes.",
+		"Leave the whole check, 'make check', to orchestra: it runs it on the branch next.",
+		"Say DONE when the rebase is complete and those tests pass.",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("no %q in the prompt:\n%s", want, p)
 		}
 	}
-	if i, j := strings.Index(p, "rebase --continue"), strings.Index(p, "'make check'"); i < 0 || j < i {
+	if i, j := strings.Index(p, "rebase --continue"), strings.Index(p, "run the tests"); i < 0 || j < i {
 		t.Errorf("the check should come after the rebase continues:\n%s", p)
 	}
 }

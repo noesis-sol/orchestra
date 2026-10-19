@@ -14,18 +14,21 @@ import (
 // (see recheckTickets).
 
 // slowLabel is Notes whose AddLabel takes delay, as bd's does on a loaded machine, the first time
-// ticket id is labelled UnmergedLabel, calling then first, after the delay.
+// ticket id is labelled UnmergedLabel, calling before, if set, ahead of the delay and then after it.
 type slowLabel struct {
 	Notes
-	id    string
-	delay time.Duration
-	then  func()
-	once  sync.Once
+	id           string
+	delay        time.Duration
+	before, then func()
+	once         sync.Once
 }
 
 func (n *slowLabel) AddLabel(ctx context.Context, id, label string) error {
 	if id == n.id && label == UnmergedLabel {
 		n.once.Do(func() {
+			if n.before != nil {
+				n.before()
+			}
 			time.Sleep(n.delay)
 			n.then()
 		})
@@ -38,7 +41,8 @@ func (n *slowLabel) AddLabel(ctx context.Context, id, label string) error {
 // in bd labelling it, Run woke on its poll and took A up to be checked again, B having moved main
 // on, with A's own merge still in flight: two goroutines for one ticket, the first's end erasing
 // the second's slot and dashboard row, so the run could end under it. A is checked again only
-// once its merge has returned.
+// once its merge has returned. A's fix is checked on main as B left it now (orchestra-nk2x), so a
+// commit made by hand moves main on as A is set aside.
 func TestATicketIsNotCheckedAgainWhileItsOwnMergeRuns(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -58,7 +62,9 @@ func TestATicketIsNotCheckedAgainWhileItsOwnMergeRuns(t *testing.T) {
 			return finishes("b.txt")(w)
 		})
 		o := h.loop()
-		o.notes = &slowLabel{Notes: o.notes, id: "A", delay: 2 * readyPoll, then: func() {
+		o.notes = &slowLabel{Notes: o.notes, id: "A", delay: 2 * readyPoll, before: func() {
+			h.mem.commit("main", "by hand: c.txt", "c.txt")
+		}, then: func() {
 			if strings.Contains(h.sink.text(), "RECHECK: A") {
 				t.Error("A was taken up to be checked again while its own merge was still under way")
 			}
@@ -73,7 +79,8 @@ func TestATicketIsNotCheckedAgainWhileItsOwnMergeRuns(t *testing.T) {
 			t.Errorf("want A set aside, then checked again:\n%s", ev)
 		}
 		if n := checkRuns(t, dir, "A"); n != 4 {
-			t.Errorf("A's check ran %d times, want 4: before and after its fix, as it merged and as it was checked once more\n%s", n, ev)
+			t.Errorf("A's check ran %d times, want 4: before its fix, after it on main as B left it, and "+
+				"before and after its second fix, as it was checked once more\n%s", n, ev)
 		}
 		if got := closedIDs(h); !equal(got, []string{"B"}) {
 			t.Errorf("merged %v, want B", got)

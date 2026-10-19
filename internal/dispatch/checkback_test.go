@@ -292,8 +292,11 @@ func TestTheFixPromptSaysWhatFailedAndWhatLanded(t *testing.T) {
 		"Fix wt/A so that the check passes, keeping the intent of both your change and what landed on main. ",
 		"then commit the fix on wt/A with A in the commit message. ",
 		"no rebase, no amending or rewriting of commits",
-		"Say DONE when the fix is committed. If the check passes without a change, the failure not coming " +
-			"from wt/A, commit nothing and say DONE: orchestra runs it again.",
+		"Run what failed (the tests or other checks the output names) and the tests of the code you changed " +
+			"in the foreground until they pass, ",
+		"Leave the whole check, 'scripts/check.sh', to orchestra: it runs it on the branch next. ",
+		"Say DONE when the fix is committed. If what failed passes without a change, the failure not coming " +
+			"from wt/A, commit nothing and say DONE: orchestra runs the check again.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("prompt lacks %q:\n%s", want, got)

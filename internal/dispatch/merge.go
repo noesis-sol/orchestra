@@ -46,7 +46,8 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // first, and checked as rebased; one on top of Base already is checked as it is (see checkOnTop). A
 // rebase that stops on conflicts is handed back to the ticket's worker to resolve, when it can be (see
 // whyNotHandBack), without holding up the merge queue meanwhile, and so is a check that fails on the
-// branch, to fix (see checkRebased). A conflict left unresolved or a failing check leaves the ticket for review and the
+// branch, to fix (see checkRebased); what the worker leaves is checked once, rebased first when Base
+// moved on meanwhile. A conflict left unresolved or a failing check leaves the ticket for review and the
 // run goes on; a failing check is tried once more after Base moves on (see recheck).
 // A branch whose commits, taken together, change nothing, before its rebase or after (by git, or by
 // its worker skipping those Base has already), has nothing to merge and is cleaned up as such (see
@@ -123,7 +124,7 @@ type mergeRun struct {
 	keep        context.Context
 	repo, queue *lockGuard
 	handedBack  int    // its rebase's conflicts handed back to its worker to resolve
-	fixes       int    // its failing check handed back to its worker to fix
+	fixes       fixes  // its failing check handed back to its worker to fix
 	checked     string // the branch's commit the check last passed on, on top of Base: it merges as it is
 }
 
@@ -201,6 +202,8 @@ func (m *mergeRun) afterCheck(r rebaseStop, res checked, stop *stopReason) (merg
 	case res.err != nil:
 		m.o.checksFailed(m.keep, r, res)
 		return mergeDone, nil
+	case res.moved:
+		return mergeAgainAfterWorker, nil // fixed while Base moved on: rebase onto it, and check it there
 	}
 	m.checked = res.at
 	if len(res.tries) > 0 {
@@ -300,6 +303,7 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 	}
 	m.repo.unlock()
 	m.handedBack++
+	m.fixes.overtaken(c.Base)
 	// The worker takes minutes: let the other finished tickets merge meanwhile, and queue
 	// behind them again to check its work and merge.
 	m.queue.unlock()
@@ -315,6 +319,12 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 			return mergeDone, nil
 		}
 		m.repo.unlock()
+		// Checked once, where it merges: a check on r.onto would be run again on the branch rebased.
+		if o.baseMoved(keep, r) {
+			o.info("  %s's worker finished the rebase, but %s moved on meanwhile: rebasing %s onto it before "+
+				"checking it", r.id, c.Base, r.br)
+			return mergeAgainAfterWorker, nil
+		}
 		o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
 		var res checked
 		if res, stop = o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, true); stop != nil {

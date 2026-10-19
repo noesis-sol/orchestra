@@ -77,10 +77,12 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 		"if the rebase stops on another commit, resolve that one the same way. "+
 		"If %s has a commit's change already, wholly or as the part that conflicts, run git rebase --skip "+
 		"for that commit instead of resolving it. "+
-		"Once the rebase has finished, run '%s' in the foreground until it passes, since the commits that "+
-		"applied cleanly may break it too; fold any fix into the branch's last commit with git commit --amend --no-edit. "+
+		"Once the rebase has finished, run the tests of the code you changed and of the files that conflicted "+
+		"in the foreground until they pass, since the commits that applied cleanly may break them too; "+
+		"fold any fix into the branch's last commit with git commit --amend --no-edit. "+
+		"Leave the whole check, '%s', to orchestra: it runs it on the branch next. "+
 		"Don't do anything else: no new commits beyond the rebase, no merge, no push, no ticket changes. "+
-		"Say DONE when the rebase is complete and the check passes.",
+		"Say DONE when the rebase is complete and those tests pass.",
 		c.Base, r.br, strings.Join(r.files, ", "), c.Base, c.Base, c.Check)
 }
 

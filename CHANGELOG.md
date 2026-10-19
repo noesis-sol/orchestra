@@ -24,6 +24,17 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A ticket handed back to its worker, to resolve its rebase (`RESOLVING`) or
+  fix its failing check (`FIXING`), is checked once when the worker is done,
+  on the base it merges onto: when other tickets merged meanwhile, its branch
+  is rebased onto the base first (`<id>'s worker finished the rebase, but
+  <base> moved on meanwhile: rebasing wt/<id> onto it before checking it`), a
+  conflict there handed back as before. It had been checked on the base it
+  was rebased onto before the hand-back, then rebased and checked again: two
+  merge checks for one hand-back while other tickets merged. The hand-back
+  asks the worker to run what failed and the tests of the code it changed,
+  leaving the whole check to orchestra, rather than to run the check until it
+  passes before orchestra ran it again.
 - The verifier `orchestra init` writes checks only what a change touches,
   as workers do, and leaves the whole suite to the merge check: the worker
   gives it the commit at which its own checks passed and the commands it ran
