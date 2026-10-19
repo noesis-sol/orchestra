@@ -24,10 +24,17 @@ import (
 type Git struct{}
 
 // readGit runs a git command that changes nothing, in dir ("" for the working directory), within
-// command.ReadLimit, and returns its output.
+// command.ReadLimit, and returns its output. It takes no optional locks (GIT_OPTIONAL_LOCKS=0): git
+// would otherwise refresh a stale index under .git/index.lock, and anything writing to the repository
+// meanwhile, such as the maintainer's own git or a worker committing on the base, fails on that lock.
+// git diff refreshes the index regardless, so a diff against the work tree also passes noIndexRefresh.
 func readGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return command.Output(ctx, command.ReadLimit, dir, "git", args...)
+	return command.OutputWithEnv(ctx, command.ReadLimit, dir, []string{"GIT_OPTIONAL_LOCKS=0"}, "git", args...)
 }
+
+// noIndexRefresh keeps a git diff against the work tree from refreshing the index, which it does
+// whatever GIT_OPTIONAL_LOCKS says.
+const noIndexRefresh = "diff.autoRefreshIndex=false"
 
 // writeGit runs a git command that changes the repository, in dir ("" for the working directory),
 // within command.WriteLimit, and returns its output.
@@ -491,7 +498,8 @@ func (Git) AbortRebase(ctx context.Context, worktree string) (string, error) {
 // ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or none.
 func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
 	// None on failure: the files only explain the conflict.
-	out, _ := readGit(ctx, "", "-C", worktree, "diff", "--name-only", "-z", "--diff-filter=U")
+	out, _ := readGit(ctx, "", "-C", worktree, "-c", noIndexRefresh, "diff", "--name-only", "-z",
+		"--diff-filter=U")
 	return splitNUL(out)
 }
 
@@ -573,7 +581,7 @@ func (Git) OneLineLog(ctx context.Context, dir, revs string) string {
 // DiffStat is the diff stat of worktree's uncommitted changes.
 func (Git) DiffStat(ctx context.Context, worktree string) string {
 	// For people and the organs: "" on failure.
-	out, _ := readGit(ctx, "", "-C", worktree, "diff", "--stat", "HEAD", "--")
+	out, _ := readGit(ctx, "", "-C", worktree, "-c", noIndexRefresh, "diff", "--stat", "HEAD", "--")
 	return out
 }
 

@@ -128,6 +128,10 @@ All notable changes to orchestra are documented here. The format follows
   `file_path`, loses only that argument rather than the whole input: the
   permission prompt it asks names its tool, is flagged and logged on Herdr,
   and a subagent's prompt is cleared by its stop.
+- orchestra's reads of git (`git status`, `git diff` on a worktree) no longer
+  refresh the index under `.git/index.lock`, so git run meanwhile in the same
+  repository, such as the maintainer's own commit in the main checkout, no
+  longer fails with `Unable to create '…/.git/index.lock': File exists`.
 - Ctrl+C (or SIGTERM, SIGHUP) during `orchestra update` stops it, exit code
   130, rather than killing it: the download is cancelled and the
   `.orchestra-update-…` file it was writing beside the binary removed, where
