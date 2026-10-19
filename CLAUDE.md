@@ -107,7 +107,8 @@ the orchestra skill's opening define both terms; use them consistently.
   the state they give, and what their screen adds to it), `internal/mcp` (discovering MCP servers for workers).
 - Test helpers: `internal/faketool` (fake commands), `internal/claudetest` (a fake Claude Code that runs its hooks,
   for the tests on a real tmux or cmux), `internal/tmuxtest` and `internal/cmuxtest` (a tmux server or cmux app of
-  the test's own), `internal/gittest`.
+  the test's own), `internal/watchdog` (stops what such a test started once the test binary exits, however it
+  exits), `internal/gittest`.
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`
   (settings, worker prompt, init, per-ticket files). `internal/tui`: the Bubble Tea dashboard and init's screen.

@@ -29,6 +29,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
+	"github.com/noesis-sol/orchestra/internal/watchdog"
 )
 
 // RequireVar is the variable that, set to 1, runs the tests that need cmux and has them fail where
@@ -70,9 +71,10 @@ const (
 // App is a cmux app of the test's own.
 type App struct {
 	t      testing.TB
-	home   string        // its home folder
-	cmd    *exec.Cmd     // the running app; nil once quit
-	exited chan struct{} // closed once it has exited
+	home   string             // its home folder
+	cmd    *exec.Cmd          // the running app; nil once quit
+	exited chan struct{}      // closed once it has exited
+	watch  *watchdog.Watchdog // quits it should the test binary exit first; nil once it has exited
 	// Socket is the path of the app's socket, which CMUX_SOCKET_PATH names for the test.
 	Socket string
 	// Own is the workspace the app opened with, and OwnSurface its terminal: orchestra's own, as the
@@ -229,6 +231,15 @@ func (a *App) start() {
 		_ = cmd.Wait() // an app quit by a signal exits with an error, as expected
 		close(exited)
 	}(a.exited)
+	// A test killed, or past its timeout, never runs its cleanups, and the app would outlive it for
+	// good, keeping every later test from running: the watchdog quits it, as Quit does, once the test
+	// binary has exited, and kills it if it is still running 30 seconds later.
+	pid := strconv.Itoa(cmd.Process.Pid)
+	if a.watch, err = watchdog.Start("kill " + pid + "\n" +
+		"i=0; while kill -0 " + pid + " 2>/dev/null && [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done\n" +
+		"ps -p " + pid + " -o comm= | grep -qF " + command.ShellQuote(appPath()) + " && kill -9 " + pid); err != nil {
+		a.t.Fatal(err) // Quit, as the test ends, quits the app
+	}
 	for deadline := time.Now().Add(startLimit); ; time.Sleep(100 * time.Millisecond) {
 		select {
 		case <-a.exited:
@@ -273,9 +284,18 @@ func (a *App) log() string {
 // it hasn't within 30 seconds. An app already quit is left as it is.
 func (a *App) Quit() {
 	a.t.Helper()
-	if a.cmd == nil {
-		return
+	if a.cmd != nil {
+		a.quit()
 	}
+	if a.watch != nil { // the app has exited
+		a.watch.Stop()
+		a.watch = nil
+	}
+}
+
+// quit is Quit for an app still running.
+func (a *App) quit() {
+	a.t.Helper()
 	cmd := a.cmd
 	a.cmd = nil
 	_ = cmd.Process.Signal(syscall.SIGTERM) // one that has exited already needs none

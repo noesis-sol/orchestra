@@ -1,5 +1,6 @@
 // Package tmuxtest is for tests that run the real tmux: each gets a tmux server of its own, on a
-// socket in a folder of its own, never the user's server, and the server is killed as the test ends.
+// socket in a folder of its own, never the user's server, and the server is killed as the test ends,
+// or, should the test never get to its end (killed, or past its timeout), once the test binary exits.
 //
 // Without tmux installed the tests skip, unless ORCHESTRA_REQUIRE_TMUX=1, when they fail instead: CI
 // sets it, so the tests can't be skipped there unseen.
@@ -16,6 +17,7 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
+	"github.com/noesis-sol/orchestra/internal/watchdog"
 )
 
 // RequireVar is the variable that, set to 1, has a test needing tmux fail where tmux isn't installed,
@@ -31,7 +33,7 @@ const Socket = "orchestra-test"
 // folder of the test's own. The server's panes run /bin/sh, and get the test's environment as it is
 // when Server is called. It skips the test where tmux isn't installed, or fails it with
 // ORCHESTRA_REQUIRE_TMUX=1. The server is killed, and the test waits for it to be gone, as the test
-// ends.
+// ends, or once the test binary has exited, should the test be killed or time out before its end.
 func Server(t *testing.T, session, dir string) string {
 	t.Helper()
 	Require(t)
@@ -45,6 +47,15 @@ func Server(t *testing.T, session, dir string) string {
 	t.Setenv("TMUX_TMPDIR", sockets)
 	t.Setenv("SHELL", "/bin/sh") // the panes' shell, not the user's, with whatever their profile says
 	path := filepath.Join(sockets, "tmux-"+strconv.Itoa(os.Getuid()), Socket)
+	// A test killed, or past its timeout, never runs its cleanups, and the server, a daemon, would
+	// outlive it for good, with whatever its panes run: the watchdog kills it once the test binary
+	// has exited. Its cleanup is registered before the one killing the server, so it runs after it.
+	d, err := watchdog.Start("tmux -S " + command.ShellQuote(path) + " kill-server\n" +
+		"rm -rf " + command.ShellQuote(sockets))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
 	if _, err := command.Output(context.Background(), command.ReadLimit, "", "tmux", "-L", Socket, "-f", "/dev/null",
 		"new-session", "-d", "-s", session, "-c", dir, "-x", "200", "-y", "50"); err != nil {
 		t.Fatal(err)
