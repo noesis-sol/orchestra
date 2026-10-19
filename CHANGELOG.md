@@ -129,6 +129,11 @@ All notable changes to orchestra are documented here. The format follows
   Claude settings (`enabledPlugins` in `.claude/settings.json`), as they reach
   its skills only through it: a project with no skills of its own had them
   denied. The run reads this once, as it begins.
+- A ticket deleted from bd is no longer taken for another one whose ID starts
+  with its own (a follow-up its worker filed, say): bd answers such an ID with
+  that ticket, so orchestra read its status, labels and parent for the deleted
+  one, and its closes, labels and notes went to it. Now the deleted ticket is
+  not found, and orchestra writes nothing to bd for it.
 
 ## [0.8.4] - 2026-10-19
 

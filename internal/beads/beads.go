@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -316,6 +317,9 @@ func (b Tracker) Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, 
 
 // AddBlock links two tickets so that blocked waits for blocker.
 func (b Tracker) AddBlock(ctx context.Context, blocker, blocked string) error {
+	if err := b.exists(ctx, blocked, blocker); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "dep", "add", blocked, blocker)
 	return err
 }
@@ -338,17 +342,33 @@ func parseTicket(raw []byte) (dispatch.Ticket, bool) {
 }
 
 // Show returns the ticket with its dependencies. If it cannot be read, Status is StatusUnknown and the
-// error says why.
+// error says why. bd answers an ID it has no ticket for with a ticket whose ID starts with it, if there
+// is one (a deleted ticket's follow-up, say): Show takes that for not found.
 func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
 	out, err := b.bd(ctx, command.ReadLimit, "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	switch {
+	case ok && t.ID != id:
+		err = fmt.Errorf("'bd show %s --json' gave %s, another ticket: bd has none by that ID", id, t.ID)
+		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, &NotFoundError{ID: id, Err: err}
 	case !ok && err != nil && noSuchTicket([]byte(out)):
 		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, &NotFoundError{ID: id, Err: err}
 	case !ok:
 		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, unreadable(id, out, err)
 	}
 	return t, nil
+}
+
+// exists returns Show's not-found error for the first of the tickets bd has none by: bd's writes,
+// like its show, act on a ticket whose ID starts with the one they are given. When Show fails
+// otherwise, it is nil, and the write says whether bd can do it.
+func (b Tracker) exists(ctx context.Context, ids ...string) error {
+	for _, id := range ids {
+		if _, err := b.Show(ctx, id); errors.Is(err, dispatch.ErrNoTicket) {
+			return err
+		}
+	}
+	return nil
 }
 
 // NotFoundError is 'bd show' failing because bd has no trace of the ticket, as one deleted from it,
@@ -399,12 +419,18 @@ func unreadable(id, out string, err error) error {
 
 // AppendNotes adds a note to the ticket.
 func (b Tracker) AppendNotes(ctx context.Context, id, note string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "update", id, "--append-notes", note)
 	return err
 }
 
 // Defer sets the ticket aside, with the reason.
 func (b Tracker) Defer(ctx context.Context, id, reason string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "defer", id, "--reason="+reason)
 	return err
 }
@@ -420,12 +446,18 @@ func (b Tracker) Describe(ctx context.Context, id string) string {
 
 // Reopen puts the ticket back in the queue.
 func (b Tracker) Reopen(ctx context.Context, id string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "update", id, "--status", "open")
 	return err
 }
 
 // Undefer brings a deferred ticket back (bd undefer), in progress, as its worker's again.
 func (b Tracker) Undefer(ctx context.Context, id string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	if _, err := b.bd(ctx, command.WriteLimit, "undefer", id); err != nil {
 		return err
 	}
@@ -435,24 +467,36 @@ func (b Tracker) Undefer(ctx context.Context, id string) error {
 
 // Close closes the ticket, with the reason.
 func (b Tracker) Close(ctx context.Context, id, reason string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "close", id, "--reason="+reason)
 	return err
 }
 
 // AddLabel adds the label to the ticket.
 func (b Tracker) AddLabel(ctx context.Context, id, label string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "label", "add", id, label)
 	return err
 }
 
 // RemoveLabel removes the label from the ticket.
 func (b Tracker) RemoveLabel(ctx context.Context, id, label string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "label", "remove", id, label)
 	return err
 }
 
 // SetMetadata sets one key of the ticket's metadata, keeping the others.
 func (b Tracker) SetMetadata(ctx context.Context, id, key, value string) error {
+	if err := b.exists(ctx, id); err != nil {
+		return err
+	}
 	_, err := b.bd(ctx, command.WriteLimit, "update", id, "--set-metadata", key+"="+value)
 	return err
 }
