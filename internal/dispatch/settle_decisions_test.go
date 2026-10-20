@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // countingReporter counts the reads of a worker's hooks: its last tool use and its hooks' record.
@@ -112,16 +114,16 @@ func TestTurnEnded(t *testing.T) {
 		{"PostToolUse after the Stop", hooksSeen{use: ToolUse{Event: "PostToolUse", At: stop.Add(time.Second),
 			Stopped: stop}, ok: true}, time.Time{}, false, false},
 		{"mid-turn", hooksSeen{use: ToolUse{Event: "PreToolUse", At: stop}, ok: true}, time.Time{}, false, false},
-		{"permission asked", hooksSeen{use: ToolUse{Event: EventPermission, At: stop}, ok: true},
+		{"permission asked", hooksSeen{use: ToolUse{Event: agentio.EventPermission, At: stop}, ok: true},
 			time.Time{}, false, false},
-		{"permission refused", hooksSeen{use: ToolUse{Event: EventPermission, At: stop.Add(-time.Minute), Idle: stop},
+		{"permission refused", hooksSeen{use: ToolUse{Event: agentio.EventPermission, At: stop.Add(-time.Minute), Idle: stop},
 			ok: true}, stop, true, false},
-		{"permission refused, subagent running", hooksSeen{use: ToolUse{Event: EventPermission,
+		{"permission refused, subagent running", hooksSeen{use: ToolUse{Event: agentio.EventPermission,
 			At: stop.Add(-time.Minute), Idle: stop}, ok: true, rec: HookRecord{Subagents: 1}}, time.Time{}, false, false},
 		{"subagent running", hooksSeen{use: ToolUse{Event: "Stop", At: stop}, ok: true,
 			rec: HookRecord{Subagents: 1}}, time.Time{}, false, false},
-		{"subagent quiet too long", hooksSeen{use: ToolUse{Event: "Stop", At: now.Add(-2 * SubagentQuiet)}, ok: true,
-			rec: HookRecord{Subagents: 1}}, now.Add(-2 * SubagentQuiet), true, false},
+		{"subagent quiet too long", hooksSeen{use: ToolUse{Event: "Stop", At: now.Add(-2 * agentio.SubagentQuiet)}, ok: true,
+			rec: HookRecord{Subagents: 1}}, now.Add(-2 * agentio.SubagentQuiet), true, false},
 		{"subagent stopped after the Stop", hooksSeen{use: ToolUse{Event: "Stop", At: stop}, ok: true,
 			rec: HookRecord{SubagentStopped: stop.Add(time.Second)}}, time.Time{}, false, false},
 		{"subagent stopped before the Stop", hooksSeen{use: ToolUse{Event: "Stop", At: stop}, ok: true,
@@ -137,7 +139,7 @@ func TestTurnEnded(t *testing.T) {
 
 func TestAsksPermission(t *testing.T) {
 	t.Parallel()
-	asked := ToolUse{Event: EventPermission, Tool: "Bash", At: time.Now()}
+	asked := ToolUse{Event: agentio.EventPermission, Tool: "Bash", At: time.Now()}
 	cases := []struct {
 		name string
 		h    hooksSeen
@@ -148,7 +150,7 @@ func TestAsksPermission(t *testing.T) {
 		{"asked, blocked", hooksSeen{use: asked, ok: true}, StateBlocked, true},
 		{"asked, done", hooksSeen{use: asked, ok: true}, StateDone, true},
 		{"asked, working", hooksSeen{use: asked, ok: true}, StateWorking, false},
-		{"asked, refused", hooksSeen{use: ToolUse{Event: EventPermission, Tool: "Bash", At: asked.At,
+		{"asked, refused", hooksSeen{use: ToolUse{Event: agentio.EventPermission, Tool: "Bash", At: asked.At,
 			Idle: asked.At.Add(time.Minute)}, ok: true}, StateIdle, false},
 		{"asked before the adoption", hooksSeen{use: asked}, StateIdle, false},
 		{"no hooks", hooksSeen{}, StateIdle, false},
@@ -213,7 +215,7 @@ func TestIdleSettledDecisions(t *testing.T) {
 			"Stop hook at " + stop.Format("15:04:05") + "; then a PreToolUse record with no turn of its own, written at " +
 				stop.Add(time.Second).Format("15:04:05") +
 				" by tool Read, session unnamed, main agent, transcript unnamed"},
-		{"permission refused", StatusClosed, hooksSeen{use: ToolUse{Event: EventPermission, Tool: "Bash",
+		{"permission refused", StatusClosed, hooksSeen{use: ToolUse{Event: agentio.EventPermission, Tool: "Bash",
 			At: stop.Add(-time.Minute), Idle: stop}, ok: true}, time.Time{}, time.Minute, true,
 			"idle at its prompt at " + stop.Format("15:04:05") + " after a permission prompt for Bash refused"},
 		{"replaced Stop before the adoption", StatusClosed, hooksSeen{use: ToolUse{Event: "PreToolUse", Tool: "Read",

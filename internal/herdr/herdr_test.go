@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
@@ -141,12 +141,12 @@ func TestRefusalsAreDispatchErrors(t *testing.T) {
 	} {
 		failingHerdr(t, c.stderr)
 		err := (Terminal{}).StartAgent(context.Background(), "X.1", "claude", "p1", nil)
-		if errors.Is(err, dispatch.ErrNameRefused) != c.name || errors.Is(err, dispatch.ErrArgumentRefused) != c.args {
+		if errors.Is(err, agentio.ErrNameRefused) != c.name || errors.Is(err, agentio.ErrArgumentRefused) != c.args {
 			t.Errorf("stderr %s: name refused %v, arguments refused %v, want %v and %v (%v)", c.stderr,
-				errors.Is(err, dispatch.ErrNameRefused), errors.Is(err, dispatch.ErrArgumentRefused), c.name, c.args, err)
+				errors.Is(err, agentio.ErrNameRefused), errors.Is(err, agentio.ErrArgumentRefused), c.name, c.args, err)
 		}
 	}
-	if errors.Is(errors.New("invalid_agent_name"), dispatch.ErrNameRefused) {
+	if errors.Is(errors.New("invalid_agent_name"), agentio.ErrNameRefused) {
 		t.Error("only Herdr's own error counts as a refused name, never its text")
 	}
 }
@@ -186,7 +186,7 @@ func herdrScript(t *testing.T, script string) {
 }
 
 func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {
-	for status, want := range map[dispatch.AgentState]string{
+	for status, want := range map[agentio.State]string{
 		"working": "agent read a --source visible\n",
 		"blocked": "agent read a --source visible\n",
 		"idle":    "agent read a --source recent-unwrapped --lines 80\nagent read a --source visible\n",

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // refusingHerdr is Herdr refusing every agent name: the start, the adoption and the rename.
@@ -18,7 +20,7 @@ type refusingHerdr struct {
 }
 
 var errNameRefused error = refusal{`herdr agent start: exit status 1: {"error":{"code":"invalid_agent_name",` +
-	`"message":"agent names must be lowercase"}}`, ErrNameRefused}
+	`"message":"agent names must be lowercase"}}`, agentio.ErrNameRefused}
 
 func (h *refusingHerdr) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	return nil

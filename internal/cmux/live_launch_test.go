@@ -4,11 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
-
-var _ dispatch.PromptTyper = Terminal{}
 
 // A launch into a terminal whose last launch still runs there, a Claude Code on its trust dialog
 // say, types nothing into it, as a retried start would; nor while cmux can't say whether it runs.

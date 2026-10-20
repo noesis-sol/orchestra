@@ -6,6 +6,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // recordReporter is hookReporter with the tool in each report and what the hooks noted besides.
@@ -57,7 +59,7 @@ func TestPermissionPromptShownAsIdleStopsAsBlocked(t *testing.T) {
 		h.worker("A", func(w *fakeWorker) AgentState {
 			w.claim()
 			hooks.use(w.wt, ToolUse{Event: "PreToolUse", Tool: "Bash", Command: "rm -rf build"})
-			hooks.use(w.wt, ToolUse{Event: EventPermission, Tool: "Bash", Command: "rm -rf build"})
+			hooks.use(w.wt, ToolUse{Event: agentio.EventPermission, Tool: "Bash", Command: "rm -rf build"})
 			hooks.note(w.wt, func(r *HookRecord) { r.Permissions = append(r.Permissions, Permission{Tool: "Bash"}) })
 			asked = time.Now()
 			w.shows(StateIdle)
@@ -101,7 +103,7 @@ func TestAllowedPermissionPromptShowsTheTool(t *testing.T) {
 		var shown Status
 		h.worker("A", func(w *fakeWorker) AgentState {
 			w.claim()
-			hooks.use(w.wt, ToolUse{Event: EventPermission, Tool: "Bash", Command: "go test ./..."})
+			hooks.use(w.wt, ToolUse{Event: agentio.EventPermission, Tool: "Bash", Command: "go test ./..."})
 			time.Sleep(3 * statusPoll)
 			shown = h.sink.lastStatus("A")
 			w.commit("a.txt")
@@ -166,10 +168,10 @@ func TestSubagentsAndCompactionsAreShown(t *testing.T) {
 
 func TestHookRecordEvidence(t *testing.T) {
 	t.Parallel()
-	if got := (HookRecord{Subagents: 2}).Evidence(); got != "" {
+	if got := recordEvidence(HookRecord{Subagents: 2}); got != "" {
 		t.Errorf("nothing for triage in running subagents: %q", got)
 	}
-	got := HookRecord{Permissions: []Permission{{Tool: "Bash"}, {Tool: "WebFetch"}}, Compactions: []string{"auto"}}.Evidence()
+	got := recordEvidence(HookRecord{Permissions: []Permission{{Tool: "Bash"}, {Tool: "WebFetch"}}, Compactions: []string{"auto"}})
 	want := "It waited on a permission prompt twice, Claude Code asking to allow: Bash, WebFetch.\n" +
 		"Its context was compacted once (auto): the summary that replaced its earlier messages may have lost " +
 		"some of what it was told or found."

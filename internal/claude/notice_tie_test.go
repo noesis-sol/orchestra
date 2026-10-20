@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A dialog's notification written in the same tick of the filesystem's clock (1-second file times on
@@ -20,21 +20,21 @@ func TestNoticeTyingItsCauseReadsBlocked(t *testing.T) {
 		name  string
 		steps []hookStep
 		tied  []string // the records dated as the notice is
-		want  dispatch.AgentState
+		want  agentio.State
 	}{
 		{"elicitation as its tool use", append(turn, stepUseBash, stepNotification("elicitation_dialog")),
-			[]string{activityName}, dispatch.StateBlocked},
+			[]string{activityName}, agentio.StateBlocked},
 		{"elicitation as the prompt and its tool use",
 			[]hookStep{stepSessionStart("startup"), stepPrompt, stepUseBash, stepNotification("elicitation_dialog")},
-			[]string{activityName, turnName}, dispatch.StateBlocked},
+			[]string{activityName, turnName}, agentio.StateBlocked},
 		{"permission notice as its prompt",
 			append(turn, stepUseBash, stepAskBash, stepNotification("permission_prompt")),
-			[]string{activityName}, dispatch.StateBlocked},
+			[]string{activityName}, agentio.StateBlocked},
 		{"elicitation as its tool done", append(turn, stepUseBash, stepNotification("elicitation_dialog"), stepUsedIt),
-			[]string{activityName}, dispatch.StateWorking},
+			[]string{activityName}, agentio.StateWorking},
 		{"elicitation as the turn's Stop",
 			append(turn, stepUseBash, stepNotification("elicitation_dialog"), stepUsedIt, stepStop),
-			[]string{activityName, turnName}, dispatch.StateIdle},
+			[]string{activityName, turnName}, agentio.StateIdle},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

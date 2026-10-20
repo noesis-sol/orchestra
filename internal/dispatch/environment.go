@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -329,7 +330,7 @@ func (o *Loop) startProbe(
 	}
 	deadline = time.Now().Add(probeLimit)
 	err = o.starter.StartAgent(ctx, agent, c.Agent().Name, pane, args)
-	if err != nil && len(args) > 0 && errors.Is(err, ErrArgumentRefused) {
+	if err != nil && len(args) > 0 && errors.Is(err, agentio.ErrArgumentRefused) {
 		o.log.Raw("", err)
 		err = o.starter.StartAgent(ctx, agent, c.Agent().Name, pane, nil)
 	}

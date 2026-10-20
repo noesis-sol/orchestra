@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A permission prompt refused runs no hook: the last tool use stays the PermissionRequest, and only
@@ -32,7 +32,7 @@ func TestLastToolUseTellsAPromptRefused(t *testing.T) {
 			wt := t.TempDir()
 			playHooks(t, wt, c.steps)
 			u, ok := Reporter{}.LastToolUse(wt)
-			if !ok || u.Event != dispatch.EventPermission {
+			if !ok || u.Event != agentio.EventPermission {
 				t.Fatalf("LastToolUse = %+v %v, want the PermissionRequest", u, ok)
 			}
 			if idle := !u.Idle.IsZero(); idle != c.idle || idle && !u.Idle.After(u.At) {

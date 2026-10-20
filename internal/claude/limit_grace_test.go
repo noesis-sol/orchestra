@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // The end of a turn that ended normally at the account's usage limit, after Claude Code's grace note, and
@@ -50,14 +50,14 @@ const graceArmedWords = "Usage limit reached · continuing automatically at 5:30
 func TestTranscriptNoticesTellTheUsageLimit(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 16, 4, 25, 7, 0, time.Local)
-	armed := dispatch.UsageLimit{At: at, Reset: time.Date(2026, 10, 16, 5, 30, 0, 0, time.Local),
+	armed := agentio.UsageLimit{At: at, Reset: time.Date(2026, 10, 16, 5, 30, 0, 0, time.Local),
 		Message: graceArmedWords}
 	ended := []string{graceNote, graceWrapUp, graceStopSummary, graceArmed, graceDuration}
 	then := func(lines ...string) []string { return append(append([]string{}, ended...), lines...) }
 	for _, c := range []struct {
 		name  string
 		lines []string
-		want  dispatch.UsageLimit
+		want  agentio.UsageLimit
 	}{
 		{"ended after the grace note", ended, armed},
 		{"Escape cancelled the automatic continue", then(informational(
@@ -68,21 +68,21 @@ func TestTranscriptNoticesTellTheUsageLimit(t *testing.T) {
 			armed},
 		{"refused again", then(graceContinue, informational(
 			"Usage limit reached again · continuing automatically at Oct 19 at 5:08pm · esc to cancel")),
-			dispatch.UsageLimit{At: at, Reset: time.Date(2026, 10, 19, 17, 8, 0, 0, time.Local), Message: "Usage limit " +
+			agentio.UsageLimit{At: at, Reset: time.Date(2026, 10, 19, 17, 8, 0, 0, time.Local), Message: "Usage limit " +
 				"reached again · continuing automatically at Oct 19 at 5:08pm · esc to cancel"}},
 		{"continuing shortly", then(graceContinue, informational(
 			"Usage limit reached again · continuing automatically shortly · esc to cancel")),
-			dispatch.UsageLimit{At: at, Message: "Usage limit reached again · continuing automatically shortly · " +
+			agentio.UsageLimit{At: at, Message: "Usage limit reached again · continuing automatically shortly · " +
 				"esc to cancel"}},
-		{"its continue queued", then(graceEnqueued, graceDequeued), dispatch.UsageLimit{}},
-		{"continued by itself", then(graceEnqueued, graceDequeued, graceFired, graceContinue), dispatch.UsageLimit{}},
+		{"its continue queued", then(graceEnqueued, graceDequeued), agentio.UsageLimit{}},
+		{"continued by itself", then(graceEnqueued, graceDequeued, graceFired, graceContinue), agentio.UsageLimit{}},
 		{"continued at once", then(informational("Usage limit available again · continuing now")),
-			dispatch.UsageLimit{}},
+			agentio.UsageLimit{}},
 		{"told to carry on", then(`{"type":"user","message":{"role":"user","content":"Orchestra: carry on."}}`),
-			dispatch.UsageLimit{}},
-		{"a turn's end with no limit", []string{graceWrapUp, graceStopSummary, graceDuration}, dispatch.UsageLimit{}},
+			agentio.UsageLimit{}},
+		{"a turn's end with no limit", []string{graceWrapUp, graceStopSummary, graceDuration}, agentio.UsageLimit{}},
 		{"lines that aren't JSON", then("{", "not JSON"), armed},
-		{"no transcript", nil, dispatch.UsageLimit{}},
+		{"no transcript", nil, agentio.UsageLimit{}},
 	} {
 		got := limitNotices([]byte(strings.Join(c.lines, "\n")), at)
 		if !sameLimit(got, c.want) {
@@ -97,14 +97,14 @@ func TestTranscriptNoticesTellTheUsageLimit(t *testing.T) {
 func TestStopAfterTheGraceNoteLimitsTheWorker(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 16, 4, 25, 7, 0, time.Local)
-	want := dispatch.UsageLimit{At: at, Reset: time.Date(2026, 10, 16, 5, 30, 0, 0, time.Local),
+	want := agentio.UsageLimit{At: at, Reset: time.Date(2026, 10, 16, 5, 30, 0, 0, time.Local),
 		Message: graceArmedWords}
 	wt := t.TempDir()
 	p := transcriptAt(t, t.TempDir(), testID, graceNote, graceWrapUp, graceStopSummary, graceArmed, graceDuration)
 	playHooksAt(t, wt, at, stepAt("SessionStart", sessionInput(testID, p)), stepPrompt, stepUseBash, stepUsedIt,
 		stepStop)
 	records := Records(wt, "")
-	if h := ReadHooks(records, ""); h.State != dispatch.StateLimited || !sameLimit(h.Limit, want) {
+	if h := ReadHooks(records, ""); h.State != agentio.StateLimited || !sameLimit(h.Limit, want) {
 		t.Errorf("hooks: %s %+v, want limited %+v", h.State, h.Limit, want)
 	}
 	u, ok := Reporter{}.LastToolUse(wt)
@@ -115,14 +115,14 @@ func TestStopAfterTheGraceNoteLimitsTheWorker(t *testing.T) {
 	// Waiting at its prompt, which Claude Code may note, leaves it limited.
 	settings := readSettings(t, filepath.Join(records, settingsName))
 	runHooks(t, settings, "Notification", stepNotification(idlePrompt).input)
-	if h := ReadHooks(records, ""); h.State != dispatch.StateLimited {
+	if h := ReadHooks(records, ""); h.State != agentio.StateLimited {
 		t.Errorf("idle at its prompt since: %s, want limited", h.State)
 	}
 	// Claude Code's own continue starts another turn.
 	transcriptAt(t, filepath.Dir(filepath.Dir(filepath.Dir(p))), testID, graceNote, graceWrapUp, graceStopSummary,
 		graceArmed, graceDuration, graceEnqueued, graceDequeued, graceFired, graceContinue)
 	runHooks(t, settings, "UserPromptSubmit", stepPrompt.input)
-	if h := ReadHooks(records, ""); h.State != dispatch.StateWorking || h.Limit.Reached() {
+	if h := ReadHooks(records, ""); h.State != agentio.StateWorking || h.Limit.Reached() {
 		t.Errorf("continued: %s %+v, want working", h.State, h.Limit)
 	}
 	if u, _ := (Reporter{}).LastToolUse(wt); u.Limit.Reached() {
@@ -130,7 +130,7 @@ func TestStopAfterTheGraceNoteLimitsTheWorker(t *testing.T) {
 	}
 	// Its turn's end, the limit far behind it, is only that.
 	runHooks(t, settings, "Stop", stepStop.input)
-	if h := ReadHooks(records, ""); h.State != dispatch.StateIdle {
+	if h := ReadHooks(records, ""); h.State != agentio.StateIdle {
 		t.Errorf("its next turn ended: %s, want idle", h.State)
 	}
 	if u, _ := (Reporter{}).LastToolUse(wt); u.Limit.Reached() || u.Stopped.IsZero() {

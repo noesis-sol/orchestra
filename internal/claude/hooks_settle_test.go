@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // What the hooks tell stands, but for what they can't: a dialog that runs no hook, which comes only
@@ -22,37 +22,37 @@ func TestSettle(t *testing.T) {
 	permission := "● Bash(go test ./...)\nBash command\n  go test ./...\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n"
 	running := "● Bash(go test ./...)\n  Running…\n\n> \n"
 	var (
-		unknown   = Hooks{State: dispatch.StateUnknown}
-		started   = Hooks{State: dispatch.StateIdle}
-		turned    = Hooks{State: dispatch.StateIdle, Turned: true}
-		asked     = Hooks{State: dispatch.StateBlocked, Asked: true, Turned: true}
-		elicited  = Hooks{State: dispatch.StateBlocked, Turned: true}
-		working   = Hooks{State: dispatch.StateWorking, Turned: true}
-		gone      = Hooks{State: dispatch.StateGone, Turned: true}
-		firstTurn = Hooks{State: dispatch.StateWorking}
+		unknown   = Hooks{State: agentio.StateUnknown}
+		started   = Hooks{State: agentio.StateIdle}
+		turned    = Hooks{State: agentio.StateIdle, Turned: true}
+		asked     = Hooks{State: agentio.StateBlocked, Asked: true, Turned: true}
+		elicited  = Hooks{State: agentio.StateBlocked, Turned: true}
+		working   = Hooks{State: agentio.StateWorking, Turned: true}
+		gone      = Hooks{State: agentio.StateGone, Turned: true}
+		firstTurn = Hooks{State: agentio.StateWorking}
 	)
 	for _, c := range []struct {
 		name   string
 		hooks  Hooks
 		screen string
 		read   bool
-		want   dispatch.AgentState
+		want   agentio.State
 	}{
-		{"the trust dialog before any hook", unknown, trust, true, dispatch.StateBlocked},
-		{"the MCP dialog once its session started", started, mcp, true, dispatch.StateBlocked},
-		{"starting, no dialog", unknown, "Welcome to Claude Code\n", true, dispatch.StateUnknown},
-		{"idle at its prompt before its first turn", started, "❯ \n", true, dispatch.StateIdle},
-		{"a dialog's words in its output", turned, output + trust, true, dispatch.StateIdle},
-		{"the MCP dialog's words in its output", turned, mcp + output, true, dispatch.StateIdle},
-		{"a dialog, the screen not read", unknown, trust, false, dispatch.StateUnknown},
-		{"at the permission dialog", asked, permission, true, dispatch.StateBlocked},
-		{"allowed, its tool running", asked, running, true, dispatch.StateWorking},
-		{"asked, the screen not read", asked, running, false, dispatch.StateBlocked},
-		{"asked, the screen empty", asked, "", true, dispatch.StateBlocked},
-		{"asking for input", elicited, running, true, dispatch.StateBlocked},
-		{"working at its first turn", firstTurn, trust, true, dispatch.StateWorking},
-		{"working, a dialog's words in its output", working, output + trust, true, dispatch.StateWorking},
-		{"gone", gone, permission, true, dispatch.StateGone},
+		{"the trust dialog before any hook", unknown, trust, true, agentio.StateBlocked},
+		{"the MCP dialog once its session started", started, mcp, true, agentio.StateBlocked},
+		{"starting, no dialog", unknown, "Welcome to Claude Code\n", true, agentio.StateUnknown},
+		{"idle at its prompt before its first turn", started, "❯ \n", true, agentio.StateIdle},
+		{"a dialog's words in its output", turned, output + trust, true, agentio.StateIdle},
+		{"the MCP dialog's words in its output", turned, mcp + output, true, agentio.StateIdle},
+		{"a dialog, the screen not read", unknown, trust, false, agentio.StateUnknown},
+		{"at the permission dialog", asked, permission, true, agentio.StateBlocked},
+		{"allowed, its tool running", asked, running, true, agentio.StateWorking},
+		{"asked, the screen not read", asked, running, false, agentio.StateBlocked},
+		{"asked, the screen empty", asked, "", true, agentio.StateBlocked},
+		{"asking for input", elicited, running, true, agentio.StateBlocked},
+		{"working at its first turn", firstTurn, trust, true, agentio.StateWorking},
+		{"working, a dialog's words in its output", working, output + trust, true, agentio.StateWorking},
+		{"gone", gone, permission, true, agentio.StateGone},
 	} {
 		if got := settle(c.hooks, c.screen, c.read); got != c.want {
 			t.Errorf("%s: settle = %s, want %s", c.name, got, c.want)
@@ -67,13 +67,13 @@ func TestSettleReadsTheScreenOnlyWhenNeeded(t *testing.T) {
 		hooks Hooks
 		reads bool
 	}{
-		{Hooks{State: dispatch.StateUnknown}, true},
-		{Hooks{State: dispatch.StateIdle}, true},
-		{Hooks{State: dispatch.StateBlocked, Asked: true, Turned: true}, true},
-		{Hooks{State: dispatch.StateIdle, Turned: true}, false},
-		{Hooks{State: dispatch.StateWorking}, false},
-		{Hooks{State: dispatch.StateBlocked, Turned: true}, false},
-		{Hooks{State: dispatch.StateGone}, false},
+		{Hooks{State: agentio.StateUnknown}, true},
+		{Hooks{State: agentio.StateIdle}, true},
+		{Hooks{State: agentio.StateBlocked, Asked: true, Turned: true}, true},
+		{Hooks{State: agentio.StateIdle, Turned: true}, false},
+		{Hooks{State: agentio.StateWorking}, false},
+		{Hooks{State: agentio.StateBlocked, Turned: true}, false},
+		{Hooks{State: agentio.StateGone}, false},
 	} {
 		read := false
 		got := c.hooks.Settle(func() (string, error) {
@@ -84,8 +84,8 @@ func TestSettleReadsTheScreenOnlyWhenNeeded(t *testing.T) {
 			t.Errorf("%+v: read the screen %v, state %s; want %v, %s", c.hooks, read, got, c.reads, c.hooks.State)
 		}
 	}
-	h := Hooks{State: dispatch.StateBlocked, Asked: true, Turned: true}
-	if got := h.Settle(func() (string, error) { return "> \n", nil }); got != dispatch.StateWorking {
+	h := Hooks{State: agentio.StateBlocked, Asked: true, Turned: true}
+	if got := h.Settle(func() (string, error) { return "> \n", nil }); got != agentio.StateWorking {
 		t.Errorf("a permission prompt no longer shown: %s, want working", got)
 	}
 }
@@ -104,10 +104,10 @@ func TestReadHooksOfAWorktree(t *testing.T) {
 	}
 	write(eventsName, `{"hook_event_name":"SessionStart","source":"startup"}`+"\n")
 	write(turnName, `{"hook_event_name":"UserPromptSubmit"}`)
-	if h := ReadHooks("", wt); h != (Hooks{State: dispatch.StateWorking, Turned: true}) {
+	if h := ReadHooks("", wt); h != (Hooks{State: agentio.StateWorking, Turned: true}) {
 		t.Errorf("ReadHooks = %+v, want working, turned", h)
 	}
-	if h := ReadHooks(filepath.Join(t.TempDir(), "none"), wt); h != (Hooks{State: dispatch.StateUnknown}) {
+	if h := ReadHooks(filepath.Join(t.TempDir(), "none"), wt); h != (Hooks{State: agentio.StateUnknown}) {
 		t.Errorf("ReadHooks of a folder that isn't there = %+v, want unknown", h)
 	}
 }

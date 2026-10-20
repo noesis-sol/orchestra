@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"golang.org/x/text/unicode/norm"
 )
@@ -124,7 +124,7 @@ type Reporter struct {
 
 // WithEnv is r with the workers' settings giving their environment env too, as their share of the
 // machine's cores (see dispatch.CoresVar): Claude Code runs their commands with it.
-func (r Reporter) WithEnv(env map[string]string) dispatch.Reporter {
+func (r Reporter) WithEnv(env map[string]string) agentio.Reporter {
 	r.env = env
 	return r
 }
@@ -322,10 +322,10 @@ var workerEnv = map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0"}
 // Stop does. A turn that ended with a Stop at the usage limit, as its transcript tells (see
 // limitNotices), ended on the limit too; one whose end the transcript has yet to log, which tells
 // whether it did, is ending (see stopTold).
-func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
+func (r Reporter) LastToolUse(worktree string) (agentio.ToolUse, bool) {
 	b, fi, err := readRun(worktree, activityName)
 	if err != nil {
-		return dispatch.ToolUse{}, false
+		return agentio.ToolUse{}, false
 	}
 	u, ok := parseToolUse(b)
 	if !ok {
@@ -362,10 +362,10 @@ func (r Reporter) LastToolUse(worktree string) (dispatch.ToolUse, bool) {
 // stopTold is what the session's transcript tells now of the turn of the worker in worktree, which ended
 // at at with a Stop (see the function stopTold): the usage limit it waits on, and whether the turn still counts
 // as going on; nothing when the worker has no session.
-func (r Reporter) stopTold(worktree string, at time.Time) (dispatch.UsageLimit, bool) {
+func (r Reporter) stopTold(worktree string, at time.Time) (agentio.UsageLimit, bool) {
 	s, ok := r.Session(worktree)
 	if !ok {
-		return dispatch.UsageLimit{}, false
+		return agentio.UsageLimit{}, false
 	}
 	return stopTold(s.Transcript, at, time.Now())
 }
@@ -373,10 +373,10 @@ func (r Reporter) stopTold(worktree string, at time.Time) (dispatch.UsageLimit, 
 // HookRecord returns what the hooks of the worker in worktree noted besides its tool uses: the
 // permission prompts it waited on, its compactions and the subagents it is running. The time of the
 // last note is the events file's last write: its lines carry none.
-func (r Reporter) HookRecord(worktree string) dispatch.HookRecord {
+func (r Reporter) HookRecord(worktree string) agentio.HookRecord {
 	b, fi, err := readRun(worktree, eventsName)
 	if err != nil {
-		return dispatch.HookRecord{}
+		return agentio.HookRecord{}
 	}
 	r.sayNewer(worktree, eventsName, b)
 	return parseEvents(b, fi.ModTime())
@@ -386,8 +386,8 @@ func (r Reporter) HookRecord(worktree string) dispatch.HookRecord {
 // line it can't read, as one in a newer format. A subagent is running from its start to its stop,
 // matched by its ID; a stop with no start is of none of the worker's (Claude Code's forks at the end
 // of a turn note one).
-func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
-	r := dispatch.HookRecord{Noted: noted}
+func parseEvents(b []byte, noted time.Time) agentio.HookRecord {
+	r := agentio.HookRecord{Noted: noted}
 	running := map[string]bool{}
 	stoppedLast := false // the last note read is a running subagent's stop
 	sc := bufio.NewScanner(bytes.NewReader(b))
@@ -398,11 +398,11 @@ func parseEvents(b []byte, noted time.Time) dispatch.HookRecord {
 		}
 		stoppedLast = e.Event == "SubagentStop" && running[e.Agent]
 		switch e.Event {
-		case dispatch.EventPermission:
+		case agentio.EventPermission:
 			if e.Tool == "" {
 				e.Tool = "an unnamed tool"
 			}
-			r.Permissions = append(r.Permissions, dispatch.Permission{Tool: e.Tool, Command: e.Input.Command,
+			r.Permissions = append(r.Permissions, agentio.Permission{Tool: e.Tool, Command: e.Input.Command,
 				Removal: e.Removal})
 		case "PreCompact":
 			if e.Trigger == "" {
@@ -497,11 +497,11 @@ func relative(root, path string) (string, bool) {
 // parseToolUse reads one hook input: the event, and before a tool use (or at a permission prompt)
 // the tool and its command, and the session and the subagent (if any) using it; false when it can't
 // be read, as one in a newer format.
-func parseToolUse(b []byte) (dispatch.ToolUse, bool) {
+func parseToolUse(b []byte) (agentio.ToolUse, bool) {
 	var in hookInput
 	if json.Unmarshal(b, &in) != nil || in.Event == "" || !readable(in.V) {
-		return dispatch.ToolUse{}, false
+		return agentio.ToolUse{}, false
 	}
-	return dispatch.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Failure: in.Error,
+	return agentio.ToolUse{Event: in.Event, Tool: in.Tool, Command: in.Input.Command, Failure: in.Error,
 		Session: in.Session, Transcript: in.Transcript, Agent: in.Agent, AgentType: in.AgentType}, true
 }

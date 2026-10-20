@@ -43,23 +43,3 @@ func TestIdleGraceSettleNamesTheRecordsWriter(t *testing.T) {
 		}
 	})
 }
-
-func TestToolUseReporter(t *testing.T) {
-	t.Parallel()
-	at := time.Date(2026, 10, 7, 9, 24, 2, 0, time.Local)
-	for _, c := range []struct {
-		u    ToolUse
-		want string
-	}{
-		{ToolUse{Event: "PreToolUse", Tool: "Bash", At: at, Session: "s", Transcript: "/t/s.jsonl"},
-			"written at 09:24:02 by tool Bash, session s, main agent, transcript /t/s.jsonl"},
-		{ToolUse{Event: "PreToolUse", AgentType: "Explore"},
-			"written at an unknown time by tool unnamed, session unnamed, agent with no ID (Explore), transcript unnamed"},
-		{ToolUse{Event: "PreToolUse", Tool: "Read", Agent: "a1"},
-			"written at an unknown time by tool Read, session unnamed, agent a1 (no type), transcript unnamed"},
-	} {
-		if got := c.u.Reporter(); got != c.want {
-			t.Errorf("%+v: got %q, want %q", c.u, got, c.want)
-		}
-	}
-}

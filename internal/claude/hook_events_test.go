@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // runHooks runs every hook settings has for the event, as Claude Code would, each with input on stdin.
@@ -59,7 +59,7 @@ func TestHooksNotePermissionPromptsCompactionsAndSubagents(t *testing.T) {
 	runHooks(t, settings, "PermissionRequest", `{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash",`+
 		`"tool_input":{"command":"rm -rf build","description":"say \"tool_name\": \"Edit\""},"permission_suggestions":[]}`)
 	u, ok := r.LastToolUse(wt)
-	if !ok || u.Event != dispatch.EventPermission || u.Tool != "Bash" || u.Command != "rm -rf build" {
+	if !ok || u.Event != agentio.EventPermission || u.Tool != "Bash" || u.Command != "rm -rf build" {
 		t.Errorf("at the prompt: %+v %v", u, ok)
 	}
 	runHooks(t, settings, "PreCompact", `{"hook_event_name":"PreCompact","trigger":"auto","custom_instructions":""}`)
@@ -68,11 +68,11 @@ func TestHooksNotePermissionPromptsCompactionsAndSubagents(t *testing.T) {
 	runHooks(t, settings, "SubagentStop", `{"hook_event_name":"SubagentStop","agent_id":"a1","agent_type":"Explore",`+
 		`"last_assistant_message":"`+strings.Repeat("x", 1<<16)+`"}`)
 	runHooks(t, settings, "PreCompact", `{"hook_event_name":"PreCompact","trigger":"manual","custom_instructions":"keep \"trigger\": \"x\""}`)
-	if u, _ := r.LastToolUse(wt); u.Event != dispatch.EventPermission {
+	if u, _ := r.LastToolUse(wt); u.Event != agentio.EventPermission {
 		t.Errorf("the notes should leave the last report as it was: %+v", u)
 	}
 	rec := r.HookRecord(wt)
-	if !slices.Equal(rec.Permissions, []dispatch.Permission{{Tool: "Bash", Command: "rm -rf build"}}) || !slices.Equal(rec.Compactions, []string{"auto", "manual"}) ||
+	if !slices.Equal(rec.Permissions, []agentio.Permission{{Tool: "Bash", Command: "rm -rf build"}}) || !slices.Equal(rec.Compactions, []string{"auto", "manual"}) ||
 		rec.Subagents != 1 {
 		t.Errorf("noted: %+v", rec)
 	}
@@ -100,7 +100,7 @@ func TestParseEvents(t *testing.T) {
 {"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":"Explore"}
 `)
 	rec := parseEvents(b, time.Time{})
-	if !slices.Equal(rec.Permissions, []dispatch.Permission{{Tool: "Edit"}, {Tool: "an unnamed tool"}}) ||
+	if !slices.Equal(rec.Permissions, []agentio.Permission{{Tool: "Edit"}, {Tool: "an unnamed tool"}}) ||
 		!slices.Equal(rec.Compactions, []string{"unknown trigger"}) || rec.Subagents != 1 {
 		t.Errorf("%+v", rec)
 	}
@@ -112,7 +112,7 @@ func TestParseEvents(t *testing.T) {
 func TestParsePermissionRequest(t *testing.T) {
 	u, ok := parseToolUse([]byte(`{"hook_event_name":"PermissionRequest","tool_name":"Bash",` +
 		`"tool_input":{"command":"go test ./..."},"permission_suggestions":[{"type":"addRules"}]}`))
-	if !ok || u.Event != dispatch.EventPermission || u.Tool != "Bash" || u.Command != "go test ./..." {
+	if !ok || u.Event != agentio.EventPermission || u.Tool != "Bash" || u.Command != "go test ./..." {
 		t.Errorf("%+v %v", u, ok)
 	}
 }

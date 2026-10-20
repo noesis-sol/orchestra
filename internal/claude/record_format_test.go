@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // jsonRecords are the records the hooks write as JSON, one object each or a log of them a line each.
@@ -112,7 +112,7 @@ func TestHookRecordsCarryTheirFormat(t *testing.T) {
 		if s, ok := r.Session(wt); !ok || s.ID != testID || s.Transcript != transcript {
 			t.Errorf("Session = %+v, %v", s, ok)
 		}
-		if st := State(records); st != dispatch.StateIdle {
+		if st := State(records); st != agentio.StateIdle {
 			t.Errorf("State = %v", st)
 		}
 	}
@@ -140,7 +140,7 @@ func TestHookRecordsCarryTheirFormat(t *testing.T) {
 		if s, ok := r.Session(wt); ok {
 			t.Errorf("Session = %+v, read from a newer format", s)
 		}
-		if st := State(records); st != dispatch.StateUnknown {
+		if st := State(records); st != agentio.StateUnknown {
 			t.Errorf("State = %v, read from a newer format", st)
 		}
 	}

@@ -5,10 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // TestLiveReports runs the real claude with the reporting hooks and watches what it reports while
@@ -45,14 +44,17 @@ func TestLiveReports(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 		}
 		if u, ok := r.LastToolUse(wt); ok {
-			label := u.Event + " " + string(dispatch.DoingOf(u, "sleep 3"))
+			label := u.Event + " "
+			if strings.Contains(u.Command, "sleep 3") {
+				label += "the check"
+			}
 			if len(seen) == 0 || seen[len(seen)-1] != label {
 				seen = append(seen, label)
 			}
 		}
 	}
 	t.Logf("reported: %q", seen)
-	if !slices.Contains(seen, "PreToolUse testing") || seen[len(seen)-1] != "Stop " {
-		t.Errorf("want the check command reported as testing, ending with Stop: %q", seen)
+	if !slices.Contains(seen, "PreToolUse the check") || seen[len(seen)-1] != "Stop " {
+		t.Errorf("want the check command reported, ending with Stop: %q", seen)
 	}
 }

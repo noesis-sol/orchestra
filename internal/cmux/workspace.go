@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
@@ -425,16 +425,16 @@ func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
 	return ok, nil
 }
 
-// readScreen reads the surface's screen: its last dispatch.ScreenLines lines with the scrollback, or
+// readScreen reads the surface's screen: its last agentio.ScreenLines lines with the scrollback, or
 // only those of the visible screen if visible, with the empty lines below its last one left out.
 func (t Terminal) readScreen(ctx context.Context, workspace, surface string, visible bool) (string, error) {
 	args := []string{"--workspace", workspace, "--surface", surface}
 	if !visible {
-		args = append(args, "--scrollback", "--lines", strconv.Itoa(dispatch.ScreenLines))
+		args = append(args, "--scrollback", "--lines", strconv.Itoa(agentio.ScreenLines))
 	}
 	out, err := t.run(ctx, "read-screen", surface, false, args...)
 	if err != nil {
 		return "", err
 	}
-	return dispatch.LastLines(out, dispatch.ScreenLines), nil
+	return agentio.LastLines(out, agentio.ScreenLines), nil
 }

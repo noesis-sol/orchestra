@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // refusesPermission is a worker turn that asks to run a Bash command, which the maintainer refuses
@@ -14,7 +16,7 @@ func refusesPermission(hooks *recordReporter) behaviour {
 	return func(w *fakeWorker) AgentState {
 		w.claim()
 		hooks.use(w.wt, ToolUse{Event: "PreToolUse", Tool: "Bash", Command: "rm -rf build"})
-		hooks.use(w.wt, ToolUse{Event: EventPermission, Tool: "Bash", Command: "rm -rf build"})
+		hooks.use(w.wt, ToolUse{Event: agentio.EventPermission, Tool: "Bash", Command: "rm -rf build"})
 		w.shows(StateBlocked)
 		time.Sleep(30 * time.Second) // the maintainer presses Esc
 		w.shows(StateIdle)

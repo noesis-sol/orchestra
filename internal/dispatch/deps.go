@@ -2,10 +2,8 @@ package dispatch
 
 import (
 	"context"
-	"errors"
-	"strings"
-	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -51,30 +49,14 @@ type Tabs interface {
 // replaces it.
 //
 // What the terminal refuses for good, a name (here or in Namer's AdoptAgent and RenameAgent) or
-// StartAgent's arguments, it says with ErrNameRefused or ErrArgumentRefused (errors.Is): a retry with
-// them can't succeed.
+// StartAgent's arguments, it says with agentio.ErrNameRefused or agentio.ErrArgumentRefused (errors.Is): a
+// retry with them can't succeed. Each waits for an agent as long as every terminal does (agentio.ReadyWithin,
+// agentio.PromptWithin, agentio.StartedWithin).
 type Starter interface {
 	LaunchInPane(ctx context.Context, pane, kind string, args []string) error     // type the command, return at once
 	StartAgent(ctx context.Context, name, kind, pane string, args []string) error // start and wait until it looks ready
 	WaitReady(ctx context.Context, name string) bool
 }
-
-// ErrNameRefused is the terminal refusing an agent name (errors.Is): it would refuse it on every
-// try. Only Herdr has a rule for names; tmux and cmux take any.
-var ErrNameRefused = errors.New("the terminal refuses the agent name")
-
-// ErrArgumentRefused is the terminal refusing the agent's arguments (errors.Is), as Herdr does those
-// it can't type into a shell: it would refuse them on every try. tmux and cmux pass any.
-var ErrArgumentRefused = errors.New("the terminal refuses the agent's arguments")
-
-// How long every terminal waits for an agent: to be ready for a prompt (Starter.StartAgent,
-// Starter.WaitReady), to start on a prompt it submits (Agents.Prompt), and to start working on one
-// it was given at launch or by a key (Agents.WaitStarted).
-const (
-	ReadyWithin   = time.Minute
-	PromptWithin  = 30 * time.Second
-	StartedWithin = 20 * time.Second
-)
 
 // Namer finds and names agents, which is how the loop refers to a worker (by a name derived from
 // its ticket).
@@ -92,20 +74,19 @@ type Namer interface {
 	FreeName(ctx context.Context, name string) string // an unused name for an earlier worker that holds name
 }
 
-// AgentState is a worker's status as the terminal reports it, or StateGone when it has no such agent.
-type AgentState string
+// AgentState is a worker's status as the terminal reports it (agentio.State), or StateGone when it
+// has no such agent.
+type AgentState = agentio.State
 
-// The states an agent can be in.
+// The states an agent can be in (agentio's).
 const (
-	StateIdle    AgentState = "idle"
-	StateWorking AgentState = "working"
-	StateBlocked AgentState = "blocked"
-	StateDone    AgentState = "done"
-	// The agent's turn ended on its account's usage limit, and it waits for the limit to reset or for a
-	// prompt (ToolUse.Limit says when it resets, if known).
-	StateLimited AgentState = "limited"
-	StateUnknown AgentState = "unknown" // the terminal can't tell what the agent is doing
-	StateGone    AgentState = "gone"    // the terminal has no such agent
+	StateIdle    = agentio.StateIdle
+	StateWorking = agentio.StateWorking
+	StateBlocked = agentio.StateBlocked
+	StateDone    = agentio.StateDone
+	StateLimited = agentio.StateLimited
+	StateUnknown = agentio.StateUnknown
+	StateGone    = agentio.StateGone
 )
 
 // Agents watches and nudges a running worker by name.
@@ -114,7 +95,7 @@ type Agents interface {
 	// nothing about the agent: the state is then "".
 	Status(ctx context.Context, name string) (AgentState, error)
 	// Screen is the end of the worker's terminal, given its state as just read ("" if not known): its
-	// last ScreenLines lines (LastLines), with wrapped lines joined, or only those of its visible
+	// last agentio.ScreenLines lines (agentio.LastLines), with wrapped lines joined, or only those of its visible
 	// screen while it works or is blocked, as its scrollback can't be read then. "" when the terminal
 	// can't read it.
 	Screen(ctx context.Context, name string, state AgentState) string
@@ -125,20 +106,6 @@ type Agents interface {
 	WaitStarted(ctx context.Context, name string) bool
 }
 
-// ScreenLines is how many lines of a worker's terminal Agents.Screen gives, at most, in every terminal.
-const ScreenLines = 80
-
-// LastLines is the last n lines of s, a terminal's screen, with the empty lines below its last one
-// left out, ending in "\n"; "" when it has none.
-func LastLines(s string, n int) string {
-	s = strings.TrimRight(s, "\n")
-	if s == "" {
-		return ""
-	}
-	lines := strings.Split(s, "\n")
-	return strings.Join(lines[max(0, len(lines)-n):], "\n") + "\n"
-}
-
 // PromptTyper is Agents whose Prompt can put other text than the prompt in the worker's input box:
 // cmux before 0.65 types a line attaching a file that holds a prompt of several lines.
 type PromptTyper interface {
@@ -147,26 +114,12 @@ type PromptTyper interface {
 }
 
 // Reporter has a worker report each tool it uses (Claude Code hooks), so the dashboard can say
-// what it is doing without reading its screen.
-type Reporter interface {
-	ReportArgs(worktree string) ([]string, error) // agent arguments that turn reporting on
-	ResumeArgs(worktree string) ([]string, error) // the same for a resumed worker, keeping the files edited before
-	LastToolUse(worktree string) (ToolUse, bool)  // false when the worker reported nothing
-	HookRecord(worktree string) HookRecord        // its permission prompts, compactions and subagents
-	EditedFiles(worktree string) []string         // repository files the worker has edited so far
-	Session(worktree string) (Session, bool)      // the worker's session, false when there is none to resume
-	TranscriptTail(worktree string) string        // the end of its session's transcript, as text; "" if unreadable
-	// ReportArgs for a worker with no worktree of its own, its records in the folder of that name in
-	// dir's .orchestra/run/ (project.ProbeRun, project.InterviewRun)
-	ReportArgsIn(dir, folder string) ([]string, error)
-}
+// what it is doing without reading its screen (agentio.Reporter).
+type Reporter = agentio.Reporter
 
-// EnvReporter is a Reporter whose hooks' settings can also give the worker environment variables,
-// which its commands run with (Claude Code's settings env).
-type EnvReporter interface {
-	// WithEnv is the Reporter whose ReportArgs and ResumeArgs give the worker env too
-	WithEnv(env map[string]string) Reporter
-}
+// EnvReporter is a Reporter whose hooks' settings can also give the worker environment variables
+// (agentio.EnvReporter).
+type EnvReporter = agentio.EnvReporter
 
 // PaneProcesses says which processes a terminal's pane runs: the roots of its worker's process tree,
 // whose memory the dashboard shows.
@@ -182,12 +135,8 @@ type AgentHelp interface {
 	Help(ctx context.Context) (string, error)
 }
 
-// Session is a Claude Code worker's session, as its hooks recorded it: resumed (claude --resume),
-// the worker has all it knew of its ticket.
-type Session struct {
-	ID         string // the session's ID, a UUID
-	Transcript string // the path of its transcript
-}
+// Session is a Claude Code worker's session, as its hooks recorded it (agentio.Session).
+type Session = agentio.Session
 
 // Checkout is what the loop checks about the main checkout and worktrees (git). Each method returns
 // git's error beside its answer when git fails to answer, which is not the same as none or "".

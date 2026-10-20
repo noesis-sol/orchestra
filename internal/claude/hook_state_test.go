@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -65,52 +65,52 @@ func TestStateFromHookRecords(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		steps []hookStep
-		want  dispatch.AgentState
+		want  agentio.State
 	}{
-		{"launched, no hook yet", nil, dispatch.StateUnknown},
-		{"started", []hookStep{stepSessionStart("startup")}, dispatch.StateIdle},
-		{"prompted", []hookStep{stepSessionStart("startup"), stepPrompt}, dispatch.StateWorking},
-		{"using a tool", []hookStep{stepSessionStart("startup"), stepPrompt, stepUseBash}, dispatch.StateWorking},
-		{"between tools", turn, dispatch.StateWorking},
-		{"after a tool that failed", then(stepUseBash, stepFailed), dispatch.StateWorking},
-		{"permission asked", then(stepUseBash, stepAskBash), dispatch.StateBlocked},
-		{"permission asked, notified", then(stepUseBash, stepAskBash, stepNotification("permission_prompt")), dispatch.StateBlocked},
-		{"permission asked then allowed", then(stepUseBash, stepAskBash, stepUsedIt), dispatch.StateWorking},
-		{"permission asked then denied", then(stepUseBash, stepAskBash, stepNotification("idle_prompt")), dispatch.StateIdle},
-		{"permission denied, then told what to do", then(stepUseBash, stepAskBash, stepPrompt), dispatch.StateWorking},
-		{"permission asked after the Stop", then(stepStop, stepAskBash), dispatch.StateBlocked},
-		{"Stop", then(stepStop), dispatch.StateIdle},
-		{"Stop, then idle at the prompt", then(stepStop, stepNotification("idle_prompt")), dispatch.StateIdle},
-		{"Stop, then a forked agent refused its tool", then(stepStop, stepForkedRead), dispatch.StateIdle},
-		{"Stop, then a tool finished", then(stepStop, stepUseBash, stepUsedIt), dispatch.StateWorking},
-		{"Stop, then a new prompt", then(stepStop, stepPrompt), dispatch.StateWorking},
-		{"Stop with a subagent running", then(stepSubStart, stepSubBash, stepStop), dispatch.StateWorking},
-		{"Stop, then the subagent's stop", then(stepSubStart, stepSubBash, stepStop, stepSubStop), dispatch.StateIdle},
+		{"launched, no hook yet", nil, agentio.StateUnknown},
+		{"started", []hookStep{stepSessionStart("startup")}, agentio.StateIdle},
+		{"prompted", []hookStep{stepSessionStart("startup"), stepPrompt}, agentio.StateWorking},
+		{"using a tool", []hookStep{stepSessionStart("startup"), stepPrompt, stepUseBash}, agentio.StateWorking},
+		{"between tools", turn, agentio.StateWorking},
+		{"after a tool that failed", then(stepUseBash, stepFailed), agentio.StateWorking},
+		{"permission asked", then(stepUseBash, stepAskBash), agentio.StateBlocked},
+		{"permission asked, notified", then(stepUseBash, stepAskBash, stepNotification("permission_prompt")), agentio.StateBlocked},
+		{"permission asked then allowed", then(stepUseBash, stepAskBash, stepUsedIt), agentio.StateWorking},
+		{"permission asked then denied", then(stepUseBash, stepAskBash, stepNotification("idle_prompt")), agentio.StateIdle},
+		{"permission denied, then told what to do", then(stepUseBash, stepAskBash, stepPrompt), agentio.StateWorking},
+		{"permission asked after the Stop", then(stepStop, stepAskBash), agentio.StateBlocked},
+		{"Stop", then(stepStop), agentio.StateIdle},
+		{"Stop, then idle at the prompt", then(stepStop, stepNotification("idle_prompt")), agentio.StateIdle},
+		{"Stop, then a forked agent refused its tool", then(stepStop, stepForkedRead), agentio.StateIdle},
+		{"Stop, then a tool finished", then(stepStop, stepUseBash, stepUsedIt), agentio.StateWorking},
+		{"Stop, then a new prompt", then(stepStop, stepPrompt), agentio.StateWorking},
+		{"Stop with a subagent running", then(stepSubStart, stepSubBash, stepStop), agentio.StateWorking},
+		{"Stop, then the subagent's stop", then(stepSubStart, stepSubBash, stepStop, stepSubStop), agentio.StateIdle},
 		{"idle notification with a subagent running", then(stepSubStart, stepStop, stepNotification("idle_prompt")),
-			dispatch.StateWorking},
-		{"subagent asked permission", then(stepSubStart, stepSubBash, stepSubAsk), dispatch.StateBlocked},
-		{"interrupted turn", then(stepUseBash, stepNotification("idle_prompt")), dispatch.StateIdle},
-		{"asking for input", then(stepNotification("elicitation_dialog")), dispatch.StateBlocked},
-		{"signed in", then(stepStop, stepNotification("auth_success")), dispatch.StateIdle},
-		{"compacting mid-turn", then(stepCompact("auto"), stepSessionStart("compact")), dispatch.StateWorking},
-		{"compacted mid-turn, then Stop", then(stepCompact("auto"), stepSessionStart("compact"), stepStop), dispatch.StateIdle},
-		{"compacted at rest", then(stepStop, stepCompact("manual"), stepSessionStart("compact")), dispatch.StateIdle},
-		{"resuming, no hook yet", then(stepStop, stepResumed), dispatch.StateUnknown},
-		{"resumed", then(stepStop, stepResumed, stepSessionStart("resume")), dispatch.StateIdle},
-		{"resumed and prompted", then(stepResumed, stepSessionStart("resume"), stepPrompt), dispatch.StateWorking},
-		{"exited", then(stepStop, stepSessionEnd("prompt_input_exit")), dispatch.StateGone},
-		{"exited mid-turn", then(stepSessionEnd("other")), dispatch.StateGone},
-		{"logged out", then(stepStop, stepSessionEnd("logout")), dispatch.StateGone},
-		{"cleared, no new session yet", then(stepStop, stepSessionEnd("clear")), dispatch.StateIdle},
-		{"cleared, then a new session", then(stepStop, stepSessionEnd("clear"), stepSessionStart("clear")), dispatch.StateIdle},
-		{"cleared, then prompted", then(stepStop, stepSessionEnd("clear"), stepSessionStart("clear"), stepPrompt), dispatch.StateWorking},
+			agentio.StateWorking},
+		{"subagent asked permission", then(stepSubStart, stepSubBash, stepSubAsk), agentio.StateBlocked},
+		{"interrupted turn", then(stepUseBash, stepNotification("idle_prompt")), agentio.StateIdle},
+		{"asking for input", then(stepNotification("elicitation_dialog")), agentio.StateBlocked},
+		{"signed in", then(stepStop, stepNotification("auth_success")), agentio.StateIdle},
+		{"compacting mid-turn", then(stepCompact("auto"), stepSessionStart("compact")), agentio.StateWorking},
+		{"compacted mid-turn, then Stop", then(stepCompact("auto"), stepSessionStart("compact"), stepStop), agentio.StateIdle},
+		{"compacted at rest", then(stepStop, stepCompact("manual"), stepSessionStart("compact")), agentio.StateIdle},
+		{"resuming, no hook yet", then(stepStop, stepResumed), agentio.StateUnknown},
+		{"resumed", then(stepStop, stepResumed, stepSessionStart("resume")), agentio.StateIdle},
+		{"resumed and prompted", then(stepResumed, stepSessionStart("resume"), stepPrompt), agentio.StateWorking},
+		{"exited", then(stepStop, stepSessionEnd("prompt_input_exit")), agentio.StateGone},
+		{"exited mid-turn", then(stepSessionEnd("other")), agentio.StateGone},
+		{"logged out", then(stepStop, stepSessionEnd("logout")), agentio.StateGone},
+		{"cleared, no new session yet", then(stepStop, stepSessionEnd("clear")), agentio.StateIdle},
+		{"cleared, then a new session", then(stepStop, stepSessionEnd("clear"), stepSessionStart("clear")), agentio.StateIdle},
+		{"cleared, then prompted", then(stepStop, stepSessionEnd("clear"), stepSessionStart("clear"), stepPrompt), agentio.StateWorking},
 		{"exited, then resumed with its records", then(stepStop, stepSessionEnd("prompt_input_exit"), stepSessionStart("resume")),
-			dispatch.StateIdle},
-		{"exited, resuming afresh", then(stepStop, stepSessionEnd("prompt_input_exit"), stepResumed), dispatch.StateUnknown},
+			agentio.StateIdle},
+		{"exited, resuming afresh", then(stepStop, stepSessionEnd("prompt_input_exit"), stepResumed), agentio.StateUnknown},
 		{"exited, resumed afresh", then(stepStop, stepSessionEnd("prompt_input_exit"), stepResumed, stepSessionStart("resume")),
-			dispatch.StateIdle},
+			agentio.StateIdle},
 		{"resumed, then exited", then(stepStop, stepResumed, stepSessionStart("resume"), stepSessionEnd("prompt_input_exit")),
-			dispatch.StateGone},
+			agentio.StateGone},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -126,8 +126,8 @@ func TestStateFromHookRecords(t *testing.T) {
 // records then give. Each step's records are dated a second after the step before's: a file's time
 // can be as coarse as the kernel's clock tick, finer than two hooks run one after the other. The
 // dates are a minute before now, which no hook writes at, and recent: a subagent quiet for
-// dispatch.SubagentQuiet counts as ended.
-func playHooks(t *testing.T, wt string, steps []hookStep) dispatch.AgentState {
+// agentio.SubagentQuiet counts as ended.
+func playHooks(t *testing.T, wt string, steps []hookStep) agentio.State {
 	t.Helper()
 	settings := reportingSettings(t, wt, false)
 	records := Records(wt, "")
@@ -174,27 +174,27 @@ func TestReportArgsInKeepsASessionsRecordsApart(t *testing.T) {
 		if want := filepath.Join(repo, ".orchestra", "run", folder); !ok || records != want || Records(repo, folder) != want {
 			t.Fatalf("%s: records in %q (%v), Records %q, want %q", folder, records, ok, Records(repo, folder), want)
 		}
-		if got := State(records); got != dispatch.StateUnknown {
+		if got := State(records); got != agentio.StateUnknown {
 			t.Errorf("%s before any hook: %s, want unknown", folder, got)
 		}
 		settings := readSettings(t, args[1])
 		runHooks(t, settings, "SessionStart", stepSessionStart("startup").input)
-		if got := State(records); got != dispatch.StateIdle {
+		if got := State(records); got != agentio.StateIdle {
 			t.Errorf("%s started: %s, want idle", folder, got)
 		}
 		runHooks(t, settings, "SessionEnd", stepSessionEnd("prompt_input_exit").input)
-		if got := State(records); got != dispatch.StateGone {
+		if got := State(records); got != agentio.StateGone {
 			t.Errorf("%s exited: %s, want gone", folder, got)
 		}
 		// Started again, it starts afresh.
 		if _, err := (Reporter{}).ReportArgsIn(repo, folder); err != nil {
 			t.Fatal(err)
 		}
-		if got := State(records); got != dispatch.StateUnknown {
+		if got := State(records); got != agentio.StateUnknown {
 			t.Errorf("%s started again: %s, want unknown", folder, got)
 		}
 	}
-	if got := State(Records(repo, "")); got != dispatch.StateWorking {
+	if got := State(Records(repo, "")); got != agentio.StateWorking {
 		t.Errorf("the ticket's worker: %s, want working, as its own records say", got)
 	}
 }

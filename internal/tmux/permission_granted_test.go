@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A worker allowed to run a command that takes long works while it runs, though no hook ran since
@@ -22,11 +22,11 @@ func TestLivePermissionAllowedWorks(t *testing.T) {
 	if err := l.term.Prompt(bg, "x-1", "Work on x-1."); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("never blocked on its permission prompt", func() bool { return l.status("x-1") == dispatch.StateBlocked })
+	l.eventually("never blocked on its permission prompt", func() bool { return l.status("x-1") == agentio.StateBlocked })
 	if err := l.term.SendKeys(bg, "x-1", "1", "enter"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("not working while its command allowed runs", func() bool { return l.status("x-1") == dispatch.StateWorking })
+	l.eventually("not working while its command allowed runs", func() bool { return l.status("x-1") == agentio.StateWorking })
 	if err := os.WriteFile(done, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}

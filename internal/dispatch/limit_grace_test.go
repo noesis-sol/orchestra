@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
@@ -256,7 +257,7 @@ func TestAnOrganRefusedForTheLimitStartsTheHold(t *testing.T) {
 	o.usage.mu.Lock()
 	reset := o.usage.reset
 	o.usage.mu.Unlock()
-	if want := LimitReset(limitWords, before); !reset.Equal(want) {
+	if want := agentio.LimitReset(limitWords, before); !reset.Equal(want) {
 		t.Errorf("the hold's reset is %s, want %s, as Claude Code's words say", reset, want)
 	}
 	var held []Event

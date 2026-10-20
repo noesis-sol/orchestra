@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // fetchStep is the hook of the event for the main agent's WebFetch of url.
@@ -27,15 +27,15 @@ func TestPermissionAskedBesideTheSameTool(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		steps []hookStep
-		want  dispatch.AgentState
+		want  agentio.State
 		asked bool
 	}{
-		{"the other call done", then(fetchStep("PostToolUse", allowed)), dispatch.StateBlocked, true},
-		{"the other call failed", then(fetchStep("PostToolUseFailure", allowed)), dispatch.StateBlocked, true},
+		{"the other call done", then(fetchStep("PostToolUse", allowed)), agentio.StateBlocked, true},
+		{"the other call failed", then(fetchStep("PostToolUseFailure", allowed)), agentio.StateBlocked, true},
 		{"allowed, both done", then(fetchStep("PostToolUse", allowed), fetchStep("PostToolUse", asking)),
-			dispatch.StateWorking, false},
-		{"allowed, done first", then(fetchStep("PostToolUse", asking)), dispatch.StateWorking, false},
-		{"denied, told what to do", then(fetchStep("PostToolUse", allowed), stepPrompt), dispatch.StateWorking, false},
+			agentio.StateWorking, false},
+		{"allowed, done first", then(fetchStep("PostToolUse", asking)), agentio.StateWorking, false},
+		{"denied, told what to do", then(fetchStep("PostToolUse", allowed), stepPrompt), agentio.StateWorking, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

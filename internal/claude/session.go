@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // Claude Code keeps each session's transcript as JSON lines in
@@ -43,34 +43,34 @@ const (
 // format, an ID that isn't a session's, or a transcript that is gone. The record is the worker's to change, as all of
 // .orchestra/run/ is, so the transcript must be where Claude Code keeps it, named after the session,
 // and a plain file.
-func (r Reporter) Session(worktree string) (dispatch.Session, bool) {
+func (r Reporter) Session(worktree string) (agentio.Session, bool) {
 	b, _, err := readRun(worktree, sessionName)
 	if err != nil {
-		return dispatch.Session{}, false
+		return agentio.Session{}, false
 	}
 	var in hookInput
 	if json.Unmarshal(b, &in) != nil || !readable(in.V) {
 		r.sayNewer(worktree, sessionName, b)
-		return dispatch.Session{}, false
+		return agentio.Session{}, false
 	}
 	return sessionOf(in)
 }
 
 // sessionOf is the session the record in, read from sessionName, names (see Reporter.Session), and false
 // when it names none to resume.
-func sessionOf(in hookInput) (dispatch.Session, bool) {
+func sessionOf(in hookInput) (agentio.Session, bool) {
 	if !sessionID.MatchString(in.Session) {
-		return dispatch.Session{}, false
+		return agentio.Session{}, false
 	}
 	p := in.Transcript
 	if !filepath.IsAbs(p) || filepath.Base(p) != in.Session+".jsonl" ||
 		filepath.Base(filepath.Dir(filepath.Dir(p))) != "projects" {
-		return dispatch.Session{}, false
+		return agentio.Session{}, false
 	}
 	if fi, err := os.Lstat(p); err != nil || !fi.Mode().IsRegular() {
-		return dispatch.Session{}, false
+		return agentio.Session{}, false
 	}
-	return dispatch.Session{ID: in.Session, Transcript: p}, true
+	return agentio.Session{ID: in.Session, Transcript: p}, true
 }
 
 // TranscriptTail returns the end of the transcript of the worker's session in worktree, as text: its

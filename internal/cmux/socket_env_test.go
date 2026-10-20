@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // Without a socket named in the environment, cmux's CLI looks in ~/.local/state/cmux/cmux.sock and
@@ -31,7 +31,7 @@ func TestNoSocketInTheEnvironmentIsNoNoServer(t *testing.T) {
 	if _, open, err := term.TabLabel(bg, workWS); err == nil || NoServer(err) {
 		t.Errorf("tab label: open %v, %v, want an error that isn't NoServer", open, err)
 	}
-	if state, err := term.Status(bg, "x-1"); err == nil || state == dispatch.StateGone {
+	if state, err := term.Status(bg, "x-1"); err == nil || state == agentio.StateGone {
 		t.Errorf("status: %q %v, want an error and no state", state, err)
 	}
 }

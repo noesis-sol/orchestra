@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A permission prompt the records tell asked and not answered is asked, as Claude Code runs no hook
@@ -18,18 +18,18 @@ func TestReadHooksTellsAPermissionPrompt(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		steps []hookStep
-		want  dispatch.AgentState
+		want  agentio.State
 		asked bool
 	}{
-		{"asked", then(stepUseBash, stepAskBash), dispatch.StateBlocked, true},
+		{"asked", then(stepUseBash, stepAskBash), agentio.StateBlocked, true},
 		{"asked, notified", then(stepUseBash, stepAskBash, stepNotification("permission_prompt")),
-			dispatch.StateBlocked, true},
-		{"notified only", then(stepNotification("permission_prompt")), dispatch.StateBlocked, true},
-		{"subagent asked", then(stepSubStart, stepSubBash, stepSubAsk), dispatch.StateBlocked, true},
-		{"allowed, its tool done", then(stepUseBash, stepAskBash, stepUsedIt), dispatch.StateWorking, false},
-		{"denied", then(stepUseBash, stepAskBash, stepNotification("idle_prompt")), dispatch.StateIdle, false},
-		{"asking for input", then(stepNotification("elicitation_dialog")), dispatch.StateBlocked, false},
-		{"using a tool", then(stepUseBash), dispatch.StateWorking, false},
+			agentio.StateBlocked, true},
+		{"notified only", then(stepNotification("permission_prompt")), agentio.StateBlocked, true},
+		{"subagent asked", then(stepSubStart, stepSubBash, stepSubAsk), agentio.StateBlocked, true},
+		{"allowed, its tool done", then(stepUseBash, stepAskBash, stepUsedIt), agentio.StateWorking, false},
+		{"denied", then(stepUseBash, stepAskBash, stepNotification("idle_prompt")), agentio.StateIdle, false},
+		{"asking for input", then(stepNotification("elicitation_dialog")), agentio.StateBlocked, false},
+		{"using a tool", then(stepUseBash), agentio.StateWorking, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -40,7 +40,7 @@ func TestReadHooksTellsAPermissionPrompt(t *testing.T) {
 			}
 		})
 	}
-	if h := ReadHooks(t.TempDir()+"/none", ""); h.State != dispatch.StateUnknown || h.Asked {
+	if h := ReadHooks(t.TempDir()+"/none", ""); h.State != agentio.StateUnknown || h.Asked {
 		t.Errorf("no records: %s %v", h.State, h.Asked)
 	}
 }

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -35,18 +35,18 @@ func (t Terminal) agentSurface(name string) (string, surfaceEntry, bool, error) 
 // is no longer in its workspace (killed, crashed, or ended by cmux quitting, none of which runs a
 // hook); otherwise what its hooks tell, read with its visible screen (the AgentUI of its kind). A process
 // cmux can't list, or hasn't yet, is taken to be there.
-func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) dispatch.AgentState {
+func (t Terminal) state(ctx context.Context, id string, e surfaceEntry, l layout) agentio.State {
 	ws, open := l.workspaces[key(id)]
 	if !open || e.Kind == "" {
-		return dispatch.StateGone
+		return agentio.StateGone
 	}
 	told, settle := hookterm.UI(e.Kind).Read(e.Records, e.Dir)
-	if told == dispatch.StateGone {
+	if told == agentio.StateGone {
 		return told
 	}
 	if pid, at, ok := t.launched(id); ok {
 		if alive, err := t.running(ctx, ws, pid, at); err == nil && !alive {
-			return dispatch.StateGone
+			return agentio.StateGone
 		}
 	}
 	return settle(func() (string, error) { return t.readScreen(ctx, ws, id, true) })
@@ -129,7 +129,7 @@ func hasPID(v any, pid int) bool {
 
 // AdoptAgent names name the agent of kind launched in the surface (LaunchInPane), and returns its
 // state. It needn't wait for the agent to show, as Herdr's does: the book has it from its launch.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (dispatch.AgentState, error) {
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (agentio.State, error) {
 	b, err := t.view()
 	if err != nil {
 		return "", err
@@ -156,14 +156,14 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (disp
 // not be asked.
 func (t Terminal) PaneAgent(
 	ctx context.Context, pane string,
-) (name, kind string, state dispatch.AgentState, err error) {
+) (name, kind string, state agentio.State, err error) {
 	b, err := t.view()
 	if err != nil {
 		return "", "", "", err
 	}
 	e, ok := b.Surfaces[key(pane)]
 	if !ok || e.Kind == "" {
-		return "", "", dispatch.StateGone, nil
+		return "", "", agentio.StateGone, nil
 	}
 	l, err := t.layout(ctx)
 	if err != nil {
@@ -218,13 +218,13 @@ func entries(b book) []surfaceEntry {
 
 // Status returns the agent's state, StateGone if no surface holds it. If cmux cannot be asked it
 // returns the error and no state: the agent may well be there.
-func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
+func (t Terminal) Status(ctx context.Context, name string) (agentio.State, error) {
 	id, e, ok, err := t.agentSurface(name)
 	switch {
 	case err != nil:
 		return "", err
 	case !ok:
-		return dispatch.StateGone, nil
+		return agentio.StateGone, nil
 	}
 	l, err := t.layout(ctx)
 	if err != nil {
@@ -234,14 +234,14 @@ func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState,
 }
 
 // Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
-// dispatch.Agents gives it: the last dispatch.ScreenLines lines, only of the visible screen while
+// dispatch.Agents gives it: the last agentio.ScreenLines lines, only of the visible screen while
 // it works or is blocked. "" when cmux can't read it.
-func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
+func (t Terminal) Screen(ctx context.Context, name string, state agentio.State) string {
 	id, e, ok, err := t.agentSurface(name)
 	if err != nil || !ok {
 		return ""
 	}
-	screen, _ := t.readScreen(ctx, e.Workspace, id, state == dispatch.StateWorking || state == dispatch.StateBlocked)
+	screen, _ := t.readScreen(ctx, e.Workspace, id, state == agentio.StateWorking || state == agentio.StateBlocked)
 	return screen // "" when cmux can't read it
 }
 

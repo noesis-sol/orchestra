@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A subagent cut off by Esc runs no SubagentStop, nor its turn a Stop: once no hook has reported
-// anything for dispatch.SubagentQuiet, it counts as ended, and the session reads idle at its prompt
+// anything for agentio.SubagentQuiet, it counts as ended, and the session reads idle at its prompt
 // or after its Stop. One that reports a tool use after that long a quiet counts as running again.
 func TestSubagentQuietSoLongCountsAsEnded(t *testing.T) {
 	t.Parallel()
@@ -19,13 +19,13 @@ func TestSubagentQuietSoLongCountsAsEnded(t *testing.T) {
 	for _, c := range []struct {
 		name        string
 		steps       []hookStep
-		recent, old dispatch.AgentState
+		recent, old agentio.State
 	}{
 		{"cut off by Esc, idle at the prompt", then(stepNotification("idle_prompt")),
-			dispatch.StateWorking, dispatch.StateIdle},
-		{"cut off, then the turn's Stop", then(stepStop), dispatch.StateWorking, dispatch.StateIdle},
-		{"cut off, then a prompt", then(stepStop, stepPrompt), dispatch.StateWorking, dispatch.StateWorking},
-		{"stopped", then(stepSubStop, stepStop), dispatch.StateIdle, dispatch.StateIdle},
+			agentio.StateWorking, agentio.StateIdle},
+		{"cut off, then the turn's Stop", then(stepStop), agentio.StateWorking, agentio.StateIdle},
+		{"cut off, then a prompt", then(stepStop, stepPrompt), agentio.StateWorking, agentio.StateWorking},
+		{"stopped", then(stepSubStop, stepStop), agentio.StateIdle, agentio.StateIdle},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -37,13 +37,13 @@ func TestSubagentQuietSoLongCountsAsEnded(t *testing.T) {
 			if rec := r.HookRecord(wt); rec.Noted.IsZero() {
 				t.Errorf("record %+v, want the time of its last note", rec)
 			}
-			age(t, Records(wt, ""), dispatch.SubagentQuiet)
+			age(t, Records(wt, ""), agentio.SubagentQuiet)
 			if got := State(Records(wt, "")); got != c.old {
-				t.Errorf("state with no hook for %s: %s, want %s", dispatch.SubagentQuiet, got, c.old)
+				t.Errorf("state with no hook for %s: %s, want %s", agentio.SubagentQuiet, got, c.old)
 			}
 			u, _ := r.LastToolUse(wt)
 			if r.HookRecord(wt).SubagentsRunning(u.At, time.Now()) {
-				t.Errorf("subagent running with no hook for %s", dispatch.SubagentQuiet)
+				t.Errorf("subagent running with no hook for %s", agentio.SubagentQuiet)
 			}
 		})
 	}
@@ -55,9 +55,9 @@ func TestSubagentReportingToolUsesKeepsRunning(t *testing.T) {
 	wt := t.TempDir()
 	playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt, stepSubStart, stepSubBash, stepStop})
 	records := Records(wt, "")
-	age(t, records, dispatch.SubagentQuiet)
+	age(t, records, agentio.SubagentQuiet)
 	runHooks(t, readSettings(t, filepath.Join(records, settingsName)), stepSubBash.event, stepSubBash.input)
-	if got := State(records); got != dispatch.StateWorking {
+	if got := State(records); got != agentio.StateWorking {
 		t.Errorf("state: %s, want working while the subagent reports tool uses", got)
 	}
 	r := Reporter{}

@@ -6,14 +6,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // AdoptAgent names name the agent of kind launched in the pane (LaunchInPane), and returns its state.
 // It needn't wait for the agent to show, as Herdr's does: the pane holds it from its launch.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (dispatch.AgentState, error) {
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (agentio.State, error) {
 	ps, err := t.panes(ctx)
 	if err != nil {
 		return "", err
@@ -36,14 +36,14 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (disp
 // not be asked.
 func (t Terminal) PaneAgent(
 	ctx context.Context, pane string,
-) (name, kind string, state dispatch.AgentState, err error) {
+) (name, kind string, state agentio.State, err error) {
 	ps, err := t.panes(ctx)
 	if err != nil {
 		return "", "", "", err
 	}
 	p, ok := find(ps, func(p paneInfo) bool { return p.id == pane })
 	if !ok || p.kind == "" {
-		return "", "", dispatch.StateGone, nil
+		return "", "", agentio.StateGone, nil
 	}
 	return p.agent, p.kind, t.state(ctx, p), nil
 }
@@ -88,13 +88,13 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 
 // Status returns the agent's state, StateGone if no pane holds it. If tmux cannot be asked it returns
 // the error and no state: the agent may well be there.
-func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
+func (t Terminal) Status(ctx context.Context, name string) (agentio.State, error) {
 	p, ok, err := t.agentPane(ctx, name)
 	switch {
 	case err != nil:
 		return "", err
 	case !ok:
-		return dispatch.StateGone, nil
+		return agentio.StateGone, nil
 	}
 	return t.state(ctx, p), nil
 }
@@ -109,43 +109,43 @@ var shells = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh"
 // Nor does it count in a pane whose process is the one orchestra launched: that runs the agent through
 // exec, and ends dead; a shell there is a wrapper script that runs the agent as its child, which tmux
 // names as the foreground process.
-func (t Terminal) state(ctx context.Context, p paneInfo) dispatch.AgentState {
+func (t Terminal) state(ctx context.Context, p paneInfo) agentio.State {
 	if p.dead || p.kind == "" {
-		return dispatch.StateGone
+		return agentio.StateGone
 	}
 	told, settle := hookterm.UI(p.kind).Read(p.records, p.dir)
 	switch {
-	case told == dispatch.StateGone:
+	case told == agentio.StateGone:
 		return told
-	case told != dispatch.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
-		return dispatch.StateGone
+	case told != agentio.StateUnknown && !p.launched && slices.Contains(shells, strings.TrimPrefix(p.command, "-")):
+		return agentio.StateGone
 	}
 	return settle(func() (string, error) { return t.capture(ctx, p.id, true) })
 }
 
-// capture reads the pane's screen: its last dispatch.ScreenLines lines, or only those of the visible
+// capture reads the pane's screen: its last agentio.ScreenLines lines, or only those of the visible
 // screen if visible, with wrapped lines joined and the empty lines below its last one left out.
 func (t Terminal) capture(ctx context.Context, pane string, visible bool) (string, error) {
 	args := []string{"-p", "-J", "-t", pane}
 	if !visible {
-		args = append(args, "-S", strconv.Itoa(-dispatch.ScreenLines))
+		args = append(args, "-S", strconv.Itoa(-agentio.ScreenLines))
 	}
 	out, err := t.run(ctx, command.ReadLimit, "capture-pane", pane, args...)
 	if err != nil {
 		return "", err
 	}
-	return dispatch.LastLines(out, dispatch.ScreenLines), nil
+	return agentio.LastLines(out, agentio.ScreenLines), nil
 }
 
 // Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
-// dispatch.Agents gives it: the last dispatch.ScreenLines lines, only of the visible screen while it
+// dispatch.Agents gives it: the last agentio.ScreenLines lines, only of the visible screen while it
 // works or is blocked. "" when tmux can't read it.
-func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
+func (t Terminal) Screen(ctx context.Context, name string, state agentio.State) string {
 	p, ok, err := t.agentPane(ctx, name)
 	if err != nil || !ok {
 		return ""
 	}
-	screen, _ := t.capture(ctx, p.id, state == dispatch.StateWorking || state == dispatch.StateBlocked)
+	screen, _ := t.capture(ctx, p.id, state == agentio.StateWorking || state == agentio.StateBlocked)
 	return screen // "" when tmux can't read it
 }
 

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // An MCP tool's arguments are its own: one that isn't the string orchestra reads under its name (an
@@ -18,7 +18,7 @@ func TestToolArgumentOfAnotherType(t *testing.T) {
 	ask := `{"hook_event_name":"PermissionRequest","session_id":"` + testID + `","agent_id":"a1",` +
 		`"tool_name":"mcp__k8s__run","tool_input":{"command":["kubectl","get"],"file_path":42}}`
 	u, ok := parseToolUse([]byte(ask))
-	if !ok || u.Event != dispatch.EventPermission || u.Tool != "mcp__k8s__run" || u.Agent != "a1" ||
+	if !ok || u.Event != agentio.EventPermission || u.Tool != "mcp__k8s__run" || u.Agent != "a1" ||
 		u.Session != testID || u.Command != "" {
 		t.Errorf("parseToolUse = %+v %v", u, ok)
 	}
@@ -33,15 +33,15 @@ func TestToolArgumentOfAnotherType(t *testing.T) {
 	steps := []hookStep{stepSessionStart("startup"), stepPrompt, stepSubStart, stepAt("PermissionRequest", ask),
 		stepNotification("permission_prompt")}
 	playHooks(t, wt, steps)
-	if h := ReadHooks(Records(wt, ""), ""); h.State != dispatch.StateBlocked || !h.Asked {
+	if h := ReadHooks(Records(wt, ""), ""); h.State != agentio.StateBlocked || !h.Asked {
 		t.Errorf("at the prompt: ReadHooks = %s %v, want blocked, asked", h.State, h.Asked)
 	}
 	var r Reporter
-	if u, ok := r.LastToolUse(wt); !ok || u.Event != dispatch.EventPermission || u.Tool != "mcp__k8s__run" ||
+	if u, ok := r.LastToolUse(wt); !ok || u.Event != agentio.EventPermission || u.Tool != "mcp__k8s__run" ||
 		u.Agent != "a1" {
 		t.Errorf("at the prompt: LastToolUse = %+v %v", u, ok)
 	}
-	if rec := r.HookRecord(wt); !slices.Equal(rec.Permissions, []dispatch.Permission{{Tool: "mcp__k8s__run"}}) {
+	if rec := r.HookRecord(wt); !slices.Equal(rec.Permissions, []agentio.Permission{{Tool: "mcp__k8s__run"}}) {
 		t.Errorf("noted: %+v", rec.Permissions)
 	}
 
@@ -51,7 +51,7 @@ func TestToolArgumentOfAnotherType(t *testing.T) {
 
 	wt = t.TempDir()
 	playHooks(t, wt, append(steps, stepOtherBash, stepSubStop))
-	if h := ReadHooks(Records(wt, ""), ""); h.State != dispatch.StateWorking || h.Asked {
+	if h := ReadHooks(Records(wt, ""), ""); h.State != agentio.StateWorking || h.Asked {
 		t.Errorf("with the asking subagent stopped: ReadHooks = %s %v, want working, not asked", h.State, h.Asked)
 	}
 }

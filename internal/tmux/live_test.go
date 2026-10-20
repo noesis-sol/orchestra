@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 	"github.com/noesis-sol/orchestra/internal/tmuxtest"
 )
@@ -109,7 +109,7 @@ func (l *live) eventually(what string, cond func() bool) {
 }
 
 // status is the agent's state, failing the test if tmux can't say.
-func (l *live) status(name string) dispatch.AgentState {
+func (l *live) status(name string) agentio.State {
 	l.t.Helper()
 	st, err := l.term.Status(bg, name)
 	if err != nil {
@@ -228,10 +228,10 @@ func TestLiveStartPromptKeysAndScreen(t *testing.T) {
 	if err := l.term.StartAgent(bg, "x-1", "claude", pane, l.hooks()); err != nil {
 		t.Fatal(err)
 	}
-	if st := l.status("x-1"); st != dispatch.StateIdle {
+	if st := l.status("x-1"); st != agentio.StateIdle {
 		t.Errorf("started: %s", st)
 	}
-	if n, k, st, err := l.term.PaneAgent(bg, pane); n != "x-1" || k != "claude" || st != dispatch.StateIdle || err != nil {
+	if n, k, st, err := l.term.PaneAgent(bg, pane); n != "x-1" || k != "claude" || st != agentio.StateIdle || err != nil {
 		t.Errorf("PaneAgent = %q %q %q %v", n, k, st, err)
 	}
 
@@ -243,7 +243,7 @@ func TestLiveStartPromptKeysAndScreen(t *testing.T) {
 	if got := l.file("prompt-1"); got != prompt {
 		t.Errorf("the prompt arrived as\n%q\nwant\n%q", got, prompt)
 	}
-	if st := l.status("x-1"); st != dispatch.StateWorking {
+	if st := l.status("x-1"); st != agentio.StateWorking {
 		t.Errorf("on its prompt: %s", st)
 	}
 	if !l.term.WaitStarted(bg, "x-1") {
@@ -260,7 +260,7 @@ func TestLiveStartPromptKeysAndScreen(t *testing.T) {
 	if !l.term.WaitReady(bg, "x-1") {
 		t.Fatalf("not idle once its turn ended: %s", l.status("x-1"))
 	}
-	screen := l.term.Screen(bg, "x-1", dispatch.StateIdle)
+	screen := l.term.Screen(bg, "x-1", agentio.StateIdle)
 	for _, want := range []string{"fake claude: session", "● Done."} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("the screen lacks %q:\n%s", want, screen)
@@ -286,17 +286,17 @@ func TestLiveLaunchAdoptAndRename(t *testing.T) {
 	if _, err := l.term.AdoptAgent(bg, pane, "claude", "x-1"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("the adopted agent never got idle", func() bool { return l.status("x-1") == dispatch.StateIdle })
+	l.eventually("the adopted agent never got idle", func() bool { return l.status("x-1") == agentio.StateIdle })
 	if got := l.term.FreeName(bg, "x-1"); got != "x-1-1" {
 		t.Errorf("FreeName = %q", got)
 	}
 	if err := l.term.RenameAgent(bg, "x-1", "x-1-1"); err != nil {
 		t.Fatal(err)
 	}
-	if st := l.status("x-1"); st != dispatch.StateGone {
+	if st := l.status("x-1"); st != agentio.StateGone {
 		t.Errorf("by its old name: %s", st)
 	}
-	if st := l.status("x-1-1"); st != dispatch.StateIdle {
+	if st := l.status("x-1-1"); st != agentio.StateIdle {
 		t.Errorf("by its new name: %s", st)
 	}
 	if got := l.term.FreeName(bg, "x-1"); got != "x-1-2" {
@@ -316,7 +316,7 @@ func TestLiveBlocked(t *testing.T) {
 	if err := l.term.Prompt(bg, "x-1", "Work on x-1."); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("never blocked on its permission prompt", func() bool { return l.status("x-1") == dispatch.StateBlocked })
+	l.eventually("never blocked on its permission prompt", func() bool { return l.status("x-1") == agentio.StateBlocked })
 	if err := l.term.SendKeys(bg, "x-1", "1", "enter"); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestLiveBlocked(t *testing.T) {
 	if _, err := l.term.AdoptAgent(bg, pane, "claude", "x-2"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("a dialog never showed it blocked", func() bool { return l.status("x-2") == dispatch.StateBlocked })
+	l.eventually("a dialog never showed it blocked", func() bool { return l.status("x-2") == agentio.StateBlocked })
 }
 
 // A worker whose process exits is gone, though its pane stays open, dead, its screen still read, and
@@ -351,7 +351,7 @@ func TestLiveAgentGone(t *testing.T) {
 	if err := l.term.SendKeys(bg, "x-1", "exit", "enter"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("never gone once it exited", func() bool { return l.status("x-1") == dispatch.StateGone })
+	l.eventually("never gone once it exited", func() bool { return l.status("x-1") == agentio.StateGone })
 	// tmux marks the pane dead as its terminal closes, and has its exit status once it has reaped it,
 	// which it does on SIGCHLD. Before 3.6 a tmux built with utempter, as Ubuntu's 3.4 is, can lose that
 	// signal: when the terminal's close comes first, removing the pane's utmp record runs a helper with
@@ -380,10 +380,10 @@ func TestLiveAgentGone(t *testing.T) {
 	if label, open, err := l.term.TabLabel(bg, tab); label != "x-1" || !open || err != nil {
 		t.Errorf("the dead window: %q %v %v", label, open, err)
 	}
-	if n, k, st, err := l.term.PaneAgent(bg, pane); n != "x-1" || k != "claude" || st != dispatch.StateGone || err != nil {
+	if n, k, st, err := l.term.PaneAgent(bg, pane); n != "x-1" || k != "claude" || st != agentio.StateGone || err != nil {
 		t.Errorf("PaneAgent = %q %q %q %v", n, k, st, err)
 	}
-	if screen := l.term.Screen(bg, "x-1", dispatch.StateGone); !strings.Contains(screen, "fake claude: session") {
+	if screen := l.term.Screen(bg, "x-1", agentio.StateGone); !strings.Contains(screen, "fake claude: session") {
 		t.Errorf("the dead pane's screen:\n%s", screen)
 	}
 	if err := l.term.Prompt(bg, "x-1", "Carry on."); err == nil {
@@ -407,7 +407,7 @@ func TestLiveAgentGone(t *testing.T) {
 	if err := l.term.SendKeys(bg, "x-2", "exit", "enter"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("never gone once its session ended", func() bool { return l.status("x-2") == dispatch.StateGone })
+	l.eventually("never gone once its session ended", func() bool { return l.status("x-2") == agentio.StateGone })
 }
 
 // Once the server is gone, there are no windows, panes or agents, which is no error.
@@ -423,7 +423,7 @@ func TestLiveServerGone(t *testing.T) {
 	if open, err := l.term.PaneOpen(bg, pane); open || err != nil {
 		t.Errorf("PaneOpen = %v %v", open, err)
 	}
-	if st, err := l.term.Status(context.Background(), "x-1"); st != dispatch.StateGone || err != nil {
+	if st, err := l.term.Status(context.Background(), "x-1"); st != agentio.StateGone || err != nil {
 		t.Errorf("Status = %s %v", st, err)
 	}
 }

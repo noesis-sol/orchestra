@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/claudetest"
 	"github.com/noesis-sol/orchestra/internal/cmuxtest"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
@@ -82,7 +82,7 @@ func (l *live) eventually(what string, cond func() bool) {
 }
 
 // status is the agent's state, failing the test if cmux can't say.
-func (l *live) status(name string) dispatch.AgentState {
+func (l *live) status(name string) agentio.State {
 	l.t.Helper()
 	st, err := l.term.Status(bg, name)
 	if err != nil {
@@ -203,7 +203,7 @@ func TestLiveTrustDialogPromptAndProcess(t *testing.T) {
 	if _, err := l.term.AdoptAgent(bg, pane, "claude", "tx-1"); err != nil {
 		t.Fatal(err)
 	}
-	l.eventually("the trust dialog was never shown as blocked", func() bool { return l.status("tx-1") == dispatch.StateBlocked })
+	l.eventually("the trust dialog was never shown as blocked", func() bool { return l.status("tx-1") == agentio.StateBlocked })
 	if err := l.term.SendKeys(bg, "tx-1", "enter"); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestLiveTrustDialogPromptAndProcess(t *testing.T) {
 	if err := l.term.Prompt(bg, "tx-1", prompt); err != nil {
 		t.Fatalf("%v; the fake claude's log:\n%s", err, l.file("log"))
 	}
-	l.eventually("the worker's turn never ended", func() bool { return l.status("tx-1") == dispatch.StateIdle })
+	l.eventually("the worker's turn never ended", func() bool { return l.status("tx-1") == agentio.StateIdle })
 	if got := l.file("prompt-1"); got != prompt {
 		t.Errorf("the worker got the prompt %q, want %q", got, prompt)
 	}
@@ -234,7 +234,7 @@ func TestLiveTrustDialogPromptAndProcess(t *testing.T) {
 	if err := l.term.SendKeys(bg, "tx-1", "ctrl+d"); err != nil { // the end of its input: it exits
 		t.Fatal(err)
 	}
-	l.eventually("the worker that exited is not gone", func() bool { return l.status("tx-1") == dispatch.StateGone })
+	l.eventually("the worker that exited is not gone", func() bool { return l.status("tx-1") == agentio.StateGone })
 	if open, err := l.term.PaneOpen(bg, pane); !open || err != nil {
 		t.Errorf("the worker's terminal: open %v, %v", open, err)
 	}

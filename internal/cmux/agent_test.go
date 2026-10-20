@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
@@ -99,15 +99,15 @@ func TestStatus(t *testing.T) {
 		running []int
 		gone    bool // cmux has no such terminal
 		screen  string
-		want    dispatch.AgentState
+		want    agentio.State
 	}{
-		{"idle", idleRecords(t), 7, []int{7}, false, "", dispatch.StateIdle},
-		{"working", workingRecords(t), 7, []int{7}, false, trust, dispatch.StateWorking},
-		{"session ended", endedRecords(t), 7, []int{7}, false, "", dispatch.StateGone},
-		{"killed", workingRecords(t), 7, []int{3}, false, "", dispatch.StateGone},
-		{"its terminal closed", workingRecords(t), 7, []int{7}, true, "", dispatch.StateGone},
-		{"not launched yet", records(t), 0, nil, false, "", dispatch.StateUnknown},
-		{"trust dialog", records(t), 7, []int{7}, false, trust, dispatch.StateBlocked},
+		{"idle", idleRecords(t), 7, []int{7}, false, "", agentio.StateIdle},
+		{"working", workingRecords(t), 7, []int{7}, false, trust, agentio.StateWorking},
+		{"session ended", endedRecords(t), 7, []int{7}, false, "", agentio.StateGone},
+		{"killed", workingRecords(t), 7, []int{3}, false, "", agentio.StateGone},
+		{"its terminal closed", workingRecords(t), 7, []int{7}, true, "", agentio.StateGone},
+		{"not launched yet", records(t), 0, nil, false, "", agentio.StateUnknown},
+		{"trust dialog", records(t), 7, []int{7}, false, trust, agentio.StateBlocked},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFakeCmux(t)
@@ -131,7 +131,7 @@ func TestStatus(t *testing.T) {
 	}
 	f := newFakeCmux(t)
 	term := terminal(t)
-	if st, err := term.Status(bg, "x-9"); st != dispatch.StateGone || err != nil {
+	if st, err := term.Status(bg, "x-9"); st != agentio.StateGone || err != nil {
 		t.Errorf("no such agent: %s %v", st, err)
 	}
 	keep(t, term, book{Surfaces: map[string]surfaceEntry{workSF: {Workspace: workWS, Agent: "x-1", Kind: "claude"}}})
@@ -222,20 +222,20 @@ func TestScreen(t *testing.T) {
 	f := newFakeCmux(t)
 	term, _ := promptTerminal(t, f)
 	f.answer("read-screen", "❯ \n\n\n")
-	if got := term.Screen(bg, "x-1", dispatch.StateWorking); got != "❯ \n" {
+	if got := term.Screen(bg, "x-1", agentio.StateWorking); got != "❯ \n" {
 		t.Errorf("got %q", got)
 	}
 	if got := cmdOf(f.call("read-screen")); !slices.Equal(got, []string{"read-screen", "--workspace", workWS,
 		"--surface", workSF}) {
 		t.Errorf("read-screen got %q", got)
 	}
-	_ = term.Screen(bg, "x-1", dispatch.StateIdle)
+	_ = term.Screen(bg, "x-1", agentio.StateIdle)
 	last := cmdOf(f.calls()[len(f.calls())-1])
 	if !slices.Equal(last[len(last)-3:], []string{"--scrollback", "--lines", "80"}) {
 		t.Errorf("read-screen got %q", last)
 	}
 	f.fail("read-screen", "Error: not_found: Workspace not found")
-	if got := term.Screen(bg, "x-1", dispatch.StateIdle); got != "" {
+	if got := term.Screen(bg, "x-1", agentio.StateIdle); got != "" {
 		t.Errorf("an unreadable screen: %q", got)
 	}
 }
@@ -253,10 +253,10 @@ func TestNamingAgents(t *testing.T) {
 	f.answer("top", topJSON(workSF, 7))
 
 	if name, kind, st, err := term.PaneAgent(bg, workSF); name != "" || kind != "claude" ||
-		st != dispatch.StateWorking || err != nil {
+		st != agentio.StateWorking || err != nil {
 		t.Errorf("PaneAgent: %q %q %s %v", name, kind, st, err)
 	}
-	if _, _, st, err := term.PaneAgent(bg, userWS); st != dispatch.StateGone || err != nil {
+	if _, _, st, err := term.PaneAgent(bg, userWS); st != agentio.StateGone || err != nil {
 		t.Errorf("PaneAgent of a terminal orchestra didn't open: %s %v", st, err)
 	}
 	if free := term.FreeName(bg, "x-1"); free != "x-1-2" {
@@ -265,7 +265,7 @@ func TestNamingAgents(t *testing.T) {
 	if _, err := term.AdoptAgent(bg, workSF, "codex", "x-1"); !Missing(err) {
 		t.Errorf("adopting an agent of another kind: %v", err)
 	}
-	if st, err := term.AdoptAgent(bg, workSF, "claude", "x-1"); st != dispatch.StateWorking || err != nil {
+	if st, err := term.AdoptAgent(bg, workSF, "claude", "x-1"); st != agentio.StateWorking || err != nil {
 		t.Errorf("AdoptAgent: %s %v", st, err)
 	}
 	b, _ := term.view()

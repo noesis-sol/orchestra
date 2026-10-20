@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // replaceStop has an agent Claude Code forks at the end of the turn of the worker in wt run its
@@ -112,7 +114,7 @@ func TestTurnEndedThroughAReplacedStop(t *testing.T) {
 			false, time.Time{}, false},
 		{"finished tool after the Stop", ToolUse{Event: "PostToolUse", At: stop.Add(time.Second), Stopped: stop},
 			false, since, false},
-		{"permission prompt after the Stop", ToolUse{Event: EventPermission, At: stop.Add(time.Second), Stopped: stop},
+		{"permission prompt after the Stop", ToolUse{Event: agentio.EventPermission, At: stop.Add(time.Second), Stopped: stop},
 			false, since, false},
 		{"subagent running", ToolUse{Event: "PreToolUse", At: stop.Add(time.Second), Stopped: stop}, true, since, false},
 		{"Stop before the adoption", ToolUse{Event: "PreToolUse", At: since.Add(time.Second),

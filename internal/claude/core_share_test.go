@@ -4,18 +4,18 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
-var _ dispatch.EnvReporter = Reporter{}
+var _ agentio.EnvReporter = Reporter{}
 
 // A worker's settings give its environment what WithEnv adds, its share of the machine's cores, beside
 // fork mode turned off, new or resumed; without WithEnv they give fork mode alone.
 func TestWorkerSettingsGiveTheEnvironmentAdded(t *testing.T) {
 	wt := t.TempDir()
-	share := map[string]string{dispatch.CoresVar: "2", "GOFLAGS": "-mod=mod -p=2"}
+	share := map[string]string{"ORCHESTRA_CORES": "2", "GOFLAGS": "-mod=mod -p=2"}
 	r := Reporter{}.WithEnv(share)
-	want := map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0", dispatch.CoresVar: "2", "GOFLAGS": "-mod=mod -p=2"}
+	want := map[string]any{"CLAUDE_CODE_FORK_SUBAGENT": "0", "ORCHESTRA_CORES": "2", "GOFLAGS": "-mod=mod -p=2"}
 	for _, args := range [][]string{must(t)(r.ReportArgs(wt)), must(t)(r.ResumeArgs(wt))} {
 		if got := readSettings(t, args[1])["env"]; !maps.Equal(got.(map[string]any), want) {
 			t.Errorf("env %v, want %v", got, want)

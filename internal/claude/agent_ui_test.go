@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // UI is Claude Code as a hook-driven terminal knows it: its records where its --settings are, and its
@@ -18,12 +18,12 @@ func TestUI(t *testing.T) {
 	told, settle := ui.Read(records, "") // no hook ran yet
 	for _, tc := range []struct {
 		screen string
-		want   dispatch.AgentState
+		want   agentio.State
 	}{
-		{"Do you trust this folder?", dispatch.StateBlocked},
-		{"╭───╮\n│ > │\n╰───╯", dispatch.StateUnknown},
+		{"Do you trust this folder?", agentio.StateBlocked},
+		{"╭───╮\n│ > │\n╰───╯", agentio.StateUnknown},
 	} {
-		if got := settle(func() (string, error) { return tc.screen, nil }); told != dispatch.StateUnknown || got != tc.want {
+		if got := settle(func() (string, error) { return tc.screen, nil }); told != agentio.StateUnknown || got != tc.want {
 			t.Errorf("screen %q: told %s, settled %s; want unknown, %s", tc.screen, told, got, tc.want)
 		}
 	}

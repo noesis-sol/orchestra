@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
@@ -413,7 +414,7 @@ func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) 
 		at = u.At
 	case u.Event == "PreToolUse" && !u.Stopped.IsZero() && !u.At.IsZero() && !u.At.Before(u.Stopped):
 		at, replaced = u.Stopped, true
-	case u.Event == EventPermission && !u.Idle.IsZero():
+	case u.Event == agentio.EventPermission && !u.Idle.IsZero():
 		at = u.Idle
 	default:
 		return time.Time{}, false, false
@@ -429,7 +430,7 @@ func turnEnded(h hooksSeen, now time.Time) (at time.Time, ended, replaced bool) 
 func turnEndName(h hooksSeen, at time.Time) string {
 	u := h.use
 	switch {
-	case u.Event == EventPermission:
+	case u.Event == agentio.EventPermission:
 		return fmt.Sprintf("idle at its prompt at %s after a permission prompt for %s refused",
 			at.Format("15:04:05"), u.Tool)
 	case u.Event == "StopFailure", u.Failure != "": // or one a PreToolUse record replaced
@@ -608,11 +609,11 @@ func (w *watcher) notePermission(u ToolUse) {
 	}
 	w.asked = u.At
 	what := u.Tool
-	if rm := GuardedRemoval(u.Command); rm != "" {
+	if rm := agentio.GuardedRemoval(u.Command); rm != "" {
 		// The command's start may not show the removal, and allowing the tool would not spare this wait.
 		what += " (" + rm + "), a removal Claude Code's built-in safety check holds for a person, which " +
 			"no allow rule skips,"
-	} else if cmd := Clip(u.Command, 80); cmd != "" {
+	} else if cmd := agentio.Clip(u.Command, 80); cmd != "" {
 		what += " (" + cmd + ")"
 	}
 	w.o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf(

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // Two runs on one tmux server, in two repositories whose tickets share IDs (two clones sharing a
@@ -15,8 +15,8 @@ func TestAgentNamesArePerRepository(t *testing.T) {
 	f.listPanes(paneLine{id: "%1", agent: "x-1", kind: "claude", records: workingRecords(t), repo: "/a"},
 		paneLine{id: "%2", agent: "x-1", kind: "claude", records: idleRecords(t), repo: "/b"},
 		paneLine{id: "%3", agent: "x-1-1", kind: "claude", records: idleRecords(t), repo: "/a"})
-	for repo, want := range map[string]dispatch.AgentState{
-		"/a": dispatch.StateWorking, "/b": dispatch.StateIdle, "/c": dispatch.StateGone,
+	for repo, want := range map[string]agentio.State{
+		"/a": agentio.StateWorking, "/b": agentio.StateIdle, "/c": agentio.StateGone,
 	} {
 		if st, err := (Terminal{Repo: repo}).Status(bg, "x-1"); st != want || err != nil {
 			t.Errorf("Status in %s = %q %v, want %q", repo, st, err, want)
@@ -44,12 +44,12 @@ func TestAgentNamesArePerRepository(t *testing.T) {
 func TestAgentNamedWithoutARepository(t *testing.T) {
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%1", agent: "x-1", kind: "claude", records: idleRecords(t)})
-	if st, err := (Terminal{Repo: "/a"}).Status(bg, "x-1"); st != dispatch.StateIdle || err != nil {
+	if st, err := (Terminal{Repo: "/a"}).Status(bg, "x-1"); st != agentio.StateIdle || err != nil {
 		t.Errorf("Status = %q %v", st, err)
 	}
 	f.listPanes(paneLine{id: "%1", agent: "x-1", kind: "claude", records: idleRecords(t)},
 		paneLine{id: "%2", agent: "x-1", kind: "claude", records: workingRecords(t), repo: "/a"})
-	if st, err := (Terminal{Repo: "/a"}).Status(bg, "x-1"); st != dispatch.StateWorking || err != nil {
+	if st, err := (Terminal{Repo: "/a"}).Status(bg, "x-1"); st != agentio.StateWorking || err != nil {
 		t.Errorf("Status with a pane named for the repository = %q %v", st, err)
 	}
 
@@ -79,7 +79,7 @@ func TestLiveAgentNamesArePerRepository(t *testing.T) {
 		term Terminal
 		pane string
 	}{{a, paneA}, {b, paneB}} {
-		if st, err := c.term.Status(bg, "x-1"); st != dispatch.StateIdle || err != nil {
+		if st, err := c.term.Status(bg, "x-1"); st != agentio.StateIdle || err != nil {
 			t.Errorf("%s's worker: %q %v", c.term.Repo, st, err)
 		}
 		if n, _, _, err := c.term.PaneAgent(bg, c.pane); n != "x-1" || err != nil {
@@ -90,10 +90,10 @@ func TestLiveAgentNamesArePerRepository(t *testing.T) {
 	if err := b.Prompt(bg, "x-1", "Work on x-1."); err != nil {
 		t.Fatal(err)
 	}
-	if st, err := a.Status(bg, "x-1"); st != dispatch.StateIdle || err != nil {
+	if st, err := a.Status(bg, "x-1"); st != agentio.StateIdle || err != nil {
 		t.Errorf("the other repository's prompt reached /repo/a's worker: %q %v", st, err)
 	}
-	if st, err := b.Status(bg, "x-1"); st != dispatch.StateWorking || err != nil {
+	if st, err := b.Status(bg, "x-1"); st != agentio.StateWorking || err != nil {
 		t.Errorf("/repo/b's worker on its prompt: %q %v", st, err)
 	}
 	if got := (Terminal{Socket: l.term.Socket, Repo: "/repo/c"}).Screen(bg, "x-1", ""); got != "" {

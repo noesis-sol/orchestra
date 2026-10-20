@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
 // lastLines keeps the end of a long text, where a worker's conclusion is.
 func lastLines(s string, n int) string {
-	return strings.TrimSuffix(LastLines(s, n), "\n")
+	return strings.TrimSuffix(agentio.LastLines(s, n), "\n")
 }
 
 // gatherDeferral collects the evidence for one deferred ticket.
@@ -26,10 +27,10 @@ func (o *Loop) gatherDeferral(ctx context.Context, id, how, wt string) organ.Def
 	transcript, hooks := "", ""
 	if o.reporter != nil {
 		transcript = o.reporter.TranscriptTail(wt)
-		hooks = o.reporter.HookRecord(wt).Evidence()
+		hooks = recordEvidence(o.reporter.HookRecord(wt))
 	}
 	return organ.Deferral{ID: id, How: how, Ticket: show,
-		Screen:     lastLines(o.agents.Screen(ctx, o.agentName(id), ""), ScreenLines),
+		Screen:     lastLines(o.agents.Screen(ctx, o.agentName(id), ""), agentio.ScreenLines),
 		Transcript: transcript,
 		Hooks:      hooks,
 		Worktree: "Uncommitted changes:\n" + orNone(status) + "\n\nCommits on the ticket branch:\n" +

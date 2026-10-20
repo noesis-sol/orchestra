@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // Where its hooks can't tell (claude.Hooks.Settle), a worker's state reads its visible screen only,
@@ -19,12 +19,12 @@ func TestStatusReadsTheVisibleScreen(t *testing.T) {
 	}
 	for _, c := range []struct {
 		name, records, screen string
-		want                  dispatch.AgentState
+		want                  agentio.State
 	}{
-		{"the trust dialog before any hook", records(t), "❯ 1. Yes, I trust this folder\n", dispatch.StateBlocked},
+		{"the trust dialog before any hook", records(t), "❯ 1. Yes, I trust this folder\n", agentio.StateBlocked},
 		{"the MCP dialog before its first turn", idleRecords(t), "New MCP server found in this project: github\n",
-			dispatch.StateBlocked},
-		{"a permission prompt allowed", asked(), "● Bash(go test ./...)\n  Running…\n\n> \n", dispatch.StateWorking},
+			agentio.StateBlocked},
+		{"a permission prompt allowed", asked(), "● Bash(go test ./...)\n  Running…\n\n> \n", agentio.StateWorking},
 	} {
 		f := newFakeTmux(t)
 		f.listPanes(paneLine{id: "%5", agent: "x-1", kind: "claude", command: "2.1.0", records: c.records})

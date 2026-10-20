@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // Error is a terminal's call that failed, or found no tab, pane or agent to act on. Callers read its
@@ -78,19 +78,19 @@ type Agents struct {
 	Tool string
 	// Status returns the state of the agent named name, StateGone if no pane holds it, and an error if
 	// the terminal cannot be asked.
-	Status func(ctx context.Context, name string) (dispatch.AgentState, error)
+	Status func(ctx context.Context, name string) (agentio.State, error)
 }
 
 // Wait reads the agent's state until it is one of want, for up to limit; the error, for op, says it
 // went away, or what it was when the time ran out. A state the terminal can't give is read again.
-func (a Agents) Wait(ctx context.Context, op, name string, limit time.Duration, want ...dispatch.AgentState) error {
+func (a Agents) Wait(ctx context.Context, op, name string, limit time.Duration, want ...agentio.State) error {
 	deadline := time.Now().Add(limit)
 	for {
 		st, err := a.Status(ctx, name)
 		switch {
 		case err == nil && slices.Contains(want, st):
 			return nil
-		case err == nil && st == dispatch.StateGone:
+		case err == nil && st == agentio.StateGone:
 			return &Error{Tool: a.Tool, Op: op, Target: name, Missing: true, Err: errors.New("the agent is gone")}
 		case time.Now().After(deadline) && err != nil:
 			return fmt.Errorf("agent %s was not %s within %s: %w", name, states(want),
@@ -108,7 +108,7 @@ func (a Agents) Wait(ctx context.Context, op, name string, limit time.Duration, 
 }
 
 // states is "idle or done", for a list of states.
-func states(sts []dispatch.AgentState) string {
+func states(sts []agentio.State) string {
 	s := make([]string, len(sts))
 	for i, st := range sts {
 		s[i] = string(st)
@@ -118,12 +118,12 @@ func states(sts []dispatch.AgentState) string {
 
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (a Agents) WaitReady(ctx context.Context, name string) bool {
-	return a.Wait(ctx, "wait", name, dispatch.ReadyWithin, dispatch.StateIdle, dispatch.StateDone) == nil
+	return a.Wait(ctx, "wait", name, agentio.ReadyWithin, agentio.StateIdle, agentio.StateDone) == nil
 }
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (a Agents) WaitStarted(ctx context.Context, name string) bool {
-	return a.Wait(ctx, "wait", name, dispatch.StartedWithin, dispatch.StateWorking, dispatch.StateBlocked) == nil
+	return a.Wait(ctx, "wait", name, agentio.StartedWithin, agentio.StateWorking, agentio.StateBlocked) == nil
 }
 
 // StartAgent launches the agent name with launch and waits up to a minute for it to be ready for a
@@ -132,7 +132,7 @@ func (a Agents) StartAgent(ctx context.Context, name string, launch func() error
 	if err := launch(); err != nil {
 		return err
 	}
-	return a.Wait(ctx, "start", name, dispatch.ReadyWithin, dispatch.StateIdle, dispatch.StateDone)
+	return a.Wait(ctx, "start", name, agentio.ReadyWithin, agentio.StateIdle, agentio.StateDone)
 }
 
 // Prompt puts a prompt in the agent's input box with put, leaves it PasteSettle to take it in,
@@ -151,7 +151,7 @@ func (a Agents) Prompt(ctx context.Context, name string, put, enter func() error
 	if err := enter(); err != nil {
 		return err
 	}
-	return a.Wait(ctx, "prompt", name, dispatch.PromptWithin, dispatch.StateWorking, dispatch.StateBlocked)
+	return a.Wait(ctx, "prompt", name, agentio.PromptWithin, agentio.StateWorking, agentio.StateBlocked)
 }
 
 // FreeName returns an agent name for an earlier worker that holds name: name-1, name-2, …, the first
@@ -166,8 +166,8 @@ func FreeName(name string, taken func(string) bool) string {
 }
 
 // Names is what a hook-driven terminal says of agents' names, for an adapter to embed: it keeps an
-// agent's name itself, so it takes any, and never refuses one (dispatch.ErrNameRefused), nor an
-// argument (dispatch.ErrArgumentRefused), which it passes as it is.
+// agent's name itself, so it takes any, and never refuses one (agentio.ErrNameRefused), nor an
+// argument (agentio.ErrArgumentRefused), which it passes as it is.
 type Names struct{}
 
 // AgentName returns ticket id's worker's agent name: the ID itself, as the terminal has no rule for

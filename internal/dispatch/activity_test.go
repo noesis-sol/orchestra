@@ -1,6 +1,10 @@
 package dispatch
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
+)
 
 func TestDoingOf(t *testing.T) {
 	t.Parallel()
@@ -21,7 +25,7 @@ func TestDoingOf(t *testing.T) {
 		{ToolUse{Event: "PreToolUse", Tool: "Edit"}, "", DoingEditing},
 		{ToolUse{Event: "PreToolUse", Tool: "Grep"}, "", DoingReading},
 		{ToolUse{Event: "PreToolUse", Tool: "Agent"}, "", DoingSubagent},
-		{ToolUse{Event: EventPermission, Tool: "Bash", Command: "go test ./..."}, "", DoingTesting}, // allowed, running
+		{ToolUse{Event: agentio.EventPermission, Tool: "Bash", Command: "go test ./..."}, "", DoingTesting}, // allowed, running
 		{ToolUse{Event: "PostToolUse"}, "", ""},
 		{ToolUse{Event: "Stop"}, "", ""},
 	}

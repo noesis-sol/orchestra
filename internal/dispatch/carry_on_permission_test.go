@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // waitsForApproval is a worker that, answered in its tab, carries on and asks to run a Bash command,
@@ -16,7 +18,7 @@ func waitsForApproval(hooks *recordReporter, claim bool, wait time.Duration, fil
 		if claim {
 			w.claim()
 		}
-		hooks.use(w.wt, ToolUse{Event: EventPermission, Tool: "Bash", Command: "rm -rf build/*"})
+		hooks.use(w.wt, ToolUse{Event: agentio.EventPermission, Tool: "Bash", Command: "rm -rf build/*"})
 		w.shows(StateIdle)
 		time.Sleep(wait)
 		w.shows(StateWorking)

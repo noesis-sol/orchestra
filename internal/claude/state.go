@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/claudescreen"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -53,7 +53,7 @@ type UI struct{}
 func (UI) Records(args []string) (string, bool) { return RecordsOf(args) }
 
 // Read is ReadHooks: the session's state as its hooks tell it, and Settle.
-func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (string, error)) dispatch.AgentState) {
+func (UI) Read(records, dir string) (agentio.State, func(screen func() (string, error)) agentio.State) {
 	h := ReadHooks(records, dir)
 	return h.State, h.Settle
 }
@@ -68,8 +68,8 @@ func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (st
 //     refusal, which ends the turn), whatever its other agents report meanwhile; or after a
 //     notification of a dialog waiting on an answer (one written in the same tick of the file's clock as
 //     the prompt or the tool use that asks came after them);
-//   - working while a subagent runs (dispatch.HookRecord.SubagentsRunning: one started and not
-//     stopped, until no hook has reported anything for dispatch.SubagentQuiet), after a prompt
+//   - working while a subagent runs (agentio.HookRecord.SubagentsRunning: one started and not
+//     stopped, until no hook has reported anything for agentio.SubagentQuiet), after a prompt
 //     (UserPromptSubmit) until the turn's Stop, or after a tool use with no turn recorded;
 //   - limited after a turn that ended on the account's usage limit (its StopFailure, see usageLimit,
 //     or its Stop where the session's transcript tells Claude Code waits to continue by itself once the
@@ -84,7 +84,7 @@ func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (st
 //     Stop or not; and once a session started and no prompt since;
 //   - unknown before any hook ran, as while claude starts or shows a dialog that runs no hook (trust
 //     this folder): the terminal's screen may say more.
-func State(records string) dispatch.AgentState {
+func State(records string) agentio.State {
 	return ReadHooks(records, "").State
 }
 
@@ -92,14 +92,14 @@ func State(records string) dispatch.AgentState {
 // for where they can't tell (see Settle).
 type Hooks struct {
 	// State is what the session is doing, as its hooks tell it (see State).
-	State dispatch.AgentState
+	State agentio.State
 	// Asked is whether it is blocked on a permission prompt the records tell asked and not answered.
 	// Claude Code runs no hook as a permission is allowed (PreToolUse runs before it asks, PostToolUse
 	// once the tool is done), so one allowed reads asked until its tool is done, however long that
 	// takes: the terminal's screen says whether its dialog still shows (claudescreen.ShowsPermission).
 	Asked bool
 	// Limit is the usage limit the session's last turn ended on, when State is limited; zero otherwise.
-	Limit dispatch.UsageLimit
+	Limit agentio.UsageLimit
 	// Turned is whether the records tell a turn of the session: a prompt or a turn's end. Claude Code
 	// asks its dialogs that run no hook (trust this folder, the project's MCP servers) before a
 	// session's first turn, so a terminal looks for them on its screen only until then: a session's
@@ -116,7 +116,7 @@ func ReadHooks(records, dir string) Hooks {
 	}
 	root, err := os.OpenRoot(records)
 	if err != nil {
-		return Hooks{State: dispatch.StateUnknown}
+		return Hooks{State: agentio.StateUnknown}
 	}
 	defer func() { _ = root.Close() }()    // read-only: nothing to lose
 	b, fi, err := readIn(root, eventsName) // none yet: no session started
@@ -131,7 +131,7 @@ func ReadHooks(records, dir string) Hooks {
 	st, asked := state(activity, turn, readRecord(root, noticeName), readAsked(root),
 		readSessions(b, noted, activity.at, time.Now()))
 	h := Hooks{State: st, Asked: asked, Turned: !turn.at.IsZero()}
-	if st == dispatch.StateLimited {
+	if st == agentio.StateLimited {
 		h.Limit = turn.limit
 	}
 	return h
@@ -142,7 +142,7 @@ func ReadHooks(records, dir string) Hooks {
 // runs no hook, which only comes before its first turn, and working once a permission prompt they
 // tell asked no longer shows, as allowed, which runs no hook: its tool runs. A screen that can't be
 // read, or reads empty, says nothing. It reads the screen only where the hooks can't tell.
-func (h Hooks) Settle(screen func() (string, error)) dispatch.AgentState {
+func (h Hooks) Settle(screen func() (string, error)) agentio.State {
 	if !h.firstTurnNotDone() && !h.Asked {
 		return h.State // the hooks tell
 	}
@@ -154,20 +154,20 @@ func (h Hooks) Settle(screen func() (string, error)) dispatch.AgentState {
 // may show a dialog that runs no hook: no hook ran yet, as while claude starts or shows one, or it is
 // idle with no turn recorded.
 func (h Hooks) firstTurnNotDone() bool {
-	return h.State == dispatch.StateUnknown || (h.State == dispatch.StateIdle && !h.Turned)
+	return h.State == agentio.StateUnknown || (h.State == agentio.StateIdle && !h.Turned)
 }
 
 // settle is Settle's decision, given the screen as read, and whether it could be read.
-func settle(h Hooks, screen string, read bool) dispatch.AgentState {
+func settle(h Hooks, screen string, read bool) agentio.State {
 	switch {
 	case !read:
 	case h.firstTurnNotDone():
 		if claudescreen.ShowsDialog(screen) {
-			return dispatch.StateBlocked
+			return agentio.StateBlocked
 		}
 	case h.Asked:
 		if screen != "" && !claudescreen.ShowsPermission(screen) {
-			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
+			return agentio.StateWorking // allowed, which runs no hook: its tool runs
 		}
 	}
 	return h.State
@@ -178,7 +178,7 @@ func settle(h Hooks, screen string, read bool) dispatch.AgentState {
 // the turn's end (see stopTold), and when it was written; a zero at when there is none.
 type record struct {
 	event, notification string
-	limit               dispatch.UsageLimit
+	limit               agentio.UsageLimit
 	ending              bool
 	at                  time.Time
 }
@@ -193,7 +193,7 @@ func (r record) after(o record) bool {
 // dialog can only follow, the prompt or the tool use that asks.
 func (r record) follows(o record) bool {
 	switch o.event {
-	case "UserPromptSubmit", "PreToolUse", dispatch.EventPermission:
+	case "UserPromptSubmit", "PreToolUse", agentio.EventPermission:
 		return !r.at.IsZero() && !r.at.Before(o.at)
 	}
 	return r.after(o)
@@ -214,66 +214,66 @@ type sessions struct {
 
 // state is State's reading of the records, and whether it is blocked on a permission prompt asked
 // (see Hooks.Asked); asked is the latest prompt an agent asked and is not done with.
-func state(activity, turn, notice, asked record, s sessions) (dispatch.AgentState, bool) {
+func state(activity, turn, notice, asked record, s sessions) (agentio.State, bool) {
 	if s.ended {
-		return dispatch.StateGone, false
+		return agentio.StateGone, false
 	}
 	if notice.follows(activity) && notice.follows(turn) {
 		switch notice.notification {
 		case permissionPrompt:
-			return dispatch.StateBlocked, true
+			return agentio.StateBlocked, true
 		case elicitation:
-			return dispatch.StateBlocked, false
+			return agentio.StateBlocked, false
 		}
 	}
 	if notice.after(activity) && notice.after(turn) {
 		switch notice.notification {
 		case idlePrompt:
 			if s.subagents {
-				return dispatch.StateWorking, false
+				return agentio.StateWorking, false
 			}
 			if turn.limit.Reached() {
-				return dispatch.StateLimited, false // waiting at its prompt is what the limit leaves it to
+				return agentio.StateLimited, false // waiting at its prompt is what the limit leaves it to
 			}
-			return dispatch.StateIdle, false
+			return agentio.StateIdle, false
 		}
 	}
 	if asked.after(turn) && !(notice.notification == idlePrompt && notice.after(asked)) {
-		return dispatch.StateBlocked, true
+		return agentio.StateBlocked, true
 	}
 	return unasked(activity, turn, s), false
 }
 
 // unasked is state's reading of records that tell no prompt or dialog waiting on an answer.
-func unasked(activity, turn record, s sessions) dispatch.AgentState {
+func unasked(activity, turn record, s sessions) agentio.State {
 	if s.subagents {
-		return dispatch.StateWorking
+		return agentio.StateWorking
 	}
 	switch turn.event {
 	case "Stop", "StopFailure":
 		if activity.event == "PostToolUse" && activity.after(turn) {
-			return dispatch.StateWorking
+			return agentio.StateWorking
 		}
 		if turn.limit.Reached() {
-			return dispatch.StateLimited
+			return agentio.StateLimited
 		}
 		if turn.ending {
-			return dispatch.StateWorking
+			return agentio.StateWorking
 		}
-		return dispatch.StateIdle
+		return agentio.StateIdle
 	case "UserPromptSubmit":
-		return dispatch.StateWorking
+		return agentio.StateWorking
 	}
 	switch activity.event {
 	case "PreToolUse", "PostToolUse":
-		return dispatch.StateWorking
+		return agentio.StateWorking
 	case "Stop", "StopFailure":
-		return dispatch.StateIdle
+		return agentio.StateIdle
 	}
 	if s.started {
-		return dispatch.StateIdle
+		return agentio.StateIdle
 	}
-	return dispatch.StateUnknown
+	return agentio.StateUnknown
 }
 
 // readRecord reads the record name in root, an os.Root at the records' folder; a zero record when
@@ -302,7 +302,7 @@ func readAsked(root *os.Root) record {
 	var latest record
 	for _, name := range names {
 		if fi, err := root.Lstat(name); err == nil && fi.Mode().IsRegular() && fi.ModTime().After(latest.at) {
-			latest = record{event: dispatch.EventPermission, at: fi.ModTime()}
+			latest = record{event: agentio.EventPermission, at: fi.ModTime()}
 		}
 	}
 	return latest

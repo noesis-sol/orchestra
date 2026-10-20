@@ -1,9 +1,9 @@
 package hookterm
 
 import (
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/claude"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // AgentUI is what a hook-driven terminal knows of an agent kind's sessions: where the hooks it
@@ -15,7 +15,7 @@ type AgentUI interface {
 	// Read reads what the hooks writing to the folder records tell of their session (records "": the
 	// folder of a session launched without hooks in dir): its state as they tell it, and settle, its
 	// state given screen, which reads its visible screen only where the hooks can't tell.
-	Read(records, dir string) (told dispatch.AgentState, settle func(screen func() (string, error)) dispatch.AgentState)
+	Read(records, dir string) (told agentio.State, settle func(screen func() (string, error)) agentio.State)
 }
 
 // agentUIs are the agent kinds whose sessions report through hooks, by the kind's name in
@@ -46,6 +46,6 @@ type noUI struct{}
 
 func (noUI) Records([]string) (string, bool) { return "", false }
 
-func (noUI) Read(string, string) (dispatch.AgentState, func(func() (string, error)) dispatch.AgentState) {
-	return dispatch.StateUnknown, func(func() (string, error)) dispatch.AgentState { return dispatch.StateUnknown }
+func (noUI) Read(string, string) (agentio.State, func(func() (string, error)) agentio.State) {
+	return agentio.StateUnknown, func(func() (string, error)) agentio.State { return agentio.StateUnknown }
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // What Herdr 0.9.3 answers 'herdr agent get' with, on stdout, for a pane holding a Claude Code agent.
@@ -18,22 +18,22 @@ func TestNoAgentReadsAsGone(t *testing.T) {
 		`{"id":"cli:agent:get","result":{"agent":null,"type":"agent_info"}}`,
 		`{"id":"cli:agent:get","result":{"type":"agent_info"}}`,
 	} {
-		if n, k, s, err := readAgent(out, nil); n != "" || k != "" || s != dispatch.StateGone || err != nil {
+		if n, k, s, err := readAgent(out, nil); n != "" || k != "" || s != agentio.StateGone || err != nil {
 			t.Errorf("%s: %q %q %q %v", out, n, k, s, err)
 		}
 	}
 
 	// What Herdr really answers for a pane that holds no agent.
 	failingHerdr(t, `{"error":{"code":"agent_not_found","message":"agent target w2D:pD not found"},"id":"cli:agent:get"}`)
-	if s, err := (Terminal{}).Status(context.Background(), "w2D:pD"); s != dispatch.StateGone || err != nil {
+	if s, err := (Terminal{}).Status(context.Background(), "w2D:pD"); s != agentio.StateGone || err != nil {
 		t.Errorf("a pane without an agent: %q %v", s, err)
 	}
 }
 
 // An agent with a status reads as that status, whichever it is.
 func TestAgentReadsAsItsStatus(t *testing.T) {
-	for _, want := range []dispatch.AgentState{
-		dispatch.StateIdle, dispatch.StateWorking, dispatch.StateBlocked, dispatch.StateDone, dispatch.StateUnknown,
+	for _, want := range []agentio.State{
+		agentio.StateIdle, agentio.StateWorking, agentio.StateBlocked, agentio.StateDone, agentio.StateUnknown,
 	} {
 		out := `{"result":{"agent":{"name":"kinieta-9g6","agent":"claude","agent_status":"` + string(want) + `"}}}`
 		if n, k, s, err := readAgent(out, nil); n != "kinieta-9g6" || k != "claude" || s != want || err != nil {
@@ -42,7 +42,7 @@ func TestAgentReadsAsItsStatus(t *testing.T) {
 	}
 
 	herdrScript(t, "#!/bin/sh\necho '"+agentInfo+"'\n")
-	if s, err := (Terminal{}).Status(context.Background(), "orchestra-4wb_11"); s != dispatch.StateWorking || err != nil {
+	if s, err := (Terminal{}).Status(context.Background(), "orchestra-4wb_11"); s != agentio.StateWorking || err != nil {
 		t.Errorf("Herdr's real output: %q %v", s, err)
 	}
 }
@@ -65,7 +65,7 @@ func TestAgentWithoutStatusIsAnError(t *testing.T) {
 	}
 
 	herdrScript(t, "#!/bin/sh\necho '{\"result\":{\"agent\":{\"agent\":\"claude\",\"name\":\"kinieta-9g6\"}}}'\n")
-	if s, err := (Terminal{}).Status(context.Background(), "kinieta-9g6"); s == dispatch.StateGone || err == nil {
+	if s, err := (Terminal{}).Status(context.Background(), "kinieta-9g6"); s == agentio.StateGone || err == nil {
 		t.Errorf("Status of an agent without a status: %q %v, want an error", s, err)
 	}
 	// FreeName must not take the name of an agent whose status it cannot read.

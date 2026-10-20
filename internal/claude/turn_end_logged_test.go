@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // stopSummaryAt is Claude Code's note that a turn's Stop hooks have run, logged at at.
@@ -59,14 +59,14 @@ func TestStopWaitsForTheTurnsEndToBeLogged(t *testing.T) {
 		name   string
 		lines  []string
 		ago    time.Duration // how long before now the Stop hook ran
-		state  dispatch.AgentState
+		state  agentio.State
 		ending bool
 	}{
-		{"its end not logged", []string{graceNote, graceWrapUp}, 0, dispatch.StateWorking, true},
-		{"its end logged", []string{graceWrapUp, graceStopSummary, graceDuration}, 0, dispatch.StateIdle, false},
+		{"its end not logged", []string{graceNote, graceWrapUp}, 0, agentio.StateWorking, true},
+		{"its end logged", []string{graceWrapUp, graceStopSummary, graceDuration}, 0, agentio.StateIdle, false},
 		{"its end at the limit logged", []string{graceNote, graceWrapUp, graceStopSummary, graceArmed}, 0,
-			dispatch.StateLimited, false},
-		{"its end never logged", []string{graceNote, graceWrapUp}, turnEndWait, dispatch.StateIdle, false},
+			agentio.StateLimited, false},
+		{"its end never logged", []string{graceNote, graceWrapUp}, turnEndWait, agentio.StateIdle, false},
 	} {
 		wt := t.TempDir()
 		p := transcriptAt(t, t.TempDir(), testID, c.lines...)
@@ -75,7 +75,7 @@ func TestStopWaitsForTheTurnsEndToBeLogged(t *testing.T) {
 			t.Errorf("%s: hooks say %s, want %s", c.name, h.State, c.state)
 		}
 		u, ok := Reporter{}.LastToolUse(wt)
-		if !ok || u.Event != "Stop" || u.Ending != c.ending || u.Limit.Reached() != (c.state == dispatch.StateLimited) {
+		if !ok || u.Event != "Stop" || u.Ending != c.ending || u.Limit.Reached() != (c.state == agentio.StateLimited) {
 			t.Errorf("%s: last report %+v %v, want the Stop, ending %v", c.name, u, ok, c.ending)
 		}
 	}

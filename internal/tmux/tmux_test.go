@@ -10,20 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
-// The interfaces the run loop reaches the terminal through, and the interview's panes.
+// The interview's panes. The interfaces the run loop reaches the terminal through are its tests' to
+// check (internal/dispatch's terminal_contract_test.go), as this package doesn't import the loop.
 var (
-	_ dispatch.Tabs    = Terminal{}
-	_ dispatch.Starter = Terminal{}
-	_ dispatch.Namer   = Terminal{}
-	_ dispatch.Agents  = Terminal{}
 	_ interface {
 		FocusTab(ctx context.Context, tab string) error
 		SplitPane(ctx context.Context, pane, cwd string) (string, error)
 		LaunchInPane(ctx context.Context, pane, kind string, args []string) error
-		PaneAgent(ctx context.Context, pane string) (name, kind string, state dispatch.AgentState, err error)
+		PaneAgent(ctx context.Context, pane string) (name, kind string, state agentio.State, err error)
 		PaneOpen(ctx context.Context, pane string) (bool, error)
 		ClosePane(ctx context.Context, pane string) error
 	} = Terminal{}

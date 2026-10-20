@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A turn can end normally at the account's usage limit, after Claude Code's grace note (see claudescreen's
@@ -56,15 +56,15 @@ type limitEntry struct {
 // recordedStop is what the transcript of the session that the record in root (an os.Root at the hooks'
 // folder) names (sessionName) tells of its turn, which ended at at with a Stop, at now (see stopTold);
 // nothing when the transcript can't be read.
-func recordedStop(root *os.Root, at, now time.Time) (limit dispatch.UsageLimit, ending bool) {
+func recordedStop(root *os.Root, at, now time.Time) (limit agentio.UsageLimit, ending bool) {
 	b, _, err := readIn(root, sessionName)
 	var in hookInput
 	if err != nil || json.Unmarshal(b, &in) != nil || !readable(in.V) {
-		return dispatch.UsageLimit{}, false
+		return agentio.UsageLimit{}, false
 	}
 	s, ok := sessionOf(in)
 	if !ok {
-		return dispatch.UsageLimit{}, false
+		return agentio.UsageLimit{}, false
 	}
 	return stopTold(s.Transcript, at, now)
 }
@@ -73,15 +73,15 @@ func recordedStop(root *os.Root, at, now time.Time) (limit dispatch.UsageLimit, 
 // Stop: the usage limit it waits on, as its last notices tell (see limitNotices), and whether the turn
 // still counts as going on (ending), its end not yet logged (see endLogged) less than turnEndWait after
 // the Stop. Nothing when the transcript can't be read.
-func stopTold(path string, at, now time.Time) (limit dispatch.UsageLimit, ending bool) {
+func stopTold(path string, at, now time.Time) (limit agentio.UsageLimit, ending bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return dispatch.UsageLimit{}, false
+		return agentio.UsageLimit{}, false
 	}
 	defer func() { _ = f.Close() }() // read-only: nothing to lose
 	b, err := readTail(f, limitTailBytes)
 	if err != nil {
-		return dispatch.UsageLimit{}, false
+		return agentio.UsageLimit{}, false
 	}
 	if limit = limitNotices(b, at); limit.Reached() {
 		return limit, false
@@ -120,9 +120,9 @@ func endLogged(b []byte, now time.Time) bool {
 // resets ("Usage limit reached · continuing automatically at 5:30am · esc to cancel"), when neither a
 // notice that it continued, nor a prompt queued, nor a message came after it. A notice that it was
 // cancelled, or that it waits for Enter, leaves the session waiting all the same. The limit resets at the
-// time the notice gives (dispatch.LimitReset); zero when none is waited on.
-func limitNotices(b []byte, at time.Time) dispatch.UsageLimit {
-	var limit dispatch.UsageLimit
+// time the notice gives (agentio.LimitReset); zero when none is waited on.
+func limitNotices(b []byte, at time.Time) agentio.UsageLimit {
+	var limit agentio.UsageLimit
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(nil, lineBytes+1) // readTail keeps no longer line
 	for sc.Scan() {
@@ -132,10 +132,10 @@ func limitNotices(b []byte, at time.Time) dispatch.UsageLimit {
 		}
 		switch e.Type {
 		case "user", "assistant":
-			limit = dispatch.UsageLimit{}
+			limit = agentio.UsageLimit{}
 		case "queue-operation":
 			if e.Operation == "enqueue" {
-				limit = dispatch.UsageLimit{}
+				limit = agentio.UsageLimit{}
 			}
 		case "system":
 			var text string
@@ -144,9 +144,9 @@ func limitNotices(b []byte, at time.Time) dispatch.UsageLimit {
 			}
 			switch {
 			case strings.HasPrefix(text, limitReached):
-				limit = dispatch.UsageLimit{At: at, Reset: dispatch.LimitReset(text, at), Message: text}
+				limit = agentio.UsageLimit{At: at, Reset: agentio.LimitReset(text, at), Message: text}
 			case strings.HasPrefix(text, limitContinued), strings.HasPrefix(text, limitAvailable):
-				limit = dispatch.UsageLimit{}
+				limit = agentio.UsageLimit{}
 			}
 		}
 	}

@@ -11,8 +11,8 @@ import (
 
 	"go.uber.org/goleak"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // TestMain fails the tests if a goroutine one of them started is still running once they have all
@@ -131,9 +131,9 @@ func TestKeyNamesName(t *testing.T) {
 }
 
 // statuses is a terminal's Status that gives the states in turn, its last one from then on.
-func statuses(sts ...dispatch.AgentState) func(context.Context, string) (dispatch.AgentState, error) {
+func statuses(sts ...agentio.State) func(context.Context, string) (agentio.State, error) {
 	n := 0
-	return func(context.Context, string) (dispatch.AgentState, error) {
+	return func(context.Context, string) (agentio.State, error) {
 		st := sts[min(n, len(sts)-1)]
 		n++
 		return st, nil
@@ -142,24 +142,24 @@ func statuses(sts ...dispatch.AgentState) func(context.Context, string) (dispatc
 
 func TestWait(t *testing.T) {
 	boom := errors.New("boom")
-	failing := func(context.Context, string) (dispatch.AgentState, error) { return "", boom }
+	failing := func(context.Context, string) (agentio.State, error) { return "", boom }
 	for _, c := range []struct {
 		name    string
-		status  func(context.Context, string) (dispatch.AgentState, error)
+		status  func(context.Context, string) (agentio.State, error)
 		want    string // the error's text, "" for none
 		missing bool
 	}{
-		{"there at once", statuses(dispatch.StateIdle), "", false},
-		{"there in time", statuses(dispatch.StateUnknown, dispatch.StateWorking, dispatch.StateDone), "", false},
-		{"gone", statuses(dispatch.StateWorking, dispatch.StateGone), "tmux start x-1: the agent is gone", true},
-		{"not in time", statuses(dispatch.StateWorking),
+		{"there at once", statuses(agentio.StateIdle), "", false},
+		{"there in time", statuses(agentio.StateUnknown, agentio.StateWorking, agentio.StateDone), "", false},
+		{"gone", statuses(agentio.StateWorking, agentio.StateGone), "tmux start x-1: the agent is gone", true},
+		{"not in time", statuses(agentio.StateWorking),
 			"tmux start x-1: the agent was not idle or done within 1m, but working", false},
 		{"not readable", failing, "agent x-1 was not idle or done within 1m: boom", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				a := Agents{Tool: "tmux", Status: c.status}
-				err := a.Wait(t.Context(), "start", "x-1", time.Minute, dispatch.StateIdle, dispatch.StateDone)
+				err := a.Wait(t.Context(), "start", "x-1", time.Minute, agentio.StateIdle, agentio.StateDone)
 				switch {
 				case c.want == "" && err != nil:
 					t.Errorf("got %v", err)
@@ -177,7 +177,7 @@ func TestWaitStopsWithItsContext(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*Poll)
 		defer cancel()
-		a := Agents{Tool: "cmux", Status: statuses(dispatch.StateIdle)}
+		a := Agents{Tool: "cmux", Status: statuses(agentio.StateIdle)}
 		if a.WaitStarted(ctx, "x-1") {
 			t.Error("an idle agent hasn't started")
 		}
@@ -189,11 +189,11 @@ func TestWaitStopsWithItsContext(t *testing.T) {
 
 func TestWaitReadyAndStarted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		a := Agents{Tool: "tmux", Status: statuses(dispatch.StateDone)}
+		a := Agents{Tool: "tmux", Status: statuses(agentio.StateDone)}
 		if !a.WaitReady(t.Context(), "x-1") || a.WaitStarted(t.Context(), "x-1") {
 			t.Error("a done agent is ready and hasn't started")
 		}
-		a.Status = statuses(dispatch.StateBlocked)
+		a.Status = statuses(agentio.StateBlocked)
 		if a.WaitReady(t.Context(), "x-1") || !a.WaitStarted(t.Context(), "x-1") {
 			t.Error("a blocked agent has started and isn't ready")
 		}
@@ -203,14 +203,14 @@ func TestWaitReadyAndStarted(t *testing.T) {
 func TestStartAgent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		boom := errors.New("boom")
-		a := Agents{Tool: "tmux", Status: statuses(dispatch.StateIdle)}
+		a := Agents{Tool: "tmux", Status: statuses(agentio.StateIdle)}
 		if err := a.StartAgent(t.Context(), "x-1", func() error { return boom }); !errors.Is(err, boom) {
 			t.Errorf("a launch that fails: %v", err)
 		}
 		if err := a.StartAgent(t.Context(), "x-1", func() error { return nil }); err != nil {
 			t.Errorf("an agent idle once launched: %v", err)
 		}
-		a.Status = statuses(dispatch.StateGone)
+		a.Status = statuses(agentio.StateGone)
 		if err := a.StartAgent(t.Context(), "x-1", func() error { return nil }); !Missing(err) {
 			t.Errorf("an agent gone once launched: %v", err)
 		}
@@ -224,7 +224,7 @@ func TestPrompt(t *testing.T) {
 		var settled time.Duration
 		put := func() error { did = append(did, "put"); return nil }
 		enter := func() error { did = append(did, "enter"); settled = time.Since(start); return nil }
-		a := Agents{Tool: "cmux", Status: statuses(dispatch.StateIdle, dispatch.StateWorking)}
+		a := Agents{Tool: "cmux", Status: statuses(agentio.StateIdle, agentio.StateWorking)}
 		if err := a.Prompt(t.Context(), "x-1", put, enter); err != nil {
 			t.Fatal(err)
 		}
@@ -238,7 +238,7 @@ func TestPrompt(t *testing.T) {
 			len(did) != 0 {
 			t.Errorf("a prompt that can't be put: %v, did %v", err, did)
 		}
-		a.Status = statuses(dispatch.StateIdle)
+		a.Status = statuses(agentio.StateIdle)
 		err := a.Prompt(t.Context(), "x-1", put, enter)
 		if want := "cmux prompt x-1: the agent was not working or blocked within 30s, but idle"; err == nil ||
 			err.Error() != want {

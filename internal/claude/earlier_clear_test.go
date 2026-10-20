@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // runHooksApart is runHooks for a Claude Code other than the one runHooks plays, the test's own
@@ -50,24 +50,24 @@ func TestEarlierWorkerClearedIsNotRecorded(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		steps   []step
-		want    dispatch.AgentState
+		want    agentio.State
 		session string
 	}{
 		{"the earlier one is cleared", []step{{false, "SessionEnd", end(earlier, "clear")},
-			{false, "SessionStart", start(other, "clear")}, {false, "Stop", stop(other)}}, dispatch.StateWorking, later},
+			{false, "SessionStart", start(other, "clear")}, {false, "Stop", stop(other)}}, agentio.StateWorking, later},
 		{"the earlier one resumes another session", []step{{false, "SessionEnd", end(earlier, "resume")},
 			{false, "SessionStart", start(other, "resume")}, {false, "SessionEnd", end(other, "prompt_input_exit")}},
-			dispatch.StateWorking, later},
+			agentio.StateWorking, later},
 		{"the earlier one is cleared and exits", []step{{false, "SessionEnd", end(earlier, "clear")},
 			{false, "SessionStart", start(other, "clear")}, {false, "SessionEnd", end(other, "prompt_input_exit")}},
-			dispatch.StateWorking, later},
+			agentio.StateWorking, later},
 		{"the later one is cleared", []step{{true, "SessionEnd", end(later, "clear")},
-			{true, "SessionStart", start(other, "clear")}, {true, "Stop", stop(other)}}, dispatch.StateIdle, other},
+			{true, "SessionStart", start(other, "clear")}, {true, "Stop", stop(other)}}, agentio.StateIdle, other},
 		{"the later one resumes another session", []step{{true, "SessionStart", start(other, "resume")},
-			{true, "SessionEnd", end(other, "prompt_input_exit")}}, dispatch.StateGone, other},
+			{true, "SessionEnd", end(other, "prompt_input_exit")}}, agentio.StateGone, other},
 		{"the later one is cleared after the earlier one", []step{{false, "SessionEnd", end(earlier, "clear")},
 			{false, "SessionStart", start(earlier+"0", "clear")}, {true, "SessionEnd", end(later, "clear")},
-			{true, "SessionStart", start(other, "clear")}, {true, "Stop", stop(other)}}, dispatch.StateIdle, other},
+			{true, "SessionStart", start(other, "clear")}, {true, "Stop", stop(other)}}, agentio.StateIdle, other},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -125,7 +125,7 @@ func TestHooksNamingNoProcess(t *testing.T) {
 	}
 	hook([]string{"SessionEnd", records}, `{"hook_event_name":"SessionEnd","session_id":"`+later+
 		`","reason":"prompt_input_exit"}`) // another session's
-	if got := State(records); got != dispatch.StateIdle {
+	if got := State(records); got != agentio.StateIdle {
 		t.Errorf("after another session's end: %s, want idle", got)
 	}
 	hook([]string{"SessionStart", records, "7"},
@@ -133,7 +133,7 @@ func TestHooksNamingNoProcess(t *testing.T) {
 	hook([]string{"UserPromptSubmit", records, "7"}, `{"hook_event_name":"UserPromptSubmit","session_id":"`+later+`"}`)
 	hook([]string{"SessionEnd", records}, `{"hook_event_name":"SessionEnd","session_id":"`+later+
 		`","reason":"prompt_input_exit"}`) // hooks of an earlier start, naming the session it now holds
-	if got := State(records); got != dispatch.StateWorking {
+	if got := State(records); got != agentio.StateWorking {
 		t.Errorf("after an end by hooks naming no process: %s, want working", got)
 	}
 }

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/claude"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // A worker started in the worktree of an earlier one left running in its own workspace, renamed, as
@@ -46,7 +46,7 @@ func TestWorkerWorksOnAsTheEarlierOneExits(t *testing.T) {
 	launchedPID(t, term, workSF, 7)
 	f.answer("tree", treeJSON(ws{earlierWS, "x-1", []string{earlierSF}}, ws{workWS, "x", []string{workSF}}))
 	f.answer("top", topJSON(workSF, 7))
-	if st, err := term.Status(bg, "x"); st != dispatch.StateWorking || err != nil {
+	if st, err := term.Status(bg, "x"); st != agentio.StateWorking || err != nil {
 		t.Errorf("the worker as the earlier one exits: %s %v, want working", st, err)
 	}
 }

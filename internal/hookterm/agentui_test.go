@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // An agent kind with an AgentUI finds its records in the arguments it is launched with; one without
@@ -35,7 +35,7 @@ func TestUI(t *testing.T) {
 		}
 		told, settle := ui.Read(records, "")
 		screen := func() (string, error) { return "Do you trust this folder?", nil }
-		if told != dispatch.StateUnknown || settle(screen) != dispatch.StateUnknown {
+		if told != agentio.StateUnknown || settle(screen) != agentio.StateUnknown {
 			t.Errorf("%q: told %s, settled %s; want unknown", tc.kind, told, settle(screen))
 		}
 	}

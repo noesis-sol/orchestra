@@ -9,7 +9,7 @@ import (
 	"time"
 	_ "time/tzdata" // the zone the fixtures' words name, on a machine with no time zone database
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // What Claude Code 2.1.301 gave its StopFailure hook as a turn ended on an API error, captured on 2026-10-16
@@ -92,10 +92,10 @@ func TestStopFailureOnTheUsageLimitLimitsTheWorker(t *testing.T) {
 			wt := t.TempDir()
 			at, reset := athens(t, c.captured), athens(t, c.reset)
 			playHooksAt(t, wt, at, stepSessionStart("startup"), stepPrompt, stepUseBash, stepUsedIt, stepFailure(c.input))
-			want := dispatch.UsageLimit{At: at, Reset: reset, Message: c.message}
+			want := agentio.UsageLimit{At: at, Reset: reset, Message: c.message}
 			records := Records(wt, "")
 			h := ReadHooks(records, "")
-			if h.State != dispatch.StateLimited || !sameLimit(h.Limit, want) {
+			if h.State != agentio.StateLimited || !sameLimit(h.Limit, want) {
 				t.Errorf("hooks: %s %+v, want limited %+v", h.State, h.Limit, want)
 			}
 			// A terminal that reads the screen where the hooks can't tell has nothing to read here.
@@ -110,12 +110,12 @@ func TestStopFailureOnTheUsageLimitLimitsTheWorker(t *testing.T) {
 			// Waiting at its prompt, which Claude Code may note, leaves it limited.
 			settings := readSettings(t, filepath.Join(records, settingsName))
 			runHooks(t, settings, "Notification", stepNotification(idlePrompt).input)
-			if h := ReadHooks(records, ""); h.State != dispatch.StateLimited || !sameLimit(h.Limit, want) {
+			if h := ReadHooks(records, ""); h.State != agentio.StateLimited || !sameLimit(h.Limit, want) {
 				t.Errorf("idle at its prompt since: %s %+v, want limited", h.State, h.Limit)
 			}
 			// A prompt, Claude Code's own once the limit resets or the loop's, starts another turn.
 			runHooks(t, settings, "UserPromptSubmit", stepPrompt.input)
-			if h := ReadHooks(records, ""); h.State == dispatch.StateLimited || h.Limit.Reached() {
+			if h := ReadHooks(records, ""); h.State == agentio.StateLimited || h.Limit.Reached() {
 				t.Errorf("prompted since: %s %+v, want no limit", h.State, h.Limit)
 			}
 			if u, _ := (Reporter{}).LastToolUse(wt); u.Limit.Reached() {
@@ -126,7 +126,7 @@ func TestStopFailureOnTheUsageLimitLimitsTheWorker(t *testing.T) {
 }
 
 // sameLimit reports whether a and b are the same limit, their times the same instants.
-func sameLimit(a, b dispatch.UsageLimit) bool {
+func sameLimit(a, b agentio.UsageLimit) bool {
 	return a.At.Equal(b.At) && a.Reset.Equal(b.Reset) && a.Message == b.Message
 }
 
@@ -142,7 +142,7 @@ func TestOtherStopFailuresOnlyEndTheTurn(t *testing.T) {
 			t.Parallel()
 			wt := t.TempDir()
 			if got := playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt, stepFailure(input)}); got !=
-				dispatch.StateIdle {
+				agentio.StateIdle {
 				t.Errorf("state: %s, want idle", got)
 			}
 			if h := ReadHooks(Records(wt, ""), ""); h.Limit.Reached() {
@@ -159,7 +159,7 @@ func TestOtherStopFailuresOnlyEndTheTurn(t *testing.T) {
 		wt := t.TempDir()
 		sub := strings.Replace(failureSessionLimit, `{`, `{"agent_id":"a1","agent_type":"verifier",`, 1)
 		if got := playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt, stepSubStart, stepUseBash,
-			stepFailure(sub)}); got != dispatch.StateWorking {
+			stepFailure(sub)}); got != agentio.StateWorking {
 			t.Errorf("state: %s, want working", got)
 		}
 		if u, _ := (Reporter{}).LastToolUse(wt); u.Event != "PreToolUse" || u.Limit.Reached() {
@@ -202,7 +202,7 @@ func TestUsageLimitRecordFormats(t *testing.T) {
 	reset := athens(t, "2026-10-16 19:00:00")
 	limited := func(t *testing.T) {
 		t.Helper()
-		if h := ReadHooks(records, ""); h.State != dispatch.StateLimited || !h.Limit.Reset.Equal(reset) {
+		if h := ReadHooks(records, ""); h.State != agentio.StateLimited || !h.Limit.Reset.Equal(reset) {
 			t.Errorf("hooks: %s %+v", h.State, h.Limit)
 		}
 		if u, ok := r.LastToolUse(wt); !ok || !u.Limit.Reset.Equal(reset) {
@@ -218,7 +218,7 @@ func TestUsageLimitRecordFormats(t *testing.T) {
 
 	rewriteRecords(t, records, `{`, `{"v":2,`)
 	for range 3 {
-		if h := ReadHooks(records, ""); h.State == dispatch.StateLimited || h.Limit.Reached() {
+		if h := ReadHooks(records, ""); h.State == agentio.StateLimited || h.Limit.Reached() {
 			t.Errorf("hooks read from a newer format: %s %+v", h.State, h.Limit)
 		}
 		if u, ok := r.LastToolUse(wt); ok || u.Limit.Reached() {
@@ -301,7 +301,7 @@ func TestResetTimeFromClaudeCodesWords(t *testing.T) {
 		{"resets soon", at, time.Time{}},
 		{"You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage", at, time.Time{}},
 	} {
-		if got := dispatch.LimitReset(c.message, c.at); !got.Equal(c.want) {
+		if got := agentio.LimitReset(c.message, c.at); !got.Equal(c.want) {
 			t.Errorf("LimitReset(%q) = %v, want %v", c.message, got, c.want)
 		}
 	}

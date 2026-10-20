@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // lateAdopt is how long, after Herdr's own adoption gave up, the loop keeps watching a pane the
@@ -39,7 +41,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 			if err == nil {
 				return "", true, nil
 			}
-			if errors.Is(err, ErrNameRefused) {
+			if errors.Is(err, agentio.ErrNameRefused) {
 				return "", false, err
 			}
 			why := fmt.Sprintf("the %s agent in the pane could not be renamed: %v", kind, err)
@@ -273,7 +275,7 @@ func (s *workerStart) interrupted(ctx context.Context) *stopReason {
 // nameRefused ends the start if err is the terminal refusing the agent name, which it would refuse on
 // every retry; for any other error, or none, it is nil.
 func (s *workerStart) nameRefused(err error) *stopReason {
-	if !errors.Is(err, ErrNameRefused) {
+	if !errors.Is(err, agentio.ErrNameRefused) {
 		return nil
 	}
 	return halt(ExitTool, stopStartFailed,
@@ -359,18 +361,18 @@ func (s *workerStart) startPlainly(ctx context.Context) *stopReason {
 			return stop
 		}
 		o.log.Raw("", err)
-		if errors.Is(err, ErrArgumentRefused) && len(args) > len(s.fixed) {
+		if errors.Is(err, agentio.ErrArgumentRefused) && len(args) > len(s.fixed) {
 			s.rules, s.report = nil, nil // start it plainly: its rules are pasted with its prompt
 			s.place()
 			continue
 		}
-		if errors.Is(err, ErrArgumentRefused) && len(s.mcpArgs) > 0 {
+		if errors.Is(err, agentio.ErrArgumentRefused) && len(s.mcpArgs) > 0 {
 			// Without them it would start with every MCP server on the machine.
 			return halt(ExitTool, stopStartFailed,
 				" for %s in tab %s: the terminal refused the arguments giving it its MCP servers (%v)",
 				s.id, s.tab, err).causedBy(err)
 		}
-		if errors.Is(err, ErrArgumentRefused) {
+		if errors.Is(err, agentio.ErrArgumentRefused) {
 			// Nothing is left to drop, and the same arguments would be refused on every try.
 			return halt(ExitTool, stopStartFailed, " for %s in tab %s: the terminal refused the arguments %q (%v)",
 				s.id, s.tab, strings.Join(args, " "), err).causedBy(err)

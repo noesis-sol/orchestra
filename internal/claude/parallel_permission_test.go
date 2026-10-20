@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 var (
@@ -32,23 +32,23 @@ func TestPermissionAskedBesideAnotherSubagent(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		steps []hookStep
-		want  dispatch.AgentState
+		want  agentio.State
 		asked bool
 	}{
-		{"the other uses a tool", then(slices.Concat(asked, []hookStep{stepOtherBash})...), dispatch.StateBlocked, true},
+		{"the other uses a tool", then(slices.Concat(asked, []hookStep{stepOtherBash})...), agentio.StateBlocked, true},
 		{"the other's tool done", then(slices.Concat(asked, []hookStep{stepOtherBash, stepOtherUsedIt})...),
-			dispatch.StateBlocked, true},
+			agentio.StateBlocked, true},
 		{"the other stopped", then(slices.Concat(asked, []hookStep{stepOtherBash, stepOtherUsedIt, stepOtherStop})...),
-			dispatch.StateBlocked, true},
-		{"the session's own agent asked", then(stepUseBash, stepAskBash, stepOtherBash), dispatch.StateBlocked, true},
+			agentio.StateBlocked, true},
+		{"the session's own agent asked", then(stepUseBash, stepAskBash, stepOtherBash), agentio.StateBlocked, true},
 		{"allowed, its tool done", then(slices.Concat(asked, []hookStep{stepOtherBash, stepSubUsedIt})...),
-			dispatch.StateWorking, false},
+			agentio.StateWorking, false},
 		{"the asking one stopped", then(slices.Concat(asked, []hookStep{stepOtherBash, stepSubStop})...),
-			dispatch.StateWorking, false},
+			agentio.StateWorking, false},
 		{"denied, told what to do", then(slices.Concat(asked, []hookStep{stepOtherBash, stepPrompt})...),
-			dispatch.StateWorking, false},
+			agentio.StateWorking, false},
 		{"resumed", then(slices.Concat(asked, []hookStep{stepOtherBash, stepResumed, stepSessionStart("resume")})...),
-			dispatch.StateIdle, false},
+			agentio.StateIdle, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -68,7 +68,7 @@ func TestPermissionAskedByAnAgentNamedAsAPath(t *testing.T) {
 	wt := t.TempDir()
 	playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt,
 		stepAt("PermissionRequest", `{"hook_event_name":"PermissionRequest","agent_id":"../../x y","tool_name":"Bash"}`)})
-	if h := ReadHooks(Records(wt, ""), ""); h.State != dispatch.StateBlocked || !h.Asked {
+	if h := ReadHooks(Records(wt, ""), ""); h.State != agentio.StateBlocked || !h.Asked {
 		t.Errorf("ReadHooks = %s %v, want blocked, asked", h.State, h.Asked)
 	}
 	if _, err := os.Stat(filepath.Join(Records(wt, ""), askedPrefix+"xy")); err != nil {

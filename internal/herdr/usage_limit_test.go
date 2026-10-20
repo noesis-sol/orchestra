@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // limitScreen is the end of Claude Code 2.1.301's screen once its turn ended on the session limit and
@@ -42,17 +42,17 @@ func statusHerdr(t *testing.T, kind, status, screen string) string {
 func TestStatusOfAClaudeAgentAtItsUsageLimit(t *testing.T) {
 	for _, c := range []struct {
 		name, kind, status, screen string
-		want                       dispatch.AgentState
+		want                       agentio.State
 		read                       bool
 	}{
-		{"idle at the limit", "claude", "idle", limitScreen, dispatch.StateLimited, true},
-		{"done at the limit", "claude", "done", limitScreen, dispatch.StateLimited, true},
+		{"idle at the limit", "claude", "idle", limitScreen, agentio.StateLimited, true},
+		{"done at the limit", "claude", "done", limitScreen, agentio.StateLimited, true},
 		{"on the limit's dialog", "claude", "blocked", limitScreen +
-			"   What do you want to do?\n   ❯ 1. Stop and wait for limit to reset\n", dispatch.StateLimited, true},
+			"   What do you want to do?\n   ❯ 1. Stop and wait for limit to reset\n", agentio.StateLimited, true},
 		{"idle with no limit", "claude", "idle", strings.Replace(limitScreen, "You've hit your session limit",
-			"API Error: Server is temporarily limiting requests (not your usage limit)", 1), dispatch.StateIdle, true},
-		{"working", "claude", "working", limitScreen, dispatch.StateWorking, false},
-		{"another kind of agent", "codex", "idle", limitScreen, dispatch.StateIdle, false},
+			"API Error: Server is temporarily limiting requests (not your usage limit)", 1), agentio.StateIdle, true},
+		{"working", "claude", "working", limitScreen, agentio.StateWorking, false},
+		{"another kind of agent", "codex", "idle", limitScreen, agentio.StateIdle, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			calls := statusHerdr(t, c.kind, c.status, c.screen)

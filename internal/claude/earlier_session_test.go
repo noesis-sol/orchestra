@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // An earlier worker left running in its tab beside the worker started since in the same worktree, as
@@ -20,17 +20,17 @@ func TestEarlierSessionLeftRunningIsNotRecorded(t *testing.T) {
 	}
 	for _, c := range []struct {
 		name, event, input string
-		want               dispatch.AgentState
+		want               agentio.State
 	}{
 		{"the earlier one exits", "SessionEnd",
-			`{"hook_event_name":"SessionEnd","session_id":"` + earlier + `","reason":"prompt_input_exit"}`, dispatch.StateWorking},
+			`{"hook_event_name":"SessionEnd","session_id":"` + earlier + `","reason":"prompt_input_exit"}`, agentio.StateWorking},
 		{"the earlier one waits at its prompt", "Notification", `{"hook_event_name":"Notification","session_id":"` +
-			earlier + `","notification_type":"idle_prompt"}`, dispatch.StateWorking},
-		{"the earlier one compacts", "SessionStart", start(earlier, "compact"), dispatch.StateWorking},
+			earlier + `","notification_type":"idle_prompt"}`, agentio.StateWorking},
+		{"the earlier one compacts", "SessionStart", start(earlier, "compact"), agentio.StateWorking},
 		{"the earlier one's turn ends", "Stop", `{"hook_event_name":"Stop","session_id":"` + earlier + `"}`,
-			dispatch.StateWorking},
+			agentio.StateWorking},
 		{"the later one exits", "SessionEnd",
-			`{"hook_event_name":"SessionEnd","session_id":"` + later + `","reason":"prompt_input_exit"}`, dispatch.StateGone},
+			`{"hook_event_name":"SessionEnd","session_id":"` + later + `","reason":"prompt_input_exit"}`, agentio.StateGone},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

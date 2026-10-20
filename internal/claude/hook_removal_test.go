@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A permission prompt's note keeps the start of its command, and the removal in the whole command that
@@ -23,8 +23,8 @@ func TestPermissionNoteHasTheHeldRemoval(t *testing.T) {
 			"tool_input": map[string]string{"command": cmd}})
 		runHooks(t, settings, "PermissionRequest", string(in))
 	}
-	want := []dispatch.Permission{
-		{Tool: "Bash", Command: dispatch.Clip(held, 80), Removal: "rm -f $S/*.mp4"},
+	want := []agentio.Permission{
+		{Tool: "Bash", Command: agentio.Clip(held, 80), Removal: "rm -f $S/*.mp4"},
 		{Tool: "Bash", Command: "ffprobe -v error in.mp4"},
 	}
 	if got := (Reporter{}).HookRecord(wt).Permissions; !slices.Equal(got, want) {

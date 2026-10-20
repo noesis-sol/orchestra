@@ -5,10 +5,12 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A subagent cut off by Esc runs no SubagentStop, so the hooks' record counts it running for good.
-// Once no hook has reported anything for SubagentQuiet it counts as ended: the worker's Stop, its
+// Once no hook has reported anything for agentio.SubagentQuiet it counts as ended: the worker's Stop, its
 // ticket still in progress, ends its turn, and the worker is told to continue rather than left to
 // the idle grace.
 func TestSubagentQuietSoLongNoLongerHoldsTheTurn(t *testing.T) {
@@ -45,33 +47,17 @@ func TestSubagentQuietSoLongNoLongerHoldsTheTurn(t *testing.T) {
 		if !strings.Contains(h.mainLog(), "A: add a.txt") {
 			t.Errorf("main:\n%s", h.mainLog())
 		}
-		if took := time.Since(stopped); took < SubagentQuiet {
+		if took := time.Since(stopped); took < agentio.SubagentQuiet {
 			t.Errorf("merged %s after the Stop: the subagent counts as running until no hook for %s",
-				took, SubagentQuiet)
+				took, agentio.SubagentQuiet)
 		}
 	})
 }
 
-// A subagent counts as running while hooks report, by a note or a tool use of any agent, and no
-// longer once none has for SubagentQuiet; with none started, none runs.
-func TestSubagentsRunning(t *testing.T) {
+// A subagent's quiet, agentio's, is the loop's idle grace: one left that long settles its worker too.
+func TestSubagentQuietIsTheIdleGrace(t *testing.T) {
 	t.Parallel()
-	now := time.Now()
-	recent, old := now.Add(-time.Minute), now.Add(-SubagentQuiet)
-	for _, c := range []struct {
-		name        string
-		rec         HookRecord
-		used        time.Time
-		wantRunning bool
-	}{
-		{"noted lately", HookRecord{Subagents: 1, Noted: recent}, old, true},
-		{"a tool use lately", HookRecord{Subagents: 1, Noted: old}, recent, true},
-		{"quiet", HookRecord{Subagents: 1, Noted: old}, old, false},
-		{"nothing known", HookRecord{Subagents: 1}, time.Time{}, false},
-		{"none started", HookRecord{Noted: now}, now, false},
-	} {
-		if got := c.rec.SubagentsRunning(c.used, now); got != c.wantRunning {
-			t.Errorf("%s: running = %v, want %v", c.name, got, c.wantRunning)
-		}
+	if agentio.SubagentQuiet != idleGrace {
+		t.Errorf("agentio.SubagentQuiet is %s, the idle grace %s", agentio.SubagentQuiet, idleGrace)
 	}
 }

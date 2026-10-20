@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
@@ -17,7 +17,7 @@ func TestAdoptAgent(t *testing.T) {
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%5", kind: "claude", records: workingRecords(t), command: "2.1.0"})
 	st, err := Terminal{}.AdoptAgent(bg, "%5", "claude", "x-1")
-	if st != dispatch.StateWorking || err != nil {
+	if st != agentio.StateWorking || err != nil {
 		t.Fatalf("got %q %v", st, err)
 	}
 	if got := f.call("set-option"); !slices.Equal(got, []string{"set-option", "-p", "-t", "%5", "@orchestra-agent", "x-1"}) {
@@ -35,11 +35,11 @@ func TestPaneAgent(t *testing.T) {
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%5", agent: "x-1", kind: "claude", records: idleRecords(t), command: "2.1.0"},
 		paneLine{id: "%6", command: "zsh"})
-	if n, k, st, err := (Terminal{}).PaneAgent(bg, "%5"); n != "x-1" || k != "claude" || st != dispatch.StateIdle || err != nil {
+	if n, k, st, err := (Terminal{}).PaneAgent(bg, "%5"); n != "x-1" || k != "claude" || st != agentio.StateIdle || err != nil {
 		t.Errorf("an agent: %q %q %q %v", n, k, st, err)
 	}
 	for _, p := range []string{"%6", "%7"} {
-		if n, k, st, err := (Terminal{}).PaneAgent(bg, p); n != "" || k != "" || st != dispatch.StateGone || err != nil {
+		if n, k, st, err := (Terminal{}).PaneAgent(bg, p); n != "" || k != "" || st != agentio.StateGone || err != nil {
 			t.Errorf("no agent in %s: %q %q %q %v", p, n, k, st, err)
 		}
 	}
@@ -97,24 +97,24 @@ func TestStatus(t *testing.T) {
 		name   string
 		pane   paneLine
 		screen string
-		want   dispatch.AgentState
+		want   agentio.State
 	}{
-		{"idle", paneLine{records: idleRecords(t)}, "", dispatch.StateIdle},
-		{"working", paneLine{records: workingRecords(t)}, trust, dispatch.StateWorking},
-		{"session ended", paneLine{records: endedRecords(t)}, "", dispatch.StateGone},
-		{"exited", paneLine{records: workingRecords(t), dead: true}, "", dispatch.StateGone},
-		{"back at its shell", paneLine{records: workingRecords(t), command: "-zsh"}, "", dispatch.StateGone},
-		{"its shell, starting", paneLine{records: records(t), command: "sh"}, "", dispatch.StateUnknown},
+		{"idle", paneLine{records: idleRecords(t)}, "", agentio.StateIdle},
+		{"working", paneLine{records: workingRecords(t)}, trust, agentio.StateWorking},
+		{"session ended", paneLine{records: endedRecords(t)}, "", agentio.StateGone},
+		{"exited", paneLine{records: workingRecords(t), dead: true}, "", agentio.StateGone},
+		{"back at its shell", paneLine{records: workingRecords(t), command: "-zsh"}, "", agentio.StateGone},
+		{"its shell, starting", paneLine{records: records(t), command: "sh"}, "", agentio.StateUnknown},
 		{"launched, a wrapper script", paneLine{records: workingRecords(t), command: "bash", launched: true}, "",
-			dispatch.StateWorking},
+			agentio.StateWorking},
 		{"launched, a wrapper script, idle", paneLine{records: idleRecords(t), command: "sh", launched: true}, "",
-			dispatch.StateIdle},
+			agentio.StateIdle},
 		{"launched, exited", paneLine{records: workingRecords(t), command: "bash", launched: true, dead: true}, "",
-			dispatch.StateGone},
-		{"no hook yet", paneLine{records: records(t)}, "Welcome to Claude Code", dispatch.StateUnknown},
-		{"trust dialog", paneLine{records: records(t)}, trust, dispatch.StateBlocked},
-		{"MCP dialog", paneLine{records: idleRecords(t)}, mcp, dispatch.StateBlocked},
-		{"no agent launched", paneLine{agent: "x-1", command: "zsh"}, "", dispatch.StateGone},
+			agentio.StateGone},
+		{"no hook yet", paneLine{records: records(t)}, "Welcome to Claude Code", agentio.StateUnknown},
+		{"trust dialog", paneLine{records: records(t)}, trust, agentio.StateBlocked},
+		{"MCP dialog", paneLine{records: idleRecords(t)}, mcp, agentio.StateBlocked},
+		{"no agent launched", paneLine{agent: "x-1", command: "zsh"}, "", agentio.StateGone},
 	} {
 		f := newFakeTmux(t)
 		p := c.pane
@@ -136,7 +136,7 @@ func TestStatus(t *testing.T) {
 func TestStatusWithoutTheAgentOrTmux(t *testing.T) {
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%1", agent: "x-2", kind: "claude"})
-	if st, err := (Terminal{}).Status(bg, "x-1"); st != dispatch.StateGone || err != nil {
+	if st, err := (Terminal{}).Status(bg, "x-1"); st != agentio.StateGone || err != nil {
 		t.Errorf("no pane holds it: %q %v", st, err)
 	}
 	f.answer("list-panes", "%1 @1 0\n")
@@ -144,7 +144,7 @@ func TestStatusWithoutTheAgentOrTmux(t *testing.T) {
 		t.Errorf("odd output: %q %v", st, err)
 	}
 	f.fail("list-panes", "no server running")
-	if st, err := (Terminal{}).Status(bg, "x-1"); st != dispatch.StateGone || err != nil {
+	if st, err := (Terminal{}).Status(bg, "x-1"); st != agentio.StateGone || err != nil {
 		t.Errorf("no server: %q %v", st, err)
 	}
 	f.serve()
@@ -169,7 +169,7 @@ func TestStatusOfAnAgentLaunchedWithoutHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.listPanes(paneLine{id: "%5", agent: "x-1", kind: "claude", command: "2.1.0", dir: wt})
-	if st, err := (Terminal{}).Status(bg, "x-1"); st != dispatch.StateWorking || err != nil {
+	if st, err := (Terminal{}).Status(bg, "x-1"); st != agentio.StateWorking || err != nil {
 		t.Errorf("got %q %v", st, err)
 	}
 }
@@ -178,11 +178,11 @@ func TestScreen(t *testing.T) {
 	f := newFakeTmux(t)
 	f.listPanes(paneLine{id: "%5", agent: "x-1", kind: "claude"})
 	f.answer("capture-pane", "⏺ Bash(go test)\n\n❯ \n\n\n\n")
-	for st, want := range map[dispatch.AgentState][]string{
-		dispatch.StateWorking: {"capture-pane", "-p", "-J", "-t", "%5"},
-		dispatch.StateBlocked: {"capture-pane", "-p", "-J", "-t", "%5"},
-		dispatch.StateIdle:    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
-		"":                    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
+	for st, want := range map[agentio.State][]string{
+		agentio.StateWorking: {"capture-pane", "-p", "-J", "-t", "%5"},
+		agentio.StateBlocked: {"capture-pane", "-p", "-J", "-t", "%5"},
+		agentio.StateIdle:    {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
+		"":                   {"capture-pane", "-p", "-J", "-t", "%5", "-S", "-80"},
 	} {
 		if err := os.Remove(filepath.Join(f.dir, "calls")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			t.Fatal(err)

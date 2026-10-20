@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // A worker's own /resume ends its session with reason resume before Claude Code starts the one it
@@ -15,14 +15,14 @@ func TestOwnResumeIsNotGone(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		steps []hookStep
-		want  dispatch.AgentState
+		want  agentio.State
 	}{
-		{"resuming, no new session yet", []hookStep{stepSessionEnd("resume")}, dispatch.StateIdle},
-		{"resumed", []hookStep{stepSessionEnd("resume"), stepSessionStart("resume")}, dispatch.StateIdle},
+		{"resuming, no new session yet", []hookStep{stepSessionEnd("resume")}, agentio.StateIdle},
+		{"resumed", []hookStep{stepSessionEnd("resume"), stepSessionStart("resume")}, agentio.StateIdle},
 		{"resumed, then prompted", []hookStep{stepSessionEnd("resume"), stepSessionStart("resume"), stepPrompt},
-			dispatch.StateWorking},
+			agentio.StateWorking},
 		{"resumed, then exited", []hookStep{stepSessionEnd("resume"), stepSessionStart("resume"),
-			stepSessionEnd("prompt_input_exit")}, dispatch.StateGone},
+			stepSessionEnd("prompt_input_exit")}, agentio.StateGone},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

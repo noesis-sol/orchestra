@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentio"
 	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // Terminal is Herdr as orchestra uses it: tabs for workers, starting and naming agents, and reading
@@ -251,7 +251,7 @@ func (t Terminal) PaneOpen(ctx context.Context, pane string) (bool, error) {
 // prompt already submitted. Herdr types the command into the pane's shell and refuses arguments
 // with line breaks, so each must be one line.
 func (t Terminal) StartAgent(ctx context.Context, name, kind, pane string, args []string) error {
-	const wait = dispatch.ReadyWithin
+	const wait = agentio.ReadyWithin
 	a := []string{"agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", millis(wait)}
 	if len(args) > 0 {
 		a = append(append(a, "--"), args...)
@@ -281,13 +281,13 @@ type Error struct {
 func (e *Error) Error() string { return e.Err.Error() }
 func (e *Error) Unwrap() error { return e.Err }
 
-// Is reports Herdr refusing an agent name as dispatch.ErrNameRefused, and agent arguments it can't
-// pass through the shell as dispatch.ErrArgumentRefused: a retry with them can't succeed.
+// Is reports Herdr refusing an agent name as agentio.ErrNameRefused, and agent arguments it can't
+// pass through the shell as agentio.ErrArgumentRefused: a retry with them can't succeed.
 func (e *Error) Is(target error) bool {
 	switch target {
-	case dispatch.ErrNameRefused:
+	case agentio.ErrNameRefused:
 		return e.Code == InvalidAgentName
-	case dispatch.ErrArgumentRefused:
+	case agentio.ErrArgumentRefused:
 		return e.Code == InvalidAgentArgument
 	}
 	return false
@@ -379,11 +379,11 @@ func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []st
 
 // AdoptAgent waits up to a minute for Herdr to recognise an agent of kind in the pane, names it
 // name, and returns its state. The error says why it could not, such as Herdr refusing the name.
-func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (dispatch.AgentState, error) {
+func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (agentio.State, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
 		n, k, st, err := t.PaneAgent(ctx, pane)
-		if err == nil && st != dispatch.StateGone && k == kind {
+		if err == nil && st != agentio.StateGone && k == kind {
 			if n != name {
 				if err := t.RenameAgent(ctx, pane, name); err != nil {
 					return st, err
@@ -410,7 +410,7 @@ func (t Terminal) AdoptAgent(ctx context.Context, pane, kind, name string) (disp
 // state StateGone if the pane holds no agent, and an error if Herdr could not be asked.
 func (t Terminal) PaneAgent(
 	ctx context.Context, pane string,
-) (name, kind string, state dispatch.AgentState, err error) {
+) (name, kind string, state agentio.State, err error) {
 	return readAgent(run(ctx, command.ReadLimit, "agent", "get", pane))
 }
 
@@ -419,9 +419,9 @@ func (t Terminal) PaneAgent(
 // agent in it; any other failure (Herdr busy or restarting, say) says nothing about the agent, so
 // it is the error, with no state. So is an agent without a status: a Herdr that renamed or dropped
 // agent_status would otherwise make every live worker look gone.
-func readAgent(out string, err error) (name, kind string, state dispatch.AgentState, _ error) {
+func readAgent(out string, err error) (name, kind string, state agentio.State, _ error) {
 	if HasCode(err, AgentNotFound) {
-		return "", "", dispatch.StateGone, nil
+		return "", "", agentio.StateGone, nil
 	}
 	var r struct {
 		Result *struct {
@@ -439,7 +439,7 @@ func readAgent(out string, err error) (name, kind string, state dispatch.AgentSt
 	case jerr != nil || r.Result == nil:
 		return "", "", "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
 	case r.Result.Agent == nil:
-		return "", "", dispatch.StateGone, nil
+		return "", "", agentio.StateGone, nil
 	case r.Result.Agent.AgentStatus == "":
 		return "", "", "", fmt.Errorf("unexpected 'herdr agent get' output: %s", out)
 	}
@@ -447,7 +447,7 @@ func readAgent(out string, err error) (name, kind string, state dispatch.AgentSt
 	if a.Name != nil {
 		name = *a.Name
 	}
-	return name, a.Agent, dispatch.AgentState(a.AgentStatus), nil
+	return name, a.Agent, agentio.State(a.AgentStatus), nil
 }
 
 // AgentTab returns the tab of the agent named name, "" if Herdr has no such agent, and an error if
@@ -494,7 +494,7 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 			base = base[:maxName-len(suffix)]
 		}
 		// Not unreadable: that name may be taken.
-		if st, err := t.Status(ctx, base+suffix); err == nil && st == dispatch.StateGone {
+		if st, err := t.Status(ctx, base+suffix); err == nil && st == agentio.StateGone {
 			return base + suffix
 		}
 	}
@@ -503,9 +503,9 @@ func (t Terminal) FreeName(ctx context.Context, name string) string {
 
 // WaitReady waits up to a minute for an agent that is already present to become idle.
 func (t Terminal) WaitReady(ctx context.Context, name string) bool {
-	const wait = dispatch.ReadyWithin
+	const wait = agentio.ReadyWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
-		"--until", string(dispatch.StateIdle), "--until", string(dispatch.StateDone),
+		"--until", string(agentio.StateIdle), "--until", string(agentio.StateDone),
 		"--timeout", millis(wait))
 	return err == nil
 }
@@ -516,9 +516,9 @@ func (t Terminal) WaitReady(ctx context.Context, name string) bool {
 // of submitting, as when the paste is lost or Enter doesn't register; the 30 seconds are a limit
 // on Herdr itself.
 func (t Terminal) Prompt(ctx context.Context, name, prompt string) error {
-	const wait = dispatch.PromptWithin
+	const wait = agentio.PromptWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "prompt", name, prompt, "--wait",
-		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked), "--timeout", millis(wait))
+		"--until", string(agentio.StateWorking), "--until", string(agentio.StateBlocked), "--timeout", millis(wait))
 	return err
 }
 
@@ -530,9 +530,9 @@ func (t Terminal) SendKeys(ctx context.Context, name string, keys ...string) err
 
 // WaitStarted waits up to 20 seconds for an agent to start working (or block).
 func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
-	const wait = dispatch.StartedWithin
+	const wait = agentio.StartedWithin
 	_, err := run(ctx, wait+command.ReadLimit, "agent", "wait", name,
-		"--until", string(dispatch.StateWorking), "--until", string(dispatch.StateBlocked),
+		"--until", string(agentio.StateWorking), "--until", string(agentio.StateBlocked),
 		"--timeout", millis(wait))
 	return err == nil
 }
@@ -542,30 +542,30 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 // turn ended on the account's usage limit: one it shows at rest (idle, done, or blocked on the dialog
 // Claude Code may ask then) is limited when its kind's screen reader finds the limit on its screen
 // (agentkind.ScreenReader's ShowsUsageLimit); the screen of a kind without one isn't read for it.
-func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
+func (t Terminal) Status(ctx context.Context, name string) (agentio.State, error) {
 	_, kind, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
 	if r := agentkind.Named(kind).Screen; err == nil && r != nil &&
-		(st == dispatch.StateIdle || st == dispatch.StateDone || st == dispatch.StateBlocked) &&
+		(st == agentio.StateIdle || st == agentio.StateDone || st == agentio.StateBlocked) &&
 		r.ShowsUsageLimit(t.Screen(ctx, name, st)) {
-		return dispatch.StateLimited, nil
+		return agentio.StateLimited, nil
 	}
 	return st, err
 }
 
 // Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
-// dispatch.Agents gives it: the last dispatch.ScreenLines lines. Herdr can capture scrollback only
+// dispatch.Agents gives it: the last agentio.ScreenLines lines. Herdr can capture scrollback only
 // while the agent is idle, so for a working or blocked agent this reads the visible screen at once,
 // and otherwise falls back to it when scrollback fails.
-func (t Terminal) Screen(ctx context.Context, name string, state dispatch.AgentState) string {
-	if state != dispatch.StateWorking && state != dispatch.StateBlocked {
+func (t Terminal) Screen(ctx context.Context, name string, state agentio.State) string {
+	if state != agentio.StateWorking && state != agentio.StateBlocked {
 		out, err := run(ctx, command.ReadLimit,
-			"agent", "read", name, "--source", "recent-unwrapped", "--lines", strconv.Itoa(dispatch.ScreenLines))
+			"agent", "read", name, "--source", "recent-unwrapped", "--lines", strconv.Itoa(agentio.ScreenLines))
 		if err == nil {
-			return dispatch.LastLines(out, dispatch.ScreenLines)
+			return agentio.LastLines(out, agentio.ScreenLines)
 		}
 	}
 	out, _ := run(ctx, command.ReadLimit, "agent", "read", name, "--source", "visible") // "" when Herdr can't read it
-	return dispatch.LastLines(out, dispatch.ScreenLines)
+	return agentio.LastLines(out, agentio.ScreenLines)
 }
 
 // CurrentWorkspace returns the Herdr workspace orchestra runs in: from HERDR_WORKSPACE_ID, which

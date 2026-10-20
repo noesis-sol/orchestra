@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // ---- Herdr ---------------------------------------------------------------------------
@@ -35,7 +37,7 @@ type refusal struct {
 func (r refusal) Error() string        { return r.text }
 func (r refusal) Is(target error) bool { return target == r.is }
 
-var errRefused error = refusal{"herdr: unknown argument", ErrArgumentRefused}
+var errRefused error = refusal{"herdr: unknown argument", agentio.ErrArgumentRefused}
 
 // fakeHerdr is the terminal: tabs, the agents in their panes, and the workers they run. An agent
 // runs the next behaviour given for its ticket once it has its prompt.

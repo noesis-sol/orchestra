@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
 // The worker's hooks are orchestra's own binary, the one that launched the worker, run as 'orchestra hook
@@ -88,7 +88,7 @@ type hookInput struct {
 	Error   string `json:"error,omitzero"`
 	Message string `json:"last_assistant_message,omitzero"`
 	// A permission prompt's note only: the removal in its command that Claude Code's safety check
-	// holds for a person (dispatch.GuardedRemoval), read from the whole command, of which the note
+	// holds for a person (agentio.GuardedRemoval), read from the whole command, of which the note
 	// keeps the start. Readers that don't know it read the prompt as an ordinary one.
 	Removal string `json:"removal,omitzero"`
 }
@@ -244,7 +244,7 @@ func eventRecord(event string) []byte {
 // Claude Code said, kept short. Its input names the session and the prompt, which no reader needs.
 func failureRecord(h hookInput) []byte {
 	b, _ := json.Marshal(hookInput{V: recordFormat, Event: "StopFailure", Error: h.Error,
-		Message: dispatch.Clip(h.Message, 300)}) // strings only: it can't fail
+		Message: agentio.Clip(h.Message, 300)}) // strings only: it can't fail
 	return b
 }
 
@@ -254,8 +254,8 @@ func noteOf(event string, h hookInput) hookInput {
 	switch event {
 	case "PermissionRequest":
 		n.Tool = h.Tool
-		n.Input.Command = dispatch.Clip(h.Input.Command, 80) // a note is short: the start names the program
-		n.Removal = dispatch.GuardedRemoval(h.Input.Command)
+		n.Input.Command = agentio.Clip(h.Input.Command, 80) // a note is short: the start names the program
+		n.Removal = agentio.GuardedRemoval(h.Input.Command)
 	case "PreCompact":
 		n.Trigger = h.Trigger
 	case "SubagentStart", "SubagentStop":
