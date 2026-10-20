@@ -80,7 +80,7 @@ if [ -f "$d/out-$1-$n" ]; then cat "$d/out-$1-$n"; elif [ -f "$d/out-$1" ]; then
 [ -f "$d/after-$1" ] && . "$d/after-$1"
 exit 0
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	t.Setenv("CMUX_SOCKET", "")
 	sockets, err := os.MkdirTemp("", "cmx") // short: a socket's path has a limit
 	if err != nil {

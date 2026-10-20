@@ -116,7 +116,7 @@ type carryOutcome struct {
 func carry(t *testing.T, repo, file string, tree specTracker, b specBreakdown) carryOutcome {
 	t.Helper()
 	var out, errOut strings.Builder
-	root, code := specRun{file: file, repo: repo, breakdown: b, tracker: tree, out: &out, err: &errOut}.run(testCtx(t.Context(), t))
+	root, code := specRun{file: file, repo: repo, breakdown: b, tracker: tree, out: &out, err: &errOut}.run(runCtx(t))
 	return carryOutcome{root, code, out.String(), errOut.String()}
 }
 
@@ -403,7 +403,7 @@ func TestSpecRootEpicUnread(t *testing.T) {
 		"earlier run filed: bd list: database is locked\n" {
 		t.Errorf("exit %d, broken down %v; stderr:\n%s", o.code, b.asked, o.err)
 	}
-	ctx, cancel := context.WithCancel(testCtx(t.Context(), t))
+	ctx, cancel := context.WithCancel(runCtx(t))
 	cancel()
 	var out, errOut strings.Builder
 	if _, code := (specRun{file: file, repo: repo, breakdown: b, tracker: failingLister{tree}, out: &out,
@@ -617,7 +617,7 @@ func TestRefineInUpdateModeCountsOnlyWhatItFiles(t *testing.T) {
 		issue("s-1.2", "task", "s-1", "{}", "")})}, every: time.Hour}.shown(line, time.Now())
 	shown := s.(*refineShown)
 	shown.counted, shown.count = time.Now(), count
-	shown.show(t.Context(), "", dispatch.StateWorking)
+	shown.show(runCtx(t), "", dispatch.StateWorking)
 	if got := ansi.Strip(out.String()); !strings.Contains(got, " · 1 epic, 1 ticket filed") {
 		t.Errorf("the line: %q", got)
 	}

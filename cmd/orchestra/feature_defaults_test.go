@@ -99,7 +99,7 @@ func TestFeatureChosenRunsAsFeatureGivenDoes(t *testing.T) {
 			t.Errorf("%s: feature %q, limit %d, permission mode %q; want %q, %d, %q",
 				tc.name, c.Feature, c.Limit, c.WorkerPermissionMode, request, tc.limit, tc.mode)
 		}
-		if h, held, err := project.RunHolder(t.Context(), repo); err != nil || !held || h.Feature != request ||
+		if h, held, err := project.RunHolder(runCtx(t), repo); err != nil || !held || h.Feature != request ||
 			h.PID != 1 {
 			t.Errorf("%s: the run lock: %+v, held %v, %v", tc.name, h, held, err)
 		}

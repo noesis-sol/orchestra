@@ -140,7 +140,7 @@ func TestCheckFeatureWarnsOfWhatIsAmiss(t *testing.T) {
 			if tc.change != nil {
 				tc.change(tree)
 			}
-			filed, warnings, err := checkFeature(t.Context(), tree, tc.epic)
+			filed, warnings, err := checkFeature(runCtx(t), tree, tc.epic)
 			if tc.err != "" {
 				if err == nil || err.Error() != tc.err {
 					t.Fatalf("got %v, want the error %q", err, tc.err)
@@ -182,7 +182,7 @@ func talkFeatureThrough(t *testing.T, repo string, tree featureEpicTracker, epic
 		}}
 	var r talkedThrough
 	r.epic, r.code = featureTalk{request: paneRequest, runID: paneRun, repo: repo, breakdown: b, tracker: tree,
-		out: &out, err: &errOut}.run(testCtx(t.Context(), t))
+		out: &out, err: &errOut}.run(runCtx(t))
 	r.out, r.err = out.String(), errOut.String()
 	return r
 }
@@ -223,7 +223,7 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 			return refineOnTerminal(ctx, nil, claudeSession{repo: repo}, message, m, strings.NewReader(""), &out, &errOut)
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: tree, out: &out,
-		err: &errOut}.run(testCtx(t.Context(), t))
+		err: &errOut}.run(runCtx(t))
 	if want := "orchestra couldn't talk the feature through: talking the feature through needs you at a " +
 		"terminal, and orchestra's input or output isn't one: orchestra --spec <file> breaks a request written " +
 		"to a file down unattended\n"; epic != "" || code != dispatch.ExitSetup || errOut.String() != want ||
@@ -269,7 +269,6 @@ func TestTypedFeatureWithoutClaudeEndsSayingSo(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "claude")); err != nil {
 		t.Fatal(err)
 	}
-	hideClaude(t, dir)
 	term, _, exit := runOnTerminal(t)
 	describeFeature(t, term)
 	code, stderr := exit()

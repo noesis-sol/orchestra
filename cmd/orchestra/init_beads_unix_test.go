@@ -4,36 +4,21 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
-// fakeBeadsTools puts a folder first on a PATH without the machine's own bd and brew (git, then
-// /usr/bin and /bin) and returns it. It holds a brew that logs its calls to calls and installs a
+// fakeBeadsTools puts a folder first on a PATH that holds only git besides (faketool.Path) and
+// returns it. It holds a brew that logs its calls to calls and installs a
 // bd into the folder, and that bd when withBd. bd logs its calls, and notes when bd init finds
 // .orchestra/ there already; its init adds .beads/ and commits it, and adds AGENTS.md uncommitted.
 func fakeBeadsTools(t *testing.T, withBd bool) string {
 	t.Helper()
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, tools := t.TempDir(), t.TempDir()
-	if err := os.Symlink(gitPath, filepath.Join(tools, "git")); err != nil {
-		t.Fatal(err)
-	}
-	setenv(t, "PATH", strings.Join([]string{dir, tools, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
-	for _, name := range []string{"bd", "brew"} {
-		// On the test's PATH, which setenv set, not the process's: dir and tools hold neither yet.
-		if p, err := command.LookPath(testCtx(t.Context(), t), name); err == nil {
-			t.Skipf("%s is in /usr/bin or /bin: %s", name, p)
-		}
-	}
+	dir := t.TempDir()
+	setenv(t, "PATH", faketool.Path(t, dir, "git"))
 	if _, err := os.Stat("/usr/local/bin/bd"); err == nil {
 		t.Skip("bd is in /usr/local/bin, where init looks off the PATH")
 	}

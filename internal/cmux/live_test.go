@@ -42,7 +42,7 @@ func newLive(t *testing.T) *live {
 	}
 	bin, claudeDir := t.TempDir(), t.TempDir()
 	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, bin, "cmux")) // the app's CLI, which Start put first on PATH
 	term := Terminal{Book: filepath.Join(t.TempDir(), BookName), Own: app.Own}
 	return &live{t: t, app: app, term: term, dir: dir, claudeDir: claudeDir}
 }

@@ -4,7 +4,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -212,23 +211,4 @@ func TestInterviewThatFiledNothingRunsNothing(t *testing.T) {
 			}
 		})
 	}
-}
-
-// hideClaude takes every claude off PATH but keeps git, and the fakes in dir first.
-func hideClaude(t *testing.T, dir string) {
-	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(git, filepath.Join(dir, "git")); err != nil {
-		t.Fatal(err)
-	}
-	kept := []string{dir}
-	for _, p := range filepath.SplitList(getenv(t)("PATH")) {
-		if _, err := os.Stat(filepath.Join(p, "claude")); err != nil {
-			kept = append(kept, p)
-		}
-	}
-	setenv(t, "PATH", strings.Join(kept, string(os.PathListSeparator)))
 }

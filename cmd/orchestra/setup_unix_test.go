@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -14,10 +13,7 @@ import (
 // else to the real git.
 func failingRevParse(t *testing.T, flag string) {
 	t.Helper()
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
+	gitPath := realGit(t)
 	dir := t.TempDir()
 	script := `#!/bin/sh
 for a in "$@"; do

@@ -21,7 +21,7 @@ func TestTerminalSessionGetsTheWorkersChrome(t *testing.T) {
 	onPath(t, tools)
 	var out strings.Builder
 	chrome := []string{"--no-chrome"}
-	if err := refineOnTerminal(testCtx(t.Context(), t), &stopWatch{},
+	if err := refineOnTerminal(runCtx(t), &stopWatch{},
 		claudeSession{repo: repo, servers: sessionServers, chrome: chrome},
 		"Break the spec down", project.RefineSpec, tty, tty, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())

@@ -30,7 +30,7 @@ case "$*" in
 esac
 `
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	return calls
 }
 

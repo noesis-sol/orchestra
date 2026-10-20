@@ -19,7 +19,7 @@ func TestMain(m *testing.M) { os.Exit(faketool.Main(m).Run()) }
 func TestRunPinsTheJSONShape(t *testing.T) {
 	dir, repo := t.TempDir(), t.TempDir()
 	faketool.Write(t, dir, "bd", "#!/bin/sh\nprintf '%s %s %s' \"${BD_JSON_ENVELOPE-unset}\" \"$PWD\" \"$*\"\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	out, err := Run(context.Background(), command.ReadLimit, repo, "count", "--json")
 	if err != nil {
 		t.Fatal(err)

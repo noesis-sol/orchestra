@@ -4,7 +4,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,10 +15,7 @@ import (
 // and passes them on to the real git.
 func loggingGit(t *testing.T) string {
 	t.Helper()
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
+	gitPath := realGit(t)
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "git-calls")
 	faketool.Write(t, dir, "git", `#!/bin/sh

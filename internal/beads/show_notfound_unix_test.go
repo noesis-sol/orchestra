@@ -5,7 +5,6 @@ package beads
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -46,7 +45,7 @@ func TestShowOfATicketBdHasNoTraceOf(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			faketool.Write(t, dir, "bd", c.script)
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("PATH", faketool.Path(t, dir))
 			b := Tracker{Repo: t.TempDir()}
 			tk, err := b.Show(context.Background(), "k-1")
 			if err == nil || !strings.Contains(err.Error(), c.stderr) {

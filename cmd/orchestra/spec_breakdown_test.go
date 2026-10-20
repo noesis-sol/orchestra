@@ -896,10 +896,10 @@ func TestSpecRunWarnsOfWhatIsAmissInTheTree(t *testing.T) {
 //	SPEC_LIVE=1 go test -run TestLiveSpec -v -timeout 30m ./cmd/orchestra/
 func TestLiveSpec(t *testing.T) {
 	t.Parallel()
-	if os.Getenv("SPEC_LIVE") != "1" {
+	if os.Getenv("SPEC_LIVE") != "1" { //nolint:forbidigo // an opt-in switch, read from the process's environment
 		t.Skip("set SPEC_LIVE=1 to call the real claude")
 	}
-	ctx := context.Background()
+	ctx := command.WithEnv(context.Background(), "PATH="+faketool.MachinePath()) // the machine's git, bd and claude
 	repo := t.TempDir()
 	for _, args := range [][]string{{"git", "init", "-q"}, {"bd", "init", "--prefix", "live", "--quiet"}} {
 		if out, err := command.Output(ctx, 2*time.Minute, repo, args[0], args[1:]...); err != nil {

@@ -6,6 +6,7 @@ linters:
   enable:
     - errcheck
     - errorlint
+    - forbidigo # in cmd/orchestra's tests only (below)
     - govet
     - lll
     - modernize
@@ -13,6 +14,17 @@ linters:
     - revive # its default rules
     - staticcheck
   settings:
+    forbidigo:
+      # cmd/orchestra's tests run in parallel, each orchestra in an environment of its own (test_env_test.go):
+      # what reads the process's instead finds the machine's tools, and a test passes or skips on one machine
+      # and not another. A deliberate use, such as an opt-in switch for a live test, says why in a nolint.
+      forbid:
+        - pattern: ^(t|tb|b)\.Context$
+          msg: "runs orchestra's commands in the process's environment: use runCtx(t), or testCtx"
+        - pattern: ^exec\.LookPath$
+          msg: "reads the process's PATH: use command.LookPath with runCtx(t), or realGit"
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: "reads the process's environment: use getenv(t) or lookupEnv"
     lll:
       line-length: 120 # a ceiling; the Uber guide's 99 is the goal where it reads naturally
     errcheck:
@@ -39,6 +51,9 @@ linters:
         - -QF1001
   exclusions:
     rules:
+      # forbidigo's rules are for cmd/orchestra's tests (above).
+      - path-except: ^cmd/orchestra/.*_test\.go$
+        linters: [forbidigo]
       # The test fakes implement interfaces whose arguments they mostly ignore.
       - path: _test\.go
         linters: [revive]

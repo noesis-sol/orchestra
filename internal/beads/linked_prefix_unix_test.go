@@ -25,7 +25,7 @@ func TestCreateAndDescribeByALongerID(t *testing.T) {
 		"'show ') echo 'k-1.1 · the follow-up' ;;\n"+
 		"create*) printf '{\"id\": \"k-2\"}\\n' ;;\n"+
 		"esac\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	b := Tracker{Repo: t.TempDir()}
 	ctx := context.Background()
 

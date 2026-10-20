@@ -46,7 +46,7 @@ func TestPaneInterviewEndsOnceTheFeatureIsFiled(t *testing.T) {
 						t.Fatalf("orchestra still waits for the interview at read %d; Herdr was asked to %q", read, panes.calls)
 					}
 				}}
-				o := interviewInPane(t.Context(), t, repo, panes)
+				o := interviewInPane(runCtx(t), t, repo, panes)
 				if o.epic != "f-1" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 					t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 				}
@@ -94,7 +94,7 @@ func TestPaneInterviewWithoutAFeatureWaitsForClaudeToLeave(t *testing.T) {
 						}
 					},
 				}
-				o := interviewInPane(t.Context(), t, repo, panes)
+				o := interviewInPane(runCtx(t), t, repo, panes)
 				if o.epic != "" || o.code != dispatch.ExitOK || o.err != tc.err || o.fellBack != "" {
 					t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 				}

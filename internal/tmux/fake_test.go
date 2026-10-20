@@ -40,7 +40,7 @@ if [ -f "$d/fail-$1" ]; then cat "$d/fail-$1" >&2; exit 1; fi
 [ -f "$d/after-$1" ] && . "$d/after-$1"
 exit 0
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	t.Setenv("TMUX", "")
 	sockets, err := os.MkdirTemp("", "tmx") // short: a socket's path has a limit
 	if err != nil {

@@ -20,7 +20,7 @@ func failingBd(t *testing.T) {
 	dir := t.TempDir()
 	script := "#!/bin/sh\necho 'Error: database is locked' >&2\nexit 1\n"
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 }
 
 func TestBdFailuresCarryItsStderr(t *testing.T) {
@@ -60,7 +60,7 @@ func TestBdFailuresCarryItsStderr(t *testing.T) {
 func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "bd", "#!/bin/sh\nsleep 5\necho '[]'\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	ctx, cancel := context.WithCancelCause(context.Background())
 	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.InterruptedError("with Ctrl+C")) })
 	start := time.Now()
@@ -76,7 +76,7 @@ func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 func TestStatusWithoutOneIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "bd", "#!/bin/sh\necho '[]'\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if st, err := (Tracker{Repo: t.TempDir()}).Status(context.Background(), "k-1"); st != "unknown" || err == nil {
 		t.Errorf("got %q, %v; want unknown and an error", st, err)
 	}
@@ -87,7 +87,7 @@ func TestReadyPassesTheExcludedTypesToBd(t *testing.T) {
 	args := filepath.Join(dir, "args")
 	script := "#!/bin/sh\necho \"$@\" > '" + args + "'\necho '[]'\n"
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	for _, c := range []struct {
 		types []string
 		want  string

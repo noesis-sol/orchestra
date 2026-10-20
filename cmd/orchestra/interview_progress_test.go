@@ -51,7 +51,7 @@ func TestPaneInterviewShowsItsProgress(t *testing.T) {
 					fileFeature(t, repo)
 				}
 			}}
-			o = interviewInPaneOn(t.Context(), t, repo, panes, width)
+			o = interviewInPaneOn(runCtx(t), t, repo, panes, width)
 		})
 		return o, panes.reads
 	}
@@ -121,7 +121,7 @@ func TestPaneInterviewProgressEnds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
-				ctx, stop := context.WithCancel(t.Context())
+				ctx, stop := context.WithCancel(runCtx(t))
 				defer stop()
 				panes := &fakePanes{agent: tc.agent, step: func(read int) {
 					if tc.step != nil {

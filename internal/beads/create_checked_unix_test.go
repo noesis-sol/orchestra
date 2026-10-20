@@ -18,7 +18,7 @@ func TestCheckedCreateAndBlockShowNothing(t *testing.T) {
 	calls := filepath.Join(dir, "calls")
 	faketool.Write(t, dir, "bd", "#!/bin/sh\necho \"$@\" >> '"+calls+"'\n"+
 		"case \"$1\" in create) printf '{\"id\": \"k-3\"}\\n' ;; esac\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	b := Tracker{Repo: t.TempDir()}
 	ctx := context.Background()
 

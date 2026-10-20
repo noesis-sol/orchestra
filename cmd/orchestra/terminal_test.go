@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,26 +57,6 @@ func fakeTmux(t *testing.T) {
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n"+
 		`[ "$1" = display-message ] && { echo work; exit 0; }`+"\necho 'tmux: not in this test' >&2\nexit 1\n")
 	onPath(t, dir)
-}
-
-// withoutTmux leaves on PATH only git and the fake bd and herdr hostTools puts there, so that tmux
-// is not found; the test is skipped where git's folder holds a tmux too.
-func withoutTmux(t *testing.T) {
-	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("no git")
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(git), "tmux")); err == nil {
-		t.Skip("tmux is installed beside git")
-	}
-	var path []string
-	for dir := range strings.SplitSeq(getenv(t)("PATH"), string(os.PathListSeparator)) {
-		if _, err := os.Stat(filepath.Join(dir, "herdr")); err == nil && strings.HasPrefix(dir, os.TempDir()) {
-			path = append(path, dir) // hostTools'
-		}
-	}
-	setenv(t, "PATH", strings.Join(append(path, filepath.Dir(git)), string(os.PathListSeparator)))
 }
 
 // Outside tmux, the workers' windows open in a detached session named after the repository, which
@@ -176,7 +154,6 @@ func TestConfigTmuxRefusesWorkersOtherThanClaude(t *testing.T) {
 func TestConfigTerminalMissing(t *testing.T) {
 	t.Parallel()
 	configFixture(t, "")
-	withoutTmux(t)
 	_, p := loadWith(t, "--terminal", "tmux")
 	if len(p) != 1 || !strings.Contains(p[0], "Required command not found: tmux") {
 		t.Errorf("tmux chosen: problems %v", p)

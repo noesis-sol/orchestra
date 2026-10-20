@@ -53,7 +53,7 @@ func TestEnvWatchFindsTheEnvironmentTicket(t *testing.T) {
 				w.filed(i.ID)
 			}
 			found := make(chan envStart, 1)
-			ctx, cancel := context.WithTimeout(t.Context(), patience)
+			ctx, cancel := context.WithTimeout(runCtx(t), patience)
 			defer cancel()
 			w.watch(ctx, found)
 			if ctx.Err() != nil {
@@ -90,7 +90,7 @@ func TestEnvWatchWaitsForWhatIsFiled(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		w.watch(t.Context(), found)
+		w.watch(runCtx(t), found)
 	}()
 	w.filed("s-1")
 	time.Sleep(10 * time.Millisecond)
@@ -107,7 +107,7 @@ func TestEnvWatchWaitsForWhatIsFiled(t *testing.T) {
 
 	w = newEnvWatch(&specTree{})
 	w.filed("s-1")
-	w.watch(t.Context(), found) // returns: bd has no s-1
+	w.watch(runCtx(t), found) // returns: bd has no s-1
 	if len(found) != 0 {
 		t.Error("found an environment ticket bd can't show")
 	}

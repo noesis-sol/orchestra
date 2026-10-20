@@ -81,7 +81,7 @@ func herdrForeground(t *testing.T, group int, pids ...int) {
 func TestOwnHerdrPane(t *testing.T) {
 	t.Parallel()
 	own := func(pane string) bool {
-		return ownHerdrPane(testCtx(t.Context(), t), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
+		return ownHerdrPane(runCtx(t), func(k string) string { return map[string]string{"HERDR_PANE_ID": pane}[k] })
 	}
 	herdrForeground(t, processGroup(), processGroup())
 	if !own("w1:p1") {

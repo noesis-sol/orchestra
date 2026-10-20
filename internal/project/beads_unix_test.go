@@ -5,7 +5,6 @@ package project
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -16,33 +15,21 @@ import (
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
-// fakeBeadsTools puts a folder first on a PATH without the machine's own bd and brew (git, then
-// /usr/bin and /bin), and HOME in a folder of its own, and returns the folder. It holds a bd when
-// withBd, which logs its calls to calls; its init adds .beads/ and commits it, and adds AGENTS.md
-// uncommitted, or fails when the folder holds bd-fails. A brew, when withBrew, logs its calls and
-// installs that bd into the folder, or fails when the folder holds brew-fails, or first waits a
-// minute in a child process when it holds brew-hangs. curl logs its calls
-// and prints an install script that puts the bd in ~/.local/bin, off the PATH, and fails as the
-// Beads script does then.
+// fakeBeadsTools puts a folder first on a PATH that holds only git and bash besides (faketool.Path),
+// bash for the Beads install script, and HOME in a folder of its own, and returns the folder. It holds
+// a bd when withBd, which logs its calls to calls; its init adds .beads/ and commits it, and adds
+// AGENTS.md uncommitted, or fails when the folder holds bd-fails. A brew, when withBrew, logs its
+// calls and installs that bd into the folder, or fails when the folder holds brew-fails, or first
+// waits a minute in a child process when it holds brew-hangs. curl logs its calls and prints an
+// install script that puts the bd in ~/.local/bin, off the PATH, and fails as the Beads script does
+// then.
 func fakeBeadsTools(t *testing.T, withBd, withBrew bool) string {
 	t.Helper()
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, tools, home := t.TempDir(), t.TempDir(), t.TempDir()
-	if err := os.Symlink(gitPath, filepath.Join(tools, "git")); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", strings.Join([]string{dir, tools, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
+	dir, home := t.TempDir(), t.TempDir()
+	t.Setenv("PATH", faketool.Path(t, dir, "git", "bash"))
 	t.Setenv("HOME", home)
 	t.Setenv("GOBIN", "")
 	t.Setenv("GOPATH", "")
-	for _, name := range []string{"bd", "brew"} {
-		if p, err := exec.LookPath(name); err == nil {
-			t.Skipf("%s is in /usr/bin or /bin: %s", name, p)
-		}
-	}
 	if _, err := os.Stat("/usr/local/bin/bd"); err == nil {
 		t.Skip("bd is in /usr/local/bin, where LocateBd looks off the PATH")
 	}
@@ -300,7 +287,7 @@ func TestFindBeadsInstall(t *testing.T) {
 			t.Errorf("%s: %+v", goos, in)
 		}
 	}
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", faketool.Path(t, ""))
 	if in := FindBeadsInstall(context.Background(), "darwin"); in.Method != "the Beads install script" {
 		t.Errorf("darwin without brew: %+v", in)
 	}

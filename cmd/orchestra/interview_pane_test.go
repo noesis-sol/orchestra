@@ -208,7 +208,7 @@ func TestPaneInterviewFilesTheFeature(t *testing.T) {
 				}
 			},
 		}
-		o := interviewInPane(t.Context(), t, repo, panes)
+		o := interviewInPane(runCtx(t), t, repo, panes)
 		if o.epic != "f-1" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 			t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 		}
@@ -243,7 +243,7 @@ func TestPaneInterviewThatFilesNothing(t *testing.T) {
 	repo := featureRepo(t)
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle, dispatch.StateWorking, dispatch.StateGone}}
-		o := interviewInPane(t.Context(), t, repo, panes)
+		o := interviewInPane(runCtx(t), t, repo, panes)
 		if o.epic != "" || o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 			t.Fatalf("got %q, exit %d, fell back %v; stderr:\n%s", o.epic, o.code, o.fellBack != "", o.err)
 		}
@@ -281,7 +281,7 @@ func TestPaneInterviewClosedByTheUser(t *testing.T) {
 					}
 				}}
 				started := time.Now()
-				o := interviewInPane(t.Context(), t, repo, panes)
+				o := interviewInPane(runCtx(t), t, repo, panes)
 				if o.code != dispatch.ExitOK || o.err != "" || o.fellBack != "" {
 					t.Fatalf("exit %d, fell back %v; stderr:\n%s", o.code, o.fellBack != "", o.err)
 				}
@@ -316,7 +316,7 @@ func TestPaneInterviewStoppedWhileWaiting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := featureRepo(t)
 			synctest.Test(t, func(t *testing.T) {
-				ctx, stop := context.WithCancel(t.Context())
+				ctx, stop := context.WithCancel(runCtx(t))
 				defer stop()
 				panes := &fakePanes{agent: []dispatch.AgentState{tc.agent}, step: func(read int) {
 					if read == 3 {
@@ -376,7 +376,7 @@ func TestPaneInterviewFallsBackToTheTerminal(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				panes := tc.panes
 				started := time.Now()
-				o := interviewInPane(t.Context(), t, repo, &panes)
+				o := interviewInPane(runCtx(t), t, repo, &panes)
 				if o.epic != "f-1" || o.code != dispatch.ExitOK {
 					t.Fatalf("got %q, exit %d; stderr:\n%s", o.epic, o.code, o.err)
 				}

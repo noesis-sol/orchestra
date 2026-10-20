@@ -19,7 +19,7 @@ func createBd(t *testing.T, out string) string {
 	record := filepath.Join(dir, "args")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + record + "'\nprintf '%s' '" + out + "'\n"
 	faketool.Write(t, dir, "bd", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	return record
 }
 

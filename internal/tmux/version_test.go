@@ -1,7 +1,6 @@
 package tmux
 
 import (
-	"os"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -23,13 +22,13 @@ func TestTooOld(t *testing.T) {
 func TestTooOldAsksTmux(t *testing.T) {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -V ] && echo 'tmux 2.9a'\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if got := TooOld(bg); got != "tmux 2.9a" {
 		t.Errorf("tmux 2.9a: %q", got)
 	}
 	dir = t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if got := TooOld(bg); got != "" {
 		t.Errorf("tmux -V failing: %q", got)
 	}

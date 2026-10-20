@@ -64,7 +64,7 @@ list) echo '{"schema_version":1,"data":[{"id":"orchestra-74b2.31","title":"a"}]}
 rename-prefix) [ -f "$d/rename-fails" ] && { echo 'Error: database is locked' >&2; exit 1; }; echo renamed ;;
 esac
 `)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	return dir
 }
 

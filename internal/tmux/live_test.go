@@ -43,9 +43,10 @@ func newLive(t *testing.T) *live {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	tmuxtest.Require(t) // before the PATH, which links the real tmux
 	bin, claudeDir := t.TempDir(), t.TempDir()
 	faketool.WriteFunc(t, bin, "claude", claudetest.Env(claudeDir))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, bin, "tmux"))
 	return &live{t: t, term: Terminal{Socket: tmuxtest.Server(t, "t", dir)}, dir: dir, claudeDir: claudeDir}
 }
 

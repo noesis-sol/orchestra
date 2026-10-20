@@ -1,7 +1,6 @@
 package tmux
 
 import (
-	"os"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/faketool"
@@ -24,13 +23,13 @@ func TestKeepsNames(t *testing.T) {
 func TestKeepsNamesAsksTmux(t *testing.T) {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -V ] && echo 'tmux 3.4'\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if KeepsNames(bg) {
 		t.Error("tmux 3.4: keeps names")
 	}
 	dir = t.TempDir()
 	faketool.Write(t, dir, "tmux", "#!/bin/sh\nexit 1\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if !KeepsNames(bg) {
 		t.Error("tmux -V failing: doesn't keep names")
 	}

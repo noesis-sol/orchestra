@@ -71,10 +71,10 @@ esac
 		"refused: orchestra is already running in ") || !strings.HasSuffix(run, want) {
 		t.Errorf("a run started during the rename: %q, want it refused, naming init (%q)", run, want)
 	}
-	if h, held, err := project.RunHolder(t.Context(), repo); err != nil || held {
+	if h, held, err := project.RunHolder(runCtx(t), repo); err != nil || held {
 		t.Errorf("after init: held %v (%+v, %v)", held, h, err)
 	}
-	lock, err := project.LockRun(t.Context(), repo, project.Holder{PID: 2})
+	lock, err := project.LockRun(runCtx(t), repo, project.Holder{PID: 2})
 	if err != nil {
 		t.Fatalf("a run after init: %v", err)
 	}

@@ -98,7 +98,7 @@ func TestFeatureNotHandedBackSaysWhatWasFiled(t *testing.T) {
 func TestFeatureStoppedBeforeHandingBackNamesItsEpic(t *testing.T) {
 	t.Parallel()
 	repo := featureRepo(t)
-	ctx, cancel := context.WithCancel(testCtx(t.Context(), t))
+	ctx, cancel := context.WithCancel(runCtx(t))
 	defer cancel()
 	var out, errOut strings.Builder
 	var message string

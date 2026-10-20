@@ -17,7 +17,7 @@ import (
 // holdLock takes repo's run lock as another run would, releasing it at the end of the test.
 func holdLock(t *testing.T, repo string, h project.Holder) {
 	t.Helper()
-	l, err := project.LockRun(t.Context(), repo, h)
+	l, err := project.LockRun(runCtx(t), repo, h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestARunLeavesItsDetailsInTheLock(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}
-	if h, held, err := project.RunHolder(t.Context(), repo); err != nil || held {
+	if h, held, err := project.RunHolder(runCtx(t), repo); err != nil || held {
 		t.Errorf("after the run: held %v (%+v, %v)", held, h, err)
 	}
 	var h project.Holder

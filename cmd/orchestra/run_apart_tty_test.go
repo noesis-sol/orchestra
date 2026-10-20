@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
@@ -32,7 +33,7 @@ func apart(ctx context.Context, t *testing.T, args []string, tty *os.File, stder
 	<-chan struct{}) {
 	t.Helper()
 	cmd := exec.CommandContext(ctx, faketool.WriteFunc(t, t.TempDir(), "orchestra"), args...)
-	cmd.Dir, cmd.Env = workDir(t), append(os.Environ(), testVars(t)...) // the last of a variable wins
+	cmd.Dir, cmd.Env = workDir(t), command.Environ(testCtx(ctx, t))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, stderr
 	cmd.WaitDelay = 10 * time.Second // for what it started that still holds its stderr
 	if err := cmd.Start(); err != nil {

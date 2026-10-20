@@ -95,7 +95,7 @@ func chosenSession(t *testing.T, repo string, args ...string) (*session, *string
 		t.Fatalf("setup problems: %q", problems)
 	}
 	holder := project.Holder{PID: 1, Branch: "main"}
-	lock, err := project.LockRun(t.Context(), repo, holder)
+	lock, err := project.LockRun(runCtx(t), repo, holder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
 			true, 5, project.PermissionAcceptEdits},
 	} {
 		s, errOut := chosenSession(t, repo, tc.args...)
-		code := s.specChosen(testCtx(t.Context(), t), tui.Work{Kind: tui.WorkSpec, Spec: spec, Refine: tc.refine})
+		code := s.specChosen(runCtx(t), tui.Work{Kind: tui.WorkSpec, Spec: spec, Refine: tc.refine})
 		c := s.cfg
 		if code != dispatch.ExitOK || errOut.Len() > 0 {
 			t.Fatalf("%s: exit %d, stderr:\n%s", tc.name, code, errOut)
@@ -137,7 +137,7 @@ func TestSpecChosenRunsAsSpecGivenDoes(t *testing.T) {
 				tc.name, c.specFile, c.Refine, c.Spec, c.Limit, c.WorkerPermissionMode,
 				spec, tc.refine, kept, tc.limit, tc.mode)
 		}
-		if h, held, err := project.RunHolder(t.Context(), repo); err != nil || !held || h.Spec != kept || h.PID != 1 {
+		if h, held, err := project.RunHolder(runCtx(t), repo); err != nil || !held || h.Spec != kept || h.PID != 1 {
 			t.Errorf("%s: the run lock: %+v, held %v, %v", tc.name, h, held, err)
 		}
 		_ = s.lock.Close() // for the next case's
@@ -152,14 +152,14 @@ func TestSpecChosenWhereGitIgnoresIt(t *testing.T) {
 	writeSpec(t, filepath.Join(repo, ".gitignore"), "private/\n")
 	ignored := writeSpec(t, filepath.Join(repo, "private", "app.md"), "# Mine\n")
 	s, errOut := chosenSession(t, repo)
-	if code := s.specChosen(testCtx(t.Context(), t), tui.Work{Kind: tui.WorkSpec, Spec: ignored}); code != dispatch.ExitSetup {
+	if code := s.specChosen(runCtx(t), tui.Work{Kind: tui.WorkSpec, Spec: ignored}); code != dispatch.ExitSetup {
 		t.Errorf("exit %d, want %d", code, dispatch.ExitSetup)
 	}
 	if want := "orchestra cannot run that spec:\n  - git ignores private/app.md, where the spec (chosen at the start) " +
 		"is kept, and workers only see committed files"; !strings.HasPrefix(errOut.String(), want) {
 		t.Errorf("stderr:\n%s\nwant it to start with:\n%s", errOut, want)
 	}
-	if h, _, err := project.RunHolder(t.Context(), repo); err != nil || h.Spec != "" {
+	if h, _, err := project.RunHolder(runCtx(t), repo); err != nil || h.Spec != "" {
 		t.Errorf("the run lock: %+v, %v", h, err)
 	}
 }

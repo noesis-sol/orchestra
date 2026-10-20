@@ -73,9 +73,9 @@ func TestRefineSessionStartsAtTheWorkersEffort(t *testing.T) {
 				panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle, dispatch.StateGone}}
 				b.panes = panes
 				if mode == "spec" {
-					_, _ = b.BreakDown(testCtx(t.Context(), t), breakdownRequest{Spec: project.Spec{Path: "app.md"}, Refine: true})
+					_, _ = b.BreakDown(runCtx(t), breakdownRequest{Spec: project.Spec{Path: "app.md"}, Refine: true})
 				} else {
-					_, _ = b.talkFeature(testCtx(t.Context(), t), "Add a --json flag", paneRun)
+					_, _ = b.talkFeature(runCtx(t), "Add a --json flag", paneRun)
 				}
 				end := slices.Index(panes.launched, "--")
 				if i := slices.Index(panes.launched, "--effort"); i < 0 || i > end || panes.launched[i+1] != tc.want {

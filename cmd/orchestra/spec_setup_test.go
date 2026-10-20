@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -187,15 +186,7 @@ func TestSpecRunSetupProblems(t *testing.T) {
 	})
 	t.Run("bd missing", func(t *testing.T) {
 		repo, spec, _ := emptyRepoFixture(t)
-		gitPath, err := exec.LookPath("git")
-		if err != nil {
-			t.Fatal(err)
-		}
-		bin := t.TempDir()
-		if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
-			t.Fatal(err)
-		}
-		setenv(t, "PATH", bin)
+		setenv(t, "PATH", faketool.Path(t, "", "git"))
 		_, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
 		if code != 2 || !strings.Contains(stderr, "  - Required command not found: bd\n") ||
 			strings.Contains(stderr, "isn't set up") {

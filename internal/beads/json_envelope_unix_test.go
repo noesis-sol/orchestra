@@ -16,7 +16,7 @@ func TestBdIsRunWithoutTheJSONEnvelope(t *testing.T) {
 	dir := t.TempDir()
 	env := filepath.Join(dir, "env")
 	faketool.Write(t, dir, "bd", "#!/bin/sh\nprintf %s \"${BD_JSON_ENVELOPE-unset}\" > '"+env+"'\necho '[]'\n")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 	if _, err := (Tracker{Repo: t.TempDir()}).Ready(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

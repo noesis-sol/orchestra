@@ -182,7 +182,7 @@ func TestRefineInAPaneRunsTheRootEpicItHandsBack(t *testing.T) {
 				}
 			},
 		}
-		o := refineSpec(t.Context(), t, repo, panes, true, tree, nil, 0)
+		o := refineSpec(runCtx(t), t, repo, panes, true, tree, nil, 0)
 		if o.root != "s-1" || o.code != dispatch.ExitOK || o.terminal != "" {
 			t.Fatalf("got %v, exit %v, on the terminal %q; stderr:\n%s", o.root, o.code, o.terminal, o.err)
 		}
@@ -253,7 +253,7 @@ func TestRefineLeftWithoutAHandBack(t *testing.T) {
 						panes.closed = true
 					}
 				}}
-				o := refineSpec(t.Context(), t, repo, panes, true, tree, nil, 0)
+				o := refineSpec(runCtx(t), t, repo, panes, true, tree, nil, 0)
 				if o.root != "" || o.code != tc.code {
 					t.Fatalf("got %v, exit %v; stderr:\n%s", o.root, o.code, o.err)
 				}
@@ -300,7 +300,7 @@ func TestRefineProgressCountsTheFiledIssues(t *testing.T) {
 					handBack(t, repo, "s-1")
 				}
 			}}
-			o = refineSpec(t.Context(), t, repo, panes, true, tree, nil, width)
+			o = refineSpec(runCtx(t), t, repo, panes, true, tree, nil, width)
 		})
 		return o, panes.reads
 	}
@@ -341,7 +341,7 @@ func TestRefineStopped(t *testing.T) {
 	t.Parallel()
 	repo := refineFixture(t)
 	synctest.Test(t, func(t *testing.T) {
-		ctx, stop := context.WithCancel(t.Context())
+		ctx, stop := context.WithCancel(runCtx(t))
 		defer stop()
 		tree := &filedTree{}
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateWorking}, step: func(read int) {
@@ -384,7 +384,7 @@ func TestRefineOnTheTerminal(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				tree := &filedTree{}
 				panes := tc.panes
-				o := refineSpec(t.Context(), t, repo, &panes, tc.pane, tree, func() {
+				o := refineSpec(runCtx(t), t, repo, &panes, tc.pane, tree, func() {
 					tree.file(refineRoot)
 					tree.file(refineTickets...)
 					handBack(t, repo, "s-1")
@@ -412,7 +412,7 @@ func TestRefineNeedsATerminal(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	var out strings.Builder
-	err := refineOnTerminal(t.Context(), nil, claudeSession{repo: repo}, "Break the spec down", project.RefineSpec,
+	err := refineOnTerminal(runCtx(t), nil, claudeSession{repo: repo}, "Break the spec down", project.RefineSpec,
 		strings.NewReader(""), &out, &out)
 	if !errors.Is(err, errRefineNeedsTerminal) || out.Len() > 0 {
 		t.Errorf("got %v; output:\n%s", err, out.String())

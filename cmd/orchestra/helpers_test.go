@@ -27,9 +27,19 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 	return repo, git
 }
 
+// realGit is the real git, as t's PATH finds it, for a fake git that passes its calls on to it.
+func realGit(t *testing.T) string {
+	t.Helper()
+	git, err := command.LookPath(runCtx(t), "git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return git
+}
+
 // hostTools puts a bd and a herdr at the end of the test's PATH, for a run's check that they're installed
-// (checkTools) on a machine without them, such as CI's. They fail if run: a test that runs one puts
-// its own first on PATH.
+// (checkTools): the tests' PATH has none of the machine's (TestMain). They fail if run: a test that runs
+// one puts its own first on PATH.
 func hostTools(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

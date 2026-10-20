@@ -182,7 +182,7 @@ func herdrScript(t *testing.T, script string) {
 	}
 	dir := t.TempDir()
 	faketool.Write(t, dir, "herdr", script)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", faketool.Path(t, dir))
 }
 
 func TestScreenReadsABusyAgentsVisibleScreenAtOnce(t *testing.T) {

@@ -51,7 +51,7 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 			return nil
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: filedEpic{}, out: &out,
-		err: &errOut}.run(testCtx(t.Context(), t))
+		err: &errOut}.run(runCtx(t))
 	logged, _ := os.ReadFile(filepath.Join(claudeDir, "log")) // none reads as nothing
 	if epic != "f-1" || code != dispatch.ExitOK || errOut.Len() > 0 {
 		t.Fatalf("the interview filed %q, exit %d; stderr:\n%s\nclaude's log:\n%s", epic, code, errOut.String(), logged)
@@ -98,7 +98,7 @@ func TestCmuxDashboardNumbersSelectWorkspaces(t *testing.T) {
 	}
 	defer func() { _ = log.Close() }() // nothing is read back from it
 	keys, typed := io.Pipe()
-	p := tea.NewProgram(tui.NewDashboard(dispatch.Config{}, func() {}, func(bool) {}, focusTab(t.Context(), log, term)),
+	p := tea.NewProgram(tui.NewDashboard(dispatch.Config{}, func() {}, func(bool) {}, focusTab(runCtx(t), log, term)),
 		tea.WithInput(keys), tea.WithOutput(io.Discard), tea.WithoutSignalHandler())
 	done := make(chan error, 1)
 	go func() {
@@ -109,7 +109,7 @@ func TestCmuxDashboardNumbersSelectWorkspaces(t *testing.T) {
 	tabs := map[string]string{}
 	began := time.Now()
 	for i, id := range []string{"tx-1", "tx-2"} {
-		tab, _, err := term.CreateTab(t.Context(), "", repo, id)
+		tab, _, err := term.CreateTab(runCtx(t), "", repo, id)
 		if err != nil {
 			t.Fatal(err)
 		}

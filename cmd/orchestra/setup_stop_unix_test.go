@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,10 +21,7 @@ import (
 // returns stalled, the file it makes as it starts to wait, and release.
 func stallGit(t *testing.T) (stalled, release string) {
 	t.Helper()
-	gitPath, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
+	gitPath := realGit(t)
 	dir := t.TempDir()
 	stalled, release = filepath.Join(dir, "stalled"), filepath.Join(dir, "release")
 	faketool.Write(t, dir, "git", `#!/bin/sh

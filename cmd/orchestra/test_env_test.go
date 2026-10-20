@@ -102,7 +102,7 @@ func lookupEnv(t testing.TB, k string) (string, bool) {
 			return v, true
 		}
 	}
-	return os.LookupEnv(k)
+	return os.LookupEnv(k) //nolint:forbidigo // the process's environment, behind t's
 }
 
 // onPath puts dir first on the PATH of t's environment.
@@ -137,6 +137,13 @@ func workDir(t testing.TB) string {
 // testCtx is ctx giving the commands run with it t's environment (command.WithEnv).
 func testCtx(ctx context.Context, t testing.TB) context.Context {
 	return command.WithEnv(ctx, testVars(t)...)
+}
+
+// runCtx is t's context, done as t ends, giving the commands run with it t's environment: what a
+// test hands orchestra in place of t.Context, which would run them in the process's environment
+// (the lint configuration bans t.Context in these tests).
+func runCtx(t testing.TB) context.Context {
+	return testCtx(t.Context(), t) //nolint:forbidigo // the one use, given t's environment
 }
 
 // testVars is the variables setenv set for t and the tests it is a subtest of, as KEY=value each,

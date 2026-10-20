@@ -143,7 +143,7 @@ func TestAskOrDefaultOutsideATerminalDeclinesTheOffers(t *testing.T) {
 	t.Parallel()
 	c := project.Choice{Union: true, InstallBeads: true, Verifier: true, Unasked: project.Questions{Concurrent: true}}
 	ask := project.Questions{Check: true, Concurrent: true, MCP: true, Union: true, Install: true, Verifier: true}
-	spent, err := askOrDefault(t.Context(), strings.NewReader(""), io.Discard, false, t.TempDir(), &c,
+	spent, err := askOrDefault(runCtx(t), strings.NewReader(""), io.Discard, false, t.TempDir(), &c,
 		tui.Ask{Questions: ask}, organ.Client{})
 	if err != nil || len(spent) != 0 {
 		t.Fatalf("spent %v, %v", spent, err)
