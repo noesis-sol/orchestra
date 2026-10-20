@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
@@ -20,14 +21,14 @@ import (
 // usage limit).
 func (o *Loop) workerRules(id string) string {
 	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.checkNote() +
-		o.budgetNote() + o.limitNote()
+		o.checkTimeNote() + o.budgetNote() + o.limitNote()
 }
 
 // fullPrompt is ticket id's whole prompt as one first message, for a worker without its rules in
 // its system prompt: the worker prompt, then first (see firstNotes) and the run's notes.
 func (o *Loop) fullPrompt(id, first string) string {
 	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.setupNote() +
-		o.checkNote() + o.budgetNote() + o.limitNote()
+		o.checkNote() + o.checkTimeNote() + o.budgetNote() + o.limitNote()
 }
 
 // setupNote tells a worker that its worktree's dependencies are installed with the project's setup
@@ -52,18 +53,47 @@ const workerCheckLog = "worker-check.log"
 // of a full check each time, to learn whether it passed. Its example is the worker's own check
 // (check_own) when the project has one, else its merge check (check_fast).
 func (o *Loop) checkNote() string {
-	cmd := o.cfg.CheckOwn
-	if cmd == "" {
-		cmd = o.cfg.Check
-	}
-	if cmd == "" {
-		cmd = "<the check>"
-	}
 	return fmt.Sprintf("\n\nRun a check (tests, linters, a build) once, its whole output saved to a file in "+
 		"%s (never committed) and its exit status printed, as in '%s > %s 2>&1; echo \"exit $?\"', then read "+
 		"the file's end or search it, rather than running the check again to see its output or whether it "+
 		"passed. Piping a check through tail hides its exit status.\n",
-		project.RunPath(""), cmd, project.RunPath(workerCheckLog))
+		project.RunPath(""), o.checkCommand(), project.RunPath(workerCheckLog))
+}
+
+// checkCommand is the check the notes on running one give as their example: the worker's own check
+// (check_own) when the project has one, else its merge check (check_fast), else a placeholder.
+func (o *Loop) checkCommand() string {
+	switch {
+	case o.cfg.CheckOwn != "":
+		return o.cfg.CheckOwn
+	case o.cfg.Check != "":
+		return o.cfg.Check
+	}
+	return "<the check>"
+}
+
+// bashMaxTimeout is the longest Claude Code's Bash waits on a command in the foreground, in the
+// milliseconds its timeout takes: 10 minutes. Without a timeout it waits 2, then moves the command to
+// the background.
+const bashMaxTimeout = 600000
+
+// checkTimeNote tells a Claude worker how to give a check its time: Bash's timeout at its maximum, and
+// for a check that can take longer, as long as orchestra's merge check may (checkTimeout), the
+// background with Monitor to wait on it. Workers ran checks with Bash's default 2 minutes, which moved
+// them to the background, and waited with a long sleep, which Bash refuses. "" for workers of other
+// kinds.
+func (o *Loop) checkTimeNote() string {
+	if !o.cfg.ClaudeWorkers() {
+		return ""
+	}
+	log := project.RunPath(workerCheckLog)
+	return fmt.Sprintf("\n\nGive a check its time: Bash waits 2 minutes on a command unless told otherwise, "+
+		"then moves it to the background. Pass Bash timeout: %d, its maximum (10 minutes), for every check. "+
+		"A check that can take longer (orchestra gives its merge check up to %s) is the one to run in the "+
+		"background (run_in_background), its exit status in the file too, as in '%s > %s 2>&1; echo \"exit $?\" "+
+		">> %s', and to wait on with Monitor, an until-loop that greps the file for its exit line: never with a "+
+		"long sleep, which Bash refuses.\n",
+		bashMaxTimeout, command.ShortDuration(o.checkTimeout()), o.checkCommand(), log, log)
 }
 
 // limitNote tells a Claude worker what to do at the account's usage limit, which Claude Code may let its

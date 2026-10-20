@@ -62,9 +62,9 @@ func VerifierText(stack, fast, full []string, chosenFast, chosenFull *[]Suite) s
 	var b strings.Builder
 	// The template is fixed and its data plain strings: it can't fail.
 	_ = verifierText.Execute(&b, struct {
-		Stack, Fast, Full             []string
-		Parts, FastRunner, FullRunner string
-	}{stack, fast, full, suiteBullets(chosenFast, chosenFull), FastRunner, FullRunner})
+		Stack, Fast, Full                           []string
+		Parts, FastRunner, FullRunner, CheckTimeout string
+	}{stack, fast, full, suiteBullets(chosenFast, chosenFull), FastRunner, FullRunner, DefaultCheckTimeoutText})
 	return b.String()
 }
 

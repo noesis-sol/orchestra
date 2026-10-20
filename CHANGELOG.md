@@ -13,6 +13,16 @@ All notable changes to orchestra are documented here. The format follows
   more), each after its `git status` code, `??` marking an untracked one,
   so a stray build output is told from a forgotten source file without
   opening the worktree; it says to commit or remove them, then merge.
+- A Claude worker's standing rules and the verifier say how to give a check
+  its time: Bash's `timeout: 600000`, its maximum of 10 minutes, as Bash
+  otherwise moves a check to the background after 2; a check that can take
+  longer (the rules name the merge check's limit) runs in the background,
+  its exit status in its output file, and is waited on with Monitor
+  (workers) or a loop of short waits (the verifier), never a long `sleep`,
+  which Bash refuses. A verifier written before keeps its text: copy the
+  bullet that starts `Give a check its time` from
+  `internal/project/verifier.md` into the Rules of
+  `.claude/agents/verifier.md`.
 
 ### Fixed
 
