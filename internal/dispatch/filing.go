@@ -59,16 +59,13 @@ func (r *runState) awaitFiling() bool {
 	}
 	o.info("  waiting for the rest of %s to be filed", o.cfg.Ticket)
 	for {
-		select {
-		case <-r.filing:
+		switch why, _ := r.wait(waits{filing: r.filing}); why {
+		case wokeFiled:
 			r.filed()
 			return true
-		case req := <-o.drainReqs:
-			r.hear(req)
-		case v := <-o.verdicts:
-			o.triaged(r.keep, v)
-		case <-r.ctx.Done():
+		case wokeDone:
 			return false
+		default:
 		}
 	}
 }

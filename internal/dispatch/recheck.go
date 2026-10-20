@@ -102,7 +102,7 @@ func (o *Loop) dueRecheck(ctx context.Context, running map[string]bool) (recheck
 // pick, even one made with every slot taken.
 func (r *runState) recheckTickets() {
 	o := r.o
-	for r.stops.first == nil && r.ctx.Err() == nil && r.solo.running == "" && r.solo.first == "" &&
+	for o.gate.firstStop() == nil && r.ctx.Err() == nil && r.solo.running == "" && r.solo.first == "" &&
 		r.slotFree() {
 		if r.takeDrainRequest() {
 			return

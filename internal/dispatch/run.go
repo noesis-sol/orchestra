@@ -218,29 +218,27 @@ func (o *Loop) Run(ctx context.Context) int {
 		}
 		reset, stopReset := o.resetTimer()
 		held, stopHeld := r.heldPoll()
+		w := waits{results: r.results, joined: o.merges.joined, filing: r.filing, timer: reset, poll: poll.C, held: held}
 		for waiting := true; waiting; {
 			waiting = false
-			select {
-			case res := <-r.results:
+			// A verdict's hold is picked up above, a request heard, and once the usage limit lifts (the
+			// gate) or a ticket goes to merge, freeing its slot, tickets start above.
+			switch why, res := r.wait(w); why {
+			case wokeResult:
 				r.returned(res)
-			case v := <-o.verdicts:
-				o.triaged(r.keep, v) // a hold is picked up above
-			case req := <-o.drainReqs:
-				r.hear(req)
-			case <-o.liftWake: // the usage limit lifted: tickets start again above
-			case <-o.merges.joined: // a ticket went to merge: its slot may be free above
-			case <-r.filing: // the rest of the scope is filed: its tickets start above
+			case wokeFiled: // the rest of the scope is filed: its tickets start above
 				r.filed()
-			case <-reset:
+			case wokeTimer:
 				o.liftAtReset() // and tickets start again above
-			case <-poll.C:
+			case wokePoll:
 				r.polled()
-			case <-held:
+			case wokeHeld:
 				waiting = r.stillHeld() // waits on while the machine is full; once a slot frees, starts it above
-			case <-ctx.Done():
+			case wokeDone:
 				stopReset()
 				stopHeld()
 				return r.end()
+			default:
 			}
 		}
 		stopReset()
@@ -310,10 +308,11 @@ type runState struct {
 	// inflight: the tickets whose goroutines haven't returned, those gone to merge included (see
 	// slotsTaken)
 	inflight map[string]bool
-	count    int   // the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar)
-	stops    stops // the reasons the run stops for, first to last
-	envSaid  bool  // the hold for the environment is taken up
-	drained  bool  // the maintainer asked to stop after the running tickets, as last said
+	// count: the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar),
+	// which hold the run at Config.Limit (see setCount); the run's stops and whether it winds down are the
+	// gate's (Loop.gate)
+	count   int
+	envSaid bool // the hold for the environment is taken up
 	// filing: closed once the scope is filed (Config.Filing), until when only its first ticket starts;
 	// nil when there is no filing, or once it is over
 	filing <-chan struct{}
@@ -342,12 +341,21 @@ type runState struct {
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
-	return &runState{
+	r := &runState{
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
-		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
+		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
 		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(), filing: o.cfg.filingDone(),
 	}
+	r.setCount(o.cfg.DoneSoFar)
+	return r
+}
+
+// setCount sets the run's count of tickets to n, holding the run at Config.Limit: the tickets running
+// finish, and merge, but no new one starts.
+func (r *runState) setCount(n int) {
+	r.count = n
+	r.o.gate.set(gateLimit, gateHold{on: n >= r.o.cfg.Limit})
 }
 
 // stops are the reasons the run stops for, as they come: the first decides the exit code, and the
@@ -367,13 +375,9 @@ func (l *stops) add(s *stopReason) (first bool) {
 	return false
 }
 
-// addStop records s among the run's stops, telling the merges at once that the run holds (see
-// sayNoMore), and reports whether it is the first.
-func (r *runState) addStop(s *stopReason) (first bool) {
-	first = r.stops.add(s)
-	r.sayNoMore()
-	return first
-}
+// addStop records s among the run's stops, on the gate, where the merges read at once that the run
+// holds, and reports whether it is the first.
+func (r *runState) addStop(s *stopReason) (first bool) { return r.o.gate.addStop(s) }
 
 // line is the line the run ends with: the first reason, then "; also" and each of the others.
 func (l *stops) line() string {
@@ -396,27 +400,27 @@ func (r *runState) sayHold(s *stopReason, ticket string) {
 	}
 }
 
-// taking reports whether the run takes new tickets: nothing has stopped it, the maintainer hasn't
-// asked it to wind down, Config.Limit isn't reached, and it doesn't hold for the usage limit.
+// taking reports whether the run takes new tickets: the gate is open (nothing has stopped the run,
+// the maintainer hasn't asked it to wind down, Config.Limit isn't reached), and it doesn't hold for the
+// usage limit.
 func (r *runState) taking() bool {
 	return r.wouldTake() && !r.o.limitHolds()
 }
 
 // wouldTake reports whether the run would take new tickets but for the usage limit (see taking).
-func (r *runState) wouldTake() bool {
-	return r.stops.first == nil && !r.drained && r.count < r.o.cfg.Limit
-}
+func (r *runState) wouldTake() bool { return r.o.gate.open() }
 
 // hear logs a request to wind down or to take tickets again, when it changes anything, and says
-// whether the run winds down.
+// whether the run winds down. The gate holds the run while it does, which the merges read at once.
 func (r *runState) hear(req drainRequest) bool {
-	if req.on != r.drained {
-		r.drained = req.on
-		r.sayNoMore()
+	if r.o.gate.set(gateDrain, gateHold{on: req.on, why: "the run is winding down"}) {
 		r.o.emit(drainEvent(req.on, req.how, r.inflight))
 	}
-	return r.drained
+	return req.on
 }
+
+// drained reports whether the maintainer asked the run to stop after the running tickets, as last heard.
+func (r *runState) drained() bool { return r.o.gate.held(gateDrain) }
 
 // takeDrainRequest hears a request waiting, if any; asked just before a ticket would start, it keeps
 // that ticket from starting.
@@ -425,24 +429,8 @@ func (r *runState) takeDrainRequest() bool {
 	case req := <-r.o.drainReqs:
 		return r.hear(req)
 	default:
-		return r.drained
+		return r.drained()
 	}
-}
-
-// sayNoMore tells the merges why the run takes on no more work, if it doesn't: it holds for a stop, or
-// the maintainer asked it to wind down (see Loop.noMore). It is called as soon as either changes, so a
-// merge reads what Run would answer now, not at its next pass.
-func (r *runState) sayNoMore() {
-	why := ""
-	switch {
-	case r.stops.first != nil:
-		why = "the run holds (" + r.stops.first.Error() + ")"
-	case r.drained:
-		why = "the run is winding down"
-	}
-	r.o.mu.Lock()
-	r.o.noMore = why
-	r.o.mu.Unlock()
 }
 
 // heedEnvironment takes up the hold for the environment, once workers fail at once whichever
@@ -499,7 +487,7 @@ func (r *runState) startTickets() {
 // start hands ticket t to a worker, with the queue q behind it.
 func (r *runState) start(t Ticket, q queue) {
 	o, c := r.o, r.o.cfg
-	r.count++
+	r.setCount(r.count + 1)
 	o.setParent(t.ID, t.Parent)
 	how := "dispatching"
 	if HasLabel(t, SoloLabel) {
@@ -551,7 +539,7 @@ func (r *runState) launch(id string, counted bool, how *settling, work func(ctx 
 // they are left to leaveAsked, and to their UnmergedLabel.
 func (r *runState) follow() bool {
 	o := r.o
-	if r.stops.first != nil || r.ctx.Err() != nil {
+	if o.gate.firstStop() != nil || r.ctx.Err() != nil {
 		return false
 	}
 	late := r.mergeLate()
@@ -583,13 +571,13 @@ func (r *runState) goOnWhenEmpty() bool {
 		return r.waitOutLimit()
 	}
 	// Held for the environment, the run may probe the machine and take tickets again.
-	s := r.stops.first
-	if s == nil || len(r.stops.others) > 0 {
+	s := r.o.gate.onlyStop()
+	if s == nil {
 		return false
 	}
-	r.stops.first = r.o.probeEnvironment(r.ctx, s, r.takeDrainRequest, r.hear)
-	r.sayNoMore()
-	if r.stops.first != nil {
+	s = r.probeEnvironment(s)
+	r.o.gate.replaceStop(s)
+	if s != nil {
 		return false
 	}
 	r.envSaid = false
@@ -606,7 +594,7 @@ func (r *runState) returned(res result) {
 	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
 	if res.counted && (res.how == requeued || res.how == setupFailed) {
-		r.count-- // it started too early, or not at all, and counts once it starts again
+		r.setCount(r.count - 1) // it started too early, or not at all, and counts once it starts again
 	}
 	if res.id == r.solo.running {
 		r.solo.running = ""
@@ -670,9 +658,9 @@ func (r *runState) end() int {
 	switch {
 	case interrupted:
 		return o.interrupted(r.ctx)
-	case r.stops.first != nil:
-		return o.stop(r.stops.first, r.stops.line())
-	case r.drained:
+	case o.gate.firstStop() != nil:
+		return o.stop(o.gate.firstStop(), o.gate.stopLine())
+	case r.drained():
 		end = fmt.Sprintf("DRAINED after %d tickets", r.count)
 	case r.count >= c.Limit:
 		end = fmt.Sprintf("LIMIT_REACHED at %d tickets", r.count)

@@ -48,8 +48,8 @@ const (
 )
 
 // usageHold is the run's hold for the usage limit, all under limitMu: the workers' polls (see
-// limitPoll) and Run (see waitOutLimit, liftAtReset) share it. Run hears on liftWake (buffered 1) that a hold
-// lifted, to take tickets again.
+// limitPoll) and Run (see waitOutLimit, liftAtReset) share it. A hold lifting wakes Run (see
+// gate.wakeRun), to take tickets again.
 type usageHold struct {
 	limitMu     sync.Mutex
 	limitOn     bool      // the run holds for the limit
@@ -58,7 +58,6 @@ type usageHold struct {
 	limitTried  time.Time // when one limited worker was last told to carry on to try the limit, in this hold
 	limitTrying string    // that worker's ticket, until its try is over; "" for none
 	limitLifted time.Time // when a hold last lifted; zero: none has
-	liftWake    chan struct{}
 }
 
 // limitHolds reports whether the run holds for the usage limit.
@@ -124,10 +123,7 @@ func (o *Loop) liftAtReset() {
 // caller holds limitMu.
 func (o *Loop) liftLimit(now time.Time, why string) Event {
 	o.limitOn, o.limitLifted, o.limitTrying = false, now, ""
-	select {
-	case o.liftWake <- struct{}{}:
-	default: // Run has one to hear already
-	}
+	o.gate.wakeRun()
 	return Event{Kind: EvLimitLift, Text: "USAGE_LIMIT lifted: " + why}
 }
 
@@ -601,16 +597,14 @@ func (r *runState) waitOutLimit() bool {
 // it goes on (goOn) for Run to take that up. A verdict that doesn't, and a request that changes
 // nothing, leave it waiting.
 func (r *runState) awaitLimit(timeout <-chan time.Time) (goOn, done bool) {
-	o := r.o
-	select {
-	case <-r.ctx.Done():
+	switch why, _ := r.wait(waits{timer: timeout}); why {
+	case wokeDone:
 		return false, true
-	case req := <-o.drainReqs:
-		return false, r.hear(req)
-	case v := <-o.verdicts:
-		o.triaged(r.keep, v)
-		return true, o.envStop != nil
-	case <-timeout:
+	case wokeDrain:
+		return false, r.drained()
+	case wokeVerdict:
+		return true, r.o.envStop != nil
+	default: // timed out, or the gate woke it: the hold is read again
 		return false, false
 	}
 }

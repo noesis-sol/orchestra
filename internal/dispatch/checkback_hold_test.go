@@ -56,7 +56,7 @@ func TestACheckIsNotHandedBackOnceTheRunHoldsInTheSamePass(t *testing.T) {
 						return
 					}
 					dirty.Store(true)
-					o.liftWake <- struct{}{} // …Run passes once more, finds the checkout dirty and holds…
+					o.gate.wakeRun() // …Run passes once more, finds the checkout dirty and holds…
 					h.waitHeld()
 					if err := f.Close(); err != nil { // …and the check fails
 						t.Error(err)

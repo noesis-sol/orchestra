@@ -193,13 +193,11 @@ const probeLimit = 5 * time.Minute
 // probeEnvironment is Run's next step when nothing runs and stop is the only reason to stop: with
 // the run held for the environment, and not probed yet, it waits Config.EnvProbe and then probes
 // the machine. It returns nil when the probe ran its command and the hold has ended, or else the
-// reason to end the run with. winding says whether the maintainer asked to wind down, hearing any
-// request waiting; hear takes one as it comes, and says the same.
-func (o *Loop) probeEnvironment(
-	ctx context.Context, stop *stopReason, winding func() bool, hear func(drainRequest) bool,
-) *stopReason {
+// reason to end the run with, as it does once the maintainer asks to wind down.
+func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
+	o, ctx := r.o, r.ctx
 	after := o.cfg.EnvProbe
-	if after <= 0 || o.envProbed || stop == nil || stop != o.envStop || winding() || ctx.Err() != nil {
+	if after <= 0 || o.envProbed || stop == nil || stop != o.envStop || r.takeDrainRequest() || ctx.Err() != nil {
 		return stop
 	}
 	o.envProbed = true
@@ -209,18 +207,18 @@ func (o *Loop) probeEnvironment(
 		command.ShortDuration(after))})
 	wait := time.NewTimer(after)
 	defer wait.Stop()
+	// Held already, a verdict changes nothing but the row.
 	for waiting := true; waiting; {
-		select {
-		case <-ctx.Done():
+		switch why, _ := r.wait(waits{timer: wait.C}); why {
+		case wokeDone:
 			return stop
-		case r := <-o.drainReqs:
-			if hear(r) {
+		case wokeDrain:
+			if r.drained() {
 				return stop
 			}
-		case v := <-o.verdicts:
-			o.triaged(context.WithoutCancel(ctx), v) // held already: it changes nothing but the row
-		case <-wait.C:
+		case wokeTimer:
 			waiting = false
+		default:
 		}
 	}
 	tab, err := o.probe(ctx)

@@ -101,6 +101,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `book.go` | the ticket book: each ticket's place in the run in one record (set aside, asked, left open, unmerged, its setup failed), changed only by its transitions, and the questions pick, the holds and the scope's end ask of it |
 | `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts; what only `Run` reads and writes is its `runState`'s (tests in `run_test.go` and `schedule_test.go`) |
+| `gate.go` | the gate: why the run takes no new tickets (its stops, winding down, the ticket limit), under its own lock, read alike by `Run` and the merges; `runState.wait`, where every loop of `Run`'s waits, hearing drain requests, triage's verdicts and the gate |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |

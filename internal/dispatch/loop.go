@@ -53,6 +53,7 @@ type Loop struct {
 	triageQueue            // triage's queue, set by StartTriage before any worker runs
 	envHold                // holding for the environment: Run's own, and triage's once Run has returned
 	usageHold              // holding for the account's usage limit, under limitMu
+	gate        gate       // why the run takes no new tickets, under its own lock: Run's to set, the merges' to read
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -78,7 +79,7 @@ type Loop struct {
 
 	// Winding down: the maintainer's latest request to stop after the running tickets, or to take
 	// tickets again, which Run hasn't heard yet (buffered 1, a newer request replacing it). Whether
-	// the run winds down is Run's own (runState.drained).
+	// the run winds down is the gate's, as Run last heard (see runState.drained).
 	drainReqs chan drainRequest
 
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
@@ -178,10 +179,6 @@ type ledger struct {
 	// check after the run went, once it has run (see FullCheck).
 	mergedN     int
 	fullChecked *fullCheck
-	// noMore is why the run takes on no more work, as Run says it each time its stops or its winding
-	// down change (see runState.sayNoMore): it winds down, or holds for a stop; "" while it takes
-	// tickets. A merge reads it before handing a failed check back to its worker (see whyNotFixCheck).
-	noMore string
 }
 
 // newLedger is the ledger of a run that has done nothing yet.
@@ -245,7 +242,7 @@ func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 		cfg: cfg, log: log, prompt: prompt,
 		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
 		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
-		usageHold: usageHold{liftWake: make(chan struct{}, 1)},
+		gate:      newGate(),
 		merges:    mergeQueue{joined: make(chan struct{}, 1)},
 		drainReqs: make(chan drainRequest, 1),
 	}

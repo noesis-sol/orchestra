@@ -193,11 +193,8 @@ func (o *Loop) whyNotFixCheck(ctx context.Context, r rebaseStop, res checked, fi
 	case at == "" || r.onto == "" || r.head == "":
 		return "git could not say what the check failed on"
 	}
-	o.mu.Lock()
-	noMore := o.noMore
-	o.mu.Unlock()
-	if noMore != "" {
-		return noMore
+	if why := o.gate.why(); why != "" {
+		return why
 	}
 	return o.workerAway(ctx, r.worker)
 }
