@@ -133,17 +133,16 @@ type tallies struct {
 	sinkMu sync.Mutex
 	sink   Sink
 	final  string // the stop or done line
-	// closedN and asideN: the tickets closed (merged, or with nothing to merge) and set aside in the run,
-	// counted as their events go out (see tally); counted, the tickets asideN counts; closedIDs, the
-	// tickets closedN counts, in the order they closed.
-	closedN, asideN int
-	counted         map[string]bool
-	closedIDs       []string
+	// closedN: the tickets closed in the run (merged, or with nothing to merge), counted as their events
+	// go out (see tally); closedIDs, the tickets it counts, in the order they closed. Those set aside
+	// are the ticket book's.
+	closedN   int
+	closedIDs []string
 }
 
 // newTallies are the tallies of a run that has sent no events yet, to sink.
 func newTallies(sink Sink) tallies {
-	return tallies{sink: sink, counted: map[string]bool{}}
+	return tallies{sink: sink}
 }
 
 // ledger is what the workers, Run and the merges share, all under mu.

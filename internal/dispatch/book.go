@@ -309,6 +309,26 @@ func (b *ticketBook) countsAside(id string) bool {
 	return r.aside > 0
 }
 
+// endsAside reports whether r counts among the tickets the run's end says it set aside: set aside in
+// this run, but for one waiting on a question, which waits on the maintainer instead, unless it was
+// closed and left unmerged as the run ended.
+func (r *ticketRecord) endsAside() bool {
+	return r.aside > 0 && (r.disp != dispAsked || r.unmerged != "")
+}
+
+// asideCount is how many tickets the run's end says it set aside (see endsAside).
+func (b *ticketBook) asideCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, r := range b.recs {
+		if r.endsAside() {
+			n++
+		}
+	}
+	return n
+}
+
 // keptOut is the tickets the run doesn't take, even if bd lists them as ready (a defer that failed,
 // say): those set aside in this run, but for one waiting on a question, which bd keeps out of ready
 // until the question is answered, and which then comes back.

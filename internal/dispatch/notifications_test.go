@@ -23,9 +23,20 @@ func notifyingLoop(t *testing.T, project string) (*Loop, *alerts) {
 	return o, recordAlerts(log)
 }
 
+// bookFor puts in b what the run would have of ev's ticket before emitting ev: set aside, or asked.
+func bookFor(b *ticketBook, ev Event) {
+	switch {
+	case ev.Kind == EvDeferred, ev.Kind == EvWarn && ev.Aside && ev.Ticket != "":
+		b.setAside(ev.Ticket)
+	case ev.Kind == EvAsked:
+		b.ask(ev.Ticket, workerSpot{question: ev.Detail})
+	}
+}
+
 // A notification is titled with the project alone and says in a few words what happened to which
 // ticket: closed with its title, set aside with why, waiting on a question with the question's
-// title, or that the run stopped (over which ticket) or finished, with what it closed and set aside.
+// title, or that the run stopped (over which ticket) or finished, with what it closed and what the
+// ticket book has set aside.
 func TestNotificationsSayWhichTicketDidWhat(t *testing.T) {
 	t.Parallel()
 	long := "Add a --json flag to list, and make the table output wrap at the terminal width"
@@ -74,6 +85,7 @@ func TestNotificationsSayWhichTicketDidWhat(t *testing.T) {
 			t.Parallel()
 			o, shown := notifyingLoop(t, "jswallet")
 			for _, ev := range tc.events {
+				bookFor(&o.book, ev)
 				o.emit(ev)
 			}
 			if got := shown.list(); !equal(got, tc.want) {

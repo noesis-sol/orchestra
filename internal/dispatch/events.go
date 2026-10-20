@@ -78,7 +78,8 @@ type Event struct {
 	// words not read.
 	Reset time.Time
 	// Closed and SetAside: for EvDone, the tickets closed in the run (merged, or with nothing to
-	// merge), and those set aside (deferred, or left for review), as their events said.
+	// merge), as their events said, and those set aside (deferred, or left for review), as the ticket
+	// book has them (see ticketBook.asideCount).
 	Closed, SetAside int
 	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
@@ -192,38 +193,23 @@ func (o *Loop) emit(ev Event) {
 	o.sink.Event(ev)
 }
 
-// tally counts the tickets closed and set aside in the run, as their events say, and gives the
-// counts to the run's EvDone. A ticket set aside counts once, however many times it is (its check
-// failing again, say), and no longer once it merges (see recheck) or is back in the queue
-// (EvReopened).
+// tally counts the tickets closed in the run, as their events say, and gives the run's EvDone that
+// count and the ticket book's of those set aside (see asideCount).
 func (o *Loop) tally(ev *Event) {
+	var aside int
+	if ev.Kind == EvDone {
+		aside = o.book.asideCount()
+	}
 	o.sinkMu.Lock()
 	defer o.sinkMu.Unlock()
-	switch {
-	case ev.Kind == EvClosed:
+	switch ev.Kind {
+	case EvClosed:
 		o.closedN++
 		if !slices.Contains(o.closedIDs, ev.Ticket) {
 			o.closedIDs = append(o.closedIDs, ev.Ticket)
 		}
-		o.uncount(ev.Ticket)
-	case ev.Kind == EvReopened:
-		o.uncount(ev.Ticket)
-	case ev.Kind == EvDeferred, ev.Kind == EvWarn && ev.Aside && ev.Ticket != "":
-		if o.counted[ev.Ticket] {
-			return
-		}
-		o.counted[ev.Ticket] = true
-		o.asideN++
-	case ev.Kind == EvDone:
-		ev.Closed, ev.SetAside = o.closedN, o.asideN
-	}
-}
-
-// uncount takes ticket id out of those asideN counts, if it is there. Its caller holds sinkMu.
-func (o *Loop) uncount(id string) {
-	if o.counted[id] {
-		o.asideN--
-		delete(o.counted, id)
+	case EvDone:
+		ev.Closed, ev.SetAside = o.closedN, aside
 	}
 }
 
