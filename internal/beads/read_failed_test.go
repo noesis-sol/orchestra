@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // A read whose output parses has no error; one that doesn't has bd's own error when bd failed too,
@@ -41,15 +41,15 @@ func TestReadFailed(t *testing.T) {
 func TestDispatchable(t *testing.T) {
 	cases := []struct {
 		name string
-		t    dispatch.Ticket
+		t    tracker.Ticket
 		want bool
 	}{
-		{"open", dispatch.Ticket{Status: dispatch.StatusOpen, IssueType: "task"}, true},
-		{"in progress", dispatch.Ticket{Status: dispatch.StatusInProgress, IssueType: "task"}, false},
-		{"closed", dispatch.Ticket{Status: dispatch.StatusClosed, IssueType: "task"}, false},
-		{"an epic", dispatch.Ticket{Status: dispatch.StatusOpen, IssueType: "epic"}, false},
-		{"a question", dispatch.Ticket{Status: dispatch.StatusOpen, IssueType: "task",
-			Labels: []string{dispatch.HumanLabel}}, false},
+		{"open", tracker.Ticket{Status: tracker.StatusOpen, IssueType: "task"}, true},
+		{"in progress", tracker.Ticket{Status: tracker.StatusInProgress, IssueType: "task"}, false},
+		{"closed", tracker.Ticket{Status: tracker.StatusClosed, IssueType: "task"}, false},
+		{"an epic", tracker.Ticket{Status: tracker.StatusOpen, IssueType: "epic"}, false},
+		{"a question", tracker.Ticket{Status: tracker.StatusOpen, IssueType: "task",
+			Labels: []string{tracker.HumanLabel}}, false},
 	}
 	for _, tc := range cases {
 		if got := dispatchable(tc.t, []string{"epic"}); got != tc.want {

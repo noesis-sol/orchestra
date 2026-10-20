@@ -149,7 +149,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
 | `predict.go` | predicting the files of ready tickets that name none, in the background; the `predictor`, its queue and predictions |
 | `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports, and the launch contract every terminal keeps to; aliases for `internal/agentio`'s types (`AgentState` and its states, `Reporter`, `Session`) |
-| `ticket.go` | `Ticket`, a Beads issue as the loop sees it: its status, labels, deferral and the question it waits on |
+| `ticket.go` | aliases for `internal/tracker`'s vocabulary, which `internal/beads` imports rather than the run loop: `Ticket`, a Beads issue as the loop sees it, its status, labels, deferral and the question it waits on |
 | `activity.go` | what the dashboard says a worker is doing (`Doing`) from what its hooks report (`ToolUse`, `HookRecord`, aliases for `internal/agentio`'s), and what triage reads of their record |
 
 The fakes the tests share are in `fakes_test.go` (Beads, workers, sinks), `fakeherdr_test.go`, `fakegit_test.go` and `loop_test.go`; the harness that runs a whole loop against them is in `helpers_test.go`. A scenario whose subject is timing uses `newTimedHarness` inside `synctest.Test`: git in memory, and the loop's real durations on the bubble's clock, which moves on whenever every goroutine waits. One whose subject is git (merging, rebasing, conflicts, reusing a worktree) uses `newHarness`, with real git on the real clock.

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // orchestra-hu0k: bd show of a ticket bd has no trace of, as one deleted, fails with an error
-// errors.Is takes for dispatch.ErrNoTicket, carrying bd's stderr; bd failing otherwise doesn't.
+// errors.Is takes for tracker.ErrNoTicket, carrying bd's stderr; bd failing otherwise doesn't.
 func TestShowOfATicketBdHasNoTraceOf(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -51,14 +51,14 @@ func TestShowOfATicketBdHasNoTraceOf(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), c.stderr) {
 				t.Errorf("Show error %v; want bd's %q", err, c.stderr)
 			}
-			if got := errors.Is(err, dispatch.ErrNoTicket); got != c.gone {
+			if got := errors.Is(err, tracker.ErrNoTicket); got != c.gone {
 				t.Errorf("errors.Is(%v, ErrNoTicket) = %v; want %v", err, got, c.gone)
 			}
-			if tk.Status != dispatch.StatusUnknown {
+			if tk.Status != tracker.StatusUnknown {
 				t.Errorf("Show status = %q; want unknown", tk.Status)
 			}
 			st, err := b.Status(context.Background(), "k-1")
-			if errors.Is(err, dispatch.ErrNoTicket) != c.gone || st != dispatch.StatusUnknown {
+			if errors.Is(err, tracker.ErrNoTicket) != c.gone || st != tracker.StatusUnknown {
 				t.Errorf("Status = %q, %v", st, err)
 			}
 		})

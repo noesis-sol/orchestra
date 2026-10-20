@@ -192,7 +192,7 @@ const SpecKey = "spec"
 // anyone's to change, and a resumed worker is told what it is told in one line.
 func specNote(t Ticket, what string) string {
 	var path string
-	if json.Unmarshal(t.metadataField(SpecKey), &path) != nil {
+	if json.Unmarshal(t.MetadataField(SpecKey), &path) != nil {
 		return ""
 	}
 	path = strings.TrimSpace(path)

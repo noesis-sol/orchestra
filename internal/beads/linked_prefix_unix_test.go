@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // orchestra-ale2: Create's parent and the tickets it waits for, and Describe, are confirmed as Show
@@ -33,7 +33,7 @@ func TestCreateAndDescribeByALongerID(t *testing.T) {
 		"parent":     {Title: "x", Type: "task", Parent: "k-1"},
 		"blocked by": {Title: "x", Type: "task", BlockedBy: []string{"k-1.1", "k-1"}},
 	} {
-		if id, err := b.Create(ctx, nt); !errors.Is(err, dispatch.ErrNoTicket) || id != "" {
+		if id, err := b.Create(ctx, nt); !errors.Is(err, tracker.ErrNoTicket) || id != "" {
 			t.Errorf("Create with %s k-1 = %q, %v; want not found", what, id, err)
 		}
 	}

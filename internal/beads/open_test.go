@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 func TestParseOpenKeepsWorkAndItsBlocksLinks(t *testing.T) {
@@ -22,7 +22,7 @@ func TestParseOpenKeepsWorkAndItsBlocksLinks(t *testing.T) {
 	if len(open) != 1 || open[0].ID != "a" || open[0].CreatedAt != "2026-09-30T14:33:10Z" || open[0].Dependencies != nil {
 		t.Errorf("open = %+v, want only a, without its link entries", open)
 	}
-	if want := []dispatch.Link{{Blocker: "b", Blocked: "a"}, {Blocker: "z", Blocked: "b"}}; !slices.Equal(links, want) {
+	if want := []tracker.Link{{Blocker: "b", Blocked: "a"}, {Blocker: "z", Blocked: "b"}}; !slices.Equal(links, want) {
 		t.Errorf("links = %+v, want %+v", links, want)
 	}
 	if _, _, err := parseOpen([]byte("not json"), nil); err == nil {

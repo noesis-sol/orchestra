@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 func TestParseReadySortsOpenTicketsByPriority(t *testing.T) {
@@ -85,7 +85,7 @@ func TestExcludedTypesAreNeverDispatched(t *testing.T) {
 }
 
 func TestParseTicketStatus(t *testing.T) {
-	cases := map[string]dispatch.TicketStatus{
+	cases := map[string]tracker.Status{
 		`[{"id":"x","status":"closed"}]`:                                  "closed",
 		`{"id":"x","status":"deferred"}`:                                  "deferred",
 		`{"schema_version":1,"data":[{"id":"x","status":"in_progress"}]}`: "in_progress",
@@ -95,7 +95,7 @@ func TestParseTicketStatus(t *testing.T) {
 		`error: no issue found`: "unknown",
 	}
 	for raw, want := range cases {
-		got := dispatch.StatusUnknown
+		got := tracker.StatusUnknown
 		if tk, ok := parseTicket([]byte(raw)); ok {
 			got = tk.Status
 		}
@@ -126,11 +126,11 @@ func TestOpenQuestionFromBdShow(t *testing.T) {
 	if d := tk.Dependencies[0]; d.ID != "k-0" || d.DependencyType != "blocks" {
 		t.Errorf("dependency = %+v, want k-0 blocking", d)
 	}
-	if q := dispatch.OpenQuestion(tk); q == nil || q.ID != "q-1" {
+	if q := tracker.OpenQuestion(tk); q == nil || q.ID != "q-1" {
 		t.Errorf("open question = %+v", q)
 	}
 	tk.Dependencies[1].Status = "closed" // answered
-	if q := dispatch.OpenQuestion(tk); q != nil {
+	if q := tracker.OpenQuestion(tk); q != nil {
 		t.Errorf("an answered question should not block: %+v", q)
 	}
 	if _, ok := parseTicket([]byte("error: not found")); ok {
@@ -148,7 +148,7 @@ func TestOnlyABlocksLinkIsAQuestion(t *testing.T) {
 	if !ok || tk.Dependencies[0].DependencyType != "related" {
 		t.Fatalf("parseTicket: %v %+v", ok, tk)
 	}
-	if q := dispatch.OpenQuestion(tk); q != nil {
+	if q := tracker.OpenQuestion(tk); q != nil {
 		t.Errorf("a non-blocking link was taken for an open question: %+v", q)
 	}
 }
@@ -157,7 +157,7 @@ func TestParseClosedKeepsOnlyClosedTickets(t *testing.T) {
 	raw := `{"schema_version":1,"data":[{"id":"k-1","status":"closed","labels":["unmerged"]},
 	         {"id":"k-2","status":"open","labels":["unmerged"]}]}`
 	got, err := parseList([]byte(raw), "closed")
-	if err != nil || len(got) != 1 || got[0].ID != "k-1" || !dispatch.HasLabel(got[0], dispatch.UnmergedLabel) {
+	if err != nil || len(got) != 1 || got[0].ID != "k-1" || !tracker.HasLabel(got[0], tracker.UnmergedLabel) {
 		t.Errorf("got %+v %v", got, err)
 	}
 	if got, err := parseList([]byte(`{"data":[],"schema_version":1}`), "closed"); err != nil || len(got) != 0 {

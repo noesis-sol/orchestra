@@ -15,17 +15,17 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/beads/bdjson"
 	"github.com/noesis-sol/orchestra/internal/command"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // parseReady returns the open tickets from 'bd ready --json', highest priority (lowest number) first.
 // Questions for the maintainer and tickets of the excluded issue types are left out.
-func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
-	var all []dispatch.Ticket
+func parseReady(raw []byte, excludeTypes []string) ([]tracker.Ticket, error) {
+	var all []tracker.Ticket
 	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, err
 	}
-	var open []dispatch.Ticket
+	var open []tracker.Ticket
 	for _, t := range all {
 		if dispatchable(t, excludeTypes) {
 			open = append(open, t)
@@ -37,14 +37,14 @@ func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 
 // dispatchable reports whether ticket t is open, not a question for the maintainer, and not of the
 // excluded issue types.
-func dispatchable(t dispatch.Ticket, excludeTypes []string) bool {
-	return t.Status == dispatch.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
-		!dispatch.HasLabel(t, dispatch.HumanLabel)
+func dispatchable(t tracker.Ticket, excludeTypes []string) bool {
+	return t.Status == tracker.StatusOpen && !slices.Contains(excludeTypes, t.IssueType) &&
+		!tracker.HasLabel(t, tracker.HumanLabel)
 }
 
 // byPriority sorts tickets highest priority (lowest number) first, keeping bd's order otherwise.
-func byPriority(ts []dispatch.Ticket) {
-	prio := func(t dispatch.Ticket) int {
+func byPriority(ts []tracker.Ticket) {
+	prio := func(t tracker.Ticket) int {
 		if t.Priority == nil {
 			return 9
 		}
@@ -54,12 +54,12 @@ func byPriority(ts []dispatch.Ticket) {
 }
 
 // parseList returns the tickets from 'bd list --json'; with status, only those in it.
-func parseList(raw []byte, status dispatch.TicketStatus) ([]dispatch.Ticket, error) {
-	var all []dispatch.Ticket
+func parseList(raw []byte, status tracker.Status) ([]tracker.Ticket, error) {
+	var all []tracker.Ticket
 	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, err
 	}
-	var kept []dispatch.Ticket
+	var kept []tracker.Ticket
 	for _, t := range all {
 		if status == "" || t.Status == status {
 			kept = append(kept, t)
@@ -71,12 +71,12 @@ func parseList(raw []byte, status dispatch.TicketStatus) ([]dispatch.Ticket, err
 // parseOpen returns the open tickets from 'bd list --json', leaving out questions for the
 // maintainer and tickets of the excluded issue types, and the blocks links among their
 // dependencies (see parseLinked).
-func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch.Link, error) {
+func parseOpen(raw []byte, excludeTypes []string) ([]tracker.Ticket, []tracker.Link, error) {
 	all, links, err := parseLinked(raw)
 	if err != nil {
 		return nil, nil, err
 	}
-	var open []dispatch.Ticket
+	var open []tracker.Ticket
 	for _, t := range all {
 		if dispatchable(t, excludeTypes) {
 			open = append(open, t)
@@ -88,8 +88,8 @@ func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch
 // parseLinked returns the tickets from 'bd list --json' and the blocks links among their
 // dependencies. bd list gives each dependency as a link (issue_id, depends_on_id, type), not as a
 // ticket, so the tickets' Dependencies are left empty.
-func parseLinked(raw []byte) ([]dispatch.Ticket, []dispatch.Link, error) {
-	var all []dispatch.Ticket
+func parseLinked(raw []byte) ([]tracker.Ticket, []tracker.Link, error) {
+	var all []tracker.Ticket
 	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, nil, err
 	}
@@ -103,11 +103,11 @@ func parseLinked(raw []byte) ([]dispatch.Ticket, []dispatch.Link, error) {
 	if err := json.Unmarshal(bdjson.Unwrap(raw), &deps); err != nil {
 		return nil, nil, err
 	}
-	var links []dispatch.Link
+	var links []tracker.Link
 	for i := range all {
 		for _, d := range deps[i].Dependencies {
 			if d.Type == "blocks" && d.IssueID != "" && d.DependsOnID != "" {
-				links = append(links, dispatch.Link{Blocker: d.DependsOnID, Blocked: d.IssueID})
+				links = append(links, tracker.Link{Blocker: d.DependsOnID, Blocked: d.IssueID})
 			}
 		}
 		all[i].Dependencies = nil
@@ -133,7 +133,7 @@ func (b Tracker) bd(ctx context.Context, limit time.Duration, args ...string) (s
 // The output decides, not bd's exit status: a list that parses is bd's answer, even should bd exit
 // non-zero over something beside the read. Only output that can't be read is an error, which then
 // carries bd's stderr.
-func (b Tracker) Ready(ctx context.Context, scope string) ([]dispatch.Ticket, error) {
+func (b Tracker) Ready(ctx context.Context, scope string) ([]tracker.Ticket, error) {
 	all, err := b.ready(ctx)
 	if err != nil || scope == "" {
 		return all, err
@@ -152,8 +152,8 @@ func (b Tracker) Ready(ctx context.Context, scope string) ([]dispatch.Ticket, er
 }
 
 // ready runs bd ready with the filters every read uses and these extra arguments.
-func (b Tracker) ready(ctx context.Context, extra ...string) ([]dispatch.Ticket, error) {
-	args := []string{"ready", "--json", "--limit", "0", "--exclude-label", dispatch.HumanLabel}
+func (b Tracker) ready(ctx context.Context, extra ...string) ([]tracker.Ticket, error) {
+	args := []string{"ready", "--json", "--limit", "0", "--exclude-label", tracker.HumanLabel}
 	if len(b.ExcludeTypes) > 0 {
 		args = append(args, "--exclude-type", strings.Join(b.ExcludeTypes, ","))
 	}
@@ -180,20 +180,20 @@ func readFailed(cmd string, parseErr, runErr error) error {
 
 // Closed returns the closed tickets carrying the label. When bd's output can't be read, the error
 // carries bd's stderr.
-func (b Tracker) Closed(ctx context.Context, label string) ([]dispatch.Ticket, error) {
-	return b.list(ctx, dispatch.StatusClosed, "--status", "closed", "--label", label)
+func (b Tracker) Closed(ctx context.Context, label string) ([]tracker.Ticket, error) {
+	return b.list(ctx, tracker.StatusClosed, "--status", "closed", "--label", label)
 }
 
 // Unclosed returns every ticket that isn't closed, without its text: what the loop needs is each
 // one's parent.
-func (b Tracker) Unclosed(ctx context.Context) ([]dispatch.Ticket, error) {
+func (b Tracker) Unclosed(ctx context.Context) ([]tracker.Ticket, error) {
 	return b.list(ctx, "", "--brief")
 }
 
 // Descendants returns the ticket's subtickets, their subtickets and so on, closed or not, without
 // their text. bd lists one level at a time.
-func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket, error) {
-	var all []dispatch.Ticket
+func (b Tracker) Descendants(ctx context.Context, id string) ([]tracker.Ticket, error) {
+	var all []tracker.Ticket
 	seen := map[string]bool{id: true}
 	for queue := []string{id}; len(queue) > 0; queue = queue[1:] {
 		children, err := b.list(ctx, "", "--all", "--brief", "--parent", queue[0])
@@ -213,7 +213,7 @@ func (b Tracker) Descendants(ctx context.Context, id string) ([]dispatch.Ticket,
 
 // Children returns the ticket's subtickets that aren't closed, with their text and metadata, and
 // the blocks links bd has for them. When bd's output can't be read, the error carries bd's stderr.
-func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
+func (b Tracker) Children(ctx context.Context, id string) ([]tracker.Ticket, []tracker.Link, error) {
 	out, runErr := b.bd(ctx, command.ReadLimit, "list", "--json", "--limit", "0", "--parent", id)
 	children, links, err := parseLinked([]byte(out))
 	if err = readFailed("bd list --json", err, runErr); err != nil {
@@ -225,7 +225,7 @@ func (b Tracker) Children(ctx context.Context, id string) ([]dispatch.Ticket, []
 // WithMetadata returns every ticket, closed or not, whose metadata gives key the value, with its text,
 // metadata and parent: those a spec's breakdown filed, by the spec's path under SpecKey, say. When
 // bd's output can't be read, the error carries bd's stderr.
-func (b Tracker) WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error) {
+func (b Tracker) WithMetadata(ctx context.Context, key, value string) ([]tracker.Ticket, error) {
 	return b.list(ctx, "", "--all", "--metadata-field", key+"="+value)
 }
 
@@ -276,7 +276,7 @@ func parseCycles(raw []byte) ([][]string, error) {
 
 // list runs 'bd list --json' without a limit and these arguments, keeping the tickets in status
 // ("" for all it lists). When bd's output can't be read, the error carries bd's stderr.
-func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ...string) ([]dispatch.Ticket, error) {
+func (b Tracker) list(ctx context.Context, status tracker.Status, args ...string) ([]tracker.Ticket, error) {
 	args = append([]string{"list", "--json", "--limit", "0"}, args...)
 	out, runErr := b.bd(ctx, command.ReadLimit, args...)
 	tickets, err := parseList([]byte(out), status)
@@ -289,7 +289,7 @@ func (b Tracker) list(ctx context.Context, status dispatch.TicketStatus, args ..
 // Open returns the open tickets, leaving out questions for the maintainer and tickets of the
 // excluded types, and the blocks links bd already has for them. When bd's output can't be read,
 // the error carries bd's stderr.
-func (b Tracker) Open(ctx context.Context) ([]dispatch.Ticket, []dispatch.Link, error) {
+func (b Tracker) Open(ctx context.Context) ([]tracker.Ticket, []tracker.Link, error) {
 	out, runErr := b.bd(ctx, command.ReadLimit, "list", "--json", "--status", "open", "--limit", "0")
 	open, links, err := parseOpen([]byte(out), b.ExcludeTypes)
 	if err = readFailed("bd list --json", err, runErr); err != nil {
@@ -314,36 +314,36 @@ func (b Tracker) AddCheckedBlock(ctx context.Context, blocker, blocked string) e
 }
 
 // parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.
-func parseTicket(raw []byte) (dispatch.Ticket, bool) {
+func parseTicket(raw []byte) (tracker.Ticket, bool) {
 	data := bdjson.Unwrap(raw)
-	var list []dispatch.Ticket
+	var list []tracker.Ticket
 	if json.Unmarshal(data, &list) == nil {
 		if len(list) > 0 && list[0].Status != "" {
 			return list[0], true
 		}
-		return dispatch.Ticket{}, false
+		return tracker.Ticket{}, false
 	}
-	var t dispatch.Ticket
+	var t tracker.Ticket
 	if json.Unmarshal(data, &t) == nil && t.Status != "" {
 		return t, true
 	}
-	return dispatch.Ticket{}, false
+	return tracker.Ticket{}, false
 }
 
 // Show returns the ticket with its dependencies. If it cannot be read, Status is StatusUnknown and the
 // error says why. bd answers an ID it has no ticket for with a ticket whose ID starts with it, if there
 // is one (a deleted ticket's follow-up, say): Show takes that for not found.
-func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
+func (b Tracker) Show(ctx context.Context, id string) (tracker.Ticket, error) {
 	out, err := b.bd(ctx, command.ReadLimit, "show", id, "--json")
 	t, ok := parseTicket([]byte(out))
 	switch {
 	case ok && t.ID != id:
 		err = fmt.Errorf("'bd show %s --json' gave %s, another ticket: bd has none by that ID", id, t.ID)
-		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, &NotFoundError{ID: id, Err: err}
+		return tracker.Ticket{ID: id, Status: tracker.StatusUnknown}, &NotFoundError{ID: id, Err: err}
 	case !ok && err != nil && noSuchTicket([]byte(out)):
-		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, &NotFoundError{ID: id, Err: err}
+		return tracker.Ticket{ID: id, Status: tracker.StatusUnknown}, &NotFoundError{ID: id, Err: err}
 	case !ok:
-		return dispatch.Ticket{ID: id, Status: dispatch.StatusUnknown}, unreadable(id, out, err)
+		return tracker.Ticket{ID: id, Status: tracker.StatusUnknown}, unreadable(id, out, err)
 	}
 	return t, nil
 }
@@ -353,7 +353,7 @@ func (b Tracker) Show(ctx context.Context, id string) (dispatch.Ticket, error) {
 // otherwise, it is nil, and the write says whether bd can do it.
 func (b Tracker) exists(ctx context.Context, ids ...string) error {
 	for _, id := range ids {
-		if _, err := b.Show(ctx, id); errors.Is(err, dispatch.ErrNoTicket) {
+		if _, err := b.Show(ctx, id); errors.Is(err, tracker.ErrNoTicket) {
 			return err
 		}
 	}
@@ -361,7 +361,7 @@ func (b Tracker) exists(ctx context.Context, ids ...string) error {
 }
 
 // NotFoundError is 'bd show' failing because bd has no trace of the ticket, as one deleted from it,
-// rather than failing to say: errors.Is takes it for dispatch.ErrNoTicket. Err is bd's failure,
+// rather than failing to say: errors.Is takes it for tracker.ErrNoTicket. Err is bd's failure,
 // carrying its stderr.
 type NotFoundError struct {
 	ID  string
@@ -372,8 +372,8 @@ func (e *NotFoundError) Error() string { return e.Err.Error() }
 
 func (e *NotFoundError) Unwrap() error { return e.Err }
 
-// Is reports whether target is dispatch.ErrNoTicket.
-func (e *NotFoundError) Is(target error) bool { return target == dispatch.ErrNoTicket }
+// Is reports whether target is tracker.ErrNoTicket.
+func (e *NotFoundError) Is(target error) bool { return target == tracker.ErrNoTicket }
 
 // bdNoSuchTicket is the error 'bd show --json' gives, on stdout as it exits 1, for an ID it has no
 // ticket for (bd 1.3: "Issue <id> not found" on stderr).
@@ -388,7 +388,7 @@ func noSuchTicket(raw []byte) bool {
 }
 
 // Status returns the ticket's status. If it cannot be read, it is StatusUnknown and the error says why.
-func (b Tracker) Status(ctx context.Context, id string) (dispatch.TicketStatus, error) {
+func (b Tracker) Status(ctx context.Context, id string) (tracker.Status, error) {
 	t, err := b.Show(ctx, id)
 	return t.Status, err
 }
@@ -515,7 +515,7 @@ func (b Tracker) FileBug(ctx context.Context, title, description, label string) 
 		Labels: []string{label}})
 }
 
-// Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
+// Create files the ticket and returns its ID. Files go in the metadata under tracker.FilesKey,
 // which footprint scheduling reads, with the rest of its Metadata. When bd's output can't be read,
 // the error carries bd's stderr. When bd has no ticket by the parent's ID or one it waits for, it
 // files nothing: bd would link the ticket to one whose ID starts with it. A Checked ticket's links
@@ -551,7 +551,7 @@ func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 			meta[k] = v
 		}
 		if len(t.Files) > 0 {
-			meta[dispatch.FilesKey] = t.Files
+			meta[tracker.FilesKey] = t.Files
 		}
 		b, err := json.Marshal(meta)
 		if err != nil {

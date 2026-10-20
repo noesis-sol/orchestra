@@ -4,13 +4,13 @@ package beads
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
@@ -62,7 +62,7 @@ func TestHungBdIsStoppedByCtrlC(t *testing.T) {
 	faketool.Write(t, dir, "bd", "#!/bin/sh\nsleep 5\necho '[]'\n")
 	t.Setenv("PATH", faketool.Path(t, dir))
 	ctx, cancel := context.WithCancelCause(context.Background())
-	time.AfterFunc(100*time.Millisecond, func() { cancel(dispatch.InterruptedError("with Ctrl+C")) })
+	time.AfterFunc(100*time.Millisecond, func() { cancel(errors.New("stopped with Ctrl+C")) })
 	start := time.Now()
 	st, err := Tracker{Repo: t.TempDir()}.Status(ctx, "k-1")
 	if took := time.Since(start); took > time.Second {

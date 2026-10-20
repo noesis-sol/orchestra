@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -66,9 +67,8 @@ type Footprint struct {
 // the same one overlap.
 const AreaPrefix = "area:"
 
-// FilesKey is the metadata key listing the files a ticket works on, as a list, a list in a string
-// or a string of paths separated by commas or spaces (bd update <id> --set-metadata files=a.go,b.go).
-const FilesKey = "files"
+// FilesKey is the metadata key listing the files a ticket works on (tracker.FilesKey).
+const FilesKey = tracker.FilesKey
 
 // TicketFiles returns the files the ticket's metadata lists under FilesKey, as written, in any of
 // those forms.
@@ -281,7 +281,7 @@ func (r *repoFiles) unioned(f string) bool {
 // every ticket broken down from it cites it without changing it.
 func specFile(t Ticket) string {
 	var spec string
-	if json.Unmarshal(t.metadataField(SpecKey), &spec) != nil {
+	if json.Unmarshal(t.MetadataField(SpecKey), &spec) != nil {
 		return ""
 	}
 	spec = norm.NFC.String(strings.TrimPrefix(strings.TrimSpace(spec), "./"))
@@ -891,9 +891,9 @@ func predictedFootprint(predicted []string, repo *repoFiles, spec string) Footpr
 
 // metadataList reads a list of paths from a ticket's metadata (FilesKey, PredictedKey): a list, a
 // list encoded in a string (bd update <id> --set-metadata 'files=["a.go","b.go"]' stores one), or
-// one string of them separated by commas or spaces (see Ticket.metadataField).
+// one string of them separated by commas or spaces (see Ticket.MetadataField).
 func metadataList(t Ticket, key string) []string {
-	field := t.metadataField(key)
+	field := t.MetadataField(key)
 	var list []string
 	if json.Unmarshal(field, &list) == nil {
 		return list

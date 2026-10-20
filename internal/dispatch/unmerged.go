@@ -112,7 +112,7 @@ func ownCommits(t Ticket, fork, rev string) string {
 // dash for an option.
 func forkOf(t Ticket) string {
 	var fork string
-	if json.Unmarshal(t.metadataField(ForkKey), &fork) != nil || !isHash(fork) {
+	if json.Unmarshal(t.MetadataField(ForkKey), &fork) != nil || !isHash(fork) {
 		return ""
 	}
 	return fork

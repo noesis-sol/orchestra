@@ -1,11 +1,11 @@
-package dispatch
+package tracker
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// metadataField reads a key from the metadata as bd gives it: an object, or one encoded as a string.
+// MetadataField reads a key from the metadata as bd gives it: an object, or one encoded as a string.
 func TestMetadataFieldReadsAnObjectOrOneInAString(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -22,8 +22,8 @@ func TestMetadataFieldReadsAnObjectOrOneInAString(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := (Ticket{Metadata: json.RawMessage(tc.meta)}).metadataField(tc.key); string(got) != tc.want {
-				t.Errorf("metadataField(%q) of %s = %s, want %s", tc.key, tc.meta, got, tc.want)
+			if got := (Ticket{Metadata: json.RawMessage(tc.meta)}).MetadataField(tc.key); string(got) != tc.want {
+				t.Errorf("MetadataField(%q) of %s = %s, want %s", tc.key, tc.meta, got, tc.want)
 			}
 		})
 	}

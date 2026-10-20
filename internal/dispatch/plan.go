@@ -5,14 +5,12 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
-// Link is a blocks link between two tickets: Blocked waits for Blocker (bd dep add <Blocked>
-// <Blocker>). Why is what both touch, for a proposed link.
-type Link struct {
-	Blocker, Blocked string
-	Why              string
-}
+// Link is a blocks link between two tickets: Blocked waits for Blocker (tracker.Link).
+type Link = tracker.Link
 
 // SmallFileLines is the most lines a file can have for two tickets naming it, and no function in
 // common, to be ordered: in a larger file they likely work in different places.

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // Children lists a ticket's subtickets with their metadata, and the blocks links among their
@@ -28,7 +28,7 @@ func TestChildrenListsTheSubticketsAndTheirLinks(t *testing.T) {
 		children[1].IssueType != "task" || children[1].Dependencies != nil {
 		t.Errorf("children %+v", children)
 	}
-	if want := []dispatch.Link{{Blocker: "k-1.1", Blocked: "k-1.2"}}; !reflect.DeepEqual(links, want) {
+	if want := []tracker.Link{{Blocker: "k-1.1", Blocked: "k-1.2"}}; !reflect.DeepEqual(links, want) {
 		t.Errorf("links %v, want %v", links, want)
 	}
 	if b, _ := os.ReadFile(record); string(b) != "list\n--json\n--limit\n0\n--parent\nk-1\n" {

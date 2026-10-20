@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/faketool"
+	"github.com/noesis-sol/orchestra/internal/tracker"
 )
 
 // orchestra-c1em: bd answers an ID it has no ticket for with one whose ID starts with it, as k-1.1
@@ -27,10 +27,10 @@ func TestATicketBdAnswersForALongerID(t *testing.T) {
 	ctx := context.Background()
 
 	tk, err := b.Show(ctx, "k-1")
-	if !errors.Is(err, dispatch.ErrNoTicket) || !strings.Contains(err.Error(), "k-1.1") {
+	if !errors.Is(err, tracker.ErrNoTicket) || !strings.Contains(err.Error(), "k-1.1") {
 		t.Errorf("Show error %v; want not found, naming the ticket bd gave", err)
 	}
-	if tk.ID != "k-1" || tk.Status != dispatch.StatusUnknown {
+	if tk.ID != "k-1" || tk.Status != tracker.StatusUnknown {
 		t.Errorf("Show = %s %q; want k-1, unknown", tk.ID, tk.Status)
 	}
 	for what, err := range map[string]error{
@@ -45,7 +45,7 @@ func TestATicketBdAnswersForALongerID(t *testing.T) {
 		"AddBlock":    b.AddBlock(ctx, "k-1.1", "k-1"),
 		"AddBlock by": b.AddBlock(ctx, "k-1", "k-1.1"),
 	} {
-		if !errors.Is(err, dispatch.ErrNoTicket) {
+		if !errors.Is(err, tracker.ErrNoTicket) {
 			t.Errorf("%s: error %v; want not found", what, err)
 		}
 	}
@@ -56,7 +56,7 @@ func TestATicketBdAnswersForALongerID(t *testing.T) {
 		}
 	}
 
-	if tk, err := b.Show(ctx, "k-1.1"); err != nil || tk.ID != "k-1.1" || tk.Status != dispatch.StatusOpen {
+	if tk, err := b.Show(ctx, "k-1.1"); err != nil || tk.ID != "k-1.1" || tk.Status != tracker.StatusOpen {
 		t.Errorf("Show(k-1.1) = %s %q, %v; want it open", tk.ID, tk.Status, err)
 	}
 	if err := b.Close(ctx, "k-1.1", "done"); err != nil {

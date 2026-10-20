@@ -107,6 +107,10 @@ the orchestra skill's opening define both terms; use them consistently.
   terminal reports it (`State`), what every terminal keeps to (its refusals, how long it waits, `ScreenLines`), and the
   records its hooks write (`ToolUse`, `HookRecord`, `Session`, `Reporter`). dispatch aliases its types; the terminals
   and `internal/claude` import it rather than dispatch.
+- `internal/tracker`: what the loop and the Beads adapter share of the backlog, a leaf package: a ticket as the loop
+  sees it (`Ticket`, its `Status`), the links between tickets (`Link`), the labels and metadata the loop reads
+  (`HumanLabel`, `UnmergedLabel`, `SoloLabel`, `FilesKey`) and `ErrNoTicket`. dispatch aliases its types;
+  `internal/beads` imports it rather than dispatch.
 - Adapters: `internal/beads` (bd; `internal/beads/bdjson` runs it and reads its JSON envelope, for `internal/project`
   too), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state from their hooks),
   `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their state from their
