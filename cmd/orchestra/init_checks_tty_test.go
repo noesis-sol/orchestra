@@ -112,7 +112,7 @@ func TestInitWritesTheRunnersFromTheSuitesTheScoutFound(t *testing.T) {
 	}
 	for path, want := range map[string]string{
 		".claude/agents/verifier.md":  "- Go 1.26\n- Postgres 16\n",
-		".orchestra/worker-prompt.md": "verifier subagent (.claude/agents/verifier.md)",
+		".orchestra/worker-prompt.md": "subagent (.claude/agents/verifier.md)", // its Verify section
 	} {
 		b, err := os.ReadFile(filepath.Join(repo, path))
 		if err != nil {

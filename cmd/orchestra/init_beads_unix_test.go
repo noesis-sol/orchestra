@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/faketool"
 )
 
@@ -28,7 +29,8 @@ func fakeBeadsTools(t *testing.T, withBd bool) string {
 	}
 	setenv(t, "PATH", strings.Join([]string{dir, tools, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
 	for _, name := range []string{"bd", "brew"} {
-		if p, err := exec.LookPath(name); err == nil {
+		// On the test's PATH, which setenv set, not the process's: dir and tools hold neither yet.
+		if p, err := command.LookPath(testCtx(t.Context(), t), name); err == nil {
 			t.Skipf("%s is in /usr/bin or /bin: %s", name, p)
 		}
 	}
