@@ -107,8 +107,12 @@ func (u specSetup) run(ctx context.Context) int {
 	if st, err := os.Stat(filepath.Join(u.repo, ".beads")); err != nil || !st.IsDir() {
 		return u.failed("couldn't set Beads up: bd init left no .beads folder", dispatch.ExitTool)
 	}
+	// Apply writes the whole setup once it starts, or nothing where the stop came first.
 	applied, err := project.Apply(ctx, u.repo, u.choice, false)
-	if steps = append(steps, applied...); err != nil {
+	switch steps = append(steps, applied...); {
+	case ctx.Err() != nil:
+		return u.stopped()
+	case err != nil:
 		return u.failed("couldn't set the repository up: "+dispatch.FirstLine(err.Error()), dispatch.ExitSetup)
 	}
 	for _, s := range steps {

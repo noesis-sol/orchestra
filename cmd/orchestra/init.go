@@ -52,12 +52,14 @@ func runInit(
 	ui := tui.NewInitScreen(stdout)
 	ui.Header(repo)
 	scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"), Effort: scoutEffort(getenv, existing.OrganEffort)}
-	// Caught while the form asks, which a stop signal cancels as Esc does: Bubble Tea's own handler
-	// would take SIGTERM for a submitted form.
-	formCtx, stopForm := signal.NotifyContext(ctx, stopSignals...)
-	spent, err := askOrDefault(formCtx, stdin, stdout, interactive, repo, &choice, ask, scout)
-	signalled := formCtx.Err() != nil && ctx.Err() == nil
-	stopForm()
+	// A stop signal is caught from the form to the end of what init writes. While the form asks, it
+	// cancels the form as Esc does: Bubble Tea's own handler would take SIGTERM for a submitted form.
+	// After it, init stops at the end of the step under way, saying what it did; without the catch, Go
+	// would end init with no word between two of the files it writes.
+	stopCtx, stop := signal.NotifyContext(ctx, stopSignals...)
+	defer stop()
+	spent, err := askOrDefault(stopCtx, stdin, stdout, interactive, repo, &choice, ask, scout)
+	signalled := stopCtx.Err() != nil && ctx.Err() == nil
 	steps := scoutSteps(spent)
 	if err != nil || signalled {
 		ui.Steps(steps)
@@ -67,6 +69,12 @@ func runInit(
 		}
 		return dispatch.ExitSetup
 	}
+	// stopped says that a stop signal stopped init after the steps so far, what follows them in why.
+	stopped := func(why string) int {
+		ui.Steps(steps)
+		fmt.Fprintln(stderr, "orchestra init: stopped"+why)
+		return dispatch.ExitInterrupted
+	}
 	// Checked again once the form is answered, which can take a while: a run may have started since.
 	// From here init holds the lock, so that no run starts while it changes the project.
 	lock, refusal := lockInit(ctx, repo)
@@ -75,18 +83,27 @@ func runInit(
 		return fail(refusal)
 	}
 	defer func() { _ = lock.Close() }() // only releases it; init exiting would too
-	beadsSteps, stopped := setUpBeads(ctx, repo, choice, getenv, ui.Working)
-	if steps = append(steps, beadsSteps...); stopped {
-		ui.Steps(steps)
-		fmt.Fprintln(stderr, "orchestra init: stopped")
-		return dispatch.ExitInterrupted
+	beadsSteps := setUpBeads(stopCtx, repo, choice, getenv, ui.Working)
+	if steps = append(steps, beadsSteps...); stopCtx.Err() != nil {
+		return stopped("")
 	}
-	applied, err := project.Apply(ctx, repo, choice, f.force)
-	if steps = append(steps, applied...); err != nil {
+	// Apply writes the whole setup once it starts, or nothing where the stop came first.
+	applied, err := project.Apply(stopCtx, repo, choice, f.force)
+	switch steps = append(steps, applied...); {
+	case stopCtx.Err() != nil && applied == nil:
+		return stopped(" before writing .orchestra/")
+	case stopCtx.Err() != nil && choice.FilesTestWork():
+		return stopped(" once it had written the files above, before filing the test work: orchestra init " +
+			"again files it")
+	case stopCtx.Err() != nil:
+		return stopped(" once it had written the files above")
+	case err != nil:
 		ui.Steps(steps)
 		return fail(err)
 	}
-	steps = append(steps, fileTestWork(ctx, repo, choice)...)
+	if steps = append(steps, fileTestWork(stopCtx, repo, choice)...); stopCtx.Err() != nil {
+		return stopped(" while filing the test work: orchestra init again files what is missing")
+	}
 	signOff(ctx, ui, repo, steps, choice, existing.WorkerEffort, getenv)
 	return dispatch.ExitOK
 }
@@ -351,26 +368,25 @@ func askOrDefault(
 }
 
 // setUpBeads installs bd and sets Beads up as the choice says, then changes the ticket prefix where it
-// does, and returns the steps, and whether Ctrl+C stopped it. Beads goes first: bd init commits what
-// was staged, and init stages a moved worker prompt; with the user's own changes staged, it doesn't
-// run. Ctrl+C stops an install or bd init under way, which run in their own process groups, and init
-// with it.
+// does, and returns the steps; where ctx ends, which Ctrl+C does, it stops there. Beads goes first:
+// bd init commits what was staged, and init stages a moved worker prompt; with the user's own changes
+// staged, it doesn't run. Ctrl+C stops an install or bd init under way, which run in their own process
+// groups, and init with it.
 func setUpBeads(
 	ctx context.Context, repo string, c project.Choice, getenv func(string) string, working func(string),
-) (steps []project.Step, stopped bool) {
-	beadsCtx, stop := signal.NotifyContext(ctx, stopSignals...)
-	defer stop()
-	steps = project.SetUpBeads(beadsCtx, repo, c, getenv, working)
-	if beadsCtx.Err() == nil {
-		refusal := ""
-		if !c.PrefixNew && c.PrefixWas != "" && c.Prefix != c.PrefixWas {
-			refusal = prefixRefusal(beadsCtx, repo, c.PrefixWas) // read again: the form can take a while
-		}
-		if s, ok := project.ApplyPrefix(beadsCtx, repo, c, refusal); ok {
-			steps = append(steps, s)
-		}
+) []project.Step {
+	steps := project.SetUpBeads(ctx, repo, c, getenv, working)
+	if ctx.Err() != nil {
+		return steps
 	}
-	return steps, beadsCtx.Err() != nil
+	refusal := ""
+	if !c.PrefixNew && c.PrefixWas != "" && c.Prefix != c.PrefixWas {
+		refusal = prefixRefusal(ctx, repo, c.PrefixWas) // read again: the form can take a while
+	}
+	if s, ok := project.ApplyPrefix(ctx, repo, c, refusal); ok {
+		steps = append(steps, s)
+	}
+	return steps
 }
 
 // takePrefix takes --prefix's value, where flag gives one, into the choice, and returns "", or why it

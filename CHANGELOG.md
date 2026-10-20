@@ -51,6 +51,15 @@ All notable changes to orchestra are documented here. The format follows
 - A ticket dispatched again while its earlier worker waits on the usage limit
   in its tab adopts that worker, which carries on after the reset, rather than
   starting a second worker in the same worktree beside it.
+- Ctrl+C while `orchestra init` or a spec run writes the repository's setup
+  no longer leaves it half written: once it has started on the worker prompt,
+  the runners and `settings.json`, it writes them all, so the next run doesn't
+  take a setup without the merge check for one done. The spec run then says
+  `SPEC: stopped while setting the repository up` with exit code 130, rather
+  than that it couldn't set the repository up (exit code 2); `init`, which Go
+  ended with no word after its Beads step, says `orchestra init: stopped`
+  below what it did, with exit code 130, here and while it files the test
+  work.
 
 ### Fixed
 

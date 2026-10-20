@@ -20,7 +20,16 @@ type Applier func(ctx context.Context, repo string, c Choice) ([]Step, error)
 // there where force is set; the runners; the settings; the changelog's union; the create-check-suite
 // skill; and the verifier, which reads the worker prompt and the runners written before it. It
 // returns each one's steps, stopping at the first error with the steps so far.
+//
+// Once it has started, it writes them all, though ctx ends meanwhile: a setup half written, the
+// worker prompt without the settings, would read as set up (IsSetUp), and a run would then go
+// without the merge check. What it runs takes little time, its commands each a short time limit
+// of their own. Where ctx has ended before it starts, it writes nothing and returns ctx's error.
 func Apply(ctx context.Context, repo string, c Choice, force bool) ([]Step, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ctx = context.WithoutCancel(ctx)
 	var steps []Step
 	for _, apply := range []Applier{initPrompt(force), ApplyRunners, ApplySettings, ApplyUnion, ApplySkill,
 		ApplyVerifier} {
