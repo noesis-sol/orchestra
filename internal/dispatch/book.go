@@ -9,7 +9,8 @@ import (
 )
 
 // The ticket book keeps each ticket's place in the run in one record: whether it is in the run like
-// any other or kept out of it, and why. A record changes only through the book's transitions, each
+// any other or kept out of it, and why, with what the run learns of it on the way (what its failed
+// check said, what it was set up for, its parent). A record changes only through the book's transitions, each
 // of which changes all of it at once, and the questions the run asks of it (what pick skips, what the
 // holds wait for, what is busy, what the scope's end line says) are answered from the records by one
 // rule each, under the book's own lock.
@@ -37,9 +38,10 @@ func (d disposition) String() string {
 }
 
 // ticketRecord is a ticket's place in the run: its disposition, with what that disposition keeps
-// (spot for dispAsked, left for dispLeftOpen, setup for dispSetupFailed), and two things kept across
-// dispositions: its place among the tickets set aside in this run, and why it is closed but not
-// merged.
+// (spot for dispAsked, left for dispLeftOpen, setup for dispSetupFailed), and what is kept across
+// dispositions: its place among the tickets set aside in this run, why it is closed but not merged,
+// what its last check said if it failed, what its dependencies were set up for, its parent, and
+// whether its worker's session was resumed.
 type ticketRecord struct {
 	disp  disposition
 	spot  workerSpot
@@ -54,6 +56,24 @@ type ticketRecord struct {
 	// leaveUnmerged, loadUnmerged); "" when it isn't. It holds the tickets it blocks until it merges,
 	// whatever the disposition.
 	unmerged string
+	// failedCheck: what its last check in this run said, if it failed (see noteCheckFailed); nil once a
+	// later check passes, as the reviewer is told of a failed check only when it is set aside for one.
+	failedCheck *checkFail
+	// setUpFor: the commit its worktree's dependencies were set up for in this run (see setUp,
+	// setUpWorktree); "" when they weren't, or its worktree is new.
+	setUpFor string
+	// parent: its parent, once it is dispatched or left unmerged: until it merges, its parent waits
+	// (see parentsOpen).
+	parent string
+	// resumed: its worker, gone from its tab, had its session resumed in this run (see resumeSession),
+	// which happens once.
+	resumed bool
+}
+
+// empty reports whether r holds nothing: a ticket in the run that nothing in it has marked.
+func (r *ticketRecord) empty() bool {
+	return r.disp == dispIn && r.aside == 0 && r.unmerged == "" && r.failedCheck == nil && r.setUpFor == "" &&
+		r.parent == "" && !r.resumed
 }
 
 // ticketBook is each ticket's record, under its own lock. Its zero value is ready to use.
@@ -85,7 +105,7 @@ func (b *ticketBook) change(id string, to func(r *ticketRecord)) {
 	defer b.mu.Unlock()
 	r := b.record(id)
 	to(r)
-	if r.disp == dispIn && r.aside == 0 && r.unmerged == "" {
+	if r.empty() {
 		delete(b.recs, id)
 	}
 }
@@ -252,6 +272,64 @@ func (b *ticketBook) retrySetups() {
 	}
 }
 
+// checkFailed keeps what ticket id's check said as it failed, f, for the reviewer.
+func (b *ticketBook) checkFailed(id string, f checkFail) {
+	b.change(id, func(r *ticketRecord) { r.failedCheck = &f })
+}
+
+// forgetCheck drops what ticket id's last failed check said: a later check of it passed, or it is
+// checked again before it merges.
+func (b *ticketBook) forgetCheck(id string) {
+	b.change(id, func(r *ticketRecord) { r.failedCheck = nil })
+}
+
+// setUpSince is the commit ticket id's dependencies were last set up for in this run; before, its
+// branch's commit before its rebase, if they weren't, which it keeps as that commit: a setup that
+// fails leaves them as they were.
+func (b *ticketBook) setUpSince(id, before string) string {
+	var from string
+	b.change(id, func(r *ticketRecord) {
+		if r.setUpFor == "" {
+			r.setUpFor = before
+		}
+		from = r.setUpFor
+	})
+	return from
+}
+
+// setUp records that ticket id's dependencies are set up for commit at; "" (git couldn't say)
+// records nothing.
+func (b *ticketBook) setUp(id, at string) {
+	if at == "" {
+		return
+	}
+	b.change(id, func(r *ticketRecord) { r.setUpFor = at })
+}
+
+// freshWorktree forgets what ticket id's dependencies were set up for: its worktree is new.
+func (b *ticketBook) freshWorktree(id string) {
+	b.change(id, func(r *ticketRecord) { r.setUpFor = "" })
+}
+
+// setParent records the parent of ticket id, dispatched or left unmerged: until it merges, its parent
+// waits. "" records nothing.
+func (b *ticketBook) setParent(id, parent string) {
+	if parent == "" {
+		return
+	}
+	b.change(id, func(r *ticketRecord) { r.parent = parent })
+}
+
+// resumeOnce reports whether ticket id's worker has not had its session resumed in this run yet, and
+// records that it has from now on.
+func (b *ticketBook) resumeOnce(id string) bool {
+	first := false
+	b.change(id, func(r *ticketRecord) {
+		first, r.resumed = !r.resumed, true
+	})
+	return first
+}
+
 // idsWhere is the tickets whose records match, by ID. The caller holds mu.
 func (b *ticketBook) idsWhere(match func(r *ticketRecord) bool) []string {
 	var ids []string
@@ -391,7 +469,7 @@ func (r ticketRecord) check(id string, asides int) error {
 	switch {
 	case r.aside < 0 || r.aside > asides:
 		return fmt.Errorf("%s is set aside in place %d, of %d", id, r.aside, asides)
-	case r.disp == dispIn && !set && r.unmerged == "":
+	case r.empty():
 		return fmt.Errorf("%s has an empty record", id)
 	case r.disp == dispIn && set:
 		return fmt.Errorf("%s is in the run, yet set aside", id)

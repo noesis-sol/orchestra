@@ -31,8 +31,8 @@ type recheck struct {
 // own commits change. It returns what the CHECKS_FAILED line adds about it.
 func (o *Loop) awaitRecheck(ctx context.Context, w worker, onto string) string {
 	c := o.cfg
-	if f, ok := o.checkSaidOf(w.id); ok {
-		if own := f.ownFailures(); len(own) > 0 {
+	if r, _ := o.book.get(w.id); r.failedCheck != nil {
+		if own := r.failedCheck.ownFailures(); len(own) > 0 {
 			return fmt.Sprintf("; not checked again in this run, as it failed in %s, which %s's own commits change",
 				strings.Join(own, ", "), w.id)
 		}

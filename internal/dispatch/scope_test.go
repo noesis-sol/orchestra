@@ -264,8 +264,8 @@ func TestScopeOfOneAndTheLimit(t *testing.T) {
 func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
 	t.Parallel()
 	o := New(Config{}, nil, "", Deps{Tickets: fakeTickets{}})
-	o.setParent("C", "P")
-	o.setParent("D", "Q")
+	o.book.setParent("C", "P")
+	o.book.setParent("D", "Q")
 	if parents, err := o.openParents(context.Background(), map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
 		t.Errorf("C running: %v %v, want P only", parents, err)
 	}

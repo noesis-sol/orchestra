@@ -42,6 +42,9 @@ func TestAFixedCheckFailureIsNotTheReasonATicketIsSetAside(t *testing.T) {
 			t.Errorf("events lack %q:\n%s", want, ev)
 		}
 	}
+	if r, _ := o.book.get("A"); r.failedCheck != nil {
+		t.Errorf("A's record keeps its fixed check failure: %+v", r.failedCheck)
+	}
 	in := o.reviewInput(t.Context(), code, o.Final())
 	if strings.Contains(in, "set aside after its check failed") {
 		t.Errorf("the reviewer is told of A's fixed check failure:\n%s", in)

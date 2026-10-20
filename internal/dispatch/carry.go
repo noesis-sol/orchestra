@@ -194,7 +194,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true)
 	}
-	o.setParent(id, t.Parent) // its parent waits for it, should it close in its tab (see openParents)
+	o.book.setParent(id, t.Parent) // its parent waits for it, should it close in its tab (see openParents)
 	return carryOn
 }
 

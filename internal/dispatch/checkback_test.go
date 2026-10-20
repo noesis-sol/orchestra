@@ -280,7 +280,7 @@ func TestTheFixPromptSaysWhatFailedAndWhatLanded(t *testing.T) {
 	t.Parallel()
 	o := New(Config{Base: "main", Check: "scripts/check.sh"}, nil, "", Deps{History: landedHistory{
 		"aaaaaaaaaaaa..bbbbbbbbbbbb": "1234567 h65.6: test the admin page\n89abcde h65.7: more tests\n"}})
-	o.checkSaid = map[string]checkFail{"A": {said: []string{"--- FAIL: TestAdmin (0.01s)", "FAIL\tm/admin\t0.1s"}}}
+	o.book.checkFailed("A", checkFail{said: []string{"--- FAIL: TestAdmin (0.01s)", "FAIL\tm/admin\t0.1s"}})
 	r := rebaseStop{worker: worker{id: "A", br: "wt/A"}, onto: "bbbbbbbbbbbb", head: "aaaaaaaaaaaa"}
 	got := o.fixPrompt(context.Background(), r, checked{err: errors.New("exit status 1"), output: "/wt/A/.orchestra/run/check.log"})
 	for _, want := range []string{

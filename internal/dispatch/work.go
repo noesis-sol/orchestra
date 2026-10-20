@@ -121,7 +121,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	// Back from a question with its earlier worker gone from its tab, the ticket has that worker's
 	// session resumed, once in a run, rather than a new worker starting over (see resume.go).
 	if asked && st == StateGone {
-		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.claimSessionResume(id) {
+		if s, ok := o.sessionOf(wt, earlier.hooks); ok && o.book.resumeOnce(id) {
 			return r.resumeSession(ctx, wt, earlier.tab, earlier.question, backFromQuestion, s)
 		}
 	}
@@ -682,13 +682,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		}
 		o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 			"  %s deferred by worker; %s", id, left)})
-		if !empty {
-			o.leaveOpen(keep, w)
-		}
-		o.triageDeferred(ctx, id, "the worker deferred it", wt)
-		if empty {
-			o.dropNothingDone(keep, w)
-		}
+		r.leaveAside(ctx, w, empty, "the worker deferred it")
 	case outcomePaused:
 		if o.workerGone(keep, w) {
 			return r.pausedGone(ctx, w)
@@ -723,19 +717,30 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 			a.deferred = fmt.Sprintf("  %s still %s -> noted and deferred; %s", id, s, nothingLeft)
 			a.then = nothingLeft
 		}
-		deferred := o.putAside(keep, t, a)
-		if !empty {
-			o.leaveOpen(keep, w)
+		settled := ""
+		if o.putAside(keep, t, a) {
+			settled = fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
 		}
-		if deferred {
-			settled := fmt.Sprintf("the worker settled with the ticket still '%s', so the orchestrator deferred it", s)
-			o.triageDeferred(ctx, id, settled, wt)
-		}
-		if empty {
-			o.dropNothingDone(keep, w)
-		}
+		r.leaveAside(ctx, w, empty, settled)
 	}
 	return nil
+}
+
+// leaveAside leaves the ticket of w's worker, just set aside, for review: the worker, if it left
+// anything done, is followed in its tab (see leaveOpen); triage is told why it was deferred, unless why
+// is "" (bd could not defer it); and a worker that left nothing done (empty) has its worktree, branch
+// and tab removed, once triage has its evidence.
+func (r *ticketRun) leaveAside(ctx context.Context, w worker, empty bool, why string) {
+	o, keep := r.o, r.keep
+	if !empty {
+		o.leaveOpen(keep, w)
+	}
+	if why != "" {
+		o.triageDeferred(ctx, w.id, why, w.wt)
+	}
+	if empty {
+		o.dropNothingDone(keep, w)
+	}
 }
 
 // nothingLeft is what a set-aside's line says of a worker that left nothing done (see nothingDone).

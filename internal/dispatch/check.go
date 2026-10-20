@@ -253,25 +253,7 @@ func (o *Loop) noteCheckFailed(ctx context.Context, r rebaseStop, output string,
 	f := checkFail{br: w.br, onto: onto, onTop: r.onTop, how: run.how(), output: output, setup: setup}
 	f.said, f.saidEnd = run.said()
 	f.dirs = o.ownDirs(context.WithoutCancel(ctx), w.br, onto) // a read cut short would look like no change
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.checkSaid[w.id] = f
-}
-
-// forgetCheckFailed drops what ticket id's last failed check said, once a later check of it passes:
-// the reviewer is told of a ticket's failed check only when it is set aside for one.
-func (o *Loop) forgetCheckFailed(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	delete(o.checkSaid, id)
-}
-
-// checkSaidOf is what ticket id's last check in this run said, if it failed.
-func (o *Loop) checkSaidOf(id string) (checkFail, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	f, ok := o.checkSaid[id]
-	return f, ok
+	o.book.checkFailed(w.id, f)
 }
 
 // ownDirs lists the directories of the files that the commits on br on top of onto change, sorted,

@@ -13,17 +13,6 @@ import (
 // A scoped run (Config.Ticket) takes only that ticket and its descendants, and says at its end
 // whether they are all merged.
 
-// setParent records the parent of a ticket dispatched or left unmerged: until the ticket merges,
-// its parent waits.
-func (o *Loop) setParent(id, parent string) {
-	if parent == "" {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.parentOf[id] = parent
-}
-
 // listUnreadableError is openParents' error: bd could not list the tickets that aren't closed.
 type listUnreadableError struct{ err error }
 
@@ -42,15 +31,13 @@ func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[st
 
 // parentsOpen is openParents from open, the tickets bd lists as not closed.
 func (o *Loop) parentsOpen(open []Ticket, running map[string]bool) map[string]bool {
-	b := o.book.snapshot()
+	ids, recs := o.book.matching(func(r *ticketRecord) bool { return r.parent != "" })
 	pending := map[string]string{}
-	o.mu.Lock()
-	for id, p := range o.parentOf {
-		if running[id] || b.asked[id] || b.unmerged[id] != "" {
-			pending[id] = p
+	for i, id := range ids {
+		if r := recs[i]; running[id] || r.disp == dispAsked || r.unmerged != "" {
+			pending[id] = r.parent
 		}
 	}
-	o.mu.Unlock()
 	return parentsOf(open, pending)
 }
 
@@ -106,9 +93,8 @@ func (c Config) excludes(t Ticket) bool {
 // once: an epic is never dispatched, so nothing else would. An epic so closed that was itself the
 // last open subticket of an epic closes that one too, up the chain.
 func (o *Loop) parentDone(ctx context.Context, id string, running map[string]bool) {
-	o.mu.Lock()
-	p := o.parentOf[id]
-	o.mu.Unlock()
+	r, _ := o.book.get(id)
+	p := r.parent
 	if o.unmergedWhy(id) != "" {
 		return
 	}

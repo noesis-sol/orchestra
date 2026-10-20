@@ -164,8 +164,8 @@ func TestAChecksEndlessOutputIsNotHeldInMemory(t *testing.T) {
 	if ev := f.sink.text(); !strings.Contains(ev, "CHECKS_FAILED: k-1") || !strings.Contains(ev, "(output is in "+saved+")") {
 		t.Errorf("CHECKS_FAILED should name %s; events:\n%s", saved, ev)
 	}
-	said, ok := f.orch.checkSaidOf("k-1")
-	if !ok || !slices.Equal(said.said, []string{"--- FAIL: TestLoop (0.00s)", "FAIL ./a"}) {
+	r, _ := f.orch.book.get("k-1")
+	if said := r.failedCheck; said == nil || !slices.Equal(said.said, []string{"--- FAIL: TestLoop (0.00s)", "FAIL ./a"}) {
 		t.Errorf("the reviewer should be told what failed: %+v", said)
 	}
 	log := read(t, f.orch.log.f.Name())

@@ -488,7 +488,7 @@ func (r *runState) startTickets() {
 func (r *runState) start(t Ticket, q queue) {
 	o, c := r.o, r.o.cfg
 	r.setCount(r.count + 1)
-	o.setParent(t.ID, t.Parent)
+	o.book.setParent(t.ID, t.Parent)
 	how := "dispatching"
 	if HasLabel(t, SoloLabel) {
 		r.solo.running, how = t.ID, "dispatching solo"

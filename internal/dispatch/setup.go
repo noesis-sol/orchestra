@@ -80,15 +80,15 @@ func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
 	if run, output := o.runIn(ctx, r, s.cmd); run.err != nil {
 		return output, run.err
 	}
-	o.setUpAt(w.id, now)
+	o.book.setUp(w.id, now)
 	return "", nil
 }
 
 // setupDue says why the setup runs for ticket id's branch at commit now: the files globs match that the
-// commits since its dependencies were last set up change (see setUpFrom), its worker's own included, or
+// commits since its dependencies were last set up change (see ticketBook.setUpSince), its worker's own included, or
 // that git can't say what they change; "" when they change none.
 func (o *Loop) setupDue(ctx context.Context, id, before, now string, globs []string) string {
-	from := o.setUpFrom(id, before)
+	from := o.book.setUpSince(id, before)
 	if from == "" || now == "" {
 		return "git could not say what changed since its dependencies were last set up"
 	}
@@ -97,32 +97,6 @@ func (o *Loop) setupDue(ctx context.Context, id, before, now string, globs []str
 		return ""
 	}
 	return fileList(changed) + " changed since its dependencies were last set up"
-}
-
-// setUpFrom is the commit ticket id's dependencies were last set up for in this run; before, its
-// branch's commit before its rebase, if they weren't, which it keeps as that commit: a setup that
-// fails leaves them as they were.
-func (o *Loop) setUpFrom(id, before string) string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if from, ok := o.setUpFor[id]; ok {
-		return from
-	}
-	if before != "" {
-		o.setUpFor[id] = before
-	}
-	return before
-}
-
-// setUpAt records that ticket id's dependencies are set up for commit at; "" (git couldn't say)
-// records nothing.
-func (o *Loop) setUpAt(id, at string) {
-	if at == "" {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.setUpFor[id] = at
 }
 
 // setUpWorktree runs the setup command in the ticket's worktree p before its worker starts there,
@@ -145,7 +119,7 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 	what, failedThere := "running '"+s.cmd+"' in its new worktree", setupFailedIn(p.wt)
 	switch {
 	case p.fresh:
-		o.forgetSetUp(id) // a worktree it had before, since removed, was set up for itself
+		o.book.freshWorktree(id) // a worktree it had before, since removed, was set up for itself
 	case failedThere:
 		what = "the last setup in its worktree failed; running '" + s.cmd + "' there again"
 	case setupCutShortIn(p.wt):
@@ -163,7 +137,7 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 	defer run.out.close()
 	switch {
 	case run.err == nil:
-		o.setUpAt(id, now)
+		o.book.setUp(id, now)
 		if failedThere {
 			o.dropRunFile(p.wt, setupLogName, "the output of a setup that failed earlier")
 		}
@@ -218,13 +192,6 @@ func (o *Loop) dropRunFile(wt, name, what string) {
 	if err != nil {
 		o.log.Raw("", fmt.Errorf("cannot remove %s in %s: %w", what, wt, err))
 	}
-}
-
-// forgetSetUp forgets what ticket id's dependencies were set up for: its worktree is new.
-func (o *Loop) forgetSetUp(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	delete(o.setUpFor, id)
 }
 
 // failedSetup is a ticket whose worktree's setup failed (see leaveSetupFailed): where the whole output

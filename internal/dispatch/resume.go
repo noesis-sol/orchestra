@@ -31,18 +31,6 @@ func (o *Loop) sessionOf(wt string, hooks bool) (Session, bool) {
 	return o.reporter.Session(wt)
 }
 
-// claimSessionResume reports whether ticket id's worker has not had its session resumed in this run yet,
-// and notes that it has from now on.
-func (o *Loop) claimSessionResume(id string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.sessionResumed[id] {
-		return false
-	}
-	o.sessionResumed[id] = true
-	return true
-}
-
 // workerGone reports whether the terminal has no worker w, under its name or in its pane (see
 // workerState); a status it can't read says nothing.
 func (o *Loop) workerGone(ctx context.Context, w worker) bool {
@@ -55,7 +43,7 @@ func (o *Loop) workerGone(ctx context.Context, w worker) bool {
 func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 	o, id := r.o, r.id
 	s, ok := o.sessionOf(w.wt, w.hooks)
-	if ok && o.claimSessionResume(id) {
+	if ok && o.book.resumeOnce(id) {
 		return r.resumeSession(ctx, w.wt, w.tab, "", goneMidTicket, s)
 	}
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, "")
@@ -73,7 +61,7 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 // counts it running.
 func (r *runState) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
 	r.o.book.answer(t.ID)
-	r.o.setParent(t.ID, t.Parent)
+	r.o.book.setParent(t.ID, t.Parent)
 	r.startFootprint(t)
 	return adoption{t: t, w: w, resume: &s}
 }

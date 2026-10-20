@@ -239,8 +239,8 @@ func (o *Loop) failedChecksSection(tag string) string {
 	c := o.cfg
 	var checks strings.Builder
 	for _, id := range o.asideList() {
-		if f, ok := o.checkSaidOf(id); ok {
-			checks.WriteString(f.evidence(id, c.Check, c.Base) + "\n")
+		if r, _ := o.book.get(id); r.failedCheck != nil {
+			checks.WriteString(r.failedCheck.evidence(id, c.Check, c.Base) + "\n")
 		}
 	}
 	if checks.Len() == 0 {

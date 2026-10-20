@@ -115,7 +115,7 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			default:
 				o.info("  '%s' passes on the rebased %s", c.Check, r.br)
 			}
-			o.forgetCheckFailed(r.id)
+			o.book.forgetCheck(r.id)
 			return checked{tries: res.tries, at: at}, nil
 		}
 		res.err, res.setup, res.output = err, setup, output
@@ -240,7 +240,8 @@ const maxLanded = 30
 func (o *Loop) fixPrompt(ctx context.Context, r rebaseStop, res checked) string {
 	c := o.cfg
 	said := "it printed nothing"
-	if f, ok := o.checkSaidOf(r.id); ok && len(f.said) > 0 {
+	if rec, _ := o.book.get(r.id); rec.failedCheck != nil && len(rec.failedCheck.said) > 0 {
+		f := rec.failedCheck
 		said = "it ends:"
 		if !f.saidEnd {
 			said = "these lines say what failed:"

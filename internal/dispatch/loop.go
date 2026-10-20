@@ -149,13 +149,11 @@ func newTallies(sink Sink) tallies {
 // ledger is what the workers, Run and the merges share, all under mu.
 type ledger struct {
 	mu        sync.Mutex
-	active    map[string]Status    // tickets being worked on; left set for those still running at the end
-	finishing map[string]string    // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
-	labelled  map[string]bool      // tickets carrying UnmergedLabel, which a merge removes
-	checkSaid map[string]checkFail // what each ticket's last check in this run said, if it failed
-	rechecks  []recheck            // tickets set aside for a failed check, to check again once Base moves on
-	rechecked map[string]bool      // tickets taken up to be checked again (see dueRecheck)
-	setUpFor  map[string]string    // the commit each ticket's dependencies were set up for (see setUp, setUpWorktree)
+	active    map[string]Status // tickets being worked on; left set for those still running at the end
+	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
+	labelled  map[string]bool   // tickets carrying UnmergedLabel, which a merge removes
+	rechecks  []recheck         // tickets set aside for a failed check, to check again once Base moves on
+	rechecked map[string]bool   // tickets taken up to be checked again (see dueRecheck)
 	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
 	// nil for Config's.
 	setupSet *setupConf
@@ -168,12 +166,7 @@ type ledger struct {
 	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
 	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
 	placed map[string]workerSpot
-	// sessionResumed: tickets whose worker, gone from its tab, had its session resumed in this run (see
-	// resumeSession), which happens once for each.
-	sessionResumed map[string]bool
-	// parentOf: the parent of each ticket dispatched or left unmerged, which waits for it; footprints,
-	// the running tickets' footprints (see startFootprint).
-	parentOf   map[string]string
+	// footprints: the running tickets' footprints (see startFootprint).
 	footprints map[string]*runFootprint
 	// mergedN: the tickets merged into Base in this run (see countMerge); fullChecked: how the full
 	// check after the run went, once it has run (see FullCheck).
@@ -185,10 +178,8 @@ type ledger struct {
 func newLedger() ledger {
 	return ledger{
 		active: map[string]Status{}, finishing: map[string]string{},
-		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
-		setUpFor: map[string]string{}, blockers: map[string]blockLinks{},
-		placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
-		parentOf: map[string]string{}, footprints: map[string]*runFootprint{},
+		labelled: map[string]bool{}, rechecked: map[string]bool{}, blockers: map[string]blockLinks{},
+		placed: map[string]workerSpot{}, footprints: map[string]*runFootprint{},
 	}
 }
 

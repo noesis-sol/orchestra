@@ -62,7 +62,7 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 			case err != nil:
 				o.log.Raw("", err)
 			case st == StateGone:
-				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.claimSessionResume(id) {
+				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.book.resumeOnce(id) {
 					adopt = append(adopt, r.resumedInTab(t, w, s))
 					break
 				}
@@ -88,7 +88,7 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
 	o, id := r.o, t.ID
 	o.book.answer(id) // back from a question: set aside again, it stays out
-	o.setParent(id, t.Parent)
+	o.book.setParent(id, t.Parent)
 	what := "claimed again"
 	switch {
 	case t.Status == StatusClosed:

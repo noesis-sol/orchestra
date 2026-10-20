@@ -31,7 +31,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 		o.info("  %s was left unmerged by an earlier run; "+
 			"tickets it blocks wait until wt/%s is merged into %s or its '%s' label is removed",
 			id, id, c.Base, UnmergedLabel)
-		o.setParent(id, t.Parent)
+		o.book.setParent(id, t.Parent)
 		o.book.noteUnmerged(id, earlierRun)
 		o.setLabelled(id, true)
 	}
