@@ -183,7 +183,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 	// Read whatever the ticket's status, so that a worker left unnamed is named before anything looks
 	// for it by its name.
 	st, err := o.earlierState(ctx, id, *w, 1)
-	if err != nil {
+	if err != nil && ctx.Err() == nil { // one the stop cut short says nothing
 		o.log.Raw("", err) // read again as the ticket is followed (followAsked) or comes back (work)
 	}
 	_, resumable := o.sessionOf(w.wt, w.hooks)

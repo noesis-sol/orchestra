@@ -250,7 +250,8 @@ type blockLinks struct {
 	links links
 }
 
-// linksOf returns the tickets ready ticket t waits on, or why bd show can't say, which it logs.
+// linksOf returns the tickets ready ticket t waits on, or why bd show can't say, which it logs unless
+// the run is stopping: then bd failed for the stop, which the run's INTERRUPTED line says.
 // They are kept for the run: bd ready's count of t's blockers changes whenever a blocks link is
 // added or removed, and then they are read again. Nothing bd ready shows changes with a
 // discovered-from link, as one bd dep add makes after the follow-up is filed, so the ticket picked
@@ -264,7 +265,9 @@ func (o *Loop) linksOf(ctx context.Context, t Ticket) (links, error) {
 	}
 	l, err := showLinks(ctx, o.tickets, t.ID)
 	if err != nil {
-		o.log.Raw("", err)
+		if ctx.Err() == nil {
+			o.log.Raw("", err)
+		}
 		return links{}, err
 	}
 	if t.DependencyCount != nil {
