@@ -69,9 +69,8 @@ func (f *fixture) event(evs ...dispatch.Event) *fixture {
 // picked sends the dispatch event that picks up ticket id, the queue's counts as they were.
 func (f *fixture) picked(id, title string) *fixture {
 	f.n++
-	m := f.m
-	return f.event(dispatch.Event{Kind: dispatch.EvDispatch, N: f.n, Limit: m.cfg.Limit, Ticket: id, Title: title,
-		Queued: m.queued, Held: m.held, Unclosed: m.unclosed, Solo: m.solo, MachineFull: m.machineFull})
+	return f.event(dispatch.Event{Kind: dispatch.EvDispatch, N: f.n, Limit: f.m.cfg.Limit, Ticket: id, Title: title,
+		QueueState: f.m.queue})
 }
 
 // status sends workers' statuses. Each but a Gone one is of a ticket picked up, as a worker runs only
@@ -116,9 +115,9 @@ func (f *fixture) done(id, title, detail string) *fixture {
 
 // queue sends the loop's count of ready tickets waiting for a slot, the rest of the queue as it was.
 func (f *fixture) queue(n int) *fixture {
-	m := f.m
-	return f.event(dispatch.Event{Kind: dispatch.EvQueue, Queued: n, Held: m.held, Unclosed: m.unclosed,
-		Solo: m.solo, MachineFull: m.machineFull})
+	q := f.m.queue
+	q.Queued = n
+	return f.event(dispatch.Event{Kind: dispatch.EvQueue, QueueState: q})
 }
 
 // sized sends the pane's size.

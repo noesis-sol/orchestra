@@ -109,10 +109,10 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 	}
 	switch ev.Kind {
 	case dispatch.EvDispatch:
-		m.queued, m.held, m.unclosed, m.solo, m.machineFull = ev.Queued, ev.Held, ev.Unclosed, ev.Solo, ev.MachineFull
+		m.queue = ev.QueueState
 		m.pickUp(ev.Ticket, ev.Title)
 	case dispatch.EvQueue:
-		m.queued, m.held, m.unclosed, m.solo, m.machineFull = ev.Queued, ev.Held, ev.Unclosed, ev.Solo, ev.MachineFull
+		m.queue = ev.QueueState
 	case dispatch.EvShared: // another run on the machine started or ended
 		m.shared = ev.Shared
 	case dispatch.EvWarn:
@@ -161,7 +161,7 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 			}
 		}
 		// main prints the last line after the program exits, below the run's summary.
-		m.final, m.solo, m.quitting = &ev, dispatch.SoloState{}, true
+		m.final, m.queue.Solo, m.quitting = &ev, dispatch.SoloState{}, true
 		return true
 	}
 	return false

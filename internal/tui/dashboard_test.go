@@ -180,10 +180,11 @@ func TestHandoffAfterAFailedDashboardPassesOnEverything(t *testing.T) {
 
 func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First", Queued: 0},
-		dispatch.Event{Kind: dispatch.EvQueue, Queued: 3})
-	if m.queued != 3 {
-		t.Errorf("queued = %d, want 3", m.queued)
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First",
+		QueueState: dispatch.QueueState{Queued: 0}},
+		dispatch.Event{Kind: dispatch.EvQueue, QueueState: dispatch.QueueState{Queued: 3}})
+	if m.queue.Queued != 3 {
+		t.Errorf("queued = %d, want 3", m.queue.Queued)
 	}
 	if len(m.rows) != 1 {
 		t.Errorf("a queue count should add no row: %d rows", len(m.rows))

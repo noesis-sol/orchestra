@@ -14,8 +14,8 @@ import (
 func TestTheTotalsCountTheTicketsHeldBack(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "main"}, func() {}, func(bool) {}, func(string) {})
 	m.height = 40
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 0, Unclosed: 29,
-		Held: dispatch.HeldBack{Overlap: 3, Merge: 1}})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue,
+		QueueState: dispatch.QueueState{Queued: 0, Unclosed: 29, Held: dispatch.HeldBack{Overlap: 3, Merge: 1}}})
 	for _, tc := range []struct {
 		w    int
 		want string
@@ -38,7 +38,7 @@ func TestTheTotalsCountTheTicketsHeldBack(t *testing.T) {
 		}
 	}
 
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 2, Unclosed: 29})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, QueueState: dispatch.QueueState{Queued: 2, Unclosed: 29}})
 	for _, w := range []int{120, 64} {
 		m.width = w
 		if plain := ansi.Strip(m.View()); strings.Contains(plain, "held back") || !strings.Contains(plain, "2 of 29") {
@@ -51,8 +51,8 @@ func TestTheTotalsCountTheTicketsHeldBack(t *testing.T) {
 func TestADispatchCountsTheTicketsHeldBack(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "main"}, func() {}, func(bool) {}, func(string) {})
 	m.width, m.height = 120, 40
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First", Queued: 1,
-		Unclosed: 9, Held: dispatch.HeldBack{Parent: 1, Solo: 1}})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "First",
+		QueueState: dispatch.QueueState{Queued: 1, Unclosed: 9, Held: dispatch.HeldBack{Parent: 1, Solo: 1}}})
 	if plain := ansi.Strip(m.View()); !strings.Contains(plain, "1 of 9 · 2 held back") {
 		t.Errorf("no held back count in\n%s", plain)
 	}

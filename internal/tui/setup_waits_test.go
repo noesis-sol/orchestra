@@ -16,8 +16,8 @@ import (
 func TestTheTotalsCountTheTicketsWaitingOnAFailedSetup(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Base: "main"}, func() {}, func(bool) {}, func(string) {})
 	m.height = 40
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 0, Unclosed: 29,
-		Held: dispatch.HeldBack{Merge: 2, Setup: 1}})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue,
+		QueueState: dispatch.QueueState{Queued: 0, Unclosed: 29, Held: dispatch.HeldBack{Merge: 2, Setup: 1}}})
 	for w, want := range map[int]string{120: "0 of 29 · 2 held back · 1 setup failed",
 		72: "queue 0 of 29 · 2 held back · 1 setup failed"} {
 		m.width = w
@@ -26,8 +26,8 @@ func TestTheTotalsCountTheTicketsWaitingOnAFailedSetup(t *testing.T) {
 		}
 	}
 
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 0, Unclosed: 29,
-		Held: dispatch.HeldBack{Setup: 2}})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue,
+		QueueState: dispatch.QueueState{Queued: 0, Unclosed: 29, Held: dispatch.HeldBack{Setup: 2}}})
 	m.width = 120
 	if plain := ansi.Strip(m.View()); strings.Contains(plain, "held back") || !strings.Contains(plain, "0 of 29 · 2 setup failed") {
 		t.Errorf("only setups failed, yet\n%s", plain)

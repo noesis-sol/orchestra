@@ -33,7 +33,7 @@ func TestTitleLineShowsTheSharedMachine(t *testing.T) {
 
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "A ticket"},
 		dispatch.Event{Kind: dispatch.EvMachine, Text: "HOLD: MACHINE: …"},
-		dispatch.Event{Kind: dispatch.EvQueue, Queued: 1, MachineFull: true})
+		dispatch.Event{Kind: dispatch.EvQueue, QueueState: dispatch.QueueState{Queued: 1, MachineFull: true}})
 	if line, want := m.titleLine(m.width), deferredStyle.Render("  · machine full"); !strings.Contains(line, want) {
 		t.Errorf("title line %q lacks %q", line, want)
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/load"
@@ -182,42 +183,80 @@ func renderEvent(ev dispatch.Event) string {
 		return fmt.Sprintf("%s %s  %s", ts, l.style.Render(l.glyph+" "+ev.Ticket+" "+re.says),
 			dimStyle.Render(re.line(ev.Detail)))
 	}
-	switch ev.Kind {
-	case dispatch.EvDispatch:
-		solo := ""
-		if ev.Solo.Ticket == ev.Ticket && !ev.Solo.Next {
-			solo = dimStyle.Render(" solo")
-		}
-		return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render("▶ ["+dispatch.Progress(ev.N, ev.Limit)+"]"),
-			pickedStyle.Render(ev.Ticket), solo, ev.Title)
-	case dispatch.EvTriage:
-		return fmt.Sprintf("%s %s  %s",
-			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
-	case dispatch.EvAnswered:
-		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
-	case dispatch.EvHold:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
-	case dispatch.EvWarn:
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+Tildify(strings.TrimSpace(ev.Text))))
-	case dispatch.EvStop:
-		return fmt.Sprintf("%s %s", ts, stopStyle.Render("■ "+Tildify(ev.Text)))
-	case dispatch.EvDone:
-		return closing(ev, 0)
-	case dispatch.EvDrain, dispatch.EvResume:
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+ev.Text))
-	case dispatch.EvProbed, dispatch.EvLimitLift:
-		return fmt.Sprintf("%s %s", ts, closedStyle.Render("■ "+ev.Text))
-	case dispatch.EvLimited: // the run waits for it, as it does when winding down
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+Tildify(ev.Text)))
-	case dispatch.EvShared, dispatch.EvMachine: // the machine is shared, which slows the run down
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("■ "+Tildify(strings.TrimSpace(ev.Text))))
-	case dispatch.EvFullCheck: // after the run: passed, or something to look at
-		if ev.Detail == dispatch.FullCheckPassed {
-			return fmt.Sprintf("%s %s", ts, closedStyle.Render("✓ "+Tildify(strings.TrimSpace(ev.Text))))
-		}
-		return fmt.Sprintf("%s %s", ts, deferredStyle.Render("! "+Tildify(strings.TrimSpace(ev.Text))))
+	if line, ok := eventLines[ev.Kind]; ok {
+		return line(ts, ev)
+	}
+	if l, ok := eventLooks[ev.Kind]; ok {
+		return l.line(ts, ev.Text)
 	}
 	return fmt.Sprintf("%s %s", ts, dimStyle.Render(Tildify(ev.Text)))
+}
+
+// eventLook is how a terminal shows an event whose line is its Text: after the time, a glyph and the
+// Text in the event's colour.
+type eventLook struct {
+	glyph string
+	style lipgloss.Style
+	trim  bool // the Text loses the spaces around it, which indent its line in the log
+}
+
+// line is the event's line from the time ts and its Text.
+func (l eventLook) line(ts, text string) string {
+	if l.trim {
+		text = strings.TrimSpace(text)
+	}
+	return fmt.Sprintf("%s %s", ts, l.style.Render(l.glyph+" "+Tildify(text)))
+}
+
+// eventLooks are the looks of the events whose line is their Text, by kind. The others are in
+// rowEvents or eventLines; an event in none of them is its Text, faint.
+var eventLooks = map[dispatch.Kind]eventLook{
+	dispatch.EvHold: {glyph: "■", style: stopStyle},
+	dispatch.EvStop: {glyph: "■", style: stopStyle},
+	dispatch.EvWarn: {glyph: "!", style: deferredStyle, trim: true},
+	// Winding down, the usage limit and a shared machine slow the run down: it waits for them.
+	dispatch.EvDrain:   {glyph: "■", style: deferredStyle},
+	dispatch.EvResume:  {glyph: "■", style: deferredStyle},
+	dispatch.EvLimited: {glyph: "■", style: deferredStyle},
+	dispatch.EvShared:  {glyph: "■", style: deferredStyle, trim: true},
+	dispatch.EvMachine: {glyph: "■", style: deferredStyle, trim: true},
+	// Tickets start again.
+	dispatch.EvProbed:    {glyph: "■", style: closedStyle},
+	dispatch.EvLimitLift: {glyph: "■", style: closedStyle},
+}
+
+// fullCheckPassed is the look of the full check's line after the run when it passed; when it
+// didn't, it has a warning's, as something to look at.
+var fullCheckPassed = eventLook{glyph: "✓", style: closedStyle, trim: true}
+
+// eventLines are the lines of the events that say more than their Text, by kind, from the time ts.
+var eventLines = map[dispatch.Kind]func(ts string, ev dispatch.Event) string{
+	dispatch.EvDispatch: dispatchLine,
+	dispatch.EvTriage: func(ts string, ev dispatch.Event) string {
+		return fmt.Sprintf("%s %s  %s",
+			ts, organStyle.Render("◆ "+ev.Ticket+" triage: "+ev.Detail), dimStyle.Render(ev.Title))
+	},
+	dispatch.EvAnswered: func(ts string, ev dispatch.Event) string {
+		return fmt.Sprintf("%s %s  %s", ts, pickedStyle.Render("↺ "+ev.Ticket+" answered"), dimStyle.Render(ev.Detail))
+	},
+	dispatch.EvDone: func(_ string, ev dispatch.Event) string { return closing(ev, 0) },
+	dispatch.EvFullCheck: func(ts string, ev dispatch.Event) string {
+		if ev.Detail == dispatch.FullCheckPassed {
+			return fullCheckPassed.line(ts, ev.Text)
+		}
+		return eventLooks[dispatch.EvWarn].line(ts, ev.Text)
+	},
+}
+
+// dispatchLine is an EvDispatch's line: the ticket's number in the run, its ID, solo if it runs
+// alone, and its title.
+func dispatchLine(ts string, ev dispatch.Event) string {
+	solo := ""
+	if ev.Solo.Ticket == ev.Ticket && !ev.Solo.Next {
+		solo = dimStyle.Render(" solo")
+	}
+	return fmt.Sprintf("%s %s %s%s  %s", ts, dimStyle.Render("▶ ["+dispatch.Progress(ev.N, ev.Limit)+"]"),
+		pickedStyle.Render(ev.Ticket), solo, ev.Title)
 }
 
 // closing is a terminal's line for a run that ended by itself (ev, an EvDone), in place of its log

@@ -90,7 +90,7 @@ func TestQueueCount(t *testing.T) {
 		{0, -1, "0", ""},
 		{3, 7, "3", " of 7"},
 	} {
-		m := Dashboard{queued: tc.queued, unclosed: tc.unclosed}
+		m := Dashboard{queue: dispatch.QueueState{Queued: tc.queued, Unclosed: tc.unclosed}}
 		if n, of := m.queueCount(); n != tc.n || of != tc.of {
 			t.Errorf("queued %d, unclosed %d: %q, %q, want %q, %q", tc.queued, tc.unclosed, n, of, tc.n, tc.of)
 		}

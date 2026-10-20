@@ -128,10 +128,10 @@ func TestEventRecordGivesUnclosed(t *testing.T) {
 		ev   Event
 		want any // the record's unclosed; nil for none
 	}{
-		{Event{Kind: EvQueue, Queued: 1, Unclosed: 5}, 5.0},
-		{Event{Kind: EvDispatch, Unclosed: 0}, 0.0},
-		{Event{Kind: EvQueue, Unclosed: -1}, nil},
-		{Event{Kind: EvClosed, Unclosed: 3}, nil},
+		{Event{Kind: EvQueue, QueueState: QueueState{Queued: 1, Unclosed: 5}}, 5.0},
+		{Event{Kind: EvDispatch, QueueState: QueueState{Unclosed: 0}}, 0.0},
+		{Event{Kind: EvQueue, QueueState: QueueState{Unclosed: -1}}, nil},
+		{Event{Kind: EvClosed, QueueState: QueueState{Unclosed: 3}}, nil},
 	} {
 		repo := t.TempDir()
 		l, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")

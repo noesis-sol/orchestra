@@ -331,13 +331,13 @@ func (t total) part() string {
 // queueCount is the queue's total: how many ready tickets wait for a slot, "—" until the loop has
 // said, and what follows that: " of " the tickets not closed, once the loop has said how many.
 func (m Dashboard) queueCount() (n, of string) {
-	if m.queued < 0 {
+	if m.queue.Queued < 0 {
 		return "—", ""
 	}
-	if m.unclosed >= 0 {
-		of = fmt.Sprintf(" of %d", m.unclosed)
+	if m.queue.Unclosed >= 0 {
+		of = fmt.Sprintf(" of %d", m.queue.Unclosed)
 	}
-	return fmt.Sprint(m.queued), of
+	return fmt.Sprint(m.queue.Queued), of
 }
 
 // heldBack is what follows the queue's count while ready tickets are held back, waiting for
@@ -345,14 +345,14 @@ func (m Dashboard) queueCount() (n, of string) {
 // solo ticket): " · 4 held back", and those whose worktree's setup failed, waiting for a ticket to
 // merge or a probe: " · 1 setup failed"; or "" with none.
 func (m Dashboard) heldBack() string {
-	if m.queued < 0 {
+	if m.queue.Queued < 0 {
 		return ""
 	}
 	var s string
-	if n := m.held.Total() - m.held.Setup; n > 0 {
+	if n := m.queue.Held.Total() - m.queue.Held.Setup; n > 0 {
 		s = heldBackStyle.Render(fmt.Sprintf(" · %d held back", n))
 	}
-	if n := m.held.Setup; n > 0 {
+	if n := m.queue.Held.Setup; n > 0 {
 		s += deferredStyle.Render(fmt.Sprintf(" · %d setup failed", n))
 	}
 	return s
@@ -375,7 +375,7 @@ func (m Dashboard) statsTable(w int) string {
 	}
 	n, of := m.queueCount()
 	queued := n + dimStyle.Render(of)
-	if m.queued <= 0 { // "—" or an empty queue: faint, like the strip's other zeros
+	if m.queue.Queued <= 0 { // "—" or an empty queue: faint, like the strip's other zeros
 		queued = dimStyle.Render(n + of)
 	}
 	queued += m.heldBack()

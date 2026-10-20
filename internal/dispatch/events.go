@@ -64,16 +64,8 @@ type Event struct {
 	Ticket string
 	// Title: the ticket's title, for EvDispatch, EvClosed, EvDeferred, EvAsked, EvWaits and
 	// EvAnswered; the verdict's summary for EvTriage.
-	Title  string
-	Queued int       // EvDispatch and EvQueue: ready tickets waiting for a slot
-	Held   HeldBack  // EvDispatch and EvQueue: ready tickets held back, waiting for something besides a slot
-	Solo   SoloState // EvDispatch and EvQueue: the solo ticket running or next, if any
-	// Unclosed: for EvDispatch and EvQueue, the tickets not closed that the run draws from (in a
-	// scoped run, the scope's); -1 before the run could read them.
-	Unclosed int
-	// MachineFull: for EvDispatch and EvQueue, a free slot waits while the workers across the machine's
-	// orchestra runs are at Config.MachineWorkers (see EvMachine).
-	MachineFull bool
+	Title      string
+	QueueState // EvDispatch and EvQueue: the queue as it stands
 	// Shared: for EvShared, how many other orchestra runs are going on the machine.
 	Shared int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
@@ -101,6 +93,19 @@ type Event struct {
 	// output starts with project.SuiteMarker, or else the check itself; "" when the setup before it
 	// failed) and where its whole output is.
 	Suite, Output string
+}
+
+// QueueState is the queue as EvDispatch and EvQueue report it, for the dashboard.
+type QueueState struct {
+	Queued int       // ready tickets waiting for a slot
+	Held   HeldBack  // ready tickets held back, waiting for something besides a slot
+	Solo   SoloState // the solo ticket running or next, if any
+	// Unclosed: the tickets not closed that the run draws from (in a scoped run, the scope's); -1
+	// before the run could read them.
+	Unclosed int
+	// MachineFull: a free slot waits while the workers across the machine's orchestra runs are at
+	// Config.MachineWorkers (see EvMachine).
+	MachineFull bool
 }
 
 // Status describes a ticket being worked on. Gone removes it from the display.

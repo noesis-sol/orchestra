@@ -19,7 +19,7 @@ func TestDashboardDropsControlSequencesInTicketIDs(t *testing.T) {
 			dispatch.Event{Kind: dispatch.EvDeferred, Ticket: id, Detail: "its ID can't name a branch"},
 			dispatch.Event{Kind: dispatch.EvWarn, Ticket: id + "2", Aside: true, Text: "WARN not deferred"},
 			dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: id + "3", Title: "Fix it",
-				Solo: dispatch.SoloState{Ticket: id + "3"}})
+				QueueState: dispatch.QueueState{Solo: dispatch.SoloState{Ticket: id + "3"}}})
 		next, _ := m.Update(statusMsg(dispatch.Status{Ticket: id + "3", Title: "Fix it", Started: time.Now(),
 			Agent: dispatch.StateWorking, Activity: "Fix it"}))
 		m = next.(Dashboard)

@@ -33,7 +33,6 @@ type Dashboard struct {
 	limitReset  time.Time                  // when that limit resets; zero when not known
 	shared      int                        // the other orchestra runs going on the machine
 	load        *load.Reading              // the machine's load as last read; nil until the loop first reads it
-	machineFull bool                       // a free slot waits: the machine's runs are at their cap on workers
 	draining    bool                       // the maintainer asked to stop after the running tickets
 	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
 	asking      bool                       // the question whether to stop after them, or to go on, is open
@@ -43,13 +42,10 @@ type Dashboard struct {
 	height      int
 	rows        []ticketRow // every ticket picked up in this run, oldest first
 	interrupted bool
-	final       *dispatch.Event   // the stop or done event, printed by main after exit
-	received    int               // events received before it quit, for ProgramSink.Handoff
-	quitting    bool              // it has asked to quit: the events still coming are for the printer
-	queued      int               // ready tickets waiting for a slot; -1 until the loop first says
-	held        dispatch.HeldBack // ready tickets held back, waiting for something besides a slot
-	unclosed    int               // the tickets not closed the run draws from; -1 until the loop says
-	solo        dispatch.SoloState
+	final       *dispatch.Event     // the stop or done event, printed by main after exit
+	received    int                 // events received before it quit, for ProgramSink.Handoff
+	quitting    bool                // it has asked to quit: the events still coming are for the printer
+	queue       dispatch.QueueState // as the loop last said; its Queued and Unclosed -1 until it first says
 	began       time.Time
 	now         func() time.Time // the clock the times shown are read from
 	cancel      func()
@@ -62,8 +58,8 @@ type Dashboard struct {
 // of orchestra's sight.
 func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus func(tab string)) Dashboard {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(pickedStyle))
-	return Dashboard{cfg: cfg, spin: s, width: 80, queued: -1, unclosed: -1, began: time.Now(), now: time.Now,
-		cancel: cancel, drain: drain, focus: focus}
+	return Dashboard{cfg: cfg, spin: s, width: 80, queue: dispatch.QueueState{Queued: -1, Unclosed: -1},
+		began: time.Now(), now: time.Now, cancel: cancel, drain: drain, focus: focus}
 }
 
 // StartedAt is the dashboard of a run whose loop started at t, before the dashboard opened (a spec's
@@ -360,14 +356,14 @@ func (m Dashboard) titleLine(w int) string {
 	if m.shared > 0 {
 		line += deferredStyle.Render(sharedLabel(m.shared))
 	}
-	if m.machineFull {
+	if m.queue.MachineFull {
 		line += deferredStyle.Render("  · machine full")
 	}
 	switch {
-	case m.solo.Next:
-		line += deferredStyle.Render("  · solo " + oneLine(m.solo.Ticket) + " next")
-	case m.solo.Ticket != "":
-		line += pickedStyle.Render("  · solo " + oneLine(m.solo.Ticket) + " running")
+	case m.queue.Solo.Next:
+		line += deferredStyle.Render("  · solo " + oneLine(m.queue.Solo.Ticket) + " next")
+	case m.queue.Solo.Ticket != "":
+		line += pickedStyle.Render("  · solo " + oneLine(m.queue.Solo.Ticket) + " running")
 	}
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
 		m.cfg.Base, dispatch.ScopeLabel(m.cfg), runTime(m.since(m.began))))

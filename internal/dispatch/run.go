@@ -508,8 +508,9 @@ func (r *runState) start(t Ticket, q queue) {
 			"  ANSWERED: %s (%s) is answered, so %s comes back", w.question, w.title, t.ID)})
 	}
 	r.queued, r.soloShown, r.unclosedSaid, r.fullShown = q, r.solo.state(), r.unclosed, r.machine.full
-	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title, MachineFull: r.fullShown,
-		Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
+	o.emit(Event{Kind: EvDispatch, N: r.count, Limit: c.Limit, Ticket: t.ID, Title: t.Title,
+		QueueState: QueueState{Queued: q.queued, Held: q.held, Solo: r.soloShown, Unclosed: r.unclosedSaid,
+			MachineFull: r.fullShown},
 		Text: fmt.Sprintf("[%s] %s %s: %s", Progress(r.count, c.Limit), t.ID, how, t.Title)})
 	r.startFootprint(t)
 	tr := o.newTicketRun(r.ctx, t)
@@ -650,7 +651,8 @@ func (r *runState) reportQueue(q queue) {
 		return
 	}
 	r.queued, r.soloShown, r.unclosedSaid, r.fullShown = q, solo, unclosed, full
-	r.o.emit(Event{Kind: EvQueue, Queued: q.queued, Held: q.held, Solo: solo, Unclosed: unclosed, MachineFull: full})
+	r.o.emit(Event{Kind: EvQueue,
+		QueueState: QueueState{Queued: q.queued, Held: q.held, Solo: solo, Unclosed: unclosed, MachineFull: full}})
 }
 
 // end ends the run, once nothing runs or Ctrl+C came, and returns its exit code. It leaves behind

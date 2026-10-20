@@ -103,7 +103,7 @@ func TestNotificationsLeaveOutWhatNeedsNothing(t *testing.T) {
 	events := []Event{
 		{Kind: EvInfo, Text: "START orchestra v1 in /repo on main"},
 		{Kind: EvDispatch, Ticket: "a", Title: "first", N: 1, Limit: 10, Text: "[1/10] a dispatching: first"},
-		{Kind: EvQueue, Queued: 3},
+		{Kind: EvQueue, QueueState: QueueState{Queued: 3}},
 		{Kind: EvHold, Ticket: "a", Text: "HOLD: PAUSED: a still in_progress; no new tickets while the 1 running finish"},
 		{Kind: EvHold, Text: "PROBE: the run holds for the environment; in 10m one worker without a ticket runs a command"},
 		{Kind: EvProbed, Text: "PROBE_OK: a worker without a ticket ran a command 10m after the hold; taking tickets again"},

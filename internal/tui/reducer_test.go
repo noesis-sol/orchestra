@@ -23,7 +23,8 @@ func rowsOf(m Dashboard) []string {
 // The loop's events set the rows and totals, with nothing rendered.
 func TestApplySetsRowsAndTotals(t *testing.T) {
 	dispatched := func(id string) dispatch.Event {
-		return dispatch.Event{Kind: dispatch.EvDispatch, Ticket: id, Title: "Title " + id, Queued: 2, Unclosed: 5}
+		return dispatch.Event{Kind: dispatch.EvDispatch, Ticket: id, Title: "Title " + id,
+			QueueState: dispatch.QueueState{Queued: 2, Unclosed: 5}}
 	}
 	ev := func(k dispatch.Kind, id, detail string) dispatch.Event {
 		return dispatch.Event{Kind: k, Ticket: id, Detail: detail}

@@ -20,12 +20,12 @@ func TestEmptyQueueIsFaint(t *testing.T) {
 	m := NewDashboard(dispatch.Config{Limit: 40, Concurrency: 4}, func() {}, func(bool) {}, func(string) {})
 	m.width, m.height = 120, 40
 
-	m.queued, m.unclosed = 0, -1
+	m.queue.Queued, m.queue.Unclosed = 0, -1
 	if table := m.statsTable(120); !strings.Contains(table, dimStyle.Render("0")) {
 		t.Errorf("a bare empty queue isn't faint: %q", table)
 	}
 
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 0, Unclosed: 4})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, QueueState: dispatch.QueueState{Queued: 0, Unclosed: 4}})
 	table := m.statsTable(120)
 	if faint := dimStyle.Render("0 of 4"); faint == "0 of 4" || !strings.Contains(table, faint) {
 		t.Errorf("the In queue box doesn't read a faint \"0 of 4\": %q", table)
@@ -34,7 +34,7 @@ func TestEmptyQueueIsFaint(t *testing.T) {
 		t.Errorf("strip:\n%s", strip)
 	}
 
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, Queued: 2, Unclosed: 4})
+	m = runEvents(m, dispatch.Event{Kind: dispatch.EvQueue, QueueState: dispatch.QueueState{Queued: 2, Unclosed: 4}})
 	table = m.statsTable(120)
 	if !strings.Contains(table, "2"+dimStyle.Render(" of 4")) || strings.Contains(table, dimStyle.Render("2 of 4")) {
 		t.Errorf("a queue of 2 isn't a bright 2 and a faint \" of 4\": %q", table)
