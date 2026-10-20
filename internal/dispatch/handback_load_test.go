@@ -79,7 +79,9 @@ func TestAMachineHoldDuringAHandBackExtendsItsDeadline(t *testing.T) {
 		}
 		handedBack := pasted.of("A")[0]
 		held := 7 * time.Minute
-		time.Sleep(held)
+		// Held from the hand-back itself, not from when the loop above saw it: that is a second later
+		// when the prompt is pasted at the instant the loop wakes, if the bubble wakes the loop first.
+		time.Sleep(time.Until(handedBack.Add(held)))
 		free()
 		o, code := (<-done)()
 		ev := h.sink.text()
