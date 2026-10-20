@@ -180,28 +180,30 @@ func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
 // arguments: it is started plainly and the prompt pasted.
 func TestStartFallsBackToPastingThePrompt(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.reporter = fakeReporter{}
-	h.herdr.launchFails["A"] = true
-	h.herdr.refuseArgs = true
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
-		t.Errorf("pasted to %v", got)
-	}
-	logged := h.logged()
-	for _, want := range []string{"could not be started from its prompt file", errRefused.Error()} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("log lacks %q:\n%s", want, logged)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.reporter = fakeReporter{}
+		h.herdr.launchFails["A"] = true
+		h.herdr.refuseArgs = true
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-	}
-	if !strings.Contains(h.mainLog(), "A: add a.txt") {
-		t.Error("A should be merged")
-	}
+		if got := h.herdr.pastedTo(); !equal(got, []string{"A"}) {
+			t.Errorf("pasted to %v", got)
+		}
+		logged := h.logged()
+		for _, want := range []string{"could not be started from its prompt file", errRefused.Error()} {
+			if !strings.Contains(logged, want) {
+				t.Errorf("log lacks %q:\n%s", want, logged)
+			}
+		}
+		if !strings.Contains(h.mainLog(), "A: add a.txt") {
+			t.Error("A should be merged")
+		}
+	})
 }
 
 // A worker launched from its prompt file that Herdr sees only after the adoption gave up is
@@ -322,28 +324,30 @@ func TestLongTicketIDRunsUnderACutName(t *testing.T) {
 // A prompt that never takes defers the ticket for a retry, and the run goes on without it.
 func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.LaunchPrompt = false
-	h.herdr.promptFails["A"] = true
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("B", finishes("b.txt"))
-	o, code := h.run()
-	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.HasPrefix(got[0], "A   PROMPT_FAILED: A's worker never started on its prompt -> deferred") {
-		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
-	}
-	if got := h.herdr.pastedTo(); !equal(got, []string{"A", "A", "B"}) {
-		t.Errorf("pasted to %v: A's prompt should be sent twice, never more", got)
-	}
-	if st, _ := h.beads.Status(context.Background(), "A"); st != "deferred" || !strings.Contains(h.beads.notesOf("A"), "never started on its prompt") {
-		t.Errorf("A is %s, notes %q", st, h.beads.notesOf("A"))
-	}
-	if !strings.Contains(h.mainLog(), "B: add b.txt") {
-		t.Error("B should be merged")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.LaunchPrompt = false
+		h.herdr.promptFails["A"] = true
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("B", finishes("b.txt"))
+		o, code := h.run()
+		if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.HasPrefix(got[0], "A   PROMPT_FAILED: A's worker never started on its prompt -> deferred") {
+			t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
+		}
+		if got := h.herdr.pastedTo(); !equal(got, []string{"A", "A", "B"}) {
+			t.Errorf("pasted to %v: A's prompt should be sent twice, never more", got)
+		}
+		if st, _ := h.beads.Status(context.Background(), "A"); st != "deferred" || !strings.Contains(h.beads.notesOf("A"), "never started on its prompt") {
+			t.Errorf("A is %s, notes %q", st, h.beads.notesOf("A"))
+		}
+		if !strings.Contains(h.mainLog(), "B: add b.txt") {
+			t.Error("B should be merged")
+		}
+	})
 }
 
 // Every Claude worker starts with the run's worker arguments first, ahead of its standing rules,
@@ -351,52 +355,56 @@ func TestPromptThatNeverTakesDefersTheTicket(t *testing.T) {
 // --no-chrome must not be lost on the way to a plain start.
 func TestStartGivesEveryWorkerTheRunsArguments(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.WorkerArgs = []string{"--no-chrome"}
-	h.reporter = fakeReporter{}
-	h.herdr.launchFails["B"] = true
-	h.herdr.refusePaths = true
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("A", finishes("a.txt"))
-	h.worker("B", finishes("b.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	if a := h.herdr.argsFor("A"); len(a) != 1 || len(a[0]) != 7 || a[0][0] != "launch" || a[0][1] != "--no-chrome" ||
-		a[0][2] != "--append-system-prompt-file" || a[0][4] != "--settings" || !strings.Contains(a[0][6], "prompt.md") {
-		t.Errorf("A's launch: %q", a)
-	}
-	b := h.herdr.argsFor("B") // the launch, the refused starts, then a plain one
-	if len(b) < 3 {
-		t.Fatalf("B's starts: %q", b)
-	}
-	for _, a := range b {
-		if len(a) < 2 || a[1] != "--no-chrome" {
-			t.Errorf("B's start without --no-chrome: %q (all: %q)", a, b)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.WorkerArgs = []string{"--no-chrome"}
+		h.reporter = fakeReporter{}
+		h.herdr.launchFails["B"] = true
+		h.herdr.refusePaths = true
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("A", finishes("a.txt"))
+		h.worker("B", finishes("b.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-	}
-	if last := b[len(b)-1]; !equal(last, []string{"start", "--no-chrome"}) {
-		t.Errorf("B's plain start: %q", last)
-	}
+		if a := h.herdr.argsFor("A"); len(a) != 1 || len(a[0]) != 7 || a[0][0] != "launch" || a[0][1] != "--no-chrome" ||
+			a[0][2] != "--append-system-prompt-file" || a[0][4] != "--settings" || !strings.Contains(a[0][6], "prompt.md") {
+			t.Errorf("A's launch: %q", a)
+		}
+		b := h.herdr.argsFor("B") // the launch, the refused starts, then a plain one
+		if len(b) < 3 {
+			t.Fatalf("B's starts: %q", b)
+		}
+		for _, a := range b {
+			if len(a) < 2 || a[1] != "--no-chrome" {
+				t.Errorf("B's start without --no-chrome: %q (all: %q)", a, b)
+			}
+		}
+		if last := b[len(b)-1]; !equal(last, []string{"start", "--no-chrome"}) {
+			t.Errorf("B's plain start: %q", last)
+		}
+	})
 }
 
 // A worker of another kind gets no worker arguments: they are Claude Code's.
 func TestStartGivesOtherAgentsNoWorkerArguments(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.cfg.WorkerArgs = []string{"--no-chrome"}
-	h.cfg.AgentKind = "codex"
-	h.beads.add("A", "first", 1)
-	h.worker("A", finishes("a.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	for _, a := range h.herdr.argsFor("A") {
-		if slices.Contains(a, "--no-chrome") {
-			t.Errorf("codex started with %q", a)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.cfg.WorkerArgs = []string{"--no-chrome"}
+		h.cfg.AgentKind = "codex"
+		h.beads.add("A", "first", 1)
+		h.worker("A", finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-	}
+		for _, a := range h.herdr.argsFor("A") {
+			if slices.Contains(a, "--no-chrome") {
+				t.Errorf("codex started with %q", a)
+			}
+		}
+	})
 }

@@ -13,7 +13,10 @@
 //
 // On macOS, where /usr/bin/git is the shim that asks xcrun for the developer tools' git on every call, Main puts that
 // git ahead of the shim on PATH, as the shim tripled the cost of each of the thousands of git commands a package's
-// tests start.
+// tests start, and caps how many tests run at once (capParallel).
+//
+// Repo gives a test a repository copied from one git made once, rather than starting git to make it
+// (NewTemplate for a package's own).
 package gittest
 
 import (
@@ -33,8 +36,9 @@ import (
 // TestingM is a package's tests, as its TestMain gets them: a *testing.M.
 type TestingM interface{ Run() int }
 
-// Main returns m set to run with git's automatic maintenance off, an identity and no shim (above). A package whose
-// tests run the real git runs them through it, from its TestMain:
+// Main returns m set to run with git's automatic maintenance off, an identity, no shim and its
+// parallel tests capped (above). A package whose tests run the real git runs them through it, from
+// its TestMain:
 //
 //	func TestMain(m *testing.M) { os.Exit(gittest.Main(m).Run()) }
 func Main(m TestingM) TestingM { return tests{m} }
@@ -56,6 +60,12 @@ func (ts tests) Run() int {
 	if dir != "" {
 		defer func() { _ = os.RemoveAll(dir) }() // a link in a temporary folder: a leftover is no failure
 	}
+	if err := capParallel(); err != nil {
+		fmt.Fprintln(os.Stderr, "gittest:", err)
+		return 1
+	}
+	inMain, tempDir = true, os.TempDir()
+	defer removeTemplates()
 	return ts.m.Run()
 }
 

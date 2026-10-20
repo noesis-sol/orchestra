@@ -10,17 +10,30 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/git"
+	"github.com/noesis-sol/orchestra/internal/gittest"
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
-// gitRepo makes a repository with one commit and returns its path and a git runner. A test that
-// uses real git takes seconds, so go test -short skips it, leaving the scenarios with git in memory.
+// gitRepo makes a repository on main with one commit and returns its path and a git runner. A test
+// that uses real git takes seconds, so go test -short skips it, leaving the scenarios with git in memory.
 func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
+	t.Helper()
+	return gitRepoFrom(t, nil)
+}
+
+// gitRepoFrom is gitRepo with the repository copied from template (nil: gittest.Repo's), which starts
+// no git.
+func gitRepoFrom(t *testing.T, template *gittest.Template) (string, func(dir string, args ...string) string) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs real git")
 	}
-	repo := t.TempDir()
+	var repo string
+	if template != nil {
+		repo = template.Repo(t)
+	} else {
+		repo = gittest.Repo(t)
+	}
 	git := func(dir string, args ...string) string {
 		t.Helper()
 		out, err := command.Output(context.Background(), 0, dir, "git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
@@ -29,10 +42,19 @@ func gitRepo(t *testing.T) (string, func(dir string, args ...string) string) {
 		}
 		return out
 	}
-	git(repo, "init", "-q")
-	git(repo, "commit", "-q", "--allow-empty", "-m", "init")
 	return repo, git
 }
+
+// commitAll commits everything in the repository at dir with message, for a template's build.
+func commitAll(dir, message string) error {
+	for _, args := range [][]string{{"add", "."}, {"commit", "-q", "-m", message}} {
+		if _, err := command.Output(context.Background(), command.WriteLimit, dir, "git", args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func read(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -64,17 +86,19 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	noLeaks(t) // checked once the workers below have returned
-	repo, run := gitRepo(t)
-	run(repo, "branch", "-M", "main")
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".orchestra/\n"), 0o644); err != nil { // the launch prompt
-		t.Fatal(err)
-	}
-	run(repo, "add", ".")
-	run(repo, "commit", "-q", "-m", "ignore .orchestra")
+	repo, run := gitRepoFrom(t, harnessRepo)
 	h := harnessIn(t, repo)
 	h.git = run
 	return h
 }
+
+// harnessRepo is newHarness's repository: gitRepo's, with .orchestra/ ignored, for the launch prompt.
+var harnessRepo = gittest.NewTemplate(func(dir string) error {
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".orchestra/\n"), 0o644); err != nil {
+		return err
+	}
+	return commitAll(dir, "ignore .orchestra")
+})
 
 // newTimedHarness is newHarness with git in memory, for scenarios whose subject is timing rather
 // than git. It is called inside synctest.Test: the loop then waits as long as it would in a real

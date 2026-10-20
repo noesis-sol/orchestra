@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/noesis-sol/orchestra/internal/mcp"
 )
@@ -48,113 +49,119 @@ type mcpFile struct {
 // no definition on its command line.
 func TestWorkersGetOnlyTheChosenMCPServers(t *testing.T) {
 	t.Parallel()
-	for _, launchFails := range []bool{false, true} {
-		h := newHarness(t)
-		h.reporter = fakeReporter{}
-		h.cfg.MCP = chosenServers()
-		h.herdr.launchFails["A"] = launchFails
-		h.beads.add("A", "first", 1)
-		var seen mcpFile
-		h.worker("A", mcpConfigSeen("a.txt", &seen))
-		o, code := h.run()
-		if code != ExitOK {
-			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-		}
-		starts := h.herdr.argsFor("A")
-		if len(starts) == 0 {
-			t.Fatal("no worker started")
-		}
-		for _, args := range starts {
-			i := slices.Index(args, "--mcp-config")
-			if i < 0 || i+2 >= len(args) || args[i+1] != seen.path || args[i+2] != "--strict-mcp-config" {
-				t.Errorf("launch fails %v: args %q, want --mcp-config %s --strict-mcp-config", launchFails, args, seen.path)
+	synctest.Test(t, func(t *testing.T) {
+		for _, launchFails := range []bool{false, true} {
+			h := newTimedHarness(t)
+			h.reporter = fakeReporter{}
+			h.cfg.MCP = chosenServers()
+			h.herdr.launchFails["A"] = launchFails
+			h.beads.add("A", "first", 1)
+			var seen mcpFile
+			h.worker("A", mcpConfigSeen("a.txt", &seen))
+			o, code := h.run()
+			if code != ExitOK {
+				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 			}
-			if args[0] == "launch" && !strings.Contains(args[len(args)-1], "prompt.md") {
-				t.Errorf("launch fails %v: the prompt isn't last: %q", launchFails, args)
+			starts := h.herdr.argsFor("A")
+			if len(starts) == 0 {
+				t.Fatal("no worker started")
 			}
-			for _, a := range args {
-				if strings.Contains(a, "secret") || strings.Contains(a, "pg-mcp") || strings.Contains(a, "exa.example") {
-					t.Errorf("launch fails %v: a definition is on the command line: %q", launchFails, args)
+			for _, args := range starts {
+				i := slices.Index(args, "--mcp-config")
+				if i < 0 || i+2 >= len(args) || args[i+1] != seen.path || args[i+2] != "--strict-mcp-config" {
+					t.Errorf("launch fails %v: args %q, want --mcp-config %s --strict-mcp-config", launchFails, args, seen.path)
+				}
+				if args[0] == "launch" && !strings.Contains(args[len(args)-1], "prompt.md") {
+					t.Errorf("launch fails %v: the prompt isn't last: %q", launchFails, args)
+				}
+				for _, a := range args {
+					if strings.Contains(a, "secret") || strings.Contains(a, "pg-mcp") || strings.Contains(a, "exa.example") {
+						t.Errorf("launch fails %v: a definition is on the command line: %q", launchFails, args)
+					}
 				}
 			}
+			if !seen.exists || seen.mode != 0o600 {
+				t.Fatalf("launch fails %v: mcp.json exists %v, mode %v", launchFails, seen.exists, seen.mode)
+			}
+			var got struct {
+				MCPServers map[string]json.RawMessage `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(seen.content, &got); err != nil {
+				t.Fatal(err)
+			}
+			compact := func(raw json.RawMessage) string {
+				var b bytes.Buffer
+				_ = json.Compact(&b, raw)
+				return b.String()
+			}
+			if len(got.MCPServers) != 2 || compact(got.MCPServers["postgres"]) != `{"command":"pg-mcp","env":{"PGPASSWORD":"secret"}}` ||
+				compact(got.MCPServers["exa"]) != `{"type":"http","url":"https://exa.example"}` {
+				t.Errorf("launch fails %v: mcp.json:\n%s", launchFails, seen.content)
+			}
+			if logged := h.logged(); !strings.Contains(logged, "MCP servers: postgres, exa)") || strings.Contains(logged, mcpUnchosen) {
+				t.Errorf("launch fails %v: log:\n%s", launchFails, logged)
+			}
 		}
-		if !seen.exists || seen.mode != 0o600 {
-			t.Fatalf("launch fails %v: mcp.json exists %v, mode %v", launchFails, seen.exists, seen.mode)
-		}
-		var got struct {
-			MCPServers map[string]json.RawMessage `json:"mcpServers"`
-		}
-		if err := json.Unmarshal(seen.content, &got); err != nil {
-			t.Fatal(err)
-		}
-		compact := func(raw json.RawMessage) string {
-			var b bytes.Buffer
-			_ = json.Compact(&b, raw)
-			return b.String()
-		}
-		if len(got.MCPServers) != 2 || compact(got.MCPServers["postgres"]) != `{"command":"pg-mcp","env":{"PGPASSWORD":"secret"}}` ||
-			compact(got.MCPServers["exa"]) != `{"type":"http","url":"https://exa.example"}` {
-			t.Errorf("launch fails %v: mcp.json:\n%s", launchFails, seen.content)
-		}
-		if logged := h.logged(); !strings.Contains(logged, "MCP servers: postgres, exa)") || strings.Contains(logged, mcpUnchosen) {
-			t.Errorf("launch fails %v: log:\n%s", launchFails, logged)
-		}
-	}
+	})
 }
 
 // mcp_servers: [] starts a worker with --strict-mcp-config alone: no servers, and no file.
 func TestNoMCPServersChosenGivesWorkersNone(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.reporter = fakeReporter{}
-	h.cfg.MCP = &[]mcp.Server{}
-	h.beads.add("A", "first", 1)
-	var seen mcpFile
-	h.worker("A", mcpConfigSeen("a.txt", &seen))
-	if o, code := h.run(); code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	for _, args := range h.herdr.argsFor("A") {
-		if !slices.Contains(args, "--strict-mcp-config") || slices.Contains(args, "--mcp-config") {
-			t.Errorf("args %q", args)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.reporter = fakeReporter{}
+		h.cfg.MCP = &[]mcp.Server{}
+		h.beads.add("A", "first", 1)
+		var seen mcpFile
+		h.worker("A", mcpConfigSeen("a.txt", &seen))
+		if o, code := h.run(); code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-	}
-	if seen.exists {
-		t.Errorf("%s written", seen.path)
-	}
-	if logged := h.logged(); !strings.Contains(logged, "MCP servers: none)") {
-		t.Errorf("log:\n%s", logged)
-	}
+		for _, args := range h.herdr.argsFor("A") {
+			if !slices.Contains(args, "--strict-mcp-config") || slices.Contains(args, "--mcp-config") {
+				t.Errorf("args %q", args)
+			}
+		}
+		if seen.exists {
+			t.Errorf("%s written", seen.path)
+		}
+		if logged := h.logged(); !strings.Contains(logged, "MCP servers: none)") {
+			t.Errorf("log:\n%s", logged)
+		}
+	})
 }
 
 // Without mcp_servers a worker starts as before, with no MCP arguments, and the run warns once that
 // workers get every server.
 func TestUnchosenMCPServersKeepTheArgumentsAndWarnOnce(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.reporter = fakeReporter{}
-	h.beads.add("A", "first", 1)
-	h.beads.add("B", "second", 2)
-	h.worker("A", finishes("a.txt"))
-	h.worker("B", finishes("b.txt"))
-	if o, code := h.run(); code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	for _, id := range []string{"A", "B"} {
-		for _, args := range h.herdr.argsFor(id) {
-			want := []string{"launch", "--append-system-prompt-file", filepath.Join(h.worktree(id), ".orchestra", "run", "rules.md"),
-				"--settings", filepath.Join(h.worktree(id), "hooks.json"),
-				"Your instructions for ticket " + id + " are in .orchestra/run/prompt.md in this directory. " +
-					"Read that file and follow it exactly."}
-			if !equal(args, want) {
-				t.Errorf("%s: args %q, want %q", id, args, want)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.reporter = fakeReporter{}
+		h.beads.add("A", "first", 1)
+		h.beads.add("B", "second", 2)
+		h.worker("A", finishes("a.txt"))
+		h.worker("B", finishes("b.txt"))
+		if o, code := h.run(); code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		for _, id := range []string{"A", "B"} {
+			for _, args := range h.herdr.argsFor(id) {
+				want := []string{"launch", "--append-system-prompt-file", filepath.Join(h.worktree(id), ".orchestra", "run", "rules.md"),
+					"--settings", filepath.Join(h.worktree(id), "hooks.json"),
+					"Your instructions for ticket " + id + " are in .orchestra/run/prompt.md in this directory. " +
+						"Read that file and follow it exactly."}
+				if !equal(args, want) {
+					t.Errorf("%s: args %q, want %q", id, args, want)
+				}
 			}
 		}
-	}
-	logged := h.logged()
-	if n := strings.Count(logged, mcpUnchosen); n != 1 || !strings.Contains(logged, "MCP servers: all, not configured)") {
-		t.Errorf("warned %d times:\n%s", n, logged)
-	}
+		logged := h.logged()
+		if n := strings.Count(logged, mcpUnchosen); n != 1 || !strings.Contains(logged, "MCP servers: all, not configured)") {
+			t.Errorf("warned %d times:\n%s", n, logged)
+		}
+	})
 }
 
 // When Herdr refuses the arguments, a worker is started without its prompt and reports but never

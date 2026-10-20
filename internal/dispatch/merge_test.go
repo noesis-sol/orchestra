@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/git"
+	"github.com/noesis-sol/orchestra/internal/gittest"
 )
 
 // mergeFixture is a repository on main with a ticket branch in its own worktree, and an Loop set
@@ -22,15 +23,17 @@ type mergeFixture struct {
 	sink *recordSink
 }
 
+// mergeRepo is newMergeFixture's repository: gitRepo's, with a file each ticket changes.
+var mergeRepo = gittest.NewTemplate(func(dir string) error {
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
+		return err
+	}
+	return commitAll(dir, "shared file")
+})
+
 func newMergeFixture(t *testing.T, check string) *mergeFixture {
 	t.Helper()
-	repo, run := gitRepo(t)
-	run(repo, "branch", "-M", "main")
-	if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("line 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run(repo, "add", ".")
-	run(repo, "commit", "-q", "-m", "shared file")
+	repo, run := gitRepoFrom(t, mergeRepo)
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

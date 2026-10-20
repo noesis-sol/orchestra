@@ -122,22 +122,24 @@ func TestPredictionNeverDelaysDispatch(t *testing.T) {
 // Without Predict (claude missing) or with footprints off, nothing is predicted.
 func TestPredictorOffWithoutOrgansOrFootprints(t *testing.T) {
 	t.Parallel()
-	for _, c := range []struct{ predict, noFootprint bool }{{false, false}, {true, true}} {
-		h := newHarness(t)
-		h.cfg.Concurrency = 2
-		h.cfg.Predict, h.cfg.NoFootprint = c.predict, c.noFootprint
-		h.beads.add("A", "first", 1)
-		h.beads.add("B", "second", 2)
-		h.worker("A", finishes("a.txt"))
-		h.worker("B", finishes("b.txt"))
-		bin, asked := fakePredictor(t, `echo '{"structured_output":{"files":["a.txt"]}}'`)
-		o := h.loop()
-		o.organ = organ.Client{Bin: bin}
-		if code := o.Run(context.Background()); code != ExitOK {
-			t.Fatalf("%+v: exit %d\n%s", c, code, h.sink.text())
+	synctest.Test(t, func(t *testing.T) {
+		for _, c := range []struct{ predict, noFootprint bool }{{false, false}, {true, true}} {
+			h := newTimedHarness(t)
+			h.cfg.Concurrency = 2
+			h.cfg.Predict, h.cfg.NoFootprint = c.predict, c.noFootprint
+			h.beads.add("A", "first", 1)
+			h.beads.add("B", "second", 2)
+			h.worker("A", finishes("a.txt"))
+			h.worker("B", finishes("b.txt"))
+			bin, asked := fakePredictor(t, `echo '{"structured_output":{"files":["a.txt"]}}'`)
+			o := h.loop()
+			o.organ = organ.Client{Bin: bin}
+			if code := o.Run(context.Background()); code != ExitOK {
+				t.Fatalf("%+v: exit %d\n%s", c, code, h.sink.text())
+			}
+			if _, err := os.Stat(asked); err == nil {
+				t.Errorf("%+v: the predictor was asked", c)
+			}
 		}
-		if _, err := os.Stat(asked); err == nil {
-			t.Errorf("%+v: the predictor was asked", c)
-		}
-	}
+	})
 }

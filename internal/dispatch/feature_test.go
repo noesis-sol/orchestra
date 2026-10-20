@@ -4,35 +4,38 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/synctest"
 )
 
 // A run on a feature request talked through (--feature) names the feature and its epic in the START
 // log and in the run report's title and evidence.
 func TestFeatureRunNamesTheFeatureAndTheEpic(t *testing.T) {
 	t.Parallel()
-	h := scopedHarness(t, "E")
-	h.cfg.Feature = "Add a --json flag\nto every   list command"
-	h.beads.add("E", "JSON output", 1)
-	h.beads.kind("E", "epic")
-	h.beads.sub("E.1", "E", "Add the encoder", 1)
-	h.worker("E.1", finishes("e1.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d\n%s", code, h.sink.text())
-	}
-	ev := h.sink.text()
-	for _, want := range []string{" on main · feature E (", "feature: epic E, talked through from: Add a --json flag to every list command"} {
-		if !strings.Contains(ev, want) {
-			t.Errorf("events lack %q:\n%s", want, ev)
+	synctest.Test(t, func(t *testing.T) {
+		h := scoped(newTimedHarness(t), "E")
+		h.cfg.Feature = "Add a --json flag\nto every   list command"
+		h.beads.add("E", "JSON output", 1)
+		h.beads.kind("E", "epic")
+		h.beads.sub("E.1", "E", "Add the encoder", 1)
+		h.worker("E.1", finishes("e1.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d\n%s", code, h.sink.text())
 		}
-	}
-	in := o.reviewInput(context.Background(), code, o.Final())
-	for _, want := range []string{"Run of epic E and its subtickets only, filed from a feature request",
-		"## The feature request epic E was talked through from\n\n<evidence id=\"", "\">\nAdd a --json flag\nto every   list command\n</evidence"} {
-		if !strings.Contains(in, want) {
-			t.Errorf("report input lacks %q:\n%s", want, in)
+		ev := h.sink.text()
+		for _, want := range []string{" on main · feature E (", "feature: epic E, talked through from: Add a --json flag to every list command"} {
+			if !strings.Contains(ev, want) {
+				t.Errorf("events lack %q:\n%s", want, ev)
+			}
 		}
-	}
+		in := o.reviewInput(context.Background(), code, o.Final())
+		for _, want := range []string{"Run of epic E and its subtickets only, filed from a feature request",
+			"## The feature request epic E was talked through from\n\n<evidence id=\"", "\">\nAdd a --json flag\nto every   list command\n</evidence"} {
+			if !strings.Contains(in, want) {
+				t.Errorf("report input lacks %q:\n%s", want, in)
+			}
+		}
+	})
 }
 
 func TestScopeLabel(t *testing.T) {

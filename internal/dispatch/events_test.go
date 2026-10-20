@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -59,16 +60,18 @@ func TestCloseWaitsForNotifications(t *testing.T) {
 // closed, FAILED or deferred shows nothing.
 func TestRunNotifiesByEventNotText(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	h.beads.add("A", "closed FAILED deferred", 1)
-	h.worker("A", finishes("a.txt"))
-	o, code := h.run()
-	if code != ExitOK {
-		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
-	}
-	o.emit(Event{Kind: EvTriage, Ticket: "A", Text: "  triage A: flaky (high confidence) - deferred after FAILED checks, closed sockets"})
-	want := []string{"Closed A · closed FAILED deferred", "Finished the run · 1 ticket closed"}
-	if got := h.alerts.list(); !equal(got, want) {
-		t.Errorf("notified:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newTimedHarness(t)
+		h.beads.add("A", "closed FAILED deferred", 1)
+		h.worker("A", finishes("a.txt"))
+		o, code := h.run()
+		if code != ExitOK {
+			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
+		}
+		o.emit(Event{Kind: EvTriage, Ticket: "A", Text: "  triage A: flaky (high confidence) - deferred after FAILED checks, closed sockets"})
+		want := []string{"Closed A · closed FAILED deferred", "Finished the run · 1 ticket closed"}
+		if got := h.alerts.list(); !equal(got, want) {
+			t.Errorf("notified:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+	})
 }
