@@ -134,15 +134,15 @@ const (
 // carriedStands checks a worker the last run left behind on ticket id, as w says, before this run
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
 // with its branch's own commits already on Base, since its ForkKey or else w's fork, was merged by
-// hand (see branchMerged). A worker
-// left unnamed in its pane is named (see earlierState). A ticket in progress whose worker is gone is
-// carried over if its session can be resumed (see resumeSession); without one, it has nothing to carry
-// on with: it is warned about and noted, once, and the run goes on. Each of those drops the worker.
-// One it can't check, as bd can't show its ticket or git can't list the worktrees, isn't gone for
-// that: it is kept, saying why, as is one whose check Ctrl+C cut short, without a word; one whose
-// ticket bd has no trace of (ErrNoTicket), as one deleted, is gone, and dropped. The question
-// the ticket now waits on, if any, replaces the one in w, and a ticket labelled UnmergedLabel loses
-// the label when it merges.
+// hand (see branchMerged), and its worktree, branch and tab are removed as after a merge (see
+// dropMerged). A worker left unnamed in its pane is named (see earlierState). A ticket in progress
+// whose worker is gone is carried over if its session can be resumed (see resumeSession); without
+// one, it has nothing to carry on with: it is warned about and noted, once, and the run goes on.
+// Each of those drops the worker. One it can't check, as bd can't show its ticket or git can't list
+// the worktrees, isn't gone for that: it is kept, saying why, as is one whose check Ctrl+C cut
+// short, without a word; one whose ticket bd has no trace of (ErrNoTicket), as one deleted, is gone,
+// and dropped. The question the ticket now waits on, if any, replaces the one in w, and a ticket
+// labelled UnmergedLabel loses the label when it merges.
 func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carryCheck {
 	c := o.cfg
 	br := branchOf(id)
@@ -173,7 +173,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 	}
 	if t.Status == StatusClosed {
 		if commit := branchMerged(ctx, c, o.merger, t, w.fork); commit != "" {
-			o.info("  %s, carried over from the last run, is dropped: %s is on %s already (%s)", id, br, c.Base, commit)
+			o.dropMerged(context.WithoutCancel(ctx), id, commit, *w)
 			return carryDrop
 		}
 	}
@@ -196,6 +196,47 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 	}
 	o.book.setParent(id, t.Parent) // its parent waits for it, should it close in its tab (see openParents)
 	return carryOn
+}
+
+// dropMerged drops ticket id's worker, left by the last run in w, as its ticket is closed and its
+// branch is on Base already (commit naming it there), merged by hand: its worktree, branch and tab
+// are removed as after a merge (see removeWorktree, closeWorkerTab), the branch moved to Base first
+// when Base holds its changes without its commits (see dropBranch), so that git deletes it. A worktree
+// with uncommitted changes is left, with its branch and tab, as a merge's cleanup would refuse to lose
+// them, saying so, as is one git can't say is clean.
+func (o *Loop) dropMerged(ctx context.Context, id, commit string, w workerSpot) {
+	c := o.cfg
+	br := branchOf(id)
+	dropped := fmt.Sprintf("  %s, carried over from the last run, is dropped: %s is on %s already (%s)",
+		id, br, c.Base, commit)
+	dirty, err := o.checkout.DirtyWorktree(ctx, w.wt)
+	switch {
+	case err != nil:
+		o.log.Raw("", err)
+		o.info("%s; worktree %s, %s and tab %s left as they are, as git can't say whether %s has uncommitted changes",
+			dropped, w.wt, br, w.tab, w.wt)
+		return
+	case dirty != "":
+		what := "has uncommitted changes"
+		if files := o.uncommittedList(ctx, w.wt); files != "" {
+			what += " (" + files + ")"
+		}
+		o.info("%s; worktree %s %s, so it, %s and tab %s are left as they are (commit or remove them, then remove it)",
+			dropped, w.wt, what, br, w.tab)
+		return
+	}
+	o.repoMu.Lock()
+	if on, err := o.merger.IsAncestor(ctx, c.Repo, br, c.Base); err != nil || !on {
+		o.dropBranch(ctx, w.wt)
+	}
+	cleaned := o.removeWorktree(ctx, id, w.wt, br)
+	o.repoMu.Unlock()
+	if !cleaned {
+		o.info("%s, but CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open",
+			dropped, w.wt, br, c.LogPath, w.tab)
+		return
+	}
+	o.info("%s; %s", dropped, o.closeWorkerTab(ctx, id, w.tab))
 }
 
 // earlierState reads the state of ticket id's earlier worker by its Herdr name, as readStatus does

@@ -57,6 +57,13 @@ All notable changes to orchestra are documented here. The format follows
   and 10-20 (`Cannot find module '@opentui/keymap'`). A failing check is
   handed back only after the setup has run before it, as before.
 
+- A worker the last run left behind whose ticket was closed and merged by
+  hand meanwhile (`… is dropped: wt/<id> is on main already`) no longer
+  leaves its worktree, branch and tab behind: they are removed as after a
+  merge, the branch moved to the base first when its change was squashed
+  there, so that git deletes it. A worktree with uncommitted changes is
+  kept, with its branch and tab, and the line says so. tutti-nrg.64's
+  worktree and branch were still there on 20 Oct after a run dropped it.
 - A worker handed its ticket back (resolving a conflict, fixing a failing
   check) whose turn ends on the account's usage limit as it finishes no
   longer holds its ticket, and those after it, until the limit resets:
