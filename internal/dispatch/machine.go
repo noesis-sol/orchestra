@@ -20,10 +20,10 @@ import (
 // each other run that it is going (SHARED_MACHINE), and that it has ended; with
 // Config.MachineWorkers, a free slot waits while the workers running across all the runs are at that
 // cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others: every
-// machinePoll while it holds. A file whose PID is gone, or is a process that started after the run did
-// (the PID taken again since), is a run that ended without removing it: it is ignored and removed. A
-// folder that can't be read holds no run, and one removed under the runs (a cache cleaner) is made
-// again as each next writes.
+// machinePoll while it holds, at the hold's end on the gate (see machine.hold). A file whose PID is
+// gone, or is a process that started after the run did (the PID taken again since), is a run that
+// ended without removing it: it is ignored and removed. A folder that can't be read holds no run, and
+// one removed under the runs (a cache cleaner) is made again as each next writes.
 
 // registration is a run's file in the machine's folder of runs.
 type registration struct {
@@ -45,7 +45,8 @@ type machine struct {
 	written bool                    // me is in its file as it is
 	seen    map[string]registration // the other runs' files, by name, as last read
 	others  int                     // the workers running in the other runs, as last read
-	full    bool                    // the run holds a free slot for Config.MachineWorkers, as last said
+	full    bool                    // the run holds a free slot for Config.MachineWorkers, as last said (see hold)
+	gate    *gate                   // the run's, which the hold is on
 	process func(pid int) (start time.Time, alive bool)
 }
 
@@ -53,7 +54,7 @@ type machine struct {
 // file it can't make is logged, and the run goes on without one, still reading the others'.
 func (o *Loop) register() *machine {
 	c := o.cfg
-	m := &machine{dir: c.Machine, seen: map[string]registration{}, process: o.process,
+	m := &machine{dir: c.Machine, seen: map[string]registration{}, gate: &o.gate, process: o.process,
 		me: registration{PID: os.Getpid(), Repo: c.Repo, Concurrent: c.Concurrency, Started: o.started}}
 	if m.process == nil {
 		m.process = runningProcess
@@ -264,8 +265,7 @@ func (r *runState) lookAround() {
 		r.o.emit(ev)
 	}
 	if !r.atCap() {
-		r.machine.full = false
-		r.o.merges.machineFull.Store(false)
+		r.machine.hold(false)
 		if r.fullShown {
 			r.reportQueue(r.queued)
 		}
@@ -285,13 +285,10 @@ func (r *runState) atCap() bool {
 func (r *runState) machineFull() bool {
 	m, limit, own := r.machine, r.o.cfg.MachineWorkers, len(r.inflight)
 	if !r.atCap() {
-		m.full = false
-		r.o.merges.machineFull.Store(false)
+		m.hold(false)
 		return false
 	}
-	r.o.merges.machineFull.Store(true) // no ticket waiting to merge is checked ahead of its turn meanwhile
-	if !m.full {
-		m.full = true
+	if m.hold(true) {
 		r.o.emit(Event{Kind: EvMachine, Text: fmt.Sprintf(
 			"HOLD: MACHINE: the machine's orchestra runs have %s running, %d of them this run's, at the cap of %d "+
 				"(ORCHESTRA_MACHINE_WORKERS); the next ticket starts once one of them finishes",
@@ -300,20 +297,29 @@ func (r *runState) machineFull() bool {
 	return true
 }
 
-// heldPoll returns a channel that ticks every machinePoll while the run holds a free slot for
-// Config.MachineWorkers, nil (which never ticks) while it doesn't, and the function that stops it.
-func (r *runState) heldPoll() (<-chan time.Time, func()) {
-	if !r.machine.full || !r.taking() {
-		return nil, func() {}
+// hold sets whether the run holds a free slot for Config.MachineWorkers, and reports whether it began
+// to. The hold is on the gate (gateMachine), where the merges read it, so that no ticket waiting to
+// merge is checked ahead of its turn meanwhile, with its end machinePoll on, when Run reads the other
+// runs again (see runState.machineEnd).
+func (m *machine) hold(full bool) (began bool) {
+	began = full && !m.full
+	m.full = full
+	switch {
+	case began:
+		m.gate.set(gateMachine, gateHold{on: true, until: time.Now().Add(machinePoll)})
+	case !full:
+		m.gate.set(gateMachine, gateHold{})
 	}
-	t := time.NewTicker(machinePoll)
-	return t.C, t.Stop
+	return began
 }
 
-// stillHeld reads the other runs as heldPoll ticks (see lookAround), and reports whether the run still
-// holds for Config.MachineWorkers: only once it doesn't does Run go round to start the next ticket,
-// reading bd ready, which it would otherwise do every machinePoll.
-func (r *runState) stillHeld() bool {
+// machineEnd is Run's turn as the gate wakes it at the end of the hold for Config.MachineWorkers, every
+// machinePoll while it holds: it reads the other runs (see lookAround), lifting the hold once they are
+// under the cap, else setting its next end. Only once it lifts does Run go round to start the next
+// ticket, reading bd ready, which it would otherwise do every machinePoll.
+func (r *runState) machineEnd(now time.Time) {
 	r.lookAround()
-	return r.machine.full
+	if r.machine.full {
+		r.o.gate.set(gateMachine, gateHold{on: true, until: now.Add(machinePoll)})
+	}
 }

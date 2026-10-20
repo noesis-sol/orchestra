@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -89,17 +90,35 @@ func TestRunsWaitWakesForTheGate(t *testing.T) {
 			t.Errorf("woken: %v, want the gate", why)
 		}
 
+		// At its end, a hold does what it registered to: lifting, it wakes Run for the gate.
 		start := time.Now()
+		var ends []time.Duration
+		o.gate.register(gateDrain, func(now time.Time) {
+			ends = append(ends, now.Sub(start))
+			if len(ends) == 1 {
+				o.gate.set(gateDrain, gateHold{on: true, until: now.Add(time.Hour)})
+				return
+			}
+			o.gate.set(gateDrain, gateHold{})
+		})
 		o.gate.set(gateDrain, gateHold{on: true, until: start.Add(time.Hour)})
-		if why, _ := r.wait(waits{timer: time.After(2 * time.Hour)}); why != wokeGate {
-			t.Errorf("at the hold's end: %v, want the gate", why)
+		if why, _ := r.wait(waits{timer: time.After(3 * time.Hour)}); why != wokeEnd {
+			t.Errorf("at the hold's end, holding on: %v, want its end", why)
 		}
-		if waited := time.Since(start); waited != time.Hour {
-			t.Errorf("waited %v, want the hold's hour", waited)
+		if why, _ := r.wait(waits{timer: time.After(3 * time.Hour)}); why != wokeGate || o.gate.held(gateDrain) {
+			t.Errorf("at the hold's next end, lifting: %v, held %v; want the gate", why, o.gate.held(gateDrain))
 		}
-		// Come to its end, a hold lifts or moves its end: until then the gate wakes Run at once.
-		if why, _ := r.wait(waits{}); why != wokeGate {
-			t.Errorf("past the hold's end: %v, want the gate", why)
+		if want := []time.Duration{time.Hour, 2 * time.Hour}; !slices.Equal(ends, want) {
+			t.Errorf("ends at %v, want %v", ends, want)
+		}
+		// A hold come to its end with nothing to do there wakes Run once, not again.
+		o.gate.register(gateDrain, nil)
+		o.gate.set(gateDrain, gateHold{on: true, until: time.Now().Add(time.Minute)})
+		if why, _ := r.wait(waits{}); why != wokeEnd || !o.gate.held(gateDrain) || !o.gate.until(gateDrain).IsZero() {
+			t.Errorf("at its end: %v, held %v until %v", why, o.gate.held(gateDrain), o.gate.until(gateDrain))
+		}
+		if why, _ := r.wait(waits{timer: time.After(time.Hour)}); why != wokeTimer {
+			t.Errorf("past its end: %v, want the timer", why)
 		}
 		o.gate.set(gateDrain, gateHold{on: true, why: "the run is winding down"})
 

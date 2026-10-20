@@ -25,7 +25,7 @@ func TestAnOrganHoldLiftsAtTheResetWhileWorkersRun(t *testing.T) {
 		var o *Loop
 		h.beads.add("A", "runs for hours", 1)
 		h.worker("A", func(w *fakeWorker) AgentState {
-			o.organLimited("triage of Q", said)
+			o.usage.refused("triage of Q", said)
 			readyOnceHeld(h, "B", "ready while the run holds", 2)
 			return carriesOn(hooks, "a.txt", 3*time.Hour)(w)
 		})

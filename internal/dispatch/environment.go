@@ -191,9 +191,9 @@ const probeID = "orchestra-probe"
 const probeLimit = 5 * time.Minute
 
 // probeEnvironment is Run's next step when nothing runs and stop is the only reason to stop: with
-// the run held for the environment, and not probed yet, it waits Config.EnvProbe and then probes
-// the machine. It returns nil when the probe ran its command and the hold has ended, or else the
-// reason to end the run with, as it does once the maintainer asks to wind down.
+// the run held for the environment, and not probed yet, it waits Config.EnvProbe, the hold's end on the
+// gate, and then probes the machine. It returns nil when the probe ran its command and the hold has
+// lifted, or else the reason to end the run with, as it does once the maintainer asks to wind down.
 func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
 	o, ctx := r.o, r.ctx
 	after := o.cfg.EnvProbe
@@ -205,19 +205,17 @@ func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
 		"PROBE: the run holds for the environment; "+
 			"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
 		command.ShortDuration(after))})
-	wait := time.NewTimer(after)
-	defer wait.Stop()
-	// Held already, a verdict changes nothing but the row.
-	for waiting := true; waiting; {
-		switch why, _ := r.wait(waits{timer: wait.C}); why {
+	// The probe is the hold's end on the gate, which wakes Run then (see gate.lapse). Held already, a
+	// verdict changes nothing but the row.
+	o.gate.set(gateEnv, gateHold{on: true, until: time.Now().Add(after)})
+	for !o.gate.until(gateEnv).IsZero() {
+		switch why, _ := r.wait(waits{}); why {
 		case wokeDone:
 			return stop
 		case wokeDrain:
 			if r.drained() {
 				return stop
 			}
-		case wokeTimer:
-			waiting = false
 		default:
 		}
 	}
@@ -235,6 +233,7 @@ func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
 	// tickets whose setup failed are taken again, as those reopened are.
 	o.envGen.Add(1)
 	o.envStop, o.fastFails, o.envVerdicts = nil, nil, nil
+	o.gate.set(gateEnv, gateHold{})
 	o.retrySetups()
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
 		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again",

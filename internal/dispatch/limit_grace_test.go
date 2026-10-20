@@ -250,12 +250,12 @@ func TestAnOrganRefusedForTheLimitStartsTheHold(t *testing.T) {
 	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
 	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
 	o.FinishTriage(context.Background())
-	if !o.limitHolds() {
+	if !o.usage.holds() {
 		t.Fatalf("the run doesn't hold:\n%s", sink.text())
 	}
-	o.limitMu.Lock()
-	reset := o.limitReset
-	o.limitMu.Unlock()
+	o.usage.mu.Lock()
+	reset := o.usage.reset
+	o.usage.mu.Unlock()
 	if want := LimitReset(limitWords, before); !reset.Equal(want) {
 		t.Errorf("the hold's reset is %s, want %s, as Claude Code's words say", reset, want)
 	}

@@ -161,7 +161,7 @@ func pronoun(under []Finishing) string {
 // for a running ticket to finish before picking them up.
 const readyPoll = 30 * time.Second
 
-// machinePoll is how often a run held for Config.MachineWorkers reads the other runs (see heldPoll), so
+// machinePoll is how often a run held for Config.MachineWorkers reads the other runs (see machine.hold), so
 // that a slot another run's worker frees is filled within seconds rather than at the next readyPoll.
 const machinePoll = 2 * time.Second
 
@@ -216,33 +216,25 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 			return r.end()
 		}
-		reset, stopReset := o.resetTimer()
-		held, stopHeld := r.heldPoll()
-		w := waits{results: r.results, joined: o.merges.joined, filing: r.filing, timer: reset, poll: poll.C, held: held}
+		w := waits{results: r.results, joined: o.merges.joined, filing: r.filing, poll: poll.C}
 		for waiting := true; waiting; {
 			waiting = false
-			// A verdict's hold is picked up above, a request heard, and once the usage limit lifts (the
-			// gate) or a ticket goes to merge, freeing its slot, tickets start above.
+			// A verdict's hold is picked up above, a request heard, and once a hold lifts (the gate) or a
+			// ticket goes to merge, freeing its slot, tickets start above.
 			switch why, res := r.wait(w); why {
 			case wokeResult:
 				r.returned(res)
 			case wokeFiled: // the rest of the scope is filed: its tickets start above
 				r.filed()
-			case wokeTimer:
-				o.liftAtReset() // and tickets start again above
 			case wokePoll:
 				r.polled()
-			case wokeHeld:
-				waiting = r.stillHeld() // waits on while the machine is full; once a slot frees, starts it above
+			case wokeEnd:
+				waiting = true // a hold came to its end and holds on, as the machine still full: nothing starts
 			case wokeDone:
-				stopReset()
-				stopHeld()
 				return r.end()
 			default:
 			}
 		}
-		stopReset()
-		stopHeld()
 	}
 }
 
@@ -311,8 +303,7 @@ type runState struct {
 	// count: the tickets dispatched but not requeued, with those done in earlier runs (Config.DoneSoFar),
 	// which hold the run at Config.Limit (see setCount); the run's stops and whether it winds down are the
 	// gate's (Loop.gate)
-	count   int
-	envSaid bool // the hold for the environment is taken up
+	count int
 	// filing: closed once the scope is filed (Config.Filing), until when only its first ticket starts;
 	// nil when there is no filing, or once it is over
 	filing <-chan struct{}
@@ -348,6 +339,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(), filing: o.cfg.filingDone(),
 	}
 	r.setCount(o.cfg.DoneSoFar)
+	o.gate.register(gateMachine, r.machineEnd)
 	return r
 }
 
@@ -401,14 +393,13 @@ func (r *runState) sayHold(s *stopReason, ticket string) {
 }
 
 // taking reports whether the run takes new tickets: the gate is open (nothing has stopped the run,
-// the maintainer hasn't asked it to wind down, Config.Limit isn't reached), and it doesn't hold for the
-// usage limit.
-func (r *runState) taking() bool {
-	return r.wouldTake() && !r.o.limitHolds()
-}
+// the maintainer hasn't asked it to wind down, Config.Limit isn't reached, it doesn't hold for the
+// usage limit), but for the machine's cap on workers, which the ticket to start waits for (see
+// machineFull).
+func (r *runState) taking() bool { return r.o.gate.open(gateMachine) }
 
 // wouldTake reports whether the run would take new tickets but for the usage limit (see taking).
-func (r *runState) wouldTake() bool { return r.o.gate.open() }
+func (r *runState) wouldTake() bool { return r.o.gate.open(gateMachine, gateUsage) }
 
 // hear logs a request to wind down or to take tickets again, when it changes anything, and says
 // whether the run winds down. The gate holds the run while it does, which the merges read at once.
@@ -434,13 +425,14 @@ func (r *runState) takeDrainRequest() bool {
 }
 
 // heedEnvironment takes up the hold for the environment, once workers fail at once whichever
-// ticket they have: said once, before another ticket starts.
+// ticket they have: on the gate (gateEnv), with its reason among the run's stops, and said once, before
+// another ticket starts.
 func (r *runState) heedEnvironment() {
 	s := r.o.envStop
-	if s == nil || r.envSaid {
+	if s == nil || r.o.gate.held(gateEnv) {
 		return
 	}
-	r.envSaid = true
+	r.o.gate.set(gateEnv, gateHold{on: true})
 	r.addStop(s)
 	r.sayHold(s, "")
 }
@@ -567,7 +559,7 @@ func (r *runState) goOnWhenEmpty() bool {
 	if r.follow() {
 		return true
 	}
-	if r.wouldTake() && r.o.limitHolds() {
+	if r.wouldTake() && r.o.usage.holds() {
 		return r.waitOutLimit()
 	}
 	// Held for the environment, the run may probe the machine and take tickets again.
@@ -577,11 +569,7 @@ func (r *runState) goOnWhenEmpty() bool {
 	}
 	s = r.probeEnvironment(s)
 	r.o.gate.replaceStop(s)
-	if s != nil {
-		return false
-	}
-	r.envSaid = false
-	return true
+	return s == nil
 }
 
 // returned takes a worker's result: its ticket no longer runs, and the reason it stopped the run

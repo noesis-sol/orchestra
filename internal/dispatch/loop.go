@@ -52,7 +52,7 @@ type Loop struct {
 	predictor              // predicting footprints, under predictMu
 	triageQueue            // triage's queue, set by StartTriage before any worker runs
 	envHold                // holding for the environment: Run's own, and triage's once Run has returned
-	usageHold              // holding for the account's usage limit, under limitMu
+	usage       *usageHold // holding for the account's usage limit, under its own lock
 	gate        gate       // why the run takes no new tickets, under its own lock: Run's to set, the merges' to read
 
 	started   time.Time
@@ -211,11 +211,12 @@ type triageQueue struct {
 // envHold is the hold for the environment, Run's own until Run has returned (runDone), then
 // triage's: the tickets whose workers failed at once, or whose setup failed, in a row, the tickets
 // triage blamed on the environment in a row, the reason once the run holds, with why, and whether the
-// machine was probed in this run. Workers say how they settled on their result; triage hands its verdicts over on
-// verdicts until Run has returned, then counts them itself, as nothing else does by then. envGen
-// counts the holds a probe has ended: each deferral is stamped with it as it is queued for triage,
-// and its verdict counts toward the hold only while envGen is unchanged. Only Run changes it, but
-// workers read it as they defer: atomic.
+// machine was probed in this run. Run puts the hold on the gate (gateEnv) as it takes it up, with the
+// probe's time as its end (see probeEnvironment). Workers say how they settled on their result;
+// triage hands its verdicts over on verdicts until Run has returned, then counts them itself, as
+// nothing else does by then. envGen counts the holds a probe has ended: each deferral is stamped with
+// it as it is queued for triage, and its verdict counts toward the hold only while envGen is
+// unchanged. Only Run changes it, but workers read it as they defer: atomic.
 type envHold struct {
 	fastFails   []fastFail
 	envVerdicts []string
@@ -229,7 +230,7 @@ type envHold struct {
 
 // New sets up a run: the worker prompt (with TICKET_ID), and its connections.
 func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
-	return &Loop{
+	o := &Loop{
 		cfg: cfg, log: log, prompt: prompt,
 		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
 		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
@@ -237,6 +238,8 @@ func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 		merges:    mergeQueue{joined: make(chan struct{}, 1)},
 		drainReqs: make(chan drainRequest, 1),
 	}
+	o.usage = newUsageHold(&o.gate, o.emit, cfg.UsageLimitWait)
+	return o
 }
 
 // Final is the line the run ended with.

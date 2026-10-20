@@ -47,91 +47,124 @@ const (
 	escapeSettle = time.Second
 )
 
-// usageHold is the run's hold for the usage limit, all under limitMu: the workers' polls (see
-// limitPoll) and Run (see waitOutLimit, liftAtReset) share it. A hold lifting wakes Run (see
-// gate.wakeRun), to take tickets again.
+// usageHold is the run's hold for the usage limit, all under mu: the workers' polls (see limitPoll),
+// the organs (see refused) and Run (see waitOutLimit) share it. It holds the gate (gateUsage) while it
+// holds, with its end at its known reset (see resetDue), when Run, woken by the gate whatever else
+// happens, lifts it (see atEnd), as no limited worker's poll may: the hold an organ started, or one
+// whose workers went on with room left, or are in long commands, never limited. A hold lifting wakes
+// Run (see gate.change), to take tickets again. Its events go to emit, once mu is let go.
 type usageHold struct {
-	limitMu     sync.Mutex
-	limitOn     bool      // the run holds for the limit
-	limitSince  time.Time // when the hold began
-	limitReset  time.Time // when the limit resets, as the hold read it; zero: not known
-	limitTried  time.Time // when one limited worker was last told to carry on to try the limit, in this hold
-	limitTrying string    // that worker's ticket, until its try is over; "" for none
-	limitLifted time.Time // when a hold last lifted; zero: none has
+	gate *gate
+	emit func(Event)
+	wait time.Duration // Config.UsageLimitWait
+
+	mu     sync.Mutex
+	on     bool      // the run holds for the limit
+	since  time.Time // when the hold began
+	reset  time.Time // when the limit resets, as the hold read it; zero: not known
+	tried  time.Time // when one limited worker was last told to carry on to try the limit, in this hold
+	trying string    // that worker's ticket, until its try is over; "" for none
+	lifted time.Time // when a hold last lifted; zero: none has
 }
 
-// limitHolds reports whether the run holds for the usage limit.
-func (o *Loop) limitHolds() bool {
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
-	return o.limitOn
+// newUsageHold is the hold for the usage limit of a run whose gate is g, which it registers with,
+// emitting its events to emit, and giving up after wait (Config.UsageLimitWait).
+func newUsageHold(g *gate, emit func(Event), wait time.Duration) *usageHold {
+	h := &usageHold{gate: g, emit: emit, wait: wait}
+	g.register(gateUsage, h.atEnd)
+	return h
 }
 
-// limitDue is when the hold next acts: a resetGrace after the reset, when known, then lifting; else
-// limitRetry after it began or its last try, then telling one limited worker to carry on. Never sooner
-// than limitRetry after a hold last lifted. The caller holds limitMu.
-func (h *usageHold) limitDue() time.Time {
-	if !h.limitReset.IsZero() {
-		return later(h.limitReset.Add(resetGrace), h.limitLifted.Add(limitRetry))
+// holds reports whether the run holds for the usage limit.
+func (h *usageHold) holds() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.on
+}
+
+// unlock lets go of mu, the gate told first how the hold now stands (see gate.change), with its end
+// (see resetDue).
+func (h *usageHold) unlock() {
+	h.gate.change(gateUsage, gateHold{on: h.on, until: h.resetDue()})
+	h.mu.Unlock()
+}
+
+// say emits evs in order: those made under mu, emitted once it is let go.
+func (h *usageHold) say(evs []Event) {
+	for _, ev := range evs {
+		h.emit(ev)
 	}
-	return later(h.limitSince, h.limitTried).Add(limitRetry)
 }
 
-// resetDue is when the hold lifts at its known reset (limitDue), as Run waits for it while workers run;
-// zero when the run doesn't hold, the reset isn't known, or the hold gives up first, after wait
-// (Config.UsageLimitWait). The caller holds limitMu.
-func (h *usageHold) resetDue(wait time.Duration) time.Time {
-	if !h.limitOn || h.limitReset.IsZero() {
+// due is when the hold next acts: a resetGrace after the reset, when known, then lifting; else
+// limitRetry after it began or its last try, then telling one limited worker to carry on. Never sooner
+// than limitRetry after a hold last lifted. The caller holds mu.
+func (h *usageHold) due() time.Time {
+	if !h.reset.IsZero() {
+		return later(h.reset.Add(resetGrace), h.lifted.Add(limitRetry))
+	}
+	return later(h.since, h.tried).Add(limitRetry)
+}
+
+// resetDue is the hold's end on the gate: when it lifts at its known reset (due); zero when the run
+// doesn't hold, the reset isn't known, or the hold gives up first, after wait. The caller holds mu.
+func (h *usageHold) resetDue() time.Time {
+	if !h.on || h.reset.IsZero() {
 		return time.Time{}
 	}
-	if due := h.limitDue(); due.Before(h.limitSince.Add(wait)) {
+	if due := h.due(); due.Before(h.since.Add(h.wait)) {
 		return due
 	}
 	return time.Time{}
 }
 
-// resetTimer is Run's timer for the hold's reset while workers run (see resetDue): fire fires then, for
-// Run to lift the hold (see liftAtReset), as no limited worker's poll may: the hold an organ started,
-// or one whose workers went on with room left, or are in long commands, never limited. fire is nil
-// when there is none to wait for; stop stops it.
-func (o *Loop) resetTimer() (fire <-chan time.Time, stop func() bool) {
-	o.limitMu.Lock()
-	due := o.resetDue(o.cfg.UsageLimitWait)
-	o.limitMu.Unlock()
-	if due.IsZero() {
-		return nil, func() bool { return false }
-	}
-	t := time.NewTimer(time.Until(due))
-	return t.C, t.Stop
-}
-
-// liftAtReset is Run's turn as resetTimer fires: the hold lifts, if it holds still and is due, to take
-// tickets again; the workers still limited are told to carry on at their next poll (see limitTurn).
-func (o *Loop) liftAtReset() {
+// atEnd is Run's turn as the gate wakes it at the hold's end (see resetDue): the hold lifts, if it
+// holds still and is due, to take tickets again; the workers still limited are told to carry on at
+// their next poll (see turn).
+func (h *usageHold) atEnd(now time.Time) {
 	var say []Event
-	defer func() { o.emitAll(say) }()
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
-	now := time.Now()
-	if due := o.resetDue(o.cfg.UsageLimitWait); !due.IsZero() && !now.Before(due) {
-		say = append(say, o.liftLimit(now, fmt.Sprintf("the limit reset at %s; taking tickets again",
-			ResetLabel(o.limitReset, now))))
+	defer func() { h.say(say) }()
+	h.mu.Lock()
+	defer h.unlock()
+	if due := h.resetDue(); !due.IsZero() && !now.Before(due) {
+		say = append(say, h.lift(now, fmt.Sprintf("the limit reset at %s; taking tickets again",
+			ResetLabel(h.reset, now))))
 	}
 }
 
-// liftLimit lifts the hold at now, for why, waking Run, and returns the event that says so. The
-// caller holds limitMu.
-func (o *Loop) liftLimit(now time.Time, why string) Event {
-	o.limitOn, o.limitLifted, o.limitTrying = false, now, ""
-	o.gate.wakeRun()
+// lift lifts the hold at now, for why, and returns the event that says so. The caller holds mu, and
+// lets go of it with unlock, which wakes Run.
+func (h *usageHold) lift(now time.Time, why string) Event {
+	h.on, h.lifted, h.trying = false, now, ""
 	return Event{Kind: EvLimitLift, Text: "USAGE_LIMIT lifted: " + why}
 }
 
-// emitAll emits evs in order: those made under a lock, emitted once it is let go.
-func (o *Loop) emitAll(evs []Event) {
-	for _, ev := range evs {
-		o.emit(ev)
+// idle is waitOutLimit's turn on the hold at now, with nothing running: once due (see due), and before
+// it has lasted wait, it lifts, to take tickets again, the next to start trying the limit when its reset
+// isn't known. It reports whether it holds still, and then when it began, its reset, and when Run next
+// looks at it: when due, or when it gives up, whichever comes first.
+func (h *usageHold) idle(now time.Time) (holds bool, since, reset, next time.Time) {
+	var say []Event
+	defer func() { h.say(say) }()
+	h.mu.Lock()
+	defer h.unlock()
+	if !h.on {
+		return false, time.Time{}, time.Time{}, time.Time{}
 	}
+	due, giveUp := h.due(), h.since.Add(h.wait)
+	if now.Before(giveUp) && !now.Before(due) {
+		why := fmt.Sprintf("the limit reset at %s; taking tickets again", ResetLabel(h.reset, now))
+		if h.reset.IsZero() {
+			why = fmt.Sprintf("%s on, and no limited worker is left to try it; taking tickets again, the next "+
+				"to start trying it", command.ShortDuration(limitRetry))
+		}
+		say = append(say, h.lift(now, why))
+		return false, time.Time{}, time.Time{}, time.Time{}
+	}
+	if giveUp.Before(due) {
+		due = giveUp
+	}
+	return true, h.since, h.reset, due
 }
 
 // ResetLabel is when a usage limit resets, as the log and the dashboard say it at now, in the local
@@ -218,22 +251,22 @@ func LimitReset(message string, at time.Time) time.Time {
 	return time.Date(year, month.Month(), day, hour, minute, 0, 0, loc)
 }
 
-// organLimited is the run's turn on an organ call, what (as "triage of X"), that the account's usage limit
+// refused is the hold's turn on an organ call, what (as "triage of X"), that the account's usage limit
 // refused, Claude Code saying said of it (organ.UsageLimit): the workers share the account, so the run holds
 // for the limit, as for a worker that reached it, when it doesn't already; the limit resets when said says.
-func (o *Loop) organLimited(what, said string) {
+func (h *usageHold) refused(what, said string) {
 	var say []Event
-	defer func() { o.emitAll(say) }()
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
+	defer func() { h.say(say) }()
+	h.mu.Lock()
+	defer h.unlock()
 	now := time.Now()
 	reset := LimitReset(said, now)
 	switch {
-	case !o.limitOn:
-		say = append(say, o.holdForLimit("", what+" was refused for the usage limit",
+	case !h.on:
+		say = append(say, h.begin("", what+" was refused for the usage limit",
 			&limitWait{at: now, reset: reset, message: said}, now))
-	case o.limitReset.IsZero() && !reset.IsZero():
-		o.limitReset = reset
+	case h.reset.IsZero() && !reset.IsZero():
+		h.reset = reset
 		say = append(say, Event{Kind: EvInfo, Text: fmt.Sprintf("  USAGE_LIMIT: %s, as %s's refusal says",
 			resetsSaid(reset, now), what)})
 	}
@@ -296,7 +329,7 @@ func (l *limitWait) leave(now time.Time, st AgentState) {
 	}
 }
 
-// What a limited worker does at a poll, as the hold says (see limitTurn).
+// What a limited worker does at a poll, as the hold says (see usageHold.turn).
 type limitAction int
 
 const (
@@ -309,22 +342,22 @@ const (
 // that finds it in state st (not gone), its hooks having reported h; lw is what it keeps of it. A
 // limited worker joins the hold, starting one if the run has none, and is told to carry on with msg
 // when the hold says (told: it took that up; see tellAfterLimit), or stops the run (stop) once the
-// hold has gone on for Config.UsageLimitWait (see limitTurn). One seen going on after the limit for
-// limitCarried lifts the hold (see limitCarriedOn).
+// hold has gone on for Config.UsageLimitWait (see usageHold.turn). One seen going on after the limit for
+// limitCarried lifts the hold (see usageHold.carriedOn).
 func (o *Loop) limitPoll(ctx context.Context, w worker, st AgentState, h hooksSeen, lw *limitWait, msg string) (
 	stop *stopReason, told bool) {
 	now := time.Now()
 	if st != StateLimited {
 		lw.leave(now, st)
 		if !lw.carrying.IsZero() && now.Sub(lw.carrying) >= limitCarried {
-			o.limitCarriedOn(w.id, lw.carrying)
+			o.usage.carriedOn(w.id, lw.carrying)
 			lw.left, lw.carrying = false, time.Time{}
 		}
 		return nil, false
 	}
 	// Its hooks report the limit its last turn ended on, whenever that was: one adopted reports it too.
 	lw.enter(now, h.use.Limit)
-	switch o.limitTurn(w.id, lw, now) {
+	switch o.usage.turn(w.id, lw, now) {
 	case limitTells:
 		return nil, o.tellAfterLimit(ctx, w, lw, msg)
 	case limitGivesUp:
@@ -376,78 +409,78 @@ func (o *Loop) undeferAtLimit(ctx context.Context, id string) {
 		"to carry on after the reset", id)
 }
 
-// limitTurn takes a poll at now that finds ticket id's worker limited, as lw has it, and says what the
+// turn takes a poll at now that finds ticket id's worker limited, as lw has it, and says what the
 // worker does. A worker limited since before the last hold lifted, or whose limit has reset already
 // (when the hold would lift at once), is told to carry on, once, then again only limitRetry later; any
 // other starts a hold, unless the run holds already. Then:
 //   - the hold gone on for Config.UsageLimitWait: it stops the run;
-//   - before the hold is due (limitDue): it waits;
+//   - before the hold is due (see due): it waits;
 //   - the reset known: the hold lifts, and it is told to carry on;
 //   - the reset not known: it is told to carry on, to try the limit, unless another try is out, or it
 //     was told less than limitRetry ago. The try is over once it reaches the limit again, goes on, or
 //     limitRetry has passed.
-func (o *Loop) limitTurn(id string, lw *limitWait, now time.Time) limitAction {
+func (h *usageHold) turn(id string, lw *limitWait, now time.Time) limitAction {
 	var say []Event
-	defer func() { o.emitAll(say) }() // runs after the deferred unlock below
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
+	defer func() { h.say(say) }() // runs after the deferred unlock below
+	h.mu.Lock()
+	defer h.unlock()
 	switch {
-	case o.limitTrying == "":
-	case o.limitTrying == id && lw.at.After(o.limitTried):
-		o.limitTrying = ""
+	case h.trying == "":
+	case h.trying == id && lw.at.After(h.tried):
+		h.trying = ""
 		say = append(say, Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
 			"  USAGE_LIMIT: %s's worker reached the usage limit again; the next try is at %s",
-			id, ResetLabel(o.limitTried.Add(limitRetry), now))})
-	case now.Sub(o.limitTried) >= limitRetry: // it never showed how the try went
-		o.limitTrying = ""
+			id, ResetLabel(h.tried.Add(limitRetry), now))})
+	case now.Sub(h.tried) >= limitRetry: // it never showed how the try went
+		h.trying = ""
 	}
-	if !o.limitOn {
+	if !h.on {
 		switch {
-		case !o.limitLifted.IsZero() && !lw.at.After(o.limitLifted): // limited since before the hold lifted
-			if lw.told.Before(o.limitLifted) || now.Sub(lw.told) >= limitRetry {
+		case !h.lifted.IsZero() && !lw.at.After(h.lifted): // limited since before the hold lifted
+			if lw.told.Before(h.lifted) || now.Sub(lw.told) >= limitRetry {
 				return limitTells
 			}
 			return limitWaits
-		case !lw.reset.IsZero() && !now.Before(later(lw.reset.Add(resetGrace), o.limitLifted.Add(limitRetry))):
+		case !lw.reset.IsZero() && !now.Before(later(lw.reset.Add(resetGrace), h.lifted.Add(limitRetry))):
 			// Its limit has reset already, as a worker an earlier run left may find: told at once, no hold.
 			if lw.told.IsZero() || now.Sub(lw.told) >= limitRetry {
 				return limitTells
 			}
 			return limitWaits
 		}
-		say = append(say, o.holdForLimit(id, id+"'s worker reached the usage limit", lw, now))
-	} else if o.limitReset.IsZero() && !lw.reset.IsZero() {
-		o.limitReset = lw.reset
+		say = append(say, h.begin(id, id+"'s worker reached the usage limit", lw, now))
+	} else if h.reset.IsZero() && !lw.reset.IsZero() {
+		h.reset = lw.reset
 		say = append(say, Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
 			"  USAGE_LIMIT: %s, as %s's worker's limit says", resetsSaid(lw.reset, now), id)})
 	}
 	switch {
-	case now.Sub(o.limitSince) >= o.cfg.UsageLimitWait:
+	case now.Sub(h.since) >= h.wait:
 		return limitGivesUp
-	case now.Before(o.limitDue()):
+	case now.Before(h.due()):
 		return limitWaits
-	case !o.limitReset.IsZero():
-		say = append(say, o.liftLimit(now, fmt.Sprintf(
+	case !h.reset.IsZero():
+		say = append(say, h.lift(now, fmt.Sprintf(
 			"the limit reset at %s; telling the workers still limited to carry on, and taking tickets again",
-			ResetLabel(o.limitReset, now))))
+			ResetLabel(h.reset, now))))
 		return limitTells
-	case o.limitTrying != "" || !lw.told.IsZero() && now.Sub(lw.told) < limitRetry:
+	case h.trying != "" || !lw.told.IsZero() && now.Sub(lw.told) < limitRetry:
 		return limitWaits
 	}
-	o.limitTrying, o.limitTried = id, now
+	h.trying, h.tried = id, now
 	say = append(say, Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
 		"  USAGE_LIMIT: telling %s's worker to carry on, to see whether the limit has lifted", id)})
 	return limitTells
 }
 
-// holdForLimit starts a hold at now, for ticket id's worker, limited as lw has it ("" and the limit an
+// begin starts a hold at now, for ticket id's worker, limited as lw has it ("" and the limit an
 // organ was refused for), and returns the event that says so, why: what reached the limit. The caller
-// holds limitMu.
-func (o *Loop) holdForLimit(id, why string, lw *limitWait, now time.Time) Event {
-	o.limitOn, o.limitSince, o.limitReset = true, now, lw.reset
-	o.limitTried, o.limitTrying = time.Time{}, ""
+// holds mu.
+func (h *usageHold) begin(id, why string, lw *limitWait, now time.Time) Event {
+	h.on, h.since, h.reset = true, now, lw.reset
+	h.tried, h.trying = time.Time{}, ""
 	text := fmt.Sprintf("USAGE_LIMIT: %s; %s", why, resetsSaid(lw.reset, now))
-	switch wait := o.cfg.UsageLimitWait; {
+	switch wait := h.wait; {
 	case wait <= 0:
 		text += "; the run doesn't wait for it (usage_limit_wait 0)"
 	case lw.reset.IsZero():
@@ -459,34 +492,34 @@ func (o *Loop) holdForLimit(id, why string, lw *limitWait, now time.Time) Event 
 	return Event{Kind: EvLimited, Ticket: id, Detail: lw.message, Reset: lw.reset, Text: text}
 }
 
-// limitCarriedOn lifts the hold, if one holds since before ticket id's worker went on after the limit,
+// carriedOn lifts the hold, if one holds since before ticket id's worker went on after the limit,
 // at from: the limit has lifted, or it would have reached it again. Its try is over, if it was one.
-func (o *Loop) limitCarriedOn(id string, from time.Time) {
+func (h *usageHold) carriedOn(id string, from time.Time) {
 	var say []Event
-	defer func() { o.emitAll(say) }()
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
-	if o.limitOn && !from.Before(o.limitSince) {
-		say = append(say, o.liftLimit(time.Now(), fmt.Sprintf("%s's worker went on past the limit; telling the "+
+	defer func() { h.say(say) }()
+	h.mu.Lock()
+	defer h.unlock()
+	if h.on && !from.Before(h.since) {
+		say = append(say, h.lift(time.Now(), fmt.Sprintf("%s's worker went on past the limit; telling the "+
 			"workers still limited to carry on, and taking tickets again", id)))
 	}
-	if o.limitTrying == id {
-		o.limitTrying = ""
+	if h.trying == id {
+		h.trying = ""
 	}
 }
 
-// limitDone is waitSettled's end on the usage limit for ticket id's worker, as lw has it: settled
+// done is waitSettled's end on the usage limit for ticket id's worker, as lw has it: settled
 // (idleAt, no stop) once it went on after the limit, it carried on past it, as a turn the limit refuses
 // ends without settling. Either way, its try is over, if it was one.
-func (o *Loop) limitDone(id string, lw *limitWait, idleAt time.Time, stop *stopReason) {
+func (h *usageHold) done(id string, lw *limitWait, idleAt time.Time, stop *stopReason) {
 	if stop == nil && !idleAt.IsZero() && !lw.carrying.IsZero() {
-		o.limitCarriedOn(id, lw.carrying)
+		h.carriedOn(id, lw.carrying)
 		return
 	}
-	o.limitMu.Lock()
-	defer o.limitMu.Unlock()
-	if o.limitTrying == id {
-		o.limitTrying = ""
+	h.mu.Lock()
+	defer h.unlock()
+	if h.trying == id {
+		h.trying = ""
 	}
 }
 
@@ -549,39 +582,22 @@ func (o *Loop) limitStop(ctx context.Context, w worker, lw *limitWait) *stopReas
 
 // waitOutLimit is Run's step once nothing runs while the run holds for the usage limit and would take
 // tickets but for it, as when the limited workers have left their tabs. It waits until the hold is due
-// (see limitDue), then lifts it, to take tickets again: the next to start tries the limit when its reset
-// isn't known. It reports whether the run goes on: not once the hold has lasted Config.UsageLimitWait,
-// which stops it (USAGE_LIMIT), nor after Ctrl+C or a request to wind down; and it goes on at once when
-// triage holds the run for the environment meanwhile, for Run to take that up.
+// (see usageHold.idle), then lifts it, to take tickets again: the next to start tries the limit when its
+// reset isn't known. It reports whether the run goes on: not once the hold has lasted
+// Config.UsageLimitWait, which stops it (USAGE_LIMIT), nor after Ctrl+C or a request to wind down; and it
+// goes on at once when triage holds the run for the environment meanwhile, for Run to take that up.
 func (r *runState) waitOutLimit() bool {
 	o := r.o
 	for {
 		now := time.Now()
-		o.limitMu.Lock()
-		on, since, reset, due := o.limitOn, o.limitSince, o.limitReset, o.limitDue()
-		giveUp := since.Add(o.cfg.UsageLimitWait)
-		var lifted []Event
-		if on && now.Before(giveUp) && !now.Before(due) {
-			why := fmt.Sprintf("the limit reset at %s; taking tickets again", ResetLabel(reset, now))
-			if reset.IsZero() {
-				why = fmt.Sprintf("%s on, and no limited worker is left to try it; taking tickets again, the next "+
-					"to start trying it", command.ShortDuration(limitRetry))
-			}
-			lifted = append(lifted, o.liftLimit(now, why))
-		}
-		o.limitMu.Unlock()
-		o.emitAll(lifted)
+		on, since, reset, next := o.usage.idle(now)
 		switch {
-		case !on || len(lifted) > 0:
+		case !on:
 			return true
-		case !now.Before(giveUp):
+		case !now.Before(since.Add(o.cfg.UsageLimitWait)):
 			r.addStop(halt(ExitUsageLimit, stopUsageLimit, ": the run held for the usage limit for %s (%s), "+
 				"with nothing running; stopping", command.ShortDuration(now.Sub(since)), resetsSaid(reset, now)))
 			return false
-		}
-		next := due
-		if giveUp.Before(next) {
-			next = giveUp
 		}
 		timer := time.NewTimer(next.Sub(now))
 		goOn, done := r.awaitLimit(timer.C)

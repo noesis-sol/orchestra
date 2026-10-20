@@ -101,7 +101,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `book.go` | the ticket book: each ticket's place in the run in one record (set aside, asked, left open, unmerged, its setup failed), changed only by its transitions, and the questions pick, the holds and the scope's end ask of it |
 | `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts; what only `Run` reads and writes is its `runState`'s (tests in `run_test.go` and `schedule_test.go`) |
-| `gate.go` | the gate: why the run takes no new tickets (its stops, winding down, the ticket limit), under its own lock, read alike by `Run` and the merges; `runState.wait`, where every loop of `Run`'s waits, hearing drain requests, triage's verdicts and the gate |
+| `gate.go` | the gate: why the run takes no new tickets (its stops, winding down, the ticket limit, the usage limit, the machine's cap on workers, the environment), under its own lock, read alike by `Run` and the merges; each hold registers what it does at its end, which wakes `Run` whatever else happens; `runState.wait`, where every loop of `Run`'s waits, hearing drain requests, triage's verdicts and the gate |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
 | `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
@@ -140,7 +140,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `eventstream.go` | the event stream (`events.jsonl`), and what a notification says of an event (`Notice`) |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once, setups keep failing in new worktrees or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
-| `usagelimit.go` | holding the run while workers wait on the account's usage limit, telling them to carry on once it resets, and stopping the run (`USAGE_LIMIT`) when it holds longer than `usage_limit_wait` |
+| `usagelimit.go` | holding the run while workers wait on the account's usage limit (`usageHold`, on the gate with its known reset as its end), telling them to carry on once it resets, and stopping the run (`USAGE_LIMIT`) when it holds longer than `usage_limit_wait` |
 | `advice.go` | triage and the run review |
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |

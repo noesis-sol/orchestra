@@ -35,7 +35,7 @@ func (o *Loop) waitSettled(
 	var idle idleWait
 	var blocked, unknown streak
 	var limit limitWait
-	defer func() { o.limitDone(w.id, &limit, idleAt, stop) }()
+	defer func() { o.usage.done(w.id, &limit, idleAt, stop) }()
 	failed := 0
 	warned := false
 	for polled := false; ; polled = true {

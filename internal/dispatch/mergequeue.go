@@ -5,7 +5,6 @@ import (
 	"context"
 	"slices"
 	"sync"
-	"sync/atomic"
 )
 
 // MergeStage is where a finished ticket is in the merge queue, for the dashboard.
@@ -33,8 +32,6 @@ type mergeQueue struct {
 	ctx                  context.Context
 	ahead                map[string]worker
 	trains               map[string]*trainRun
-	// machineFull: the run holds for Config.MachineWorkers (see runState.machineFull), so no train starts.
-	machineFull atomic.Bool
 	// gone: the tickets whose workers have settled and that have gone to merge, until their goroutines
 	// return, a hand-back to their workers included; up to Concurrency of them hold no slot (see
 	// runState.slotsTaken). Run hears of each on joined (buffered 1), as a slot may be free.

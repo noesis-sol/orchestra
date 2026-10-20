@@ -156,7 +156,7 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 	report func(context.Context, AgentState, error)) (why string, stop *stopReason) {
 	var lw limitWait
 	var idleSince, settled time.Time
-	defer func() { o.limitDone(w.id, &lw, settled, stop) }()
+	defer func() { o.usage.done(w.id, &lw, settled, stop) }()
 	given := false
 	give := func() string {
 		if !o.deliverPrompt(ctx, w.agent, prompt) {

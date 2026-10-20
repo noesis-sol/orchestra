@@ -89,7 +89,7 @@ func (q *mergeQueue) stopTrains() {
 func (o *Loop) startTrains() {
 	q, c := &o.merges, o.cfg
 	if c.MergeTrain <= 0 || c.Check == "" || q.checking == "" || q.ctx == nil || q.ctx.Err() != nil ||
-		q.machineFull.Load() {
+		o.gate.held(gateMachine) {
 		return
 	}
 	behind, onto := q.checkingBr, q.checking
