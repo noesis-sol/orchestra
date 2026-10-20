@@ -68,6 +68,11 @@ All notable changes to orchestra are documented here. The format follows
   (a key used twice, a key that names no issue, a cycle) files none of it
   and ends the run as a breakdown that didn't finish does. An update of the
   tree, and a breakdown with `--refine`, still file through `bd` themselves.
+- orchestra files a breakdown's answer without a `bd show` for each parent
+  and each issue an issue waits for: it asks `bd` once about each issue
+  filed before the answer, and trusts the IDs `bd` gives the ones it files.
+  A tree of 40 issues with 40 links no longer costs some 120 extra `bd`
+  calls, a second or so each on a loaded machine.
 
 ## [0.8.5] - 2026-10-20
 

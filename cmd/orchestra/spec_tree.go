@@ -54,7 +54,7 @@ type specIssue struct {
 type treeFiler interface {
 	Show(ctx context.Context, id string) (dispatch.Ticket, error)
 	Create(ctx context.Context, t beads.NewTicket) (string, error)
-	AddBlock(ctx context.Context, blocker, blocked string) error
+	AddCheckedBlock(ctx context.Context, blocker, blocked string) error
 	AppendNotes(ctx context.Context, id, note string) error
 	SetMetadata(ctx context.Context, id, key, value string) error
 }
@@ -74,7 +74,9 @@ type treeFiled struct {
 // (checkBreakdown sets the metadata again). An answer that can't be filed as given (an issue without
 // a key, a key given twice, a name that is neither a key of the answer nor an issue bd has, a parent
 // or blocks cycle) is an error before anything is filed; bd failing to file is one, saying how far
-// it got.
+// it got. Every ID it links an issue to is one bd gave it as it filed the issue, or one planTree
+// found bd has, so bd isn't asked again whether it has it (a bd show each, some 120 for a tree of 40
+// issues with 40 links).
 func fileAnswerTree(ctx context.Context, bd treeFiler, spec project.Spec, a specAnswer,
 	filed func(f filedIssue, id string)) (treeFiled, error) {
 	root, err := bd.Show(ctx, a.Root)
@@ -112,7 +114,7 @@ func fileAnswerTree(ctx context.Context, bd treeFiler, spec project.Spec, a spec
 		is := issues[i]
 		t := beads.NewTicket{Title: is.Title, Description: is.Description, Acceptance: is.Acceptance, Type: is.Type,
 			Priority: is.Priority, Parent: cmp.Or(ref(is.Parent), a.Root), Files: is.Files, Labels: is.Labels,
-			Metadata: map[string]string{dispatch.SpecKey: spec.Path}}
+			Metadata: map[string]string{dispatch.SpecKey: spec.Path}, Checked: true}
 		for _, w := range is.WaitsFor {
 			if id := ref(w); id != "" {
 				t.BlockedBy = append(t.BlockedBy, id)
@@ -132,7 +134,7 @@ func fileAnswerTree(ctx context.Context, bd treeFiler, spec project.Spec, a spec
 		}
 	}
 	for _, l := range later {
-		if err := bd.AddBlock(ctx, ids[l.blocker], ids[l.blocked]); err != nil {
+		if err := bd.AddCheckedBlock(ctx, ids[l.blocker], ids[l.blocked]); err != nil {
 			return done, fmt.Errorf("orchestra filed its answer's %d issues and %d of its %d later blocks links, then "+
 				"couldn't have %s wait for %s: %w", done.issues, done.links, len(later), ids[l.blocked], ids[l.blocker], err)
 		}

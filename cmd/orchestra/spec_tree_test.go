@@ -68,8 +68,8 @@ func (m *memFiler) Create(_ context.Context, t beads.NewTicket) (string, error) 
 	return id, nil
 }
 
-func (m *memFiler) AddBlock(_ context.Context, blocker, blocked string) error {
-	if m.fail == "AddBlock" {
+func (m *memFiler) AddCheckedBlock(_ context.Context, blocker, blocked string) error {
+	if m.fail == "AddCheckedBlock" {
 		return errors.New("bd dep add: database is locked")
 	}
 	m.calls = append(m.calls, "block "+blocked+" on "+blocker)
@@ -231,7 +231,7 @@ func TestFileAnswerTreeWhenBdFails(t *testing.T) {
 		t.Errorf("a create failing: %+v, %v; want %q", got, err, want)
 	}
 	bd = newMemFiler(treeRoot)
-	bd.fail = "AddBlock"
+	bd.fail = "AddCheckedBlock"
 	got, err = fileAnswerTree(context.Background(), bd, testSpec, a, nil)
 	if want := "orchestra filed its answer's 2 issues and 0 of its 1 later blocks links, then couldn't have s-1.1 " +
 		"wait for s-1.2: bd dep add: database is locked"; err == nil || err.Error() != want ||

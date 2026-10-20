@@ -320,6 +320,12 @@ func (b Tracker) AddBlock(ctx context.Context, blocker, blocked string) error {
 	if err := b.exists(ctx, blocked, blocker); err != nil {
 		return err
 	}
+	return b.AddCheckedBlock(ctx, blocker, blocked)
+}
+
+// AddCheckedBlock is AddBlock for two tickets the caller has made sure bd has by those very IDs (it
+// filed them, or Show gave them): it doesn't show them again.
+func (b Tracker) AddCheckedBlock(ctx context.Context, blocker, blocked string) error {
 	_, err := b.bd(ctx, command.WriteLimit, "dep", "add", blocked, blocker)
 	return err
 }
@@ -515,6 +521,9 @@ type NewTicket struct {
 	Files                          []string
 	Metadata                       map[string]string // more of its metadata, besides its files
 	Labels                         []string
+	// Checked says the caller has made sure bd has Parent and BlockedBy by those very IDs (it filed
+	// them, or Show gave them): Create doesn't show them again.
+	Checked bool
 }
 
 // FileBug files a P2 bug carrying label and returns its ID.
@@ -526,11 +535,15 @@ func (b Tracker) FileBug(ctx context.Context, title, description, label string) 
 // Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
 // which footprint scheduling reads, with the rest of its Metadata. When bd's output can't be read,
 // the error carries bd's stderr. When bd has no ticket by the parent's ID or one it waits for, it
-// files nothing: bd would link the ticket to one whose ID starts with it.
+// files nothing: bd would link the ticket to one whose ID starts with it. A Checked ticket's links
+// aren't looked up.
 func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	linked := t.BlockedBy
 	if t.Parent != "" {
 		linked = append([]string{t.Parent}, linked...)
+	}
+	if t.Checked {
+		linked = nil
 	}
 	if err := b.exists(ctx, linked...); err != nil {
 		return "", err
