@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
-	"time"
 )
 
 // A ticket with commits on its branch, as one reopened or carried over has, works where its branch
@@ -62,7 +61,7 @@ func TestReopenedTicketsFootprintIsItsBranchs(t *testing.T) {
 		cutBranch(h.mem, "wt/D") // nothing on top of main
 		var v overlap
 		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-			time.Sleep(3 * readyPoll) // a few polls, with B running beside it
+			v.awaits("A", "B", 20) // B starts beside A, however long its start takes
 			return finishes("a.txt")(w)
 		}))
 		for _, id := range []string{"B", "C", "D"} {

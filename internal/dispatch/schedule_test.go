@@ -251,6 +251,19 @@ func (v *overlap) of(id string) []string {
 	return v.beside[id]
 }
 
+// awaits waits, a poll at a time and for at most polls of them, until other's worker has run beside
+// id's, and reports whether it has: a ticket's worker that is to run beside another's then does,
+// however long it takes to start.
+func (v *overlap) awaits(id, other string, polls int) bool {
+	for range polls {
+		if slices.Contains(v.of(id), other) {
+			return true
+		}
+		time.Sleep(readyPoll)
+	}
+	return false
+}
+
 // dispatched returns the tickets dispatched, in order.
 func (s *runSink) dispatched() []string {
 	s.mu.Lock()
