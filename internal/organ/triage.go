@@ -21,6 +21,13 @@ const triageSchema = `{"type":"object","properties":{"cause":{"type":"string",` 
 	`"recommendation":{"type":"string"}},"required":["cause","confidence","summary",` +
 	`"recommendation"]}`
 
+// The values triageSchema allows for a verdict's cause and confidence, which parseTriage checks too;
+// TestSchemaEnums holds the two to the same list.
+var (
+	triageCauses      = []string{"environment", "instructions", "problem"}
+	triageConfidences = []string{"high", "medium", "low"}
+)
+
 // Verdict is the triage organ's answer.
 type Verdict struct {
 	Cause          string `json:"cause"`
@@ -64,9 +71,9 @@ func parseTriage(r Result) (Verdict, error) {
 		return t, fmt.Errorf("unreadable triage: %w", err)
 	}
 	switch {
-	case !slices.Contains([]string{"environment", "instructions", "problem"}, t.Cause):
+	case !slices.Contains(triageCauses, t.Cause):
 		return t, fmt.Errorf("unknown triage cause %q", t.Cause)
-	case !slices.Contains([]string{"high", "medium", "low"}, t.Confidence):
+	case !slices.Contains(triageConfidences, t.Confidence):
 		return t, fmt.Errorf("unknown triage confidence %q", t.Confidence)
 	}
 	return t, nil

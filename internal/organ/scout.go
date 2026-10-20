@@ -62,6 +62,8 @@ const (
 	SuiteOther       SuiteKind = "other"
 )
 
+// suiteKinds are the kinds scoutSchema allows, which parseScouting checks too; TestSchemaEnums holds
+// the two to the same list.
 var suiteKinds = []SuiteKind{SuiteUnit, SuiteIntegration, SuiteE2E, SuiteLint, SuiteTypecheck, SuiteBuild,
 	SuiteOther}
 
@@ -73,6 +75,10 @@ const (
 	TierFast Tier = "fast" // unit tests, lint, type checks and one smoke e2e suite
 	TierFull Tier = "full" // the rest
 )
+
+// tiers are the tiers scoutSchema allows, which parseScouting checks too; TestSchemaEnums holds the
+// two to the same list.
+var tiers = []Tier{TierFast, TierFull}
 
 // Suite is one check the scout found.
 type Suite struct {
@@ -252,7 +258,7 @@ func parseScouting(r Result) (Scouting, error) {
 			return Scouting{}, fmt.Errorf("a suite with no name or no command: %+v", su)
 		case !slices.Contains(suiteKinds, su.Kind):
 			return Scouting{}, fmt.Errorf("suite %q has an unknown kind %q", su.Name, su.Kind)
-		case su.Tier != TierFast && su.Tier != TierFull:
+		case !slices.Contains(tiers, su.Tier):
 			return Scouting{}, fmt.Errorf("suite %q has an unknown tier %q", su.Name, su.Tier)
 		}
 		if !hasPlaceholder(su.Targeted) { // it would run the whole suite, or nothing the worker can fill in
