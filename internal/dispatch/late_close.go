@@ -1,11 +1,9 @@
 package dispatch
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 )
 
@@ -33,8 +31,8 @@ func (o *Loop) leaveOpen(ctx context.Context, w worker) {
 	w.since = time.Now()
 	head, err := o.checkout.Head(ctx, o.cfg.Repo, w.br) // "" on failure: its work is not taken for none
 	o.log.Raw("", err)
+	o.book.leaveOpen(w.id, leftOpen{w: w, head: head})
 	o.mu.Lock()
-	o.leftOpen[w.id] = leftOpen{w: w, head: head}
 	labelled := o.labelled[w.id]
 	o.mu.Unlock()
 	if !labelled {
@@ -42,48 +40,28 @@ func (o *Loop) leaveOpen(ctx context.Context, w worker) {
 	}
 }
 
-// dropLeftOpen stops following ticket id's worker, left in its tab: the ticket is merging, its
-// worker is gone, or it is dispatched again.
-func (o *Loop) dropLeftOpen(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	delete(o.leftOpen, id)
-}
-
 // leftOpenSpot is where ticket id's worker was left in its tab as the ticket was set aside, and
 // whether it was.
 func (o *Loop) leftOpenSpot(id string) (workerSpot, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	lo, ok := o.leftOpen[id]
-	return workerSpot{tab: lo.w.tab, wt: lo.w.wt, hooks: lo.w.hooks}, ok
+	r, _ := o.book.get(id)
+	return workerSpot{tab: r.left.w.tab, wt: r.left.w.wt, hooks: r.left.w.hooks}, r.disp == dispLeftOpen
 }
 
 // leftOpenList is the workers left in their tabs as their tickets were set aside, by ticket.
 func (o *Loop) leftOpenList() []leftOpen {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	l := make([]leftOpen, 0, len(o.leftOpen))
-	for _, lo := range o.leftOpen {
-		l = append(l, lo)
+	_, recs := o.book.matching(func(r *ticketRecord) bool { return r.disp == dispLeftOpen })
+	l := make([]leftOpen, len(recs))
+	for i, r := range recs {
+		l[i] = r.left
 	}
-	slices.SortFunc(l, func(a, b leftOpen) int { return cmp.Compare(a.w.id, b.w.id) })
 	return l
-}
-
-func (o *Loop) anyLeftOpen() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return len(o.leftOpen) > 0
 }
 
 // leftOpenWhy is why ticket id, set aside with its worker left in its tab, has not merged, closed
 // or not (see mergeState), or "" when it wasn't so left.
 func (o *Loop) leftOpenWhy(id string) string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if lo, ok := o.leftOpen[id]; ok {
-		return leftInTab(lo.w.tab)
+	if r, _ := o.book.get(id); r.disp == dispLeftOpen {
+		return leftInTab(r.left.w.tab)
 	}
 	return ""
 }
@@ -134,7 +112,7 @@ func (r *runState) followLeft() []lateClose {
 			case ctx.Err() != nil:
 				return late
 			case errors.Is(err, ErrNoTicket):
-				o.dropLeftOpen(id)
+				o.book.unfollow(id)
 				o.info("  %s, set aside with its worker left in tab %s, is gone from bd; it is no longer followed", id, tab)
 				continue
 			case err != nil:
@@ -149,13 +127,13 @@ func (r *runState) followLeft() []lateClose {
 		case err != nil:
 			o.log.Raw("", err)
 		case t.Status != StatusClosed && st == StateGone:
-			o.dropLeftOpen(id)
+			o.book.unfollow(id)
 			o.info("  %s's worker, left in tab %s as %s was set aside, is gone with it %s; it is no longer followed",
 				id, tab, id, t.Status)
 		case t.Status != StatusClosed, st == StateWorking, st == StateBlocked, st == StateUnknown:
 			// read again at the next poll
 		default:
-			o.dropLeftOpen(id)
+			o.book.unfollow(id)
 			late = append(late, lateClose{t: t, left: lo})
 		}
 	}
@@ -189,9 +167,5 @@ func (r *ticketRun) lateClose(ctx context.Context, lo leftOpen) *stopReason {
 	st := Status{Ticket: id, Title: r.t.Title, Tab: w.tab, Started: w.started}
 	o.showActive(st)
 	defer o.status(Status{Ticket: id, Gone: true})
-	stop := r.conclude(ctx, w, lo.head, o.newWatcher(w.wt, st).report)
-	if slices.Contains(o.closedInRun(), id) {
-		o.unmarkAside(id) // merged: no longer set aside, nor for the reviewer
-	}
-	return stop
+	return r.conclude(ctx, w, lo.head, o.newWatcher(w.wt, st).report) // merged, it is no longer set aside
 }

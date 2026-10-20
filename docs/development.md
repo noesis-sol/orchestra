@@ -98,6 +98,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | File | What's in it |
 | --- | --- |
 | `loop.go` | the `Loop` type, its state grouped by owner (`deps`, `tallies`, `ledger`, `carryover`, `triageQueue`, `envHold`: each says which lock guards it, or whose it is), `Config`, exit codes, timings and shared helpers |
+| `book.go` | the ticket book: each ticket's place in the run in one record (set aside, asked, left open, unmerged, its setup failed), changed only by its transitions, and the questions pick, the holds and the scope's end ask of it |
 | `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts; what only `Run` reads and writes is its `runState`'s (tests in `run_test.go` and `schedule_test.go`) |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |

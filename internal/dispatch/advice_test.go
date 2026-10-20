@@ -17,7 +17,7 @@ func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
 	t.Parallel()
 	o := New(Config{}, nil, "", Deps{})
 	for _, id := range []string{"a", "b", "a", "c"} {
-		o.markAside(id)
+		o.book.setAside(id)
 	}
 	if got := o.asideList(); !slices.Equal(got, []string{"a", "b", "c"}) {
 		t.Errorf("got %v", got)
@@ -64,7 +64,7 @@ func TestLiveOrgans(t *testing.T) {
 	}
 	t.Logf("triage (%s):\n%s", time.Since(start).Round(time.Second), tr.Note())
 
-	o.markAside(id)
+	o.book.setAside(id)
 	start = time.Now()
 	report, err := o.organ.Review(context.Background(), o.reviewInput(context.Background(), ExitOK, "(live test: the run is still going)"))
 	if err != nil {

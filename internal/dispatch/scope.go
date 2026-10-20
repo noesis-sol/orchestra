@@ -42,11 +42,11 @@ func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[st
 
 // parentsOpen is openParents from open, the tickets bd lists as not closed.
 func (o *Loop) parentsOpen(open []Ticket, running map[string]bool) map[string]bool {
+	b := o.book.snapshot()
 	pending := map[string]string{}
 	o.mu.Lock()
 	for id, p := range o.parentOf {
-		_, asked := o.askedIDs[id]
-		if running[id] || asked || o.unmerged[id] != "" {
+		if running[id] || b.asked[id] || b.unmerged[id] != "" {
 			pending[id] = p
 		}
 	}
@@ -238,7 +238,7 @@ type scopeView struct {
 // scopeView is where the run's scope stands, as the run knows it.
 func (o *Loop) scopeView() scopeView {
 	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
-		aside:  func(id string) bool { return slices.Contains(o.asideList(), id) },
+		aside:  o.book.countsAside,
 		closed: func(id string) bool { return o.doneSaid.last(id) == epicClosed },
 		setup:  func(id string) string { output, _ := o.failedSetupOf(id); return output }}
 }

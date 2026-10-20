@@ -14,7 +14,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// A run leaves workers behind in their tabs: on tickets waiting on a question (askedIDs), and on
+// A run leaves workers behind in their tabs: on tickets waiting on a question (askedList), and on
 // tickets it leaves running when it stops (active). What it knows of them would end with it, so as
 // it ends, on every path, it saves them to .orchestra/run/state.json in the main checkout, and the
 // next run puts each back where its own asked workers go, for the same paths to take up: followAsked
@@ -63,7 +63,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			o.keptOut = append(o.keptOut, e)
 			continue
 		}
-		o.setAsked(e.Ticket, &w)
+		o.book.carry(e.Ticket, w)
 		carried = append(carried, e.Ticket+" ("+w.state()+")")
 	}
 	if len(carried) > 0 {
@@ -284,9 +284,7 @@ func (o *Loop) leaveBehind(ctx context.Context) {
 	left := o.saveCarried(context.WithoutCancel(ctx), "")
 	o.leftSaved = true
 	o.leftMu.Unlock()
-	o.mu.Lock()
-	left = left || len(o.unmerged) > 0
-	o.mu.Unlock()
+	left = left || o.anyUnmerged()
 	if left && o.cfg.Watch != "" {
 		o.info("  to see their tabs: %s", o.cfg.Watch)
 	}
@@ -344,8 +342,8 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 		id := st.Ticket
 		o.mu.Lock()
 		w, ok := o.placed[id]
-		why := o.unmerged[id]
 		o.mu.Unlock()
+		why := o.unmergedWhy(id)
 		if ok && !st.handedBack() && (why == "" || why == earlierRun) {
 			w.left = cmp.Or(w.left, running)
 			add(id, w)

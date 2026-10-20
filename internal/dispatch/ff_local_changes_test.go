@@ -67,7 +67,7 @@ func TestMergeStopsOnLocalChangesUnderExcludedPaths(t *testing.T) {
 			if ce := new(command.Error); !errors.As(s, &ce) || !strings.Contains(ce.Stderr, tc.file) {
 				t.Errorf("git's error is not kept: cause = %v", s.cause)
 			}
-			if why := f.orch.unmerged["k-1"]; why != "DIRTY_TREE" {
+			if why := f.orch.unmergedWhy("k-1"); why != "DIRTY_TREE" {
 				t.Errorf("k-1 left unmerged for %q, want DIRTY_TREE", why)
 			}
 			if f.git(f.repo, "rev-parse", "main") != before {
@@ -104,7 +104,7 @@ func TestMergeFailedSaysWhatGitSaid(t *testing.T) {
 	if !errors.Is(s, errNoFastForward) || !strings.Contains(s.Error(), "fatal: something else") {
 		t.Errorf("stop = %q, want it to keep and say git's error", s)
 	}
-	if why := f.orch.unmerged["k-1"]; why != "MERGE_FAILED" {
+	if why := f.orch.unmergedWhy("k-1"); why != "MERGE_FAILED" {
 		t.Errorf("k-1 left unmerged for %q, want MERGE_FAILED", why)
 	}
 }

@@ -269,7 +269,7 @@ func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
 	if parents, err := o.openParents(context.Background(), map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
 		t.Errorf("C running: %v %v, want P only", parents, err)
 	}
-	o.unmerged = map[string]string{"D": "MERGE_CONFLICT"}
+	o.book.leaveUnmerged("D", "MERGE_CONFLICT")
 	if parents, _ := o.openParents(context.Background(), nil); parents["P"] || !parents["Q"] {
 		t.Errorf("D unmerged: %v, want Q only", parents)
 	}

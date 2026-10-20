@@ -253,13 +253,13 @@ func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
 	ready := readyTickets{{ID: "deferred"}, {ID: "answered"}, {ID: "fresh"}}
 	o := New(Config{Repo: "repo", Base: "main"}, log, "", Deps{Tickets: ready, Checkout: cleanCheckout{}})
 	o.SetSink(&recordSink{})
-	o.markAside("deferred")
-	o.markAside("answered")
-	o.setAsked("answered", &workerSpot{question: "Q"})
+	o.book.setAside("deferred")
+	o.book.setAside("answered")
+	o.book.ask("answered", workerSpot{question: "Q"})
 	if tk, _, s := newRunState(context.Background(), o).next(); s != nil || tk == nil || tk.ID != "answered" {
 		t.Fatalf("got %v (%v), want the ticket whose question was answered", tk, s)
 	}
-	o.setAsked("answered", nil) // dispatched again, then set aside for another reason
+	o.book.answer("answered") // dispatched again, then set aside for another reason
 	if tk, _, s := newRunState(context.Background(), o).next(); s != nil || tk == nil || tk.ID != "fresh" {
 		t.Fatalf("got %v (%v), want the fresh ticket", tk, s)
 	}

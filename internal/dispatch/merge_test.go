@@ -234,7 +234,7 @@ func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
 	if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree || !strings.Contains(s.Error(), "uncommitted changes") {
 		t.Fatalf("stop = %+v, want DIRTY_TREE", s)
 	}
-	if why := f.orch.unmerged["k-1"]; why != "DIRTY_TREE" {
+	if why := f.orch.unmergedWhy("k-1"); why != "DIRTY_TREE" {
 		t.Errorf("k-1 left unmerged for %q, want DIRTY_TREE", why)
 	}
 	if f.git(f.repo, "rev-parse", "main") != before {

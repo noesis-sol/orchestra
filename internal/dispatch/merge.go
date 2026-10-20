@@ -331,7 +331,7 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 		o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or MERGE_FAILED
 		return s
 	}
-	o.clearUnmerged(keep, id)
+	o.merged(keep, id)
 	o.countMerge()
 	// What it brought may be what a setup that failed needed, or a new setup (see leaveSetupFailed).
 	o.retrySetups()
@@ -694,7 +694,7 @@ func checksFailedDetail(setup, timedOut bool) string {
 func (o *Loop) closedUnchanged(ctx context.Context, w worker, why string, repo *lockGuard) {
 	c := o.cfg
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
-	o.clearUnmerged(ctx, id) // an unmerged label from an earlier run holds nothing now
+	o.merged(ctx, id) // an unmerged label from an earlier run holds nothing now
 	repo.lock()
 	cleaned := o.removeWorktree(ctx, id, wt, br)
 	repo.unlock()

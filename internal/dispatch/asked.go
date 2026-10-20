@@ -4,8 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 )
 
 // A ticket set aside to wait on a question comes back through bd ready once the question is
@@ -89,7 +87,7 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 // running, with no question, comes back the same way.
 func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
 	o, id := r.o, t.ID
-	o.setAsked(id, nil) // back from a question: set aside again, it stays out
+	o.book.answer(id) // back from a question: set aside again, it stays out
 	o.setParent(id, t.Parent)
 	what := "claimed again"
 	switch {
@@ -115,8 +113,7 @@ func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
 // on its own goroutine, so the deferral is offered (offerTriage).
 func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w workerSpot) {
 	id := t.ID
-	o.setAsked(id, nil)
-	o.markAside(id)
+	o.book.setAside(id)
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
 	o.leaveOpen(context.WithoutCancel(ctx), worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab,
@@ -142,7 +139,7 @@ func (o *Loop) askedGone(ctx context.Context, id string, w workerSpot, n int) *s
 // carriedStands drops one carried over without a session: stopping the run for it (askedGone) would
 // save it for the next run, which stops for it again if it too takes no more tickets.
 func (o *Loop) askedDropped(ctx context.Context, id string, w workerSpot) {
-	o.setAsked(id, nil)
+	o.book.dropAsked(id)
 	o.warnWorkerGone(ctx, id, w, "so it is no longer followed")
 }
 
@@ -226,9 +223,7 @@ func (o *Loop) leaveAsked(ctx context.Context) {
 
 // askedList is the tickets waiting on a question, in order.
 func (o *Loop) askedList() []string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return slices.Sorted(maps.Keys(o.askedIDs))
+	return o.book.ids(func(r *ticketRecord) bool { return r.disp == dispAsked })
 }
 
 // workerSpot is where a ticket set aside to wait on a question left its worker, which may carry
@@ -258,38 +253,13 @@ func (w workerSpot) leftWhy() string {
 	return cmp.Or(string(w.left), "stopped")
 }
 
-// setAsked records ticket id as set aside waiting on a question, its worker left as w; nil: no
-// longer.
-func (o *Loop) setAsked(id string, w *workerSpot) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if w == nil {
-		delete(o.askedIDs, id)
-		return
-	}
-	o.askedIDs[id] = *w
-}
-
 // asked returns where ticket id, set aside waiting on a question, left its worker.
 func (o *Loop) asked(id string) (workerSpot, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	w, ok := o.askedIDs[id]
-	return w, ok
+	r, _ := o.book.get(id)
+	return r.spot, r.disp == dispAsked
 }
 
 func (o *Loop) isAsked(id string) bool {
 	_, ok := o.asked(id)
 	return ok
-}
-
-// askedSet is the tickets waiting on a question, or carried over from the last run.
-func (o *Loop) askedSet() map[string]bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	set := make(map[string]bool, len(o.askedIDs))
-	for id := range o.askedIDs {
-		set[id] = true
-	}
-	return set
 }

@@ -137,9 +137,7 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 	o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
 		"  RECHECK: %s's check failed on %s at %s, which has moved on since; rebasing %s and checking it once more",
 		id, c.Base, short(rc.onto), rc.w.br)})
-	if stop = o.merge(ctx, rc.w); stop == nil && o.unmergedWhy(id) == "" {
-		o.unmarkAside(id) // merged: no longer set aside, nor for the reviewer
-	}
+	stop = o.merge(ctx, rc.w) // merged, it is no longer set aside, nor for the reviewer
 	if stop == errInterrupted && !o.handedBack(id) {
 		// Only its check was cut short: no worker of it is left running, and it stays set aside.
 		o.clearActive(id)

@@ -269,7 +269,7 @@ func TestNothingToRunScopedSaysWhyEachIsNotDone(t *testing.T) {
 
 	// A run that had left E.6 unmerged ends with the same SCOPE_OPEN.
 	o := New(c, nil, "", Deps{Tickets: b})
-	o.unmerged = map[string]string{"E.6": earlierRun}
+	o.book.noteUnmerged("E.6", earlierRun)
 	subs, err := b.Descendants(context.Background(), "E")
 	if got := o.scopeEnd(context.Background(), subs, err); got != scopeOpen {
 		t.Errorf("scopeEnd %q\n   check %q", got, scopeOpen)

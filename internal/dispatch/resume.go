@@ -72,7 +72,7 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 // comes back to have its session s resumed (see adoptAsked), and records its footprint; the caller
 // counts it running.
 func (r *runState) resumedInTab(t Ticket, w workerSpot, s Session) adoption {
-	r.o.setAsked(t.ID, nil)
+	r.o.book.answer(t.ID)
 	r.o.setParent(t.ID, t.Parent)
 	r.startFootprint(t)
 	return adoption{t: t, w: w, resume: &s}

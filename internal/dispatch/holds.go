@@ -69,7 +69,7 @@ func (s *sayOnce) forget(id string) {
 type holds struct {
 	parents  map[string]bool        // the tickets with a subticket not yet closed and merged
 	running  map[string]bool        // the tickets whose workers are running
-	asked    map[string]bool        // the tickets waiting on a question, carried over (askedIDs) or kept out
+	asked    map[string]bool        // the tickets waiting on a question, carried over (askedList) or kept out
 	unmerged func(id string) string // why the ticket is closed but not merged, as the run left it, or ""
 	left     func(id string) string // why the ticket, its worker left in its tab, has not merged, or ""; nil for none
 	// branches returns why closed ticket id's work is only on its branch (see closedBranches), or "";
@@ -83,15 +83,24 @@ type holds struct {
 	links func(ctx context.Context, t Ticket) (links, error)
 }
 
-// holds is what keeps a ready ticket waiting, as the run knows it.
+// holds is what keeps a ready ticket waiting, as the run knows it: the ticket book as it is now, read
+// at one time.
 func (o *Loop) holds(running, parents map[string]bool) holds {
-	asked := o.askedSet()
+	b := o.book.snapshot()
+	asked := b.asked
 	for _, id := range o.keptOutIDs() { // their workers may still close them (see isKeptOut)
 		asked[id] = true
 	}
-	return holds{parents: parents, running: running, asked: asked, unmerged: o.unmergedWhy, left: o.leftOpenWhy,
-		branches: o.branchWhy, pending: len(running) > 0 || len(asked) > 0 || o.anyUnmerged() || o.anyLeftOpen(),
-		links: o.linksOf}
+	left := func(id string) string {
+		if tab, ok := b.left[id]; ok {
+			return leftInTab(tab)
+		}
+		return ""
+	}
+	unmerged := func(id string) string { return b.unmerged[id] }
+	pending := len(running) > 0 || len(asked) > 0 || len(b.unmerged) > 0 || len(b.left) > 0
+	return holds{parents: parents, running: running, asked: asked, unmerged: unmerged, left: left,
+		branches: o.branchWhy, pending: pending, links: o.linksOf}
 }
 
 // holdKind is what holds a ready ticket back.

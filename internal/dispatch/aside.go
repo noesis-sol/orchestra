@@ -2,7 +2,7 @@ package dispatch
 
 import (
 	"context"
-	"slices"
+	"fmt"
 )
 
 // appendNotes adds a note to the ticket, logging a failure: a lost note doesn't stop the run.
@@ -30,7 +30,7 @@ type asideTexts struct {
 func (o *Loop) putAside(ctx context.Context, t Ticket, a asideTexts) bool {
 	id := t.ID
 	o.appendNotes(ctx, id, a.note)
-	o.markAside(id)
+	o.book.setAside(id)
 	if err := o.notes.Defer(ctx, id, a.reason); err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Aside: true, Detail: a.detail,
 			Text: "  DEFER_FAILED: " + a.failed + because(err) + "; kept out of this run, " + a.then})
@@ -40,30 +40,26 @@ func (o *Loop) putAside(ctx context.Context, t Ticket, a asideTexts) bool {
 	return true
 }
 
-// asideList lists tickets deferred or left unmerged in this run, in order, without repeats.
-func (o *Loop) asideList() []string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return append([]string(nil), o.asideIDs...)
-}
+// asideList lists tickets set aside in this run, in order, without repeats.
+func (o *Loop) asideList() []string { return o.book.asideList() }
 
-func (o *Loop) markAside(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if slices.Contains(o.asideIDs, id) {
-		return
+// reopen puts ticket id, status as the caller found it, back in bd's queue, open, should it not be
+// open already, and reports whether it is. Should bd fail, it warns with REOPEN_FAILED, its status
+// "set aside" when not known, and what it won't do then, as "so it won't <wont>".
+func (o *Loop) reopen(ctx context.Context, id string, status TicketStatus, wont string) bool {
+	if status == StatusOpen {
+		return true
 	}
-	o.asideIDs = append(o.asideIDs, id)
-}
-
-// unmarkAside takes a ticket back out of those set aside in this run.
-func (o *Loop) unmarkAside(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	for i, x := range o.asideIDs {
-		if x == id {
-			o.asideIDs = append(o.asideIDs[:i:i], o.asideIDs[i+1:]...)
-			return
-		}
+	err := o.notes.Reopen(ctx, id)
+	if err == nil {
+		return true
 	}
+	stays := "set aside"
+	if status != "" {
+		stays = string(status)
+	}
+	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+		"  REOPEN_FAILED: %s stays %s, so it won't %s%s; reopen it with: bd update %s --status open",
+		id, stays, wont, because(err), id)})
+	return false
 }

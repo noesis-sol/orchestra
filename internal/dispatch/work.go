@@ -96,7 +96,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	if !asked {
 		earlier, _ = o.leftOpenSpot(id) // set aside with its worker left in its tab: where that is
 	}
-	o.dropLeftOpen(id) // dispatched again: its earlier worker is adopted or replaced below
+	o.book.unfollow(id) // dispatched again: its earlier worker is adopted or replaced below
 	if HasLabel(r.t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}
@@ -107,7 +107,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	if done {
 		return stop
 	}
-	o.setAsked(id, nil) // back from a question: set aside again once this worker settles, it stays out
+	o.book.answer(id) // back from a question: set aside again once this worker settles, it stays out
 	p, done, stop := r.prepare()
 	if done {
 		return stop
@@ -520,7 +520,7 @@ func (o *Loop) takeOn(t Ticket, w workerSpot) Status {
 	o.place(id, workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, fork: w.fork, hooks: w.hooks})
 	st := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()}
 	o.setActive(st)
-	o.setAsked(id, nil) // back from a question: set aside again once it settles, it stays out
+	o.book.answer(id) // back from a question: set aside again once it settles, it stays out
 	return st
 }
 
@@ -650,16 +650,8 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 	info, showErr := o.showTries(keep, id)
 	r.how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
-		o.markAside(id)
-		o.setAsked(id, &workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
-		if info.Status != StatusOpen { // back in the queue once answered
-			if err := o.notes.Reopen(keep, id); err != nil {
-				o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-					"  REOPEN_FAILED: %s stays %s, so it won't come back once %s is answered%s; "+
-						"reopen it with: bd update %s --status open",
-					id, info.Status, q.ID, because(err), id)})
-			}
-		}
+		o.book.ask(id, workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
+		o.reopen(keep, id, info.Status, "come back once "+q.ID+" is answered") // back in the queue once answered
 		o.emit(Event{Kind: EvAsked, Ticket: id, Title: t.Title, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
 			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
 			id, q.ID, q.Title, q.ID, wt, tab)})
@@ -682,7 +674,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 			return s
 		}
 	case outcomeDeferred:
-		o.markAside(id)
+		o.book.setAside(id)
 		empty := o.nothingDone(keep, w)
 		left := fmt.Sprintf("worktree %s and tab %s left open", wt, tab)
 		if empty {
@@ -791,16 +783,9 @@ func (o *Loop) waitForMerge(ctx context.Context, t Ticket, w worker, status Tick
 	if len(on) > 1 {
 		does = "they do"
 	}
-	if status != StatusOpen {
-		if err := o.notes.Reopen(ctx, id); err != nil {
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  REOPEN_FAILED: %s stays %s, so it won't be back in the queue as it waits for %s%s; "+
-					"reopen it with: bd update %s --status open",
-				id, status, blockers, because(err), id)})
-		}
-	}
+	o.reopen(ctx, id, status, "be back in the queue as it waits for "+blockers)
 	// Back in the queue, it is no longer set aside: not as a ticket that asked earlier in the run.
-	o.unmarkAside(id)
+	o.book.requeue(id)
 	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: started before %s merged; back in the queue until %s.", blockers, does))
 	o.repoMu.Lock()
 	cleaned := o.removeWorktree(ctx, id, wt, br)

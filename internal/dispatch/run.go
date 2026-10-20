@@ -843,8 +843,8 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 	// ticket waiting on a question is the exception: bd keeps it out of ready until the question is
 	// answered, and then it comes back.
 	skip := map[string]bool{}
-	for _, id := range o.asideList() {
-		skip[id] = !o.isAsked(id)
+	for _, id := range o.book.keptOut() {
+		skip[id] = true
 	}
 	for id := range running {
 		skip[id] = true

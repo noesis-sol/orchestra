@@ -44,14 +44,15 @@ type Loop struct {
 	log    *Log
 	prompt string // worker prompt with the TICKET_ID placeholder
 
-	deps        // the connections, set by New and never changed
-	tallies     // the sink and what the events sent to it counted, under sinkMu
-	ledger      // what the workers, Run and the merges share, under mu
-	carryover   // the workers carried over from the last run and left for the next, under leftMu
-	predictor   // predicting footprints, under predictMu
-	triageQueue // triage's queue, set by StartTriage before any worker runs
-	envHold     // holding for the environment: Run's own, and triage's once Run has returned
-	usageHold   // holding for the account's usage limit, under limitMu
+	deps                   // the connections, set by New and never changed
+	tallies                // the sink and what the events sent to it counted, under sinkMu
+	ledger                 // what the workers, Run and the merges share, under mu
+	book        ticketBook // each ticket's place in the run (set aside, asked, left open, …), under its own lock
+	carryover              // the workers carried over from the last run and left for the next, under leftMu
+	predictor              // predicting footprints, under predictMu
+	triageQueue            // triage's queue, set by StartTriage before any worker runs
+	envHold                // holding for the environment: Run's own, and triage's once Run has returned
+	usageHold              // holding for the account's usage limit, under limitMu
 
 	started   time.Time
 	startHead string // Base's commit when the run started; the reviewer reads commits since
@@ -150,31 +151,20 @@ type ledger struct {
 	mu        sync.Mutex
 	active    map[string]Status    // tickets being worked on; left set for those still running at the end
 	finishing map[string]string    // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
-	asideIDs  []string             // tickets deferred or left unmerged in this run
-	unmerged  map[string]string    // tickets closed but left unmerged, in this run or an earlier one, with why
 	labelled  map[string]bool      // tickets carrying UnmergedLabel, which a merge removes
 	checkSaid map[string]checkFail // what each ticket's last check in this run said, if it failed
 	rechecks  []recheck            // tickets set aside for a failed check, to check again once Base moves on
 	rechecked map[string]bool      // tickets taken up to be checked again (see dueRecheck)
 	setUpFor  map[string]string    // the commit each ticket's dependencies were set up for (see setUp, setUpWorktree)
 	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
-	// nil for Config's. failedSetups: the tickets whose worktree's setup failed, with where its whole
-	// output is and whether bd reopened them, kept out of the run until a ticket merges or a probe ends a
-	// hold (see leaveSetupFailed).
-	setupSet     *setupConf
-	failedSetups map[string]failedSetup
+	// nil for Config's.
+	setupSet *setupConf
 	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
 	// many times pick has read bd ready; baseAt, the commit Base was on as a pick last read it (see
 	// pickHead).
 	blockers map[string]blockLinks
 	picks    int
 	baseAt   pickedHead
-	// askedIDs: tickets set aside in this run to wait on a question, and where their workers were left;
-	// also those the last run left behind, carried over (see loadCarried).
-	askedIDs map[string]workerSpot
-	// leftOpen: tickets set aside in this run with their workers left in their tabs, which may still
-	// close them there (see leaveOpen).
-	leftOpen map[string]leftOpen
 	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
 	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
 	placed map[string]workerSpot
@@ -198,11 +188,10 @@ type ledger struct {
 // newLedger is the ledger of a run that has done nothing yet.
 func newLedger() ledger {
 	return ledger{
-		active: map[string]Status{}, finishing: map[string]string{}, unmerged: map[string]string{},
+		active: map[string]Status{}, finishing: map[string]string{},
 		labelled: map[string]bool{}, checkSaid: map[string]checkFail{}, rechecked: map[string]bool{},
-		setUpFor: map[string]string{}, failedSetups: map[string]failedSetup{}, blockers: map[string]blockLinks{},
-		askedIDs: map[string]workerSpot{},
-		leftOpen: map[string]leftOpen{}, placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
+		setUpFor: map[string]string{}, blockers: map[string]blockLinks{},
+		placed: map[string]workerSpot{}, sessionResumed: map[string]bool{},
 		parentOf: map[string]string{}, footprints: map[string]*runFootprint{},
 	}
 }

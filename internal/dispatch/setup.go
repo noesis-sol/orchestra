@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -248,22 +247,10 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
 	r.how = setupFailed
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, wt, run.err))
 	f := failedSetup{output: o.keepOutput(wt, setupLogName, "the setup's", run.out)}
-	if r.t.Status != StatusOpen {
-		if err := o.notes.Reopen(keep, id); err != nil {
-			f.notReopened = true
-			o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-				"  REOPEN_FAILED: %s stays %s, so it won't be back in the queue after its setup failed%s; "+
-					"reopen it with: bd update %s --status open", id, r.t.Status, because(err), id)})
-		}
-	}
-	o.mu.Lock()
-	o.failedSetups[id] = f
-	o.mu.Unlock()
-	if !f.notReopened {
-		// Back in the queue, it is no longer set aside: retrySetups brings it back, and the run's end
-		// names it as waiting on its setup.
-		o.unmarkAside(id)
-	}
+	f.notReopened = !o.reopen(keep, id, r.t.Status, "be back in the queue after its setup failed")
+	// Back in the queue, it is no longer set aside: retrySetups brings it back, and the run's end names
+	// it as waiting on its setup.
+	o.book.setupFailed(id, f)
 	o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the setup '%s' %s in worktree %s, so no worker was started; "+
 		"back in the queue (the whole output is in %s).", cmd, run.how(), wt, f.output))
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
@@ -273,10 +260,8 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
 // failedSetupOf reports whether ticket id's worktree's setup failed, keeping it out of the run for now
 // (see leaveSetupFailed), and where the whole output is.
 func (o *Loop) failedSetupOf(id string) (output string, failed bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	f, failed := o.failedSetups[id]
-	return f.output, failed
+	r, _ := o.book.get(id)
+	return r.setup.output, r.disp == dispSetupFailed
 }
 
 // setupWaits is what the run's end line adds for the tickets kept out of it as their worktrees' setup
@@ -284,14 +269,11 @@ func (o *Loop) failedSetupOf(id string) (output string, failed bool) {
 // naming them and where each one's output is, for the maintainer to fix the setup and run again; ""
 // for none. One bd failed to reopen isn't ready, and its REOPEN_FAILED said so: it is left out.
 func (o *Loop) setupWaits() string {
-	o.mu.Lock()
-	var ids, outputs []string
-	for _, id := range slices.Sorted(maps.Keys(o.failedSetups)) {
-		if f := o.failedSetups[id]; !f.notReopened {
-			ids, outputs = append(ids, id), append(outputs, f.output)
-		}
+	var outputs []string
+	ids, recs := o.book.matching(func(r *ticketRecord) bool { return r.disp == dispSetupFailed && !r.setup.notReopened })
+	for _, r := range recs {
+		outputs = append(outputs, r.setup.output)
 	}
-	o.mu.Unlock()
 	switch len(ids) {
 	case 0:
 		return ""
@@ -305,11 +287,7 @@ func (o *Loop) setupWaits() string {
 
 // retrySetups lets the tickets whose worktree's setup failed be taken again: a ticket merged, which
 // may bring what the setup needs, or a probe found the machine working after a hold.
-func (o *Loop) retrySetups() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	clear(o.failedSetups)
-}
+func (o *Loop) retrySetups() { o.book.retrySetups() }
 
 // takeSettings has the run take setup and setup_files from settings.json as ticket id's merge
 // committed it to Base, when the merge, from before, changed it: a setup set during the run counts

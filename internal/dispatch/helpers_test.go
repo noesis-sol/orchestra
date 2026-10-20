@@ -147,6 +147,7 @@ func (h *harness) loop() *Loop {
 	}
 	o := New(h.cfg, log, "Work on TICKET_ID.", d)
 	o.SetSink(h.sink)
+	h.sink.checkBook(h.t, o)
 	if h.mem == nil {
 		o.poll = time.Millisecond // git takes real time: the loop's clock is the real one
 	} else {

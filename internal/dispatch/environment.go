@@ -173,14 +173,10 @@ func (o *Loop) holdForEnvironment(ctx context.Context, why string) {
 // reopenFailed puts a ticket whose worker failed at once back in the queue, keeping its notes: it
 // did nothing, and its worktree is clean.
 func (o *Loop) reopenFailed(ctx context.Context, id string) {
-	if err := o.notes.Reopen(ctx, id); err != nil {
-		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  REOPEN_FAILED: %s failed at once like the tickets before it, and bd could not reopen it%s; "+
-				"reopen it with: bd update %s --status open",
-			id, because(err), id)})
+	if !o.reopen(ctx, id, "", "be back in the queue after failing at once like the tickets before it") {
 		return
 	}
-	o.unmarkAside(id)
+	o.book.requeue(id)
 	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, "+
 		"so the run held for the environment rather than for this ticket.")
 	// No longer set aside: the dashboard's total and the run's closing count leave it out.

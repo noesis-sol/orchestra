@@ -89,8 +89,8 @@ func TestUnmergedBlockersStaleLabel(t *testing.T) {
 	g := newFakeGit("main") // no branches: each closed blocker's work is on main, as far as git says
 	o := New(Config{Base: "main"}, nil, "", Deps{Checkout: g, Worktrees: g, Merger: g})
 	o.active = map[string]Status{"k-run": {Ticket: "k-run"}}
-	o.askedIDs = map[string]workerSpot{"k-ask": {}}
-	o.unmerged = map[string]string{"k-left": earlierRun}
+	o.book.carry("k-ask", workerSpot{})
+	o.book.noteUnmerged("k-left", earlierRun)
 	blocks := func(id string, status TicketStatus, labels ...string) Ticket {
 		return Ticket{ID: id, Status: status, DependencyType: "blocks", Labels: labels}
 	}

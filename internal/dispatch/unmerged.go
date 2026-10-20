@@ -32,9 +32,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 			"tickets it blocks wait until wt/%s is merged into %s or its '%s' label is removed",
 			id, id, c.Base, UnmergedLabel)
 		o.setParent(id, t.Parent)
-		o.mu.Lock()
-		o.unmerged[id] = earlierRun
-		o.mu.Unlock()
+		o.book.noteUnmerged(id, earlierRun)
 		o.setLabelled(id, true)
 	}
 	return nil
@@ -128,10 +126,7 @@ func isHash(s string) bool {
 // leaveUnmerged sets aside a closed ticket that was not merged; tickets it blocks wait for it, in
 // this run and, through its UnmergedLabel, in later ones. It reports whether bd labelled it.
 func (o *Loop) leaveUnmerged(ctx context.Context, id, why string) bool {
-	o.markAside(id)
-	o.mu.Lock()
-	o.unmerged[id] = why
-	o.mu.Unlock()
+	o.book.leaveUnmerged(id, why)
 	return o.label(ctx, id)
 }
 
@@ -204,10 +199,11 @@ func (o *Loop) label(ctx context.Context, id string) bool {
 	return true
 }
 
-// clearUnmerged forgets that the ticket was unmerged, and removes its UnmergedLabel if it has one.
-func (o *Loop) clearUnmerged(ctx context.Context, id string) {
+// merged records the ticket as merged, or closed with nothing to merge: no longer set aside nor
+// unmerged. It removes its UnmergedLabel if it has one.
+func (o *Loop) merged(ctx context.Context, id string) {
+	o.book.merged(id)
 	o.mu.Lock()
-	delete(o.unmerged, id)
 	labelled := o.labelled[id]
 	o.mu.Unlock()
 	if labelled {
@@ -242,13 +238,10 @@ func (o *Loop) busy(id string) bool {
 
 // unmergedWhy is why ticket id is closed but not merged, as the run left it, or "".
 func (o *Loop) unmergedWhy(id string) string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.unmerged[id]
+	r, _ := o.book.get(id)
+	return r.unmerged
 }
 
 func (o *Loop) anyUnmerged() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return len(o.unmerged) > 0
+	return len(o.book.ids(func(r *ticketRecord) bool { return r.unmerged != "" })) > 0
 }

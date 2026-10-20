@@ -409,12 +409,17 @@ type runSink struct {
 	last   map[string]Status // each ticket's latest status, as the dashboard shows it
 	held   chan struct{}
 	once   sync.Once
+	check  func() // run after each event: the ticket book's invariants (see checkBook); nil for none
 }
 
 func (s *runSink) Event(ev Event) {
 	s.mu.Lock()
 	s.events = append(s.events, ev)
+	check := s.check
 	s.mu.Unlock()
+	if check != nil {
+		check()
+	}
 	if ev.Kind == EvHold {
 		s.once.Do(func() { close(s.held) })
 	}
