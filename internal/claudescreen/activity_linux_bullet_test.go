@@ -1,4 +1,4 @@
-package dispatch
+package claudescreen
 
 import "testing"
 
@@ -6,7 +6,7 @@ import "testing"
 func TestLastActivityWithLinuxBullets(t *testing.T) {
 	t.Parallel()
 	screen := "● Bash(go test ./...)\n  ⎿  ok\n\n────────────────\n❯ \n────────────────\n"
-	if got := lastActivity(screen); got != "● Bash(go test ./...)" {
+	if got := (Reader{}).LastActivity(screen); got != "● Bash(go test ./...)" {
 		t.Errorf("got %q", got)
 	}
 }

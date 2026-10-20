@@ -1,4 +1,4 @@
-package dispatch
+package claudescreen
 
 import (
 	"strings"
@@ -19,10 +19,10 @@ func TestLastActivitySkipsTheInputBoxAndStatusBar(t *testing.T) {
 		"────────────────",
 		"  ⏵⏵ auto mode on (shift+tab to cycle)",
 	}, "\n")
-	if got := lastActivity(screen); !strings.HasPrefix(got, "✻ Running checks") {
+	if got := (Reader{}).LastActivity(screen); !strings.HasPrefix(got, "✻ Running checks") {
 		t.Errorf("got %q", got)
 	}
-	if got := lastActivity("❯ \n  status bar"); got != "" {
+	if got := (Reader{}).LastActivity("❯ \n  status bar"); got != "" {
 		t.Errorf("no activity should give empty, got %q", got)
 	}
 }
@@ -48,8 +48,8 @@ func TestInputHoldsOnlyAnUnsentPrompt(t *testing.T) {
 		"": false,
 	}
 	for screen, want := range cases {
-		if got := inputHolds(screen, prompt); got != want {
-			t.Errorf("inputHolds(%q) = %v, want %v", screen, got, want)
+		if got := (Reader{}).InputHolds(screen, prompt); got != want {
+			t.Errorf("InputHolds(%q) = %v, want %v", screen, got, want)
 		}
 	}
 }

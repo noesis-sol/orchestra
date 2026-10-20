@@ -560,7 +560,7 @@ func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 	read := err == nil && st != StateGone
 	var activity string
 	if read {
-		activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.id), st))
+		activity = o.cfg.Agent().Reader().LastActivity(o.agents.Screen(ctx, o.agentName(w.id), st))
 	}
 	var doing Doing
 	permission := false

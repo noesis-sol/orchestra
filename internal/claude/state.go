@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/claudescreen"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -95,7 +96,7 @@ type Hooks struct {
 	// Asked is whether it is blocked on a permission prompt the records tell asked and not answered.
 	// Claude Code runs no hook as a permission is allowed (PreToolUse runs before it asks, PostToolUse
 	// once the tool is done), so one allowed reads asked until its tool is done, however long that
-	// takes: the terminal's screen says whether its dialog still shows (ShowsPermission).
+	// takes: the terminal's screen says whether its dialog still shows (claudescreen.ShowsPermission).
 	Asked bool
 	// Limit is the usage limit the session's last turn ended on, when State is limited; zero otherwise.
 	Limit dispatch.UsageLimit
@@ -161,11 +162,11 @@ func settle(h Hooks, screen string, read bool) dispatch.AgentState {
 	switch {
 	case !read:
 	case h.firstTurnNotDone():
-		if ShowsDialog(screen) {
+		if claudescreen.ShowsDialog(screen) {
 			return dispatch.StateBlocked
 		}
 	case h.Asked:
-		if screen != "" && !ShowsPermission(screen) {
+		if screen != "" && !claudescreen.ShowsPermission(screen) {
 			return dispatch.StateWorking // allowed, which runs no hook: its tool runs
 		}
 	}

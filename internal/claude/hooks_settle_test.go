@@ -111,22 +111,3 @@ func TestReadHooksOfAWorktree(t *testing.T) {
 		t.Errorf("ReadHooks of a folder that isn't there = %+v, want unknown", h)
 	}
 }
-
-// Claude Code's start-up dialogs show on screen, in any case; their words above the bottom of the
-// screen don't count.
-func TestShowsDialog(t *testing.T) {
-	t.Parallel()
-	for screen, want := range map[string]bool{
-		"Quick safety check: is this a project you created or one you trust?\n\n❯ 1. Yes, I trust this folder\n": true,
-		"New MCP server found in this project: github\n":                                                         true,
-		"3 new MCP servers found in this project\n":                                                              true,
-		"╭───╮\n│ Do you trust the files in this folder? │\n│ ❯ 1. Yes, Trust This Folder │\n╰───╯\n":            true,
-		"Welcome to Claude Code\n\n> \n":                                                                         false,
-		"":                                                                                                       false,
-		"Yes, I trust this folder\n" + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nok\n": false,
-	} {
-		if got := ShowsDialog(screen); got != want {
-			t.Errorf("ShowsDialog(%q) = %v, want %v", screen, got, want)
-		}
-	}
-}

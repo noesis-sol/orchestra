@@ -449,7 +449,7 @@ func (o *Loop) agentName(id string) string {
 func (o *Loop) promptTaken(ctx context.Context, id, agent, prompt string, atLaunch, resumed bool) bool {
 	if atLaunch {
 		if o.agents.WaitStarted(ctx, agent) ||
-			!resumed && (o.claimed(ctx, id) || lastActivity(o.agents.Screen(ctx, agent, "")) != "") {
+			!resumed && (o.claimed(ctx, id) || o.cfg.Agent().Reader().LastActivity(o.agents.Screen(ctx, agent, "")) != "") {
 			return true
 		}
 		if ctx.Err() != nil {
@@ -497,7 +497,7 @@ func (o *Loop) deliverPrompt(ctx context.Context, agent, prompt string) bool {
 		case StateWorking, StateBlocked:
 			return true // it started; a block is handled by the settle loop
 		case StateIdle, StateDone:
-			if inputHolds(o.agents.Screen(ctx, agent, st), o.typedPrompt(ctx, agent, prompt)) {
+			if o.cfg.Agent().Reader().InputHolds(o.agents.Screen(ctx, agent, st), o.typedPrompt(ctx, agent, prompt)) {
 				if err := o.agents.SendKeys(ctx, agent, "enter"); err != nil {
 					o.log.Raw("", fmt.Errorf("cannot press Enter for %s: %w", agent, err))
 				}

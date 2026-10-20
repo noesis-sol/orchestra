@@ -137,37 +137,3 @@ func TestStopAfterTheGraceNoteLimitsTheWorker(t *testing.T) {
 		t.Errorf("last report at its next turn's end: %+v, want a Stop", u)
 	}
 }
-
-// Claude Code's notice that it continues by itself once the limit resets is the screen's sign of a turn
-// that ended normally at the limit, where no words of the limit show under the prompt; not once the session
-// went on.
-func TestScreenShowsTheLimitAfterTheGraceNote(t *testing.T) {
-	t.Parallel()
-	ended := "❯ Work on the ticket\n" +
-		"⏺ Your usage limit was reached partway through the ticket, so I stopped and saved the work.\n" +
-		"⏺ Usage limit reached · continuing automatically at 5:30am · esc to cancel\n" +
-		"✻ Worked for 21m 3s\n" +
-		"────────────────────────────────────────\n" +
-		"❯ \n" +
-		"────────────────────────────────────────\n" +
-		"  ⚠ Usage limit reached · limit resets 5:30am\n" +
-		"    Continuing automatically at 5:30am · esc to cancel\n"
-	wentOn := strings.Replace(ended, "✻ Worked for 21m 3s\n", "✻ Worked for 21m 3s\n"+
-		"⏺ Usage limit reset · continuing automatically\n"+
-		"❯ Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; "+
-		"do not repeat work that is already complete.\n"+
-		"⏺ Picking the ticket up where I left it.\n", 1)
-	quoted := "❯ Work on the ticket\n⏺ Claude Code may say: Usage limit reached · continuing automatically at 5:30am\n"
-	for name, c := range map[string]struct {
-		screen string
-		want   bool
-	}{
-		"waiting to continue by itself": {ended, true},
-		"gone on after the reset":       {wentOn, false},
-		"a message quoting the notice":  {quoted, false},
-	} {
-		if got := ShowsUsageLimit(c.screen); got != c.want {
-			t.Errorf("%s: %v, want %v", name, got, c.want)
-		}
-	}
-}

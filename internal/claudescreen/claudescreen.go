@@ -1,14 +1,86 @@
-package claude
+// Package claudescreen reads Claude Code's screen, as a terminal gives it: its glyphs and dialogs, its
+// input box, its latest action, and its words of the account's usage limit. It is the one place that knows
+// what Claude Code shows; the claude agent kind's row (internal/agentkind) reads a worker's screen with
+// its Reader, and internal/claude reads a session's dialogs here where its hooks can't tell.
+package claudescreen
 
 import (
+	"slices"
 	"strings"
-	"time"
-
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// A terminal reads a Claude session's visible screen where its hooks can't tell: for the dialogs that
-// run no hook, and for a permission prompt allowed, which runs none either (see Hooks.Settle).
+// Reader reads a Claude Code worker's screen: the claude agent kind's screen reader.
+type Reader struct{}
+
+// InputHolds reports whether the agent's input box still holds the prompt, unsent. The box runs
+// from the last line starting with ❯ to the rule below it; a long paste shows only its last lines
+// there, or a "[Pasted text …]" placeholder, so any substantial line of the prompt counts.
+func (Reader) InputHolds(screen, prompt string) bool {
+	lines := strings.Split(screen, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "❯") {
+			start = i
+		}
+	}
+	if start < 0 {
+		return false
+	}
+	var box []string
+	for i, l := range lines[start:] {
+		t := strings.TrimSpace(l)
+		if i > 0 && strings.HasPrefix(t, "─") {
+			break
+		}
+		box = append(box, t)
+	}
+	box[0] = strings.TrimSpace(strings.TrimPrefix(box[0], "❯"))
+	text := strings.Join(box, " ")
+	if strings.Contains(text, "[Pasted text") {
+		return true
+	}
+	for l := range strings.SplitSeq(prompt, "\n") {
+		r := []rune(strings.TrimSpace(l))
+		if len(r) < 20 {
+			continue // too short to tell apart from anything else on screen
+		}
+		if len(r) > 40 {
+			r = r[:40]
+		}
+		if strings.Contains(text, string(r)) {
+			return true
+		}
+	}
+	return false
+}
+
+// messageBullets are the bullets Claude Code starts its messages and tool calls with on the screen: ⏺ on
+// macOS, ● elsewhere (its BLACK_CIRCLE).
+var messageBullets = []string{"⏺", "●"}
+
+// Claude Code marks tool calls with a message bullet and its working spinner with one of these glyphs.
+var activityMarks = append(slices.Clone(messageBullets), "✻", "✶", "✳", "✢", "✽")
+
+// LastActivity returns the worker's most recent action or spinner line, skipping the input box
+// and status bar at the bottom of its screen.
+func (Reader) LastActivity(screen string) string {
+	lines := strings.Split(screen, "\n")
+	for _, line := range slices.Backward(lines) {
+		l := strings.TrimSpace(line)
+		for _, m := range activityMarks {
+			if strings.HasPrefix(l, m) {
+				return l
+			}
+		}
+	}
+	return ""
+}
+
+// ShowsUsageLimit is the package's ShowsUsageLimit.
+func (Reader) ShowsUsageLimit(screen string) bool { return ShowsUsageLimit(screen) }
+
+// A session's visible screen is read where its hooks can't tell: for the dialogs that run no hook, and
+// for a permission prompt allowed, which runs none either (see internal/claude's Hooks.Settle).
 
 // dialogs are what Claude Code shows of the dialogs it asks before a session starts, which run no
 // hook: whether to trust the folder, and whether to use the project's MCP servers.
@@ -110,18 +182,8 @@ func bottom(screen string) []string {
 // reached your Fable limit." for a model that needs usage credits, tell no limit that resets.
 var limitWords = []string{"You've hit your ", "You're out of usage credits"}
 
-// usageLimit is the usage limit a turn that ended on an API error of the kind (StopFailure's error)
-// with the message (its last_assistant_message) ended on, the turn having ended at at; false when the
-// error is another, as a server that limits requests is.
-func usageLimit(kind, message string, at time.Time) (dispatch.UsageLimit, bool) {
-	if kind != "rate_limit" || !saysLimit(message) {
-		return dispatch.UsageLimit{}, false
-	}
-	return dispatch.UsageLimit{At: at, Reset: dispatch.LimitReset(message, at), Message: message}, true
-}
-
-// saysLimit reports whether s, StopFailure's message, is Claude Code's words of the usage limit.
-func saysLimit(s string) bool {
+// SaysLimit reports whether s, StopFailure's message, is Claude Code's words of the usage limit.
+func SaysLimit(s string) bool {
 	for _, w := range limitWords {
 		if strings.HasPrefix(s, w) {
 			return true
@@ -135,7 +197,7 @@ func saysLimit(s string) bool {
 // may, is not.
 func showsLimit(l string) bool {
 	rest, ok := strings.CutPrefix(strings.TrimLeft(l, " \u00a0"), "⎿")
-	return ok && saysLimit(strings.TrimLeft(rest, " \u00a0"))
+	return ok && SaysLimit(strings.TrimLeft(rest, " \u00a0"))
 }
 
 // ShowsUsageLimit reports whether screen, a Claude session's screen, shows its last turn ended on the
@@ -171,10 +233,10 @@ func showsContinue(l string) bool {
 }
 
 // bulleted is l, a line of the screen, after the bullet Claude Code starts a message with (one of
-// dispatch.MessageBullets: ⏺ on macOS, ● elsewhere), and whether l starts with one.
+// messageBullets: ⏺ on macOS, ● elsewhere), and whether l starts with one.
 func bulleted(l string) (string, bool) {
 	l = strings.TrimSpace(l)
-	for _, b := range dispatch.MessageBullets {
+	for _, b := range messageBullets {
 		if m, ok := strings.CutPrefix(l, b); ok {
 			return m, true
 		}

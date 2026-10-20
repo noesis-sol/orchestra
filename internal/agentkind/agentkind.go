@@ -3,6 +3,8 @@
 // project up for them reads the kind's row (Of) rather than comparing its name.
 package agentkind
 
+import "github.com/noesis-sol/orchestra/internal/claudescreen"
+
 // Kind is one kind of agent, as a row of kinds describes it.
 type Kind struct {
 	// Name is the kind as --agent, AGENT_KIND and the terminals name it.
@@ -32,24 +34,51 @@ type Kind struct {
 	LimitNote bool
 	// Subagents says init can write subagents for it, such as the verifier.
 	Subagents bool
-	// UsageLimitOnScreen says its screen shows the account's usage limit as Claude Code's does, which
-	// Herdr, having no state for it, reads there.
-	UsageLimitOnScreen bool
+	// Screen reads its screen, as a terminal gives it (see ScreenReader); nil for a kind whose screen
+	// orchestra can't read, which gets no reading of it (Reader).
+	Screen ScreenReader
 }
+
+// ScreenReader reads what an agent kind's screen shows, which only the kind knows: its glyphs, its
+// input box, its dialogs. A screen is the end of a worker's terminal, as dispatch.Agents.Screen gives it.
+type ScreenReader interface {
+	// InputHolds reports whether the input box still holds prompt, unsent.
+	InputHolds(screen, prompt string) bool
+	// LastActivity is the worker's most recent action or spinner line; "" when the screen shows none.
+	LastActivity(screen string) string
+	// ShowsUsageLimit reports whether the screen shows its last turn ended on the account's usage limit,
+	// which Herdr, having no state for it, reads there.
+	ShowsUsageLimit(screen string) bool
+}
+
+// Reader is the kind's Screen, or for a kind without one a reader that finds nothing on a screen.
+func (k Kind) Reader() ScreenReader {
+	if k.Screen == nil {
+		return noScreen{}
+	}
+	return k.Screen
+}
+
+// noScreen is the ScreenReader of a kind whose screen orchestra can't read.
+type noScreen struct{}
+
+func (noScreen) InputHolds(string, string) bool { return false }
+func (noScreen) LastActivity(string) string     { return "" }
+func (noScreen) ShowsUsageLimit(string) bool    { return false }
 
 // Claude is Claude Code, the default kind.
 var Claude = Kind{
-	Name:               "claude",
-	SkillsDir:          ".claude/skills",
-	ClaudeArgs:         true,
-	MCP:                true,
-	Rules:              true,
-	LaunchPrompt:       true,
-	Hooks:              true,
-	CheckTimeNote:      true,
-	LimitNote:          true,
-	Subagents:          true,
-	UsageLimitOnScreen: true,
+	Name:          "claude",
+	SkillsDir:     ".claude/skills",
+	ClaudeArgs:    true,
+	MCP:           true,
+	Rules:         true,
+	LaunchPrompt:  true,
+	Hooks:         true,
+	CheckTimeNote: true,
+	LimitNote:     true,
+	Subagents:     true,
+	Screen:        claudescreen.Reader{},
 }
 
 // Codex is OpenAI's Codex CLI, of which orchestra knows only where it finds a project's skills.

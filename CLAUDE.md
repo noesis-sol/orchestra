@@ -115,7 +115,9 @@ the orchestra skill's opening define both terms; use them consistently.
   for the tests on a real tmux or cmux), `internal/tmuxtest` and `internal/cmuxtest` (a tmux server or cmux app of
   the test's own), `internal/watchdog` (stops what such a test started once the test binary exits, however it
   exits), `internal/gittest`.
-- `internal/agentkind`: the workers' agent kinds, a row each (`Of`): what a worker of the kind is given and told.
+- `internal/agentkind`: the workers' agent kinds, a row each (`Of`): what a worker of the kind is given and told, and
+  how its screen is read (`ScreenReader`). `internal/claudescreen`: Claude Code's screen, its glyphs and dialogs in one
+  package: its input box, latest action, usage limit, start-up and permission dialogs.
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
 - `internal/load`: the machine's load for the dashboard's load line: each worker's process-tree memory from one `ps`
   listing, the kernel's memory pressure, swapping and CPU load (macOS and Linux), and the thresholds that colour it.

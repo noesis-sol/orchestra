@@ -11,8 +11,8 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// A turn can end normally at the account's usage limit, after Claude Code's grace note (see the comment
-// above limitWords): its Stop hook says no more than any turn's end, and the transcript tells the limit,
+// A turn can end normally at the account's usage limit, after Claude Code's grace note (see claudescreen's
+// comment above limitWords): its Stop hook says no more than any turn's end, and the transcript tells the limit,
 // in the notices of its automatic continue. A session whose turn ended with a Stop is limited while the
 // transcript's last notice of the limit says it waits to continue by itself, with no message or prompt
 // after it. Claude Code runs the turn's Stop hooks before it logs the turn's end and that notice (in a

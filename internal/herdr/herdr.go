@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/agentkind"
-	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -539,15 +538,15 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 }
 
 // Status returns the agent's state, StateGone if Herdr has no such agent. If Herdr cannot be asked
-// it returns the error and no state: the agent may well be there. Herdr has no state for a Claude Code
-// agent whose turn ended on the account's usage limit: one it shows at rest (idle, done, or blocked on
-// the dialog Claude Code may ask then) is limited when its screen shows the limit
-// (claude.ShowsUsageLimit).
+// it returns the error and no state: the agent may well be there. Herdr has no state for an agent whose
+// turn ended on the account's usage limit: one it shows at rest (idle, done, or blocked on the dialog
+// Claude Code may ask then) is limited when its kind's screen reader finds the limit on its screen
+// (agentkind.ScreenReader's ShowsUsageLimit); the screen of a kind without one isn't read for it.
 func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
 	_, kind, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
-	if err == nil && agentkind.Named(kind).UsageLimitOnScreen &&
+	if r := agentkind.Named(kind).Screen; err == nil && r != nil &&
 		(st == dispatch.StateIdle || st == dispatch.StateDone || st == dispatch.StateBlocked) &&
-		claude.ShowsUsageLimit(t.Screen(ctx, name, st)) {
+		r.ShowsUsageLimit(t.Screen(ctx, name, st)) {
 		return dispatch.StateLimited, nil
 	}
 	return st, err
