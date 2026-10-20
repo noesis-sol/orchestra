@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"sync"
@@ -160,8 +161,9 @@ func (t mergeTurn) Unlock() {
 }
 
 // showMerge shows ticket id at stage of its merge on the dashboard, at place in line when it is
-// queued (1: next), its worker done with it. A ticket no longer worked on isn't shown. The caller
-// holds merges.mu, so the places shown follow the line as it changes.
+// queued (1: next), its worker done with it, and how its check ahead of its turn goes, if it has one
+// (see trainActivity). A ticket no longer worked on isn't shown. The caller holds merges.mu, so the
+// places shown follow the line as it changes.
 func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 	o.mu.Lock()
 	st, ok := o.active[id]
@@ -174,6 +176,9 @@ func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 		return
 	}
 	activity := st.Activity // a ticket checked again says so (see recheck)
+	if stage == MergeQueued {
+		activity = cmp.Or(o.merges.trainActivity(id), activity) // one checked ahead of its turn says how it goes
+	}
 	switch {
 	case activity != "":
 	case stage == MergeRunning:

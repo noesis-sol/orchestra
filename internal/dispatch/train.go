@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // The merge train: while the ticket holding the merge queue is checked, the next in line, waiting for
@@ -28,6 +29,7 @@ type trainRun struct {
 	head   string        // its branch's commit after the rebase; "" until it is rebased, or if it wasn't
 	passed string        // the commit the check passed on; "" when it didn't, or hasn't yet
 	failed bool          // it was not rebased, or its check failed or stopped: none behind it starts
+	cut    bool          // its check was cut short, not failed: the branch ahead didn't merge as checked
 }
 
 // mayCheckAhead says that w's ticket waits for its first turn in its merge: until it takes the queue,
@@ -103,6 +105,7 @@ func (o *Loop) startTrains() {
 				q.trains = map[string]*trainRun{}
 			}
 			q.trains[next.id] = t
+			o.showTrain(t)
 		}
 		if t.onto != onto || t.head == "" || t.failed {
 			return // on another branch than the one ahead as it is now, or not rebased onto it (yet)
@@ -149,7 +152,7 @@ func (o *Loop) runTrain(ctx context.Context, w worker, t *trainRun) {
 		o.info("  %s on %s ahead of its turn, on top of %s (output is in %s); it is checked again in its turn",
 			o.failedHow(setup, err), w.br, t.behind, output)
 	}
-	o.trainChecked(t, head, err == nil)
+	o.trainChecked(t, head, err == nil, err != nil && ctx.Err() != nil)
 }
 
 // rebaseAhead rebases w's branch onto t.onto in its worktree, holding repoMu, and returns its commit
@@ -203,28 +206,64 @@ func (o *Loop) trainRebased(t *trainRun, head string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	t.head, t.failed = head, head == ""
+	o.showTrain(t)
 	if head != "" {
 		o.startTrains()
 	}
 }
 
-// trainChecked records the check on t's branch at head as passed, or not: the trains behind one that
-// failed are stopped, as it is rebased again in its turn.
-func (o *Loop) trainChecked(t *trainRun, head string, passed bool) {
+// trainChecked records the check on t's branch at head as passed, or not, or cut short: the trains
+// behind one that failed are stopped, as it is rebased again in its turn.
+func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
 	q := &o.merges
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	defer o.showTrain(t)
 	if passed {
 		t.passed = head
 		return
 	}
-	t.failed = true
+	t.failed, t.cut = true, cut
 	behind := false
 	for _, w := range q.line {
 		if b := q.trains[w.id]; b != nil && behind {
 			b.cancel()
 		}
 		behind = behind || w.id == t.id
+	}
+}
+
+// showTrain shows t's ticket, while it waits in line, with how its check ahead of its turn goes (see
+// trainActivity). The caller holds merges.mu.
+func (o *Loop) showTrain(t *trainRun) {
+	q := &o.merges
+	if q.trains[t.id] != t {
+		return // its turn came: it shows as merging
+	}
+	if i := slices.IndexFunc(q.line, func(w mergeWaits) bool { return w.id == t.id }); i >= 0 {
+		o.showMerge(t.id, MergeQueued, i+1)
+	}
+}
+
+// trainActivity is what ticket id, waiting in line, shows of its check ahead of its turn on the
+// dashboard; "" when it has none, or none under way or done: it wasn't rebased onto the branch ahead,
+// or its check was cut short, as it is rebased and checked in its turn then. The caller holds merges.mu.
+func (q *mergeQueue) trainActivity(id string) string {
+	t := q.trains[id]
+	switch {
+	case t == nil:
+		return ""
+	case t.passed != "":
+		return "passed its check ahead of its turn, on top of " + t.behind + ": merges with no further check if " +
+			t.behind + " merges as checked"
+	case t.failed && t.head != "" && !t.cut:
+		return "failed its check ahead of its turn, on top of " + t.behind + ": checked again in its turn"
+	case t.failed:
+		return ""
+	case t.head == "":
+		return "rebasing onto " + t.behind + ", to be checked ahead of its turn on top of it as it is checked"
+	default:
+		return "checked ahead of its turn, on top of " + t.behind + " as it is checked"
 	}
 }
 

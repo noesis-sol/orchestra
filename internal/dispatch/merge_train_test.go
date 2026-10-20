@@ -103,17 +103,23 @@ func trainCheck(dir string, waits bool) string {
 // the git it ran on, the run's exit code and where the checks counted their runs. A lands a commit on
 // main before it closes, so both are rebased; B finishes a minute later, while A merges.
 func trainScenario(t *testing.T, train int, aPasses, aWaits bool) (*harness, *trainGit, *Loop, int, string) {
-	h := newTimedHarness(t)
 	dir := t.TempDir()
 	if aPasses {
 		if err := os.WriteFile(filepath.Join(dir, "A.passes"), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+	h, g, o := trainLoop(t, train, trainCheck(dir, aWaits))
+	return h, g, o, o.Run(context.Background()), dir
+}
+
+// trainLoop is trainScenario's run, yet to start, its check check.
+func trainLoop(t *testing.T, train int, check string) (*harness, *trainGit, *Loop) {
+	h := newTimedHarness(t)
 	h.cfg.Concurrency = 2
 	h.cfg.MergeTrain = train
 	h.cfg.CheckHandBacks = 0
-	h.cfg.Check = trainCheck(dir, aWaits)
+	h.cfg.Check = check
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.worker("A", func(w *fakeWorker) AgentState {
@@ -130,7 +136,7 @@ func trainScenario(t *testing.T, train int, aPasses, aWaits bool) (*harness, *tr
 	o := h.loop()
 	o.merger, o.checkout = g, g
 	o.SetSink(queuedSink{Sink: h.sink, on: "B", once: &sync.Once{}, queued: queued})
-	return h, g, o, o.Run(context.Background()), dir
+	return h, g, o
 }
 
 // commitOf is the hash of the commit on branch whose subject is subject, as the fake's log gives it.

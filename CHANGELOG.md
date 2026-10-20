@@ -23,6 +23,9 @@ All notable changes to orchestra are documented here. The format follows
   checked in its turn as before. `"merge_train"` in `settings.json` says how
   many are checked ahead (default 1; `0` for none); none is while the run
   holds at the machine's cap on workers.
+- A ticket checked ahead of its turn to merge says so on the dashboard while
+  it waits: its latest action reads that it is rebased onto the branch
+  ahead, checked on top of it, or that its check passed or failed there.
 - The dashboard leaves a blank line between its title line and the load line
   under it, so the two no longer run together. A pane too short for it drops
   the blank line first, before any line with something on it.
