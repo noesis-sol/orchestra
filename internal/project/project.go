@@ -491,6 +491,10 @@ func fillTemplate(t string, checks PromptChecks) string {
 // suitesPlaceholder is the template's line for how to run each suite on part of the project.
 const suitesPlaceholder = "<How to run each suite on part of the project.>"
 
+// suitesIntro is the worker prompt's line before its bullets on how to run each suite on part of the
+// project, a bullet a suite, where init knows the suites.
+const suitesIntro = "  The suites, and how to run each on part of the project:\n"
+
 // suiteLines are the worker prompt's lines on how to run each suite on part of the project: a line a
 // suite where init knows them all (suiteBullets). Where init doesn't know them, the lines say where
 // the suites are and how to run them.
@@ -505,7 +509,7 @@ func suiteLines(checks PromptChecks) string {
 			"  line: run each on part of the project where its tool allows it (`go test ./<package>/...`,\n" +
 			"  `pytest <paths>`, `eslint <files>`), and whole where it doesn't.\n"
 	}
-	return "  The suites, and how to run each on part of the project:\n" + bullets
+	return suitesIntro + bullets
 }
 
 // suiteBullets are the lines on how to run each of the suites FastRunner and FullRunner run on part of

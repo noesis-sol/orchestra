@@ -305,12 +305,17 @@ type TemplateUpdate struct {
 // currentPrompt is the worker prompt init would write for the project in repo now, whose merge check
 // is check (FastRunner where settings.json names none): the template, with the Verify section where
 // text, the project's prompt, runs the verifier. Init doesn't know the suites here, which the scout
-// found: the lines on running each on part of the project say where they are.
+// found: the lines on running each on part of the project are text's, a bullet a suite, where it has
+// them (keptBullets), and else say where the suites are.
 func currentPrompt(text, check string) string {
 	if check == "" {
 		check = FastRunner
 	}
-	p := fillTemplate(promptTemplate, PromptChecks{Check: check})
+	checks := PromptChecks{Check: check}
+	p := fillTemplate(promptTemplate, checks)
+	if bullets := keptBullets(text, suitesIntro); bullets != "" {
+		p = strings.Replace(p, suiteLines(checks), suitesIntro+bullets, 1)
+	}
 	if usesVerifier(text) {
 		p += verifierSection
 	}
@@ -318,9 +323,10 @@ func currentPrompt(text, check string) string {
 }
 
 // currentVerifier is the verifier init would write for the project in repo now, its suites read from
-// the runners. Its stack, which the scout found, is the project's copy's: the template never changes
-// that section.
-func currentVerifier(repo string) (string, error) {
+// the runners, and the bullets on how to run each on what a change touches, which the scout found,
+// text's, the project's copy (keptBullets). Its stack, which the scout found too, is the copy's: the
+// template never changes that section.
+func currentVerifier(repo, text string) (string, error) {
 	fast, err := runnerSuites(repo, FastRunner)
 	if err != nil {
 		return "", err
@@ -329,7 +335,25 @@ func currentVerifier(repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return VerifierText(nil, fast, full, nil, nil), nil
+	return verifierWithParts(nil, fast, full, keptBullets(text, partsIntro)), nil
+}
+
+// keptBullets are the lines of text, a project's copy of a template, that follow its line intro and
+// start with two spaces: the bullets init wrote there, a suite each, with any lines the project added
+// to them. "" where text lacks intro.
+func keptBullets(text, intro string) string {
+	_, rest, ok := strings.Cut("\n"+text, "\n"+intro)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	for line := range strings.SplitAfterSeq(rest, "\n") {
+		if !strings.HasPrefix(line, "  ") || !strings.HasSuffix(line, "\n") {
+			break
+		}
+		b.WriteString(line)
+	}
+	return b.String()
 }
 
 // ErrNotSetUp is UpdateTemplates' error for a repository init hasn't set up: no worker prompt in
@@ -372,7 +396,7 @@ func UpdateTemplates(repo string) ([]Step, []TemplateUpdate, error) {
 		}
 		current := currentPrompt(o.text, s.CheckFast)
 		if f.path == VerifierPath {
-			if current, err = currentVerifier(repo); err != nil {
+			if current, err = currentVerifier(repo, o.text); err != nil {
 				return steps, updates, err
 			}
 		}

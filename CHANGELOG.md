@@ -20,6 +20,10 @@ All notable changes to orchestra are documented here. The format follows
   from (`"templates"`), as `init` writes them; a project set up before has
   its files read for each change's words instead. tutti's prompt of
   2026-10-16 still had its workers and verifier run the whole merge check.
+- `orchestra init --update` keeps the worker prompt's lines on running each
+  suite on part of the project, a bullet a suite as the scout found them,
+  when it rewrites the opening, and the verifier's bullets on them when it
+  rewrites Its checks, rather than write the lines for suites it doesn't know.
 - Workers share the machine's cores in their checks: each Claude worker
   starts with its share, the cores divided among the run's `concurrent`
   workers and those running in the machine's other runs (kept to

@@ -66,14 +66,24 @@ func OffersVerifier(repo, agent string) bool {
 // chose for them, as it passes them to the worker prompt, for how to run each on part of the project;
 // nil where init doesn't know them.
 func VerifierText(stack, fast, full []string, chosenFast, chosenFull *[]Suite) string {
+	return verifierWithParts(stack, fast, full, suiteBullets(chosenFast, chosenFull))
+}
+
+// verifierWithParts is the verifier VerifierText writes, whose Its checks give parts, the bullets on how
+// to run each suite on what a change touches after the line partsIntro; "" where init doesn't know them.
+func verifierWithParts(stack, fast, full []string, parts string) string {
 	var b strings.Builder
 	// The template is fixed and its data plain strings: it can't fail.
 	_ = verifierText.Execute(&b, struct {
 		Stack, Fast, Full                           []string
 		Parts, FastRunner, FullRunner, CheckTimeout string
-	}{stack, fast, full, suiteBullets(chosenFast, chosenFull), FastRunner, FullRunner, DefaultCheckTimeoutText})
+	}{stack, fast, full, parts, FastRunner, FullRunner, DefaultCheckTimeoutText})
 	return b.String()
 }
+
+// partsIntro is the line of verifier.md's Its checks before the bullets on how to run each suite on what
+// a change touches, where init knows the suites.
+const partsIntro = "- How to run each suite on what a change touches, as the worker prompt has workers run them:\n"
 
 // runnerSuites are the commands of the runner at path, from the repository's top, as written: for
 // check-full, those after check-fast. None when it isn't there.
