@@ -43,19 +43,22 @@ func (o *Loop) shareCores(others int) {
 	o.share.Store(int64(coreShare(cores, o.cfg.Concurrency, others, o.cfg.MachineWorkers)))
 }
 
-// workerEnv is the environment a worker starts with beside the run's own: its share of the machine's
-// cores (see shareCores), as CoresVar and as GOFLAGS's -p, after the GOFLAGS the run has, unless those
-// set -p already. nil before Run has shared the cores.
+// workerEnv is the environment a worker starts with beside the run's own: Bash's timeouts at the merge
+// check's limit for a worker told how to give a check its time (see bashTimeoutEnv), and its share of
+// the machine's cores (see shareCores), as CoresVar and as GOFLAGS's -p, after the GOFLAGS the run has,
+// unless those set -p already, once Run has shared the cores. nil when it has neither.
 func (o *Loop) workerEnv(ctx context.Context) map[string]string {
-	n := o.share.Load()
-	if n == 0 {
-		return nil
+	env := o.bashTimeoutEnv()
+	if n := o.share.Load(); n != 0 {
+		share := strconv.FormatInt(n, 10)
+		env[CoresVar] = share
+		flags := strings.Fields(command.Getenv(ctx, "GOFLAGS"))
+		if !hasParallelFlag(flags) {
+			env["GOFLAGS"] = strings.Join(append(flags, "-p="+share), " ")
+		}
 	}
-	share := strconv.FormatInt(n, 10)
-	env := map[string]string{CoresVar: share}
-	flags := strings.Fields(command.Getenv(ctx, "GOFLAGS"))
-	if !hasParallelFlag(flags) {
-		env["GOFLAGS"] = strings.Join(append(flags, "-p="+share), " ")
+	if len(env) == 0 {
+		return nil
 	}
 	return env
 }

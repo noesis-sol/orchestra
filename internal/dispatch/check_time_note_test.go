@@ -9,10 +9,10 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// A Claude worker's rules have it give a check its time: Bash's timeout at its maximum, as Bash
-// otherwise moves a check to the background after 2 minutes, and for a check that can take longer
-// than that, as long as the merge check's limit, which they name, the background with a wait on
-// Monitor rather than a long sleep.
+// A Claude worker whose settings can't give it Bash's timeout (see bashTimeoutEnv) has its rules tell
+// it to give a check its time: Bash's timeout at its maximum, as Bash otherwise moves a check to the
+// background after 2 minutes, and for a check that can take longer than that, as long as the merge
+// check's limit, which they name, the background with a wait on Monitor rather than a long sleep.
 func TestClaudeWorkerRulesGiveACheckItsTime(t *testing.T) {
 	t.Parallel()
 	for _, limit := range []time.Duration{0, 45 * time.Minute} {

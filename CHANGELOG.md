@@ -61,6 +61,13 @@ All notable changes to orchestra are documented here. The format follows
   started blind: on 2026-10-20 one of tutti's verifier rounds held a
   requirement one way and a later one the other, and the worker deferred
   after three FAILs. `orchestra init --update` takes the change.
+- A Claude worker's settings set `BASH_DEFAULT_TIMEOUT_MS` to the merge
+  check's limit (`check_fast_timeout`) and `BASH_MAX_TIMEOUT_MS` to that or
+  10 minutes, whichever is longer, so Bash waits on a check in the
+  foreground for as long as the merge check may take, the verifier's
+  included, without a timeout passed. The rules' note on giving a check its
+  time now says so and tells the worker to pass none, in place of Bash's
+  10-minute maximum and Monitor on a check in the background.
 
 ### Fixed
 

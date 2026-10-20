@@ -105,7 +105,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `gate.go` | the gate: why the run takes no new tickets (its stops, winding down, the ticket limit, the usage limit, the machine's cap on workers, the environment), under its own lock, read alike by `Run` and the merges; each hold registers what it does at its end, which wakes `Run` whatever else happens; `runState.wait`, where every loop of `Run`'s waits, hearing drain requests, triage's verdicts and the gate |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
-| `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without |
+| `rules.go` | a worker's standing rules (the worker prompt) and its first message, with its rules in its system prompt or without; Bash's timeouts in a Claude worker's environment, at the merge check's limit |
 | `mcp.go` | the MCP servers a Claude worker starts with, and orchestra's own sessions (`SessionMCP`), and the warning the run gives once about them |
 | `permission_mode.go` | the permission mode Claude workers start in (`--permission-mode`), as the `START` line says it, and whether their `claude --help` lists it |
 | `unused_tools.go` | the tools Claude workers start without (`--disallowedTools`), Skill unless the project has skills of its own, when their `claude --help` lists it |

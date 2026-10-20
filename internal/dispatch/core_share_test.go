@@ -38,12 +38,16 @@ func TestCoreShare(t *testing.T) {
 }
 
 // The worker's environment gives its share as ORCHESTRA_CORES and as GOFLAGS's -p, after the flags the
-// run has, unless they set -p themselves; nothing before the cores are shared.
+// run has, unless they set -p themselves; no share before the cores are shared.
 func TestWorkerEnvGivesTheShare(t *testing.T) {
 	o := New(Config{Concurrency: 4, Limit: NoLimit}, &Log{}, "", Deps{})
 	o.cores = 10
-	if env := o.workerEnv(command.WithEnv(context.Background(), "GOFLAGS=")); env != nil {
-		t.Errorf("env before the cores are shared %v, want none", env)
+	env := o.workerEnv(command.WithEnv(context.Background(), "GOFLAGS="))
+	if _, set := env[CoresVar]; set {
+		t.Errorf("env before the cores are shared %v, want no share", env)
+	}
+	if _, set := env["GOFLAGS"]; set {
+		t.Errorf("env before the cores are shared %v, want no GOFLAGS", env)
 	}
 	o.shareCores(1)
 	for goflags, want := range map[string]string{
