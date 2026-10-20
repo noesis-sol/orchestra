@@ -20,6 +20,14 @@ All notable changes to orchestra are documented here. The format follows
   from (`"templates"`), as `init` writes them; a project set up before has
   its files read for each change's words instead. tutti's prompt of
   2026-10-16 still had its workers and verifier run the whole merge check.
+- Workers share the machine's cores in their checks: each Claude worker
+  starts with its share, the cores divided among the run's `concurrent`
+  workers and those running in the machine's other runs (kept to
+  `--machine-workers`), at least one, in `ORCHESTRA_CORES` for a project's
+  check scripts and as `-p` in `GOFLAGS`, so `go test ./...` runs no more
+  packages at once than that. The rules' note on checks says so. Four
+  workers' Go checks on ten cores each ran ten packages at once, pushing
+  the load past 30 and timing out tests no ticket touched.
 
 ### Changed
 

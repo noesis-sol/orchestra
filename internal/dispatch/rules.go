@@ -51,13 +51,26 @@ const workerCheckLog = "worker-check.log"
 // printing its exit status, then to read the file, rather than to run the check again to see what it
 // said: workers piped a check through tail, which hides its exit status, then ran it again, minutes
 // of a full check each time, to learn whether it passed. Its example is the worker's own check
-// (check_own) when the project has one, else its merge check (check_fast).
+// (check_own) when the project has one, else its merge check (check_fast). A worker given its share
+// of the machine's cores (see coresNote) is told so too.
 func (o *Loop) checkNote() string {
 	return fmt.Sprintf("\n\nRun a check (tests, linters, a build) once, its whole output saved to a file in "+
 		"%s (never committed) and its exit status printed, as in '%s > %s 2>&1; echo \"exit $?\"', then read "+
 		"the file's end or search it, rather than running the check again to see its output or whether it "+
-		"passed. Piping a check through tail hides its exit status.\n",
-		project.RunPath(""), o.checkCommand(), project.RunPath(workerCheckLog))
+		"passed. Piping a check through tail hides its exit status.%s\n",
+		project.RunPath(""), o.checkCommand(), project.RunPath(workerCheckLog), o.coresNote())
+}
+
+// coresNote tells a worker that its environment gives it its share of the machine's cores (see
+// cores.go), for its checks to keep to: " " and the sentence, or "" for a worker not given one, as
+// one of another kind, or one whose hooks can't give it an environment.
+func (o *Loop) coresNote() string {
+	if _, ok := o.reporter.(EnvReporter); !ok || !o.cfg.ClaudeWorkers() {
+		return ""
+	}
+	return fmt.Sprintf(" Other workers' checks run on this machine beside yours: %s in your environment is your "+
+		"share of its cores, so a check that runs things side by side (test packages, a linter's jobs, a build) "+
+		"runs no more than that many at once; GOFLAGS has Go's commands keep to it already (-p).", CoresVar)
 }
 
 // checkCommand is the check the notes on running one give as their example: the worker's own check

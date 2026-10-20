@@ -207,7 +207,7 @@ func TestHookExitsZeroWhateverHappens(t *testing.T) {
 // its input, under sh and dash.
 func TestHookWithItsBinaryGone(t *testing.T) {
 	records := t.TempDir()
-	settings := hookSettings(filepath.Join(t.TempDir(), "orchestra"), records)
+	settings := hookSettings(filepath.Join(t.TempDir(), "orchestra"), records, nil)
 	shells := []string{"sh"}
 	if _, err := exec.LookPath("dash"); err == nil {
 		shells = append(shells, "dash")

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -116,7 +117,17 @@ func newerFormat(b []byte) int {
 // Reporter sets workers up to report what they are doing and reads what they reported. The zero
 // Reporter logs nothing; NewReporter's says in the log, once a worker, that its records are in a newer
 // format than it reads.
-type Reporter struct{ newer *newerLog }
+type Reporter struct {
+	newer *newerLog
+	env   map[string]string // what the worker's settings give its environment beside workerEnv (see WithEnv)
+}
+
+// WithEnv is r with the workers' settings giving their environment env too, as their share of the
+// machine's cores (see dispatch.CoresVar): Claude Code runs their commands with it.
+func (r Reporter) WithEnv(env map[string]string) dispatch.Reporter {
+	r.env = env
+	return r
+}
 
 // NewReporter returns a Reporter that logs with log.
 func NewReporter(log func(text string)) Reporter {
@@ -160,15 +171,15 @@ func (r Reporter) sayNewer(worktree, name string, b []byte) {
 
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
-func (Reporter) ReportArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, "", allRecords...)
+func (r Reporter) ReportArgs(worktree string) ([]string, error) {
+	return reportArgs(worktree, "", r.env, allRecords...)
 }
 
 // ReportArgsIn is ReportArgs for a Claude session with no worktree of its own, such as the
 // environment probe's worker (project.ProbeRun) or the feature interview (project.InterviewRun): its
 // hooks write to the folder of that name in dir's .orchestra/run/, apart from a ticket's records.
-func (Reporter) ReportArgsIn(dir, folder string) ([]string, error) {
-	return reportArgs(dir, folder, allRecords...)
+func (r Reporter) ReportArgsIn(dir, folder string) ([]string, error) {
+	return reportArgs(dir, folder, r.env, allRecords...)
 }
 
 // allRecords are the files the hooks write, all of them an earlier session's for a new one.
@@ -180,15 +191,16 @@ var allRecords = []string{activityName, turnName, editsName, sessionName, proces
 // were the start to fail, as when Herdr is down, the next run still finds the session to resume.
 // Its other records are removed: the subagents its process ran ended with it, and the resumed session
 // runs in a process of its own.
-func (Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, "", activityName, turnName, processName, eventsName, noticeName)
+func (r Reporter) ResumeArgs(worktree string) ([]string, error) {
+	return reportArgs(worktree, "", r.env, activityName, turnName, processName, eventsName, noticeName)
 }
 
-// reportArgs is ReportArgsIn, removing the earlier session's records named stale; folder "" is
+// reportArgs is ReportArgsIn, its settings giving the worker env too, removing the earlier session's
+// records named stale; folder "" is
 // dir's .orchestra/run/ itself. A file or a symlink in place of the folder, wherever it points, is
 // replaced by it, as WriteRun replaces a symlink in place of a file: the records are written through
 // no link.
-func reportArgs(dir, folder string, stale ...string) ([]string, error) {
+func reportArgs(dir, folder string, env map[string]string, stale ...string) ([]string, error) {
 	root, err := project.OpenRun(dir)
 	if err != nil {
 		return nil, err
@@ -219,7 +231,7 @@ func reportArgs(dir, folder string, stale ...string) ([]string, error) {
 		return nil, fmt.Errorf("finding orchestra's binary for the worker's hooks: %w", err)
 	}
 	at := func(name string) string { return filepath.Join(dir, rel(name)) }
-	b, err := json.MarshalIndent(hookSettings(bin, at("")), "", "  ")
+	b, err := json.MarshalIndent(hookSettings(bin, at(""), env), "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +261,7 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 
 // hookSettings is the settings that have the worker's hooks write their records to the folder records
 // (activityName and the other names say what each holds), each JSON one in recordFormat, and that
-// carry workerEnv. Each event's hook is bin, orchestra's binary that launches the worker, run as 'bin
+// carry workerEnv and env. Each event's hook is bin, orchestra's binary that launches the worker, run as 'bin
 // hook <event> <records> <process>' (Hook), process being the shell's $PPID, the Claude Code that runs
 // the hook, and keeps to these rules:
 //   - A record replaced is written to a temporary file and moved over it, so a reader never sees
@@ -263,7 +275,7 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 //     then fail on the file.
 //   - It records nothing of a process or a session other than the ones the folder's records name
 //     (foreign), as an earlier worker's left running in the same worktree.
-func hookSettings(bin, records string) map[string]any {
+func hookSettings(bin, records string, env map[string]string) map[string]any {
 	hook := func(event string) []any {
 		line := "{ " + hookCookie + "=1 " + command.ShellQuote(bin) + " " + hookCommand + " " + event + " " +
 			command.ShellQuote(records) + ` "$PPID"; cat >/dev/null; } 2>/dev/null; exit 0`
@@ -285,7 +297,16 @@ func hookSettings(bin, records string) map[string]any {
 		"SessionStart":       other("SessionStart"),
 		"SessionEnd":         other("SessionEnd"),
 		"Notification":       other("Notification"),
-	}, "env": workerEnv}
+	}, "env": settingsEnv(env)}
+}
+
+// settingsEnv is workerEnv with env beside it.
+func settingsEnv(env map[string]string) map[string]any {
+	all := maps.Clone(workerEnv)
+	for k, v := range env {
+		all[k] = v
+	}
+	return all
 }
 
 // workerEnv is the environment the worker's settings give it. Fork mode, on by default in an

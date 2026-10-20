@@ -90,6 +90,12 @@ type Loop struct {
 	// process reports whether the process of a run registered on the machine runs and when it started,
 	// the zero time when unknown (see machine.gone); runningProcess when nil. Tests give their own.
 	process func(pid int) (start time.Time, alive bool)
+	// cores is how many cores the machine has, which the workers share (see shareCores):
+	// runtime.NumCPU() when 0. Tests give their own.
+	cores int
+	// share is the cores each worker started from now on has (see shareCores), 0 until Run first reads
+	// the other runs. Run sets it; workers read it as they start: atomic.
+	share atomic.Int64
 	// sampler reads the machine's load for the dashboard (see watchLoad): load.NewSampler of orchestra's
 	// own process when nil. Tests give their own.
 	sampler *load.Sampler

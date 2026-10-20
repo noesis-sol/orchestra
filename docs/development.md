@@ -141,6 +141,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `eventstream.go` | the event stream (`events.jsonl`), and what a notification says of an event (`Notice`) |
 | `drain.go` | stopping after the running tickets when asked (s in the dashboard, SIGUSR1), and taking that back |
 | `environment.go` | holding the run when workers keep failing at once, setups keep failing in new worktrees or triage keeps blaming the environment, reopening the tickets that did nothing, probing the machine to take tickets again |
+| `cores.go` | each worker's share of the machine's cores, among the workers across its orchestra runs, in its environment (`ORCHESTRA_CORES`, `-p` in `GOFLAGS`) |
 | `usagelimit.go` | holding the run while workers wait on the account's usage limit (`usageHold`, on the gate with its known reset as its end), telling them to carry on once it resets, and stopping the run (`USAGE_LIMIT`) when it holds longer than `usage_limit_wait` |
 | `advice.go` | triage and the run review |
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |

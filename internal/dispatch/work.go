@@ -462,17 +462,18 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cu
 		}
 	}
 
-	// A Claude worker reports each tool it uses, through hooks loaded for it alone. A resumed one
-	// keeps the files the worker before it edited in the footprint (sessionOf found a reporter).
+	// A Claude worker reports each tool it uses, through hooks loaded for it alone, whose settings give
+	// it its share of the machine's cores. A resumed one keeps the files the worker before it edited in
+	// the footprint (sessionOf found a reporter).
 	var report []string
 	switch {
 	case resumed:
 		o.newWorkerHooks(id, wt)
-		report, err = o.reporter.ResumeArgs(wt)
+		report, err = o.envReporter(o.workerEnv(ctx)).ResumeArgs(wt)
 		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s resumed worker to report what it does")
 	case o.reporter != nil && c.ClaudeWorkers():
 		o.newWorkerHooks(id, wt)
-		report, err = o.reporter.ReportArgs(wt)
+		report, err = o.envReporter(o.workerEnv(ctx)).ReportArgs(wt)
 		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s worker to report what it does")
 	}
 	return ws, err

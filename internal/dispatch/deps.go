@@ -161,6 +161,13 @@ type Reporter interface {
 	ReportArgsIn(dir, folder string) ([]string, error)
 }
 
+// EnvReporter is a Reporter whose hooks' settings can also give the worker environment variables,
+// which its commands run with (Claude Code's settings env).
+type EnvReporter interface {
+	// WithEnv is the Reporter whose ReportArgs and ResumeArgs give the worker env too
+	WithEnv(env map[string]string) Reporter
+}
+
 // PaneProcesses says which processes a terminal's pane runs: the roots of its worker's process tree,
 // whose memory the dashboard shows.
 type PaneProcesses interface {

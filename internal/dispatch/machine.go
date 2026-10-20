@@ -256,14 +256,16 @@ func processAlive(pid int) bool {
 	return err == nil || !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH)
 }
 
-// lookAround reads the other runs on the machine, saying which started and ended, and writes how
-// many of the run's own workers run. The hold for Config.MachineWorkers ends once they are under it,
-// and the dashboard hears so then, whether or not the run goes on taking tickets.
+// lookAround reads the other runs on the machine, saying which started and ended, sharing the cores
+// with their workers (see shareCores), and writes how many of the run's own workers run. The hold for
+// Config.MachineWorkers ends once they are under it, and the dashboard hears so then, whether or not the
+// run goes on taking tickets.
 func (r *runState) lookAround() {
 	r.machine.running(len(r.inflight))
 	for _, ev := range r.machine.look() {
 		r.o.emit(ev)
 	}
+	r.o.shareCores(r.machine.others)
 	if !r.atCap() {
 		r.machine.hold(false)
 		if r.fullShown {

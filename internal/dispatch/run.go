@@ -343,6 +343,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 	}
 	r.setCount(o.cfg.DoneSoFar)
 	o.gate.register(gateMachine, r.machineEnd)
+	o.shareCores(0) // for the workers taken up before Run first reads the other runs
 	return r
 }
 
