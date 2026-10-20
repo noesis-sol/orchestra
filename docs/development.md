@@ -99,8 +99,9 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | --- | --- |
 | `loop.go` | the `Loop` type, its state grouped by owner (`deps`, `tallies`, `ledger`, `carryover`, `triageQueue`, `envHold`: each says which lock guards it, or whose it is), `Config`, exit codes, timings and shared helpers |
 | `book.go` | the ticket book: each ticket's place in the run in one record (set aside, asked, left open, unmerged, its setup failed), changed only by its transitions, and the questions pick, the holds and the scope's end ask of it |
-| `recover.go` | a worker's panic: logging it and stopping the run, and `held`, a mutex a deferred call releases if a panic leaves it taken |
+| `recover.go` | a worker's panic: logging it and stopping the run, and `lockGuard`, a mutex a deferred call releases if a panic leaves it taken |
 | `run.go` | `Run`: picking the next ticket, solo tickets, HOLD, interrupts; what only `Run` reads and writes is its `runState`'s (tests in `run_test.go` and `schedule_test.go`) |
+| `slots.go` | the tickets gone to merge, which `Run` counts toward its slots (`mergeSlots`), under their own lock |
 | `gate.go` | the gate: why the run takes no new tickets (its stops, winding down, the ticket limit, the usage limit, the machine's cap on workers, the environment), under its own lock, read alike by `Run` and the merges; each hold registers what it does at its end, which wakes `Run` whatever else happens; `runState.wait`, where every loop of `Run`'s waits, hearing drain requests, triage's verdicts and the gate |
 | `ids.go` | which ticket IDs can be run (plain names, valid in a branch), setting aside the others |
 | `start.go` | a ticket's worktree, starting, adopting and naming its worker, delivering its prompt |
@@ -117,8 +118,8 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `resume.go` | resuming a Claude worker gone from its tab with its ticket in progress, or back from its answered question: its session, recorded by its hooks, in a new tab, once per ticket in a run |
 | `merge.go` | merging a closed ticket: rebase, check, fast-forward, cleanup (the worker's tab only while the terminal still has it labelled with the ticket's ID) |
 | `check.go` | running the check command (`check`) on a finished ticket's branch within its time limit, saving its whole output when it fails, what it said for the reviewer, its `FLAKY:` lines; the runner the check, the setup and the full check share (`runLimited`: the time limit, how a command failed, the lines that say what failed, saving the whole output) |
-| `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging |
-| `train.go` | the merge train: the next ticket in line (`merge_train` of them) rebased onto the branch of the one holding the queue as it is checked, and checked beside it; merged in its turn with no second check when that one merges as checked, else put back as its worker left it |
+| `mergequeue.go` | the merge queue: finished tickets merge one at a time, in the order they finish, each shown on the dashboard as to merge (with its place in line) or merging; a merge takes its turn with `acquire`, which returns `errInterrupted` and no turn once the run stops, and lets go of it with `release` |
+| `train.go` | the merge train: the next ticket in line (`merge_train` of them) rebased onto the branch of the one holding the queue as it is checked, and checked beside it; merged in its turn with no second check when that one merges as checked, else put back as its worker left it, or as the run stops before its turn; its state is a `mergeTrain` under its own lock, taken after the queue's |
 | `recheck.go` | checking a ticket set aside for a failed check once more after Base moves on, unless it failed in its own code |
 | `checkback.go` | handing a check that fails on a finished ticket's branch back to its worker to fix, and checking what it committed |
 | `handback.go` | handing a finished ticket's rebase conflicts back to its worker to resolve, then checking or undoing its resolution; the hand-back itself (`handBackTo`) and putting the branch back after one is rejected (`restoreBranch`), shared with `checkback.go` |

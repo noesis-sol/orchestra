@@ -216,7 +216,7 @@ func (o *Loop) Run(ctx context.Context) int {
 			}
 			return r.end()
 		}
-		w := waits{results: r.results, joined: o.merges.joined, filing: r.filing, poll: poll.C}
+		w := waits{results: r.results, joined: o.slots.joined, filing: r.filing, poll: poll.C}
 		for waiting := true; waiting; {
 			waiting = false
 			// A verdict's hold is picked up above, a request heard, and once a hold lifts (the gate) or a
@@ -439,11 +439,11 @@ func (r *runState) heedEnvironment() {
 
 // slotsTaken is how many of the Concurrency slots the tickets in flight take. A ticket whose worker
 // has settled and that has gone to merge takes none while it waits for its turn, merges or has its
-// worker resolve or fix its branch (see goToMerge), so the next ticket starts meanwhile; but no more
+// worker resolve or fix its branch (see mergeSlots), so the next ticket starts meanwhile; but no more
 // than Concurrency of them go without one, so that a slow merge check can't let finished tickets
 // pile up without end: beyond that cap, each takes a slot until a merge ends.
 func (r *runState) slotsTaken() int {
-	merging := r.o.goneToMerge(r.inflight)
+	merging := r.o.slots.goneToMerge(r.inflight)
 	return len(r.inflight) - merging + max(0, merging-r.o.cfg.Concurrency)
 }
 
@@ -577,7 +577,7 @@ func (r *runState) goOnWhenEmpty() bool {
 func (r *runState) returned(res result) {
 	o := r.o
 	delete(r.inflight, res.id)
-	o.doneMerging(res.id)
+	o.slots.doneMerging(res.id)
 	o.stoppedBy(res.id, res.stop)
 	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
@@ -672,7 +672,7 @@ func (o *Loop) awaitInflight(ctx context.Context, results <-chan result, infligh
 		select {
 		case r := <-results:
 			delete(inflight, r.id)
-			o.doneMerging(r.id)
+			o.slots.doneMerging(r.id)
 			o.stoppedBy(r.id, r.stop)
 			o.countSettling(ctx, r.id, r.how)
 		case <-slow.C:
@@ -710,7 +710,7 @@ func (r *runState) next() (*Ticket, queue, *stopReason) {
 	if ctx.Err() != nil {
 		return nil, queue{}, nil // Ctrl+C: nothing starts, and a read it cut short says nothing
 	}
-	if s != nil && len(r.inflight) >= o.cfg.Concurrency && o.goneToMerge(r.inflight) > 0 {
+	if s != nil && len(r.inflight) >= o.cfg.Concurrency && o.slots.goneToMerge(r.inflight) > 0 {
 		// The slot is free only as tickets merge (see slotsTaken), and their merges meet the checkout as
 		// it is: they stop the run, saying which ticket it keeps from merging. Nothing starts meanwhile,
 		// and the queue stays as last reported.

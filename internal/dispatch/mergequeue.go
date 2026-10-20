@@ -20,61 +20,13 @@ const (
 
 // mergeQueue is the merge queue: a finished ticket holds it through rebase, check and merge, so Base
 // doesn't move while its rebased code is checked. Worktree creation isn't held up. Tickets take their
-// turn in the order they join it, so the place in line the dashboard shows (Status.Place) holds.
+// turn in the order they join it, so the place in line the dashboard shows (Status.Place) holds. A
+// ticket takes its turn with acquire, and lets go of it with release (see mergeTurn).
 type mergeQueue struct {
-	mu     sync.Mutex
+	o      *Loop
+	mu     sync.Mutex   // taken before train.mu, when both are
 	holder string       // the ticket whose merge is under way; "" when none is
 	line   []mergeWaits // the tickets waiting for their turn, next first
-	// The merge train (see train.go): the holder's branch (checkingBr) at the commit its check runs on
-	// or passed on (checking; "" when it isn't checked), in the run's context (ctx); the tickets waiting
-	// for their first turn, which may be checked ahead of it (ahead), and those that are (trains).
-	checking, checkingBr string
-	ctx                  context.Context
-	ahead                map[string]worker
-	trains               map[string]*trainRun
-	// gone: the tickets whose workers have settled and that have gone to merge, until their goroutines
-	// return, a hand-back to their workers included; up to Concurrency of them hold no slot (see
-	// runState.slotsTaken). Run hears of each on joined (buffered 1), as a slot may be free.
-	gone   map[string]bool
-	joined chan struct{}
-}
-
-// goToMerge says that ticket id's worker has settled and the ticket goes to merge: Run no longer
-// counts it among the workers at work.
-func (o *Loop) goToMerge(id string) {
-	q := &o.merges
-	q.mu.Lock()
-	if q.gone == nil {
-		q.gone = map[string]bool{}
-	}
-	q.gone[id] = true
-	q.mu.Unlock()
-	select {
-	case q.joined <- struct{}{}:
-	default: // Run has yet to hear an earlier one, and counts this one with it
-	}
-}
-
-// doneMerging says that ticket id's goroutine has returned: merged, set aside or stopped.
-func (o *Loop) doneMerging(id string) {
-	q := &o.merges
-	q.mu.Lock()
-	delete(q.gone, id)
-	q.mu.Unlock()
-}
-
-// goneToMerge is how many of the tickets in flight have gone to merge (see goToMerge).
-func (o *Loop) goneToMerge(inflight map[string]bool) int {
-	q := &o.merges
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	n := 0
-	for id := range q.gone {
-		if inflight[id] {
-			n++
-		}
-	}
-	return n
 }
 
 // mergeWaits is a ticket waiting in the merge queue: turn is closed when it is its turn.
@@ -83,66 +35,97 @@ type mergeWaits struct {
 	turn chan struct{}
 }
 
-// mergeTurn is ticket id's use of the merge queue, as a sync.Locker for held: Lock joins the line
-// and waits for its turn, Unlock passes the queue on to the next in line. Each shows the stage it
-// leaves the tickets in on the dashboard (see showMerge).
+// mergeTurn is ticket id's turn in the merge queue, from acquire, which waits for it, to release, which
+// passes the queue on to the next in line. A hand-back to the ticket's worker lets go of it while the
+// worker works, and retake joins the line again. Each shows the stage it leaves the tickets in on the
+// dashboard (see showMerge). Only the ticket's merge uses its turn.
 type mergeTurn struct {
-	o    *Loop
+	q    *mergeQueue
 	id   string
-	stop <-chan struct{} // closed as the run stops (its context's Done): Lock gives up waiting then
+	held bool // id holds the queue: from acquire or retake to release
 }
 
-// Lock waits for id's turn to merge, showing it as to merge meanwhile, then as merging. It gives up
-// waiting as the run stops, leaving the line without the queue, for the caller to see the stop and
-// return: a merge must not begin after it (see mergeRun.pass).
-func (t mergeTurn) Lock() {
-	q := &t.o.merges
+// acquire waits for ticket id's turn to merge, showing it as to merge meanwhile, then as merging, and
+// returns the turn, held. As the run stops (ctx is done) it gives up waiting, leaving the line without
+// the queue, and returns errInterrupted: a merge must not begin after a stop.
+func (q *mergeQueue) acquire(ctx context.Context, id string) (*mergeTurn, *stopReason) {
+	t := &mergeTurn{q: q, id: id}
+	if s := t.retake(ctx); s != nil {
+		return nil, s
+	}
+	return t, nil
+}
+
+// retake waits for the ticket's turn again, after a release (see acquire), and holds the queue; or
+// returns errInterrupted, the queue not held, as the run stops.
+func (t *mergeTurn) retake(ctx context.Context) *stopReason {
+	q := t.q
+	if ctx.Err() != nil {
+		return errInterrupted
+	}
 	q.mu.Lock()
 	if q.holder == "" && len(q.line) == 0 {
-		q.holder = t.id
-		t.o.showMerge(t.id, MergeRunning, 0)
+		q.holder, t.held = t.id, true
+		q.o.showMerge(t.id, MergeRunning, 0)
 		q.mu.Unlock()
-		return
+		return nil
 	}
 	turn := make(chan struct{})
 	q.line = append(q.line, mergeWaits{id: t.id, turn: turn})
-	t.o.showMerge(t.id, MergeQueued, len(q.line))
-	t.o.startTrains() // it may be checked ahead of its turn, as the holder is checked
+	q.o.showMerge(t.id, MergeQueued, len(q.line))
+	q.o.startTrains() // it may be checked ahead of its turn, as the holder is checked
 	q.mu.Unlock()
 	select {
 	case <-turn:
-	case <-t.stop:
-		t.leaveLine()
+	case <-ctx.Done():
 	}
+	if ctx.Err() == nil {
+		t.held = true
+		return nil
+	}
+	if !q.leaveLine(t.id) { // its turn came as the run stopped: the next in line has it
+		t.held = true
+		t.release()
+	}
+	return errInterrupted
 }
 
-// leaveLine takes id out of the line as the run stops, and moves those behind it up; unless its turn
-// came meanwhile, as the run stopped: it holds the queue then.
-func (t mergeTurn) leaveLine() {
-	q := &t.o.merges
+// leaveLine takes id out of the line as the run stops, moves those behind it up and reports true;
+// or false when id isn't in it, its turn having come meanwhile, as the run stopped: it holds the queue
+// then.
+func (q *mergeQueue) leaveLine(id string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	i := slices.IndexFunc(q.line, func(w mergeWaits) bool { return w.id == t.id })
+	i := slices.IndexFunc(q.line, func(w mergeWaits) bool { return w.id == id })
 	if i < 0 {
-		return
+		return false
 	}
 	q.line = slices.Delete(q.line, i, i+1)
 	for j := i; j < len(q.line); j++ {
-		t.o.showMerge(q.line[j].id, MergeQueued, j+1)
+		q.o.showMerge(q.line[j].id, MergeQueued, j+1)
 	}
+	return true
 }
 
-// Unlock passes the queue on to the next ticket in line, if any, and moves the others up. id, which
-// held it, is no longer shown as merging: it is done with its merge, or handed back to its worker
-// (see setHandedBack).
-func (t mergeTurn) Unlock() {
-	q := &t.o.merges
+// release passes the queue on to the next ticket in line, if any, and moves the others up. t's ticket,
+// which held it, is no longer shown as merging: it is done with its merge, or handed back to its
+// worker (see setHandedBack). A turn not held, or nil, has nothing to release: released already, or
+// not taken again after a hand-back as the run stopped.
+func (t *mergeTurn) release() {
+	if t == nil || !t.held {
+		return
+	}
+	t.held = false
+	q := t.q
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.holder != t.id {
-		return // it gave up waiting for its turn as the run stopped (see Lock)
-	}
-	q.checking = "" // the next holder's check is another
+	q.passOn()
+}
+
+// passOn gives the queue to the next ticket in line, if any, its holder done with it, and moves the
+// others up. The caller holds q.mu.
+func (q *mergeQueue) passOn() {
+	q.o.train.holderDone() // the next holder's check is another
 	if len(q.line) == 0 {
 		q.holder = ""
 		return
@@ -150,16 +133,16 @@ func (t mergeTurn) Unlock() {
 	next := q.line[0]
 	q.line = slices.Delete(q.line, 0, 1)
 	q.holder = next.id
-	t.o.showMerge(next.id, MergeRunning, 0)
+	q.o.showMerge(next.id, MergeRunning, 0)
 	for i, w := range q.line {
-		t.o.showMerge(w.id, MergeQueued, i+1)
+		q.o.showMerge(w.id, MergeQueued, i+1)
 	}
 	close(next.turn)
 }
 
 // showMerge shows ticket id at stage of its merge on the dashboard, at place in line when it is
 // queued (1: next), its worker done with it, and how its check ahead of its turn goes, if it has one
-// (see trainActivity). A ticket no longer worked on isn't shown, and one handed back to its worker
+// (see mergeTrain.activity). A ticket no longer worked on isn't shown, and one handed back to its worker
 // stays so. The caller holds merges.mu, so the places shown follow the line as it changes.
 func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 	phase := PhaseQueued
@@ -168,7 +151,7 @@ func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 	}
 	var train string
 	if stage == MergeQueued {
-		train = o.merges.trainActivity(id) // one checked ahead of its turn says how it goes
+		train = o.train.activity(id) // one checked ahead of its turn says how it goes
 	}
 	o.updateActive(id, func(st *Status) {
 		if st.handedBack() {

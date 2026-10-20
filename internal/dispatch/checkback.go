@@ -57,12 +57,12 @@ func (f *fixes) overtaken(base string) {
 // can (see whyNotFixCheck), fx keeping the hand-backs in the ticket's merge; resolved says its
 // worker resolved the rebase. A fix its worker commits while Base moves on isn't checked here: it
 // returns moved, and fx keeps the fix for the check on the branch rebased onto Base (see
-// mergeRun.pass), so that a hand-back costs one check. The caller holds the merge queue,
-// which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
-// is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's stop during a hand-back,
-// the worker's work left as it is; GIT_FAILED's when git can't tell where the branch is, the ticket
-// left unmerged.
-func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fx *fixes,
+// mergeRun.pass), so that a hand-back costs one check. The caller holds its turn in the merge queue,
+// which a hand-back lets go of while the worker works and takes again after, and not repo, which is
+// taken to undo a fix that is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's
+// stop during a hand-back, the worker's work left as it is; GIT_FAILED's when git can't tell where the
+// branch is, the ticket left unmerged.
+func (o *Loop) checkRebased(ctx context.Context, repo *lockGuard, turn *mergeTurn, r rebaseStop, fx *fixes,
 	resolved bool) (checked, *stopReason) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failure
@@ -134,9 +134,9 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 		}
 		fx.n++
 		// The worker takes minutes: let the other finished tickets merge meanwhile.
-		queue.unlock()
+		turn.release()
 		f, why, stop := o.fixCheck(ctx, r, at, res, fx.n)
-		queue.lock()
+		retaken := turn.retake(ctx)
 		if stop != nil {
 			return res, stop
 		}
@@ -146,6 +146,9 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			repo.unlock()
 			res.tries = append(res.tries, why+undone)
 			return res, nil
+		}
+		if retaken != nil {
+			return res, retaken // the run stopped as the queue was taken again: the fix is left as it is
 		}
 		fixed = f
 		if o.baseMoved(keep, r) {

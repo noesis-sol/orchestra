@@ -113,20 +113,23 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 // mergeRun.commitNaming).
 func (o *Loop) mergeNamed(ctx context.Context, w worker, named string) *stopReason {
 	c := o.cfg
-	o.goToMerge(w.id) // its slot is free for the next ticket while it waits for its turn and merges
+	o.slots.goToMerge(w.id) // its slot is free for the next ticket while it waits for its turn and merges
 	defer o.markFinishing(w.id, finishMerge)()
 	m := &mergeRun{
 		o: o, w: w, named: named,
 		// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 		// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 		keep: context.WithoutCancel(ctx),
-		// let go of even if the merge panics
-		repo: &lockGuard{mu: &o.repoMu}, queue: &lockGuard{mu: mergeTurn{o: o, id: w.id, stop: ctx.Done()}},
+		repo: &lockGuard{mu: &o.repoMu}, // let go of even if the merge panics
 	}
 	defer m.repo.release()
 	o.mayCheckAhead(w) // checked ahead of its turn while the ticket before it is (see train.go)
-	m.queue.lock()
-	defer m.queue.release() // held on every return but a stop's; a hand-back lets go of it and takes it again
+	turn, stop := o.merges.acquire(ctx, w.id)
+	if stop != nil {
+		return m.leaveTrain(stop) // the run stopped before its turn: the ticket is left finished and unmerged
+	}
+	m.turn = turn
+	defer turn.release() // let go of even if the merge panics; a hand-back lets go of it and takes it again
 	if boarded, stop := m.board(ctx); !boarded {
 		return stop // set aside, or git failed
 	}
@@ -182,20 +185,21 @@ func mergePasses(pass func(rebase bool) (mergeStep, *stopReason)) (*stopReason, 
 // step either hands it to the next or lets go of it before it returns, so a pass always ends with it
 // let go of. A step that sets the ticket aside, or closes it, lets go of it first.
 type mergeRun struct {
-	o           *Loop
-	w           worker
-	keep        context.Context
-	repo, queue *lockGuard
-	handedBack  int    // its rebase's conflicts handed back to its worker to resolve
-	fixes       fixes  // its failing check handed back to its worker to fix
-	checked     string // the branch's commit the check last passed on, on top of Base: it merges as it is
-	named       string // the commit naming the ticket, as finish read it on the branch (see commitNaming)
+	o          *Loop
+	w          worker
+	keep       context.Context
+	repo       *lockGuard
+	turn       *mergeTurn
+	handedBack int    // its rebase's conflicts handed back to its worker to resolve
+	fixes      fixes  // its failing check handed back to its worker to fix
+	checked    string // the branch's commit the check last passed on, on top of Base: it merges as it is
+	named      string // the commit naming the ticket, as finish read it on the branch (see commitNaming)
 }
 
 // pass merges the ticket's branch if it is on top of Base and checked there, or checks it there
 // first, or rebases it onto Base and checks it when it may (rebase), and says what is left to do.
 // Once the run has stopped it does none of that, the ticket left finished and unmerged for the next
-// run: what follows a stop, the queue's turn included (see mergeTurn.Lock), mustn't rebase the branch.
+// run: what follows a stop, the queue's turn included (see mergeQueue.acquire), mustn't rebase the branch.
 func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReason) {
 	c := m.o.cfg
 	if ctx.Err() != nil {
@@ -281,7 +285,7 @@ func (m *mergeRun) checkOnTop(ctx context.Context, head string) (mergeStep, *sto
 	r := rebaseStop{worker: w, onto: onto, head: head, onTop: true}
 	m.repo.unlock()
 	o.info("  %s is on top of %s already: checking it with '%s' before it merges", w.br, c.Base, c.Check)
-	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
+	res, stop := o.checkRebased(ctx, m.repo, m.turn, r, &m.fixes, false)
 	return m.afterCheck(r, res, stop)
 }
 
@@ -453,13 +457,13 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 	m.fixes.overtaken(c.Base)
 	// The worker takes minutes: let the other finished tickets merge meanwhile, and queue
 	// behind them again to check its work and merge.
-	m.queue.unlock()
+	m.turn.release()
 	why, stop := o.handBack(ctx, r)
-	m.queue.lock()
+	retaken := m.turn.retake(ctx)
 	if stop != nil {
 		return mergeDone, stop // Ctrl+C or the usage limit: the rebase is left as it is, as the stop says
 	}
-	if why == "" && ctx.Err() != nil {
+	if why == "" && (retaken != nil || ctx.Err() != nil) {
 		return mergeDone, errInterrupted // the run stopped as the queue was taken again: the branch is left resolved
 	}
 	if why == "" {
@@ -477,7 +481,7 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 		}
 		o.info("  %s's worker finished the rebase; checking it with '%s'", r.id, c.Check)
 		var res checked
-		if res, stop = o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, true); stop != nil {
+		if res, stop = o.checkRebased(ctx, m.repo, m.turn, r, &m.fixes, true); stop != nil {
 			return mergeDone, stop // Ctrl+C or the usage limit: a fix under way is left as it is
 		}
 		if why = o.failedResolved(r, res); why == "" {
@@ -525,7 +529,7 @@ func (m *mergeRun) checkClean(ctx context.Context, r rebaseStop) (mergeStep, *st
 		o.info("  no check command in .orchestra/settings.json: merging %s without checking the rebased code", r.br)
 		return mergeAgain, nil
 	}
-	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
+	res, stop := o.checkRebased(ctx, m.repo, m.turn, r, &m.fixes, false)
 	return m.afterCheck(r, res, stop)
 }
 

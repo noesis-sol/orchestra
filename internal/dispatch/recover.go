@@ -42,7 +42,7 @@ func (o *Loop) panicStop(id string, p any) *stopReason {
 // release however the function ends: a worker that panics while holding it must not leave the
 // other workers waiting for it forever, nor unlock it twice, which Go can't recover from.
 type lockGuard struct {
-	mu sync.Locker
+	mu *sync.Mutex
 	on bool
 }
 

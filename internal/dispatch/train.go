@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 )
 
 // The merge train: while the ticket holding the merge queue is checked, the next in line, waiting for
@@ -17,8 +18,21 @@ import (
 // the workers' for the CPU, and a branch that doesn't rebase cleanly onto the one ahead isn't checked
 // ahead: its turn hands back its conflict, if it has one, as it would without the train.
 
-// trainRun is a ticket checked ahead of its turn in the merge queue (see startTrains). Its fields but
-// the first are written by its goroutine, under merges.mu until done is closed.
+// mergeTrain is the merge train's state, under its own lock (mu): taken after merges.mu when both are,
+// and let go of before anything else is called, the gate's lock aside.
+type mergeTrain struct {
+	mu sync.Mutex
+	// The holder's branch (checkingBr) at the commit its check runs on or passed on (checking; "" when
+	// it isn't checked), in the run's context (ctx); the tickets waiting for their first turn, which may
+	// be checked ahead of it (ahead), and those that are (trains).
+	checking, checkingBr string
+	ctx                  context.Context
+	ahead                map[string]worker
+	trains               map[string]*trainRun
+}
+
+// trainRun is a ticket checked ahead of its turn in the merge queue (see startTrains). Its fields from
+// orig on are written by its goroutine, under train.mu until done is closed.
 type trainRun struct {
 	id     string
 	behind string // the branch it was rebased onto, of the ticket ahead of it
@@ -36,26 +50,28 @@ type trainRun struct {
 // it may be checked ahead of its turn (see startTrains). A ticket queueing again after a hand-back to
 // its worker isn't, its merge under way.
 func (o *Loop) mayCheckAhead(w worker) {
-	q := &o.merges
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.ahead == nil {
-		q.ahead = map[string]worker{}
+	tr := &o.train
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.ahead == nil {
+		tr.ahead = map[string]worker{}
 	}
-	q.ahead[w.id] = w
+	tr.ahead[w.id] = w
 }
 
 // checkStarts says that the ticket holding the queue is checked on its branch br at commit at: the
 // tickets next in line may be checked ahead of their turn on top of it. Trains on another commit of
 // its branch are stopped, as it no longer merges as they were rebased onto.
 func (o *Loop) checkStarts(ctx context.Context, br, at string) {
-	q := &o.merges
+	q, tr := &o.merges, &o.train
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.checking != "" && q.checking != at {
-		q.stopTrains()
+	tr.mu.Lock()
+	if tr.checking != "" && tr.checking != at {
+		tr.stopTrains()
 	}
-	q.ctx, q.checking, q.checkingBr = ctx, at, br
+	tr.ctx, tr.checking, tr.checkingBr = ctx, at, br
+	tr.mu.Unlock()
 	o.startTrains()
 }
 
@@ -66,16 +82,23 @@ func (o *Loop) checkEnds(passed bool) {
 	if passed {
 		return
 	}
-	q := &o.merges
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.checking = ""
-	q.stopTrains()
+	tr := &o.train
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.checking = ""
+	tr.stopTrains()
 }
 
-// stopTrains cancels every train under way. The caller holds merges.mu.
-func (q *mergeQueue) stopTrains() {
-	for _, t := range q.trains {
+// holderDone says that the ticket holding the queue let go of it: the next holder's check is another.
+func (tr *mergeTrain) holderDone() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.checking = ""
+}
+
+// stopTrains cancels every train under way. The caller holds tr.mu.
+func (tr *mergeTrain) stopTrains() {
+	for _, t := range tr.trains {
 		t.cancel()
 	}
 }
@@ -87,31 +110,43 @@ func (q *mergeQueue) stopTrains() {
 // cap on workers, and none behind a ticket not checked ahead, or whose train failed. The caller holds
 // merges.mu.
 func (o *Loop) startTrains() {
-	q, c := &o.merges, o.cfg
-	if c.MergeTrain <= 0 || c.Check == "" || q.checking == "" || q.ctx == nil || q.ctx.Err() != nil ||
-		o.gate.held(gateMachine) {
-		return
+	for _, t := range o.boardTrains() {
+		o.showTrain(t)
 	}
-	behind, onto := q.checkingBr, q.checking
+}
+
+// boardTrains starts the trains startTrains does, and returns them, for the caller to show. The caller
+// holds merges.mu.
+func (o *Loop) boardTrains() []*trainRun {
+	q, tr, c := &o.merges, &o.train, o.cfg
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if c.MergeTrain <= 0 || c.Check == "" || tr.checking == "" || tr.ctx == nil || tr.ctx.Err() != nil ||
+		o.gate.held(gateMachine) {
+		return nil
+	}
+	var started []*trainRun
+	behind, onto := tr.checkingBr, tr.checking
 	for _, next := range q.line[:min(len(q.line), c.MergeTrain)] {
-		w, ok := q.ahead[next.id]
+		w, ok := tr.ahead[next.id]
 		if !ok {
-			return
+			break
 		}
-		t := q.trains[next.id]
+		t := tr.trains[next.id]
 		if t == nil {
-			t = o.startTrain(q.ctx, w, behind, onto)
-			if q.trains == nil {
-				q.trains = map[string]*trainRun{}
+			t = o.startTrain(tr.ctx, w, behind, onto)
+			if tr.trains == nil {
+				tr.trains = map[string]*trainRun{}
 			}
-			q.trains[next.id] = t
-			o.showTrain(t)
+			tr.trains[next.id] = t
+			started = append(started, t)
 		}
 		if t.onto != onto || t.head == "" || t.failed {
-			return // on another branch than the one ahead as it is now, or not rebased onto it (yet)
+			break // on another branch than the one ahead as it is now, or not rebased onto it (yet)
 		}
 		behind, onto = w.br, t.head
 	}
+	return started
 }
 
 // startTrain starts checking w's ticket ahead of its turn, its branch rebased onto onto, the commit of
@@ -205,19 +240,21 @@ func (o *Loop) rebaseAhead(ctx context.Context, w worker, t *trainRun) string {
 
 // trainFrom records the commit t's branch was on before its rebase.
 func (o *Loop) trainFrom(t *trainRun, orig string) {
-	q := &o.merges
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	tr := &o.train
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	t.orig = orig
 }
 
 // trainRebased records t's branch rebased onto t.onto at head, and starts the train behind it, if any;
 // "" says it wasn't rebased, and starts none.
 func (o *Loop) trainRebased(t *trainRun, head string) {
-	q := &o.merges
+	q, tr := &o.merges, &o.train
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	tr.mu.Lock()
 	t.head, t.failed = head, head == ""
+	tr.mu.Unlock()
 	o.showTrain(t)
 	if head != "" {
 		o.startTrains()
@@ -227,10 +264,12 @@ func (o *Loop) trainRebased(t *trainRun, head string) {
 // trainChecked records the check on t's branch at head as passed, or not, or cut short: the trains
 // behind one that failed are stopped, as it is rebased again in its turn.
 func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
-	q := &o.merges
+	q, tr := &o.merges, &o.train
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	defer o.showTrain(t)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	if passed {
 		t.passed = head
 		return
@@ -238,7 +277,7 @@ func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
 	t.failed, t.cut = true, cut
 	behind := false
 	for _, w := range q.line {
-		if b := q.trains[w.id]; b != nil && behind {
+		if b := tr.trains[w.id]; b != nil && behind {
 			b.cancel()
 		}
 		behind = behind || w.id == t.id
@@ -246,10 +285,13 @@ func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
 }
 
 // showTrain shows t's ticket, while it waits in line, with how its check ahead of its turn goes (see
-// trainActivity). The caller holds merges.mu.
+// activity). The caller holds merges.mu, not train.mu.
 func (o *Loop) showTrain(t *trainRun) {
-	q := &o.merges
-	if q.trains[t.id] != t {
+	q, tr := &o.merges, &o.train
+	tr.mu.Lock()
+	current := tr.trains[t.id] == t
+	tr.mu.Unlock()
+	if !current {
 		return // its turn came: it shows as merging
 	}
 	if i := slices.IndexFunc(q.line, func(w mergeWaits) bool { return w.id == t.id }); i >= 0 {
@@ -257,11 +299,13 @@ func (o *Loop) showTrain(t *trainRun) {
 	}
 }
 
-// trainActivity is what ticket id, waiting in line, shows of its check ahead of its turn on the
-// dashboard; "" when it has none, or none under way or done: it wasn't rebased onto the branch ahead,
-// or its check was cut short, as it is rebased and checked in its turn then. The caller holds merges.mu.
-func (q *mergeQueue) trainActivity(id string) string {
-	t := q.trains[id]
+// activity is what ticket id, waiting in line, shows of its check ahead of its turn on the dashboard;
+// "" when it has none, or none under way or done: it wasn't rebased onto the branch ahead, or its check
+// was cut short, as it is rebased and checked in its turn then.
+func (tr *mergeTrain) activity(id string) string {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	t := tr.trains[id]
 	switch {
 	case t == nil:
 		return ""
@@ -282,12 +326,12 @@ func (q *mergeQueue) trainActivity(id string) string {
 // takeTrain takes ticket id's train, if it has one, as its turn comes: no train starts for it from now
 // on in its merge.
 func (o *Loop) takeTrain(id string) *trainRun {
-	q := &o.merges
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	t := q.trains[id]
-	delete(q.trains, id)
-	delete(q.ahead, id)
+	tr := &o.train
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	t := tr.trains[id]
+	delete(tr.trains, id)
+	delete(tr.ahead, id)
 	return t
 }
 
@@ -295,13 +339,16 @@ func (o *Loop) takeTrain(id string) *trainRun {
 // is checked, the tickets behind it may be checked ahead on top of it, as on the check of a ticket in
 // its turn (see checkStarts). The caller holds the queue.
 func (o *Loop) boardTrain(ctx context.Context, w worker, t *trainRun) {
-	q := &o.merges
+	q, tr := &o.merges, &o.train
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	tr.mu.Lock()
 	if t.head == "" || t.failed {
+		tr.mu.Unlock()
 		return
 	}
-	q.ctx, q.checking, q.checkingBr = ctx, t.head, w.br
+	tr.ctx, tr.checking, tr.checkingBr = ctx, t.head, w.br
+	tr.mu.Unlock()
 	o.startTrains()
 }
 
@@ -311,9 +358,9 @@ func (o *Loop) boardTrain(ctx context.Context, w worker, t *trainRun) {
 // check. Otherwise a branch the train rebased is put back as its worker left it, for the merge to rebase
 // and check as any other, and the trains behind it are stopped. It reports false when git could not put
 // it back, the ticket set aside then: its branch has the commits of the branch ahead; or git can't tell
-// where the branch is, the run stopping then (stop says why). The caller holds the queue, not repo.
+// where the branch is, the run stopping then (stop says why). The caller holds its turn, not repo.
 func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
-	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
+	o, keep, w := m.o, m.keep, m.w
 	t := o.takeTrain(w.id)
 	if t == nil {
 		return true, nil
@@ -338,26 +385,69 @@ func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
 			"merging it with no further check", w.br, t.behind)
 		return true, nil
 	}
-	rebased := t.head != "" && head == t.head // and not moved since
-	if rebased {
-		var out string
-		out, err = o.merger.ResetBranch(keep, w.wt, t.orig)
-		o.log.Raw(out, err)
-	}
-	m.repo.unlock()
+	rebased, err := m.putBack(t, head)
 	o.checkEnds(false)
 	switch {
 	case err != nil:
-		o.leaveFor(keep, w.id, asideRebaseFailed, "rebase failed", "", fmt.Sprintf(
-			"%s closed, but git could not put %s back as its worker left it, at %s, after it was rebased onto %s "+
-				"to be checked ahead of its turn%s; worktree %s and tab %s left for review (git output is in %s)",
-			w.id, w.br, short(t.orig), t.behind, because(err), w.wt, w.tab, c.LogPath))
+		m.cantPutBack(t, err)
 		return false, nil
 	case rebased:
 		o.info("  %s was checked ahead of its turn on top of %s, which did not merge as it was checked: "+
 			"put back as its worker left it", w.br, t.behind)
 	}
 	return true, nil
+}
+
+// leaveTrain stops the ticket's train, if it has one, as the run stops (stop) before its turn comes,
+// and puts back a branch it rebased as its worker left it: the ticket is left finished and unmerged,
+// for the next run to merge as any other. It returns stop, or the reason to stop when git can't tell
+// where the branch is (see gitFailed). The queue isn't held: nothing here moves Base.
+func (m *mergeRun) leaveTrain(stop *stopReason) *stopReason {
+	o, w := m.o, m.w
+	t := o.takeTrain(w.id)
+	if t == nil {
+		return stop
+	}
+	t.cancel()
+	<-t.done
+	m.repo.lock()
+	head, err := o.head(m.keep, m.repo, w.br)
+	if err != nil { // the branch may have the commits of the branch ahead, which didn't merge
+		_, failed := m.gitFailed("where "+w.br+" is, after it was rebased to be checked ahead of its turn", err)
+		return failed
+	}
+	rebased, err := m.putBack(t, head)
+	switch {
+	case err != nil:
+		m.cantPutBack(t, err)
+	case rebased:
+		o.info("  %s was rebased onto %s to be checked ahead of its turn, but the run stopped before its turn: "+
+			"put back as its worker left it", w.br, t.behind)
+	}
+	return stop
+}
+
+// putBack puts the ticket's branch, at head, back as its worker left it, when t rebased it and it hasn't
+// moved since, and lets go of repo, which the caller holds. It reports whether the branch was rebased,
+// and git's error when it could not put it back.
+func (m *mergeRun) putBack(t *trainRun, head string) (bool, error) {
+	defer m.repo.unlock()
+	if t.head == "" || head != t.head {
+		return false, nil
+	}
+	out, err := m.o.merger.ResetBranch(m.keep, m.w.wt, t.orig)
+	m.o.log.Raw(out, err)
+	return true, err
+}
+
+// cantPutBack sets the ticket aside, git having failed to put its branch back as its worker left it
+// (see putBack): it has the commits of the branch ahead.
+func (m *mergeRun) cantPutBack(t *trainRun, err error) {
+	o, c, w := m.o, m.o.cfg, m.w
+	o.leaveFor(m.keep, w.id, asideRebaseFailed, "rebase failed", "", fmt.Sprintf(
+		"%s closed, but git could not put %s back as its worker left it, at %s, after it was rebased onto %s "+
+			"to be checked ahead of its turn%s; worktree %s and tab %s left for review (git output is in %s)",
+		w.id, w.br, short(t.orig), t.behind, because(err), w.wt, w.tab, c.LogPath))
 }
 
 // baseHead is the commit Base is on, as board compares it with the one a train was checked on: "" when

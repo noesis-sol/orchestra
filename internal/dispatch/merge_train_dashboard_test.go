@@ -91,11 +91,11 @@ func TestTrainActivitySaysHowTheCheckAheadGoes(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			tr := c.t
 			tr.id, tr.behind = "B", "wt/A"
-			q := &mergeQueue{trains: map[string]*trainRun{"B": &tr}}
-			if got := q.trainActivity("B"); got != c.want {
+			train := &mergeTrain{trains: map[string]*trainRun{"B": &tr}}
+			if got := train.activity("B"); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
-			if got := q.trainActivity("C"); got != "" {
+			if got := train.activity("C"); got != "" {
 				t.Errorf("a ticket with no train shows %q, want nothing", got)
 			}
 		})

@@ -58,20 +58,27 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		for _, id := range []string{"A", "B", "C"} {
 			o.setActive(Status{Ticket: id, Title: "Ticket " + id, Tab: "tab-" + id, Started: time.Now()})
 		}
-		turns := map[string]*lockGuard{}
+		turns := map[string]*mergeTurn{}
 		var order []string
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		take := func(id string) {
-			h := &lockGuard{mu: mergeTurn{o: o, id: id}}
-			turns[id] = h
 			wg.Go(func() {
-				h.lock()
+				turn, stop := o.merges.acquire(t.Context(), id)
+				if stop != nil {
+					t.Errorf("%s: %v", id, stop)
+				}
 				mu.Lock()
+				turns[id] = turn
 				order = append(order, id)
 				mu.Unlock()
 			})
 			synctest.Wait() // in line, or holding the queue
+		}
+		turn := func(id string) *mergeTurn {
+			mu.Lock()
+			defer mu.Unlock()
+			return turns[id]
 		}
 		expect := func(when string, want ...string) {
 			t.Helper()
@@ -86,13 +93,13 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		take("C")
 		expect("B and C wait behind A, in the order they came", "B to merge 1", "C to merge 2")
 
-		turns["A"].release()
+		turn("A").release()
 		synctest.Wait()
 		expect("A is done: B's turn, and C moves up", "B merging", "C to merge 1")
 
 		// B is handed back to its worker, which lets go of the queue: C's turn.
 		o.setHandedBack("B", handFixing)
-		turns["B"].unlock()
+		turn("B").release()
 		synctest.Wait()
 		expect("B handed back to fix its check", "B fixing", "C merging")
 		if st := o.active["B"]; st.Merge != MergeNone || st.Place != 0 {
@@ -103,10 +110,10 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		o.setHandedBack("B", handNone)
 		take("B")
 		expect("B back in line behind C", "B to merge 1")
-		turns["C"].release()
+		turn("C").release()
 		synctest.Wait()
 		expect("C is done: B's turn again", "B merging")
-		turns["B"].release()
+		turn("B").release()
 		wg.Wait()
 
 		if want := []string{"A", "B", "C", "B"}; !slices.Equal(order, want) {
@@ -128,9 +135,11 @@ func TestMergeQueueShowsNoTicketNotWorkedOn(t *testing.T) {
 	sink := &stageSink{}
 	o := New(Config{Base: "main"}, nil, "", Deps{})
 	o.sink = sink
-	q := &lockGuard{mu: mergeTurn{o: o, id: "gone"}}
-	q.lock()
-	q.release()
+	turn, stop := o.merges.acquire(t.Context(), "gone")
+	if stop != nil {
+		t.Fatal(stop)
+	}
+	turn.release()
 	if got := sink.shown(); len(got) != 0 {
 		t.Errorf("a ticket not worked on should not get a box: shown %q", got)
 	}

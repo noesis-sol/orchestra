@@ -378,7 +378,7 @@ type readsAcrossCtrlC struct {
 
 func (b readsAcrossCtrlC) Ready(ctx context.Context, scope string) ([]Ticket, error) {
 	ready, err := b.fakeBeads.Ready(ctx, scope)
-	if b.o.goneToMerge(map[string]bool{b.ticket: true}) > 0 {
+	if b.o.slots.goneToMerge(map[string]bool{b.ticket: true}) > 0 {
 		<-b.interrupted
 	}
 	return ready, err

@@ -165,7 +165,7 @@ func TestAStopAsARebaseConflictsAbortsIt(t *testing.T) {
 }
 
 // A ticket waiting in the merge queue as the run stops leaves the line without taking a turn: those
-// behind it move up, and its Unlock passes on nothing, the queue not being its own.
+// behind it move up, and acquire returns errInterrupted with no turn to release.
 func TestMergeQueueLetsATicketGiveUpItsTurnAsTheRunStops(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -175,37 +175,46 @@ func TestMergeQueueLetsATicketGiveUpItsTurnAsTheRunStops(t *testing.T) {
 		for _, id := range []string{"A", "B", "C"} {
 			o.setActive(Status{Ticket: id, Title: "Ticket " + id, Tab: "tab-" + id, Started: time.Now()})
 		}
-		stopB := make(chan struct{})
-		a := &lockGuard{mu: mergeTurn{o: o, id: "A"}}
-		b := &lockGuard{mu: mergeTurn{o: o, id: "B", stop: stopB}}
-		c := &lockGuard{mu: mergeTurn{o: o, id: "C"}}
-		a.lock()
-		var bDone, cDone bool
-		go func() { b.lock(); bDone = true }()
+		a, stop := o.merges.acquire(t.Context(), "A")
+		if stop != nil {
+			t.Fatal(stop)
+		}
+		ctxB, stopB := context.WithCancel(t.Context())
+		defer stopB()
+		var b, c *mergeTurn
+		var bStop, cStop *stopReason
+		bDone, cDone := make(chan struct{}), make(chan struct{})
+		go func() { b, bStop = o.merges.acquire(ctxB, "B"); close(bDone) }()
 		synctest.Wait()
-		go func() { c.lock(); cDone = true }()
+		go func() { c, cStop = o.merges.acquire(t.Context(), "C"); close(cDone) }()
 		synctest.Wait()
 		sink.shown()
 
-		close(stopB)
+		stopB()
+		<-bDone
+		if b != nil || bStop != errInterrupted {
+			t.Fatalf("B should give up waiting as the run stops: turn %v, %v", b, bStop)
+		}
 		synctest.Wait()
-		if !bDone || cDone {
-			t.Fatalf("B should give up waiting as the run stops, and C wait on: B done %v, C done %v", bDone, cDone)
+		select {
+		case <-cDone:
+			t.Fatal("C should wait on behind A")
+		default:
 		}
 		if got, want := sink.shown(), []string{"C to merge 1"}; !slices.Equal(got, want) {
 			t.Errorf("shown %q, want %q: C moves up", got, want)
 		}
-		b.release()
-		synctest.Wait()
-		if q := &o.merges; q.holder != "A" || cDone {
-			t.Errorf("B's release should pass on nothing: held by %q, C done %v", q.holder, cDone)
+		b.release() // a nil turn releases nothing
+		if q := &o.merges; q.holder != "A" {
+			t.Errorf("the queue should stay A's: held by %q", q.holder)
 		}
 		a.release()
-		synctest.Wait()
-		if !cDone {
-			t.Error("A's release should give C its turn")
+		<-cDone
+		if cStop != nil {
+			t.Fatalf("C: %v", cStop)
 		}
 		c.release()
+		c.release() // a turn released twice passes nothing on the second time
 		if q := &o.merges; q.holder != "" || len(q.line) != 0 {
 			t.Errorf("the queue should be empty: held by %q, %d waiting", q.holder, len(q.line))
 		}

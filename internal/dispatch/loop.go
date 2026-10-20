@@ -68,6 +68,8 @@ type Loop struct {
 	// deletions): workers run side by side, and git's lock files allow one writer at a time.
 	repoMu sync.Mutex
 	merges mergeQueue // the merge queue (see mergeTurn)
+	train  mergeTrain // the tickets checked ahead of their turn in it (see train.go)
+	slots  mergeSlots // the tickets gone to merge, as Run counts its slots
 
 	organCost organCost // what the run's organ calls cost
 	hookTally hookTally // what the workers' hooks noted: permission prompts, compactions
@@ -235,9 +237,10 @@ func New(cfg Config, log *Log, prompt string, d Deps) *Loop {
 		deps: depsFrom(d), tallies: newTallies(nil), ledger: newLedger(), predictor: newPredictor(),
 		envHold:   envHold{verdicts: make(chan verdict), runDone: make(chan struct{})},
 		gate:      newGate(),
-		merges:    mergeQueue{joined: make(chan struct{}, 1)},
+		slots:     newMergeSlots(),
 		drainReqs: make(chan drainRequest, 1),
 	}
+	o.merges.o = o
 	o.usage = newUsageHold(&o.gate, o.emit, cfg.UsageLimitWait)
 	return o
 }
