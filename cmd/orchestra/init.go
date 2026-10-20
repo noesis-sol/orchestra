@@ -69,12 +69,6 @@ func runInit(
 		}
 		return dispatch.ExitSetup
 	}
-	// stopped says that a stop signal stopped init after the steps so far, what follows them in why.
-	stopped := func(why string) int {
-		ui.Steps(steps)
-		fmt.Fprintln(stderr, "orchestra init: stopped"+why)
-		return dispatch.ExitInterrupted
-	}
 	// Checked again once the form is answered, which can take a while: a run may have started since.
 	// From here init holds the lock, so that no run starts while it changes the project.
 	lock, refusal := lockInit(ctx, repo)
@@ -83,29 +77,54 @@ func runInit(
 		return fail(refusal)
 	}
 	defer func() { _ = lock.Close() }() // only releases it; init exiting would too
-	beadsSteps := setUpBeads(stopCtx, repo, choice, getenv, ui.Working)
-	if steps = append(steps, beadsSteps...); stopCtx.Err() != nil {
-		return stopped("")
-	}
-	// Apply writes the whole setup once it starts, or nothing where the stop came first.
-	applied, err := project.Apply(stopCtx, repo, choice, f.force)
-	switch steps = append(steps, applied...); {
-	case stopCtx.Err() != nil && applied == nil:
-		return stopped(" before writing .orchestra/")
-	case stopCtx.Err() != nil && choice.FilesTestWork():
-		return stopped(" once it had written the files above, before filing the test work: orchestra init " +
-			"again files it")
-	case stopCtx.Err() != nil:
-		return stopped(" once it had written the files above")
-	case err != nil:
-		ui.Steps(steps)
-		return fail(err)
-	}
-	if steps = append(steps, fileTestWork(stopCtx, repo, choice)...); stopCtx.Err() != nil {
-		return stopped(" while filing the test work: orchestra init again files what is missing")
+	did, halt := runSteps(stopCtx, initSteps(repo, choice, f.force, getenv, ui.Working))
+	if steps = append(steps, did...); halt != nil {
+		return initHalted(ui, stderr, steps, halt)
 	}
 	signOff(ctx, ui, repo, steps, choice, existing.WorkerEffort, getenv)
 	return dispatch.ExitOK
+}
+
+// initSteps are the steps init takes to set up the repository at repo as the choice says, once it is
+// answered: Beads, then .orchestra/ and the rest Apply writes (anew where force is), then the test
+// work. working says what a step under way is doing.
+func initSteps(
+	repo string, c project.Choice, force bool, getenv func(string) string, working func(string),
+) []setupStep {
+	return []setupStep{
+		{name: "Beads", run: func(ctx context.Context) ([]project.Step, error) {
+			return setUpBeads(ctx, repo, c, getenv, working), nil
+		}},
+		// Apply writes the whole setup once it starts, or nothing where the stop came first.
+		{name: "the setup", run: func(ctx context.Context) ([]project.Step, error) {
+			return project.Apply(ctx, repo, c, force)
+		}, stopped: func(took []project.Step) string {
+			switch {
+			case took == nil:
+				return " before writing .orchestra/"
+			case c.FilesTestWork():
+				return " once it had written the files above, before filing the test work: orchestra init again files it"
+			}
+			return " once it had written the files above"
+		}},
+		{name: "the test work", run: func(ctx context.Context) ([]project.Step, error) {
+			return fileTestWork(ctx, repo, c), nil
+		}, stopped: func([]project.Step) string {
+			return " while filing the test work: orchestra init again files what is missing"
+		}},
+	}
+}
+
+// initHalted reports where halt ended init's setup, after the steps so far, and returns the exit code:
+// a stop signal stopped init, or a step failed.
+func initHalted(ui tui.InitScreen, stderr io.Writer, steps []project.Step, halt *setupHalt) int {
+	ui.Steps(steps)
+	if halt.stop {
+		fmt.Fprintln(stderr, "orchestra init: stopped"+halt.words)
+		return dispatch.ExitInterrupted
+	}
+	fmt.Fprintln(stderr, "orchestra init:", halt.err)
+	return dispatch.ExitSetup
 }
 
 // openInitRepo finds the repository around dir that init sets up, and reads its settings. The error

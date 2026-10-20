@@ -98,48 +98,99 @@ func (u specSetup) run(ctx context.Context) int {
 	}
 	fmt.Fprintln(u.out, "orchestra init hasn't set this repository up: setting it up as init does without a terminal")
 	u.logLine("SPEC: setting up " + u.repo + ", which orchestra init hasn't, as init does without a terminal")
-	steps := project.SetUpBeads(ctx, u.repo, u.choice, u.getenv, func(what string) { fmt.Fprintln(u.out, what) })
-	if ctx.Err() != nil {
-		return u.stopped()
+	var committed specCommit
+	did, halt := runSteps(ctx, u.steps(before, &committed))
+	return u.halted(did, halt, rel, committed)
+}
+
+// The names of a spec run's setup steps (see specSetup.steps).
+const (
+	specStepBeads  = "Beads"
+	specStepApply  = "the setup"
+	specStepCommit = "the commit"
+)
+
+// specCommit is the commit of a spec run's setup: its hash, and the files it took.
+type specCommit struct {
+	hash  string
+	paths []string
+}
+
+// specFailure is a spec run's setup step's error: why, what orchestra couldn't do, and the exit code.
+type specFailure struct {
+	why  string
+	code int
+}
+
+func (f *specFailure) Error() string { return f.why }
+
+// steps are the spec run's setup steps: Beads, then .orchestra/ and the rest Apply writes, then the
+// commit of what changed since before, with the spec, which they put in committed.
+func (u specSetup) steps(before map[string]string, committed *specCommit) []setupStep {
+	return []setupStep{
+		{name: specStepBeads, run: func(ctx context.Context) ([]project.Step, error) {
+			steps := project.SetUpBeads(ctx, u.repo, u.choice, u.getenv, func(what string) { fmt.Fprintln(u.out, what) })
+			for _, s := range steps {
+				if s.Kind == project.StepMissing {
+					return steps, &specFailure{"couldn't set Beads up: " + s.Detail, dispatch.ExitTool}
+				}
+			}
+			if st, err := os.Stat(filepath.Join(u.repo, ".beads")); err != nil || !st.IsDir() {
+				return steps, &specFailure{"couldn't set Beads up: bd init left no .beads folder", dispatch.ExitTool}
+			}
+			return steps, nil
+		}},
+		// Apply writes the whole setup once it starts, or nothing where the stop came first.
+		{name: specStepApply, run: func(ctx context.Context) ([]project.Step, error) {
+			applied, err := project.Apply(ctx, u.repo, u.choice, false)
+			if err != nil {
+				return applied, &specFailure{"couldn't set the repository up: " + dispatch.FirstLine(err.Error()),
+					dispatch.ExitSetup}
+			}
+			return applied, nil
+		}},
+		{name: specStepCommit, run: func(ctx context.Context) ([]project.Step, error) {
+			var err error
+			committed.hash, committed.paths, err = project.CommitSetUp(ctx, u.repo, before, u.file)
+			if err != nil {
+				code := dispatch.ExitSetup
+				if _, gitFailed := errors.AsType[*command.Error](err); gitFailed {
+					code = dispatch.ExitTool
+				}
+				return nil, &specFailure{"couldn't commit its setup: " + dispatch.FirstLine(err.Error()), code}
+			}
+			return nil, nil
+		}},
 	}
-	for _, s := range steps {
-		if s.Kind == project.StepMissing {
-			return u.failed("couldn't set Beads up: "+s.Detail, dispatch.ExitTool)
+}
+
+// halted reports how the setup's steps ended, having taken did, where halt halted them, and returns
+// the exit code. Once it has written the setup, it lists what it did, then says what the commit did;
+// rel is the spec's path in the repository.
+func (u specSetup) halted(did []project.Step, halt *setupHalt, rel string, committed specCommit) int {
+	if halt == nil || halt.step == specStepCommit {
+		for _, s := range did {
+			line := s.Label
+			if s.Detail != "" {
+				line += ": " + s.Detail
+			}
+			line = tui.Printable(line)
+			fmt.Fprintln(u.out, "  - "+line)
+			u.logLine("SPEC: setup: " + line)
 		}
 	}
-	if st, err := os.Stat(filepath.Join(u.repo, ".beads")); err != nil || !st.IsDir() {
-		return u.failed("couldn't set Beads up: bd init left no .beads folder", dispatch.ExitTool)
-	}
-	// Apply writes the whole setup once it starts, or nothing where the stop came first.
-	applied, err := project.Apply(ctx, u.repo, u.choice, false)
-	switch steps = append(steps, applied...); {
-	case ctx.Err() != nil:
-		return u.stopped()
-	case err != nil:
-		return u.failed("couldn't set the repository up: "+dispatch.FirstLine(err.Error()), dispatch.ExitSetup)
-	}
-	for _, s := range steps {
-		line := s.Label
-		if s.Detail != "" {
-			line += ": " + s.Detail
-		}
-		line = tui.Printable(line)
-		fmt.Fprintln(u.out, "  - "+line)
-		u.logLine("SPEC: setup: " + line)
-	}
-	commit, paths, err := project.CommitSetUp(ctx, u.repo, before, u.file)
 	switch {
-	case ctx.Err() != nil:
+	case halt == nil:
+	case halt.stop:
 		return u.stopped()
-	case err != nil:
-		code := dispatch.ExitSetup
-		if _, gitFailed := errors.AsType[*command.Error](err); gitFailed {
-			code = dispatch.ExitTool
+	default:
+		if f, ok := errors.AsType[*specFailure](halt.err); ok {
+			return u.failed(f.why, f.code)
 		}
-		return u.failed("couldn't commit its setup: "+dispatch.FirstLine(err.Error()), code)
+		return u.failed(halt.step+": "+dispatch.FirstLine(halt.err.Error()), dispatch.ExitSetup)
 	}
-	done := fmt.Sprintf("committed the setup with the spec %s as %s (%s)", rel, commit[:min(12, len(commit))],
-		plural(len(paths), "file"))
+	done := fmt.Sprintf("committed the setup with the spec %s as %s (%s)", rel,
+		committed.hash[:min(12, len(committed.hash))], plural(len(committed.paths), "file"))
 	fmt.Fprintln(u.out, done)
 	u.logLine("SPEC: " + done)
 	return dispatch.ExitOK
