@@ -208,7 +208,9 @@ type options struct {
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
-	showVersion  bool
+	// the permission mode workers start in on a run that isn't planned and on one that is (see settleWork)
+	permissionModes struct{ unplanned, planned string }
+	showVersion     bool
 	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
 	specSetup *project.Choice
 	// how long the spec's breakdown may take, and the effort it runs at (--spec-timeout, --spec-effort)
@@ -482,61 +484,17 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	return f
 }
 
-// checkFlagCombos checks how a run's flags go together: --feature and --spec with what they need
-// and against what they can't be combined with.
+// checkFlagCombos checks how a run's flags go together: --yes, which is gone, and what they say the
+// run works on (see checkWorkFlags).
 func checkFlagCombos(f *runFlags) []string {
 	if f.set["yes"] {
 		return []string{"--yes is gone: --feature always talks the feature through with you; " +
 			"orchestra --spec <file> runs a request written to a file unattended."}
 	}
-	if p := checkSpecCombos(f); p != "" {
+	if p := checkWorkFlags(f); p != "" {
 		return []string{p}
 	}
-	feature := f.set["feature"]
-	switch {
-	case feature && f.Feature == "":
-		return []string{"--feature needs the request: orchestra --feature \"<what to build>\""}
-	case feature && f.Ticket != "":
-		return []string{"--feature can't be combined with --ticket (or ORCHESTRA_TICKET): " +
-			"a feature run is scoped to the epic it files."}
-	case feature && f.set["tickets"] && f.Tickets:
-		return []string{"--feature can't be combined with --tickets: " +
-			"one runs a new feature, the other the current tickets."}
-	case feature && f.Limit >= 0 && f.DoneSoFar >= f.Limit:
-		// Only with --limit or LIMIT: the loop would end at once, the plan filed and none of it started.
-		return []string{fmt.Sprintf("--feature would file a plan and run none of it: "+
-			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
-			"or leave both out.",
-			f.DoneSoFar, f.Limit)}
-	}
 	return nil
-}
-
-// checkSpecCombos says how --spec (or ORCHESTRA_SPEC) and --refine don't go with the run's other
-// flags, or returns "". ORCHESTRA_REFINE alone, like ORCHESTRA_TICKETS, is a standing choice that
-// a run without a spec leaves unused; --refine with --feature changes nothing, as a feature is always
-// talked through.
-func checkSpecCombos(f *runFlags) string {
-	spec, from := f.specFile != "", f.specFrom()
-	switch {
-	case f.set["spec"] && !spec:
-		return "--spec needs the spec's file: orchestra --spec <file>"
-	case spec && f.set["feature"]:
-		return from + " can't be combined with --feature: one runs a spec, the other a feature request."
-	case spec && f.Ticket != "":
-		return from + " can't be combined with --ticket (or ORCHESTRA_TICKET): " +
-			"a spec run is scoped to the epic its breakdown files."
-	case spec && f.set["tickets"] && f.Tickets:
-		return from + " can't be combined with --tickets: one runs a spec, the other the current tickets."
-	case !spec && !f.set["feature"] && f.set["refine"] && f.Refine:
-		return "--refine only applies with --spec or --feature."
-	case spec && f.DoneSoFar >= f.Limit:
-		// Only with --limit or LIMIT: a run has none otherwise.
-		return fmt.Sprintf("%s would break the spec down and run none of it: "+
-			"--done-so-far (%d) has reached --limit (%d). Raise --limit [LIMIT], lower --done-so-far [DONE_SO_FAR], "+
-			"or leave both out.", from, f.DoneSoFar, f.Limit)
-	}
-	return ""
 }
 
 // specFrom is what gave the run its spec, for its problems: --spec, or ORCHESTRA_SPEC.
@@ -551,7 +509,7 @@ func (f *runFlags) specFrom() string {
 func findRepo(ctx context.Context, c *options, dir string) []string {
 	repo, err := (git.Git{}).TopLevel(ctx, dir)
 	switch {
-	case err != nil && c.specFile != "":
+	case err != nil && c.work().kind == workSpec:
 		return []string{noRepoForSpec}
 	case err != nil:
 		return []string{"Not inside a git repository: cd into the project first."}
@@ -630,8 +588,11 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(f.workerEffort, settings)) {
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
 	}
-	keep(&problems, &c.WorkerPermissionMode)(
-		project.ResolvePermissionMode(f.permissionMode, settings, c.specFile != "" || c.Feature != ""))
+	if keep(&problems, &c.permissionModes.unplanned)(project.ResolvePermissionMode(f.permissionMode, settings, false)) {
+		// The same flag and settings, read with a planned run's default: no other error.
+		c.permissionModes.planned, _ = project.ResolvePermissionMode(f.permissionMode, settings, true)
+	}
+	c.settleWork()
 	keep(&problems, &c.OrganEffort)(project.ResolveEffort(f.organEffort, "organ_effort", settings.OrganEffort))
 	keep(&problems, &c.SpecEffort)(project.ResolveSpecEffort(f.specEffort, settings))
 	keep(&problems, &c.SpecTimeout)(project.ResolveSpecTimeout(f.specTimeout, settings))
@@ -698,20 +659,20 @@ func checkCheckout(ctx context.Context, c *options) []string {
 	case !strings.Contains(string(b), "TICKET_ID"):
 		problems = append(problems, "Worker prompt has no TICKET_ID placeholder: "+prompt)
 	}
-	idProblem := ""
-	if c.Ticket != "" {
-		if idProblem = dispatch.IDProblem(c.Ticket); idProblem != "" {
+	idProblem, ticket := "", c.work().ticket
+	if ticket != "" {
+		if idProblem = dispatch.IDProblem(ticket); idProblem != "" {
 			problems = append(problems, fmt.Sprintf("Ticket %s (--ticket): %s: a ticket's ID names its worktree "+
 				"folder and its branch wt/<id>. Give it a plain ID with: bd rename %s <new-id>",
-				c.Ticket, idProblem, c.Ticket))
+				ticket, idProblem, ticket))
 		}
 	}
 	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 		if !c.notSetUp && c.specSetup == nil {
 			problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
 		}
-	} else if _, err := command.LookPath(ctx, "bd"); err == nil && c.Ticket != "" && idProblem == "" {
-		if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, c.Ticket); p != "" {
+	} else if _, err := command.LookPath(ctx, "bd"); err == nil && ticket != "" && idProblem == "" {
+		if p := scopeProblem(ctx, beads.Tracker{Repo: c.Repo}, ticket); p != "" {
 			problems = append(problems, p)
 		}
 	}

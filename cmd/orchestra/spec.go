@@ -63,27 +63,29 @@ func breakdownOf(s *session) specBreakdown {
 	if s.e.breakdown != nil {
 		return s.e.breakdown(s)
 	}
-	if s.cfg.Refine {
+	if s.cfg.work().refine {
 		return newRefineBreakdown(s)
 	}
 	return newHeadlessBreakdown(s)
 }
 
-// checkSpecFile checks the spec --spec (or ORCHESTRA_SPEC, as from says) gives, c.specFile: a file
-// of text with something in it (see project.ReadSpec). It makes c.specFile absolute, as the working
+// checkSpecFile checks the spec --spec (or ORCHESTRA_SPEC, as from says) gives the run c: a file of
+// text with something in it (see project.ReadSpec). It makes the spec's file absolute, as the working
 // directory dir has it.
 func checkSpecFile(c *options, dir, from string) []string {
-	if c.specFile == "" {
+	w := c.work()
+	if w.kind != workSpec {
 		return nil
 	}
-	given := c.specFile
+	given := w.spec
 	if !filepath.IsAbs(given) {
-		c.specFile = filepath.Join(dir, given)
+		w.spec = filepath.Join(dir, given)
 	}
-	if abs, err := filepath.Abs(c.specFile); err == nil {
-		c.specFile = abs
+	if abs, err := filepath.Abs(w.spec); err == nil {
+		w.spec = abs
 	}
-	_, err := project.ReadSpec(c.specFile)
+	c.specFile = w.spec // only the spec's file: whatever else the flags give is their problem, kept as given
+	_, err := project.ReadSpec(w.spec)
 	var pathErr *fs.PathError
 	switch {
 	case err == nil:
@@ -104,10 +106,11 @@ func checkSpecFile(c *options, dir, from string) []string {
 // checkSpecPath settles where the spec is kept in the repository, c.Spec (see project.SpecPath), and
 // checks that git can commit it there: not in the .git folder, nor where git ignores it.
 func checkSpecPath(ctx context.Context, c *options, from string) []string {
-	if c.specFile == "" {
+	w := c.work()
+	if w.kind != workSpec {
 		return nil
 	}
-	c.Spec, _ = project.SpecPath(c.Repo, c.specFile)
+	c.Spec, _ = project.SpecPath(c.Repo, w.spec)
 	if project.InGitDir(c.Spec) {
 		return []string{fmt.Sprintf("The spec %s (%s) is in the repository's .git folder, which git keeps "+
 			"no file of: move it out.", c.Spec, from)}
@@ -174,13 +177,13 @@ func (s *session) runSpec(ctx context.Context) (string, int) {
 	if code := s.setUpForSpec(ctx); code != dispatch.ExitOK {
 		return "", code
 	}
-	c := s.cfg
+	c, w := s.cfg, s.cfg.work()
 	if plainOutput(c.Plain, s.e.getenv, s.e.stdin, s.e.stdout) {
 		// The loop may print beside the breakdown (spec_early.go): one line at a time.
 		s.e.stdout, s.e.stderr = lineLocked(s.e.stdout, s.e.stderr)
 	}
 	root, code, f := specRun{
-		file: c.specFile, repo: c.Repo, refine: c.Refine,
+		file: w.spec, repo: c.Repo, refine: w.refine,
 		breakdown: breakdownOf(s), tracker: beads.Tracker{Repo: c.Repo},
 		log: s.log, out: s.e.stdout, err: s.e.stderr, early: true, say: s.printer(), cancel: cancel,
 	}.start(ctx)

@@ -257,9 +257,10 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	// One run at a time in a repository: a second would race this one for the same tickets, worktrees
 	// and branch. Taken before anything changes, a --feature request's session included, and held
 	// until orchestra exits, after the organ phase.
+	w := cfg.work()
 	s.holder = project.Holder{
 		PID: os.Getpid(), Started: s.started, Version: e.version, Branch: cfg.Base,
-		Ticket: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Pane: cfg.where.pane,
+		Ticket: w.ticket, Feature: w.feature, Spec: cfg.Spec, Pane: cfg.where.pane,
 	}
 	lock, lockErr := project.LockRun(ctx, cfg.Repo, s.holder)
 	var held *project.HeldError
@@ -333,29 +334,25 @@ func (s *session) readPrompt() int {
 func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	cfg, e := &s.cfg, s.e
 	if asksWork(*cfg, isTerminal(e.stdin) && isTerminal(e.stdout)) {
-		work, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr, e.getenv("TERM"))
+		answer, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr, e.getenv("TERM"))
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
 			return code, false
 		}
-		switch work.Kind {
-		case tui.WorkFeature:
-			s.featureChosen(work)
-		case tui.WorkSpec:
-			if code := s.specChosen(ctx, work); code != dispatch.ExitOK {
-				return code, false
-			}
+		if code := s.setWork(ctx, answered(answer)); code != dispatch.ExitOK {
+			return code, false
 		}
 	}
+	w := cfg.work()
 	filedCode := dispatch.ExitOK
-	switch { // the run is scoped to the epic filed
-	case cfg.specFile != "": // broken down from the spec, once it is committed (spec.go)
+	switch w.kind { // the run is scoped to the epic filed
+	case workSpec: // broken down from the spec, once it is committed (spec.go)
 		cfg.Ticket, filedCode = s.runSpec(ctx)
-	case cfg.Feature != "": // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
+	case workFeature: // talked through with the user, and filed, in a Claude Code session (feature_refine.go)
 		cfg.Ticket, filedCode = s.talkFeature(ctx)
 	}
 	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: s.e.version, Repo: cfg.Repo,
-		Branch: cfg.Base, Scope: cfg.Ticket, Feature: cfg.Feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})
-	if (cfg.Feature != "" || cfg.specFile != "") && cfg.Ticket == "" { // nothing filed to run
+		Branch: cfg.Base, Scope: cfg.Ticket, Feature: w.feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})
+	if w.planned() && cfg.Ticket == "" { // nothing filed to run
 		return filedCode, false
 	}
 	return dispatch.ExitOK, true

@@ -48,7 +48,7 @@ func specSetupChoice(repo string, concurrency project.Given[int], agent string) 
 // and returns the settings the run reads: those it will have once set up, so that the run's
 // problems are all found before anything is written. Elsewhere it returns settings, the project's.
 func planSpecSetup(c *options, concurrency project.Given[int], settings project.Settings) project.Settings {
-	if c.specFile == "" || c.Repo == "" || project.IsSetUp(c.Repo) {
+	if c.work().kind != workSpec || c.Repo == "" || project.IsSetUp(c.Repo) {
 		return settings
 	}
 	choice := specSetupChoice(c.Repo, concurrency, c.AgentKind)
@@ -63,7 +63,7 @@ func (s *session) setUpForSpec(ctx context.Context) int {
 	if c.specSetup == nil {
 		return dispatch.ExitOK
 	}
-	code := specSetup{choice: *c.specSetup, repo: c.Repo, file: c.specFile, getenv: s.e.getenv,
+	code := specSetup{choice: *c.specSetup, repo: c.Repo, file: c.work().spec, getenv: s.e.getenv,
 		log: s.log, out: s.e.stdout, err: s.e.stderr}.run(ctx)
 	if code != dispatch.ExitOK {
 		return code

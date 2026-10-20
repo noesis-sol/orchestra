@@ -96,7 +96,7 @@ func (s *session) talkFeature(ctx context.Context) (string, int) {
 	defer stop()
 	c := s.cfg
 	return featureTalk{
-		request: c.Feature, runID: featureRun(s.started), repo: c.Repo, breakdown: newRefineBreakdown(s),
+		request: c.work().feature, runID: featureRun(s.started), repo: c.Repo, breakdown: newRefineBreakdown(s),
 		tracker: beads.Tracker{Repo: c.Repo}, log: s.log, out: s.e.stdout, err: s.e.stderr,
 	}.run(ctx)
 }
