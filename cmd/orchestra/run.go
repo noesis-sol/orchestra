@@ -214,6 +214,25 @@ type session struct {
 	stops   *stopWatch
 	log     *dispatch.Log
 	undo    []func(err error) // what close does, the last added first, given the run's result
+	// filing is a spec's breakdown going on as the loop starts on its environment ticket
+	// (spec_early.go); nil for none
+	filing *specFiling
+	say    *tui.Printer // what printer gives, once it has
+}
+
+// printer is where the run's lines go before its loop, and beside the spec's breakdown that goes on
+// as the loop starts: a terminal's printer, which draws a busy line and prints above it, unless the
+// run is plain. Each call gives a copy of the same printer, sharing its busy line.
+func (s *session) printer() tui.Printer {
+	if s.say == nil {
+		c, e := s.cfg, s.e
+		say := tui.Printer{Out: e.stdout}
+		if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
+			say = tui.Terminal(out, termWidth(out))
+		}
+		s.say = &say
+	}
+	return *s.say
 }
 
 // onClose adds f to what close does, before everything added so far.
@@ -345,7 +364,9 @@ func (s *session) runLoop(ctx context.Context) int {
 	cfg, e := s.cfg, s.e
 	out, _ := e.stdout.(*os.File)
 	plain := plainOutput(cfg.Plain, e.getenv, e.stdin, e.stdout)
-	if nothingToRun(ctx, cfg, s.log, e.stdout, plain) {
+	if s.filing != nil { // the spec's breakdown goes on: the loop starts on its environment ticket alone
+		cfg.Filing = s.filing.gate()
+	} else if nothingToRun(ctx, cfg, s.log, e.stdout, plain) {
 		return dispatch.ExitOK
 	}
 
@@ -358,9 +379,13 @@ func (s *session) runLoop(ctx context.Context) int {
 	if cfg.Triage {
 		orch.StartTriage()
 	}
-	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, base: base, cancelOrgans: cancelOrgans}
-	if plain {
+	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, base: base, cancelOrgans: cancelOrgans,
+		filing: s.filing}
+	switch {
+	case plain:
 		return runPlain(ctx, r, e.stdout)
+	case s.filing != nil:
+		return runFiling(ctx, r, s.printer(), e.stdin, out, e.stderr)
 	}
 	return runDashboard(ctx, r, e.stdin, out, e.stderr)
 }

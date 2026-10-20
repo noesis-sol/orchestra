@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ type breakdownRequest struct {
 	project.Spec
 	Refine bool
 	Update *specUpdate // nil for a spec broken down for the first time
+	// Filed, unless nil, is told the IDs of the issues the breakdown files, in the order it files
+	// them, as it goes (see envWatch). It must not block.
+	Filed func(ids ...string)
 }
 
 // breakdownResult is what a breakdown filed: the root epic, under which it filed the rest, and the
@@ -142,41 +146,83 @@ type specRun struct {
 	log       *dispatch.Log // nil in tests
 	out, err  io.Writer
 	update    *specUpdate // the breakdown's update, once run finds the spec changed since its tree was filed
+	// early has start return once a breakdown of the spec for the first time has filed its
+	// environment ticket, the breakdown going on (spec_early.go); say is where it says so, and cancel
+	// stops the breakdown.
+	early  bool
+	say    tui.Printer
+	cancel context.CancelFunc
 }
 
 // runSpec sets up the repository of the run s where orchestra init hasn't (spec_setup.go), commits
 // the spec and has it broken down, or carries on with the root epic an earlier run filed for it, and
 // returns the root epic's ID, which the run is then scoped to. When there is nothing to run it
-// returns "" and the exit code; what happened has been reported.
+// returns "" and the exit code; what happened has been reported. Once the breakdown has filed the
+// spec's environment ticket it returns, the breakdown going on in s.filing (spec_early.go).
 func (s *session) runSpec(ctx context.Context) (string, int) {
-	// Ctrl+C stops the breakdown as it does the loop; what it filed so far stays filed.
-	ctx, stop := s.stops.context(ctx)
-	defer stop()
+	// Ctrl+C stops the breakdown as it does the loop; what it filed so far stays filed. A breakdown
+	// that goes on beside the loop is stopped by the loop's stop signal (see specFiling.stopBreakdown).
+	ctx, cancel := context.WithCancel(ctx)
+	s.stops.on(func(os.Signal) { cancel() })
+	defer func() {
+		if s.filing == nil {
+			s.stops.on(nil)
+			cancel()
+		}
+	}()
 	if code := s.setUpForSpec(ctx); code != dispatch.ExitOK {
 		return "", code
 	}
 	c := s.cfg
-	return specRun{
+	if plainOutput(c.Plain, s.e.getenv, s.e.stdin, s.e.stdout) {
+		// The loop may print beside the breakdown (spec_early.go): one line at a time.
+		s.e.stdout, s.e.stderr = lineLocked(s.e.stdout, s.e.stderr)
+	}
+	root, code, f := specRun{
 		file: c.specFile, repo: c.Repo, refine: c.Refine,
 		breakdown: breakdownOf(s), tracker: beads.Tracker{Repo: c.Repo},
-		log: s.log, out: s.e.stdout, err: s.e.stderr,
-	}.run(ctx)
+		log: s.log, out: s.e.stdout, err: s.e.stderr, early: true, say: s.printer(), cancel: cancel,
+	}.start(ctx)
+	s.filing = f
+	return root, code
 }
 
+// run is start without early: it returns once the breakdown is over.
 func (r specRun) run(ctx context.Context) (string, int) {
+	r.early = false
+	root, code, _ := r.start(ctx)
+	return root, code
+}
+
+// start commits the spec and has it broken down, or carries on with the root epic an earlier run
+// filed for it, and returns the root epic's ID, or "" and the exit code having said why there is
+// nothing to run. With early, a breakdown of the spec for the first time that files its environment
+// ticket returns with it the specFiling the breakdown goes on in.
+func (r specRun) start(ctx context.Context) (string, int, *specFiling) {
 	spec, code := r.commit(ctx)
 	if code != dispatch.ExitOK {
-		return "", code
+		return "", code, nil
 	}
 	c, code := r.carryOn(ctx, spec)
 	switch {
 	case code != dispatch.ExitOK:
-		return "", code
+		return "", code, nil
 	case c.root != "": // the spec unchanged since its tree was filed: no breakdown
-		return c.root, dispatch.ExitOK
+		return c.root, dispatch.ExitOK, nil
 	}
 	r.update = c.update
-	res, err := r.breakdown.BreakDown(ctx, breakdownRequest{Spec: spec, Refine: r.refine, Update: c.update})
+	req := breakdownRequest{Spec: spec, Refine: r.refine, Update: c.update}
+	if r.early && c.update == nil {
+		return r.breakDownEarly(ctx, req)
+	}
+	res, err := r.breakdown.BreakDown(ctx, req)
+	root, code := r.broken(ctx, spec, res, err)
+	return root, code, nil
+}
+
+// broken is the end of the breakdown of spec, which gave res and err: it says what went wrong, or
+// checks what was filed and says what it is. It returns the root epic, or "" and the exit code.
+func (r specRun) broken(ctx context.Context, spec project.Spec, res breakdownResult, err error) (string, int) {
 	switch {
 	case ctx.Err() != nil:
 		return "", r.stopped(true, res.Root)

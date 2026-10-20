@@ -212,7 +212,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.startTickets()
 		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {
-			if r.goOnWhenEmpty() {
+			if r.awaitFiling() || r.goOnWhenEmpty() {
 				continue
 			}
 			return r.end()
@@ -230,6 +230,8 @@ func (o *Loop) Run(ctx context.Context) int {
 				r.hear(req)
 			case <-o.liftWake: // the usage limit lifted: tickets start again above
 			case <-o.merges.joined: // a ticket went to merge: its slot may be free above
+			case <-r.filing: // the rest of the scope is filed: its tickets start above
+				r.filed()
 			case <-reset:
 				o.liftAtReset() // and tickets start again above
 			case <-poll.C:
@@ -311,6 +313,9 @@ type runState struct {
 	stops    stops // the reasons the run stops for, first to last
 	envSaid  bool  // the hold for the environment is taken up
 	drained  bool  // the maintainer asked to stop after the running tickets, as last said
+	// filing: closed once the scope is filed (Config.Filing), until when only its first ticket starts;
+	// nil when there is no filing, or once it is over
+	filing <-chan struct{}
 
 	solo soloQueue // the tickets labelled SoloLabel
 	// The queue last reported, its queued -1 before the first, and the solo ticket and the tickets
@@ -340,7 +345,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		count: o.cfg.DoneSoFar, queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
-		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(),
+		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(), filing: o.cfg.filingDone(),
 	}
 }
 
@@ -811,6 +816,7 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 	if err != nil {
 		return nil, queue{}, err
 	}
+	ready = r.filingOnly(ready)
 	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
 		return nil, queue{}, listUnreadableError{err}

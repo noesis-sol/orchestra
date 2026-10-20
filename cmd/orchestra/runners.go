@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -24,6 +25,7 @@ type loopRun struct {
 	log          *dispatch.Log
 	base         context.Context // the run's, without its cancellation
 	cancelOrgans func()
+	filing       *specFiling // the spec's breakdown going on as the loop starts; nil for none
 }
 
 // organs runs the organ phase after the loop ended with code and its final line.
@@ -39,11 +41,15 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 	sink := tui.Printer{Out: stdout}
 	// The signal that stops the loop is the first; one while it winds down ends orchestra.
 	r.stops.quitWith(quitter{loop: r.orch, log: r.log, out: sink, exit: os.Exit})
-	r.stops.on(func(s os.Signal) { cancelRun(dispatch.InterruptedError(stoppedHow(s))) })
+	r.stops.on(func(s os.Signal) {
+		cancelRun(dispatch.InterruptedError(stoppedHow(s)))
+		r.filing.stopBreakdown()
+	})
+	defer r.filing.bind(cancelRun)()
 	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
 	r.orch.SetSink(sink)
 	r.orch.ReportInterrupt = true
-	code := r.orch.Run(ctx)
+	code := r.filing.result(r.orch.Run(ctx))
 	r.stops.on(nil)
 	stopDrain()
 	r.organs(code, r.orch.Final(), sink)
@@ -57,6 +63,24 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.File, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	return dashboard(ctx, cancel, r, nil, stdin, stdout, stderr)
+}
+
+// startedLoop is a loop already running as the dashboard opens, its events held for it: a spec's
+// breakdown went on as the loop started (runFiling).
+type startedLoop struct {
+	codes <-chan int // the loop's exit code, once Run returns
+	held  *heldSink
+	began time.Time // when the loop started
+	// onPanic is what the loop panicking does before it ends orchestra: once the dashboard is open, it
+	// closes it, so that the terminal isn't left in raw mode.
+	onPanic atomic.Pointer[func()]
+}
+
+// dashboard is runDashboard once ctx, which cancel cancels, is the loop's: it starts the loop, unless
+// started has it running already.
+func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLoop, stdin io.Reader,
+	stdout *os.File, stderr io.Writer) int {
 	// orchestra handles the signals itself: Bubble Tea's handler knows nothing of SIGHUP.
 	drain := func(on bool) {
 		if on {
@@ -72,7 +96,11 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	if r.cfg.where.inSight {
 		focus = focusTab(ctx, r.log, terminalOf(r.cfg))
 	}
-	p := tea.NewProgram(tui.NewDashboard(r.cfg.Config, cancel, drain, focus),
+	d := tui.NewDashboard(r.cfg.Config, cancel, drain, focus)
+	if started != nil {
+		d = d.StartedAt(started.began)
+	}
+	p := tea.NewProgram(d,
 		tui.WithTerminal(stdin, stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
@@ -82,24 +110,37 @@ func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.Fi
 	// the dashboard hears it from the loop
 	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
 	progSink := tui.NewProgramSink(p)
-	r.orch.SetSink(progSink)
 	codes := make(chan int, 1)
 	ran := make(chan struct{}) // closed once the dashboard has exited and the terminal is restored
-	go func() {
-		// The loop recovers its workers' panics; one in the loop itself is a bug that ends
-		// orchestra, but not with the terminal left in raw mode. Panicking again from here keeps
-		// the original stack in the crash.
-		defer func() {
-			if v := recover(); v != nil {
-				r.log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
-				p.Kill()
-				<-ran
-				panic(v)
-			}
+	if started == nil {
+		r.orch.SetSink(progSink)
+		go func() {
+			// The loop recovers its workers' panics; one in the loop itself is a bug that ends
+			// orchestra, but not with the terminal left in raw mode. Panicking again from here keeps
+			// the original stack in the crash.
+			defer func() {
+				if v := recover(); v != nil {
+					r.log.Line(time.Now(), fmt.Sprintf("PANIC: %v\n\n%s", v, debug.Stack()))
+					p.Kill()
+					<-ran
+					panic(v)
+				}
+			}()
+			codes <- r.orch.Run(ctx)
+			p.Send(tui.Finished{})
 		}()
-		codes <- r.orch.Run(ctx)
-		p.Send(tui.Finished{})
-	}()
+	} else {
+		kill := func() {
+			p.Kill()
+			<-ran
+		}
+		started.onPanic.Store(&kill)
+		go func() {
+			started.held.handTo(progSink) // its sends wait for the dashboard to start, and come before its end
+			codes <- <-started.codes
+			p.Send(tui.Finished{})
+		}()
+	}
 	final, err := p.Run()
 	close(ran)
 	// A stop signal from here on goes to the organ phase, which it skips, until quitWith below: one

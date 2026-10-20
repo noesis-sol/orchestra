@@ -26,6 +26,15 @@ All notable changes to orchestra are documented here. The format follows
 - The dashboard leaves a blank line between its title line and the load line
   under it, so the two no longer run together. A pane too short for it drops
   the blank line first, before any line with something on it.
+- A spec run starts on the spec's environment setup ticket as soon as the
+  breakdown has filed it, rather than once the whole tree is filed: nothing
+  else can start before it merges, and it no longer waits on the breakdown
+  with every slot idle (`SPEC: the run starts on <id>, the environment
+  ticket, while the breakdown files the rest of <root>`). The rest joins the
+  run once the breakdown is over and its tree checked; a breakdown that fails
+  or is stopped then ends the run as before, the environment ticket's worker
+  left as a stopped run leaves its workers. On a terminal the run's lines
+  show above the breakdown's spinner, and the dashboard opens once it is over.
 
 ## [0.8.5] - 2026-10-20
 

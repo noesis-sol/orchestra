@@ -82,6 +82,12 @@ func (f *fakeBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (brea
 	return breakdownResult{Root: f.root, Assumptions: f.assumptions}, ctx.Err()
 }
 
+// sameRequest tells whether breakdown requests a and b ask the same, whatever they are told of what
+// the breakdown files.
+func sameRequest(a, b breakdownRequest) bool {
+	return a.Spec == b.Spec && a.Refine == b.Refine && a.Update == b.Update
+}
+
 // useBreakdown has the spec runs of the test broken down by f.
 func useBreakdown(t *testing.T, f specBreakdown) {
 	t.Helper()
@@ -150,7 +156,7 @@ func TestSpecRunRunsTheRootEpic(t *testing.T) {
 	}
 	want := breakdownRequest{Spec: project.Spec{Path: kept, Commit: head}}
 	want.SHA256 = f.got.SHA256
-	if f.got != want || len(f.got.SHA256) != 64 {
+	if !sameRequest(f.got, want) || len(f.got.SHA256) != 64 {
 		t.Errorf("the breakdown was asked %+v, want %+v", f.got, want)
 	}
 	if f.holder.Spec != kept {
@@ -189,7 +195,7 @@ func TestSpecRunRunsTheRootEpic(t *testing.T) {
 		t.Errorf("an unchanged spec was committed again: HEAD %s, was %s", again, head)
 	}
 	want.Refine = true
-	if f.got != want {
+	if !sameRequest(f.got, want) {
 		t.Errorf("again: the breakdown was asked %+v, want %+v", f.got, want)
 	}
 	for _, want := range []string{"the spec " + kept + " is committed already (sha256 " + short + ")\n",

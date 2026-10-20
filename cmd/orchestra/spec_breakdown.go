@@ -77,13 +77,9 @@ type headlessBreakdown struct {
 // newHeadlessBreakdown is the headless breakdown of the spec run s, its progress on s's terminal
 // unless the run is plain.
 func newHeadlessBreakdown(s *session) headlessBreakdown {
-	c, e := s.cfg, s.e
-	say := tui.Printer{Out: e.stdout}
-	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
-		say = tui.Terminal(out, termWidth(out))
-	}
+	c := s.cfg
 	return headlessBreakdown{repo: c.Repo, limit: c.SpecTimeout, effort: c.SpecEffort, servers: c.SessionMCP(),
-		chrome: c.SessionChrome(), say: say, log: s.log, tracker: beads.Tracker{Repo: c.Repo},
+		chrome: c.SessionChrome(), say: s.printer(), log: s.log, tracker: beads.Tracker{Repo: c.Repo},
 		countEvery: specCountEvery}
 }
 
@@ -107,7 +103,12 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	h.logLine(fmt.Sprintf("SPEC: breaking %s down with claude (effort %s, time limit %s)", r.Path, effort,
 		command.ShortDuration(h.limit)))
 	progress := startSpecProgress(h.say, h.log, h.countEvery)
-	stream := &specStream{pending: map[string][]filedIssue{}, filed: progress.filed}
+	stream := &specStream{pending: map[string][]filedIssue{}, filed: func(issues []filedIssue, ids []string) {
+		progress.filed(issues, ids)
+		if r.Filed != nil && ids != nil {
+			r.Filed(ids...)
+		}
+	}}
 	began := time.Now()
 	err = command.Stream(ctx, h.limit, h.repo, nil, specMessage(r, h.limit), stream, "claude", args...)
 	stream.end()

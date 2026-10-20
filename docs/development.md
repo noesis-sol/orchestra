@@ -125,6 +125,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `closed_unmerged.go` | closed tickets whose work is only on their branch, which hold what they block (`CLOSED_UNMERGED`) |
 | `deferred_free.go` | deferred tickets whose blockers have all merged, listed in the `START` block and the nothing-to-run box (`DEFERRED_FREE`) |
 | `scope.go` | parents after their children, runs of one ticket and its subtickets (`--ticket`) and how they end (`SCOPE_DONE`, `SCOPE_OPEN`) |
+| `filing.go` | a scope still being filed as the run starts on it (`Filing`, a spec's breakdown): only its first ticket starts, and the run waits for the rest rather than end |
 | `nothing.go` | why a run has nothing to run (`NothingToRun`, `CheckNothingToRun`): everything done, or nothing ready and what holds it |
 | `footprint.go` | tickets' footprints (the files and functions they name, and the files their workers edit), skipping a ticket that overlaps a running one, warning when two workers edit one file |
 | `plan.go` | `orchestra plan`'s proposal: blocks links between open tickets whose footprints overlap |

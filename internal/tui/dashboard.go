@@ -66,6 +66,13 @@ func NewDashboard(cfg dispatch.Config, cancel func(), drain func(on bool), focus
 		cancel: cancel, drain: drain, focus: focus}
 }
 
+// StartedAt is the dashboard of a run whose loop started at t, before the dashboard opened (a spec's
+// breakdown went on as the loop started): its run time counts from t.
+func (m Dashboard) StartedAt(t time.Time) Dashboard {
+	m.began = t
+	return m
+}
+
 // Init starts the spinner.
 func (m Dashboard) Init() tea.Cmd { return m.spin.Tick }
 

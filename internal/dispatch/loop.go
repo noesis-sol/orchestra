@@ -503,7 +503,10 @@ type Config struct {
 	Feature        string        // the feature request (--feature) Ticket, its epic, was talked through from; "" for none
 	// Spec is the spec (--spec) Ticket, its root epic, was broken down from: its path in the
 	// repository; "" for none.
-	Spec         string
+	Spec string
+	// Filing is the scope still being filed as the run starts on it, as a spec's breakdown files the
+	// rest after its environment ticket; nil when it is filed already.
+	Filing       *Filing
 	ExcludeTypes []string // issue types never dispatched, such as epics, from .orchestra/settings.json
 	// CheckFull is every check (check_full), from .orchestra/settings.json, run once at the end of a
 	// run for at most CheckFullTimeout (0 for project.DefaultCheckFullTimeout); "" for none.

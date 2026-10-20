@@ -256,10 +256,13 @@ grep 'SPEC:' .orchestra/orchestra.log | tail    # the breakdown's steps and the 
 ```
 
 The breakdown may take up to an hour (`spec_timeout`), while the pane shows a spinner counting the
-epics and tickets filed; the log has a `SPEC:` line for each epic and each step, and the event stream
-starts only once the breakdown is over. Its first lines say what it did: `committed the spec <path>`
-or `the spec <path> is committed already`, then `broke the spec down into <root> (N epics, M
-tickets)` and the assumptions it made, which also go under `Assumptions` in the root epic's notes.
+epics and tickets filed; the log has a `SPEC:` line for each epic and each step. The run, and the
+event stream, start once the breakdown is over, or sooner on the environment setup ticket it files
+first, the rest joining once the breakdown is over (`SPEC: the run starts on <id>, the environment
+ticket, while the breakdown files the rest of <root>`). Its first lines say what it did:
+`committed the spec <path>` or `the spec <path> is committed already`, then `broke the spec down into
+<root> (N epics, M tickets)` and the assumptions it made, which also go under `Assumptions` in the root
+epic's notes.
 Relay those to the user: they are the choices the spec left open, and changing the spec is how to
 change one.
 
