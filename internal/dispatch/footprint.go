@@ -28,12 +28,22 @@ import (
 // names (SpecKey), count only when the metadata lists them: nearly every ticket names the check,
 // asking for it to pass, and every ticket broken down from a spec cites it, without changing them.
 // The files git merges by union (merge=union, as init offers for the changelog) never count: two
-// tickets' lines in one can't conflict, git keeps both.
+// tickets' lines in one can't conflict, git keeps both. A file two footprints share keeps them apart
+// only when one of them is to change it (changes): two tickets that only cite a file can't conflict
+// over it.
 type Footprint struct {
 	// Files are paths in the repository, sorted. A folder the files metadata lists is kept as one,
 	// ending in /, beside the tracked files under it: it holds the files under it, those another ticket
 	// adds included, and is all there is of a new one (or of any, the files unknown).
 	Files []string
+	// Cited are the files among Files the ticket names only to read, sorted: those its text names when
+	// its files metadata lists others (the files it changes), and, without files metadata, a document
+	// (docExtensions) its text names in no sentence asking to change it (asksChange), as tickets cite
+	// the project's guides and spikes for conventions and findings.
+	Cited []string
+	// Listed says the files metadata lists the files the ticket changes: a function it names changes
+	// none of the others (changes).
+	Listed bool
 	// Globs are the globs the files metadata lists, sorted, cleaned and in NFC: one that matches none of
 	// the repository's files (any, the files unknown) as it is (web/src/*.ts, which a ticket of a project
 	// built from a spec may list before there is any), one that matches some anchored at each folder it
@@ -115,7 +125,32 @@ var (
 	camelCase = regexp.MustCompile(`^[A-Za-z_]\w*[a-z0-9][A-Z]\w*$`)
 	// identifier is a word of source code, for the functions a file mentions.
 	identifier = regexp.MustCompile(`[A-Za-z_]\w*`)
+	// sentenceBreak ends a sentence of a ticket's text: a line's end, or a . ! or ? and the spaces after
+	// it (a closing quote or bracket between them), unless a lower-case letter follows (e.g. docs/x.md).
+	sentenceBreak = regexp.MustCompile(`[.!?]["'’”)\]]*\s+|\n`)
+	// changeWord is a word asking for a change to a document a sentence names near it (asksChange), before
+	// or after it: "Update docs/running.md", "Add the result to docs/spikes/07-compile.md", "docs/workers.md
+	// updated".
+	changeWord = regexp.MustCompile(`(?i)\b(?:add|added|adding|update|updated|updating|change|changed|changing|` +
+		`edit|edited|editing|write|written|writing|rewrite|rewritten|reword|reworded|document|fix|fixed|correct|` +
+		`corrected|mention|say|describe|explain|note|record|remove|removed|delete|deleted|drop|replace|rename|` +
+		`move|put|pin|keep|extend|create|split|trim|shorten|expand)\b`)
+	// changesWord is a word saying, after a document it follows, what the document is to do or have:
+	// "docs/development.md says how to run them". Before a document, its subject is something else ("the
+	// help says it disables CLAUDE.md").
+	changesWord = regexp.MustCompile(`(?i)\b(?:adds|updates|changes|edits|writes|rewrites|rewords|fixes|` +
+		`mentions|says|describes|explains|notes|records|removes|deletes|drops|replaces|renames|moves|extends|` +
+		`creates|lists|names|gives|shows|covers)\b`)
 )
+
+// docExtensions are the extensions of documents, files of prose that tickets cite for conventions and
+// findings more often than they change them.
+var docExtensions = setOf(`md markdown mdx txt rst adoc`)
+
+// document reports whether p, a file or a folder, is a document (docExtensions).
+func document(p string) bool {
+	return !strings.HasSuffix(p, "/") && docExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(p), "."))]
+}
 
 // camelWords are names written with a hump that are no code of the project's: GitHub, macOS.
 var camelWords = setOf(`GitHub GitLab BitBucket JavaScript TypeScript CoffeeScript PostgreSQL MySQL SQLite MongoDB
@@ -657,7 +692,15 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	maps.Copy(funcs, callsIn(text))
 	maps.Copy(funcs, codeSpansIn(text))
 	globs := map[string]bool{}
-	for _, f := range metadataList(t, FilesKey) {
+	var fp Footprint
+	listed := metadataList(t, FilesKey)
+	if len(listed) > 0 { // the files it changes are listed: those its text names it reads
+		for f := range files {
+			files[f] = false
+		}
+	}
+	fp.Listed = len(listed) > 0
+	for _, f := range listed {
 		found, gs := repo.listed(f)
 		for _, p := range found {
 			files[p] = true
@@ -667,13 +710,17 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 		}
 	}
 	maps.DeleteFunc(files, func(f string, _ bool) bool { return repo.unioned(f) })
-	var fp Footprint
 	for _, l := range t.Labels {
 		if strings.HasPrefix(l, AreaPrefix) && len(l) > len(AreaPrefix) {
 			fp.Areas = append(fp.Areas, l)
 		}
 	}
 	fp.Files, fp.Funcs = slices.Sorted(maps.Keys(files)), slices.Sorted(maps.Keys(funcs))
+	for _, f := range fp.Files {
+		if !files[f] {
+			fp.Cited = append(fp.Cited, f)
+		}
+	}
 	fp.Globs = slices.Sorted(maps.Keys(globs))
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
@@ -683,25 +730,80 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 }
 
 // pathsIn returns the repository files the words of text that may be paths name, but those named in
-// passing (inPassing) by a ticket from spec, and the Type.method words among them that name no file.
+// passing (inPassing) by a ticket from spec, each with whether text asks to change it (asksChange), and
+// the Type.method words among them that name no file.
 func pathsIn(text string, repo *repoFiles, spec string) (files, funcs map[string]bool) {
 	files, funcs = map[string]bool{}, map[string]bool{}
-	eachPathToken(text, func(tok string) bool {
-		if found := repo.resolve(tok, false); len(found) > 0 {
-			for _, f := range found {
-				if !repo.inPassing(f, spec) { // "scripts/check.sh passes" says nothing about where a ticket works
-					files[f] = true
+	for _, s := range sentences(text) {
+		// A path token holds no space, so each is in one word, and starts it as it would the text.
+		words := strings.Fields(s)
+		for i, w := range words {
+			eachPathToken(w, func(tok string) bool {
+				if found := repo.resolve(tok, false); len(found) > 0 {
+					for _, f := range found {
+						if !repo.inPassing(f, spec) { // "scripts/check.sh passes" says nothing about where a ticket works
+							files[f] = files[f] || !document(f) || asksChange(words, i)
+						}
+					}
+					return true
 				}
-			}
-			return true
+				if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
+					funcs[tok] = true
+					return true
+				}
+				return false
+			})
 		}
-		if typeMethod.MatchString(tok) && !sourceExtensions[strings.ToLower(strings.TrimPrefix(path.Ext(tok), "."))] {
-			funcs[tok] = true
-			return true
-		}
-		return false
-	})
+	}
 	return files, funcs
+}
+
+// Around a document a sentence names, the words a changeWord asking to change it is looked for in.
+const (
+	changeBefore = 8 // "Add the result to docs/spikes/07-compile.md", "pin the rule in a test and in docs/running.md"
+	changeAfter  = 3 // "docs/running.md updated", "docs/running.md or docs/workers.md says how"
+)
+
+// citeWords are the words that, among the two before a document, cite it: "per docs/development.md", "as
+// docs/running.md says", "following docs/guide.md's conventions".
+var citeWords = setOf(`per see following as like cf according via`)
+
+// asksChange reports whether a sentence, as its words, asks to change the document its i-th word names:
+// the document starts it, after a list's marker ("- docs/running.md: say …", "CLAUDE.md and
+// docs/development.md say …"), or, unless one of the two words before it is a citeWord, a changeWord
+// is among the changeBefore words before it (none when it opens a parenthesis) or the changeAfter
+// words after it, or a changesWord among those after it. A sentence citing it ("Reproduce per
+// docs/development.md", "Spike 1 (docs/spikes/01-sdk.md, item 4) found that …") does none of these.
+func asksChange(words []string, i int) bool {
+	first := slices.IndexFunc(words, func(w string) bool { return strings.ContainsFunc(w, unicode.IsLetter) })
+	if i == first {
+		return true
+	}
+	for _, w := range words[max(0, i-2):i] {
+		if citeWords[strings.ToLower(strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }))] {
+			return false
+		}
+	}
+	before := ""
+	if !strings.HasPrefix(words[i], "(") {
+		before = strings.Join(words[max(0, i-changeBefore):i], " ")
+	}
+	after := strings.Join(words[i+1:min(len(words), i+1+changeAfter)], " ")
+	return changeWord.MatchString(before) || changeWord.MatchString(after) || changesWord.MatchString(after)
+}
+
+// sentences splits text into its sentences (sentenceBreak), each with the break that ends it.
+func sentences(text string) []string {
+	var out []string
+	start := 0
+	for _, m := range sentenceBreak.FindAllStringIndex(text, -1) {
+		if next, _ := utf8.DecodeRuneInString(text[m[1]:]); text[m[0]] != '\n' && unicode.IsLower(next) {
+			continue // e.g. docs/x.md: the sentence goes on
+		}
+		out = append(out, text[start:m[1]])
+		start = m[1]
+	}
+	return append(out, text[start:])
 }
 
 // callsIn returns the functions text names with their parentheses: refreshBranch(), Loop.merge().
@@ -825,6 +927,19 @@ func takesIn(fp Footprint, p string) bool {
 	}) || slices.ContainsFunc(fp.Globs, func(g string) bool { return globHolds(g, p) })
 }
 
+// changes reports whether footprint fp is to change p, a file or a folder: it takes p in (takesIn) by a
+// file or folder it doesn't only cite (Cited) or by a glob, or, named true, it names a function p
+// mentions while its files metadata lists none (Listed) and p is no document, which mentions functions
+// without holding them.
+func changes(fp Footprint, p string, named bool) bool {
+	if named && !fp.Listed && !document(p) {
+		return true
+	}
+	return slices.ContainsFunc(fp.Files, func(f string) bool {
+		return (f == p || strings.HasSuffix(f, "/") && strings.HasPrefix(p, f)) && !slices.Contains(fp.Cited, f)
+	}) || slices.ContainsFunc(fp.Globs, func(g string) bool { return globHolds(g, p) })
+}
+
 // meetsGlob reports whether footprint fp works where glob g does: on a file or folder g holds, or by a
 // glob of its own that can match a file g does.
 func meetsGlob(fp Footprint, g string) bool {
@@ -848,7 +963,9 @@ func holdsNamed(p string, files []string) bool {
 // file in it (a new folder): the files they name in it, those it holds when it exists, are compared
 // one by one instead, by function where both name some. A folder mentions no function. A glob (Globs)
 // works on the files it holds (globHolds), and is compared itself, as a new folder is, only when it
-// holds no file either names: its files are compared one by one too.
+// holds no file either names: its files are compared one by one too. A file both work on is shared only
+// when one of them is to change it (changes), or r's worker edited it: two tickets that only cite a
+// document, or name files their files metadata doesn't list, don't conflict over it.
 func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
 		folder := strings.HasSuffix(p, "/")
@@ -863,7 +980,8 @@ func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, 
 		fIn, rIn := namesIn(f, p), namesIn(r, p)
 		fAt := fIn || takesIn(f, p)
 		rAt := rIn || takesIn(r, p) || slices.Contains(edited, p)
-		if fAt && rAt && !(fIn && rIn) && (keep == nil || keep(p)) {
+		change := changes(f, p, fIn) || changes(r, p, rIn) || slices.Contains(edited, p)
+		if fAt && rAt && !(fIn && rIn) && change && (keep == nil || keep(p)) {
 			return p
 		}
 	}

@@ -23,8 +23,9 @@ import (
 // nor with a + other than one starting a name of its path (+page.svelte, src/routes/+layout.ts)
 // unless its metadata lists or predicts something, its globs sorted, without repeats, only when its
 // files metadata lists something, each a clean path in the repository in NFC holding only repository
-// files among its files (globHolds agrees with glob), and its areas sorted, each an area label naming an
-// area. go test runs the seeds; docs/development.md says how to fuzz.
+// files among its files (globHolds agrees with glob), its cited files sorted, without repeats, among its
+// files and each a document unless its files metadata lists something, and its areas sorted, each an area
+// label naming an area. go test runs the seeds; docs/development.md says how to fuzz.
 func FuzzTicketFootprint(f *testing.F) {
 	// strayPlus is a + that doesn't start a name of a path: one after anything but a /, or before
 	// anything but a letter, digit, mark or _.
@@ -92,10 +93,16 @@ func FuzzTicketFootprint(f *testing.F) {
 		}
 		tk := Ticket{ID: "x", Description: text, Metadata: json.RawMessage(meta), Labels: strings.Split(labels, ",")}
 		fp := TicketFootprint(tk, tracked, check)
-		for what, l := range map[string][]string{"files": fp.Files, "globs": fp.Globs, "functions": fp.Funcs} {
+		for what, l := range map[string][]string{"files": fp.Files, "globs": fp.Globs, "functions": fp.Funcs,
+			"cited files": fp.Cited} {
 			if !slices.IsSorted(l) || len(slices.Compact(slices.Clone(l))) != len(l) {
 				t.Errorf("the %s %q are unsorted or repeat", what, l)
 			}
+		}
+		if i := slices.IndexFunc(fp.Cited, func(f string) bool {
+			return !slices.Contains(fp.Files, f) || !fp.Listed && !document(f)
+		}); i >= 0 {
+			t.Errorf("the cited file %q isn't among the files %q, or is no document of a ticket listing none", fp.Cited[i], fp.Files)
 		}
 		if i := slices.IndexFunc(fp.Files, func(f string) bool { return !filepath.IsLocal(f) || path.Clean(f) == "." }); i >= 0 {
 			t.Errorf("the file %q is no path in the repository", fp.Files[i])

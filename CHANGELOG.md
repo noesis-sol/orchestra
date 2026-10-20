@@ -4,6 +4,18 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Two tickets that share a file run side by side unless one of them is to
+  change it: one its `files` metadata lists, or, for a ticket without, one
+  its text names, but a document (`.md`, `.txt`) only where a sentence asks
+  to change it (`Update docs/guide.md`) rather than cites it (`per
+  CLAUDE.md`), or one a running ticket's worker edited. The guides and spike
+  notes tickets cite for conventions and findings no longer hold them apart:
+  on tutti's log a third of the footprint skips go.
+
 ## [0.8.5] - 2026-10-20
 
 ### Added

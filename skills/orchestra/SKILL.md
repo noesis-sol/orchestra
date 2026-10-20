@@ -227,8 +227,10 @@ a shared file: run next to other work, it guarantees merge conflicts.
 Tickets are also kept apart by footprint: a ready ticket that names the same function (or, when one
 of the two names no functions, the same file) as a running ticket, shares an `area:<name>` label with
 it, or names a file its worker has edited, waits for a later slot while the next ticket takes this
-one. Naming files and functions in a ticket's description helps; so does `bd update <id>
---set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
+one. A file counts only when one of the two is to change it: one its `files` metadata lists, or, for a
+ticket without, one its text names, but a document only in a sentence asking to change it (`Update
+docs/guide.md`), not citing it (`per CLAUDE.md`). Naming files and functions in a ticket's description
+helps; so does `bd update <id> --set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
 predictor organ guesses its files in the background and caches them as `predicted_files` metadata.
 `"footprint": false` in `settings.json` turns it off.
 
