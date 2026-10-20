@@ -165,27 +165,25 @@ func (t mergeTurn) Unlock() {
 // (see trainActivity). A ticket no longer worked on isn't shown. The caller holds merges.mu, so the
 // places shown follow the line as it changes.
 func (o *Loop) showMerge(id string, stage MergeStage, place int) {
-	o.mu.Lock()
-	st, ok := o.active[id]
-	if ok {
-		st.Merge, st.Place = stage, place
-		o.active[id] = st
+	phase := PhaseQueued
+	if stage == MergeRunning {
+		phase = PhaseMerging
 	}
-	o.mu.Unlock()
-	if !ok {
-		return
-	}
-	activity := st.Activity // a ticket checked again says so (see recheck)
+	var train string
 	if stage == MergeQueued {
-		activity = cmp.Or(o.merges.trainActivity(id), activity) // one checked ahead of its turn says how it goes
+		train = o.merges.trainActivity(id) // one checked ahead of its turn says how it goes
 	}
-	switch {
-	case activity != "":
-	case stage == MergeRunning:
-		activity = "merging into " + o.cfg.Base + " once checked, rebased onto it first if it moved on"
-	default:
-		activity = "waiting for its turn to merge into " + o.cfg.Base
-	}
-	o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: StateDone,
-		Activity: activity, Merge: stage, Place: place})
+	o.updateActive(id, func(st *Status) {
+		st.enter(phase, place)
+		st.Agent, st.Doing, st.Permission, st.Unreadable = StateDone, "", false, false
+		// A ticket checked again says so (see recheck).
+		st.Activity = cmp.Or(train, st.mergeNote)
+		switch {
+		case st.Activity != "":
+		case stage == MergeRunning:
+			st.Activity = "merging into " + o.cfg.Base + " once checked, rebased onto it first if it moved on"
+		default:
+			st.Activity = "waiting for its turn to merge into " + o.cfg.Base
+		}
+	})
 }

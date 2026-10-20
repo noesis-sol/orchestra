@@ -186,8 +186,7 @@ func (r *ticketRun) lateClose(ctx context.Context, lo leftOpen) *stopReason {
 	w.started = time.Now()
 	o.place(id, workerSpot{tab: w.tab, wt: w.wt, hooks: w.hooks})
 	st := Status{Ticket: id, Title: r.t.Title, Tab: w.tab, Started: w.started}
-	o.setActive(st)
-	o.status(st)
+	o.showActive(st)
 	defer o.status(Status{Ticket: id, Gone: true})
 	stop := r.conclude(ctx, w, lo.head, o.newWatcher(w.wt, st).report)
 	if slices.Contains(o.closedInRun(), id) {

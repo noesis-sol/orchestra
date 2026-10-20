@@ -12,16 +12,21 @@ import (
 )
 
 // stageSink keeps each status shown of a ticket's merge stage, as "<ticket> <stage>", with its place
-// in line when it waits: "B to merge 1".
+// in line when it waits: "B to merge 1"; and the last status shown of each ticket.
 type stageSink struct {
 	recordSink
 	smu    sync.Mutex
 	stages []string
+	last   map[string]Status
 }
 
 func (s *stageSink) Status(st Status) {
 	s.smu.Lock()
 	defer s.smu.Unlock()
+	if s.last == nil {
+		s.last = map[string]Status{}
+	}
+	s.last[st.Ticket] = st
 	switch {
 	case st.Gone:
 	case st.Resolving:
@@ -110,8 +115,10 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 		if q := &o.merges; q.holder != "" || len(q.line) != 0 {
 			t.Errorf("the queue should be empty once all are done: held by %q, %d waiting", q.holder, len(q.line))
 		}
-		if st := o.active["A"]; st.Agent != "" || st.Activity != "" {
-			t.Errorf("the stage shown should not be kept as the ticket's own status: %+v", st)
+		for _, id := range []string{"A", "B", "C"} {
+			if st, shown := o.active[id], sink.last[id]; st != shown {
+				t.Errorf("%s: the status kept should be the one shown:\nkept  %+v\nshown %+v", id, st, shown)
+			}
 		}
 	})
 }

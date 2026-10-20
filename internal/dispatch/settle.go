@@ -540,46 +540,53 @@ func hooksSettled(h hooksSeen, since, now time.Time, idleFor time.Duration) (set
 // watcher shows a worker's status and latest action on the dashboard, and logs what its hooks
 // note: a permission prompt it waits on, a compaction of its context.
 type watcher struct {
-	o        *Loop
-	wt       string
-	base     Status
-	activity string      // the latest action read, kept while the screen can't be
-	noted    *HookRecord // the hooks' record as last read; nil before the first read, which logs nothing
-	asked    time.Time   // when the permission prompt last logged was reported
+	o       *Loop
+	wt      string
+	id, tab string      // its ticket, and the tab its worker is in
+	noted   *HookRecord // the hooks' record as last read; nil before the first read, which logs nothing
+	asked   time.Time   // when the permission prompt last logged was reported
 }
 
-func (o *Loop) newWatcher(wt string, base Status) *watcher {
-	return &watcher{o: o, wt: wt, base: base}
+// newWatcher is a watcher of the worker in worktree wt on ticket st.Ticket, in tab st.Tab. What it reads
+// changes the ticket's status as the loop keeps it (see updateActive).
+func (o *Loop) newWatcher(wt string, st Status) *watcher {
+	return &watcher{o: o, wt: wt, id: st.Ticket, tab: st.Tab}
 }
 
 // report shows the worker in state st, as just read, reading its screen for its latest action; err
-// is why the state could not be read.
+// is why the state could not be read. The latest action read is kept while the screen can't be.
 func (w *watcher) report(ctx context.Context, st AgentState, err error) {
 	o := w.o
-	s := w.base
-	s.Agent, s.Unreadable = st, err != nil
-	if err == nil && st != StateGone {
-		w.activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.base.Ticket), st))
+	read := err == nil && st != StateGone
+	var activity string
+	if read {
+		activity = lastActivity(o.agents.Screen(ctx, o.agentName(w.id), st))
 	}
-	s.Activity = w.activity
-	if o.reporter != nil && err == nil && st != StateGone {
+	var doing Doing
+	permission := false
+	if o.reporter != nil && read {
 		u, ok := o.reporter.LastToolUse(w.wt)
 		rec := o.reporter.HookRecord(w.wt)
 		switch {
 		case st == StateWorking:
 			if ok {
-				s.Doing = DoingOf(u, o.cfg.Check)
+				doing = DoingOf(u, o.cfg.Check)
 			}
-			if s.Doing == "" && rec.SubagentsRunning(u.At, time.Now()) {
-				s.Doing = DoingSubagent
+			if doing == "" && rec.SubagentsRunning(u.At, time.Now()) {
+				doing = DoingSubagent
 			}
 		case waitsOnPermission(st, u, ok):
-			s.Permission = true
+			permission = true
 			w.notePermission(u)
 		}
 		w.noteCompactions(rec)
 	}
-	o.status(s)
+	o.updateActive(w.id, func(s *Status) {
+		s.Agent, s.Unreadable, s.Doing, s.Permission = st, err != nil, doing, permission
+		if read {
+			s.Activity = activity
+		}
+	})
 }
 
 // notePermission logs the permission prompt the worker reported in u, once.
@@ -596,17 +603,16 @@ func (w *watcher) notePermission(u ToolUse) {
 	} else if cmd := Clip(u.Command, 80); cmd != "" {
 		what += " (" + cmd + ")"
 	}
-	id := w.base.Ticket
-	w.o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+	w.o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf(
 		"  PERMISSION_PROMPT: %s's worker waits on a permission prompt for %s in tab %s; allow or deny it there",
-		id, what, w.base.Tab)})
+		w.id, what, w.tab)})
 }
 
 // noteCompactions logs the compactions of the worker's context in rec that the last read hadn't.
 func (w *watcher) noteCompactions(rec HookRecord) {
 	if w.noted != nil {
 		for _, trigger := range rec.Compactions[min(len(w.noted.Compactions), len(rec.Compactions)):] {
-			w.o.info("  %s's worker's context was compacted (%s)", w.base.Ticket, trigger)
+			w.o.info("  %s's worker's context was compacted (%s)", w.id, trigger)
 		}
 	}
 	w.noted = &rec
@@ -619,14 +625,14 @@ func (w *watcher) noteCompactions(rec HookRecord) {
 func (o *Loop) watch(ctx context.Context, w *watcher) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	agent := o.agentName(w.base.Ticket)
+	agent := o.agentName(w.id)
 	go func() {
 		defer close(done)
 		defer func() {
 			if p := recover(); p != nil { // the worker goes on; only its status stops showing until it settles
-				o.emit(Event{Kind: EvWarn, Ticket: w.base.Ticket, Text: fmt.Sprintf("  WATCH_FAILED for %s: panic: %s; "+
+				o.emit(Event{Kind: EvWarn, Ticket: w.id, Text: fmt.Sprintf("  WATCH_FAILED for %s: panic: %s; "+
 					"its status is not shown until it takes its prompt (the stack is in %s)",
-					w.base.Ticket, o.logPanic("watching "+w.base.Ticket, p), o.cfg.LogPath)})
+					w.id, o.logPanic("watching "+w.id, p), o.cfg.LogPath)})
 			}
 		}()
 		tick := time.NewTicker(o.pollEvery())

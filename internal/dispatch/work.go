@@ -500,9 +500,7 @@ func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adop
 	base := o.takeOn(r.t, w)
 	o.footprintWorktree(id, w.wt)
 	head := o.checkout.Head(ctx, o.cfg.Repo, r.br)
-	running := base
-	running.Agent = st
-	o.status(running)
+	o.updateActive(id, func(s *Status) { s.Agent = st })
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
 	// end of this one: only what they reported once it was adopted counts.

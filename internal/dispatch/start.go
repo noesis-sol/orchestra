@@ -196,8 +196,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 			id, c.Workspace).causedBy(err)
 	}
 	started := time.Now()
-	o.setActive(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started})
-	o.status(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
+	o.showActive(Status{Ticket: id, Title: t.Title, Tab: tab, Started: started, Agent: "starting"})
 	up := false
 	defer func() {
 		if !up { // also when it panics

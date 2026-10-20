@@ -120,6 +120,9 @@ type Status struct {
 	// Permission: its hooks say it waits on a permission prompt, whatever Herdr shows (idle, as
 	// often as blocked)
 	Permission bool
+	// Phase: where its work is, which the loop sets (see enter): its worker at it, handed back to it, or
+	// in the merge queue. Resolving, Fixing and Merge say the same for the sink, and follow it.
+	Phase Phase
 	// Resolving: its branch's rebase stopped on conflicts with Base and was handed back to its
 	// worker, and is left in progress until the worker finishes it.
 	Resolving bool
@@ -130,7 +133,40 @@ type Status struct {
 	Place      int
 	Unreadable bool // the last read of Agent failed
 	Gone       bool
+	// mergeNote is what it shows as it merges, in place of the merge queue's own words: a ticket
+	// checked again says so (see recheck and showMerge).
+	mergeNote string
 }
+
+// Phase is where a running ticket's work is: its worker at it, handed back to it to resolve its
+// rebase or fix its check, or its worker done with it, in the merge queue.
+type Phase int
+
+// The phases of a running ticket, in the order a ticket that merges goes through them; a hand-back
+// takes it from the queue back to its worker, and it joins the queue again after.
+const (
+	PhaseWorking   Phase = iota // its worker is at it
+	PhaseResolving              // its rebase stopped on conflicts, handed back to its worker
+	PhaseFixing                 // its check failed on its rebased branch, handed back to its worker
+	PhaseQueued                 // waiting for its turn to merge, at Place in line
+	PhaseMerging                // its merge is under way
+)
+
+// enter puts st in phase p, at place in line when p is PhaseQueued, and sets the fields that say the
+// same for the sink to match.
+func (st *Status) enter(p Phase, place int) {
+	st.Phase, st.Place = p, 0
+	st.Resolving, st.Fixing, st.Merge = p == PhaseResolving, p == PhaseFixing, MergeNone
+	switch p {
+	case PhaseQueued:
+		st.Merge, st.Place = MergeQueued, place
+	case PhaseMerging:
+		st.Merge = MergeRunning
+	}
+}
+
+// handedBack reports whether st's worker has its rebase to resolve or its check to fix.
+func (st Status) handedBack() bool { return st.Phase == PhaseResolving || st.Phase == PhaseFixing }
 
 // Sink receives events and live status; the terminal UI and the plain printer implement it.
 type Sink interface {

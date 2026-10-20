@@ -240,11 +240,11 @@ func (o *Loop) handBackLeft(id string) string {
 	o.mu.Lock()
 	st := o.active[id]
 	o.mu.Unlock()
-	switch {
-	case st.Resolving:
+	switch st.Phase {
+	case PhaseResolving:
 		return "its rebase, handed back to resolve, is left in progress: once its worker has finished it, " +
 			"run the check and merge the branch by hand"
-	case st.Fixing:
+	case PhaseFixing:
 		return "its failing check, handed back to fix, is left to its worker: once it has committed the fix, " +
 			"run the check and merge the branch by hand"
 	}
@@ -371,15 +371,15 @@ func short(hash string) string {
 // shows that on the dashboard at once, and returns its status as the dashboard shows it. Its worker is
 // idle then: before it takes the hand-back, and once it is done with it.
 func (o *Loop) setHandedBack(id string, mode handMode) Status {
-	resolving, fixing := mode == handResolving, mode == handFixing
-	o.mu.Lock()
-	st := o.active[id]
-	st.Resolving, st.Fixing, st.Merge, st.Place = resolving, fixing, MergeNone, 0 // it joins the queue again after
-	if st.Ticket != "" {
-		o.active[id] = st
-	}
-	o.mu.Unlock()
-	o.status(Status{Ticket: st.Ticket, Title: st.Title, Tab: st.Tab, Started: st.Started, Agent: StateIdle,
-		Resolving: resolving, Fixing: fixing})
+	phase := map[handMode]Phase{handNone: PhaseWorking, handResolving: PhaseResolving, handFixing: PhaseFixing}[mode]
+	var st Status
+	o.updateActive(id, func(s *Status) {
+		if s.Merge != MergeNone {
+			s.Activity = "" // the merge queue's words: its worker's own come with its next read
+		}
+		s.enter(phase, 0) // out of the merge queue: it joins it again after
+		s.Agent, s.Doing, s.Permission, s.Unreadable = StateIdle, "", false, false
+		st = *s
+	})
 	return st
 }

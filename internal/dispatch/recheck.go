@@ -122,10 +122,9 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 		o.info("  %s is not checked again: %s; it stays set aside", id, why)
 		return nil
 	}
-	st := Status{Ticket: id, Title: rc.title, Tab: rc.w.tab, Started: time.Now(),
-		Activity: "checking again: " + c.Base + " moved on since its check failed"} // kept as it merges (see showMerge)
-	o.setActive(st)
-	o.status(st)
+	activity := "checking again: " + c.Base + " moved on since its check failed"
+	o.showActive(Status{Ticket: id, Title: rc.title, Tab: rc.w.tab, Started: time.Now(), Activity: activity,
+		mergeNote: activity})
 	defer o.status(Status{Ticket: id, Gone: true})
 	o.emit(Event{Kind: EvInfo, Ticket: id, Text: fmt.Sprintf(
 		"  RECHECK: %s's check failed on %s at %s, which has moved on since; rebasing %s and checking it once more",
@@ -146,8 +145,7 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 func (o *Loop) handedBack(id string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	st := o.active[id]
-	return st.Resolving || st.Fixing
+	return o.active[id].handedBack()
 }
 
 // whyNotRecheck says why rc's ticket is left as it is rather than checked again, or "".

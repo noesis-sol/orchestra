@@ -344,7 +344,7 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 		w, ok := o.placed[id]
 		why := o.unmerged[id]
 		o.mu.Unlock()
-		if ok && !st.Resolving && !st.Fixing && (why == "" || why == earlierRun) {
+		if ok && !st.handedBack() && (why == "" || why == earlierRun) {
 			w.left = cmp.Or(w.left, running)
 			add(id, w)
 		}

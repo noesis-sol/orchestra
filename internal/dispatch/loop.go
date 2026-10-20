@@ -349,10 +349,33 @@ func (s *stopReason) Error() string { return string(s.kind) + s.detail }
 // Unwrap is what failed, or nil.
 func (s *stopReason) Unwrap() error { return s.cause }
 
+// setActive makes st the status of ticket st.Ticket, worked on from now; showActive shows it too.
 func (o *Loop) setActive(st Status) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.active[st.Ticket] = st
+}
+
+// showActive makes st the status of ticket st.Ticket, worked on from now, and shows it on the dashboard.
+func (o *Loop) showActive(st Status) {
+	o.setActive(st)
+	o.status(st)
+}
+
+// updateActive changes the status of ticket id with change and shows the dashboard the status as
+// changed, the one stored, so that what it shows is what the loop keeps. A ticket no longer worked on
+// is left as it is: change isn't called, and nothing is shown. change runs under mu: it must not block.
+func (o *Loop) updateActive(id string, change func(*Status)) {
+	o.mu.Lock()
+	st, ok := o.active[id]
+	if ok {
+		change(&st)
+		o.active[id] = st
+	}
+	o.mu.Unlock()
+	if ok {
+		o.status(st)
+	}
 }
 
 func (o *Loop) clearActive(id string) {
