@@ -37,6 +37,24 @@ func commitsNamingThenNot(file, other string) behaviour {
 	}
 }
 
+// finishesOnceCut claims the ticket, waits until branch is cut, and then commits file and closes it.
+// A worker finishing at once may merge before the ticket started beside it has its branch cut: that
+// one is then cut from the merge, with nothing to rebase.
+func finishesOnceCut(branch, file string) behaviour {
+	return func(w *fakeWorker) AgentState {
+		w.claim()
+		for {
+			if has, _ := w.git.HasBranch(context.Background(), "", branch); has {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		w.commit(file)
+		w.close()
+		return "idle"
+	}
+}
+
 // A merges as its worker left it, and B, which started beside it, rebased onto A's merge: git is asked
 // for the commit naming B again, as rebased, and not for A's. Each line names the commit merged.
 func TestAMergeNamesTheCommitFinishReadUnlessARebaseMovedTheBranch(t *testing.T) {
@@ -46,7 +64,7 @@ func TestAMergeNamesTheCommitFinishReadUnlessARebaseMovedTheBranch(t *testing.T)
 		h.cfg.Concurrency = 2
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
-		h.worker("A", finishes("a.txt"))
+		h.worker("A", finishesOnceCut("wt/B", "a.txt"))
 		h.worker("B", slowly(time.Minute, "b.txt"))
 		g := &askedGit{fakeGit: h.mem}
 		o := h.loop()
@@ -61,7 +79,7 @@ func TestAMergeNamesTheCommitFinishReadUnlessARebaseMovedTheBranch(t *testing.T)
 			}
 		}
 		if !slices.Equal(named, []string{"CommitNaming main..wt/B"}) {
-			t.Errorf("git was asked %q for the commits naming the tickets, want B's alone", named)
+			t.Errorf("git was asked %q for the commits naming the tickets, want B's alone\n%q\n%s", named, g.asked, h.sink.text())
 		}
 		log := strings.Split(strings.TrimSpace(h.mem.log("main")), "\n")
 		if len(log) < 2 || !strings.HasSuffix(log[0], " B: add b.txt") || !strings.HasSuffix(log[1], " A: add a.txt") {
