@@ -13,29 +13,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/beads/bdjson"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
-
-// unwrap accepts either bd JSON shape: the bare payload, or the v2 envelope {schema_version, data}.
-func unwrap(raw []byte) []byte {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) > 0 && raw[0] == '{' {
-		var env struct {
-			Data json.RawMessage `json:"data"`
-		}
-		if json.Unmarshal(raw, &env) == nil && env.Data != nil {
-			return env.Data
-		}
-	}
-	return raw
-}
 
 // parseReady returns the open tickets from 'bd ready --json', highest priority (lowest number) first.
 // Questions for the maintainer and tickets of the excluded issue types are left out.
 func parseReady(raw []byte, excludeTypes []string) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
-	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, err
 	}
 	var open []dispatch.Ticket
@@ -69,7 +56,7 @@ func byPriority(ts []dispatch.Ticket) {
 // parseList returns the tickets from 'bd list --json'; with status, only those in it.
 func parseList(raw []byte, status dispatch.TicketStatus) ([]dispatch.Ticket, error) {
 	var all []dispatch.Ticket
-	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, err
 	}
 	var kept []dispatch.Ticket
@@ -103,7 +90,7 @@ func parseOpen(raw []byte, excludeTypes []string) ([]dispatch.Ticket, []dispatch
 // ticket, so the tickets' Dependencies are left empty.
 func parseLinked(raw []byte) ([]dispatch.Ticket, []dispatch.Link, error) {
 	var all []dispatch.Ticket
-	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, nil, err
 	}
 	var deps []struct {
@@ -113,7 +100,7 @@ func parseLinked(raw []byte) ([]dispatch.Ticket, []dispatch.Link, error) {
 			Type        string `json:"type"`
 		} `json:"dependencies"`
 	}
-	if err := json.Unmarshal(unwrap(raw), &deps); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap(raw), &deps); err != nil {
 		return nil, nil, err
 	}
 	var links []dispatch.Link
@@ -134,13 +121,9 @@ type Tracker struct {
 	ExcludeTypes []string // issue types never dispatched, such as epics, whose children are the work
 }
 
-// bdEnv pins the bd --json shape. Only bd gets it: given to every command, it reached a tmux server
-// orchestra started, and through it every pane the user opened there later.
-var bdEnv = []string{"BD_JSON_ENVELOPE=0"}
-
 // bd runs bd in the repository with these arguments, stopped at limit.
 func (b Tracker) bd(ctx context.Context, limit time.Duration, args ...string) (string, error) {
-	return command.OutputWithEnv(ctx, limit, b.Repo, bdEnv, "bd", args...)
+	return bdjson.Run(ctx, limit, b.Repo, args...)
 }
 
 // Ready returns the open tickets bd considers ready, highest priority first; questions for the
@@ -261,7 +244,7 @@ func (b Tracker) Cycles(ctx context.Context) ([][]string, error) {
 // parseCycles reads 'bd dep cycles --json'.
 func parseCycles(raw []byte) ([][]string, error) {
 	var all []json.RawMessage
-	if err := json.Unmarshal(unwrap(raw), &all); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap(raw), &all); err != nil {
 		return nil, err
 	}
 	type member struct {
@@ -332,7 +315,7 @@ func (b Tracker) AddCheckedBlock(ctx context.Context, blocker, blocked string) e
 
 // parseTicket reads one ticket from 'bd show --json'; ok is false if it cannot be read.
 func parseTicket(raw []byte) (dispatch.Ticket, bool) {
-	data := unwrap(raw)
+	data := bdjson.Unwrap(raw)
 	var list []dispatch.Ticket
 	if json.Unmarshal(data, &list) == nil {
 		if len(list) > 0 && list[0].Status != "" {
@@ -583,7 +566,7 @@ func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	var created struct {
 		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(unwrap([]byte(out)), &created); err != nil || created.ID == "" {
+	if err := json.Unmarshal(bdjson.Unwrap([]byte(out)), &created); err != nil || created.ID == "" {
 		return "", fmt.Errorf("'bd create --json' gave no ID: %q", strings.TrimSpace(out))
 	}
 	return created.ID, nil

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/beads/bdjson"
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
@@ -91,21 +92,13 @@ func PrefixTickets(ctx context.Context, repo string) (n int, example string, err
 }
 
 // bdJSON runs bd with args in repo and decodes its JSON output into v, bare or in bd's envelope
-// ({"schema_version": …, "data": …}).
+// (bdjson.Unwrap).
 func bdJSON(ctx context.Context, repo string, v any, args ...string) error {
-	out, err := command.Output(ctx, command.ReadLimit, repo, "bd", args...)
+	out, err := bdjson.Run(ctx, command.ReadLimit, repo, args...)
 	if err != nil {
 		return err
 	}
-	raw := []byte(out)
-	var env struct {
-		Version *int            `json:"schema_version"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if json.Unmarshal(raw, &env) == nil && env.Version != nil && env.Data != nil {
-		raw = env.Data
-	}
-	if err := json.Unmarshal(raw, v); err != nil {
+	if err := json.Unmarshal(bdjson.Unwrap([]byte(out)), v); err != nil {
 		return fmt.Errorf("could not read 'bd %s': %w", strings.Join(args, " "), err)
 	}
 	return nil

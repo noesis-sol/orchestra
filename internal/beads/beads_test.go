@@ -86,9 +86,9 @@ func TestExcludedTypesAreNeverDispatched(t *testing.T) {
 
 func TestParseTicketStatus(t *testing.T) {
 	cases := map[string]dispatch.TicketStatus{
-		`[{"id":"x","status":"closed"}]`:               "closed",
-		`{"id":"x","status":"deferred"}`:               "deferred",
-		`{"data":[{"id":"x","status":"in_progress"}]}`: "in_progress",
+		`[{"id":"x","status":"closed"}]`:                                  "closed",
+		`{"id":"x","status":"deferred"}`:                                  "deferred",
+		`{"schema_version":1,"data":[{"id":"x","status":"in_progress"}]}`: "in_progress",
 		`[]`:                    "unknown",
 		`[{"id":"x"}]`:          "unknown",
 		``:                      "unknown",

@@ -103,9 +103,10 @@ the orchestra skill's opening define both terms; use them consistently.
   signals, the organ phase after a run.
 - `internal/dispatch`: the run loop, one file per concern (docs/development.md lists them). It reaches Beads, the
   terminal (Herdr, tmux or cmux), git and workers' reports only through the interfaces in `deps.go`.
-- Adapters: `internal/beads` (bd), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state
-  from their hooks), `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their
-  state from their hooks), `internal/hookterm` (what tmux and cmux share: their errors, the agents whose hooks they read
+- Adapters: `internal/beads` (bd; `internal/beads/bdjson` runs it and reads its JSON envelope, for `internal/project`
+  too), `internal/herdr` (Herdr), `internal/tmux` (tmux: windows for workers, their state from their hooks),
+  `internal/cmux` (cmux: a workspace per worker, kept by UUID in `.orchestra/run/cmux.json`, their state from their
+  hooks), `internal/hookterm` (what tmux and cmux share: their errors, the agents whose hooks they read
   (`AgentUI`), waiting for a worker's state, the end of a prompt, key names, free agent names, probing a socket),
   `internal/git` (git), `internal/command` (every external command: context, time limit, process group),
   `internal/claude` (workers' hooks, which are orchestra's own binary run as the hidden `orchestra hook <event>`,
