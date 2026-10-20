@@ -11,7 +11,7 @@ import (
 
 // LoadSink is a Sink that shows whether the workers are overloading the machine, as the dashboard
 // does: while the run's sink is one, the run reads the machine's load every loadEvery and gives it
-// there. Nothing the run does depends on it.
+// there. Only a hand-back's time limit depends on it (see loaded).
 type LoadSink interface {
 	Load(load.Reading)
 }
@@ -35,6 +35,7 @@ func (o *Loop) watchLoad(ctx context.Context) (stop func()) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer o.pressing.Store(false) // no longer read: plain output counts the machine hold alone
 		defer func() {
 			if p := recover(); p != nil { // the run goes on; only the dashboard's load line stops changing
 				o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  LOAD_FAILED: panic: %s; the machine's load is "+
@@ -50,7 +51,9 @@ func (o *Loop) watchLoad(ctx context.Context) (stop func()) {
 			if !ok {
 				return
 			}
-			sink.Load(o.readLoad(ctx, roots))
+			r := o.readLoad(ctx, roots)
+			o.pressing.Store(pressing(r))
+			sink.Load(r)
 			select {
 			case <-ctx.Done():
 				return
@@ -59,6 +62,50 @@ func (o *Loop) watchLoad(ctx context.Context) (stop func()) {
 		}
 	}()
 	return func() { cancel(); <-done }
+}
+
+// pressing reports whether reading r has the machine pressed hard enough to slow a worker's tests
+// several times over: the kernel's memory pressure at warn or worse, swapping under way, or the load
+// past load.OverLoad per core for load.OverLoadFor. A load past load.BusyLoad alone doesn't: a run's
+// workers keep it there.
+func pressing(r load.Reading) bool {
+	l := r.Levels
+	return l.Pressure == load.Red || l.Swapping >= load.Amber || l.CPU == load.Red
+}
+
+// loaded reports whether the machine is loaded now, as a hand-back's time limit leaves out (see
+// loadWait): the run holds at Config.MachineWorkers, or the last load reading has it pressed (see
+// pressing), which a run reads for the dashboard alone.
+func (o *Loop) loaded() bool {
+	return o.gate.held(gateMachine) || o.pressing.Load()
+}
+
+// loadWait is the time a hand-back's worker has spent on a loaded machine (see Loop.loaded), from
+// one poll to the next, left out of its time limit as the usage limit's wait is (see limitWait).
+type loadWait struct {
+	since  time.Time // when the machine was first seen loaded, this time; zero while it isn't
+	waited time.Duration
+}
+
+// note notes a poll at now that finds the machine loaded or not: one with the worker at the usage
+// limit counts as not, its wait left out already.
+func (l *loadWait) note(now time.Time, loaded bool) {
+	switch {
+	case loaded && l.since.IsZero():
+		l.since = now
+	case !loaded && !l.since.IsZero():
+		l.waited += now.Sub(l.since)
+		l.since = time.Time{}
+	}
+}
+
+// held is how long the machine has been loaded by now, up to most: the time it extends the limit by.
+func (l *loadWait) held(now time.Time, most time.Duration) time.Duration {
+	d := l.waited
+	if !l.since.IsZero() {
+		d += now.Sub(l.since)
+	}
+	return min(d, most)
 }
 
 // loadSink is the run's sink, and whether it takes the machine's load.

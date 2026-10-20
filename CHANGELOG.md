@@ -35,6 +35,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A hand-back's time limit (`resolve_timeout`) leaves out the time the
+  machine is loaded, as it does the usage limit's wait, up to the limit
+  again: while the run holds at `--machine-workers`, or the dashboard's load
+  line has the memory pressure or the CPU red, or swapping under way. The
+  line that ends a hand-back past it says how much more it was given. On
+  tutti's loaded runs of 2026-10-19 workers' tests ran several times slower,
+  and a worker making progress could pass the limit.
 - A ticket's footprint leaves out its notes: they say what happened to it
   (orchestra's notes, its workers', a reopening's), naming files and
   functions it doesn't change, and kept it from running beside tickets over

@@ -100,6 +100,9 @@ type Loop struct {
 	// sampler reads the machine's load for the dashboard (see watchLoad): load.NewSampler of orchestra's
 	// own process when nil. Tests give their own.
 	sampler *load.Sampler
+	// pressing is whether the machine's last load reading has it pressed (see pressing), which extends
+	// a hand-back's time limit (see loaded). watchLoad sets it; hand-backs read it: atomic.
+	pressing atomic.Bool
 
 	// ReportInterrupt logs the INTERRUPTED line from the loop itself; in the terminal UI the
 	// command does it (it knows what stopped the run: Ctrl+C, a signal or the dashboard failing).
