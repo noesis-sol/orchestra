@@ -1,7 +1,7 @@
 // Package load reads whether the workers are overloading the machine: the memory each worker's
 // process tree takes, and orchestra's own (its merge check above all), from one process listing, and
 // the kernel's memory pressure, swapping and CPU load, on macOS and Linux. The dashboard shows it on a
-// line of its own, coloured by Level.
+// line of its own, each figure coloured by its own Level (Levels).
 package load
 
 import (
@@ -13,15 +13,15 @@ import (
 // from the listing.
 const Unknown int64 = -1
 
-// The thresholds that colour the line (see level): tune them here.
+// The thresholds that colour the line's figures (see levels): tune them here.
 const (
-	// BusyLoad is the 1-minute load average per core past which the line turns amber.
+	// BusyLoad is the 1-minute load average per core past which the CPU turns amber.
 	BusyLoad = 1.5
-	// OverLoad is the load per core past which, held for OverLoadFor, the line turns red.
+	// OverLoad is the load per core past which, held for OverLoadFor, the CPU turns red.
 	OverLoad    = 3.0
 	OverLoadFor = time.Minute
 	// SwappingPerMinute is the pages swapped in and out per minute at which swapping is under way, and
-	// the line turns amber.
+	// shows, in amber.
 	SwappingPerMinute = 600
 	// Linux's pressure stall information (/proc/pressure/memory) gives the level of memory pressure
 	// macOS gives itself: the share of the last 10 seconds, in percent, in which some task stalled on
@@ -43,6 +43,17 @@ const (
 	Red                // the kernel's memory pressure at warn or worse, or the load past OverLoad per core for OverLoadFor
 )
 
+// Levels is each signal's own level, for its figure on the line: the memory the workers take has no
+// threshold, and none.
+type Levels struct {
+	CPU      Level // the load per core: amber past BusyLoad, red past OverLoad for OverLoadFor
+	Pressure Level // the kernel's memory pressure: red at warn or worse
+	Swapping Level // amber while swapping is under way
+}
+
+// Worst is the highest of the levels.
+func (l Levels) Worst() Level { return max(l.CPU, l.Pressure, l.Swapping) }
+
 // Reading is one look at the machine.
 type Reading struct {
 	At time.Time
@@ -55,7 +66,9 @@ type Reading struct {
 	// Swapping is the pages swapped in and out per minute since the last reading; -1 before there are
 	// two to tell.
 	Swapping float64
-	Level    Level
+	// Levels is each signal's level; Level the worst of them, how hard the machine is pressed.
+	Levels Levels
+	Level  Level
 }
 
 // Memory is the workers' memory and orchestra's own together, in bytes: those whose tree is unknown
@@ -118,13 +131,14 @@ func (s *Sampler) Read(ctx context.Context, now time.Time, roots map[string][]in
 		}
 		s.last, s.lastAt = k, now
 	}
-	r.Level = s.level(r, now)
+	r.Levels = s.levels(r, now)
+	r.Level = r.Levels.Worst()
 	return r
 }
 
-// level is r's Level at now, by the thresholds above, keeping since when the load has been past
+// levels is r's Levels at now, by the thresholds above, keeping since when the load has been past
 // OverLoad per core.
-func (s *Sampler) level(r Reading, now time.Time) Level {
+func (s *Sampler) levels(r Reading, now time.Time) Levels {
 	perCore := -1.0
 	if r.Cores > 0 && r.Load1 >= 0 {
 		perCore = r.Load1 / float64(r.Cores)
@@ -135,11 +149,18 @@ func (s *Sampler) level(r Reading, now time.Time) Level {
 	case perCore <= OverLoad:
 		s.overSince = time.Time{}
 	}
+	var l Levels
 	switch {
-	case r.Pressure >= PressureWarn, !s.overSince.IsZero() && now.Sub(s.overSince) >= OverLoadFor:
-		return Red
-	case perCore > BusyLoad, r.Swapping >= SwappingPerMinute:
-		return Amber
+	case !s.overSince.IsZero() && now.Sub(s.overSince) >= OverLoadFor:
+		l.CPU = Red
+	case perCore > BusyLoad:
+		l.CPU = Amber
 	}
-	return Green
+	if r.Pressure >= PressureWarn {
+		l.Pressure = Red
+	}
+	if r.Swapping >= SwappingPerMinute {
+		l.Swapping = Amber
+	}
+	return l
 }

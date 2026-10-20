@@ -49,6 +49,13 @@ All notable changes to orchestra are documented here. The format follows
   in its tab adopts that worker, which carries on after the reset, rather than
   starting a second worker in the same worktree beside it.
 
+### Fixed
+
+- Each figure on the dashboard's load line is in the colour of its own
+  signal, not all of them in the worst one's: with only the CPU past its
+  threshold, only the CPU reads amber, and the pressure stays green. The
+  memory, which has no threshold, is uncoloured.
+
 ## [0.8.5] - 2026-10-20
 
 ### Added

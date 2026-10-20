@@ -144,14 +144,14 @@ func TestTheLoadLineShowsSwappingAndAvailableMemory(t *testing.T) {
 	}
 }
 
-// The machine's figures are in the level's colour: green, amber or red.
+// The CPU is in its level's colour: green, amber or red.
 func TestTheLoadLineIsInTheLevelsColour(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
 	for level, style := range map[load.Level]lipgloss.Style{load.Green: doneStyle, load.Amber: windDownStyle,
 		load.Red: stopStyle} {
 		r := reading()
-		r.Level = level
+		r.Levels.CPU = level
 		if line := loadedDashboard(t, r).loadLine(200); !strings.Contains(line, style.Render("CPU 9.8/10 cores")) {
 			t.Errorf("level %v: the CPU isn't in its colour: %q", level, line)
 		}

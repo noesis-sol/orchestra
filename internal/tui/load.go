@@ -15,8 +15,9 @@ import (
 //
 // the workers at work out of their slots, the memory their process trees take and orchestra's own
 // commands' (its merge check above all), the kernel's memory pressure (and on Linux the memory
-// available), swapping while it is under way, and the 1-minute load average against the cores, in
-// the colour of how hard the machine is pressed (load.Level).
+// available), swapping while it is under way, and the 1-minute load average against the cores: the
+// pressure, the swapping and the CPU each in the colour of its own level (load.Levels), the memory,
+// which has no threshold, uncoloured.
 
 // levelStyles are the load line's colours, by level.
 var levelStyles = map[load.Level]lipgloss.Style{
@@ -34,24 +35,34 @@ func (m Dashboard) loadLine(w int) string {
 	if m.load == nil {
 		return ansi.Truncate(" "+workers, w, "…")
 	}
-	style := levelStyles[m.load.Level]
+	levels := m.load.Levels
+	pressure := inLevel(levels.Pressure, m.pressurePart())
+	swapping := inLevel(levels.Swapping, m.swappingPart())
+	cpu := inLevel(levels.CPU, m.cpuPart())
 	render := func(parts ...string) string {
-		var l []string
+		l := []string{workers}
 		for _, p := range parts {
 			if p != "" {
-				l = append(l, style.Render(p))
+				l = append(l, p)
 			}
 		}
-		return strings.Join(append([]string{workers}, l...), sep)
+		return strings.Join(l, sep)
 	}
-	pressure, cpu := m.pressurePart(), m.cpuPart()
 	var line string
 	for _, memory := range []string{m.memoryPart(true), m.memoryPart(false), ""} {
-		if line = " " + render(memory, pressure, m.swappingPart(), cpu); lipgloss.Width(line) <= w {
+		if line = " " + render(memory, pressure, swapping, cpu); lipgloss.Width(line) <= w {
 			return line
 		}
 	}
 	return ansi.Truncate(line, w, "…")
+}
+
+// inLevel is part in level's colour; "" stays "".
+func inLevel(level load.Level, part string) string {
+	if part == "" {
+		return ""
+	}
+	return levelStyles[level].Render(part)
 }
 
 // workersPart is the workers at work out of their slots: "▶ 4 of 4 workers", faint with none.
