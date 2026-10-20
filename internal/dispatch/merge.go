@@ -305,8 +305,9 @@ func (m *mergeRun) afterCheck(r rebaseStop, res checked, stop *stopReason) (merg
 	return mergeAgain, nil
 }
 
-// fastForward merges the ticket's branch, on top of Base and at commit at, into it and cleans up after it, or returns the reason to stop when the main checkout isn't ready for
-// it or git won't. It is called with repo held.
+// fastForward merges the ticket's branch, on top of Base and at commit at, into it and cleans up after
+// it, or returns the reason to stop when the main checkout isn't ready for it or git won't. It is
+// called with repo held.
 func (m *mergeRun) fastForward(at string) *stopReason {
 	o, c, keep := m.o, m.o.cfg, m.keep
 	id, br, wt, tab := m.w.id, m.w.br, m.w.wt, m.w.tab

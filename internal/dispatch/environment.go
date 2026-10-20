@@ -30,8 +30,8 @@ import (
 
 // failedAtOnce reports whether a worker settled as one failed by its environment does: idle for good
 // (from idleAt) soon after started, its ticket still open, its branch still at head and its
-// worktree clean; not where git can't tell. Going idle counts, not settling: an idle worker with its ticket open is given
-// startGrace before it settles, which can outlast the window.
+// worktree clean; not where git can't tell. Going idle counts, not settling: an idle worker with its
+// ticket open is given startGrace before it settles, which can outlast the window.
 func (o *Loop) failedAtOnce(ctx context.Context, status TicketStatus, started, idleAt time.Time,
 	br, head, wt string) bool {
 	c := o.cfg
