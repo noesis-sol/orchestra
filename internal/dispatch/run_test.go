@@ -366,8 +366,27 @@ func (m interruptingMerger) FastForward(ctx context.Context, repo, branch string
 	return m.Merger.FastForward(ctx, repo, branch)
 }
 
+// readsAcrossCtrlC is a tracker whose reads of bd ready, once ticket has gone to merge, finish only as
+// Ctrl+C comes (interrupted): the read that would start the next ticket in the slot ticket frees is
+// under way as Ctrl+C comes, rather than racing the merge to it.
+type readsAcrossCtrlC struct {
+	*fakeBeads
+	o           *Loop
+	ticket      string
+	interrupted <-chan struct{}
+}
+
+func (b readsAcrossCtrlC) Ready(ctx context.Context, scope string) ([]Ticket, error) {
+	ready, err := b.fakeBeads.Ready(ctx, scope)
+	if b.o.goneToMerge(map[string]bool{b.ticket: true}) > 0 {
+		<-b.interrupted
+	}
+	return ready, err
+}
+
 // Ctrl+C during a merge: the merge and its cleanup finish, so the repository isn't left half
-// merged, and then the run stops.
+// merged, and then the run stops. B, which would take the slot A frees as it goes to merge, starts
+// neither before Ctrl+C (the read that picks it finishes as Ctrl+C comes) nor after it.
 func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -379,6 +398,7 @@ func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(t.Context())
 		defer cancel(nil)
 		o.merger = interruptingMerger{Merger: o.merger, t: t, cancel: cancel}
+		o.tickets = readsAcrossCtrlC{fakeBeads: h.beads, o: o, ticket: "A", interrupted: ctx.Done()}
 		if code := o.Run(ctx); code != ExitInterrupted {
 			t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
 		}
