@@ -204,7 +204,8 @@ type Checkout interface {
 type Worktrees interface {
 	// the worktree that has branch checked out, or "" for none; the error is git failing to tell
 	WorktreeOf(ctx context.Context, repo, branch string) (string, error)
-	HasBranch(ctx context.Context, repo, branch string) bool
+	// whether repo has the local branch; the error is git failing to tell, which is not the same as no
+	HasBranch(ctx context.Context, repo, branch string) (bool, error)
 	Prune(ctx context.Context, repo string) (string, error)
 	AddWorktree(ctx context.Context, repo, path, branch string) (string, error)
 	NewWorktree(ctx context.Context, repo, path, branch, base string) (string, error)
@@ -215,7 +216,8 @@ type Worktrees interface {
 
 // Merger brings finished branches onto the base branch.
 type Merger interface {
-	IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
+	// whether ancestor is in rev's history (or is rev); the error is git failing to tell
+	IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error)
 	MergeBase(ctx context.Context, repo, a, b string) string // their best common ancestor; "" if git can't say
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
 	// CommitNaming and CountCommits of base..branch from one git command: "" and -1 when git can't list them
@@ -231,8 +233,9 @@ type Merger interface {
 	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
 	// branch's tree is its merge-base's with base: its commits, taken together, change nothing
 	Unchanged(ctx context.Context, repo, base, branch string) bool
-	// base holds branch's changes: merging it would change nothing, as after a squash merge
-	Holds(ctx context.Context, repo, base, branch string) bool
+	// base holds branch's changes: merging it would change nothing, as after a squash merge; false when
+	// they conflict, and the error when git can't tell
+	Holds(ctx context.Context, repo, base, branch string) (bool, error)
 	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }

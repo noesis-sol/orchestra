@@ -102,9 +102,13 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWo
 		p = preparedWorktree{wt: wt, before: o.checkout.Head(ctx, c.Repo, br)}
 		return p, !o.refreshBranch(ctx, wt, br), nil
 	}
-	p = preparedWorktree{wt: filepath.Join(c.WTRoot, id), fresh: true, cut: !o.worktrees.HasBranch(ctx, c.Repo, br)}
+	has, err := o.worktrees.HasBranch(ctx, c.Repo, br)
+	p = preparedWorktree{wt: filepath.Join(c.WTRoot, id), fresh: true, cut: !has}
+	if err != nil { // cut or reused, the worktree could leave out an earlier attempt's work or fail
+		return preparedWorktree{}, false, halt(ExitTool, stopWorktreeFailed,
+			" for %s at %s: git can't tell whether %s exists%s", id, p.wt, br, because(err)).causedBy(err)
+	}
 	var out string
-	var err error
 	if p.cut {
 		out, err = o.worktrees.NewWorktree(ctx, c.Repo, p.wt, br, c.Base)
 	} else {
@@ -514,7 +518,8 @@ func (o *Loop) typedPrompt(ctx context.Context, agent, prompt string) string {
 // the branch conflicts with Base.
 func (o *Loop) refreshBranch(ctx context.Context, wt, br string) bool {
 	c := o.cfg
-	if o.merger.IsAncestor(ctx, c.Repo, c.Base, br) {
+	// Where git can't tell, the branch is rebased, which leaves one on top of Base as it is.
+	if on, _ := o.merger.IsAncestor(ctx, c.Repo, c.Base, br); on {
 		return true // already on top of Base
 	}
 	if d := o.checkout.DirtyWorktree(ctx, wt); d != "" {

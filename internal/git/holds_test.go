@@ -7,7 +7,7 @@ import (
 
 // Base holds a branch's changes when merging it would change nothing: after a squash merge, though
 // base moved on since, but not before, nor when the branch conflicts with base; git that can't tell
-// says it doesn't.
+// says so.
 func TestHolds(t *testing.T) {
 	ctx, g := context.Background(), Git{}
 	repo, git := newRepo(t)
@@ -22,8 +22,8 @@ func TestHolds(t *testing.T) {
 	write(t, repo, "x.md", "x2\n")
 	git("commit", "-q", "-am", "x: change x.md")
 	git("switch", "-q", "main")
-	if g.Holds(ctx, repo, "main", "wt/x") {
-		t.Error("main should not hold wt/x before it is merged")
+	if holds, err := g.Holds(ctx, repo, "main", "wt/x"); holds || err != nil {
+		t.Errorf("Holds before the merge = %v, %v; want false, nil", holds, err)
 	}
 
 	git("merge", "-q", "--squash", "wt/x")
@@ -31,8 +31,8 @@ func TestHolds(t *testing.T) {
 	write(t, repo, "b.md", "b\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "Add b.md")
-	if !g.Holds(ctx, repo, "main", "wt/x") {
-		t.Error("main should hold wt/x once it is squash-merged, though main moved on")
+	if holds, err := g.Holds(ctx, repo, "main", "wt/x"); !holds || err != nil {
+		t.Errorf("Holds once squash-merged, though main moved on = %v, %v; want true, nil", holds, err)
 	}
 
 	write(t, repo, "a.md", "changed on main\n")
@@ -41,10 +41,10 @@ func TestHolds(t *testing.T) {
 	write(t, repo, "a.md", "changed on wt/x\n")
 	git("commit", "-q", "-am", "x: change a.md again")
 	git("switch", "-q", "main")
-	if g.Holds(ctx, repo, "main", "wt/x") {
-		t.Error("main should not hold a branch that conflicts with it")
+	if holds, err := g.Holds(ctx, repo, "main", "wt/x"); holds || err != nil {
+		t.Errorf("Holds of a branch that conflicts with main = %v, %v; want false, nil", holds, err)
 	}
-	if g.Holds(ctx, repo, "main", "no-such-branch") {
-		t.Error("main should not hold a branch git can't find")
+	if holds, err := g.Holds(ctx, repo, "main", "no-such-branch"); holds || err == nil {
+		t.Errorf("Holds of a branch git can't find = %v, %v; want false and git's error", holds, err)
 	}
 }

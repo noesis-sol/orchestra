@@ -289,6 +289,7 @@ func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed,
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed fix
 	on := o.offBranch(keep, r.worker)
+	added, err := o.merger.IsAncestor(keep, c.Repo, at, r.br)
 	switch {
 	case o.merger.RebaseInProgress(keep, r.wt):
 		return "", "its worker left a rebase in progress in " + r.wt
@@ -296,7 +297,9 @@ func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed,
 		return "", "its worker left uncommitted changes in " + r.wt
 	case on != "":
 		return "", o.leftOffBranch(r, on)
-	case !o.merger.IsAncestor(keep, c.Repo, at, r.br):
+	case err != nil:
+		return "", "git could not say whether its worker added to the commits on " + r.br + because(err)
+	case !added:
 		return "", fmt.Sprintf("its worker rewrote the commits on %s rather than add to them", r.br)
 	}
 	n := o.merger.CountCommits(keep, c.Repo, at+".."+r.br)

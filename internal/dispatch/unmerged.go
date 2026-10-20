@@ -43,11 +43,14 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 // mergedSince returns the commit on Base naming ticket t, which an earlier run left unmerged, when
 // it has merged since, by hand: its branch (wt/<id>) is on Base with a commit of its own naming it,
 // or squash-merged (see branchMerged), or its branch is gone and a commit on Base since the branch
-// was cut (ForkKey) names it. It
-// returns "" when it hasn't, or git can't tell. loadUnmerged and CheckNothingToRun both ask it, so
-// that a run and its check agree on what is merged.
+// was cut (ForkKey) names it. It returns "" when it hasn't, or git can't tell, as when it can't tell
+// whether the branch is there. loadUnmerged and CheckNothingToRun both ask it, so that a run and its
+// check agree on what is merged.
 func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merger, t Ticket) string {
-	if worktrees.HasBranch(ctx, c.Repo, branchOf(t.ID)) {
+	switch has, err := worktrees.HasBranch(ctx, c.Repo, branchOf(t.ID)); {
+	case err != nil:
+		return "" // not a branch gone: a commit on Base naming the ticket may be another's mention of it
+	case has:
 		return branchMerged(ctx, c, merger, t, "")
 	}
 	rev := c.Base // labelled before ForkKey was noted: any commit on Base
@@ -63,13 +66,16 @@ func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merg
 // not its merge. fork is where the branch was cut, as the run that left its worker behind found it
 // (see saveCarried), for a ticket with no ForkKey; "" if not known. A branch squash-merged by hand
 // and kept is not on Base, but Base holds its changes: then a commit on Base that the branch doesn't
-// have names the ticket, and is returned.
+// have names the ticket, and is returned. Where git fails to tell, it returns "".
 func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket, fork string) string {
 	br := branchOf(t.ID)
-	if merger.IsAncestor(ctx, c.Repo, br, c.Base) {
+	switch on, err := merger.IsAncestor(ctx, c.Repo, br, c.Base); {
+	case err != nil:
+		return ""
+	case on:
 		return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
 	}
-	if !merger.Holds(ctx, c.Repo, c.Base, br) {
+	if held, err := merger.Holds(ctx, c.Repo, c.Base, br); err != nil || !held {
 		return ""
 	}
 	return merger.CommitNamingOn(ctx, c.Repo, br+".."+c.Base, t.ID)

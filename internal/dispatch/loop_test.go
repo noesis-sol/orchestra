@@ -80,8 +80,10 @@ type newWorktrees struct{}
 func (newWorktrees) WorktreeOf(ctx context.Context, repo, branch string) (string, error) {
 	return "", nil
 }
-func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) bool { return false }
-func (newWorktrees) Prune(ctx context.Context, repo string) (string, error)  { return "", nil }
+func (newWorktrees) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
+	return false, nil
+}
+func (newWorktrees) Prune(ctx context.Context, repo string) (string, error) { return "", nil }
 func (newWorktrees) AddWorktree(ctx context.Context, repo, path, branch string) (string, error) {
 	return "", nil
 }
@@ -100,8 +102,10 @@ func (newWorktrees) DeleteBranch(ctx context.Context, repo, branch string) (stri
 
 type upToDate struct{}
 
-func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool { return true }
-func (upToDate) MergeBase(ctx context.Context, repo, a, b string) string         { return "" }
+func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
+	return true, nil
+}
+func (upToDate) MergeBase(ctx context.Context, repo, a, b string) string { return "" }
 func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
 	return ""
 }
@@ -115,7 +119,9 @@ func (upToDate) ConflictedFiles(ctx context.Context, worktree string) []string  
 func (upToDate) RebaseInProgress(ctx context.Context, worktree string) bool          { return false }
 func (upToDate) CountCommits(ctx context.Context, repo, revs string) int             { return 0 }
 func (upToDate) Unchanged(ctx context.Context, repo, base, branch string) bool       { return false }
-func (upToDate) Holds(ctx context.Context, repo, base, branch string) bool           { return false }
+func (upToDate) Holds(ctx context.Context, repo, base, branch string) (bool, error) {
+	return false, nil
+}
 func (upToDate) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	return "", nil
 }

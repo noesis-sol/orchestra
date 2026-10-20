@@ -30,7 +30,7 @@ type branchAsks struct {
 	asked map[string][]string
 }
 
-func (b *branchAsks) HasBranch(ctx context.Context, repo, branch string) bool {
+func (b *branchAsks) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
 	head := b.Head(ctx, repo, b.base)
 	b.mu.Lock()
 	b.asked[branch] = append(b.asked[branch], head)

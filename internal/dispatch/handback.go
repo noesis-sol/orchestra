@@ -261,6 +261,7 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed resolution
 	on := o.offBranch(keep, r.worker)
+	onTop, err := o.merger.IsAncestor(keep, c.Repo, r.onto, r.br)
 	switch {
 	case o.merger.RebaseInProgress(keep, r.wt):
 		return "its worker left the rebase unfinished"
@@ -268,7 +269,9 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 		return "its worker left uncommitted changes in " + r.wt
 	case on != "":
 		return o.leftOffBranch(r, on)
-	case !o.merger.IsAncestor(keep, c.Repo, r.onto, r.br):
+	case err != nil:
+		return fmt.Sprintf("git could not say whether %s is on top of %s", r.br, c.Base) + because(err)
+	case !onTop:
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base)
 	case o.merger.Unchanged(keep, c.Repo, r.onto, r.br):
 		return ""

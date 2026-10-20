@@ -11,16 +11,27 @@ import (
 // for merged, though its work may be only on its branch. As a backstop for any such close, a closed
 // ticket is not merged while git says so: its branch exists, has commits Base doesn't have, and Base
 // doesn't hold its changes (branchMerged's two tests). A branch with no commits beyond Base holds
-// nothing back, and no branch at all counts as merged.
+// nothing back, and no branch at all counts as merged. Where git fails to tell, the ticket is not
+// merged either, until git can.
 
-// branchOff returns why closed ticket id's work is only on its branch, as git finds it, or "".
-func branchOff(ctx context.Context, c Config, worktrees Worktrees, merger Merger, id string) string {
+// branchOff returns why closed ticket id's work is only on its branch, as git finds it, or "". Where
+// git fails to tell, it returns why the work may be only on the branch, with git's error.
+func branchOff(ctx context.Context, c Config, worktrees Worktrees, merger Merger, id string) (string, error) {
 	br := branchOf(id)
-	if !worktrees.HasBranch(ctx, c.Repo, br) || merger.IsAncestor(ctx, c.Repo, br, c.Base) ||
-		merger.Holds(ctx, c.Repo, c.Base, br) {
-		return ""
+	has, err := worktrees.HasBranch(ctx, c.Repo, br)
+	var on bool // the branch is on Base, or Base holds its changes
+	if err == nil && has {
+		if on, err = merger.IsAncestor(ctx, c.Repo, br, c.Base); err == nil && !on {
+			on, err = merger.Holds(ctx, c.Repo, c.Base, br)
+		}
 	}
-	return fmt.Sprintf("%s is not on %s", br, c.Base)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("git can't tell whether %s is on %s", br, c.Base), err
+	case !has || on:
+		return "", nil
+	}
+	return fmt.Sprintf("%s is not on %s", br, c.Base), nil
 }
 
 // closedBranches keeps what git said of closed tickets' branches (see branchOff), for each ticket
@@ -43,8 +54,10 @@ type branchAt struct {
 // why returns why closed ticket id's work is only on its branch, with Base on head, asking git (off)
 // unless it has already for that head and, when it found the work only on the branch, for the commit
 // the branch is on (tip, asked each time); "" for a head or a tip means git couldn't say, and git is
-// asked again. first is whether this is the first time the ticket was found so.
-func (b *closedBranches) why(id, head string, tip, off func() string) (why string, first bool) {
+// asked again, as it is after off fails to tell, its why kept for no head. first is whether this is
+// the first time the ticket was found so.
+func (b *closedBranches) why(id, head string, tip func() string, off func() (string, error)) (why string,
+	first bool) {
 	b.mu.Lock()
 	k, ok := b.known[id]
 	b.mu.Unlock()
@@ -52,7 +65,10 @@ func (b *closedBranches) why(id, head string, tip, off func() string) (why strin
 		return k.why, false
 	}
 	at := tip() // before off: a branch that moves meanwhile is asked of again
-	why = off()
+	why, err := off()
+	if err != nil {
+		return why + because(err), false
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if head != "" {
@@ -87,7 +103,7 @@ func (o *Loop) branchWhy(ctx context.Context, id string) string {
 	c := o.cfg
 	why, first := o.branches.why(id, o.pickHead(ctx), func() string {
 		return o.checkout.Head(ctx, c.Repo, branchOf(id))
-	}, func() string {
+	}, func() (string, error) {
 		return branchOff(ctx, c, o.worktrees, o.merger, id)
 	})
 	if first {

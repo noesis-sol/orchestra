@@ -26,7 +26,7 @@ func (g *askedGit) ask(what string) {
 	g.asked = append(g.asked, what)
 }
 
-func (g *askedGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
+func (g *askedGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
 	g.ask("IsAncestor " + ancestor + " " + rev)
 	return g.fakeGit.IsAncestor(ctx, repo, ancestor, rev)
 }

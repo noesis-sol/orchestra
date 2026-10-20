@@ -59,7 +59,7 @@ func TestClosedBranchesAsksAgainOnceTheBranchMoves(t *testing.T) {
 	var b closedBranches
 	tip, why, asked := "t1", "wt/A is not on main", 0
 	ask := func() string {
-		got, _ := b.why("A", "h1", func() string { return tip }, func() string { asked++; return why })
+		got, _ := b.why("A", "h1", func() string { return tip }, func() (string, error) { asked++; return why, nil })
 		return got
 	}
 	for range 3 {

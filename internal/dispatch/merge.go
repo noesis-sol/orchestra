@@ -153,7 +153,9 @@ func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReaso
 	if m.dropUnchanged(c.Base, fmt.Sprintf("the commits on %s, taken together, change nothing", m.w.br)) {
 		return mergeDone, nil
 	}
-	if m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br) {
+	// Where git can't tell, the branch is taken for one off Base: rebased, which leaves one on top of
+	// Base as it is, or left for Base to move.
+	if on, _ := m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br); on {
 		// What the fast-forward brings onto Base: the very code checked, when it was checked in this merge.
 		at := m.o.checkout.Head(m.keep, c.Repo, m.w.br)
 		if c.Check == "" || at != "" && at == m.checked {

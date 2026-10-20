@@ -71,8 +71,12 @@ func (o *Loop) dueRecheck(ctx context.Context, running map[string]bool) (recheck
 		if running[rc.w.id] {
 			continue // taken up once its merge has returned
 		}
-		// On, not merely elsewhere: a Base moved back brings nothing that could fix its check.
-		if base == rc.onto || !o.merger.IsAncestor(ctx, c.Repo, rc.onto, c.Base) {
+		// On, not merely elsewhere: a Base moved back brings nothing that could fix its check. Where git
+		// can't tell, it is asked again at the next poll.
+		if base == rc.onto {
+			continue
+		}
+		if on, err := o.merger.IsAncestor(ctx, c.Repo, rc.onto, c.Base); err != nil || !on {
 			continue
 		}
 		o.mu.Lock()

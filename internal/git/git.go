@@ -17,8 +17,8 @@ import (
 // Git is git as orchestra uses it: the state of checkouts and branches, worktrees, rebasing and
 // merging finished tickets, the history the organs read, and what orchestra init reads and stages.
 //
-// What a failed git call reads as, method by method: IsAncestor, Unchanged, Holds, Tracks and
-// HasBranch report false; RebaseInProgress true, as a rebase can't be shown to be over; DirtyWorktree
+// What a failed git call reads as, method by method: Unchanged and Tracks report false;
+// RebaseInProgress true, as a rebase can't be shown to be over; DirtyWorktree
 // git's error text, as uncommitted work it can't rule out; CountCommits -1, and OwnCommits "" and -1;
 // CommitNaming(On), MergeBase, Head and the texts for people (ShortStatus, OneLineLog, DiffStat,
 // Subjects) ""; Changes, ChangedFiles, ConflictedFiles and TrackedFiles none. The other methods return
@@ -32,6 +32,20 @@ type Git struct{}
 // git diff refreshes the index regardless, so a diff against the work tree also passes noIndexRefresh.
 func readGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return command.OutputWithEnv(ctx, command.ReadLimit, dir, []string{"GIT_OPTIONAL_LOCKS=0"}, "git", args...)
+}
+
+// answer is what a git command that answers yes or no by its exit status says, given its error:
+// yes on exit 0, no on exit 1, and otherwise the error, git having failed to answer (a time limit, a
+// missing commit, a broken repository).
+func answer(err error) (bool, error) {
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, err
 }
 
 // noIndexRefresh keeps a git diff against the work tree from refreshing the index, which it does
@@ -313,10 +327,11 @@ func (Git) WorktreeOf(ctx context.Context, repo, branch string) (string, error) 
 	return parseWorktreeOf(out, branch), nil
 }
 
-// HasBranch reports whether repo has the local branch.
-func (Git) HasBranch(ctx context.Context, repo, branch string) bool {
+// HasBranch reports whether repo has the local branch. It returns git's error when git can't tell,
+// which is not the same as no branch.
+func (Git) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
 	_, err := readGit(ctx, repo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
-	return err == nil
+	return answer(err) // exit 1: no such ref
 }
 
 // BranchesStartingWith returns repo's local branches whose names start with prefix, which holds no
@@ -429,10 +444,11 @@ func isIDChar(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
 
-// IsAncestor reports whether ancestor is an ancestor of rev (or the same commit).
-func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
+// IsAncestor reports whether ancestor is an ancestor of rev (or the same commit). It returns git's
+// error when git can't tell, as for a rev that names no commit.
+func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
 	_, err := readGit(ctx, repo, "merge-base", "--is-ancestor", ancestor, rev)
-	return err == nil
+	return answer(err) // exit 1: not an ancestor
 }
 
 // MergeBase returns the best common ancestor of a and b, as a full hash, or "" when git can't find
@@ -488,14 +504,7 @@ func (Git) PathChanged(ctx context.Context, repo, path string) (bool, error) {
 // git's error when git can't tell.
 func (Git) Ignored(ctx context.Context, repo, path string) (bool, error) {
 	_, err := readGit(ctx, repo, "check-ignore", "-q", "--", path)
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.As(err, &exit) && exit.ExitCode() == 1: // none of the patterns matches
-		return false, nil
-	}
-	return false, err
+	return answer(err) // exit 1: none of the patterns matches
 }
 
 // LastCommit returns the latest commit, as a full hash, that changed the file at path, relative
@@ -683,16 +692,25 @@ func (Git) Unchanged(ctx context.Context, repo, base, branch string) bool {
 
 // Holds reports whether base holds branch's changes already: merging branch into it would change
 // nothing, as after the branch was squash-merged or its commits were cherry-picked onto base. It
-// reports false when git can't tell, as git before 2.38 can't (merge-tree --write-tree).
-func (g Git) Holds(ctx context.Context, repo, base, branch string) bool {
-	// merge-tree prints the merged tree on its first line, and exits 1 on conflicts.
+// reports false when they conflict, and returns git's error when git can't tell, as git before 2.38
+// can't (merge-tree --write-tree).
+func (Git) Holds(ctx context.Context, repo, base, branch string) (bool, error) {
+	// merge-tree prints the merged tree on its first line, and exits 1 on conflicts, as it does on a
+	// rev it can't merge, for which it prints no tree.
 	out, err := readGit(ctx, repo, "merge-tree", "--write-tree", base, branch)
-	if err != nil {
-		return false
-	}
 	merged, _, _ := strings.Cut(out, "\n")
-	tree := g.Head(ctx, repo, base+"^{tree}")
-	return tree != "" && strings.TrimSpace(merged) == tree
+	merged = strings.TrimSpace(merged)
+	switch clean, failed := answer(err); {
+	case failed != nil || !clean && merged == "":
+		return false, err
+	case !clean:
+		return false, nil // conflicts
+	}
+	tree, err := readGit(ctx, repo, "rev-parse", "--verify", base+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	return merged == strings.TrimSpace(tree), nil
 }
 
 // ResetBranch moves the branch checked out in worktree to rev, with its files.

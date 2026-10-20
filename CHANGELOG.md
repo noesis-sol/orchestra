@@ -12,6 +12,12 @@ All notable changes to orchestra are documented here. The format follows
   from merging) no longer shows twice on the dashboard for a moment, in
   Current and in the tickets table beside it: its row comes into the table
   only as it leaves Current.
+- A git call that fails, as one timing out on a loaded machine, no longer
+  makes a closed ticket's branch count as merged when it isn't on the base:
+  git saying no (no branch, not on the base) is told from git failing to
+  answer, and the tickets it blocks wait, saying git can't tell, until git
+  answers at a later poll. Starting a ticket whose branch git can't look up
+  stops the run (`WORKTREE_FAILED`) with git's error.
 
 ## [0.8.6] - 2026-10-20
 

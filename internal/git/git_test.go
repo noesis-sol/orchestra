@@ -159,7 +159,7 @@ func TestDeleteBranchWaitsForAnotherGitsLock(t *testing.T) {
 	if out, err := (Git{}).DeleteBranch(context.Background(), repo, "wt/x-12"); err != nil {
 		t.Fatalf("DeleteBranch: %v\n%s", err, out)
 	}
-	if (Git{}).HasBranch(context.Background(), repo, "wt/x-12") {
-		t.Error("wt/x-12 should be deleted")
+	if has, err := (Git{}).HasBranch(context.Background(), repo, "wt/x-12"); has || err != nil {
+		t.Errorf("HasBranch after the delete = %v, %v; want false, nil", has, err)
 	}
 }

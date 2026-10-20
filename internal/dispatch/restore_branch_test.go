@@ -53,8 +53,8 @@ func (g *stubGit) CurrentBranch(ctx context.Context, repo string) (string, error
 	}
 	return g.on, nil
 }
-func (g *stubGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
-	return !g.notAncestor
+func (g *stubGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
+	return !g.notAncestor, nil
 }
 func (g *stubGit) Unchanged(ctx context.Context, repo, base, branch string) bool { return g.unchanged }
 func (g *stubGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {

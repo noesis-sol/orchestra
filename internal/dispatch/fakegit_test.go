@@ -254,11 +254,11 @@ func (g *fakeGit) WorktreeOf(ctx context.Context, repo, branch string) (string, 
 	return "", nil
 }
 
-func (g *fakeGit) HasBranch(ctx context.Context, repo, branch string) bool {
+func (g *fakeGit) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	_, ok := g.branches[branch]
-	return ok
+	return ok, nil
 }
 
 // Prune forgets the worktrees whose folders are gone.
@@ -326,10 +326,25 @@ func (g *fakeGit) DeleteBranch(ctx context.Context, repo, branch string) (string
 
 // Merger
 
-func (g *fakeGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool {
+// IsAncestor reports whether ancestor is in rev's history, or fails, as git does, when either names
+// no commit.
+func (g *fakeGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.isAncestor(ancestor, rev)
+	if err := g.noCommit(ancestor, rev); err != nil {
+		return false, err
+	}
+	return g.isAncestor(ancestor, rev), nil
+}
+
+// noCommit is git's error for the first of revs that names no commit, or nil. The caller holds mu.
+func (g *fakeGit) noCommit(revs ...string) error {
+	for _, rev := range revs {
+		if len(g.resolve(rev)) == 0 {
+			return fmt.Errorf("fatal: Not a valid commit name %s", rev)
+		}
+	}
+	return nil
 }
 
 // isAncestor reports whether ancestor is in rev's history. The caller holds mu.
@@ -463,10 +478,13 @@ func (g *fakeGit) Unchanged(ctx context.Context, repo, base, branch string) bool
 
 // Holds reports whether each file the commits of branch not in base's history add is added by a
 // commit of base's not in branch's made after them: base has the branch's changes, as after a
-// squash merge.
-func (g *fakeGit) Holds(ctx context.Context, repo, base, branch string) bool {
+// squash merge. It fails, as git does, when base or branch names no commit.
+func (g *fakeGit) Holds(ctx context.Context, repo, base, branch string) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if err := g.noCommit(base, branch); err != nil {
+		return false, err
+	}
 	own := g.only(base, branch)
 	var on []string
 	for _, c := range g.only(branch, base) {
@@ -477,11 +495,11 @@ func (g *fakeGit) Holds(ctx context.Context, repo, base, branch string) bool {
 	for _, c := range own {
 		for _, f := range c.files {
 			if !slices.Contains(on, f) {
-				return false
+				return false, nil
 			}
 		}
 	}
-	return true
+	return true, nil
 }
 
 func (g *fakeGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
