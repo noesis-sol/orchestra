@@ -151,26 +151,17 @@ func (m Dashboard) View() string {
 // frame is the view at width w.
 func (m Dashboard) frame(w int) string {
 	title := m.titleLine(w)
-	hint := m.hintLine(w) // none with no key to name
-	if m.draining {
-		hint = stack(m.windDownLine(w), hint)
-	}
-	if warn := m.cfg.MCPWarning(); warn != "" { // in the log once; here for the whole run
-		hint = stack(deferredStyle.Render(ansi.Truncate(" ! "+warn, w, "…")), hint)
-	}
-	if m.cfg.Watch != "" { // the workers' tabs are out of sight: the number keys can't go to them
-		hint = stack(dimStyle.Render(ansi.Truncate(" to see the workers' tabs: "+m.cfg.Watch, w, "…")), hint)
-	}
+	foot := m.footer(w)
 	if !m.asking {
-		return m.layout(w, title, hint)
+		return m.layout(w, title, foot)
 	}
 	// The question goes in a box over the middle of the dashboard, or, where the pane is too
 	// small for one, on a line above the hint.
 	modal := m.modal(w)
-	if v := m.layout(w, title, hint); w >= modalMinWidth && lipgloss.Height(v) >= lipgloss.Height(modal)+modalRoom {
+	if v := m.layout(w, title, foot); w >= modalMinWidth && lipgloss.Height(v) >= lipgloss.Height(modal)+modalRoom {
 		return overlay(v, modal, w)
 	}
-	return m.layout(w, title, stack(m.promptLine(w), hint))
+	return m.layout(w, title, foot.below(m.promptLine(w)))
 }
 
 // summary is the run's summary, printed on the normal screen once the dashboard has closed: the
@@ -213,27 +204,58 @@ func lineCount(s string) int {
 	return lipgloss.Height(s)
 }
 
+// footer is the foot of the dashboard, below the workers, and the room the layout keeps for it.
+type footer struct {
+	text string // its lines, stacked; empty for none
+	// room is the lines the workers' form is chosen around: the foot's own, with the winding-down line's
+	// and the hint's counted whether they show or not, so that neither changes the form as it comes and goes.
+	room int
+}
+
 // footFixedLines is the lines the foot always has room for: the winding-down line, there or not,
 // and the hint.
 const footFixedLines = 2
 
-// footLines is how many lines the foot takes below the workers, the winding-down line there or not:
-// the MCP warning and the way to see the workers' tabs, if any, that line and the hint.
-func (m Dashboard) footLines() int {
-	n := footFixedLines
-	if m.cfg.MCPWarning() != "" {
-		n++
+// footer is the foot at width w: the way to see the workers' tabs and the MCP warning, if any, the
+// winding-down line while the run winds down, and the hint, if it has a key to name.
+func (m Dashboard) footer(w int) footer {
+	var watch, warn, windDown string
+	room := footFixedLines
+	if m.cfg.Watch != "" { // the workers' tabs are out of sight: the number keys can't go to them
+		watch = dimStyle.Render(ansi.Truncate(" to see the workers' tabs: "+m.cfg.Watch, w, "…"))
+		room++
 	}
-	if m.cfg.Watch != "" {
-		n++
+	if msg := m.cfg.MCPWarning(); msg != "" { // in the log once; here for the whole run
+		warn = deferredStyle.Render(ansi.Truncate(" ! "+msg, w, "…"))
+		room++
 	}
-	return n
+	if m.draining {
+		windDown = m.windDownLine(w)
+	}
+	return footer{text: stack(watch, warn, windDown, m.hintLine(w)), room: room}
+}
+
+// below is the foot below line, which the room kept for the foot doesn't count.
+func (f footer) below(line string) footer {
+	f.text = stack(line, f.text)
+	return f
+}
+
+// steadyLines is the lines the foot takes from the workers' form: its room, or its lines where more.
+func (f footer) steadyLines() int { return max(len(f.lines()), f.room) }
+
+// lines is the foot's lines, top first: none when it is empty.
+func (f footer) lines() []string {
+	if f.text == "" {
+		return nil
+	}
+	return strings.Split(f.text, "\n")
 }
 
 // slots is how many workers the run may have at once: its concurrency, one at the least.
 func (m Dashboard) slots() int { return max(m.cfg.Concurrency, 1) }
 
-// layout fits the title, totals, tickets and workers above footer into the pane: Bubble Tea
+// layout fits the title, totals, tickets and workers above the foot into the pane: Bubble Tea
 // can't redraw a view taller than the terminal. The tickets table's height, its Tickets label
 // included, comes from the pane's alone (tableLines), and blank rows fill it, so it stays put while
 // workers come, report and go; it is left out of a pane too short for it and one line per worker the
@@ -241,16 +263,13 @@ func (m Dashboard) slots() int { return max(m.cfg.Concurrency, 1) }
 // too, and is the first to go. The workers get what is left: a box each, or one line each, chosen with
 // room for the winding-down line so that line doesn't change it. Below that the layout gives way step
 // by step: the totals on one line, without the load line, which has the workers they then carry, then
-// the Current label and the Tickets label with it, then cut, keeping footer.
-// An empty footer takes no line.
-func (m Dashboard) layout(w int, title, footer string) string {
-	var foot []string
-	if footer != "" {
-		foot = strings.Split(footer, "\n")
-	}
+// the Current label and the Tickets label with it, then cut, keeping the foot.
+// An empty foot takes no line.
+func (m Dashboard) layout(w int, title string, f footer) string {
+	foot := f.lines()
 	// The room the workers' form is chosen for, the winding-down line there or not; its height changes
 	// only as workers start and finish.
-	steady := m.height - max(len(foot), m.footLines())
+	steady := m.height - f.steadyLines()
 	// The parts' lines are counted rather than stacked: stacking measures every line's width.
 	fits := func(room int, parts ...string) bool {
 		n := 0
@@ -259,7 +278,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		}
 		return n <= room
 	}
-	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
+	with := func(parts ...string) string { return stack(append(slices.Clone(parts), f.text)...) }
 	stats := stack(m.loadLine(w), m.statsTable(w))
 	// The one-line form is drawn only once the boxes don't fit.
 	panels, list := withCurrentLabel(m.workerPanels(w)), ""
@@ -270,8 +289,8 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		}
 		return list
 	}
-	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
-	need := lineCount(title) + lineCount(stats) + m.slots() + sectionChrome + m.footLines()
+	// Current in its one-line form with every worker the run may have, and the foot at its steady height.
+	need := lineCount(title) + lineCount(stats) + m.currentListLines() + f.room
 	lines := tableLines(m.height)
 	var tickets string
 	if need+lines <= m.height {

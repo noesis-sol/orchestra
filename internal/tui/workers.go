@@ -25,6 +25,10 @@ func withCurrentLabel(panels string) string {
 // indented and in style, which is bold.
 func sectionLabel(name string, style lipgloss.Style) string { return "  " + style.Render(name) }
 
+// currentListLines is how many lines Current takes in its one-line form (workerList) with every worker
+// the run may have: a line each, in a box under the Current label.
+func (m Dashboard) currentListLines() int { return m.slots() + sectionChrome }
+
 // workerList is the compact form of the worker boxes: one box, one line per running worker, its ID,
 // status, time and memory lined up in columns with the other lines', each as wide as the widest on
 // screen.
