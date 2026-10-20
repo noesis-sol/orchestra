@@ -13,19 +13,29 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// answeredRun is a run in which A asks Q and is set aside, B answers Q meanwhile and is merged, and
-// A comes back through bd ready: its earlier worker, idle in tab1, is told the answer is in, and
-// carries on with then.
+// answeredRun is a run in which A asks Q and is set aside, B is merged meanwhile, the maintainer
+// answering Q as it is (see answering), and A comes back through bd ready: its earlier worker, idle
+// in tab1, is told the answer is in, and carries on with then.
 func answeredRun(t *testing.T, then behaviour) *harness {
 	h := newTimedHarness(t)
 	h.beads.add("A", "first", 1)
 	h.beads.add("B", "second", 2)
 	h.worker("A", func(w *fakeWorker) AgentState { w.claim(); w.ask("Q", "which way?"); return "idle" }, then)
-	h.worker("B", func(w *fakeWorker) AgentState {
-		w.beads.set("Q", "closed") // the maintainer answers meanwhile
-		return finishes("b.txt")(w)
-	})
+	h.worker("B", finishes("b.txt"))
 	return h
+}
+
+// answering is answeredRun's sink, calling on with each event: the maintainer answers Q as B is
+// merged. Answered while B was at work, A could come back as B went to merge, its merge yet to begin
+// (B's slot is free then: see slotsTaken), and a Ctrl+C as A came back would leave B unmerged, as
+// it should (see mergeRun.pass).
+func answering(h *harness, on func(Event)) cutSink {
+	return cutSink{runSink: h.sink, on: func(ev Event) {
+		if ev.Kind == EvClosed && ev.Ticket == "B" {
+			h.beads.set("Q", "closed")
+		}
+		on(ev)
+	}}
 }
 
 // cutSink is the run's sink, calling on with each event as the run emits it, where a test presses
@@ -70,6 +80,7 @@ func TestCtrlCAsAnAskedTicketsWorkerIsToldLeavesItRunning(t *testing.T) {
 		h.herdr.promptTakes = time.Minute // Herdr waits to see the worker start on it
 		o := h.loop()
 		o.ReportInterrupt = true
+		o.SetSink(answering(h, func(Event) {}))
 		ctx, cancel := context.WithCancelCause(t.Context())
 		h.herdr.onPrompt = func(id string) {
 			if id == "A" {
@@ -148,7 +159,7 @@ func TestCtrlCBeforeAnAskedTicketsWorkerIsToldLeavesItAsked(t *testing.T) {
 				if c.status {
 					o.agents = cutAtStatus{Agents: o.agents, id: "A", armed: &armed, cut: interrupt}
 				}
-				o.SetSink(cutSink{runSink: h.sink, on: func(ev Event) {
+				o.SetSink(answering(h, func(ev Event) {
 					if ev.Kind != EvAnswered || ev.Ticket != "A" {
 						return
 					}
@@ -157,7 +168,7 @@ func TestCtrlCBeforeAnAskedTicketsWorkerIsToldLeavesItAsked(t *testing.T) {
 					} else {
 						interrupt()
 					}
-				}})
+				}))
 				if code := o.Run(ctx); code != ExitInterrupted {
 					t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 				}
@@ -170,7 +181,7 @@ func TestCtrlCBeforeAnAskedTicketsWorkerIsToldLeavesItAsked(t *testing.T) {
 				want := []project.LeftWorker{
 					{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Question: "Q", QuestionTitle: "which way?"}}
 				if got := saved(t, h); !reflect.DeepEqual(got, want) {
-					t.Errorf("saved %+v\nwant %+v", got, want)
+					t.Errorf("saved %+v\nwant %+v\n%s", got, want, h.sink.text())
 				}
 
 				o, code := h.run()
