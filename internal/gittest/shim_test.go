@@ -17,6 +17,9 @@ func TestMainBypassesMacOSsGitShim(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("the shim is macOS's")
 	}
+	if bypassed == "" {
+		t.Skip("git on PATH isn't the shim, or xcrun can't say which git it runs: Main left PATH as it was")
+	}
 	want, err := command.Output(context.Background(), command.ReadLimit, "", "xcrun", "--find", "git")
 	if err != nil {
 		t.Skipf("xcrun can't say which git the shim runs: %v", err)

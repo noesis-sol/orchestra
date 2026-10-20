@@ -57,6 +57,7 @@ func (ts tests) Run() int {
 		fmt.Fprintln(os.Stderr, "gittest:", err)
 		return 1
 	}
+	bypassed = dir
 	if dir != "" {
 		defer func() { _ = os.RemoveAll(dir) }() // a link in a temporary folder: a leftover is no failure
 	}
@@ -72,6 +73,9 @@ func (ts tests) Run() int {
 // shim is macOS's git: a stub that asks xcrun where the developer tools are, on every call, and runs
 // their git. It takes about 16ms a call on an idle machine, the git it runs 5ms.
 const shim = "/usr/bin/git"
+
+// bypassed is the folder Main put ahead of the shim on PATH (bypassShim), "" where it put none.
+var bypassed string
 
 // bypassShim puts the git the shim runs ahead of it on PATH, for the tests and every process they
 // start: a new folder holding only a link to it, rather than its own folder, which holds the
