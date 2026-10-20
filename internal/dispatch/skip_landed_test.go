@@ -16,7 +16,7 @@ import (
 func TestTheResolvePromptChecksAfterTheRebaseAndSkipsWhatLanded(t *testing.T) {
 	t.Parallel()
 	o := &Loop{cfg: Config{Base: "main", Check: "make check"}}
-	p := o.resolvePrompt(rebaseStop{worker: worker{id: "A", br: "wt/A"}, files: []string{"a.go", "b.go"}})
+	p := o.resolvePrompt(rebaseStop{worker: worker{id: "A", br: "wt/A"}, files: []string{"a.go", "b.go"}}, "")
 	for _, want := range []string{
 		"rebasing wt/A onto it stopped on conflicts in a.go, b.go",
 		"If main has a commit's change already, wholly or as the part that conflicts, run git rebase --skip",

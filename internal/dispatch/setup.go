@@ -88,15 +88,50 @@ func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
 // commits since its dependencies were last set up change (see ticketBook.setUpSince), its worker's own included, or
 // that git can't say what they change; "" when they change none.
 func (o *Loop) setupDue(ctx context.Context, id, before, now string, globs []string) string {
-	from := o.book.setUpSince(id, before)
-	if from == "" || now == "" {
+	changed, known := o.setupChanged(ctx, id, before, now, globs)
+	switch {
+	case !known:
 		return "git could not say what changed since its dependencies were last set up"
-	}
-	changed := setupFilesIn(o.history.ChangedFiles(ctx, o.cfg.Repo, from, now), globs)
-	if len(changed) == 0 {
+	case len(changed) == 0:
 		return ""
 	}
 	return fileList(changed) + " changed since its dependencies were last set up"
+}
+
+// setupChanged lists the files globs match that the commits since ticket id's dependencies were last
+// set up (see ticketBook.setUpSince) change, up to commit now; known is false when git can't say.
+func (o *Loop) setupChanged(ctx context.Context, id, before, now string, globs []string) (changed []string,
+	known bool) {
+	from := o.book.setUpSince(id, before)
+	if from == "" || now == "" {
+		return nil, false
+	}
+	return setupFilesIn(o.history.ChangedFiles(ctx, o.cfg.Repo, from, now), globs), true
+}
+
+// setupToResolve is what the worker handed r's rebase back to resolve (see handBack) is told of the
+// setup, and what the line saying so adds: to run it once the rebase has finished, before the tests,
+// when the commits since its dependencies were last set up, up to r.onto, which the rebase brings in,
+// change a file the setup's globs match, or git can't say what they change; "" for both when they
+// change none, or there is no setup. Its tests would otherwise run on dependencies set up for the code
+// before the rebase, as tutti-nrg.62's did ("Cannot find module"). orchestra runs the setup itself
+// before it checks the resolution (see setUp).
+func (o *Loop) setupToResolve(ctx context.Context, r rebaseStop) (prompt, line string) {
+	s := o.setupNow()
+	if s.cmd == "" {
+		return "", ""
+	}
+	changed, known := o.setupChanged(ctx, r.id, r.head, r.onto, s.files)
+	if known && len(changed) == 0 {
+		return "", ""
+	}
+	why := "git could not say whether the rebase brings in a change to the files the project's setup reads"
+	if known {
+		why = "the rebase brings in a change to " + fileList(changed) + ", which the project's setup reads"
+	}
+	return fmt.Sprintf("As %s, once the rebase has finished run the setup, '%s', in the foreground before the "+
+			"tests, so that they run on dependencies set up for the rebased code. ", why, s.cmd),
+		fmt.Sprintf("; told to run '%s' once the rebase has finished, as %s", s.cmd, why)
 }
 
 // setUpWorktree runs the setup command in the ticket's worktree p before its worker starts there,

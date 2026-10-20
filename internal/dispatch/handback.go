@@ -68,8 +68,9 @@ func (o *Loop) workerAway(ctx context.Context, w worker) string {
 	return ""
 }
 
-// resolvePrompt is what the worker is asked to do with a rebase stopped on conflicts.
-func (o *Loop) resolvePrompt(r rebaseStop) string {
+// resolvePrompt is what the worker is asked to do with a rebase stopped on conflicts; setup says when
+// to run the project's setup, if it is to (see setupToResolve).
+func (o *Loop) resolvePrompt(r rebaseStop, setup string) string {
 	c := o.cfg
 	return fmt.Sprintf("%s moved on while you worked; rebasing %s onto it stopped on conflicts in %s. "+
 		"Resolve them keeping the intent of both your change and what landed on %s, "+
@@ -77,25 +78,30 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 		"if the rebase stops on another commit, resolve that one the same way. "+
 		"If %s has a commit's change already, wholly or as the part that conflicts, run git rebase --skip "+
 		"for that commit instead of resolving it. "+
+		"%s"+
 		"Once the rebase has finished, run the tests of the code you changed and of the files that conflicted "+
 		"in the foreground until they pass, since the commits that applied cleanly may break them too; "+
 		"fold any fix into the branch's last commit with git commit --amend --no-edit. "+
 		"Leave the whole check, '%s', to orchestra: it runs it on the branch next. "+
 		"Don't do anything else: no new commits beyond the rebase, no merge, no push, no ticket changes. "+
 		"Say DONE when the rebase is complete and those tests pass.",
-		c.Base, r.br, strings.Join(r.files, ", "), c.Base, c.Base, c.Check)
+		c.Base, r.br, strings.Join(r.files, ", "), c.Base, c.Base, setup, c.Check)
 }
 
 // handBack gives a stopped rebase to the ticket's worker and waits for it to finish, then looks at
-// the result itself. It returns why the resolution failed, or "" once the branch is on top of onto
-// with the ticket's own commits, or those of them Base hasn't already, to be checked next (see
+// the result itself. A rebase that brings in a change to a file the project's setup reads has the
+// worker told to run the setup once it has finished, before its tests (see setupToResolve). It returns
+// why the resolution failed, or "" once the branch is on top of onto with the ticket's own commits, or
+// those of them Base hasn't already, to be checked next (see
 // checkRebased) or closed as unchanged when none are left, or the reason the run stops meanwhile,
 // errInterrupted after Ctrl+C or the usage limit's, the rebase left as it is (see handBackTo). Neither
 // lock is held: the worker may take minutes.
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
+	setup, told := o.setupToResolve(context.WithoutCancel(ctx), r) // a read cut short would look like no change
 	line := fmt.Sprintf("  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve "+
-		"(up to %s)", r.br, o.cfg.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(o.handBackLimit()))
-	return o.handBackTo(ctx, r, handResolving, line, o.resolvePrompt(r), r.head, func(bool) string {
+		"(up to %s)%s", r.br, o.cfg.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(o.handBackLimit()),
+		told)
+	return o.handBackTo(ctx, r, handResolving, line, o.resolvePrompt(r, setup), r.head, func(bool) string {
 		return o.verifyResolved(ctx, r)
 	})
 }

@@ -41,6 +41,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker handed a conflicting rebase back to resolve is told to run the
+  project's setup (`"setup"`) once the rebase has finished and before its
+  tests, when the rebase brings in a change to a file `"setup_files"`
+  names, and the `RESOLVING` line says so: its tests ran on the
+  dependencies installed before the rebase, as tutti's did on 2026-10-18
+  and 10-20 (`Cannot find module '@opentui/keymap'`). A failing check is
+  handed back only after the setup has run before it, as before.
+
 - A worker handed its ticket back (resolving a conflict, fixing a failing
   check) whose turn ends on the account's usage limit as it finishes no
   longer holds its ticket, and those after it, until the limit resets:
