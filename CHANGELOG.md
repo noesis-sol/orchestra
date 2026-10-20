@@ -106,6 +106,13 @@ All notable changes to orchestra are documented here. The format follows
   committed, after the commit's line, rather than that nothing was committed
   (`orchestra: stopped once it had set the repository up for the spec and
   committed it`, exit code 130).
+- A ticket checked ahead of its turn whose own check failed, on top of a
+  branch that then merged as it was checked, says so in its turn (`wt/<next>
+  was checked ahead of its turn on top of wt/<id>, which merged as it was
+  checked, but '<check>' fails on wt/<next> on top of it (output is in
+  <file>): put back as its worker left it`), rather than that the branch
+  ahead did not merge as it was checked: tutti's run of 2026-10-20 blamed
+  tutti-nrg.10.2, merged five minutes before, for tutti-0im's failure.
 - A worker the terminal shows neither under its name nor in its pane is
   read again for 30 seconds before it is taken for gone: Herdr can lose
   sight of a worker still at work for a moment, as a Claude Code it runs

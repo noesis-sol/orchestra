@@ -44,6 +44,7 @@ type trainRun struct {
 	passed string        // the commit the check passed on; "" when it didn't, or hasn't yet
 	failed bool          // it was not rebased, or its check failed or stopped: none behind it starts
 	cut    bool          // its check was cut short, not failed: the branch ahead didn't merge as checked
+	why    string        // what failed on it and how, and where the output is, when its check failed
 }
 
 // mayCheckAhead says that w's ticket waits for its first turn in its merge: until it takes the queue,
@@ -179,15 +180,17 @@ func (o *Loop) runTrain(ctx context.Context, w worker, t *trainRun) {
 	if !setup {
 		output, err = o.runCheck(ctx, r)
 	}
+	var failure string
 	switch {
 	case err == nil:
 		o.info("  '%s' passes on %s ahead of its turn, on top of %s", c.Check, w.br, t.behind)
 	case ctx.Err() == nil:
 		o.book.forgetCheck(w.id) // its turn checks it again, on the Base it merges onto
+		failure = fmt.Sprintf("%s on %s on top of it (output is in %s)", o.failedHow(setup, err), w.br, output)
 		o.info("  %s on %s ahead of its turn, on top of %s (output is in %s); it is checked again in its turn",
 			o.failedHow(setup, err), w.br, t.behind, output)
 	}
-	o.trainChecked(t, head, err == nil, err != nil && ctx.Err() != nil)
+	o.trainChecked(t, head, err == nil, err != nil && ctx.Err() != nil, failure)
 }
 
 // rebaseAhead rebases w's branch onto t.onto in its worktree, holding repoMu, and returns its commit
@@ -261,9 +264,10 @@ func (o *Loop) trainRebased(t *trainRun, head string) {
 	}
 }
 
-// trainChecked records the check on t's branch at head as passed, or not, or cut short: the trains
-// behind one that failed are stopped, as it is rebased again in its turn.
-func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
+// trainChecked records the check on t's branch at head as passed, or not, or cut short, failure saying
+// what failed when it did: the trains behind one that failed are stopped, as it is rebased again in its
+// turn.
+func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool, failure string) {
 	q, tr := &o.merges, &o.train
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -274,7 +278,7 @@ func (o *Loop) trainChecked(t *trainRun, head string, passed, cut bool) {
 		t.passed = head
 		return
 	}
-	t.failed, t.cut = true, cut
+	t.failed, t.cut, t.why = true, cut, failure
 	behind := false
 	for _, w := range q.line {
 		if b := tr.trains[w.id]; b != nil && behind {
@@ -356,7 +360,8 @@ func (o *Loop) boardTrain(ctx context.Context, w worker, t *trainRun) {
 // for its check to end. When the branch ahead merged as it was checked and the check passed on the
 // ticket's branch on top of it, the branch is on top of Base as checked: it merges with no further
 // check. Otherwise a branch the train rebased is put back as its worker left it, for the merge to rebase
-// and check as any other, and the trains behind it are stopped. It reports false when git could not put
+// and check as any other, and the trains behind it are stopped; the log says which it was, the branch
+// ahead not merging as checked or the ticket's own check failing on top of it. It reports false when git could not put
 // it back, the ticket set aside then: its branch has the commits of the branch ahead; or git can't tell
 // where the branch is, the run stopping then (stop says why). The caller holds its turn, not repo.
 func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
@@ -366,7 +371,9 @@ func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
 		return true, nil
 	}
 	// Where git can't tell where Base is, the branch ahead is taken for one that didn't merge.
-	if base := m.baseHead(); base != "" && base == t.onto {
+	base := m.baseHead()
+	merged := base != "" && base == t.onto
+	if merged {
 		o.boardTrain(ctx, w, t)
 	} else {
 		t.cancel() // the branch ahead didn't merge as it was rebased onto
@@ -391,7 +398,14 @@ func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
 	case err != nil:
 		m.cantPutBack(t, err)
 		return false, nil
-	case rebased:
+	case !rebased:
+	case merged && t.why != "":
+		o.info("  %s was checked ahead of its turn on top of %s, which merged as it was checked, but %s: "+
+			"put back as its worker left it", w.br, t.behind, t.why)
+	case merged && t.passed == "":
+		o.info("  %s was checked ahead of its turn on top of %s, which merged as it was checked, but its check "+
+			"was stopped before it ended: put back as its worker left it", w.br, t.behind)
+	default:
 		o.info("  %s was checked ahead of its turn on top of %s, which did not merge as it was checked: "+
 			"put back as its worker left it", w.br, t.behind)
 	}
