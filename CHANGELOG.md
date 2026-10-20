@@ -15,6 +15,14 @@ All notable changes to orchestra are documented here. The format follows
   CLAUDE.md`), or one a running ticket's worker edited. The guides and spike
   notes tickets cite for conventions and findings no longer hold them apart:
   on tutti's log a third of the footprint skips go.
+- The next ticket waiting to merge is checked while the one before it is:
+  rebased onto that ticket's branch as it is checked, in its own worktree,
+  and checked there beside it, outside the merge queue. When the ticket
+  ahead merges as checked, the next one merges in its turn with no second
+  check; otherwise it is put back as its worker left it, and rebased and
+  checked in its turn as before. `"merge_train"` in `settings.json` says how
+  many are checked ahead (default 1; `0` for none); none is while the run
+  holds at the machine's cap on workers.
 
 ## [0.8.5] - 2026-10-20
 

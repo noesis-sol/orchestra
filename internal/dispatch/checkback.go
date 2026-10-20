@@ -75,12 +75,14 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 			return res, errInterrupted
 		}
 		at := o.checkout.Head(keep, c.Repo, r.br)
+		o.checkStarts(ctx, r.br, at) // the next in line may be checked ahead meanwhile, on top of it (see train.go)
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
 		output, err := o.setUp(ctx, r)
 		setup := err != nil
 		if !setup {
 			output, err = o.runCheck(ctx, r)
 		}
+		o.checkEnds(err == nil)
 		if err != nil && ctx.Err() != nil {
 			return res, errInterrupted
 		}

@@ -530,6 +530,9 @@ type Config struct {
 	// CheckHandBacks is how many times a finished ticket whose check fails on its branch, rebased or not, is
 	// handed back to its worker to fix (see checkRebased), within ResolveTimeout each; 0 for never.
 	CheckHandBacks int
+	// MergeTrain is how many of the tickets waiting in the merge queue are checked ahead of their turn,
+	// while the ticket before each is checked, rebased onto its branch (see train.go); 0 for none.
+	MergeTrain int
 	// WorkerArgs start every Claude worker, before its own arguments: --no-chrome or --chrome, and
 	// --effort.
 	WorkerArgs []string

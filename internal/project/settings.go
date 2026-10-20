@@ -68,6 +68,10 @@ type Settings struct {
 	// work merged while it ran or not, is handed back to its worker to fix, before it is set aside for review.
 	// Absent: DefaultCheckHandBacks; 0 sets it aside at once.
 	CheckHandBacks *int `json:"check_hand_backs,omitempty"`
+	// MergeTrain is how many of the finished tickets waiting in the merge queue are checked ahead of
+	// their turn, each rebased onto the branch of the ticket before it as that one is checked.
+	// Absent: DefaultMergeTrain; 0 checks each in its turn alone.
+	MergeTrain *int `json:"merge_train,omitempty"`
 	// EnvironmentHold is when the run holds because its workers keep failing at once, whichever
 	// ticket they have. Absent: DefaultEnvironmentHold.
 	EnvironmentHold *EnvironmentHold `json:"environment_hold,omitempty"`
@@ -131,6 +135,9 @@ const (
 	// DefaultCheckHandBacks is how many times a ticket's failed check before it merges is handed back to
 	// its worker when settings.json doesn't say.
 	DefaultCheckHandBacks = 2
+	// DefaultMergeTrain is how many tickets waiting to merge are checked ahead of their turn when
+	// settings.json doesn't say: one, as each check competes with the workers' for the CPU.
+	DefaultMergeTrain = 1
 	// DefaultSpecTimeout is how long a spec's breakdown may take when settings.json sets no limit.
 	DefaultSpecTimeout = 60 * time.Minute
 	// DefaultSpecEffort is the effort of a spec's breakdown when settings.json sets none: made once
@@ -481,6 +488,12 @@ func ResolveConflictResolution(flag Given[bool], s Settings) (on bool, limit tim
 // rebased branch back to its worker: the project's setting, else DefaultCheckHandBacks; 0 for never.
 func ResolveCheckHandBacks(s Settings) (int, error) {
 	return fromSettings(countSetting("check_hand_backs", "never", s.CheckHandBacks), DefaultCheckHandBacks)
+}
+
+// ResolveMergeTrain picks how many of the tickets waiting in the merge queue a run checks ahead of
+// their turn: the project's setting, else DefaultMergeTrain; 0 for none.
+func ResolveMergeTrain(s Settings) (int, error) {
+	return fromSettings(countSetting("merge_train", "off", s.MergeTrain), DefaultMergeTrain)
 }
 
 // ResolveExcludeTypes picks the issue types a run leaves out of bd ready: the project's setting,

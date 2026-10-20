@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -34,6 +35,7 @@ type fakeGit struct {
 	rebasing  map[string]bool         // worktree folders with a rebase stopped in them
 	dirty     map[string]string       // the uncommitted changes in these worktree folders, as git status shows them
 	unions    map[string]bool         // the files .gitattributes merges by union (merge=union)
+	replaced  [][]fakeCommit          // the histories rebases and resets moved branches from, as git keeps their commits
 }
 
 func newFakeGit(base string) *fakeGit {
@@ -136,7 +138,7 @@ func (g *fakeGit) resolve(rev string) []fakeCommit {
 	if cs, ok := g.branches[rev]; ok {
 		return slices.Clone(cs)
 	}
-	for _, cs := range g.branches {
+	for _, cs := range slices.Concat(slices.Collect(maps.Values(g.branches)), g.replaced) {
 		for i, c := range cs {
 			if c.hash == rev {
 				return slices.Clone(cs[:i+1])
@@ -403,6 +405,7 @@ func (g *fakeGit) Rebase(ctx context.Context, worktree, onto string) (string, er
 		r.content = c.content
 		rebased = append(rebased, r)
 	}
+	g.replaced = append(g.replaced, g.branches[br])
 	g.branches[br] = rebased
 	return "", nil
 }
@@ -475,7 +478,10 @@ func (g *fakeGit) Holds(ctx context.Context, repo, base, branch string) bool {
 func (g *fakeGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.branches[g.worktrees[worktree]] = g.resolve(rev)
+	br := g.worktrees[worktree]
+	to := g.resolve(rev)
+	g.replaced = append(g.replaced, g.branches[br])
+	g.branches[br] = to
 	return "", nil
 }
 

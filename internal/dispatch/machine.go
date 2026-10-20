@@ -265,6 +265,7 @@ func (r *runState) lookAround() {
 	}
 	if !r.atCap() {
 		r.machine.full = false
+		r.o.merges.machineFull.Store(false)
 		if r.fullShown {
 			r.reportQueue(r.queued)
 		}
@@ -285,8 +286,10 @@ func (r *runState) machineFull() bool {
 	m, limit, own := r.machine, r.o.cfg.MachineWorkers, len(r.inflight)
 	if !r.atCap() {
 		m.full = false
+		r.o.merges.machineFull.Store(false)
 		return false
 	}
+	r.o.merges.machineFull.Store(true) // no ticket waiting to merge is checked ahead of its turn meanwhile
 	if !m.full {
 		m.full = true
 		r.o.emit(Event{Kind: EvMachine, Text: fmt.Sprintf(

@@ -65,8 +65,12 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 		repo: &lockGuard{mu: &o.repoMu}, queue: &lockGuard{mu: mergeTurn{o: o, id: w.id, stop: ctx.Done()}},
 	}
 	defer m.repo.release()
+	o.mayCheckAhead(w) // checked ahead of its turn while the ticket before it is (see train.go)
 	m.queue.lock()
 	defer m.queue.release() // held on every return but a stop's; a hand-back lets go of it and takes it again
+	if !m.board(ctx) {
+		return nil // set aside
+	}
 	stop, done := mergePasses(func(rebase bool) (mergeStep, *stopReason) { return m.pass(ctx, rebase) })
 	if !done {
 		o.leaveFor(m.keep, w.id, asideConflict, c.Base+" kept changing", c.Base+" kept changing", fmt.Sprintf(

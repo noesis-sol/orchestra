@@ -1,8 +1,10 @@
 package dispatch
 
 import (
+	"context"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // MergeStage is where a finished ticket is in the merge queue, for the dashboard.
@@ -23,6 +25,15 @@ type mergeQueue struct {
 	mu     sync.Mutex
 	holder string       // the ticket whose merge is under way; "" when none is
 	line   []mergeWaits // the tickets waiting for their turn, next first
+	// The merge train (see train.go): the holder's branch (checkingBr) at the commit its check runs on
+	// or passed on (checking; "" when it isn't checked), in the run's context (ctx); the tickets waiting
+	// for their first turn, which may be checked ahead of it (ahead), and those that are (trains).
+	checking, checkingBr string
+	ctx                  context.Context
+	ahead                map[string]worker
+	trains               map[string]*trainRun
+	// machineFull: the run holds for Config.MachineWorkers (see runState.machineFull), so no train starts.
+	machineFull atomic.Bool
 	// gone: the tickets whose workers have settled and that have gone to merge, until their goroutines
 	// return, a hand-back to their workers included; up to Concurrency of them hold no slot (see
 	// runState.slotsTaken). Run hears of each on joined (buffered 1), as a slot may be free.
@@ -98,6 +109,7 @@ func (t mergeTurn) Lock() {
 	turn := make(chan struct{})
 	q.line = append(q.line, mergeWaits{id: t.id, turn: turn})
 	t.o.showMerge(t.id, MergeQueued, len(q.line))
+	t.o.startTrains() // it may be checked ahead of its turn, as the holder is checked
 	q.mu.Unlock()
 	select {
 	case <-turn:
@@ -132,6 +144,7 @@ func (t mergeTurn) Unlock() {
 	if q.holder != t.id {
 		return // it gave up waiting for its turn as the run stopped (see Lock)
 	}
+	q.checking = "" // the next holder's check is another
 	if len(q.line) == 0 {
 		q.holder = ""
 		return

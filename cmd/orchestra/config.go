@@ -618,6 +618,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	keep2(&problems, &c.ResolveConflicts, &c.ResolveTimeout)(
 		project.ResolveConflictResolution(f.resolveConflicts, settings))
 	keep(&problems, &c.CheckHandBacks)(project.ResolveCheckHandBacks(settings))
+	keep(&problems, &c.MergeTrain)(project.ResolveMergeTrain(settings))
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
 	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
 	keep(&problems, &c.UsageLimitWait)(project.ResolveUsageLimitWait(settings))
