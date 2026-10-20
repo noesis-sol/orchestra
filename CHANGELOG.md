@@ -4,6 +4,15 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A ticket coming to an end (closed, deferred, left for review or blocked
+  from merging) no longer shows twice on the dashboard for a moment, in
+  Current and in the tickets table beside it: its row comes into the table
+  only as it leaves Current.
+
 ## [0.8.6] - 2026-10-20
 
 ### Changed

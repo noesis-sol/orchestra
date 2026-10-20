@@ -103,12 +103,14 @@ func (m *Dashboard) setRow(id string, state rowState, note string) {
 	m.rows[i].state, m.rows[i].note = state, note
 }
 
-// rowsBesideCurrent are the rows the tickets table has when Current is drawn with it: all but the live
-// rows of the tickets Current shows, which would repeat them.
+// rowsBesideCurrent are the rows the tickets table has when Current is drawn with it: all but the rows
+// of the tickets Current shows, which would repeat them, whatever their state. A ticket's end event
+// (closed, deferred, blocked) comes before the status that takes it out of Current, so its row, no
+// longer live, comes in only as it leaves.
 func (m Dashboard) rowsBesideCurrent() []ticketRow {
 	var rows []ticketRow
 	for _, r := range m.rows {
-		if _, current := m.active[r.id]; current && rowLooks[r.state].live {
+		if _, current := m.active[r.id]; current {
 			continue
 		}
 		rows = append(rows, r)
