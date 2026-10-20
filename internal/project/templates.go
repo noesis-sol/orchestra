@@ -60,6 +60,8 @@ var verifierChanges = []TemplateChange{
 		"on with short waits", "Give a check its time"},
 	{4, "How to verify", "it weighs the earlier rounds' findings and says where it disagrees with one, and why",
 		"DISAGREES WITH ROUND"},
+	{5, "Rules", "it passes Bash no timeout where Bash's default is as long as a check may take, as in a worker, " +
+		"whose settings raise it", "one of your own shortens it"},
 }
 
 // verifyHeading is the heading of the worker prompt's section that runs the verifier.

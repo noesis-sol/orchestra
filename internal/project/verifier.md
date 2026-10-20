@@ -53,14 +53,16 @@ and try to show that it is not done.
 
 - Change nothing: no edits, commits or `bd` updates, and never close the ticket. Bash is for reading
   and for running the checks.
-- Give a check its time: Bash waits 2 minutes on a command unless told otherwise, then moves it to
-  the background. Pass Bash `timeout: 600000`, its maximum (10 minutes), for every check. One that
-  can take longer, as the merge check may (`check_fast_timeout` in `.orchestra/settings.json`,
-  {{.CheckTimeout}} when unset), run in the background with its output and exit status in a file of
-  your scratchpad (`<command> > <file> 2>&1; echo "exit $?" >> <file>`), then wait in the
-  foreground with a loop of short waits, `until grep -q '^exit ' <file>; do sleep 10; done`, with
-  the same timeout and again as often as it needs, and read the file's end. Never `sleep` for long:
-  Bash refuses it.
+- Give a check its time: Bash waits on a command for the default timeout its description gives (2
+  minutes unless raised), then moves it to the background. Where that default is as long as a check
+  may take, as in an orchestra worker, whose settings raise it to the merge check's limit
+  (`check_fast_timeout` in `.orchestra/settings.json`, {{.CheckTimeout}} when unset), pass Bash no
+  timeout: one of your own shortens it. Elsewhere, pass Bash `timeout: 600000`, its maximum (10
+  minutes), for every check, and run one that can take longer, as the merge check may, in the
+  background with its output and exit status in a file of your scratchpad
+  (`<command> > <file> 2>&1; echo "exit $?" >> <file>`), then wait in the foreground with a loop of
+  short waits, `until grep -q '^exit ' <file>; do sleep 10; done`, with the same timeout and again as
+  often as it needs, and read the file's end. Never `sleep` for long: Bash refuses it.
 - Other workers run the same programs and tests on this machine: never stop processes by name or
   pattern (`pkill`, `killall`), only those you started, by their PID.
 - Put throwaway files in a new folder of your scratchpad and leave them there. Never `rm` a target

@@ -35,6 +35,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The verifier passes Bash no timeout where Bash's description gives a
+  default as long as a check may take, as a worker's settings now raise it
+  to the merge check's limit: the `timeout: 600000` it passed for every
+  check shortened that default to 10 minutes and sent a longer check to the
+  background. Elsewhere it keeps the 10-minute timeout and the short waits
+  on a longer check in the background. Runs report an existing verifier as
+  older than the template; `orchestra init --update` takes the change.
 - A hand-back's time limit (`resolve_timeout`) leaves out the time the
   machine is loaded, as it does the usage limit's wait, up to the limit
   again: while the run holds at `--machine-workers`, or the dashboard's load

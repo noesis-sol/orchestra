@@ -15,7 +15,7 @@ import (
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
 	promptTemplateSum   = "5ece7210e1c79f7ae3a36848e7b9939b6acf315eb8c50842acba944bc599b90f"
-	verifierTemplateSum = "38b3f1c5704ffd42e66a327ff867b120d3c7ac46eeca8c85a7d97f2e2ee63fbf"
+	verifierTemplateSum = "925b141110e3006a95942db7d5df3ab6f9106755d379957f99ab8e5674715b65"
 )
 
 func sum(text string) string {
