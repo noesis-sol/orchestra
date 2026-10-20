@@ -181,6 +181,9 @@ func (u specSetup) halted(did []project.Step, halt *setupHalt, rel string, commi
 	}
 	switch {
 	case halt == nil:
+	case halt.stop && committed.hash != "": // the stop came as the commit was made: it says so, then stops
+		u.committed(rel, committed)
+		return u.stoppedCommitted()
 	case halt.stop:
 		return u.stopped()
 	default:
@@ -189,11 +192,16 @@ func (u specSetup) halted(did []project.Step, halt *setupHalt, rel string, commi
 		}
 		return u.failed(halt.step+": "+dispatch.FirstLine(halt.err.Error()), dispatch.ExitSetup)
 	}
+	u.committed(rel, committed)
+	return dispatch.ExitOK
+}
+
+// committed reports the setup's commit, with the spec at rel.
+func (u specSetup) committed(rel string, committed specCommit) {
 	done := fmt.Sprintf("committed the setup with the spec %s as %s (%s)", rel,
 		committed.hash[:min(12, len(committed.hash))], plural(len(committed.paths), "file"))
 	fmt.Fprintln(u.out, done)
 	u.logLine("SPEC: " + done)
-	return dispatch.ExitOK
 }
 
 // failed reports that the setup failed, why being what orchestra couldn't do, and returns code.
@@ -210,6 +218,14 @@ func (u specSetup) stopped() int {
 	fmt.Fprintln(u.err, "orchestra: stopped while setting the repository up for the spec; nothing was committed "+
 		"(see git status).")
 	u.logLine("SPEC: stopped while setting the repository up")
+	return dispatch.ExitInterrupted
+}
+
+// stoppedCommitted reports that a stop came once the setup was committed, and returns the exit code.
+func (u specSetup) stoppedCommitted() int {
+	fmt.Fprintln(u.err, "orchestra: stopped once it had set the repository up for the spec and committed it "+
+		"(see git log).")
+	u.logLine("SPEC: stopped once the setup was committed")
 	return dispatch.ExitInterrupted
 }
 

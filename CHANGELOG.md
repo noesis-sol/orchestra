@@ -102,6 +102,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A stop that comes as a spec run commits its setup says the setup was
+  committed, after the commit's line, rather than that nothing was committed
+  (`orchestra: stopped once it had set the repository up for the spec and
+  committed it`, exit code 130).
 - A worker the terminal shows neither under its name nor in its pane is
   read again for 30 seconds before it is taken for gone: Herdr can lose
   sight of a worker still at work for a moment, as a Claude Code it runs
