@@ -253,10 +253,25 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	// The room the workers' form is chosen for, the winding-down line there or not; its height changes
 	// only as workers start and finish.
 	steady := m.height - max(len(foot), m.footLines())
-	fits := func(room int, parts ...string) bool { return lineCount(stack(parts...)) <= room }
+	// The parts' lines are counted rather than stacked: stacking measures every line's width.
+	fits := func(room int, parts ...string) bool {
+		n := 0
+		for _, p := range parts {
+			n += lineCount(p)
+		}
+		return n <= room
+	}
 	with := func(parts ...string) string { return stack(append(slices.Clone(parts), footer)...) }
 	stats := stack(m.loadLine(w), m.statsTable(w))
-	panels, list := withCurrentLabel(m.workerPanels(w)), withCurrentLabel(m.workerList(w))
+	// The one-line form is drawn only once the boxes don't fit.
+	panels, list := withCurrentLabel(m.workerPanels(w)), ""
+	listed := false
+	compact := func() string {
+		if !listed {
+			list, listed = withCurrentLabel(m.workerList(w)), true
+		}
+		return list
+	}
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
 	need := lineCount(title) + lineCount(stats) + m.slots() + sectionChrome + m.footLines()
 	lines := tableLines(m.height)
@@ -272,9 +287,9 @@ func (m Dashboard) layout(w int, title, footer string) string {
 		heads = []string{title + "\n", title}
 	}
 	for _, head := range heads {
-		for _, workers := range []string{panels, list} {
-			if fits(steady, head, stats, tickets, workers) {
-				return with(head, stats, tickets, workers)
+		for _, workers := range []func() string{func() string { return panels }, compact} {
+			if fits(steady, head, stats, tickets, workers()) {
+				return with(head, stats, tickets, workers())
 			}
 		}
 	}
@@ -285,7 +300,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	top := stack(title, m.statsLine(w))
 	// A pane too short for a steady form: the workers get every line the foot leaves as it is now,
 	// the winding-down line's included while there is none.
-	if fits(m.height-len(foot), top, list) {
+	if list := compact(); fits(m.height-len(foot), top, list) {
 		return with(top, list)
 	}
 	return m.cut(stack(top, m.workerList(w)), foot)

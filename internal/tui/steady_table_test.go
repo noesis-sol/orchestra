@@ -286,14 +286,21 @@ func TestDashboardFitsEveryPane(t *testing.T) {
 		}
 		dashboards = append(dashboards, [3]Dashboard{m, busy, press(busy, "s", "y")})
 	}
-	for w := 0; w <= 140; w++ {
-		t.Run(fmt.Sprint(w), func(t *testing.T) {
+	// A few groups of widths run side by side, each width in turn: drawing allocates so much that more
+	// at once spend more CPU in the garbage collector's pauses than they save in time.
+	const groups = 4
+	for g := range groups {
+		t.Run(fmt.Sprintf("widths %d+%dn", g, groups), func(t *testing.T) {
 			t.Parallel()
-			for h := 1; h <= 45; h++ {
-				n := (7*w + h) % len(dashboards)
-				m := dashboards[n][(w+h)%3]
-				m.width, m.height = w, h
-				checkWithinPane(t, m.View(), w, h)
+			for w := g; w <= 140; w += groups {
+				t.Run(fmt.Sprint(w), func(t *testing.T) {
+					for h := 1; h <= 45; h++ {
+						n := (7*w + h) % len(dashboards)
+						m := dashboards[n][(w+h)%3]
+						m.width, m.height = w, h
+						checkWithinPane(t, m.View(), w, h)
+					}
+				})
 			}
 		})
 	}

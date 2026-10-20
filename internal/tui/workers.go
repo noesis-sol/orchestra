@@ -17,7 +17,8 @@ func withCurrentLabel(panels string) string {
 	if panels == "" {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, sectionLabel("Current", pickedStyle), panels)
+	// Not joined to pad the label: the layout stacks it with the rest, which pads every line.
+	return sectionLabel("Current", pickedStyle) + "\n" + panels
 }
 
 // sectionLabel is the line that heads a section of the dashboard, Tickets or Current: its name,
@@ -198,26 +199,30 @@ func (m Dashboard) workerPanels(w int) string {
 		}
 		return w - 1 - left
 	}
+	// Each box is drawn as tall as it needs, then again as tall as the tallest if it is shorter.
+	boxes := make([]string, len(running))
 	h := 0
 	for i, st := range running {
-		h = max(h, lipgloss.Height(m.workerPanel(width(i), 0, i+1, st, titleMax)))
+		boxes[i] = m.workerPanel(width(i), 0, i+1, st, titleMax)
+		h = max(h, lipgloss.Height(boxes[i]))
 	}
-	var boxes []string
 	for i, st := range running {
-		boxes = append(boxes, m.workerPanel(width(i), h, i+1, st, titleMax))
+		if lipgloss.Height(boxes[i]) < h {
+			boxes[i] = m.workerPanel(width(i), h, i+1, st, titleMax)
+		}
 	}
 	if w < gridWidth {
-		return lipgloss.JoinVertical(lipgloss.Left, boxes...)
+		return strings.Join(boxes, "\n") // each box w wide: none to pad
 	}
 	var rows []string
 	for i := 0; i < len(boxes); i += 2 {
 		if i+1 == len(boxes) {
-			rows = append(rows, boxes[i])
-			break
+			// A box alone on its row, padded to the rows' width
+			return lipgloss.JoinVertical(lipgloss.Left, append(rows, boxes[i])...)
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, boxes[i], " ", boxes[i+1]))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return strings.Join(rows, "\n") // each row w wide
 }
 
 // workerPanel boxes the nth running ticket, w wide and h tall (0: as tall as it needs): its number,
