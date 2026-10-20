@@ -33,8 +33,12 @@ var _ = faketool.Func("claude", claudetest.Claude)
 
 // tmuxRun is a run's repository, tracker, tmux and worker; or cmux, for a cmuxRun.
 type tmuxRun struct {
-	t         *testing.T
-	repo      string
+	t    *testing.T
+	repo string
+	// ctx gives the commands the run and the test run their environment (command.WithEnv): the fake bd
+	// and claude first on PATH and, in tmux, the test's tmux server; the process's is left as it is,
+	// so the scenarios run in parallel.
+	ctx       context.Context
 	bdDir     string // the fake bd's folder: status, the ticket's; calls, each call's arguments
 	claudeDir string // the fake claude's folder (claudetest.Claude)
 	term      tmux.Terminal
@@ -63,7 +67,8 @@ func newTmuxRun(t *testing.T, script, resumed []string) *tmuxRun {
 		t.Skip("skipped by -short: a whole run in a real tmux")
 	}
 	r := newRunFixture(t, script, resumed)
-	r.term = tmux.Terminal{Socket: tmuxtest.Server(t, "orch", r.repo)}
+	r.ctx = tmuxtest.ServerContext(r.ctx, t, "orch", r.repo)
+	r.term = tmux.Terminal{Socket: tmuxtest.Socket}
 	r.terminal, r.kind, r.workspace = r.term, project.TerminalTmux, "orch"
 	return r
 }
@@ -71,14 +76,15 @@ func newTmuxRun(t *testing.T, script, resumed []string) *tmuxRun {
 // newRunFixture sets up the repository and backlog of newTmuxRun, with no terminal.
 func newRunFixture(t *testing.T, script, resumed []string) *tmuxRun {
 	t.Helper()
+	bin := t.TempDir()
 	r := &tmuxRun{t: t, repo: t.TempDir(), bdDir: t.TempDir(), claudeDir: t.TempDir(),
-		log: filepath.Join(t.TempDir(), "orchestra.log"), sink: &tmuxSink{}}
+		log: filepath.Join(t.TempDir(), "orchestra.log"), sink: &tmuxSink{},
+		ctx: command.WithEnv(context.Background(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))}
 	r.git(r.repo, "init", "-q", "-b", "main")
 	r.write(filepath.Join(r.repo, ".gitignore"), ".orchestra/\n")
 	r.git(r.repo, "add", ".")
 	r.git(r.repo, "commit", "-q", "-m", "init")
 
-	bin := t.TempDir()
 	r.write(filepath.Join(r.bdDir, "status"), "open\n")
 	faketool.Write(t, bin, "bd", `d='`+r.bdDir+`'
 for a; do printf '%s|' "$a"; done >> "$d/calls"; echo >> "$d/calls"
@@ -96,7 +102,6 @@ esac
 exit 0
 `)
 	faketool.WriteFunc(t, bin, "claude", claudetest.Env(r.claudeDir))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r.write(filepath.Join(r.claudeDir, "script"), strings.Join(script, "\n")+"\n")
 	r.write(filepath.Join(r.claudeDir, "script.resume"), strings.Join(resumed, "\n")+"\n")
 	return r
@@ -116,7 +121,7 @@ func (r *tmuxRun) read(path string) string {
 
 func (r *tmuxRun) git(dir string, args ...string) string {
 	r.t.Helper()
-	out, err := command.Output(context.Background(), command.ReadLimit, dir, "git", args...)
+	out, err := command.Output(r.ctx, command.ReadLimit, dir, "git", args...)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -139,7 +144,7 @@ func (r *tmuxRun) loop() *dispatch.Loop {
 	o := dispatch.New(cfg, log, "Work on TICKET_ID.", dispatch.Deps{
 		Tickets: tracker, Notes: tracker, Tabs: r.terminal, Starter: r.terminal, Namer: r.terminal, Agents: r.terminal,
 		Reporter: claude.Reporter{}, Checkout: git.Git{}, Worktrees: git.Git{}, Merger: git.Git{}, History: git.Git{},
-		Advisor: organ.Client{Bin: filepath.Join(r.t.TempDir(), "no-claude")}, AdviceCtx: context.Background()})
+		Advisor: organ.Client{Bin: filepath.Join(r.t.TempDir(), "no-claude")}, AdviceCtx: r.ctx})
 	o.SetSink(r.sink)
 	dispatch.SetPoll(o, 100*time.Millisecond)
 	return o
@@ -148,7 +153,7 @@ func (r *tmuxRun) loop() *dispatch.Loop {
 // run runs the loop to its end, failing the test if it takes over 2 minutes, and returns its exit code.
 func (r *tmuxRun) run(o *dispatch.Loop) int {
 	r.t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(r.ctx, 2*time.Minute)
 	defer cancel()
 	code := o.Run(ctx)
 	if ctx.Err() != nil {
@@ -191,6 +196,7 @@ var claimed = []string{"start", "prompt", "sleep 1s", `bash bd update "$ID" --cl
 // prompt, works on it, claims, commits and closes its ticket, and settles at its Stop hook; the
 // ticket is merged and its window closed.
 func TestTmuxRunMergesATicket(t *testing.T) {
+	t.Parallel()
 	r := newTmuxRun(t, slices.Concat(claimed, work), nil)
 	code := r.run(r.loop())
 	r.merged(code)
@@ -212,6 +218,7 @@ func TestTmuxRunMergesATicket(t *testing.T) {
 // A worker that waits on a permission prompt is blocked, as the dashboard shows and the log says,
 // until it is allowed in its window; then it finishes its ticket, which merges.
 func TestTmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
+	t.Parallel()
 	r := newTmuxRun(t, slices.Concat(claimed, []string{"write feature.txt the feature",
 		`permission git add feature.txt && git commit -q -m "$ID: Add the feature"`, `bash bd close "$ID"`, "stop",
 		"idle"}), nil)
@@ -228,7 +235,7 @@ func TestTmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if err := r.term.SendKeys(context.Background(), "tx-1", "1", "enter"); err != nil {
+	if err := r.term.SendKeys(r.ctx, "tx-1", "1", "enter"); err != nil {
 		t.Fatal(err)
 	}
 	r.merged(<-done)
@@ -244,6 +251,7 @@ func TestTmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
 // dead; its session is resumed in a new window, told to carry on, and finishes the ticket, which
 // merges.
 func TestTmuxRunResumesAWorkerGone(t *testing.T) {
+	t.Parallel()
 	r := newTmuxRun(t, slices.Concat(claimed, []string{"exit 1"}),
 		slices.Concat([]string{"start", "prompt", "sleep 1s"}, work))
 	code := r.run(r.loop())
@@ -279,7 +287,7 @@ func TestTmuxRunResumesAWorkerGone(t *testing.T) {
 // windows lists the session's windows as name:dead, the first window's ("") being the session's own.
 func (r *tmuxRun) windows() []string {
 	r.t.Helper()
-	out, err := command.Output(context.Background(), command.ReadLimit, "", "tmux", "-L", r.term.Socket,
+	out, err := command.Output(r.ctx, command.ReadLimit, "", "tmux", "-L", r.term.Socket,
 		"list-windows", "-t", "orch", "-F", "#{?#{==:#{window_index},0},orch,#{window_name}}:#{?pane_dead,dead,}")
 	if err != nil {
 		r.t.Fatal(err)

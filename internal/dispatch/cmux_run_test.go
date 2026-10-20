@@ -118,7 +118,7 @@ func TestCmuxRunMergesATicket(t *testing.T) {
 	// A turn of a few seconds, which reading the worker's state through cmux 0.65's top, at times
 	// a second or two, can't miss.
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 3s"}, work), nil)
-	done := r.start(context.Background(), r.loop())
+	done := r.start(r.ctx, r.loop())
 	var tree cmuxtest.Tree
 	r.await("the worker's workspace opened", done, func() bool {
 		tree = r.app.Tree()
@@ -144,9 +144,9 @@ func TestCmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"write feature.txt the feature",
 		`permission git add feature.txt && git commit -q -m "$ID: Add the feature"`, `bash bd close "$ID"`, "stop",
 		"idle"}), nil)
-	done := r.start(context.Background(), r.loop())
+	done := r.start(r.ctx, r.loop())
 	r.await("the worker was shown blocked on its permission prompt", done, r.sink.permission)
-	if err := r.term.SendKeys(context.Background(), "tx-1", "1", "enter"); err != nil {
+	if err := r.term.SendKeys(r.ctx, "tx-1", "1", "enter"); err != nil {
 		t.Fatal(err)
 	}
 	r.merged(<-done)
@@ -160,7 +160,7 @@ func TestCmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
 // carries it over by its workspace's UUID, and merges its ticket once the worker is done.
 func TestCmuxRunCarriesAWorkerOverAfterCtrlC(t *testing.T) {
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 3s"}, work), nil)
-	ctx, stop := context.WithCancel(context.Background())
+	ctx, stop := context.WithCancel(r.ctx)
 	defer stop()
 	done := r.start(ctx, r.loop())
 	r.await("the worker claimed its ticket", done, func() bool {
@@ -190,7 +190,7 @@ func TestCmuxRunCarriesAWorkerOverAfterCtrlC(t *testing.T) {
 func TestCmuxRunResumesAWorkerAfterCmuxQuits(t *testing.T) {
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 2m"}),
 		slices.Concat([]string{"start", "prompt", "sleep 1s"}, work))
-	ctx, stop := context.WithCancel(context.Background())
+	ctx, stop := context.WithCancel(r.ctx)
 	defer stop()
 	done := r.start(ctx, r.loop())
 	r.await("the worker claimed its ticket", done, func() bool {

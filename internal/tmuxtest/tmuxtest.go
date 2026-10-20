@@ -31,10 +31,26 @@ const Socket = "orchestra-test"
 // window in dir, and returns the name of its socket (Socket). The test's tmux is kept from the
 // user's: $TMUX and $TMUX_PANE are unset, and $TMUX_TMPDIR, where tmux keeps its sockets, is a
 // folder of the test's own. The server's panes run /bin/sh, and get the test's environment as it is
-// when Server is called. It skips the test where tmux isn't installed, or fails it with
-// ORCHESTRA_REQUIRE_TMUX=1. The server is killed, and the test waits for it to be gone, as the test
-// ends, or once the test binary has exited, should the test be killed or time out before its end.
+// when Server is called. It sets those variables in the process's environment for the rest of the
+// test, which rules out t.Parallel: a test running in parallel calls ServerContext instead. It skips
+// the test where tmux isn't installed, or fails it with ORCHESTRA_REQUIRE_TMUX=1. The server is
+// killed, and the test waits for it to be gone, as the test ends, or once the test binary has
+// exited, should the test be killed or time out before its end.
 func Server(t *testing.T, session, dir string) string {
+	t.Helper()
+	ctx := ServerContext(context.Background(), t, session, dir)
+	for _, v := range []string{"TMUX", "TMUX_PANE", "TMUX_TMPDIR", "SHELL"} {
+		t.Setenv(v, command.Getenv(ctx, v))
+	}
+	return Socket
+}
+
+// ServerContext is Server leaving the process's environment as it is, for a test that runs in
+// parallel: it starts the server with the environment ctx gives commands (command.WithEnv), and
+// returns ctx with what keeps the test's tmux from the user's added to it ($TMUX and $TMUX_PANE
+// unset, $TMUX_TMPDIR the test's own folder, $SHELL /bin/sh), for the tmux commands the test runs
+// with it to reach its server (tmux -L Socket). The server's panes get that environment.
+func ServerContext(ctx context.Context, t *testing.T, session, dir string) context.Context {
 	t.Helper()
 	Require(t)
 	sockets, err := os.MkdirTemp("", "tmx") // short: a socket's path has a limit of about 100 bytes
@@ -42,10 +58,8 @@ func Server(t *testing.T, session, dir string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(sockets) }) // the server is gone by then (below); a leftover is no failure
-	t.Setenv("TMUX", "")
-	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TMUX_TMPDIR", sockets)
-	t.Setenv("SHELL", "/bin/sh") // the panes' shell, not the user's, with whatever their profile says
+	// The panes' shell is /bin/sh, not the user's, with whatever their profile says.
+	ctx = command.WithEnv(ctx, "TMUX=", "TMUX_PANE=", "TMUX_TMPDIR="+sockets, "SHELL=/bin/sh")
 	path := filepath.Join(sockets, "tmux-"+strconv.Itoa(os.Getuid()), Socket)
 	// A test killed, or past its timeout, never runs its cleanups, and the server, a daemon, would
 	// outlive it for good, with whatever its panes run: the watchdog kills it once the test binary
@@ -56,13 +70,13 @@ func Server(t *testing.T, session, dir string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(d.Stop)
-	if _, err := command.Output(context.Background(), command.ReadLimit, "", "tmux", "-L", Socket, "-f", "/dev/null",
+	if _, err := command.Output(ctx, command.ReadLimit, "", "tmux", "-L", Socket, "-f", "/dev/null",
 		"new-session", "-d", "-s", session, "-c", dir, "-x", "200", "-y", "50"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		// Killed even when the test failed with the server stuck: a test's server never outlives it.
-		if _, err := command.Output(context.Background(), command.ReadLimit, "", "tmux", "-L", Socket,
+		if _, err := command.Output(context.WithoutCancel(ctx), command.ReadLimit, "", "tmux", "-L", Socket,
 			"kill-server"); err != nil && listening(path) {
 			t.Errorf("the test's tmux server could not be killed: %v", err)
 			return
@@ -74,7 +88,7 @@ func Server(t *testing.T, session, dir string) string {
 			}
 		}
 	})
-	return Socket
+	return ctx
 }
 
 // Require skips the test where tmux isn't installed, or fails it there with ORCHESTRA_REQUIRE_TMUX=1.
