@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The dashboard's tickets table no longer repeats the tickets Current shows:
+  beside Current it lists the tickets that came to an end, in that order, a
+  ticket's row coming in as it leaves Current. Where Current isn't drawn (a
+  short pane, the run's summary), the running tickets keep their rows.
 - Two tickets that share a file run side by side unless one of them is to
   change it: one its `files` metadata lists, or, for a ticket without, one
   its text names, but a document (`.md`, `.txt`) only where a sentence asks

@@ -153,9 +153,10 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 	case dispatch.EvStop, dispatch.EvDone:
 		if ev.Kind == dispatch.EvStop {
 			m.markBlocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
-			for i := range m.rows {
-				if rowLooks[m.rows[i].state].live {
-					m.rows[i].state = rowStopped
+			// Each to the end as it stops, in the order they were.
+			for _, r := range slices.Clone(m.rows) {
+				if rowLooks[r.state].live {
+					m.setRow(r.id, rowStopped, r.note)
 				}
 			}
 		}

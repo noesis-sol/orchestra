@@ -26,7 +26,7 @@ func TestWarningsAboutARunningTicketKeepItsRowWorking(t *testing.T) {
 			Text: "  LONG_RUNNING: k-1 still working after 2h in tab t1; still waiting on it, as no ticket limit is set"},
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1",
 			Text: "  WATCH_FAILED for k-1: panic: oops; its status is not shown until it takes its prompt"})
-	v := ansi.Strip(m.View())
+	v := fullTable(m)
 	if m.rows[0].state != rowWorking || !strings.Contains(v, "▶ testing") || strings.Contains(v, "! review") {
 		t.Errorf("k-1 should still show as testing, not for review:\n%s", v)
 	}

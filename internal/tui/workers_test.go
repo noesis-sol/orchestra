@@ -236,13 +236,14 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 		Agent: "working", Doing: "testing", Activity: "⏺ Running the full local CI · 59s"}
 	m.active = map[string]dispatch.Status{"kinieta-ce1": status}
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "▶ testing") || !strings.Contains(view, "kinieta-ce1  testing") || strings.Contains(view, "working") {
+	if !strings.Contains(fullTable(m), "▶ testing") || !strings.Contains(view, "kinieta-ce1  testing") ||
+		strings.Contains(view, "working") {
 		t.Errorf("a worker running the checks should show testing:\n%s", view)
 	}
 
 	status.Agent = "blocked" // a dialog outranks the last report
 	m.active["kinieta-ce1"] = status
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(view, "▶ working") {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(fullTable(m), "▶ working") {
 		t.Errorf("a blocked worker should show blocked:\n%s", view)
 	}
 }
@@ -265,7 +266,8 @@ func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
 	m.width, m.height = 70, 40
 	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
 		Agent: "working", Doing: "testing", Resolving: true}}
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "⟳ resolving") || !strings.Contains(view, "kinieta-ce1  resolving") {
+	if view := ansi.Strip(m.View()); !strings.Contains(fullTable(m), "⟳ resolving") ||
+		!strings.Contains(view, "kinieta-ce1  resolving") {
 		t.Errorf("a worker resolving its rebase should show resolving:\n%s", view)
 	}
 }

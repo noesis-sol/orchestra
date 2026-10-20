@@ -262,7 +262,8 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	lines := tableLines(m.height)
 	var tickets string
 	if need+lines <= m.height {
-		tickets, need = m.tickets(w, lines), need+lines
+		// Current is drawn below it, whole: the table leaves out the tickets it shows.
+		tickets, need = m.ticketsBesideCurrent(w, lines), need+lines
 	}
 	// The title with the blank line below it, in a pane with a line to spare for it beside the rest
 	// at its steady height, so that it doesn't come and go as workers do; then the title alone.

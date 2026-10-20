@@ -86,14 +86,34 @@ func (m *Dashboard) rowIndex(id string) int {
 	return -1
 }
 
-// setRow sets ticket id's row to state, with note.
+// setRow sets ticket id's row to state, with note. A row whose worker is no longer at it moves to the
+// end, so that the rows are in the order their tickets came to an end and one leaving Current comes in
+// under the others in the tickets table beside it.
 func (m *Dashboard) setRow(id string, state rowState, note string) {
 	i := m.rowIndex(id)
 	if i < 0 {
 		m.rows = append(m.rows, ticketRow{id: id})
 		i = len(m.rows) - 1
 	}
+	if rowLooks[m.rows[i].state].live && !rowLooks[state].live {
+		r := m.rows[i]
+		m.rows = append(slices.Delete(m.rows, i, i+1), r)
+		i = len(m.rows) - 1
+	}
 	m.rows[i].state, m.rows[i].note = state, note
+}
+
+// rowsBesideCurrent are the rows the tickets table has when Current is drawn with it: all but the live
+// rows of the tickets Current shows, which would repeat them.
+func (m Dashboard) rowsBesideCurrent() []ticketRow {
+	var rows []ticketRow
+	for _, r := range m.rows {
+		if _, current := m.active[r.id]; current && rowLooks[r.state].live {
+			continue
+		}
+		rows = append(rows, r)
+	}
+	return rows
 }
 
 // markBlocked shows ev's ticket as blocked, its work done but its merge waiting on the maintainer, with
@@ -166,9 +186,15 @@ func (r ticketRow) cells(width int, worker *look) [3]string {
 	return [3]string{state, l.style.Render(r.id), about}
 }
 
-// tickets is the tickets table headed by its Tickets label, lines lines in all.
+// tickets is the tickets table headed by its Tickets label, lines lines in all, with every row: drawn
+// where Current isn't, so that a running ticket is always shown somewhere.
 func (m Dashboard) tickets(w, lines int) string {
 	return stack(sectionLabel("Tickets", ticketsStyle), m.ticketsTable(w, lines-labelLines))
+}
+
+// ticketsBesideCurrent is tickets drawn with Current: without the rows of the tickets Current shows.
+func (m Dashboard) ticketsBesideCurrent(w, lines int) string {
+	return stack(sectionLabel("Tickets", ticketsStyle), m.rowsTable(w, lines-labelLines, m.rowsBesideCurrent()))
 }
 
 // The tickets table's columns: the state column's width, the narrowest its ID column and the text in
@@ -189,15 +215,17 @@ func aboutWidth(w, idWidth int) int {
 
 // ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
 // the tickets leave, and when there are more the oldest give way to a count of them.
-func (m Dashboard) ticketsTable(w, lines int) string {
+func (m Dashboard) ticketsTable(w, lines int) string { return m.rowsTable(w, lines, m.rows) }
+
+// rowsTable is ticketsTable listing rows.
+func (m Dashboard) rowsTable(w, lines int, rows []ticketRow) string {
 	idWidth := minIDWidth
-	for _, r := range m.rows {
+	for _, r := range rows {
 		idWidth = max(idWidth, ansi.StringWidth(oneLine(r.id)))
 	}
 	// IDs longer than a third of the table are cut, so the titles keep their room
 	idWidth = min(idWidth, max(w/3, minIDWidth))
 	about := aboutWidth(w, idWidth)
-	rows := m.rows
 	hidden := 0
 	limit := max(lines-borderLines, 1)
 	if len(rows) > limit {

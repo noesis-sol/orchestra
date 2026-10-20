@@ -41,7 +41,8 @@ func withStatus(m Dashboard, msg statusMsg) Dashboard {
 }
 
 func TestFinishedTicketsShowTheirMergeStage(t *testing.T) {
-	view := ansi.Strip(mergeDashboard(t).View())
+	m := mergeDashboard(t)
+	view := fullTable(m) + "\n" + ansi.Strip(m.View()) // the table's rows where Current isn't drawn, then Current
 	for _, want := range []string{
 		"◆ merging", "◆  kinieta-m1  merging ", // the table's row, then Current's head
 		"◼ to merge", "◼  kinieta-q2  to merge (2nd) ",
@@ -110,8 +111,7 @@ func TestHandedBackTicketJoinsTheMergeQueueAgain(t *testing.T) {
 	} {
 		c.set(&st)
 		m = withStatus(m, statusMsg(st))
-		view := ansi.Strip(m.View())
-		if !strings.Contains(view, c.row) || !strings.Contains(view, c.label) {
+		if view := ansi.Strip(m.View()); !strings.Contains(fullTable(m), c.row) || !strings.Contains(view, c.label) {
 			t.Errorf("%s: the view should show %q in the table and %q in Current:\n%s", c.name, c.row, c.label, view)
 		}
 	}
@@ -133,7 +133,8 @@ func TestMergeStagesHaveColoursOfTheirOwn(t *testing.T) {
 	if toMergeStyle.GetForeground() == mergingStyle.GetForeground() {
 		t.Error("to merge and merging should have colours of their own")
 	}
-	if v := mergeDashboard(t).View(); !strings.Contains(v, toMergeStyle.Render("◼ to merge")) ||
+	m := mergeDashboard(t)
+	if v := m.ticketsTable(m.width, 12); !strings.Contains(v, toMergeStyle.Render("◼ to merge")) ||
 		!strings.Contains(v, mergingStyle.Render("◆ merging")) {
 		t.Errorf("the table should show the merge stages in their colours:\n%q", v)
 	}
