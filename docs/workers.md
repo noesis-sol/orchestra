@@ -78,7 +78,7 @@ The [organs](organs.md#organs) run `claude` whatever the workers' agent kind.
 
 ### Taking template changes
 
-`orchestra init` writes the worker prompt and the verifier from orchestra's templates once, and keeps them as they are from then on, so a change to the templates in a later orchestra doesn't reach a project by itself. `settings.json` records the version of each template the project's files came from (`"templates": {"worker_prompt": 4, "verifier": 2}`); a project set up before it recorded them has none, and orchestra looks in its files for the words each change brought instead. Where a template has changed since, every run says so under its `START` line, a line a file:
+`orchestra init` writes the worker prompt and the verifier from orchestra's templates once, and keeps them as they are from then on, so a change to the templates in a later orchestra doesn't reach a project by itself. `settings.json` records the version of each template the project's files came from (`"templates": {"worker_prompt": 4, "verifier": 3}`); a project set up before it recorded them has none, and orchestra looks in its files for the words each change brought instead. Where a template has changed since, every run says so under its `START` line, a line a file:
 
 ```
   templates: .orchestra/worker-prompt.md is older than orchestra's worker prompt template, which has since changed the opening (a worker checks its own change and leaves the whole suite to the merge check) and Close (a ticket closes once the worker's own checks pass): orchestra init --update rewrites those sections from the template, keeping the rest of the file, and shows the diff to commit

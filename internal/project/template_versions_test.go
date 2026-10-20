@@ -15,7 +15,7 @@ import (
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
 	promptTemplateSum   = "2b66b41a9f75e77619e9583c1980d40b8f6990f5f4069347a6aad3decc25da1c"
-	verifierTemplateSum = "f7cdef64b9a8cfa667b0f96607b2ec7968d13c06108d883a8cdded314b358363"
+	verifierTemplateSum = "7ac912ee75359b432244595656a9abf1e5c3c1818107028422479da751335972"
 )
 
 func sum(text string) string {
@@ -145,13 +145,14 @@ func TestAnOlderVerifierIsNoticed(t *testing.T) {
 	for _, want := range []string{
 		VerifierPath + " is older than orchestra's verifier template",
 		"the opening (its description asks", "Its checks (", "How to verify (",
+		"Rules (a check gets Bash's longest timeout",
 	} {
 		if !strings.Contains(notes[1], want) {
 			t.Errorf("the verifier's note lacks %q:\n%s", want, notes[1])
 		}
 	}
-	if strings.Contains(notes[1], "Rules") {
-		t.Errorf("the verifier's note names its Rules, which have the change:\n%s", notes[1])
+	if strings.Contains(notes[1], "throwaway") {
+		t.Errorf("the verifier's note names the throwaway files, which its Rules have:\n%s", notes[1])
 	}
 }
 

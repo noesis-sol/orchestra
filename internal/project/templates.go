@@ -54,6 +54,8 @@ var verifierChanges = []TemplateChange{
 	{2, "Its checks", "how to run each suite on what a change touches", "on what a change touches"},
 	{2, "How to verify", "it quotes the worker's passing checks at the same commit rather than run them again, " +
 		"and runs the suites only on what the change touches", "Leave the whole suite to orchestra"},
+	{3, "Rules", "a check gets Bash's longest timeout, and one that takes longer runs in the background, waited " +
+		"on with short waits", "Give a check its time"},
 }
 
 // verifyHeading is the heading of the worker prompt's section that runs the verifier.
