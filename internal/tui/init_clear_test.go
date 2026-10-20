@@ -21,7 +21,7 @@ func TestInitHeaderClearsTheScreenOnATerminal(t *testing.T) {
 
 func TestInitHeaderLeavesAPlainWriterUncleared(t *testing.T) {
 	var b strings.Builder
-	NewInitScreen(&b).Header("/repo")
+	NewInitScreen(&b, ttyTerm).Header("/repo")
 	if strings.Contains(b.String(), "\x1b[2J") || strings.Contains(b.String(), "\x1b[H") {
 		t.Errorf("header on a plain writer = %q, want no clear sequence", b.String())
 	}

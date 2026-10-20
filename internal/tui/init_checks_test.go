@@ -51,7 +51,7 @@ func finds(s organ.Scouting, err error) func(context.Context) (organ.Scouting, e
 // askChecks runs the init form for ask on a fake terminal, from c.
 func askChecks(t *testing.T, c *project.Choice, ask Ask) *formTerminal {
 	t.Helper()
-	return askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(t.Context(), in, out, c, ask) })
+	return askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(t.Context(), in, out, ttyTerm, c, ask) })
 }
 
 // commands are the suites' commands.
@@ -336,12 +336,11 @@ func TestKeepOrReplaceTheSkillThatDiffers(t *testing.T) {
 }
 
 func TestAccessibleStage2SaysWhatTheScoutFound(t *testing.T) {
-	t.Setenv("TERM", "dumb")
 	c := project.Choice{}
 	var out strings.Builder
 	failed := &organ.ScoutError{Failure: organ.ScoutNoClaude, Err: errors.New("claude not found")}
 	// The choice: Manual, the default; the check command.
-	if err := AskInit(t.Context(), typed("3", "make check"), &out, &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)}); err != nil {
+	if err := AskInit(t.Context(), typed("3", "make check"), &out, "dumb", &c, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)}); err != nil {
 		t.Fatal(err)
 	}
 	screen := ansi.Strip(out.String())

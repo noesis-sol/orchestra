@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -42,15 +41,15 @@ type Work struct {
 var errNoDescription = errors.New("describe the feature first, or press Esc to cancel")
 
 // AskWork asks what a run in the repository repo (its main checkout) should work on, reading the
-// answers from in and drawing the form on out: the current tickets, ready of them ready (-1 when bd
-// can't say); a spec, whose file it then asks for, a relative path starting at repo, and whether to
-// refine it with claude first; or a new feature, whose description it then asks for. nothing is why
-// the run has nothing to run, none ready or every ready ticket held back (see
-// dispatch.CheckNothingToRun), or nil when it has something to run. Ctrl+C or Esc cancels it with
+// answers from in and drawing the form on out, a terminal TERM names termName: the current tickets,
+// ready of them ready (-1 when bd can't say); a spec, whose file it then asks for, a relative path
+// starting at repo, and whether to refine it with claude first; or a new feature, whose description it
+// then asks for. nothing is why the run has nothing to run, none ready or every ready ticket held back
+// (see dispatch.CheckNothingToRun), or nil when it has something to run. Ctrl+C or Esc cancels it with
 // ErrCancelled, as the end of in does in the accessible form (TERM=dumb); ctx ending stops it with
 // ctx's error.
 func AskWork(
-	ctx context.Context, in io.Reader, out io.Writer, repo string, ready int, nothing *dispatch.NothingToRun,
+	ctx context.Context, in io.Reader, out io.Writer, termName, repo string, ready int, nothing *dispatch.NothingToRun,
 ) (Work, error) {
 	choice, description, spec, refine := WorkTickets, "", "", false
 	theme := huh.ThemeCharm()
@@ -89,7 +88,7 @@ func AskWork(
 	}, specFields, []huh.Field{describe})
 	form := huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme).WithKeyMap(keys)
 	var err error
-	if os.Getenv("TERM") == "dumb" { // huh.NewForm's test for its accessible form
+	if termName == "dumb" { // huh's test for its accessible form, which asks with plain lines
 		// Run here rather than by huh's RunWithContext, which takes the end of input for answers.
 		err = runAccessible(ctx, fields, in, out)
 	} else {

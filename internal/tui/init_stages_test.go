@@ -37,7 +37,7 @@ func (s *syncBuffer) reset() {
 func askStages(t *testing.T, c *project.Choice) *formTerminal {
 	t.Helper()
 	return askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(t.Context(), in, out, c, Ask{Questions: project.Questions{Union: true, Check: true}})
+		return AskInit(t.Context(), in, out, ttyTerm, c, Ask{Questions: project.Questions{Union: true, Check: true}})
 	})
 }
 
@@ -106,7 +106,7 @@ func TestAStageTheFlagsAnsweredIsSkipped(t *testing.T) {
 		{"only workers asked", Ask{Questions: project.Questions{Union: true}}, "Workers", []keysOn{{onUnion, "\r"}}, "Check command"},
 	} {
 		c := project.Choice{}
-		term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(t.Context(), in, out, &c, tc.ask) })
+		term := askOn(t, func(in io.Reader, out io.Writer) error { return AskInit(t.Context(), in, out, ttyTerm, &c, tc.ask) })
 		term.typeSteps(t, tc.steps)
 		if err := term.end(t); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
@@ -120,11 +120,10 @@ func TestAStageTheFlagsAnsweredIsSkipped(t *testing.T) {
 }
 
 func TestAccessibleInitFormPrintsEachStagesHeader(t *testing.T) {
-	t.Setenv("TERM", "dumb")
 	c := project.Choice{Concurrent: 1}
 	var out strings.Builder
 	// Tickets at the same time, union, the choice of checks (3, Manual), check command.
-	if err := AskInit(t.Context(), typed("2", "y", "3", "make check"), &out, &c, Ask{Questions: project.Questions{Concurrent: true, Union: true, Check: true}}); err != nil {
+	if err := AskInit(t.Context(), typed("2", "y", "3", "make check"), &out, "dumb", &c, Ask{Questions: project.Questions{Concurrent: true, Union: true, Check: true}}); err != nil {
 		t.Fatal(err)
 	}
 	screen := ansi.Strip(out.String())

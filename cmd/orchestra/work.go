@@ -41,14 +41,15 @@ type workQuestion struct {
 	repo     string // the main checkout, where a spec's relative path starts
 	in       io.Reader
 	out, err io.Writer
+	termName string // the terminal out is, as TERM names it
 }
 
 // askWork asks what the run c works on (see asksWork), reading the answers from stdin and drawing
-// the form on stdout. It returns the answer and ExitOK; or the exit code when the run is not to go
-// on, having said why. Whether the current tickets have anything to run is for the run to check once
-// they are picked.
+// the form on stdout, the terminal TERM names termName. It returns the answer and ExitOK; or the exit
+// code when the run is not to go on, having said why. Whether the current tickets have anything to
+// run is for the run to check once they are picked.
 func askWork(
-	ctx context.Context, stops *stopWatch, c options, stdin io.Reader, stdout, stderr io.Writer,
+	ctx context.Context, stops *stopWatch, c options, stdin io.Reader, stdout, stderr io.Writer, termName string,
 ) (tui.Work, int) {
 	// A stop signal ends the question as Ctrl+C does; until it is answered, nothing has changed.
 	ctx, stop := stops.context(ctx)
@@ -59,10 +60,11 @@ func askWork(
 		nothing: func(ctx context.Context) (*dispatch.NothingToRun, error) {
 			return dispatch.CheckNothingToRun(ctx, c.Config, tracker, git.Git{}, git.Git{})
 		},
-		repo: c.Repo,
-		in:   stdin,
-		out:  stdout,
-		err:  stderr,
+		repo:     c.Repo,
+		in:       stdin,
+		out:      stdout,
+		err:      stderr,
+		termName: termName,
 	}.ask(ctx)
 }
 
@@ -80,7 +82,7 @@ func (q workQuestion) ask(ctx context.Context) (tui.Work, int) {
 			ready = -1 // bd can't say why none is
 		}
 	}
-	work, err := tui.AskWork(ctx, q.in, q.out, q.repo, ready, nothing)
+	work, err := tui.AskWork(ctx, q.in, q.out, q.termName, q.repo, ready, nothing)
 	switch {
 	case ctx.Err() != nil || errors.Is(err, tui.ErrCancelled):
 		fmt.Fprintln(q.err, "orchestra: stopped before the run started; nothing was changed.")
@@ -116,7 +118,8 @@ const specChosenFrom = "chosen at the start"
 // project's settings give one.
 func plannedDefaults(c *options) {
 	// The mode given, checked already, kept; else a planned run's, as no one answers a permission prompt.
-	if mode, err := project.ResolvePermissionMode(c.WorkerPermissionMode, project.Settings{}, true); err == nil {
+	given := project.Given[string]{Value: c.WorkerPermissionMode}
+	if mode, err := project.ResolvePermissionMode(given, project.Settings{}, true); err == nil {
 		c.WorkerPermissionMode = mode
 	}
 }

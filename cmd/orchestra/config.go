@@ -90,11 +90,14 @@ type envFlags struct {
 type envBinding struct {
 	fs       *flag.FlagSet
 	names    []string // the flag's, then its shorthands' and aliases'
+	env      string   // the variable's name; "" for none
 	envGiven bool     // the variable gave the flag's default
 	problem  string   // the variable's value the flag doesn't take: a problem unless the flag is set
 	given    *bool    // set to whether the flag or the variable gave the value; nil where nothing asks
+	// set to what gave the value, as a problem names it (see givenAs); nil where nothing asks
+	name *string
 	// the problem with the value the flag is set to, as given under name, the first of names the command
-	// line sets; nil for none
+	// line sets as givenAs writes it; nil for none
 	check func(name string) string
 }
 
@@ -106,28 +109,28 @@ func bindEnv[T any](
 ) *envBinding {
 	v, given, problem := readEnv(e.getenv, env, def, parse)
 	define(dst, name, v, usage)
-	b := &envBinding{fs: e.fs, names: []string{name}, envGiven: given, problem: problem}
+	b := &envBinding{fs: e.fs, names: []string{name}, env: env, envGiven: given, problem: problem}
 	e.bindings = append(e.bindings, b)
 	return b
 }
 
 // bindGiven is bindEnv for a setting the project's settings.json also has: the flag gives g.Value,
-// and g.Given says whether it or its variable did.
+// g.Given says whether it or its variable did, and g.Name which.
 func bindGiven[T any](
 	e *envFlags, define func(*T, string, T, string), g *project.Given[T], name, env string, def T,
 	parse func(string) (T, error), usage string,
 ) *envBinding {
 	b := bindEnv(e, define, &g.Value, name, env, def, parse, usage)
-	b.given = &g.Given
+	b.given, b.name = &g.Given, &g.Name
 	return b
 }
 
 // bindWhole is bindEnv for a whole number, which the flag's value must be as the variable's must.
 func bindWhole(e *envFlags, dst *int, name, env string, def int, usage string) *envBinding {
 	b := bindEnv(e, e.fs.IntVar, dst, name, env, def, parseWhole, usage)
-	b.check = func(string) string {
+	b.check = func(name string) string {
 		if *dst < 0 {
-			return fmt.Sprintf("--%s must be a whole number (got %d).", name, *dst)
+			return fmt.Sprintf("%s must be a whole number (got %d).", name, *dst)
 		}
 		return ""
 	}
@@ -147,6 +150,15 @@ func (b *envBinding) alias(alias string) *envBinding {
 	return b
 }
 
+// givenAs is how a problem names the flag as the command line sets it, b.names[i]: --name, or for a
+// shorthand the flag's own name.
+func (b *envBinding) givenAs(i int) string {
+	if len(b.names[i]) == 1 {
+		i = 0
+	}
+	return "--" + b.names[i]
+}
+
 // settle reconciles each flag with its variable once the flags are parsed: a variable's problem
 // counts only when no flag overrides it, and a flag set is held to its check. set is the flags the
 // command line sets.
@@ -160,12 +172,20 @@ func (e *envFlags) settle() (set map[string]bool, problems []string) {
 		case !flagSet && b.problem != "":
 			problems = append(problems, b.problem)
 		case flagSet && b.check != nil:
-			if p := b.check(b.names[i]); p != "" {
+			if p := b.check(b.givenAs(i)); p != "" {
 				problems = append(problems, p)
 			}
 		}
 		if b.given != nil {
 			*b.given = flagSet || b.envGiven
+		}
+		if b.name != nil {
+			switch {
+			case flagSet:
+				*b.name = b.givenAs(i)
+			case b.envGiven:
+				*b.name = b.env
+			}
 		}
 	}
 	return set, problems
@@ -195,7 +215,7 @@ type options struct {
 	SpecTimeout time.Duration
 	SpecEffort  string
 	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
-	terminalAsked string
+	terminalAsked project.Given[string]
 	where         runsIn // where orchestra itself runs, as checkTerminal finds it
 }
 
@@ -254,6 +274,8 @@ type runFlags struct {
 	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
 	specTimeout                                 project.Given[time.Duration]
 	resolveConflicts                            project.Given[bool]
+	workerEffort, organEffort, specEffort       project.Given[string]
+	permissionMode                              project.Given[string]
 	set                                         map[string]bool // the flags the command line sets
 	env                                         envFlags
 }
@@ -369,7 +391,7 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"Herdr workspace or tmux session for the worker tabs (default: the one orchestra runs in, "+
 			"or under tmux outside it orchestra-<repository folder>; list Herdr's with: herdr workspace list); "+
 			"none under cmux, where each worker has a workspace of its own")
-	bindEnv(e, fs.StringVar, &c.terminalAsked, "terminal", "ORCHESTRA_TERMINAL", "", parseText,
+	bindGiven(e, fs.StringVar, &c.terminalAsked, "terminal", "ORCHESTRA_TERMINAL", "", parseText,
 		"what workers run in: herdr, tmux, cmux, or auto for the one orchestra runs in, else tmux "+
 			"(default: .orchestra/settings.json, else auto) [ORCHESTRA_TERMINAL]")
 	bindWhole(e, &c.Limit, "limit", "LIMIT", dispatch.NoLimit,
@@ -386,13 +408,13 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 			"(default: <repo>-worktrees next to it) [WT_ROOT]")
 	bindEnv(e, fs.StringVar, &c.OrganModel, "organ-model", "ORGAN_MODEL", "", parseText,
 		"model for the organs: triage, the predictor and the run report (default: the claude CLI's default) [ORGAN_MODEL]")
-	bindEnv(e, fs.StringVar, &c.OrganEffort, "organ-effort", "ORGAN_EFFORT", "", parseText,
+	bindGiven(e, fs.StringVar, &f.organEffort, "organ-effort", "ORGAN_EFFORT", "", parseText,
 		"effort for every organ: low, medium, high, xhigh or max (default: .orchestra/settings.json, "+
 			"else low for triage and the predictor, medium for the reviewer and init's scout) [ORGAN_EFFORT]")
-	bindEnv(e, fs.StringVar, &c.WorkerEffort, "worker-effort", "WORKER_EFFORT", "", parseText,
+	bindGiven(e, fs.StringVar, &f.workerEffort, "worker-effort", "WORKER_EFFORT", "", parseText,
 		"effort Claude workers, and a spec's or feature's talk-through, start at: low, medium, high, xhigh or max "+
-			"(default: .orchestra/settings.json, else high) [WORKER_EFFORT]")
-	bindEnv(e, fs.StringVar, &c.WorkerPermissionMode, "worker-permission-mode", "WORKER_PERMISSION_MODE", "",
+			"(default: .orchestra/settings.json, else "+project.DefaultWorkerEffort+") [WORKER_EFFORT]")
+	bindGiven(e, fs.StringVar, &f.permissionMode, "worker-permission-mode", "WORKER_PERMISSION_MODE", "",
 		parseText, "permission mode Claude workers start in: default (or manual, its name in newer Claude Code), "+
 			"acceptEdits or auto, where Claude Code's classifier decides and asks only when it can't (default: "+
 			".orchestra/settings.json, else auto for a --spec or --feature run and Claude Code's default "+
@@ -401,7 +423,8 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"work on this ticket and its subtickets only, each parent after its children; "+
 			"nothing else is started [ORCHESTRA_TICKET]")
 	bindGiven(e, fs.IntVar, &f.concurrency, "concurrent", "ORCHESTRA_CONCURRENT", 0, parseWhole,
-		"tickets to work on at the same time (default: .orchestra/settings.json, else 1) [ORCHESTRA_CONCURRENT]").
+		"tickets to work on at the same time (default: .orchestra/settings.json, else "+
+			strconv.Itoa(project.DefaultConcurrency)+") [ORCHESTRA_CONCURRENT]").
 		short("c")
 	bindWhole(e, &c.MachineWorkers, "machine-workers", "ORCHESTRA_MACHINE_WORKERS", 0,
 		"start no ticket while this many workers run across the machine's orchestra runs, this one's included; "+
@@ -412,11 +435,12 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindGiven(e, fs.DurationVar, &f.checkTimeout, "check-timeout", "ORCHESTRA_CHECK_TIMEOUT", 0,
 		project.ParseCheckTimeout,
 		"stop the merge check (check-fast) on a ticket before it merges after this long and set the ticket aside, e.g. 5m "+
-			"(default: .orchestra/settings.json, else 30m) [ORCHESTRA_CHECK_TIMEOUT]")
+			"(default: .orchestra/settings.json, else "+project.DefaultCheckTimeoutText+") [ORCHESTRA_CHECK_TIMEOUT]")
 	bindGiven(e, fs.DurationVar, &f.checkFullTimeout, "check-full-timeout", "ORCHESTRA_CHECK_FULL_TIMEOUT", 0,
 		project.ParseCheckTimeout,
 		"stop the full check (check-full), run once at the end of a run, after this long, e.g. 90m "+
-			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_CHECK_FULL_TIMEOUT]")
+			"(default: .orchestra/settings.json, else "+project.DefaultCheckFullTimeoutText+
+			") [ORCHESTRA_CHECK_FULL_TIMEOUT]")
 	bindGiven(e, fs.BoolVar, &f.resolveConflicts, "resolve-conflicts", "", true, parseOnOff,
 		"when a finished ticket's rebase onto work merged while it ran stops on conflicts, "+
 			"ask its worker to resolve them before setting it aside; needs a check command "+
@@ -447,10 +471,10 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindGiven(e, fs.DurationVar, &f.specTimeout, "spec-timeout", "ORCHESTRA_SPEC_TIMEOUT", 0,
 		project.ParseCheckTimeout,
 		"with --spec, stop the spec's breakdown after this long, e.g. 90m "+
-			"(default: .orchestra/settings.json, else 60m) [ORCHESTRA_SPEC_TIMEOUT]")
-	bindEnv(e, fs.StringVar, &c.SpecEffort, "spec-effort", "ORCHESTRA_SPEC_EFFORT", "", parseText,
+			"(default: .orchestra/settings.json, else "+project.DefaultSpecTimeoutText+") [ORCHESTRA_SPEC_TIMEOUT]")
+	bindGiven(e, fs.StringVar, &f.specEffort, "spec-effort", "ORCHESTRA_SPEC_EFFORT", "", parseText,
 		"with --spec, the effort the spec's breakdown runs at: low, medium, high, xhigh or max "+
-			"(default: .orchestra/settings.json, else high) [ORCHESTRA_SPEC_EFFORT]")
+			"(default: .orchestra/settings.json, else "+project.DefaultSpecEffort+") [ORCHESTRA_SPEC_EFFORT]")
 	fs.BoolVar(&c.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&c.showVersion, "v", false, "shorthand for --version")
 	fs.BoolVar(&c.Plain, "plain", false,
@@ -603,13 +627,13 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
-	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(c.WorkerEffort, settings)) {
+	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(f.workerEffort, settings)) {
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)
 	}
 	keep(&problems, &c.WorkerPermissionMode)(
-		project.ResolvePermissionMode(c.WorkerPermissionMode, settings, c.specFile != "" || c.Feature != ""))
-	keep(&problems, &c.OrganEffort)(project.ResolveEffort(c.OrganEffort, "organ_effort", settings.OrganEffort))
-	keep(&problems, &c.SpecEffort)(project.ResolveSpecEffort(c.SpecEffort, settings))
+		project.ResolvePermissionMode(f.permissionMode, settings, c.specFile != "" || c.Feature != ""))
+	keep(&problems, &c.OrganEffort)(project.ResolveEffort(f.organEffort, "organ_effort", settings.OrganEffort))
+	keep(&problems, &c.SpecEffort)(project.ResolveSpecEffort(f.specEffort, settings))
 	keep(&problems, &c.SpecTimeout)(project.ResolveSpecTimeout(f.specTimeout, settings))
 	keep(&problems, &c.Concurrency)(project.ResolveConcurrency(f.concurrency, settings))
 	keep(&problems, &c.TicketLimit)(project.ResolveTicketLimit(f.ticketLimit, settings))

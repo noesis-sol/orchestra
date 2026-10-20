@@ -49,7 +49,7 @@ func runInit(
 		return fail(err)
 	}
 
-	ui := tui.NewInitScreen(stdout)
+	ui := tui.NewInitScreen(stdout, getenv("TERM"))
 	ui.Header(repo)
 	scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"), Effort: scoutEffort(getenv, existing.OrganEffort)}
 	// A stop signal is caught from the form to the end of what init writes. While the form asks, it
@@ -58,7 +58,7 @@ func runInit(
 	// would end init with no word between two of the files it writes.
 	stopCtx, stop := signal.NotifyContext(ctx, stopSignals...)
 	defer stop()
-	spent, err := askOrDefault(stopCtx, stdin, stdout, interactive, repo, &choice, ask, scout)
+	spent, err := askOrDefault(stopCtx, stdin, stdout, getenv("TERM"), interactive, repo, &choice, ask, scout)
 	signalled := stopCtx.Err() != nil && ctx.Err() == nil
 	steps := scoutSteps(spent)
 	if err != nil || signalled {
@@ -177,10 +177,10 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 		"(asked when omitted)").alias("check")
 	bindGiven(e, fs.StringVar, &f.checkFull, "check-full", "", "", parseText, "the slower suites' command, which "+
 		project.FullRunner+" runs after check-fast.sh, once at the end of a run; \"\" for none")
-	bindGiven(e, fs.DurationVar, &f.fastTimeout, "check-fast-timeout", "", 0, time.ParseDuration,
+	bindGiven(e, fs.DurationVar, &f.fastTimeout, "check-fast-timeout", "", 0, project.ParseCheckTimeout,
 		"how long check-fast may run on a ticket before it merges, e.g. 5m (default "+
 			project.DefaultCheckTimeoutText+")").alias("check-timeout").check = positive(&f.fastTimeout.Value)
-	bindGiven(e, fs.DurationVar, &f.fullTimeout, "check-full-timeout", "", 0, time.ParseDuration,
+	bindGiven(e, fs.DurationVar, &f.fullTimeout, "check-full-timeout", "", 0, project.ParseCheckTimeout,
 		"how long check-full may run at the end of a run, e.g. 90m (default "+
 			project.DefaultCheckFullTimeoutText+")").check = positive(&f.fullTimeout.Value)
 	bindGiven(e, fs.StringVar, &f.setup, "setup", "", "", parseText, "the command that installs the dependencies "+
@@ -206,9 +206,9 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 	concurrent := bindGiven(e, fs.IntVar, &f.concurrent, "concurrent", "", 0, parseWhole,
 		"tickets to run at the same time by default (asked when omitted)")
 	concurrent.short("c")
-	concurrent.check = func(string) string {
-		if n := f.concurrent.Value; n < 1 || n > project.MaxConcurrency {
-			return fmt.Sprintf("--concurrent must be between 1 and %d", project.MaxConcurrency)
+	concurrent.check = func(name string) string {
+		if err := project.ConcurrencyRange(f.concurrent.Value); err != nil {
+			return name + " " + err.Error()
 		}
 		return ""
 	}
@@ -228,11 +228,11 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 	return f, dispatch.ExitOK, true
 }
 
-// positive is the check of a time limit's flag, given as name: init takes no limit of 0.
+// positive is the check of a time limit's flag, given as name: init takes no limit of 0, as a run doesn't.
 func positive(d *time.Duration) func(name string) string {
 	return func(name string) string {
-		if *d <= 0 {
-			return "--" + name + " must be a positive duration such as 5m"
+		if err := project.PositiveCheckTimeout(*d); err != nil {
+			return name + " " + err.Error()
 		}
 		return ""
 	}
@@ -343,13 +343,13 @@ func planPrefix(ctx context.Context, repo string, flag project.Given[string], c 
 	return nil
 }
 
-// askOrDefault asks the questions ask names in a terminal (interactive), with the scout looking for
-// the suites of the project in repo, and returns what the scout's calls cost; the error is the form's,
-// cancelled by Esc or by the end of ctx. Outside a terminal it takes the questions as unasked (see
-// Choice.DeclineUnasked).
+// askOrDefault asks the questions ask names in a terminal (interactive), which TERM names termName,
+// with the scout looking for the suites of the project in repo, and returns what the scout's calls
+// cost; the error is the form's, cancelled by Esc or by the end of ctx. Outside a terminal it takes the
+// questions as unasked (see Choice.DeclineUnasked).
 func askOrDefault(
-	ctx context.Context, in io.Reader, out io.Writer, interactive bool, repo string, c *project.Choice, ask tui.Ask,
-	scout organ.Client,
+	ctx context.Context, in io.Reader, out io.Writer, termName string, interactive bool, repo string,
+	c *project.Choice, ask tui.Ask, scout organ.Client,
 ) (spent []organ.Spend, err error) {
 	if !interactive || !ask.Any() {
 		c.DeclineUnasked(ask.Questions)
@@ -363,7 +363,7 @@ func askOrDefault(
 			return scout.Scout(command.WithEnvOf(scoutCtx, ctx), repo)
 		}
 	}
-	err = tui.AskInit(ctx, in, out, c, ask)
+	err = tui.AskInit(ctx, in, out, termName, c, ask)
 	return spent, err
 }
 
@@ -459,7 +459,8 @@ func heldRefusal(held *project.HeldError) string {
 // as a run checks them. One that isn't an effort would reach claude --effort and fail the scout:
 // the scout runs at its own instead, and a run says what is wrong with it.
 func scoutEffort(getenv func(string) string, setting string) string {
-	effort, err := project.ResolveEffort(getenv("ORGAN_EFFORT"), "organ_effort", setting)
+	given := project.Given[string]{Value: getenv("ORGAN_EFFORT"), Name: "ORGAN_EFFORT"}
+	effort, err := project.ResolveEffort(given, "organ_effort", setting)
 	if err != nil {
 		return ""
 	}

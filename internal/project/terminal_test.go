@@ -43,7 +43,7 @@ func TestResolveTerminal(t *testing.T) {
 		{"screen", "", "", true},
 		{"", "screen", "", true},
 	} {
-		got, err := ResolveTerminal(tc.flag, Settings{Terminal: tc.setting}, terminals)
+		got, err := ResolveTerminal(Given[string]{Value: tc.flag, Name: "--terminal"}, Settings{Terminal: tc.setting}, terminals)
 		if got != tc.want || (err != nil) != tc.err {
 			t.Errorf("flag %q, setting %q: %q %v, want %q (an error: %v)", tc.flag, tc.setting, got, err, tc.want, tc.err)
 		}

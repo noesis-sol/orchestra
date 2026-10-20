@@ -55,6 +55,9 @@ type formTerminal struct {
 // as a field's title beside the bar huh draws on the left of the focused field.
 type keysOn struct{ on, keys string }
 
+// ttyTerm is the TERM of a terminal that draws the forms, rather than huh's accessible form's plain lines.
+const ttyTerm = "xterm-256color"
+
 // askOn runs ask, which asks with a form reading in and drawing on out, on a fake terminal.
 func askOn(t *testing.T, ask func(in io.Reader, out io.Writer) error) *formTerminal {
 	t.Helper()

@@ -25,7 +25,7 @@ func askStart(t *testing.T, repo string, steps ...keysOn) (Work, string, error) 
 	var work Work
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
 		var err error
-		work, err = AskWork(t.Context(), in, out, repo, 3, nil)
+		work, err = AskWork(t.Context(), in, out, ttyTerm, repo, 3, nil)
 		return err
 	})
 	term.typeSteps(t, steps)
@@ -138,7 +138,6 @@ func TestStartQuestionCancelledAtASpec(t *testing.T) {
 // until it names a spec, and whether to refine it, running it as it is unless told otherwise.
 func TestAccessibleStartQuestionOffersASpec(t *testing.T) {
 	repo, _ := specRepo(t)
-	t.Setenv("TERM", "dumb")
 	for _, tc := range []struct {
 		name    string
 		answers []string
@@ -151,7 +150,7 @@ func TestAccessibleStartQuestionOffersASpec(t *testing.T) {
 		{"the current tickets", []string{"1"}, Work{Kind: WorkTickets}},
 	} {
 		var out strings.Builder
-		got, err := AskWork(context.Background(), typed(tc.answers...), &out, repo, 3, nil)
+		got, err := AskWork(context.Background(), typed(tc.answers...), &out, "dumb", repo, 3, nil)
 		screen := ansi.Strip(out.String())
 		if err != nil || got != tc.want {
 			t.Errorf("%s: AskWork = %+v, %v; want %+v\n%s", tc.name, got, err, tc.want, screen)
@@ -171,14 +170,13 @@ func TestAccessibleStartQuestionOffersASpec(t *testing.T) {
 
 func TestAccessibleStartQuestionCancelsAtTheEndOfInputAtASpec(t *testing.T) {
 	repo, _ := specRepo(t)
-	t.Setenv("TERM", "dumb")
 	for name, answers := range map[string][]string{
 		"at the file":             {"2"},
 		"after a wrong file":      {"2", "nope.md"},
 		"at the choice to refine": {"2", "README.md"},
 	} {
 		var out strings.Builder
-		got, err := AskWork(context.Background(), typedThenEnd(answers...), &out, repo, 3, nil)
+		got, err := AskWork(context.Background(), typedThenEnd(answers...), &out, "dumb", repo, 3, nil)
 		if !errors.Is(err, ErrCancelled) && !errors.Is(err, huh.ErrUserAborted) {
 			t.Errorf("%s: AskWork = %+v, %v; want %v\n%s", name, got, err, ErrCancelled, ansi.Strip(out.String()))
 		}

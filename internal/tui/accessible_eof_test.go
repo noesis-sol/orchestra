@@ -28,7 +28,6 @@ func typedThenEnd(lines ...string) io.Reader {
 }
 
 func TestAccessibleWorkFormCancelsAtTheEndOfInput(t *testing.T) {
-	t.Setenv("TERM", "dumb")
 	for _, tc := range []struct {
 		name    string
 		answers []string
@@ -38,7 +37,7 @@ func TestAccessibleWorkFormCancelsAtTheEndOfInput(t *testing.T) {
 		{"after an empty description", []string{"3", ""}},
 	} {
 		var out strings.Builder
-		got, err := AskWork(context.Background(), typedThenEnd(tc.answers...), &out, t.TempDir(), 3, nil)
+		got, err := AskWork(context.Background(), typedThenEnd(tc.answers...), &out, "dumb", t.TempDir(), 3, nil)
 		if !errors.Is(err, ErrCancelled) {
 			t.Errorf("%s: AskWork = %+v, %v; want %v\n%s", tc.name, got, err, ErrCancelled, ansi.Strip(out.String()))
 		}
@@ -46,7 +45,6 @@ func TestAccessibleWorkFormCancelsAtTheEndOfInput(t *testing.T) {
 }
 
 func TestAccessibleInitFormCancelsAtTheEndOfInput(t *testing.T) {
-	t.Setenv("TERM", "dumb")
 	for _, tc := range []struct {
 		name    string
 		answers []string // install Beads, tickets at the same time, union
@@ -58,7 +56,7 @@ func TestAccessibleInitFormCancelsAtTheEndOfInput(t *testing.T) {
 		c := project.Choice{Concurrent: 1, InstallBeads: true, Union: true,
 			Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
 		var out strings.Builder
-		err := AskInit(t.Context(), typedThenEnd(tc.answers...), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
+		err := AskInit(t.Context(), typedThenEnd(tc.answers...), &out, "dumb", &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
 		if !errors.Is(err, huh.ErrUserAborted) {
 			t.Errorf("%s: AskInit = %v; want %v\n%s", tc.name, err, huh.ErrUserAborted, ansi.Strip(out.String()))
 		}
@@ -66,11 +64,10 @@ func TestAccessibleInitFormCancelsAtTheEndOfInput(t *testing.T) {
 }
 
 func TestAccessibleInitFormStillTakesEveryAnswer(t *testing.T) {
-	t.Setenv("TERM", "dumb")
 	c := project.Choice{Concurrent: 1, InstallBeads: true, Union: true,
 		Install: project.BeadsInstall{Method: "Homebrew", Command: "brew install beads"}}
 	var out strings.Builder
-	err := AskInit(t.Context(), typed("n", "3", "n"), &out, &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
+	err := AskInit(t.Context(), typed("n", "3", "n"), &out, "dumb", &c, Ask{Questions: project.Questions{Install: true, Concurrent: true, Union: true}})
 	if err != nil || c.InstallBeads || c.Concurrent != 3 || c.Union {
 		t.Errorf("AskInit: %v, install %v, concurrent %d, union %v; want nil, false, 3, false\n%s",
 			err, c.InstallBeads, c.Concurrent, c.Union, ansi.Strip(out.String()))
@@ -79,12 +76,11 @@ func TestAccessibleInitFormStillTakesEveryAnswer(t *testing.T) {
 
 func TestAccessibleWorkFormStopsWhenCtxEnds(t *testing.T) {
 	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
-	t.Setenv("TERM", "dumb")
 	in, typing := io.Pipe() // nothing typed: the form waits for its first answer
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := AskWork(ctx, in, io.Discard, t.TempDir(), 3, nil)
+		_, err := AskWork(ctx, in, io.Discard, "dumb", t.TempDir(), 3, nil)
 		done <- err
 	}()
 	time.Sleep(10 * time.Millisecond) // the form is reading by now, or reads an ended input

@@ -68,7 +68,7 @@ func askConcurrency(t *testing.T, current int, steps ...keysOn) int {
 	t.Helper()
 	c := project.Choice{Concurrent: current}
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Concurrent: true}})
+		return AskInit(t.Context(), in, out, ttyTerm, &c, Ask{Questions: project.Questions{Concurrent: true}})
 	})
 	term.typeSteps(t, steps)
 	if err := term.end(t); err != nil {

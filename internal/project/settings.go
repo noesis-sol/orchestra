@@ -105,6 +105,10 @@ type Settings struct {
 	Terminal string `json:"terminal,omitempty"`
 }
 
+// CheckCommands are the project's check commands, the merge check's, the full check's and a worker's
+// own, one a line: a ticket's footprint leaves out the files they name.
+func (s Settings) CheckCommands() string { return s.CheckFast + "\n" + s.CheckFull + "\n" + s.CheckOwn }
+
 // EnvironmentHold is settings.json's "environment_hold": Count tickets in a row whose workers
 // settled within Window of dispatch without claiming the ticket or changing anything, or that
 // triage blamed on the environment with high confidence, hold the run. Probe after the hold, once
@@ -121,6 +125,8 @@ const (
 	SettingsName = "settings.json"
 	// MaxConcurrency is the most workers a run may have at once.
 	MaxConcurrency = 16
+	// DefaultConcurrency is how many tickets run at the same time when settings.json doesn't say.
+	DefaultConcurrency = 1
 	// DefaultCheckTimeout is how long the fast check may run when settings.json sets no limit.
 	DefaultCheckTimeout = 30 * time.Minute
 	// DefaultCheckTimeoutText is DefaultCheckTimeout as settings.json writes it.
@@ -140,6 +146,8 @@ const (
 	DefaultMergeTrain = 1
 	// DefaultSpecTimeout is how long a spec's breakdown may take when settings.json sets no limit.
 	DefaultSpecTimeout = 60 * time.Minute
+	// DefaultSpecTimeoutText is DefaultSpecTimeout as the help writes it.
+	DefaultSpecTimeoutText = "60m"
 	// DefaultSpecEffort is the effort of a spec's breakdown when settings.json sets none: made once
 	// per spec, it decides the whole run.
 	DefaultSpecEffort = "high"
@@ -264,19 +272,23 @@ func settingsKeys() []string {
 type Given[T any] struct {
 	Value T
 	Given bool
+	// Name is what gave Value, as a problem with it names it: the flag (--concurrent) or the variable
+	// (ORCHESTRA_CONCURRENT).
+	Name string
 }
 
 // setting reads a run setting from the project's settings.json; ok is false where it doesn't set it.
 type setting[T any] func() (v T, ok bool, err error)
 
 // resolve picks a run setting: flag's value when given, which checkFlag (nil for any) must take,
-// else the project's, as read reads it, else def.
+// else the project's, as read reads it, else def. checkFlag's error follows the name of what gave
+// the value (flag.Name), as ParseDuration's does.
 func resolve[T any](flag Given[T], checkFlag func(T) error, read setting[T], def T) (T, error) {
 	var zero T
 	if flag.Given {
 		if checkFlag != nil {
 			if err := checkFlag(flag.Value); err != nil {
-				return zero, err
+				return zero, fmt.Errorf("%s %w", flag.Name, err)
 			}
 		}
 		return flag.Value, nil
@@ -347,31 +359,35 @@ func countSetting(key, zero string, n *int) setting[int] {
 // choices.
 func choiceSetting(key, text string, choices []string) setting[string] {
 	return func() (string, bool, error) {
-		switch {
-		case text == "":
+		if text == "" {
 			return "", false, nil
-		case !slices.Contains(choices, text):
-			return "", false, settingErr(key, fmt.Errorf("must be one of %s (got '%s')", strings.Join(choices, ", "), text))
+		}
+		if err := oneOf(choices)(text); err != nil {
+			return "", false, settingErr(key, err)
 		}
 		return text, true, nil
 	}
 }
 
 // givenText is a flag's text as a Given: one gives none where it is empty.
-func givenText(v string) Given[string] { return Given[string]{Value: v, Given: v != ""} }
+func givenText(g Given[string]) Given[string] {
+	g.Given = g.Value != ""
+	return g
+}
 
-// oneOfFlag checks that the value the flag named flag gives is one of choices.
-func oneOfFlag(flag string, choices []string) func(string) error {
+// oneOf checks that a value, following the name of what gives it, is one of choices.
+func oneOf(choices []string) func(string) error {
 	return func(v string) error {
 		if !slices.Contains(choices, v) {
-			return fmt.Errorf("%s must be one of %s (got '%s')", flag, strings.Join(choices, ", "), v)
+			return fmt.Errorf("must be one of %s (got '%s')", strings.Join(choices, ", "), v)
 		}
 		return nil
 	}
 }
 
-// concurrencyRange checks a concurrency is between 1 and MaxConcurrency.
-func concurrencyRange(n int) error {
+// ConcurrencyRange checks that a concurrency, following the name of what gives it, is between 1 and
+// MaxConcurrency.
+func ConcurrencyRange(n int) error {
 	if n < 1 || n > MaxConcurrency {
 		return fmt.Errorf("must be between 1 and %d (got %d)", MaxConcurrency, n)
 	}
@@ -379,23 +395,18 @@ func concurrencyRange(n int) error {
 }
 
 // ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT) when given,
-// else the project's setting, else 1. A given 0 is out of range, as any other value outside 1 to
-// MaxConcurrency.
+// else the project's setting, else DefaultConcurrency. A given 0 is out of range, as any other value
+// outside 1 to MaxConcurrency.
 func ResolveConcurrency(flag Given[int], s Settings) (int, error) {
-	return resolve(flag, func(n int) error {
-		if err := concurrencyRange(n); err != nil {
-			return fmt.Errorf("--concurrent (or ORCHESTRA_CONCURRENT) %w", err)
-		}
-		return nil
-	}, func() (int, bool, error) {
+	return resolve(flag, ConcurrencyRange, func() (int, bool, error) {
 		if s.Concurrency == 0 {
 			return 0, false, nil
 		}
-		if err := concurrencyRange(s.Concurrency); err != nil {
+		if err := ConcurrencyRange(s.Concurrency); err != nil {
 			return 0, false, settingErr("concurrent", err)
 		}
 		return s.Concurrency, true, nil
-	}, 1)
+	}, DefaultConcurrency)
 }
 
 // ResolveTicketLimit picks a run's ticket limit: --ticket-limit (or TICKET_LIMIT) when given, else
@@ -403,7 +414,7 @@ func ResolveConcurrency(flag Given[int], s Settings) (int, error) {
 func ResolveTicketLimit(flag Given[time.Duration], s Settings) (time.Duration, error) {
 	return resolve(flag, func(d time.Duration) error {
 		if d < 0 {
-			return fmt.Errorf("--ticket-limit must not be negative (got %s)", d)
+			return fmt.Errorf("must not be negative (got %s)", d)
 		}
 		return nil
 	}, durationSetting("ticket_limit", s.TicketLimit, "2h", true), 0)
@@ -416,28 +427,28 @@ func ResolveCheckTimeout(flag Given[time.Duration], s Settings) (time.Duration, 
 	if s.CheckTimeout != "" && s.CheckFastTimeout == s.CheckTimeout {
 		key = "check_timeout" // the settings' old name for it
 	}
-	return resolve(flag, positiveFlag("check-timeout"), durationSetting(key, s.CheckFastTimeout, "5m", false),
+	return resolve(flag, PositiveCheckTimeout, durationSetting(key, s.CheckFastTimeout, "5m", false),
 		DefaultCheckTimeout)
 }
 
 // ResolveCheckFullTimeout picks how long a run's full check may run: --check-full-timeout (or
 // ORCHESTRA_CHECK_FULL_TIMEOUT) when given, else the project's setting, else DefaultCheckFullTimeout.
 func ResolveCheckFullTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
-	return resolve(flag, positiveFlag("check-full-timeout"),
+	return resolve(flag, PositiveCheckTimeout,
 		durationSetting("check_full_timeout", s.CheckFullTimeout, "5m", false), DefaultCheckFullTimeout)
 }
 
 // ResolveSpecTimeout picks how long a spec's breakdown may take: --spec-timeout (or
 // ORCHESTRA_SPEC_TIMEOUT) when given, else the project's setting, else DefaultSpecTimeout.
 func ResolveSpecTimeout(flag Given[time.Duration], s Settings) (time.Duration, error) {
-	return resolve(flag, positiveFlag("spec-timeout"), durationSetting("spec_timeout", s.SpecTimeout, "90m", false),
+	return resolve(flag, PositiveCheckTimeout, durationSetting("spec_timeout", s.SpecTimeout, "90m", false),
 		DefaultSpecTimeout)
 }
 
 // ResolveSpecEffort picks the effort of a spec's breakdown: --spec-effort (or ORCHESTRA_SPEC_EFFORT)
 // when given, else the project's setting, else DefaultSpecEffort.
-func ResolveSpecEffort(flagValue string, s Settings) (string, error) {
-	effort, err := ResolveEffort(flagValue, "spec_effort", s.SpecEffort)
+func ResolveSpecEffort(flag Given[string], s Settings) (string, error) {
+	effort, err := ResolveEffort(flag, "spec_effort", s.SpecEffort)
 	if err == nil && effort == "" {
 		effort = DefaultSpecEffort
 	}
@@ -446,25 +457,24 @@ func ResolveSpecEffort(flagValue string, s Settings) (string, error) {
 
 // ResolveWorkerEffort picks the effort Claude workers start at: --worker-effort (or WORKER_EFFORT)
 // when given, else the project's setting, else DefaultWorkerEffort.
-func ResolveWorkerEffort(flagValue string, s Settings) (string, error) {
-	effort, err := ResolveEffort(flagValue, "worker_effort", s.WorkerEffort)
+func ResolveWorkerEffort(flag Given[string], s Settings) (string, error) {
+	effort, err := ResolveEffort(flag, "worker_effort", s.WorkerEffort)
 	if err == nil && effort == "" {
 		effort = DefaultWorkerEffort
 	}
 	return effort, err
 }
 
-// positiveFlag checks that the duration the flag called name gives is positive.
-func positiveFlag(name string) func(time.Duration) error {
-	return func(d time.Duration) error {
-		if d <= 0 {
-			return fmt.Errorf("--%s must be a positive duration such as 5m (got %s)", name, d)
-		}
-		return nil
+// PositiveCheckTimeout checks that a time limit a flag gives, such as a check's, is positive. Its error
+// follows the name of the flag.
+func PositiveCheckTimeout(d time.Duration) error {
+	if d <= 0 {
+		return fmt.Errorf("must be a positive duration such as 5m (got %s)", d)
 	}
+	return nil
 }
 
-// ParseCheckTimeout reads a check time limit such as "5m", which must be positive.
+// ParseCheckTimeout reads a time limit such as a check's, "5m", which must be positive.
 func ParseCheckTimeout(v string) (time.Duration, error) { return ParseDuration(v, "5m", false) }
 
 // ResolveConflictResolution picks whether a run hands a finished ticket's rebase conflicts back to
@@ -532,11 +542,10 @@ func ResolveSetupFiles(s Settings) ([]string, error) {
 // Efforts are the effort levels claude --effort takes.
 var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
-// ResolveEffort picks an effort: the flag's (or its variable's) when given, else the project's
+// ResolveEffort picks an effort: the flag's (or its variable's) when it gives one, else the project's
 // setting called key, else "" (the default). Either must be one of Efforts.
-func ResolveEffort(flagValue, key, setting string) (string, error) {
-	return resolve(givenText(flagValue), oneOfFlag("--"+strings.ReplaceAll(key, "_", "-"), Efforts),
-		choiceSetting(key, setting, Efforts), "")
+func ResolveEffort(flag Given[string], key, setting string) (string, error) {
+	return resolve(givenText(flag), oneOf(Efforts), choiceSetting(key, setting, Efforts), "")
 }
 
 // The permission modes of Claude Code's that workers can be started in (claude --permission-mode).
@@ -567,22 +576,17 @@ var unsuitedModes = map[string]string{
 	"plan":              "only plans, and never changes a file",
 }
 
-// ResolvePermissionMode picks the permission mode Claude workers start in: flagValue (from
+// ResolvePermissionMode picks the permission mode Claude workers start in: the flag's (from
 // --worker-permission-mode or WORKER_PERMISSION_MODE) unless it is empty, else the project's
 // setting, else PermissionAuto in a run on a spec or a feature (planned), where nobody answers a
 // permission prompt once its plan is filed, else "" for Claude Code's own default. Either must be
 // one of PermissionModes.
-func ResolvePermissionMode(flagValue string, s Settings, planned bool) (string, error) {
+func ResolvePermissionMode(flag Given[string], s Settings, planned bool) (string, error) {
 	def := ""
 	if planned {
 		def = PermissionAuto
 	}
-	return resolve(givenText(flagValue), func(v string) error {
-		if err := permissionModeErr(v); err != nil {
-			return fmt.Errorf("--worker-permission-mode (or WORKER_PERMISSION_MODE) %w", err)
-		}
-		return nil
-	}, func() (string, bool, error) {
+	return resolve(givenText(flag), permissionModeErr, func() (string, bool, error) {
 		if s.WorkerPermissionMode == "" {
 			return "", false, nil
 		}
@@ -617,10 +621,10 @@ const (
 )
 
 // ResolveTerminal picks a run's terminal among choices (the terminals and TerminalAuto, in the order a
-// problem lists them): flagValue (from --terminal or ORCHESTRA_TERMINAL) unless it is empty, else the
+// problem lists them): the flag's (from --terminal or ORCHESTRA_TERMINAL) unless it is empty, else the
 // project's setting, else TerminalAuto, for the run to choose where it runs.
-func ResolveTerminal(flagValue string, s Settings, choices []string) (string, error) {
-	return resolve(givenText(flagValue), oneOfFlag("--terminal (or ORCHESTRA_TERMINAL)", choices),
+func ResolveTerminal(flag Given[string], s Settings, choices []string) (string, error) {
+	return resolve(givenText(flag), oneOf(choices),
 		choiceSetting("terminal", s.Terminal, choices), TerminalAuto)
 }
 

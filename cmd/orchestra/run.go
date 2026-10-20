@@ -333,7 +333,7 @@ func (s *session) readPrompt() int {
 func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 	cfg, e := &s.cfg, s.e
 	if asksWork(*cfg, isTerminal(e.stdin) && isTerminal(e.stdout)) {
-		work, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr)
+		work, code := askWork(ctx, s.stops, *cfg, e.stdin, e.stdout, e.stderr, e.getenv("TERM"))
 		if code != dispatch.ExitOK { // before the run's start: nothing to record
 			return code, false
 		}

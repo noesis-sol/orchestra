@@ -33,10 +33,10 @@ func TestParseInitFlags(t *testing.T) {
 			return f.checkFast.Given && f.checkFast.Value == "" && !f.checkFull.Given
 		}, dispatch.ExitOK, true, ""},
 		{"the timeout's alias", []string{"--check-timeout", "90s"}, nil, func(f initFlags) bool {
-			return f.fastTimeout == project.Given[time.Duration]{Value: 90 * time.Second, Given: true}
+			return f.fastTimeout == project.Given[time.Duration]{Value: 90 * time.Second, Given: true, Name: "--check-timeout"}
 		}, dispatch.ExitOK, true, ""},
 		{"concurrency's shorthand", []string{"-c", "3"}, nil, func(f initFlags) bool {
-			return f.concurrent == project.Given[int]{Value: 3, Given: true}
+			return f.concurrent == project.Given[int]{Value: 3, Given: true, Name: "--concurrent"}
 		}, dispatch.ExitOK, true, ""},
 		{"declined", []string{"--changelog-union=false", "--verifier=false"}, nil, func(f initFlags) bool {
 			return f.union.Given && !f.union.Value && f.verifier.Given && !f.verifier.Value && !f.install.Given
@@ -49,11 +49,11 @@ func TestParseInitFlags(t *testing.T) {
 		{"force", []string{"--force"}, nil, func(f initFlags) bool { return f.force }, dispatch.ExitOK, true, ""},
 		{"help", []string{"-h"}, nil, nil, dispatch.ExitOK, false, "Usage: orchestra init"},
 		{"a zero time limit, by its alias", []string{"--check-timeout", "0"}, nil, nil, dispatch.ExitSetup, false,
-			"orchestra init: --check-timeout must be a positive duration such as 5m\n"},
+			"orchestra init: --check-timeout must be a positive duration such as 5m (got 0s)\n"},
 		{"two zero time limits", []string{"--check-fast-timeout=0", "--check-timeout=0"}, nil, nil,
-			dispatch.ExitSetup, false, "orchestra init: --check-fast-timeout must be a positive duration such as 5m\n"},
+			dispatch.ExitSetup, false, "orchestra init: --check-fast-timeout must be a positive duration such as 5m (got 0s)\n"},
 		{"concurrency out of range, by its shorthand", []string{"-c", "0"}, nil, nil, dispatch.ExitSetup, false,
-			"orchestra init: --concurrent must be between 1 and 16\n"},
+			"orchestra init: --concurrent must be between 1 and 16 (got 0)\n"},
 		{"an argument", []string{"now"}, nil, nil, dispatch.ExitSetup, false,
 			"orchestra init: unexpected argument \"now\" (see orchestra init -h)\n"},
 	} {
@@ -143,7 +143,7 @@ func TestAskOrDefaultOutsideATerminalDeclinesTheOffers(t *testing.T) {
 	t.Parallel()
 	c := project.Choice{Union: true, InstallBeads: true, Verifier: true, Unasked: project.Questions{Concurrent: true}}
 	ask := project.Questions{Check: true, Concurrent: true, MCP: true, Union: true, Install: true, Verifier: true}
-	spent, err := askOrDefault(runCtx(t), strings.NewReader(""), io.Discard, false, t.TempDir(), &c,
+	spent, err := askOrDefault(runCtx(t), strings.NewReader(""), io.Discard, "", false, t.TempDir(), &c,
 		tui.Ask{Questions: ask}, organ.Client{})
 	if err != nil || len(spent) != 0 {
 		t.Fatalf("spent %v, %v", spent, err)

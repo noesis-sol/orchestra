@@ -1039,10 +1039,12 @@ func (o *Loop) mergedByUnion(ctx context.Context, f string) (bool, error) {
 	return err == nil && merge == "union", err
 }
 
-// checkCommands are the project's check commands, the merge check's, the full check's and a worker's
-// own, one a line, whose files footprints leave out: a ticket asks for them to pass, and a merge
-// check that calls the full one (scripts/check.sh -short) names only its own script.
-func checkCommands(c Config) string { return c.Check + "\n" + c.CheckFull + "\n" + c.CheckOwn }
+// checkCommands are the project's check commands, as project.Settings.CheckCommands lists them, whose
+// files footprints leave out: a ticket asks for them to pass, and a merge check that calls the full
+// one (scripts/check.sh -short) names only its own script.
+func checkCommands(c Config) string {
+	return project.Settings{CheckFast: c.Check, CheckFull: c.CheckFull, CheckOwn: c.CheckOwn}.CheckCommands()
+}
 
 // maxSource is the most of a file read for the functions it mentions.
 const maxSource = 4 << 20

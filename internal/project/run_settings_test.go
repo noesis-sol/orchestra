@@ -84,10 +84,10 @@ func TestSettingProblems(t *testing.T) {
 			".orchestra/settings.json: environment_hold window must be a positive duration such as 2m (got '0')"},
 		{"environment_hold probe", second(ResolveEnvironmentProbe(Settings{EnvironmentHold: &EnvironmentHold{Probe: "-1m"}})),
 			".orchestra/settings.json: environment_hold probe must be a duration such as 10m, or 0 for none (got '-1m')"},
-		{"terminal", second(ResolveTerminal("", Settings{Terminal: "screen"}, terminals)),
+		{"terminal", second(ResolveTerminal(Given[string]{}, Settings{Terminal: "screen"}, terminals)),
 			".orchestra/settings.json: terminal must be one of herdr, tmux, cmux, auto (got 'screen')"},
-		{"--terminal", second(ResolveTerminal("screen", Settings{}, terminals)),
-			"--terminal (or ORCHESTRA_TERMINAL) must be one of herdr, tmux, cmux, auto (got 'screen')"},
+		{"ORCHESTRA_TERMINAL", second(ResolveTerminal(Given[string]{Value: "screen", Name: "ORCHESTRA_TERMINAL"}, Settings{},
+			terminals)), "ORCHESTRA_TERMINAL must be one of herdr, tmux, cmux, auto (got 'screen')"},
 		{"setup_files", second(ResolveSetupFiles(Settings{SetupFiles: &[]string{"["}})),
 			`.orchestra/settings.json: setup_files must be a list of file names or globs such as ["package-lock.json"] ` +
 				`(got "[")`},

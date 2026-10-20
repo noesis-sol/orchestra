@@ -18,7 +18,7 @@ func TestResolveEffort(t *testing.T) {
 		{"HIGH", "", "", "--worker-effort must be one of"},
 	}
 	for _, c := range cases {
-		got, err := ResolveEffort(c.flag, "worker_effort", c.setting)
+		got, err := ResolveEffort(Given[string]{Value: c.flag, Name: "--worker-effort"}, "worker_effort", c.setting)
 		if c.problem != "" {
 			if err == nil || !strings.Contains(err.Error(), c.problem) {
 				t.Errorf("%q, %q: want the problem %q, got %q, %v", c.flag, c.setting, c.problem, got, err)

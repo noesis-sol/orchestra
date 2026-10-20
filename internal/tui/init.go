@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,15 +29,16 @@ type InitScreen struct {
 	clear bool // whether Header clears the screen first: out is a terminal, and TERM isn't dumb
 }
 
-// NewInitScreen returns the screen for out, as wide as its terminal (at most 100), or 80.
-func NewInitScreen(out io.Writer) InitScreen {
+// NewInitScreen returns the screen for out, as wide as its terminal (at most 100), or 80, on the terminal
+// TERM names termName.
+func NewInitScreen(out io.Writer, termName string) InitScreen {
 	w, onTerminal := 80, false
 	if f, ok := out.(interface{ Fd() uintptr }); ok {
 		if tw, _, err := term.GetSize(int(f.Fd())); err == nil && tw > 0 {
 			w, onTerminal = min(tw, 100), true
 		}
 	}
-	return InitScreen{out: out, width: w, clear: clearsScreen(onTerminal, os.Getenv("TERM"))}
+	return InitScreen{out: out, width: w, clear: clearsScreen(onTerminal, termName)}
 }
 
 // clearsScreen says whether init starts on a cleared screen: on a terminal, but not with TERM=dumb,
@@ -522,15 +522,15 @@ func stepper(names []string, n int) string {
 }
 
 // AskInit asks the questions ask names, starting from the current choice, reading the answers
-// from in and drawing the form on out. It asks them in stages, each stage under its header; a stage
-// with no question to ask is left out. It changes nothing but c: Esc or Ctrl+C at any stage returns
-// huh.ErrUserAborted, as the end of in does in the accessible form (TERM=dumb), and init then writes
-// and installs nothing. The end of ctx (a stop signal) ends the form too: AskInit returns ctx's error
-// and leaves c as it was.
-func AskInit(ctx context.Context, in io.Reader, out io.Writer, c *project.Choice, ask Ask) error {
+// from in and drawing the form on out, a terminal TERM names termName. It asks them in stages, each
+// stage under its header; a stage with no question to ask is left out. It changes nothing but c: Esc
+// or Ctrl+C at any stage returns huh.ErrUserAborted, as the end of in does in the accessible form
+// (TERM=dumb), and init then writes and installs nothing. The end of ctx (a stop signal) ends the
+// form too: AskInit returns ctx's error and leaves c as it was.
+func AskInit(ctx context.Context, in io.Reader, out io.Writer, termName string, c *project.Choice, ask Ask) error {
 	workers, answers := workersStage(c, ask)
 	checks := &initStage{name: "Checks"}
-	accessible := os.Getenv("TERM") == "dumb" // huh's accessible form, which asks with plain lines
+	accessible := termName == "dumb" // huh's accessible form, which asks with plain lines
 	var stage2 *checksStage
 	if ask.Check {
 		stage2 = addChecks(checks, c, ask, accessible)

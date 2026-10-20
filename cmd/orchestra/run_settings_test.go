@@ -161,16 +161,16 @@ func TestRunSettingProblems(t *testing.T) {
 			[]string{
 				"--limit must be a whole number (got -1).",
 				"--done-so-far must be a whole number (got -3).",
-				"--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and 16 (got -1).",
+				"--concurrent must be between 1 and 16 (got -1).",
 			}},
 		{"-c 20", []string{"-c", "20"}, nil, "",
-			[]string{"--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and 16 (got 20)."}},
+			[]string{"--concurrent must be between 1 and 16 (got 20)."}},
 		{"--concurrent 0 is out of range, not unset", []string{"--concurrent", "0"}, nil, `{"concurrent": 3}`,
-			[]string{"--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and 16 (got 0)."}},
+			[]string{"--concurrent must be between 1 and 16 (got 0)."}},
 		{"-c 0", []string{"-c", "0"}, nil, `{"concurrent": 3}`,
-			[]string{"--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and 16 (got 0)."}},
+			[]string{"--concurrent must be between 1 and 16 (got 0)."}},
 		{"ORCHESTRA_CONCURRENT=0", nil, map[string]string{"ORCHESTRA_CONCURRENT": "0"}, `{"concurrent": 3}`,
-			[]string{"--concurrent (or ORCHESTRA_CONCURRENT) must be between 1 and 16 (got 0)."}},
+			[]string{"ORCHESTRA_CONCURRENT must be between 1 and 16 (got 0)."}},
 		{"the flag over a variable of 0", []string{"-c", "2"}, map[string]string{"ORCHESTRA_CONCURRENT": "0"}, "", nil},
 		{"concurrent in settings.json", nil, nil, `{"concurrent": 17}`,
 			[]string{".orchestra/settings.json: concurrent must be between 1 and 16 (got 17)."}},
@@ -193,10 +193,10 @@ func TestRunSettingProblems(t *testing.T) {
 		{"--worker-effort extreme", []string{"--worker-effort", "extreme"}, nil, "",
 			[]string{"--worker-effort must be one of low, medium, high, xhigh, max (got 'extreme')."}},
 		{"--worker-permission-mode plan", []string{"--worker-permission-mode", "plan"}, nil, "",
-			[]string{"--worker-permission-mode (or WORKER_PERMISSION_MODE) can't be plan: a worker in it only plans, " +
+			[]string{"--worker-permission-mode can't be plan: a worker in it only plans, " +
 				"and never changes a file. Use one of default, manual, acceptEdits, auto."}},
 		{"WORKER_PERMISSION_MODE", nil, map[string]string{"WORKER_PERMISSION_MODE": "bypassPermissions"}, "",
-			[]string{"--worker-permission-mode (or WORKER_PERMISSION_MODE) can't be bypassPermissions: a worker in it " +
+			[]string{"WORKER_PERMISSION_MODE can't be bypassPermissions: a worker in it " +
 				"would run every command unchecked, where auto has Claude Code's classifier check them. " +
 				"Use one of default, manual, acceptEdits, auto."}},
 		{"worker_permission_mode", nil, nil, `{"worker_permission_mode": "Auto"}`,

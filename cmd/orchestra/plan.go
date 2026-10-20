@@ -57,8 +57,7 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		return dispatch.ExitTool
 	}
 	// a footprint leaves out the files any of the checks names
-	checks := settings.CheckFast + "\n" + settings.CheckFull + "\n" + settings.CheckOwn
-	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), checks,
+	links := dispatch.PlanLinks(open, existing, git.Git{}.TrackedFiles(ctx, repo), settings.CheckCommands(),
 		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(ctx, repo))
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",

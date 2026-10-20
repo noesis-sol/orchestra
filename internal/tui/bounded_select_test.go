@@ -102,7 +102,7 @@ func TestInitConcurrencyStopsAtItsEnds(t *testing.T) {
 func TestInitConcurrencyHelpOffersNoFilter(t *testing.T) {
 	c := project.Choice{Concurrent: 1}
 	term := askOn(t, func(in io.Reader, out io.Writer) error {
-		return AskInit(t.Context(), in, out, &c, Ask{Questions: project.Questions{Concurrent: true}})
+		return AskInit(t.Context(), in, out, ttyTerm, &c, Ask{Questions: project.Questions{Concurrent: true}})
 	})
 	term.waitFor(t, "↑ up")
 	if screen := term.screen.String(); strings.Contains(screen, "filter") {

@@ -343,7 +343,7 @@ func TestOldCheckSettingsAreReadAsCheckFast(t *testing.T) {
 	if d, err := ResolveCheckFullTimeout(Given[time.Duration]{}, Settings{CheckFullTimeout: "90m"}); err != nil || d != 90*time.Minute {
 		t.Errorf("check_full_timeout: %s, %v", d, err)
 	}
-	if _, err := ResolveCheckFullTimeout(Given[time.Duration]{Given: true}, Settings{}); err == nil ||
+	if _, err := ResolveCheckFullTimeout(Given[time.Duration]{Given: true, Name: "--check-full-timeout"}, Settings{}); err == nil ||
 		!strings.Contains(err.Error(), "--check-full-timeout must be") {
 		t.Errorf("--check-full-timeout 0: %v", err)
 	}
