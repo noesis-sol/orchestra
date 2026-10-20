@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 )
 
 // A worker checks its own change with the checks before it closes its ticket, but it grades work it
@@ -42,7 +44,7 @@ const verifierSection = "\n## Verify\n" +
 func usesVerifier(prompt string) bool { return strings.Contains(prompt, VerifierPath) }
 
 // writesSubagents reports whether init can write subagents for the workers' agent kind: Claude Code's.
-func writesSubagents(agent string) bool { return agent == "" || agent == "claude" }
+func writesSubagents(agent string) bool { return agentkind.Of(agent).Subagents }
 
 // OffersVerifier reports whether init should offer the verifier: the workers are Claude Code's, and
 // the project lacks the subagent or a worker prompt that runs it.

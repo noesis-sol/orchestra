@@ -65,7 +65,7 @@ func (o *Loop) checkNote() string {
 // cores.go), for its checks to keep to: " " and the sentence, or "" for a worker not given one, as
 // one of another kind, or one whose hooks can't give it an environment.
 func (o *Loop) coresNote() string {
-	if _, ok := o.reporter.(EnvReporter); !ok || !o.cfg.ClaudeWorkers() {
+	if _, ok := o.reporter.(EnvReporter); !ok || !o.cfg.Agent().Hooks {
 		return ""
 	}
 	return fmt.Sprintf(" Other workers' checks run on this machine beside yours: %s in your environment is your "+
@@ -96,7 +96,7 @@ const bashMaxTimeout = 600000
 // them to the background, and waited with a long sleep, which Bash refuses. "" for workers of other
 // kinds.
 func (o *Loop) checkTimeNote() string {
-	if !o.cfg.ClaudeWorkers() {
+	if !o.cfg.Agent().CheckTimeNote {
 		return ""
 	}
 	log := project.RunPath(workerCheckLog)
@@ -114,7 +114,7 @@ func (o *Loop) checkTimeNote() string {
 // worker carry on after the reset, while a ticket deferred or closed for it would be set aside or merged
 // unfinished. "" for workers of other kinds.
 func (o *Loop) limitNote() string {
-	if !o.cfg.ClaudeWorkers() {
+	if !o.cfg.Agent().LimitNote {
 		return ""
 	}
 	return "\n\nAt the account's usage limit, commit what you have and stop, without deferring or closing the " +
@@ -164,7 +164,7 @@ func specNote(t Ticket, what string) string {
 // rulesArgs writes ticket id's worker's standing rules to its worktree wt and returns the
 // arguments that append them to a Claude worker's system prompt; nil for workers of other kinds.
 func (o *Loop) rulesArgs(wt, id string) ([]string, error) {
-	if !o.cfg.ClaudeWorkers() {
+	if !o.cfg.Agent().Rules {
 		return nil, nil
 	}
 	path, err := project.WriteRules(wt, o.workerRules(id))

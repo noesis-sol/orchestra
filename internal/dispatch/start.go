@@ -30,7 +30,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 			held = why
 		case st == StateGone:
 			held = ""
-		case kind != o.cfg.AgentKind:
+		case kind != o.cfg.Agent().Name:
 			held = fmt.Sprintf("the pane holds a %s agent", kind)
 		case name == agent:
 			return "", true, nil
@@ -69,7 +69,7 @@ func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 	case st == StateGone:
 		o.log.Raw("", fmt.Errorf("%s's start was cut short before the terminal saw a worker in tab %s to name %s: "+
 			"one still coming up there is left unnamed, for the next run to look for in its pane", id, tab, agent))
-	case kind != o.cfg.AgentKind || name == agent:
+	case kind != o.cfg.Agent().Name || name == agent:
 	default:
 		if err := o.namer.RenameAgent(ctx, pane, agent); err != nil {
 			o.log.Raw("", fmt.Errorf("cannot give %s's worker in tab %s the name %s as the run stops: %w", id, tab, agent, err))
@@ -213,7 +213,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 	}()
 	s := &workerStart{o: o, id: id, tab: tab, pane: pane, wt: wt, agent: agent,
 		mcpArgs: a.mcp, fixed: slices.Clip(a.mcp), rules: a.rules, report: a.report, launch: launch}
-	if c.ClaudeWorkers() {
+	if c.Agent().ClaudeArgs {
 		s.fixed = append(append(append(s.fixed, c.WorkerArgs...), o.permission...), o.unusedTools...)
 	}
 	if session != "" {
@@ -289,10 +289,10 @@ func (s *workerStart) fromPromptFile(ctx context.Context) (launched bool, stop *
 		return false, nil
 	}
 	o, c := s.o, s.o.cfg
-	err := o.starter.LaunchInPane(ctx, s.pane, c.AgentKind, s.args())
+	err := o.starter.LaunchInPane(ctx, s.pane, c.Agent().Name, s.args())
 	typed := err == nil
 	if typed {
-		_, err = o.namer.AdoptAgent(ctx, s.pane, c.AgentKind, s.agent)
+		_, err = o.namer.AdoptAgent(ctx, s.pane, c.Agent().Name, s.agent)
 	}
 	if ctx.Err() != nil {
 		return false, s.interrupted(ctx)
@@ -351,7 +351,7 @@ func (s *workerStart) startPlainly(ctx context.Context) *stopReason {
 	o := s.o
 	for range 10 {
 		args := s.args()
-		err := o.starter.StartAgent(ctx, s.agent, o.cfg.AgentKind, s.pane, args)
+		err := o.starter.StartAgent(ctx, s.agent, o.cfg.Agent().Name, s.pane, args)
 		if err == nil {
 			return nil
 		}
@@ -419,7 +419,7 @@ func (s *workerStart) adoptUnnamed(ctx context.Context) (AgentState, *stopReason
 		o.log.Raw("", err)
 		return StateGone, nil
 	}
-	if st == StateGone || name != "" || kind != o.cfg.AgentKind {
+	if st == StateGone || name != "" || kind != o.cfg.Agent().Name {
 		return StateGone, nil
 	}
 	err = o.namer.RenameAgent(ctx, s.pane, s.agent)

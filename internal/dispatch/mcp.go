@@ -13,7 +13,7 @@ const mcpUnchosen = "workers load every MCP server Claude Code finds on this mac
 // MCPWarning is the warning a run gives once about its workers' MCP servers, or "" for none: a
 // project that hasn't chosen them leaves Claude workers every server Claude Code finds.
 func (c Config) MCPWarning() string {
-	if c.MCP == nil && c.ClaudeWorkers() {
+	if c.MCP == nil && c.Agent().MCP {
 		return mcpUnchosen
 	}
 	return ""
@@ -22,8 +22,8 @@ func (c Config) MCPWarning() string {
 // mcpLabel names the MCP servers workers get, for the START line.
 func (c Config) mcpLabel() string {
 	switch {
-	case !c.ClaudeWorkers():
-		return "not passed to " + c.AgentKind + " workers"
+	case !c.Agent().MCP:
+		return "not passed to " + c.Agent().Name + " workers"
 	case c.MCP == nil:
 		return "all, not configured"
 	case len(*c.MCP) == 0:
@@ -44,8 +44,8 @@ func (o *Loop) sayMCP() {
 	switch {
 	case c.MCPWarning() != "":
 		o.emit(Event{Kind: EvInfo, Text: "  MCP: " + c.MCPWarning()})
-	case c.MCP != nil && !c.ClaudeWorkers():
-		o.info("  MCP: the servers in mcp_servers aren't passed to %s workers, only to Claude ones", c.AgentKind)
+	case c.MCP != nil && !c.Agent().MCP:
+		o.info("  MCP: the servers in mcp_servers aren't passed to %s workers, only to Claude ones", c.Agent().Name)
 	}
 }
 
@@ -54,7 +54,7 @@ func (o *Loop) sayMCP() {
 // none when the project hasn't chosen, or for another kind of agent.
 func (o *Loop) mcpArgs(wt string) ([]string, error) {
 	c := o.cfg
-	if c.MCP == nil || !c.ClaudeWorkers() {
+	if c.MCP == nil || !c.Agent().MCP {
 		return nil, nil
 	}
 	return project.MCPArgs(wt, *c.MCP)
@@ -65,7 +65,7 @@ func (o *Loop) mcpArgs(wt string) ([]string, error) {
 // hasn't chosen them, or chose them for workers of another kind, of which orchestra has only the
 // names. project.MCPArgs gives them.
 func (c Config) SessionMCP() []mcp.Server {
-	if c.MCP == nil || !c.ClaudeWorkers() {
+	if c.MCP == nil || !c.Agent().MCP {
 		return nil
 	}
 	return *c.MCP

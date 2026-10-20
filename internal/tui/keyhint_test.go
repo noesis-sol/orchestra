@@ -105,7 +105,7 @@ func TestNoHintTakesNoLine(t *testing.T) {
 	if last := lines[len(lines)-1]; strings.TrimSpace(last) == "" {
 		t.Errorf("the view ends in an empty line:\n%s", strings.Join(lines, "\n"))
 	}
-	m.cfg.AgentKind = "claude" // with no MCP servers chosen: a warning above the hint
+	m.cfg.MCP = nil // no MCP servers chosen: a warning above the hint
 	lines = strings.Split(ansi.Strip(m.View()), "\n")
 	if last := lines[len(lines)-1]; !strings.Contains(last, "! workers load every MCP server") {
 		t.Errorf("the warning is not the last line:\n%s", strings.Join(lines, "\n"))

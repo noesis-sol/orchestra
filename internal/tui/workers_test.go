@@ -127,7 +127,7 @@ func TestDashboardShowsTheSoloTicket(t *testing.T) {
 }
 
 func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
-	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3})
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3, MCP: noServers})
 	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
 		f.running(dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now().Add(-time.Duration(3-i) * time.Minute),

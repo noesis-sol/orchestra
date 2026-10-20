@@ -1,6 +1,7 @@
 package hookterm
 
 import (
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
@@ -17,16 +18,17 @@ type AgentUI interface {
 	Read(records, dir string) (told dispatch.AgentState, settle func(screen func() (string, error)) dispatch.AgentState)
 }
 
-// agentUIs are the agent kinds whose sessions report through hooks, by the kind a terminal launches
-// (dispatch.Config.AgentKind): adding one is its package and a row here.
+// agentUIs are the agent kinds whose sessions report through hooks, by the kind's name in
+// internal/agentkind's table, as a terminal launches it (dispatch.Config.AgentKind): adding one is its
+// package and a row here.
 var agentUIs = map[string]AgentUI{
-	"claude": claude.UI{},
+	agentkind.Claude.Name: claude.UI{},
 }
 
-// UI is the AgentUI of the agent kind; a kind without one launches with no records, and its state is
-// unknown.
+// UI is the AgentUI of the agent kind; a kind without one, or none (""), launches with no records, and
+// its state is unknown.
 func UI(kind string) AgentUI {
-	if ui, ok := agentUIs[kind]; ok {
+	if ui, ok := agentUIs[agentkind.Named(kind).Name]; ok {
 		return ui
 	}
 	return noUI{}
@@ -35,7 +37,7 @@ func UI(kind string) AgentUI {
 // Reports reports whether the agent kind's sessions report through hooks, which a hook-driven terminal
 // needs to tell what they are doing.
 func Reports(kind string) bool {
-	_, ok := agentUIs[kind]
+	_, ok := agentUIs[agentkind.Named(kind).Name]
 	return ok
 }
 

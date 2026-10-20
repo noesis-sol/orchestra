@@ -28,7 +28,7 @@ type ticketHooks struct {
 
 // hooksRecorded reports whether the run's workers note their permission prompts and compactions.
 func (o *Loop) hooksRecorded() bool {
-	return o.reporter != nil && o.cfg.ClaudeWorkers()
+	return o.reporter != nil && o.cfg.Agent().Hooks
 }
 
 // readHooks reads what ticket id's worker in wt noted, as its latest worker's record; gone says its

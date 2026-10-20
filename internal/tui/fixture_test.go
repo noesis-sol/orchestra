@@ -6,7 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/mcp"
 )
+
+// noServers are the MCP servers of a project that chose none, whose run, unlike one whose project
+// hasn't chosen, has no MCP warning above the hint (dispatch.Config.MCPWarning).
+var noServers = &[]mcp.Server{}
 
 // fixture builds a test's dashboard as a run does: each step is a message through Update, the loop's
 // events and its workers' statuses as dispatch sends them, so a test can't make a state no run makes,
@@ -20,7 +25,7 @@ type fixture struct {
 // run is a fixture for a run of up to 40 tickets on batch, 80 columns wide and not yet sized, its
 // callbacks doing nothing.
 func run(t *testing.T) *fixture {
-	return &fixture{t: t, m: NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {},
+	return &fixture{t: t, m: NewDashboard(dispatch.Config{Limit: 40, Base: "batch", MCP: noServers}, func() {}, func(bool) {},
 		func(string) {})}
 }
 

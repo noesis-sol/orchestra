@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -400,7 +401,7 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"stop after this many tickets in total (default: none) [LIMIT]")
 	bindWhole(e, &c.DoneSoFar, "done-so-far", "DONE_SO_FAR", 0,
 		"tickets dispatched in earlier runs, counted toward --limit [DONE_SO_FAR]")
-	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", "claude", parseText,
+	bindEnv(e, fs.StringVar, &c.AgentKind, "agent", "AGENT_KIND", agentkind.Default.Name, parseText,
 		"agent kind for the workers: claude, or another Herdr agent kind (Herdr only) [AGENT_KIND]")
 	bindEnv(e, fs.StringVar, &c.WorkerPrompt, "prompt", "WORKER_PROMPT", "", parseText,
 		"worker instructions with TICKET_ID as placeholder (default: .orchestra/worker-prompt.md, "+
@@ -559,7 +560,7 @@ func resolveProject(
 	// config; one this machine can't give them is for the maintainer to fix before they start.
 	switch {
 	case settings.MCPServers == nil:
-	case !c.ClaudeWorkers(): // only named: the loop says they aren't passed to such workers
+	case !c.Agent().MCP: // only named: the loop says they aren't passed to such workers
 		named := []mcp.Server{}
 		for _, name := range *settings.MCPServers {
 			named = append(named, mcp.Server{Name: name})

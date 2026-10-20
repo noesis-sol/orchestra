@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -544,16 +545,13 @@ func (t Terminal) WaitStarted(ctx context.Context, name string) bool {
 // (claude.ShowsUsageLimit).
 func (t Terminal) Status(ctx context.Context, name string) (dispatch.AgentState, error) {
 	_, kind, st, err := readAgent(run(ctx, command.ReadLimit, "agent", "get", name))
-	if err == nil && kind == claudeAgent &&
+	if err == nil && agentkind.Named(kind).UsageLimitOnScreen &&
 		(st == dispatch.StateIdle || st == dispatch.StateDone || st == dispatch.StateBlocked) &&
 		claude.ShowsUsageLimit(t.Screen(ctx, name, st)) {
 		return dispatch.StateLimited, nil
 	}
 	return st, err
 }
-
-// claudeAgent is Herdr's kind of a Claude Code agent.
-const claudeAgent = "claude"
 
 // Screen returns the end of the agent's terminal, given its state as just read ("" if not known), as
 // dispatch.Agents gives it: the last dispatch.ScreenLines lines. Herdr can capture scrollback only

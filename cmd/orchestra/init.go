@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
@@ -227,9 +228,9 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 		"<prefix>-<hash>: lowercase letters, digits and hyphens, starting with a letter; for a new Beads bd init "+
 		"takes it, and an existing one's tickets are all renamed to it with bd rename-prefix (asked when omitted; "+
 		"kept when not given)")
-	bindEnv(e, fs.StringVar, &f.agent, "agent", "AGENT_KIND", "claude", parseText, "the workers' agent kind, "+
-		"whose skill folder gets the skills test work needs: .claude/skills for claude, .agents/skills for codex "+
-		"[AGENT_KIND]")
+	bindEnv(e, fs.StringVar, &f.agent, "agent", "AGENT_KIND", agentkind.Default.Name, parseText,
+		"the workers' agent kind, whose skill folder gets the skills test work needs: .claude/skills for claude, "+
+			".agents/skills for codex [AGENT_KIND]")
 	concurrent := bindGiven(e, fs.IntVar, &f.concurrent, "concurrent", "", 0, parseWhole,
 		"tickets to run at the same time by default (asked when omitted)")
 	concurrent.short("c")

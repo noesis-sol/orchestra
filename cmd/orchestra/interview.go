@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -149,7 +150,7 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := p.panes.LaunchInPane(ctx, pane, "claude", args); err != nil {
+	if err := p.panes.LaunchInPane(ctx, pane, agentkind.Claude.Name, args); err != nil {
 		return pane, err
 	}
 	return pane, p.started(ctx, pane)
@@ -163,7 +164,7 @@ func (p paneSession) started(ctx context.Context, pane string) error {
 	for {
 		_, kind, st, err := p.panes.PaneAgent(ctx, pane)
 		switch {
-		case err == nil && st != dispatch.StateGone && kind == "claude":
+		case err == nil && st != dispatch.StateGone && kind == agentkind.Claude.Name:
 			return nil
 		case err == nil && st == dispatch.StateGone:
 			// No agent in a pane that is gone, too: Herdr can't tell them apart.

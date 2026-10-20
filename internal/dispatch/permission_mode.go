@@ -15,8 +15,8 @@ func (c Config) permissionLabel() string {
 	switch {
 	case c.WorkerPermissionMode == "":
 		return ""
-	case !c.ClaudeWorkers():
-		return ", permission mode: not passed to " + c.AgentKind + " workers"
+	case !c.Agent().ClaudeArgs:
+		return ", permission mode: not passed to " + c.Agent().Name + " workers"
 	}
 	return ", permission mode: " + c.WorkerPermissionMode
 }
@@ -30,7 +30,7 @@ func (c Config) permissionLabel() string {
 func (o *Loop) permissionArgs(ctx context.Context, help string, err error) []string {
 	c := o.cfg
 	mode := c.WorkerPermissionMode
-	if mode == "" || !c.ClaudeWorkers() {
+	if mode == "" || !c.Agent().ClaudeArgs {
 		return nil
 	}
 	listed := listedPermissionMode(help, mode)

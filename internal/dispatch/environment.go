@@ -302,7 +302,7 @@ func (o *Loop) freeProbeName(ctx context.Context, agent string) error {
 // it does when the project asks for that (Config.ProbeHooks).
 func (o *Loop) probeArgs() ([]string, error) {
 	c := o.cfg
-	if !c.ClaudeWorkers() {
+	if !c.Agent().ClaudeArgs {
 		return nil, nil
 	}
 	args := append(append([]string{"--strict-mcp-config"}, o.permission...), o.unusedTools...)
@@ -328,10 +328,10 @@ func (o *Loop) startProbe(
 		return "", time.Time{}, fmt.Errorf("no tab for it in workspace %s: %w", c.Workspace, err)
 	}
 	deadline = time.Now().Add(probeLimit)
-	err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, args)
+	err = o.starter.StartAgent(ctx, agent, c.Agent().Name, pane, args)
 	if err != nil && len(args) > 0 && errors.Is(err, ErrArgumentRefused) {
 		o.log.Raw("", err)
-		err = o.starter.StartAgent(ctx, agent, c.AgentKind, pane, nil)
+		err = o.starter.StartAgent(ctx, agent, c.Agent().Name, pane, nil)
 	}
 	if err != nil {
 		// 'agent start' can fail while the agent still comes up.

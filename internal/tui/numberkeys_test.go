@@ -14,7 +14,7 @@ import (
 // numberedRun is a run 80x60 with n workers running, k-01 the oldest, recording the tabs it asks to
 // focus. Each worker's tab is t<its number>, but k-03's: it has none.
 func numberedRun(t *testing.T, n int, focused *[]string) *fixture {
-	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: n}).
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: n, MCP: noServers}).
 		onFocus(func(tab string) { *focused = append(*focused, tab) }).sized(80, 60)
 	now := time.Now()
 	for i := 1; i <= n; i++ {

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/organ"
-	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // unusedTools are the tools Claude Code describes in every request of a worker that orchestra's
@@ -42,7 +42,7 @@ func (o *Loop) unusedToolArgs(help string) []string {
 // .claude/skills, or in .claude/commands, whose commands Claude Code lists and runs as skills, or a
 // plugin its committed Claude settings enable (projectEnablesPlugins). It is read once, as the run begins.
 func projectHasSkills(repo string) bool {
-	for _, dir := range []string{project.SkillsDir("claude"), ".claude/commands"} {
+	for _, dir := range []string{agentkind.Claude.SkillsDir, ".claude/commands"} {
 		entries, err := os.ReadDir(filepath.Join(repo, filepath.FromSlash(dir)))
 		if err == nil && len(entries) > 0 {
 			return true

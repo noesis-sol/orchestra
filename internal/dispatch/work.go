@@ -453,7 +453,7 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cu
 		}
 		// Claude starts with its prompt already submitted, so nothing is pasted into its input box.
 		// Herdr can only pass a one-line argument, so the prompt goes in a file the worker reads.
-		if c.LaunchPrompt && c.ClaudeWorkers() {
+		if c.LaunchPrompt && c.Agent().LaunchPrompt {
 			launch, err := project.WriteLaunchPrompt(wt, id, ws.prompt)
 			ws.launch, err = optional(o.log, launch, err, "cannot write the launch prompt for "+id+", pasting it instead")
 			if err != nil {
@@ -471,7 +471,7 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cu
 		o.newWorkerHooks(id, wt)
 		report, err = o.envReporter(o.workerEnv(ctx)).ResumeArgs(wt)
 		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s resumed worker to report what it does")
-	case o.reporter != nil && c.ClaudeWorkers():
+	case o.reporter != nil && c.Agent().Hooks:
 		o.newWorkerHooks(id, wt)
 		report, err = o.envReporter(o.workerEnv(ctx)).ReportArgs(wt)
 		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s worker to report what it does")

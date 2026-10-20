@@ -257,7 +257,7 @@ func (o *Loop) begin(ctx context.Context) {
 	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
 		"check timeout: %s, terminal: %s, %s: %s, agent: %s%s, worktrees: %s, MCP servers: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency, ticketLimit,
-		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.AgentKind, c.permissionLabel(),
+		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.Agent().Name, c.permissionLabel(),
 		c.WTRoot, c.mcpLabel())
 	if c.Watch != "" {
 		o.info("  to see the workers' tabs: %s", c.Watch)
@@ -281,7 +281,7 @@ func (o *Loop) begin(ctx context.Context) {
 // workers of another kind, which aren't Claude Code's.
 func (o *Loop) claudeHelp(ctx context.Context) (string, error) {
 	switch {
-	case !o.cfg.ClaudeWorkers():
+	case !o.cfg.Agent().ClaudeArgs:
 		return "", nil
 	case o.help == nil:
 		return "", errors.New("nothing to ask it with")

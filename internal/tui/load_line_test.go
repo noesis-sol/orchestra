@@ -19,7 +19,7 @@ func gbs(n float64) int64 { return int64(n * gb) }
 
 // loadedDashboard is a dashboard 120x40 with four workers in four slots, given reading r.
 func loadedDashboard(t *testing.T, r load.Reading) Dashboard {
-	f := run(t).config(dispatch.Config{Limit: 40, Base: "main", Concurrency: 4}).sized(120, 40)
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "main", Concurrency: 4, MCP: noServers}).sized(120, 40)
 	for _, id := range []string{"k-1", "k-2", "k-3", "k-4"} {
 		f.running(dispatch.Status{Ticket: id, Title: "Ticket " + id, Started: time.Now(), Agent: dispatch.StateWorking})
 	}

@@ -277,7 +277,7 @@ func (o *Loop) unnamedInPane(ctx context.Context, id, tab, pane string) (AgentSt
 	switch {
 	case err != nil:
 		return "", err
-	case st == StateGone || kind != o.cfg.AgentKind || name != "":
+	case st == StateGone || kind != o.cfg.Agent().Name || name != "":
 		return StateGone, nil // nothing there, or another's
 	}
 	return st, nil

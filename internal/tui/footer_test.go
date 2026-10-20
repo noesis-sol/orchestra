@@ -15,13 +15,13 @@ import (
 func TestFooterKeepsRoomForItsLines(t *testing.T) {
 	for _, watch := range []bool{false, true} {
 		for _, warn := range []bool{false, true} {
-			cfg := dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}
+			cfg := dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2, MCP: noServers}
 			want := footFixedLines
 			if watch {
 				cfg.Watch, want = "herdr attach", want+1
 			}
 			if warn {
-				cfg.AgentKind, want = "claude", want+1
+				cfg.MCP, want = nil, want+1
 			}
 			name := fmt.Sprintf("watch %v, warning %v", watch, warn)
 			f := run(t).config(cfg).running(dispatch.Status{Ticket: "k-1", Title: "one"}).sized(80, 40)

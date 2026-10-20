@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/skills"
 )
 
@@ -30,16 +31,10 @@ func (c Choice) FilesTestWork() bool {
 }
 
 // SkillsDir is the folder, from the repository's top, where the workers' agent kind finds a
-// project's skills: .claude/skills for claude (and "", the default kind), .agents/skills for codex.
-// It is "" for a kind orchestra knows no folder for.
+// project's skills, as its row in internal/agentkind gives it: .claude/skills for claude (and "", the
+// default kind), .agents/skills for codex. It is "" for a kind orchestra knows no folder for.
 func SkillsDir(agent string) string {
-	switch agent {
-	case "", "claude":
-		return ".claude/skills"
-	case "codex":
-		return ".agents/skills"
-	}
-	return ""
+	return agentkind.Of(agent).SkillsDir
 }
 
 // SkillPlan is the create-check-suite skill as init would install it for the workers' agent.

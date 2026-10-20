@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/load"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -497,7 +498,7 @@ type Config struct {
 	Watch          string // how to see the workers' tabs from elsewhere (tmux attach -t …); "" if in sight
 	Limit          int    // stop after this many tickets, DoneSoFar's included; NoLimit for none
 	DoneSoFar      int
-	AgentKind      string
+	AgentKind      string // the workers' agent kind, as --agent names it; "" is agentkind.Default (see Agent)
 	WTRoot         string
 	LogPath        string
 	ReportsDir     string
@@ -615,8 +616,8 @@ func (c Config) terminalLabel(t string) TerminalLabel {
 	return TerminalLabel{Name: t, Tabs: "workspace"}
 }
 
-// ClaudeWorkers reports whether the workers are Claude Code agents (AgentKind claude), which alone
-// take Claude's arguments, hooks and MCP servers.
-func (c Config) ClaudeWorkers() bool {
-	return c.AgentKind == "claude"
+// Agent is the workers' agent kind, AgentKind's row of the table in internal/agentkind, which says what
+// they are given and told.
+func (c Config) Agent() agentkind.Kind {
+	return agentkind.Of(c.AgentKind)
 }
