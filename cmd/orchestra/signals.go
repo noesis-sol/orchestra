@@ -16,6 +16,14 @@ import (
 // terminal or Herdr pane.
 var stopSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 
+// catchStop starts catching stopSignals for a subcommand whose policy is stopCancels (see
+// stopPolicy): the first of them cancels stop.ctx, a copy of parent, and stop.stopped reports whether
+// one has, rather than parent ending. release stops catching them.
+func catchStop(parent context.Context) (stop stopCatch, release func()) {
+	ctx, cancel := signal.NotifyContext(parent, stopSignals...)
+	return stopCatch{ctx: ctx, stopped: func() bool { return ctx.Err() != nil && parent.Err() == nil }}, cancel
+}
+
 // pipeSignals are what a write to stdout or stderr gets once nothing reads it, as with
 // orchestra --plain | tee and Ctrl+C, which ends tee too: SIGPIPE. Go's default ends orchestra at that
 // write, in the middle of winding down; caught, the write fails with EPIPE instead (and the printer

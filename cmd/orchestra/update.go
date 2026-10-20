@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/update"
@@ -21,23 +20,27 @@ const exitUpdateAvailable = 1
 const updateSynopsis = "[--check] [--force]"
 
 // runUpdateHere is orchestra update on the binary running, of this build's version, from e's releases. It
-// returns the exit code.
-func runUpdateHere(ctx context.Context, args []string, e cmdEnv) int {
+// returns the exit code. It works under stop's context alone.
+func runUpdateHere(_ context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(e.stderr, "orchestra update: cannot find this binary:", err)
 		return dispatch.ExitSetup
 	}
-	return runUpdate(ctx, args, e.version, exe, e.releases, e.stdout, e.stderr)
+	return runUpdate(stop, args, e.version, exe, e.releases, e.stdout, e.stderr)
 }
 
 // runUpdate replaces the binary at exe, orchestra of version current, with the latest release's, which
 // u reads and installs. It returns the exit code.
 //
+// A stop signal, caught as update's stopPolicy says, cancels the requests and the new binary's
+// --version, so that Install removes its temporary file as it fails, rather than the signal ending
+// orchestra with the file left beside exe.
+//
 // A run going doesn't hold it off: nothing runs the binary during a run (workers' hooks are shell, the
 // organs are claude), and Install renames the new one over exe, so a run keeps the build it started
 // with and the next starts the new one.
-func runUpdate(ctx context.Context, args []string, current, exe string, u update.Updater,
+func runUpdate(stop stopCatch, args []string, current, exe string, u update.Updater,
 	stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -56,12 +59,7 @@ func runUpdate(ctx context.Context, args []string, current, exe string, u update
 	if code, ok := parseArgs(fs, args, "update"); !ok {
 		return code
 	}
-	// A stop signal cancels the requests and the new binary's --version, so that Install removes its
-	// temporary file as it fails, rather than the signal ending orchestra with the file left beside exe.
-	parent := ctx
-	ctx, stop := signal.NotifyContext(ctx, stopSignals...)
-	defer stop()
-	stopped := func() bool { return ctx.Err() != nil && parent.Err() == nil }
+	ctx, stopped := stop.ctx, stop.stopped
 
 	rel, err := u.Latest(ctx)
 	if stopped() {

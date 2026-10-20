@@ -92,20 +92,54 @@ type subcommand struct {
 	// synopsis is its flags, as its usage line gives them after 'orchestra <name> ', a newline where
 	// the line breaks: the main usage, the hint for flags given before it and its own -h all read it.
 	synopsis string
-	run      func(ctx context.Context, args []string, e cmdEnv) int // its exit code
+	stops    stopPolicy // what a stop signal does to it
+	// run is the subcommand, given the stop signals' catch its policy sets up; it returns its exit code
+	run func(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int
+}
+
+// stopPolicy is what a stop signal (stopSignals) does to a subcommand while it runs, decided once,
+// in its row of subcommands.
+type stopPolicy int
+
+const (
+	// stopEnds leaves stop signals their default effect: the first ends orchestra at once. For a
+	// subcommand that changes nothing.
+	stopEnds stopPolicy = iota
+	// stopCancels catches stop signals: the first cancels the context its stopCatch gives, and the
+	// subcommand ends where it can say what it did and what not, exit code 130.
+	stopCancels
+)
+
+// stopCatch is how a subcommand learns of a stop signal, as its stopPolicy has it caught: ctx, a copy
+// of the subcommand's context that the first stop signal cancels, and stopped, which reports whether
+// one has, rather than the subcommand's context ending. Under stopEnds, ctx is the subcommand's
+// context and stopped is always false.
+type stopCatch struct {
+	ctx     context.Context
+	stopped func() bool
+}
+
+// catch sets up the stop signals' handling p says for a subcommand run under ctx. Call release as the
+// subcommand ends: from then on stop signals have their default effect again.
+func (p stopPolicy) catch(ctx context.Context) (stop stopCatch, release func()) {
+	if p == stopCancels {
+		return catchStop(ctx)
+	}
+	return stopCatch{ctx: ctx, stopped: func() bool { return false }}, func() {}
+}
+
+// start runs c with args, its stop signals handled as its policy says, and returns its exit code.
+func (c subcommand) start(ctx context.Context, args []string, e cmdEnv) int {
+	stop, release := c.stops.catch(ctx)
+	defer release()
+	return c.run(ctx, args, e, stop)
 }
 
 // subcommands are orchestra's subcommands, in the order the main usage lists them.
 var subcommands = []subcommand{
-	{"init", initSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runInit(ctx, e.dir, args, e.getenv, e.stdin, e.stdout, e.stderr)
-	}},
-	{"plan", planSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runPlan(ctx, e.dir, args, e.stdout, e.stderr)
-	}},
-	{"update", updateSynopsis, func(ctx context.Context, args []string, e cmdEnv) int {
-		return runUpdateHere(ctx, args, e)
-	}},
+	{"init", initSynopsis, stopCancels, runInit},
+	{"plan", planSynopsis, stopCancels, runPlan},
+	{"update", updateSynopsis, stopCancels, runUpdateHere},
 }
 
 // findSubcommand is the subcommand called name, if there is one.
@@ -157,7 +191,7 @@ func run(ctx context.Context, args []string, e cmdEnv) (err error) {
 			return status(claude.Hook(args[2:], e.getenv, e.stdin, e.stderr))
 		}
 		if c, ok := findSubcommand(args[1]); ok {
-			return status(c.run(ctx, args[2:], e))
+			return status(c.start(ctx, args[2:], e))
 		}
 	}
 	cfg, code, ok := configure(ctx, args[1:], e)

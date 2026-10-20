@@ -98,7 +98,10 @@ func oldBinary(t *testing.T) string {
 func updateIn(t *testing.T, current, exe string, u update.Updater, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut strings.Builder
-	code = runUpdate(runCtx(t), args, current, exe, u, &out, &errOut)
+	c, _ := findSubcommand("update") // stop signals handled as the table says
+	stop, release := c.stops.catch(runCtx(t))
+	defer release()
+	code = runUpdate(stop, args, current, exe, u, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
 

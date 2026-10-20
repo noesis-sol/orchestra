@@ -86,8 +86,8 @@ func TestInitStoppedWhileWritingItsSetUp(t *testing.T) {
 	var out, errOut strings.Builder
 	done := make(chan int, 1)
 	go func() {
-		done <- runInit(testCtx(ctx, t), repo, []string{"--check", "make check"}, func(k string) string { return env[k] },
-			strings.NewReader(""), &out, &errOut)
+		done <- startIn(testCtx(ctx, t), "init", []string{"--check", "make check"},
+			cmdEnv{dir: repo, getenv: func(k string) string { return env[k] }, stdin: strings.NewReader(""), stdout: &out, stderr: &errOut})
 	}()
 	stopWhileStalled(t, stalled, release, cancel)
 	var code int

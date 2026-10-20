@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os/signal"
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
@@ -18,8 +17,14 @@ import (
 const planSynopsis = "[--apply]"
 
 // runPlan proposes blocks links between the open tickets that touch the same code, in the
-// repository around dir, and adds them with --apply. It returns the exit code.
-func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) int {
+// repository around e's dir, and adds them with --apply. It returns the exit code.
+//
+// A stop signal, caught as plan's stopPolicy says, cuts its reading short, saying it changed nothing,
+// and stops --apply between two links, saying which it added and which not; without the catch, Go
+// would end it with no word between two bd dep add. The link under way is added whole: its bd runs on
+// ctx, which no stop signal cancels, in a process group of its own, out of the terminal's Ctrl+C.
+func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
+	stdout, stderr := e.stdout, e.stderr
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	apply := fs.Bool("apply", false, "add the proposed links with bd dep add")
@@ -34,8 +39,11 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	if code, ok := parseArgs(fs, args, "plan"); !ok {
 		return code
 	}
-	repo, err := git.Git{}.TopLevel(ctx, dir)
-	if err != nil {
+	repo, err := git.Git{}.TopLevel(stop.ctx, e.dir)
+	switch {
+	case stop.stopped():
+		return stoppedReading(stderr)
+	case err != nil:
 		fmt.Fprintln(stderr, "orchestra plan: not inside a git repository")
 		return dispatch.ExitSetup
 	}
@@ -51,19 +59,28 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	}
 
 	tracker := beads.Tracker{Repo: repo, ExcludeTypes: types}
-	open, existing, err := tracker.Open(ctx)
-	if err != nil {
+	open, existing, err := tracker.Open(stop.ctx)
+	switch {
+	case stop.stopped():
+		return stoppedReading(stderr)
+	case err != nil:
 		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
 		return dispatch.ExitTool
 	}
-	tracked, err := git.Git{}.TrackedFiles(ctx, repo)
-	if err != nil { // the footprints go by the names alone
+	tracked, err := git.Git{}.TrackedFiles(stop.ctx, repo)
+	switch {
+	case stop.stopped():
+		return stoppedReading(stderr)
+	case err != nil: // the footprints go by the names alone
 		fmt.Fprintln(stderr, "orchestra plan: cannot list the files git tracks:", err)
 		tracked = nil
 	}
 	// a footprint leaves out the files any of the checks names
 	links := dispatch.PlanLinks(open, existing, tracked, settings.CheckCommands(),
-		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(ctx, repo))
+		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(stop.ctx, repo))
+	if stop.stopped() {
+		return stoppedReading(stderr)
+	}
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",
 			plural(len(open), "open ticket"))
@@ -85,17 +102,9 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	}
 	fmt.Fprintf(stdout, "%s %s between the %s:\n",
 		verb, plural(len(links), "blocks link"), plural(len(open), "open ticket"))
-	// A stop signal stops --apply between two links, saying which it added and which not; without the
-	// catch, Go would end it with no word between two bd dep add. The link under way is added whole:
-	// its bd runs on the parent context, in a process group of its own, out of the terminal's Ctrl+C.
-	stop, unwatch := ctx, func() {}
-	if *apply {
-		stop, unwatch = signal.NotifyContext(ctx, stopSignals...)
-	}
-	defer unwatch()
 	var added, notAdded []string
 	for i, l := range links {
-		if stop.Err() != nil && ctx.Err() == nil {
+		if *apply && stop.stopped() {
 			for _, l := range links[i:] {
 				notAdded = append(notAdded, waits(l))
 			}
@@ -128,6 +137,13 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 
 // waits names link l as stoppedPlan lists it: "k-2 waits for k-1".
 func waits(l dispatch.Link) string { return l.Blocked + " waits for " + l.Blocker }
+
+// stoppedReading says that a stop signal stopped plan as it read the tickets and the code, before it
+// proposed a link, and returns exit code 130.
+func stoppedReading(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "orchestra plan: stopped before proposing any link; nothing changed.")
+	return dispatch.ExitInterrupted
+}
 
 // stoppedPlan says that a stop signal stopped plan --apply with the links added and those not, and
 // returns exit code 130.

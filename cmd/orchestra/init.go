@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -24,13 +23,12 @@ import (
 	"golang.org/x/term"
 )
 
-// runInit sets up .orchestra/ in the repository around dir, asking what it needs when run in a
-// terminal, and returns the exit code. It reads the form's answers from stdin and prints to stdout
-// and stderr. It plans what to set up from the project and the flags, asks the rest, sets up Beads,
-// then applies the choice.
-func runInit(
-	ctx context.Context, dir string, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer,
-) int {
+// runInit sets up .orchestra/ in the repository around e's dir, asking what it needs when run in a
+// terminal, and returns the exit code. It reads the form's answers from e's stdin and prints to its
+// stdout and stderr. It plans what to set up from the project and the flags, asks the rest, sets up
+// Beads, then applies the choice.
+func runInit(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
+	dir, getenv, stdin, stdout, stderr := e.dir, e.getenv, e.stdin, e.stdout, e.stderr
 	f, code, ok := parseInitFlags(args, getenv, stderr)
 	if !ok {
 		return code
@@ -52,14 +50,13 @@ func runInit(
 	ui := tui.NewInitScreen(stdout, getenv("TERM"))
 	ui.Header(repo)
 	scout := organ.Client{Bin: "claude", Model: getenv("ORGAN_MODEL"), Effort: scoutEffort(getenv, existing.OrganEffort)}
-	// A stop signal is caught from the form to the end of what init writes. While the form asks, it
-	// cancels the form as Esc does: Bubble Tea's own handler would take SIGTERM for a submitted form.
-	// After it, init stops at the end of the step under way, saying what it did; without the catch, Go
-	// would end init with no word between two of the files it writes.
-	stopCtx, stop := signal.NotifyContext(ctx, stopSignals...)
-	defer stop()
+	// A stop signal, caught as init's stopPolicy says, cancels stop.ctx. While the form asks, it cancels
+	// the form as Esc does: Bubble Tea's own handler would take SIGTERM for a submitted form. After it,
+	// init stops at the end of the step under way, saying what it did; without the catch, Go would end
+	// init with no word between two of the files it writes.
+	stopCtx := stop.ctx
 	spent, err := askOrDefault(stopCtx, stdin, stdout, getenv("TERM"), interactive, repo, &choice, ask, scout)
-	signalled := stopCtx.Err() != nil && ctx.Err() == nil
+	signalled := stop.stopped()
 	steps := scoutSteps(spent)
 	if err != nil || signalled {
 		ui.Steps(steps)
