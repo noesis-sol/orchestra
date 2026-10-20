@@ -445,7 +445,7 @@ ended with, say why it ended:
 | `USAGE_LIMIT` | 8 | a worker reached the account's usage limit, and the run held for it longer than `usage_limit_wait` (6h by default) | Nothing to fix: the limited workers are left in their tabs, noted on their tickets. Tell the user when the limit resets (the line says); the next run carries the workers over and tells them to carry on once it has. |
 | `MERGE_FAILED` | 6 | the ticket's branch doesn't fast-forward after rebasing | Rare: something else changed the base. Rebase the worktree, check, merge by hand. |
 | `DIRTY_TREE` | 5 | uncommitted changes in the main checkout, or it left its branch | `git status`. These are the user's changes: ask before touching them. |
-| `START_FAILED`, `TAB_FAILED`, `TERMINAL_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | the terminal (Herdr, tmux or cmux), Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout three times running); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
+| `START_FAILED`, `TAB_FAILED`, `TERMINAL_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | the terminal (Herdr, tmux or cmux), Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout, or answer what a finished ticket's merge turns on, three times running; that ticket is left unmerged and labelled, its worktree and tab for review); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, the next run merges it. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled or left for the next run: label each ticket the line leaves running (`bd label add <id> unmerged`), and merge one its worker closes by hand (below). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
@@ -595,8 +595,9 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   worktree, so it was deferred without starting a worker: orchestra writes those files only in the
   worktree's own `.orchestra/run` folder, which git ignores. Look at the link with the user, remove
   it, then `bd undefer <id>`.
-- `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, so its branch wasn't
-  rebased before its worker started; it is rebased when it merges.
+- `REBASE_SKIPPED`: a returning ticket's worktree had uncommitted changes, or git could not tell
+  whether its branch is behind the base or its worktree clean, so its branch wasn't rebased before its
+  worker started; it is rebased when it merges.
 - `PERMISSION_MODE: claude --help doesn't list the permission mode <mode>` (or `cannot read claude
   --help …`), in the `START` block: the workers start in the mode Claude Code's settings give, without
   `--permission-mode`. Tell the user; `claude update` may bring the mode.

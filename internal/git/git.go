@@ -17,12 +17,10 @@ import (
 // Git is git as orchestra uses it: the state of checkouts and branches, worktrees, rebasing and
 // merging finished tickets, the history the organs read, and what orchestra init reads and stages.
 //
-// What a failed git call reads as, method by method: Unchanged and Tracks report false;
-// RebaseInProgress true, as a rebase can't be shown to be over; DirtyWorktree
-// git's error text, as uncommitted work it can't rule out; CountCommits -1, and OwnCommits "" and -1;
-// CommitNaming(On), MergeBase, Head and the texts for people (ShortStatus, OneLineLog, DiffStat,
-// Subjects) ""; Changes, ChangedFiles, ConflictedFiles and TrackedFiles none. The other methods return
-// git's error.
+// A method that asks git a question returns git's error beside its answer when git fails to answer,
+// which is not the same as no, none or "": the caller decides what to do without one. Only what is
+// for people and the organs reads a failed git call as nothing: the texts (ShortStatus, OneLineLog,
+// DiffStat, Subjects) "", ChangedFiles and LastCommit none.
 type Git struct{}
 
 // readGit runs a git command that changes nothing, in dir ("" for the working directory), within
@@ -124,23 +122,27 @@ func branchOfStatus(line string) (string, bool) {
 
 // DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
 // ticket's scratch). Unlike DirtyTree it counts .claude/, .beads/ and the rest of .orchestra/: a
-// change a worker left there is its ticket's work. A failed git call counts as dirty.
-func (Git) DirtyWorktree(ctx context.Context, dir string) string {
+// change a worker left there is its ticket's work. It returns git's error when git can't tell, which
+// is not the same as clean.
+func (Git) DirtyWorktree(ctx context.Context, dir string) (string, error) {
 	out, err := readGit(ctx, "", "-C", dir, "status", "--porcelain",
 		"--", ".", ":(exclude).orchestra/run")
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
-	return strings.TrimSpace(out)
+	return strings.TrimSpace(out), nil
 }
 
 // Changes maps each changed or untracked file in repo, under paths when any are given, to its
 // two-letter code from 'git status --porcelain' ("M ", "??", …), listing each untracked file rather
-// than its folder. It is empty when git can't tell.
-func (Git) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
+// than its folder. It returns git's error when git can't tell, which is not the same as no changes.
+func (Git) Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error) {
 	args := append([]string{"status", "--porcelain", "-z", "--untracked-files=all", "--"}, paths...)
-	out, _ := readGit(ctx, repo, args...) // empty on failure, as documented
-	return parseStatus(out)
+	out, err := readGit(ctx, repo, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseStatus(out), nil
 }
 
 // parseStatus reads 'git status --porcelain -z': a two-letter code, a space and the path, with a
@@ -352,29 +354,34 @@ func (Git) BranchesStartingWith(ctx context.Context, repo, prefix string) ([]str
 }
 
 // CommitNaming returns the latest commit on branch (not on base) whose message names the ticket,
-// as "<hash> <subject>" cut to 70 characters, or "".
-func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
+// as "<hash> <subject>" cut to 70 characters, or "" when none does; git's error when git can't list
+// them.
+func (g Git) CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error) {
 	return g.CommitNamingOn(ctx, repo, base+".."+branch, ticket)
 }
 
 // CommitNamingOn returns the latest commit reachable from rev (or in a range such as a..b) whose
-// message names the ticket, as "<hash> <subject>" cut to 70 characters, or "".
-func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
-	// On failure none is found: nothing is merged.
-	out, _ := readGit(ctx, repo, "log", "--no-show-signature",
+// message names the ticket, as "<hash> <subject>" cut to 70 characters, or "" when none does; git's
+// error when git can't list them.
+func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) (string, error) {
+	out, err := readGit(ctx, repo, "log", "--no-show-signature",
 		"--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev, "--")
-	return latestNaming(out, ticket)
+	if err != nil {
+		return "", err
+	}
+	return latestNaming(out, ticket), nil
 }
 
 // OwnCommits is CommitNaming and CountCommits of base..branch from one git log: the latest commit on
 // branch, not on base, whose message names the ticket, as "<hash> <subject>" cut to 70 characters, or
-// ""; and how many commits branch has that base hasn't, or -1 when git can't list them.
-func (Git) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int) {
+// ""; and how many commits branch has that base hasn't. It returns git's error when git can't list
+// them.
+func (Git) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int, err error) {
 	out, err := readGit(ctx, repo, "log", "--no-show-signature", "--format=%h %s%x00%B%x1e", base+".."+branch, "--")
 	if err != nil {
-		return "", -1
+		return "", 0, err
 	}
-	return latestNaming(out, ticket), strings.Count(out, "\x1e")
+	return latestNaming(out, ticket), strings.Count(out, "\x1e"), nil
 }
 
 // CommitNotNaming returns the oldest commit in revs, a range such as a..b, whose message doesn't name
@@ -451,19 +458,25 @@ func (Git) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, er
 	return answer(err) // exit 1: not an ancestor
 }
 
-// MergeBase returns the best common ancestor of a and b, as a full hash, or "" when git can't find
-// one.
-func (Git) MergeBase(ctx context.Context, repo, a, b string) string {
-	out, _ := readGit(ctx, repo, "merge-base", a, b) // "" on failure
-	return strings.TrimSpace(out)
+// MergeBase returns the best common ancestor of a and b, as a full hash, or "" when they have none.
+// It returns git's error when git can't tell, as for a rev that names no commit.
+func (Git) MergeBase(ctx context.Context, repo, a, b string) (string, error) {
+	out, err := readGit(ctx, repo, "merge-base", a, b)
+	if found, err := answer(err); !found {
+		return "", err // exit 1: no common ancestor
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // Head returns the commit rev points at, or "" when there is none, such as HEAD before the first
-// commit.
-func (Git) Head(ctx context.Context, repo, rev string) string {
+// commit. It returns git's error when git can't tell, which is not the same as none.
+func (Git) Head(ctx context.Context, repo, rev string) (string, error) {
 	// --verify: without it, git prints a rev it can't find back as if it were the commit.
-	out, _ := readGit(ctx, repo, "rev-parse", "-q", "--verify", rev)
-	return strings.TrimSpace(out) // "" on failure, as documented
+	out, err := readGit(ctx, repo, "rev-parse", "-q", "--verify", rev)
+	if found, err := answer(err); !found {
+		return "", err // -q: exit 1 for a rev that names nothing
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // FileAt returns the content of the file at path, from the repository's top, in commit rev, as
@@ -473,19 +486,20 @@ func (Git) FileAt(ctx context.Context, repo, rev, path string) (string, error) {
 	return readGit(ctx, repo, "cat-file", "blob", rev+":"+path)
 }
 
-// TrackedFiles lists the files git tracks in repo, or nil if git can't.
-func (Git) TrackedFiles(ctx context.Context, repo string) []string {
+// TrackedFiles lists the files git tracks in repo. It returns git's error when git can't list them.
+func (Git) TrackedFiles(ctx context.Context, repo string) ([]string, error) {
 	out, err := readGit(ctx, repo, "ls-files", "-z")
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return splitNUL(out)
+	return splitNUL(out), nil
 }
 
-// Tracks reports whether git tracks the file at path, relative to repo.
-func (Git) Tracks(ctx context.Context, repo, path string) bool {
+// Tracks reports whether git tracks the file at path, relative to repo. It returns git's error when
+// git can't tell.
+func (Git) Tracks(ctx context.Context, repo, path string) (bool, error) {
 	_, err := readGit(ctx, repo, "ls-files", "--error-unmatch", "--", path)
-	return err == nil
+	return answer(err) // exit 1: git tracks no such file
 }
 
 // PathChanged reports whether the file at path, relative to repo, differs from what HEAD holds:
@@ -596,8 +610,11 @@ func (g Git) CommitPaths(ctx context.Context, repo, msg string, paths ...string)
 	if _, err := writeGit(ctx, repo, commit...); err != nil {
 		return "", err
 	}
-	head := g.Head(ctx, repo, "HEAD")
-	if head == "" {
+	head, err := g.Head(ctx, repo, "HEAD")
+	switch {
+	case err != nil:
+		return "", err
+	case head == "":
 		return "", errors.New("git committed " + strings.Join(paths, ", ") + " but HEAD names no commit")
 	}
 	return head, nil
@@ -645,49 +662,52 @@ func (Git) AbortRebase(ctx context.Context, worktree string) (string, error) {
 	return writeGit(ctx, "", "-C", worktree, "rebase", "--abort")
 }
 
-// ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or none.
-func (Git) ConflictedFiles(ctx context.Context, worktree string) []string {
-	// None on failure: the files only explain the conflict.
-	out, _ := readGit(ctx, "", "-C", worktree, "-c", noIndexRefresh, "diff", "--name-only", "-z",
+// ConflictedFiles lists the files left unmerged in worktree by a rebase that stopped, or none. It
+// returns git's error when git can't list them.
+func (Git) ConflictedFiles(ctx context.Context, worktree string) ([]string, error) {
+	out, err := readGit(ctx, "", "-C", worktree, "-c", noIndexRefresh, "diff", "--name-only", "-z",
 		"--diff-filter=U")
-	return splitNUL(out)
+	if err != nil {
+		return nil, err
+	}
+	return splitNUL(out), nil
 }
 
 // RebaseInProgress reports whether a rebase has stopped in worktree and not been finished or
-// aborted. A git call that fails counts as one in progress: it can't be shown to be over.
-func (Git) RebaseInProgress(ctx context.Context, worktree string) bool {
+// aborted. It returns git's error when git can't tell, which is not the same as none.
+func (Git) RebaseInProgress(ctx context.Context, worktree string) (bool, error) {
 	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
 		out, err := readGit(ctx, "", "-C", worktree, "rev-parse", "--path-format=absolute", "--git-path", dir)
 		if err != nil {
-			return true
+			return false, err
 		}
-		if _, err := os.Stat(strings.TrimSpace(out)); !errors.Is(err, os.ErrNotExist) {
-			return true
+		switch _, err := os.Stat(strings.TrimSpace(out)); {
+		case err == nil:
+			return true, nil
+		case !errors.Is(err, os.ErrNotExist):
+			return false, err
 		}
 	}
-	return false
+	return false, nil
 }
 
-// CountCommits counts the commits in revs, such as base..branch, or returns -1 if git can't.
-func (Git) CountCommits(ctx context.Context, repo, revs string) int {
+// CountCommits counts the commits in revs, such as base..branch. It returns git's error when git
+// can't count them.
+func (Git) CountCommits(ctx context.Context, repo, revs string) (int, error) {
 	out, err := readGit(ctx, repo, "rev-list", "--count", revs, "--")
 	if err != nil {
-		return -1
+		return 0, err
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil {
-		return -1
-	}
-	return n
+	return strconv.Atoi(strings.TrimSpace(out))
 }
 
 // Unchanged reports whether branch, taken as a whole, changes nothing since it left base: its tree is
-// the tree of their merge-base, as when a commit and its revert are all it has. It reports false
-// when git can't tell.
-func (Git) Unchanged(ctx context.Context, repo, base, branch string) bool {
-	// base...branch: from the merge-base to branch. --quiet exits 1 on a difference, as on a failure.
+// the tree of their merge-base, as when a commit and its revert are all it has. It returns git's error
+// when git can't tell, which is not the same as changed.
+func (Git) Unchanged(ctx context.Context, repo, base, branch string) (bool, error) {
+	// base...branch: from the merge-base to branch. --quiet exits 1 on a difference.
 	_, err := readGit(ctx, repo, "diff", "--quiet", base+"..."+branch, "--")
-	return err == nil
+	return answer(err)
 }
 
 // Holds reports whether base holds branch's changes already: merging branch into it would change

@@ -70,8 +70,9 @@ func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
 	if s.cmd == "" {
 		return "", nil
 	}
-	keep := context.WithoutCancel(ctx) // a read cut short would look like no change
-	now := o.checkout.Head(keep, o.cfg.Repo, w.br)
+	keep := context.WithoutCancel(ctx)                  // a read cut short would look like no change
+	now, err := o.checkout.Head(keep, o.cfg.Repo, w.br) // "" on failure: the setup runs
+	o.log.Raw("", err)
 	what := o.setupDue(keep, w.id, r.head, now, s.files)
 	if what == "" {
 		return "", nil
@@ -140,7 +141,8 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 	if s.cmd == "" {
 		return false, nil
 	}
-	now := o.checkout.Head(r.keep, o.cfg.Repo, r.br)
+	now, err := o.checkout.Head(r.keep, o.cfg.Repo, r.br) // "" on failure: the setup runs
+	o.log.Raw("", err)
 	what, failedThere := "running '"+s.cmd+"' in its new worktree", setupFailedIn(p.wt)
 	switch {
 	case p.fresh:

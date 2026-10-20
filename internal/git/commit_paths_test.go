@@ -26,7 +26,7 @@ func TestCommitPathsMakesTheFirstCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head := g.Head(ctx, repo, "refs/heads/trunk"); head != commit || len(commit) != 40 {
+	if head := answered[string](t)(g.Head(ctx, repo, "refs/heads/trunk")); head != commit || len(commit) != 40 {
 		t.Errorf("trunk is at %q, the commit %q", head, commit)
 	}
 	if got := g.ChangedFiles(ctx, repo, "", commit); !slices.Equal(got,

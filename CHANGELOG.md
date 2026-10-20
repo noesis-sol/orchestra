@@ -33,6 +33,15 @@ All notable changes to orchestra are documented here. The format follows
 - Ctrl+C (or SIGTERM) during `orchestra plan --apply` stops it between two
   links, saying which links it added and which not, exit code 130, rather
   than ending it partway with no word.
+- A git call that fails while a finished ticket merges is no longer read as
+  an answer: as no commit naming the ticket (set aside as closed without a
+  commit), as uncommitted changes, as a branch not on top of the base
+  (rebased) or as one whose commits change something. Every question git
+  answers with yes, no, none or a commit now returns git's error beside its
+  answer; the merge asks again, then stops the run with `GIT_FAILED`, the
+  ticket left unmerged and its branch as its worker left it. A hand-back's
+  checks reject what its worker left with git's error, and a returning
+  ticket's branch git can't tell about is left unrebased (`REBASE_SKIPPED`).
 
 ## [0.8.6] - 2026-10-20
 

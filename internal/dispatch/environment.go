@@ -30,13 +30,20 @@ import (
 
 // failedAtOnce reports whether a worker settled as one failed by its environment does: idle for good
 // (from idleAt) soon after started, its ticket still open, its branch still at head and its
-// worktree clean. Going idle counts, not settling: an idle worker with its ticket open is given
+// worktree clean; not where git can't tell. Going idle counts, not settling: an idle worker with its ticket open is given
 // startGrace before it settles, which can outlast the window.
 func (o *Loop) failedAtOnce(ctx context.Context, status TicketStatus, started, idleAt time.Time,
 	br, head, wt string) bool {
 	c := o.cfg
-	return c.EnvHoldCount > 0 && status == StatusOpen && idleAt.Sub(started) < c.EnvHoldWindow &&
-		o.checkout.Head(ctx, c.Repo, br) == head && o.checkout.DirtyWorktree(ctx, wt) == ""
+	if c.EnvHoldCount == 0 || status != StatusOpen || idleAt.Sub(started) >= c.EnvHoldWindow {
+		return false
+	}
+	now, err := o.checkout.Head(ctx, c.Repo, br)
+	if err != nil || now != head {
+		return false
+	}
+	dirty, err := o.checkout.DirtyWorktree(ctx, wt)
+	return err == nil && dirty == ""
 }
 
 // settling is how a worker settled, as the hold counts it. One requeued doesn't count toward

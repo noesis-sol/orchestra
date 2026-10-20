@@ -27,7 +27,7 @@ type checked struct {
 	output string   // where its whole output is
 	tries  []string // what came of each hand-back of a failure to the ticket's worker, in turn
 	not    string   // why the last failure wasn't handed back, when hand-backs are on
-	at     string   // the branch's commit the check passed on, once it passes; "" when git can't say
+	at     string   // the branch's commit the check passed on, once it passes; "" for a branch with none
 	moved  bool     // Base moved on while its worker fixed the branch: not checked, to be rebased and checked
 }
 
@@ -60,7 +60,8 @@ func (f *fixes) overtaken(base string) {
 // mergeRun.pass), so that a hand-back costs one check. The caller holds the merge queue,
 // which a hand-back lets go of while the worker works, and not repo, which is taken to undo a fix that
 // is rejected. It returns errInterrupted after Ctrl+C, or the usage limit's stop during a hand-back,
-// the worker's work left as it is.
+// the worker's work left as it is; GIT_FAILED's when git can't tell where the branch is, the ticket
+// left unmerged.
 func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebaseStop, fx *fixes,
 	resolved bool) (checked, *stopReason) {
 	c := o.cfg
@@ -74,7 +75,10 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 		if ctx.Err() != nil {
 			return res, errInterrupted
 		}
-		at := o.checkout.Head(keep, c.Repo, r.br)
+		at, err := o.head(keep, nil, r.br)
+		if err != nil {
+			return res, o.gitFailedMerging(keep, r.worker, "where "+r.br+" is", err)
+		}
 		o.checkStarts(ctx, r.br, at) // the next in line may be checked ahead meanwhile, on top of it (see train.go)
 		// The rebase, or the fix, may have changed the dependencies: set them up again first (see setUp).
 		output, err := o.setUp(ctx, r)
@@ -157,7 +161,8 @@ func (o *Loop) checkRebased(ctx context.Context, repo, queue *lockGuard, r rebas
 // on top of, as when other tickets merged while its worker worked on a hand-back; false when git can't
 // say, the check then running on the branch as it is, and the merge rebasing it after if need be.
 func (o *Loop) baseMoved(ctx context.Context, r rebaseStop) bool {
-	now := o.checkout.Head(ctx, o.cfg.Repo, o.cfg.Base)
+	now, err := o.checkout.Head(ctx, o.cfg.Repo, o.cfg.Base)
+	o.log.Raw("", err)
 	return now != "" && r.onto != "" && now != r.onto
 }
 
@@ -288,24 +293,20 @@ const committedNothing = "nothing"
 func (o *Loop) verifyFixed(ctx context.Context, r rebaseStop, at string) (fixed, why string) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed fix
-	on := o.offBranch(keep, r.worker)
-	added, err := o.merger.IsAncestor(keep, c.Repo, at, r.br)
-	switch {
-	case o.merger.RebaseInProgress(keep, r.wt):
-		return "", "its worker left a rebase in progress in " + r.wt
-	case o.checkout.DirtyWorktree(keep, r.wt) != "":
-		return "", "its worker left uncommitted changes in " + r.wt
-	case on != "":
-		return "", o.leftOffBranch(r, on)
+	if why := o.leftClean(keep, r, "a rebase in progress in "+r.wt); why != "" {
+		return "", why
+	}
+	switch added, err := o.merger.IsAncestor(keep, c.Repo, at, r.br); {
 	case err != nil:
-		return "", "git could not say whether its worker added to the commits on " + r.br + because(err)
+		return "", gitCantTell("whether its worker added to the commits on "+r.br, err)
 	case !added:
 		return "", fmt.Sprintf("its worker rewrote the commits on %s rather than add to them", r.br)
 	}
-	n := o.merger.CountCommits(keep, c.Repo, at+".."+r.br)
-	switch other, err := o.merger.CommitNotNaming(keep, c.Repo, at+".."+r.br, r.id); {
-	case n < 0 || err != nil:
-		return "", "git could not say what its worker committed" + because(err)
+	n, err := o.merger.CountCommits(keep, c.Repo, at+".."+r.br)
+	other, notErr := o.merger.CommitNotNaming(keep, c.Repo, at+".."+r.br, r.id)
+	switch {
+	case err != nil || notErr != nil:
+		return "", gitCantTell("what its worker committed", errors.Join(err, notErr))
 	case n == 0: // with at an ancestor, the branch is at at: the worker found nothing to fix
 		return committedNothing, ""
 	case other != "":
@@ -330,6 +331,9 @@ func (x restored) afterFix() string {
 	switch {
 	case x.stuck:
 		return "; its rebase could not be aborted, so " + x.wt + " is left mid-rebase"
+	case x.unknown != nil:
+		return fmt.Sprintf("; git could not say what %s has%s, so it is left as its worker left it", x.wt,
+			because(x.unknown))
 	case x.dirty:
 		return "; " + x.wt + " is left as its worker left it"
 	case x.off != "":

@@ -149,8 +149,9 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 				t.ID, o.logPanic("predicting "+t.ID+"'s footprint", p), o.cfg.LogPath)
 		}
 	}()
-	tracked := o.checkout.TrackedFiles(ctx, o.cfg.Repo)
-	if len(tracked) == 0 {
+	tracked, err := o.checkout.TrackedFiles(ctx, o.cfg.Repo)
+	if err != nil || len(tracked) == 0 {
+		o.log.Raw("", err)
 		return // no files to choose from
 	}
 	files, err := o.organs().PredictFiles(ctx, organ.Footprint{

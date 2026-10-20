@@ -128,7 +128,7 @@ func TestTicketClosedInItsLeftTabAfterTheRunHoldsItsDependentsInTheNext(t *testi
 		h.beads.link("B", "A", "blocks")
 		h.worker("A", leavesOpen)
 		h.worker("B", cutWith("A: add a.txt", "b.txt"))
-		fork := h.mem.Head(t.Context(), "", "main")
+		fork := h.mem.head("main")
 
 		if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 			t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())

@@ -244,7 +244,9 @@ type worktree struct {
 // a git that fails leaves them out.
 func readWorktree(ctx context.Context, repo string) worktree {
 	g := git.Git{}
-	return worktree{head: g.Head(ctx, repo, "HEAD"), status: g.Changes(ctx, repo)}
+	head, _ := g.Head(ctx, repo, "HEAD") // "" on failure, as documented
+	status, _ := g.Changes(ctx, repo)    // none on failure, as documented
+	return worktree{head: head, status: status}
 }
 
 // topLevel shortens paths to what the repository's top holds, sorted: .beads/ for .beads/config.yaml.

@@ -170,13 +170,13 @@ func (g *fakeGit) DirtyTreeAndBranch(ctx context.Context, dir string) (string, s
 	br, err := g.CurrentBranch(ctx, dir)
 	return "", br, err
 }
-func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) string {
+func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.dirty[dir]
+	return g.dirty[dir], nil
 }
-func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
-	return nil
+func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error) {
+	return nil, nil
 }
 
 // CurrentBranch is the branch the worktree is on, "" when detached; the main checkout is on the base.
@@ -189,13 +189,19 @@ func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error
 	return g.base, nil
 }
 
-func (g *fakeGit) Head(ctx context.Context, repo, rev string) string {
+func (g *fakeGit) Head(ctx context.Context, repo, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if cs := g.resolve(rev); len(cs) > 0 {
-		return cs[len(cs)-1].hash
+		return cs[len(cs)-1].hash, nil
 	}
-	return ""
+	return "", nil
+}
+
+// head is the commit rev is on, "" for none.
+func (g *fakeGit) head(rev string) string {
+	h, _ := g.Head(context.Background(), "", rev) // the fake answers every question
+	return h
 }
 
 // FileAt is the content the latest commit in rev's history that adds file gave it: "" when that
@@ -211,7 +217,7 @@ func (g *fakeGit) FileAt(ctx context.Context, repo, rev, file string) (string, e
 	return "", fmt.Errorf("fatal: path '%s' does not exist in '%s'", file, rev)
 }
 
-func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) []string {
+func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) ([]string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	var files []string
@@ -219,7 +225,7 @@ func (g *fakeGit) TrackedFiles(ctx context.Context, repo string) []string {
 		files = append(files, c.files...)
 	}
 	slices.Sort(files)
-	return slices.Compact(files)
+	return slices.Compact(files), nil
 }
 
 // mergeByUnion has .gitattributes merge file by union.
@@ -354,7 +360,7 @@ func (g *fakeGit) isAncestor(ancestor, rev string) bool {
 }
 
 // MergeBase is the last commit a's and b's histories share.
-func (g *fakeGit) MergeBase(ctx context.Context, repo, a, b string) string {
+func (g *fakeGit) MergeBase(ctx context.Context, repo, a, b string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	ra, rb := g.resolve(a), g.resolve(b)
@@ -362,34 +368,43 @@ func (g *fakeGit) MergeBase(ctx context.Context, repo, a, b string) string {
 	for i := 0; i < len(ra) && i < len(rb) && ra[i].hash == rb[i].hash; i++ {
 		base = ra[i].hash
 	}
-	return base
+	return base, nil
 }
 
 // CommitNaming is the latest commit on branch, not on base, whose subject begins with the ticket's ID.
-func (g *fakeGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
+func (g *fakeGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return naming(g.only(base, branch), ticket)
+	return naming(g.only(base, branch), ticket), nil
 }
 
 // OwnCommits is CommitNaming and CountCommits of base..branch.
-func (g *fakeGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
-	return g.CommitNaming(ctx, repo, base, branch, ticket), g.CountCommits(ctx, repo, base+".."+branch)
+func (g *fakeGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	own := g.only(base, branch)
+	return naming(own, ticket), len(own), nil
 }
 
 // CommitNamingOn is the latest commit in rev's history, in a range a..b or in rev^! (rev alone),
 // whose subject begins with the ticket's ID.
-func (g *fakeGit) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string {
+func (g *fakeGit) CommitNamingOn(ctx context.Context, repo, rev, ticket string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if base, tip, ok := strings.Cut(rev, ".."); ok {
-		return naming(g.only(base, tip), ticket)
+		return naming(g.only(base, tip), ticket), nil
 	}
 	if tip, ok := strings.CutSuffix(rev, "^!"); ok {
 		cs := g.resolve(tip)
-		return naming(cs[max(len(cs)-1, 0):], ticket)
+		return naming(cs[max(len(cs)-1, 0):], ticket), nil
 	}
-	return naming(g.resolve(rev), ticket)
+	return naming(g.resolve(rev), ticket), nil
+}
+
+// naming is the latest commit in rev's history naming the ticket, as CommitNamingOn gives it.
+func (g *fakeGit) naming(rev, ticket string) string {
+	n, _ := g.CommitNamingOn(context.Background(), "", rev, ticket) // the fake answers every question
+	return n
 }
 
 // CommitNotNaming is the oldest commit in revs whose subject doesn't begin with the ticket's ID.
@@ -441,39 +456,45 @@ func (g *fakeGit) AbortRebase(ctx context.Context, worktree string) (string, err
 	return "", nil
 }
 
-func (g *fakeGit) ConflictedFiles(ctx context.Context, worktree string) []string {
+func (g *fakeGit) ConflictedFiles(ctx context.Context, worktree string) ([]string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if !g.rebasing[worktree] {
-		return nil
+		return nil, nil
 	}
-	return g.conflicts[g.worktrees[worktree]]
+	return g.conflicts[g.worktrees[worktree]], nil
 }
 
-func (g *fakeGit) RebaseInProgress(ctx context.Context, worktree string) bool {
+func (g *fakeGit) RebaseInProgress(ctx context.Context, worktree string) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.rebasing[worktree]
+	return g.rebasing[worktree], nil
 }
 
-func (g *fakeGit) CountCommits(ctx context.Context, repo, revs string) int {
+// inRebase reports whether a rebase is stopped in worktree.
+func (g *fakeGit) inRebase(worktree string) bool {
+	in, _ := g.RebaseInProgress(context.Background(), worktree) // the fake answers every question
+	return in
+}
+
+func (g *fakeGit) CountCommits(ctx context.Context, repo, revs string) (int, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	base, rev, _ := strings.Cut(revs, "..")
-	return len(g.only(base, rev))
+	return len(g.only(base, rev)), nil
 }
 
 // Unchanged reports whether the commits of branch not in base's history add no files: a commit made
 // with none stands for one that changes nothing, or one its revert undoes.
-func (g *fakeGit) Unchanged(ctx context.Context, repo, base, branch string) bool {
+func (g *fakeGit) Unchanged(ctx context.Context, repo, base, branch string) (bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for _, c := range g.only(base, branch) {
 		if len(c.files) > 0 {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // Holds reports whether each file the commits of branch not in base's history add is added by a

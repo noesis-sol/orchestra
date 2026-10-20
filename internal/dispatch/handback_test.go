@@ -228,7 +228,7 @@ func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
 				if log := h.mainLog(); strings.Contains(log, "A: add") {
 					t.Errorf("main must not change:\n%s", log)
 				}
-				if h.mem.RebaseInProgress(t.Context(), h.worktree("A")) {
+				if h.mem.inRebase(h.worktree("A")) {
 					t.Error("the rebase should be aborted")
 				}
 				if a, _ := h.beads.Show(t.Context(), "A"); !HasLabel(a, UnmergedLabel) {

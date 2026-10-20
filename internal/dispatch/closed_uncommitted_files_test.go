@@ -52,8 +52,8 @@ type changesGit struct {
 	changes map[string]string
 }
 
-func (g changesGit) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
-	return g.changes
+func (g changesGit) Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error) {
+	return g.changes, nil
 }
 
 func TestUncommittedListNamesAFewThenCounts(t *testing.T) {

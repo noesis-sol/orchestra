@@ -217,7 +217,8 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		case idleSince.IsZero():
 			idleSince = time.Now()
 		}
-		if idle && (!o.merger.RebaseInProgress(ctx, w.wt) || time.Since(idleSince) >= idleGrace) {
+		// A rebase git can't tell is over is waited for as one in progress: its worker may be at it still.
+		if idle && (!o.rebasing(ctx, w.wt) || time.Since(idleSince) >= idleGrace) {
 			settled = time.Now()
 			return "", nil
 		}
@@ -260,30 +261,61 @@ func (o *Loop) handBackLeft(id string) string {
 func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // a read cut short would look like a failed resolution
-	on := o.offBranch(keep, r.worker)
-	onTop, err := o.merger.IsAncestor(keep, c.Repo, r.onto, r.br)
-	switch {
-	case o.merger.RebaseInProgress(keep, r.wt):
-		return "its worker left the rebase unfinished"
-	case o.checkout.DirtyWorktree(keep, r.wt) != "":
-		return "its worker left uncommitted changes in " + r.wt
-	case on != "":
-		return o.leftOffBranch(r, on)
+	if why := o.leftClean(keep, r, "the rebase unfinished"); why != "" {
+		return why
+	}
+	switch onTop, err := o.merger.IsAncestor(keep, c.Repo, r.onto, r.br); {
 	case err != nil:
-		return fmt.Sprintf("git could not say whether %s is on top of %s", r.br, c.Base) + because(err)
+		return gitCantTell(fmt.Sprintf("whether %s is on top of %s", r.br, c.Base), err)
 	case !onTop:
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base)
-	case o.merger.Unchanged(keep, c.Repo, r.onto, r.br):
+	}
+	switch unchanged, err := o.merger.Unchanged(keep, c.Repo, r.onto, r.br); {
+	case err != nil:
+		return gitCantTell(fmt.Sprintf("whether the commits on %s change anything", r.br), err)
+	case unchanged:
 		return ""
 	}
-	switch naming, n := o.merger.OwnCommits(keep, c.Repo, r.onto, r.br, r.id); {
+	switch naming, n, err := o.merger.OwnCommits(keep, c.Repo, r.onto, r.br, r.id); {
+	case err != nil:
+		return gitCantTell("what its worker left on "+r.br, err)
 	case naming == "":
 		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id)
-	case n < 0 || n > r.own:
+	case n > r.own:
 		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)",
 			r.br, n, r.own)
 	}
 	return ""
+}
+
+// leftClean says why what r's worker left after a hand-back is rejected when its worktree isn't as a
+// hand-back must leave it, or "": no rebase in progress (rebasing says how one left reads, as in "the
+// rebase unfinished"), no uncommitted changes, and on its branch; or git can't tell.
+func (o *Loop) leftClean(ctx context.Context, r rebaseStop, rebasing string) string {
+	switch in, err := o.merger.RebaseInProgress(ctx, r.wt); {
+	case err != nil:
+		return gitCantTell("whether its worker left a rebase in progress in "+r.wt, err)
+	case in:
+		return "its worker left " + rebasing
+	}
+	switch dirty, err := o.checkout.DirtyWorktree(ctx, r.wt); {
+	case err != nil:
+		return gitCantTell("whether its worker left uncommitted changes in "+r.wt, err)
+	case dirty != "":
+		return "its worker left uncommitted changes in " + r.wt
+	}
+	if on := o.offBranch(ctx, r.worker); on != "" {
+		return o.leftOffBranch(r, on)
+	}
+	return ""
+}
+
+// rebasing reports whether a rebase is in progress in wt, or git can't tell, logging git's error: one
+// can't be shown to be over.
+func (o *Loop) rebasing(ctx context.Context, wt string) bool {
+	in, err := o.merger.RebaseInProgress(ctx, wt)
+	o.log.Raw("", err)
+	return in || err != nil
 }
 
 // leftOffBranch says why what r's worker left after a hand-back is rejected, its worktree having on
@@ -308,6 +340,7 @@ type restored struct {
 	dirty      bool   // the worktree has changes, so the branch was left where it is
 	off        string // what the worktree has checked out instead of the branch (see offBranch), left as it is
 	now        string // where the branch was, after any abort; reset to to unless it was there, dirty or off
+	unknown    error  // git could not tell what the worktree has, so the branch was left where it is
 	err        error  // why the reset failed
 }
 
@@ -316,16 +349,23 @@ type restored struct {
 // it, as a reset in the worktree resets what it has checked out. The caller holds repoMu.
 func (o *Loop) restoreBranch(ctx context.Context, r rebaseStop, to string) restored {
 	x := restored{br: r.br, wt: r.wt, to: to}
-	if o.merger.RebaseInProgress(ctx, r.wt) {
+	switch in, err := o.merger.RebaseInProgress(ctx, r.wt); {
+	case err != nil:
+		x.unknown = err
+		return x
+	case in:
 		if err := o.abortRebase(ctx, r.wt); err != nil {
 			x.stuck = true
 			return x
 		}
 		x.aborted = true
 	}
-	x.dirty = o.checkout.DirtyWorktree(ctx, r.wt) != ""
-	x.now = o.checkout.Head(ctx, o.cfg.Repo, r.br)
-	if x.now == to || x.dirty {
+	dirty, err := o.checkout.DirtyWorktree(ctx, r.wt)
+	x.dirty = dirty != ""
+	if x.unknown = err; err == nil {
+		x.now, x.unknown = o.checkout.Head(ctx, o.cfg.Repo, r.br)
+	}
+	if x.unknown != nil || x.now == to || x.dirty {
 		return x
 	}
 	if x.off = o.offBranch(ctx, r.worker); x.off != "" {
@@ -343,6 +383,9 @@ func (x restored) afterResolution() string {
 	switch {
 	case x.stuck:
 		return "the rebase could not be aborted, so " + x.wt + " is left mid-rebase"
+	case x.unknown != nil:
+		return fmt.Sprintf("git could not say what %s has%s, so %s is left as its worker left it (it was at %s "+
+			"before the rebase)", x.wt, because(x.unknown), x.br, short(x.to))
 	case x.aborted && x.now == x.to:
 		return "the rebase was aborted"
 	case x.now == x.to:

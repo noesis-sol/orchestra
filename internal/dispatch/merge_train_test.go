@@ -41,7 +41,7 @@ func (g *trainGit) Rebase(ctx context.Context, worktree, onto string) (string, e
 	return out, err
 }
 
-func (g *trainGit) Head(ctx context.Context, repo, rev string) string {
+func (g *trainGit) Head(ctx context.Context, repo, rev string) (string, error) {
 	g.mu.Lock()
 	gated := g.gated && rev == "wt/A"
 	g.mu.Unlock()

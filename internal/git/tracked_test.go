@@ -25,10 +25,10 @@ func TestTrackedFiles(t *testing.T) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	if got := (Git{}).TrackedFiles(context.Background(), dir); !slices.Equal(got, []string{"a.go", "sub dir/b.md"}) {
+	if got := answered[[]string](t)((Git{}).TrackedFiles(context.Background(), dir)); !slices.Equal(got, []string{"a.go", "sub dir/b.md"}) {
 		t.Errorf("got %q", got)
 	}
-	if got := (Git{}).TrackedFiles(context.Background(), t.TempDir()); got != nil {
-		t.Errorf("not a repository: %q", got)
+	if got, err := (Git{}).TrackedFiles(context.Background(), t.TempDir()); got != nil || err == nil {
+		t.Errorf("not a repository: %q, %v; want git's error", got, err)
 	}
 }

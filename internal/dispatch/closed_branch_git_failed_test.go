@@ -50,7 +50,7 @@ func (g *gitFails) heads() []string {
 
 func (g *gitFails) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
 	if branch == "wt/A" {
-		head := g.Head(ctx, repo, g.base)
+		head := g.head(g.base)
 		g.mu.Lock()
 		g.asked = append(g.asked, head)
 		g.mu.Unlock()
@@ -89,7 +89,7 @@ func TestClosedTicketGitCantLookUpHoldsItsDependents(t *testing.T) {
 		h.beads.add("B", "blocked by A", 2)
 		h.beads.link("B", "A", "blocks")
 		g := &gitFails{fakeGit: h.mem, fail: "HasBranch", failing: true}
-		start := h.mem.Head(context.Background(), "", "main")
+		start := h.mem.head("main")
 		bStarted := make(chan struct{})
 		h.worker("C", func(w *fakeWorker) AgentState {
 			time.Sleep(2 * time.Minute) // B is held meanwhile, poll after poll

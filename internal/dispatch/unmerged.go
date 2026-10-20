@@ -57,7 +57,17 @@ func mergedSince(ctx context.Context, c Config, worktrees Worktrees, merger Merg
 	if fork := forkOf(t); fork != "" {
 		rev = fork + ".." + c.Base
 	}
-	return merger.CommitNamingOn(ctx, c.Repo, rev, t.ID)
+	return namingOn(ctx, c, merger, rev, t.ID)
+}
+
+// namingOn is the latest commit in rev's history naming ticket id (see Merger.CommitNamingOn), or ""
+// when none does or git can't tell: nothing is taken for merged on a git call that failed.
+func namingOn(ctx context.Context, c Config, merger Merger, rev, id string) string {
+	naming, err := merger.CommitNamingOn(ctx, c.Repo, rev, id)
+	if err != nil {
+		return ""
+	}
+	return naming
 }
 
 // branchMerged returns the commit naming ticket t that its branch added, when the branch is on Base
@@ -73,12 +83,12 @@ func branchMerged(ctx context.Context, c Config, merger Merger, t Ticket, fork s
 	case err != nil:
 		return ""
 	case on:
-		return merger.CommitNamingOn(ctx, c.Repo, ownCommits(t, fork, br), t.ID)
+		return namingOn(ctx, c, merger, ownCommits(t, fork, br), t.ID)
 	}
 	if held, err := merger.Holds(ctx, c.Repo, c.Base, br); err != nil || !held {
 		return ""
 	}
-	return merger.CommitNamingOn(ctx, c.Repo, br+".."+c.Base, t.ID)
+	return namingOn(ctx, c, merger, br+".."+c.Base, t.ID)
 }
 
 // ForkKey is the metadata key holding the commit on Base that a ticket's branch was cut from (their
@@ -175,7 +185,9 @@ func (o *Loop) leaveRunning(ctx context.Context) {
 // first notes where the ticket's branch left Base (ForkKey), so that a later run takes only the
 // branch's own commits for its merge (see mergedSince).
 func (o *Loop) label(ctx context.Context, id string) bool {
-	if fork := o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id)); fork != "" {
+	fork, err := o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
+	o.log.Raw("", err) // none noted then, as for a branch with no commit in common with Base
+	if fork != "" {
 		if err := o.notes.SetMetadata(ctx, id, ForkKey, fork); err != nil {
 			o.log.Raw("", err) // a later run then takes the branch's tip alone for its own
 		}

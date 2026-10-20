@@ -126,15 +126,18 @@ func (f freeing) blockers(ctx context.Context, info Ticket) ([]string, bool) {
 
 // worktree returns the worktree a worker left for ticket id when its branch has no commits beyond
 // Base: as empty when it has no uncommitted changes either, else as dirty. Both are "" when there
-// is none, it has commits, or git can't list the worktrees or count the commits; a failed git
-// status counts as uncommitted changes.
+// is none, it has commits, or git can't list the worktrees or count the commits; a git status that
+// fails counts as uncommitted changes, which it can't rule out.
 func (f freeing) worktree(ctx context.Context, id string) (empty, dirty string) {
 	br := branchOf(id)
 	wt, err := f.worktrees.WorktreeOf(ctx, f.cfg.Repo, br)
-	switch {
-	case err != nil || wt == "" || f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br) != 0:
+	if err != nil || wt == "" {
 		return "", ""
-	case f.checkout.DirtyWorktree(ctx, wt) != "":
+	}
+	if n, err := f.merger.CountCommits(ctx, f.cfg.Repo, f.cfg.Base+".."+br); err != nil || n != 0 {
+		return "", ""
+	}
+	if d, err := f.checkout.DirtyWorktree(ctx, wt); err != nil || d != "" {
 		return "", wt
 	}
 	return wt, ""

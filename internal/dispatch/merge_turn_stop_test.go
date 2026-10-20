@@ -98,7 +98,7 @@ func TestAStopEndsAMergeWaitingForItsTurn(t *testing.T) {
 			t.Errorf("shown handed back to their workers: %v\n%s", handed, ev)
 		}
 		mu.Unlock()
-		if h.mem.RebaseInProgress(t.Context(), h.worktree("B")) {
+		if h.mem.inRebase(h.worktree("B")) {
 			t.Error("B's worktree is left mid-rebase")
 		}
 		if strings.Contains(ev, "RESOLVING") || strings.Contains(o.Final(), "resolv") {
@@ -155,7 +155,7 @@ func TestAStopAsARebaseConflictsAbortsIt(t *testing.T) {
 		if len(handed) > 0 || strings.Contains(ev, "RESOLVING") || strings.Contains(o.Final(), "resolv") {
 			t.Errorf("nothing was handed back to resolve (shown handed back: %v): final %q\n%s", handed, o.Final(), ev)
 		}
-		if h.mem.RebaseInProgress(t.Context(), h.worktree("B")) {
+		if h.mem.inRebase(h.worktree("B")) {
 			t.Error("B's rebase should be aborted")
 		}
 		if got := saved(t, h); len(got) != 1 || got[0].Ticket != "B" || got[0].Left != "INTERRUPTED" {

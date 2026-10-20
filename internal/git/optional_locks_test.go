@@ -24,12 +24,12 @@ func TestReadsLeaveTheIndexAsItIs(t *testing.T) {
 		read func()
 	}{
 		{"DirtyTree", func() { _, _ = g.DirtyTree(ctx, repo) }},
-		{"DirtyWorktree", func() { g.DirtyWorktree(ctx, repo) }},
-		{"Changes", func() { g.Changes(ctx, repo) }},
+		{"DirtyWorktree", func() { _, _ = g.DirtyWorktree(ctx, repo) }},
+		{"Changes", func() { _, _ = g.Changes(ctx, repo) }},
 		{"PathChanged", func() { _, _ = g.PathChanged(ctx, repo, "a.md") }},
 		{"ShortStatus", func() { g.ShortStatus(ctx, repo) }},
 		{"DiffStat", func() { g.DiffStat(ctx, repo) }},
-		{"ConflictedFiles", func() { g.ConflictedFiles(ctx, repo) }},
+		{"ConflictedFiles", func() { _, _ = g.ConflictedFiles(ctx, repo) }},
 	} {
 		// A new modification time on the file, its content the same, leaves the index stale.
 		later := time.Now().Add(time.Duration(i+1) * time.Minute)

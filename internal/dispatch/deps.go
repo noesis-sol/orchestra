@@ -182,20 +182,21 @@ type Session struct {
 	Transcript string // the path of its transcript
 }
 
-// Checkout is what the loop checks about the main checkout and worktrees (git).
+// Checkout is what the loop checks about the main checkout and worktrees (git). Each method returns
+// git's error beside its answer when git fails to answer, which is not the same as none or "".
 type Checkout interface {
 	// uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/, and the branch it is on
 	// as git status names it ("" on a detached HEAD), from one git command
 	DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error)
 	// uncommitted work in a ticket's worktree outside .orchestra/run/
-	DirtyWorktree(ctx context.Context, dir string) string
+	DirtyWorktree(ctx context.Context, dir string) (string, error)
 	// each changed or untracked file in repo (under paths, if any) to its code in git status --porcelain
-	Changes(ctx context.Context, repo string, paths ...string) map[string]string
+	Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error)
 	CurrentBranch(ctx context.Context, repo string) (string, error) // "" on a detached HEAD
-	Head(ctx context.Context, repo, rev string) string
+	Head(ctx context.Context, repo, rev string) (string, error)     // "" when rev names no commit
 	// the content of the file at path, from the repository's top, in commit rev; git's error when it has none
 	FileAt(ctx context.Context, repo, rev, path string) (string, error)
-	TrackedFiles(ctx context.Context, repo string) []string // git ls-files; nil when git can't list them
+	TrackedFiles(ctx context.Context, repo string) ([]string, error) // git ls-files
 	// the value .gitattributes gives attr for path ("unspecified", "set", "unset" or its value), as git check-attr says
 	Attribute(ctx context.Context, repo, attr, path string) (string, error)
 }
@@ -214,33 +215,36 @@ type Worktrees interface {
 	DeleteBranch(ctx context.Context, repo, branch string) (string, error)
 }
 
-// Merger brings finished branches onto the base branch.
+// Merger brings finished branches onto the base branch. Each method that asks git a question returns
+// git's error beside its answer when git fails to answer, which is not the same as no, none or "".
 type Merger interface {
-	// whether ancestor is in rev's history (or is rev); the error is git failing to tell
+	// whether ancestor is in rev's history (or is rev)
 	IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error)
-	MergeBase(ctx context.Context, repo, a, b string) string // their best common ancestor; "" if git can't say
-	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
-	// CommitNaming and CountCommits of base..branch from one git command: "" and -1 when git can't list them
-	OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int)
-	// the latest commit reachable from rev naming the ticket
-	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string
+	MergeBase(ctx context.Context, repo, a, b string) (string, error) // their best common ancestor; "" for none
+	// the latest commit on branch, not on base, naming the ticket; "" for none
+	CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error)
+	// CommitNaming and CountCommits of base..branch from one git command
+	OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int, err error)
+	// the latest commit reachable from rev naming the ticket; "" for none
+	CommitNamingOn(ctx context.Context, repo, rev, ticket string) (string, error)
 	// the oldest commit in revs (a..b) whose message doesn't name the ticket; "" when each one does
 	CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error)
 	Rebase(ctx context.Context, worktree, onto string) (string, error)
 	AbortRebase(ctx context.Context, worktree string) (string, error)
-	ConflictedFiles(ctx context.Context, worktree string) []string // files a stopped rebase left unmerged
-	RebaseInProgress(ctx context.Context, worktree string) bool    // a rebase stopped and neither finished nor aborted
-	CountCommits(ctx context.Context, repo, revs string) int       // -1 if git can't count them
+	ConflictedFiles(ctx context.Context, worktree string) ([]string, error) // files a stopped rebase left unmerged
+	// a rebase stopped and neither finished nor aborted
+	RebaseInProgress(ctx context.Context, worktree string) (bool, error)
+	CountCommits(ctx context.Context, repo, revs string) (int, error)
 	// branch's tree is its merge-base's with base: its commits, taken together, change nothing
-	Unchanged(ctx context.Context, repo, base, branch string) bool
+	Unchanged(ctx context.Context, repo, base, branch string) (bool, error)
 	// base holds branch's changes: merging it would change nothing, as after a squash merge; false when
-	// they conflict, and the error when git can't tell
+	// they conflict
 	Holds(ctx context.Context, repo, base, branch string) (bool, error)
 	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }
 
-// History is what the organs read about the work.
+// History is what the organs read about the work, and people: a git call that fails reads as nothing.
 type History interface {
 	ShortStatus(ctx context.Context, worktree string) string
 	OneLineLog(ctx context.Context, dir, revs string) string

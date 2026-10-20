@@ -401,7 +401,7 @@ func TestCarriedOverWorkerNoLongerThereIsDropped(t *testing.T) {
 				h.beads.set("A", "closed")
 			},
 			func(h *harness) string {
-				return "wt/A is on main already (" + h.mem.CommitNamingOn(context.Background(), h.repo, "main", "A") + ")"
+				return "wt/A is on main already (" + h.mem.naming("main", "A") + ")"
 			},
 		},
 	} {

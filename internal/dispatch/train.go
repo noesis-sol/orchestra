@@ -158,24 +158,30 @@ func (o *Loop) runTrain(ctx context.Context, w worker, t *trainRun) {
 // rebaseAhead rebases w's branch onto t.onto in its worktree, holding repoMu, and returns its commit
 // after the rebase; "" when it isn't rebased: the run stops, its worktree isn't ready for a rebase (its
 // turn says why), it doesn't rebase cleanly (the rebase is aborted), or its commits change nothing on
-// top of t.onto (it is put back, and its turn closes it as unchanged).
+// top of t.onto (it is put back, and its turn closes it as unchanged). Where git can't tell what that
+// turns on, it is not rebased, or put back, and its turn asks again.
 func (o *Loop) rebaseAhead(ctx context.Context, w worker, t *trainRun) string {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // once begun, the rebase finishes, or is undone
 	o.repoMu.Lock()
 	defer o.repoMu.Unlock()
-	if ctx.Err() != nil || o.offBranch(keep, w) != "" || len(o.uncommitted(keep, w.wt)) > 0 {
+	if ctx.Err() != nil || o.offBranch(keep, w) != "" {
 		return ""
 	}
-	orig := o.checkout.Head(keep, c.Repo, w.br)
-	if orig == "" {
+	if files, err := o.uncommitted(keep, w.wt); err != nil || len(files) > 0 {
+		o.log.Raw("", err)
+		return ""
+	}
+	orig, err := o.checkout.Head(keep, c.Repo, w.br)
+	if err != nil || orig == "" {
+		o.log.Raw("", err)
 		return ""
 	}
 	o.trainFrom(t, orig)
 	out, err := o.merger.Rebase(keep, w.wt, t.onto)
 	o.log.Raw(out, err)
 	if err != nil {
-		if o.merger.RebaseInProgress(keep, w.wt) {
+		if o.rebasing(keep, w.wt) { // one git can't tell is over is aborted: the branch is left as it was
 			if err := o.abortRebase(keep, w.wt); err != nil {
 				o.info("  %s's rebase onto %s, ahead of its turn, could not be aborted: %v", w.br, t.behind, err)
 			}
@@ -183,12 +189,18 @@ func (o *Loop) rebaseAhead(ctx context.Context, w worker, t *trainRun) string {
 		o.info("  %s is not checked ahead of its turn: it does not rebase cleanly onto %s", w.br, t.behind)
 		return ""
 	}
-	if o.merger.Unchanged(keep, c.Repo, t.onto, w.br) {
+	unchanged, err := o.merger.Unchanged(keep, c.Repo, t.onto, w.br)
+	o.log.Raw("", err)
+	var head string
+	if err == nil && !unchanged {
+		head, err = o.checkout.Head(keep, c.Repo, w.br)
+		o.log.Raw("", err)
+	}
+	if head == "" { // changing nothing, or git can't tell
 		out, err := o.merger.ResetBranch(keep, w.wt, orig)
 		o.log.Raw(out, err)
-		return ""
 	}
-	return o.checkout.Head(keep, c.Repo, w.br)
+	return head
 }
 
 // trainFrom records the commit t's branch was on before its rebase.
@@ -298,30 +310,34 @@ func (o *Loop) boardTrain(ctx context.Context, w worker, t *trainRun) {
 // ticket's branch on top of it, the branch is on top of Base as checked: it merges with no further
 // check. Otherwise a branch the train rebased is put back as its worker left it, for the merge to rebase
 // and check as any other, and the trains behind it are stopped. It reports false when git could not put
-// it back, the ticket set aside then: its branch has the commits of the branch ahead. The caller holds
-// the queue, not repo.
-func (m *mergeRun) board(ctx context.Context) bool {
+// it back, the ticket set aside then: its branch has the commits of the branch ahead; or git can't tell
+// where the branch is, the run stopping then (stop says why). The caller holds the queue, not repo.
+func (m *mergeRun) board(ctx context.Context) (bool, *stopReason) {
 	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
 	t := o.takeTrain(w.id)
 	if t == nil {
-		return true
+		return true, nil
 	}
-	if o.checkout.Head(keep, c.Repo, c.Base) == t.onto {
+	// Where git can't tell where Base is, the branch ahead is taken for one that didn't merge.
+	if base := m.baseHead(); base != "" && base == t.onto {
 		o.boardTrain(ctx, w, t)
 	} else {
 		t.cancel() // the branch ahead didn't merge as it was rebased onto
 	}
 	<-t.done
 	m.repo.lock()
-	head := o.checkout.Head(keep, c.Repo, w.br)
-	if t.passed != "" && head == t.passed && o.checkout.Head(keep, c.Repo, c.Base) == t.onto {
+	head, err := o.head(keep, m.repo, w.br)
+	if err != nil { // the branch may have the commits of the branch ahead, which didn't merge
+		_, stop := m.gitFailed("where "+w.br+" is, after it was rebased to be checked ahead of its turn", err)
+		return false, stop
+	}
+	if t.passed != "" && head == t.passed && m.baseHead() == t.onto {
 		m.repo.unlock()
 		m.checked = t.passed
 		o.info("  %s was checked ahead of its turn on top of %s, which merged as it was checked: "+
 			"merging it with no further check", w.br, t.behind)
-		return true
+		return true, nil
 	}
-	var err error
 	rebased := t.head != "" && head == t.head // and not moved since
 	if rebased {
 		var out string
@@ -336,10 +352,18 @@ func (m *mergeRun) board(ctx context.Context) bool {
 			"%s closed, but git could not put %s back as its worker left it, at %s, after it was rebased onto %s "+
 				"to be checked ahead of its turn%s; worktree %s and tab %s left for review (git output is in %s)",
 			w.id, w.br, short(t.orig), t.behind, because(err), w.wt, w.tab, c.LogPath))
-		return false
+		return false, nil
 	case rebased:
 		o.info("  %s was checked ahead of its turn on top of %s, which did not merge as it was checked: "+
 			"put back as its worker left it", w.br, t.behind)
 	}
-	return true
+	return true, nil
+}
+
+// baseHead is the commit Base is on, as board compares it with the one a train was checked on: "" when
+// git can't say, logging git's error.
+func (m *mergeRun) baseHead() string {
+	head, err := m.o.checkout.Head(m.keep, m.o.cfg.Repo, m.o.cfg.Base)
+	m.o.log.Raw("", err)
+	return head
 }

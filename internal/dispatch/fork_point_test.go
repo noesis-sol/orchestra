@@ -34,7 +34,7 @@ func TestCarriedOverAskedWorkerIsDroppedOnlyForItsOwnCommits(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				h := newTimedHarness(t)
 				h.mem.commit("main", "A: an earlier attempt", "a0.txt") // A was reopened since
-				cut := h.mem.Head(t.Context(), h.repo, "main")
+				cut := h.mem.head("main")
 				h.beads.add("A", "first", 1)
 				h.worker("A", asksAndStops(func(string, string) {}))
 				if o, code := h.run(); code != ExitOK {

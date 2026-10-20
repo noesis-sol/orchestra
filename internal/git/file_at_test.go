@@ -13,7 +13,7 @@ func TestFileAt(t *testing.T) {
 	write(t, repo, ".orchestra/settings.json", "{\"setup\": \"npm ci\"}\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "Set the setup")
-	first := g.Head(ctx, repo, "HEAD")
+	first := answered[string](t)(g.Head(ctx, repo, "HEAD"))
 	write(t, repo, ".orchestra/settings.json", "{}\n")
 
 	if got, err := g.FileAt(ctx, repo, first, ".orchestra/settings.json"); err != nil || got != "{\"setup\": \"npm ci\"}\n" {

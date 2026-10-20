@@ -84,18 +84,18 @@ func TestOwnCommitsIsCommitNamingAndCountCommits(t *testing.T) {
 	for _, tc := range []struct{ base, ticket string }{
 		{"main", "k-1"}, {"main", "k-2"}, {"wt/k-1", "k-1"}, {"wt/k-1~2", "k-1"},
 	} {
-		naming, own := g.OwnCommits(ctx, repo, tc.base, "wt/k-1", tc.ticket)
-		wantNaming := g.CommitNaming(ctx, repo, tc.base, "wt/k-1", tc.ticket)
-		wantOwn := g.CountCommits(ctx, repo, tc.base+"..wt/k-1")
-		if naming != wantNaming || own != wantOwn {
+		naming, own, err := g.OwnCommits(ctx, repo, tc.base, "wt/k-1", tc.ticket)
+		wantNaming := answered[string](t)(g.CommitNaming(ctx, repo, tc.base, "wt/k-1", tc.ticket))
+		wantOwn := answered[int](t)(g.CountCommits(ctx, repo, tc.base+"..wt/k-1"))
+		if naming != wantNaming || own != wantOwn || err != nil {
 			t.Errorf("%s..wt/k-1, %s: got %q, %d; want %q, %d", tc.base, tc.ticket, naming, own, wantNaming, wantOwn)
 		}
 	}
-	if naming, own := g.OwnCommits(ctx, repo, "main", "wt/k-1", "k-1"); own != 4 || naming == "" {
-		t.Errorf("got %q, %d; want k-1: second, 4", naming, own)
+	if naming, own, err := g.OwnCommits(ctx, repo, "main", "wt/k-1", "k-1"); own != 4 || naming == "" || err != nil {
+		t.Errorf("got %q, %d, %v; want k-1: second, 4", naming, own, err)
 	}
-	if naming, own := g.OwnCommits(ctx, repo, "main", "no-such-branch", "k-1"); naming != "" || own != -1 {
-		t.Errorf("a missing branch: got %q, %d; want \"\", -1", naming, own)
+	if naming, own, err := g.OwnCommits(ctx, repo, "main", "no-such-branch", "k-1"); naming != "" || err == nil {
+		t.Errorf("a missing branch: got %q, %d, %v; want \"\" and git's error", naming, own, err)
 	}
 }
 

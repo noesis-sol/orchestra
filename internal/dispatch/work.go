@@ -347,7 +347,8 @@ func (r *ticketRun) start(ctx context.Context, wt string) *stopReason {
 	}
 	prompt := ws.prompt
 
-	head := o.checkout.Head(ctx, c.Repo, r.br) // a worker that commits moves it
+	head, err := o.checkout.Head(ctx, c.Repo, r.br) // a worker that commits moves it; "" on failure
+	o.log.Raw("", err)
 
 	launched, stop := o.startWorker(ctx, r.t, r.agent, wt, ws.args, ws.launch, "")
 	if stop != nil {
@@ -499,7 +500,8 @@ func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adop
 	o, id := r.o, r.id
 	base := o.takeOn(r.t, w)
 	o.footprintWorktree(id, w.wt)
-	head := o.checkout.Head(ctx, o.cfg.Repo, r.br)
+	head, err := o.checkout.Head(ctx, o.cfg.Repo, r.br) // "" on failure: its work is not taken for none
+	o.log.Raw("", err)
 	o.updateActive(id, func(s *Status) { s.Agent = st })
 	defer o.status(Status{Ticket: id, Gone: true})
 	// Its hooks' record may still end with the Stop of the turn it asked in, which would pass for the
@@ -765,10 +767,16 @@ func (o *Loop) dropNothingDone(ctx context.Context, w worker) {
 }
 
 // nothingDone reports whether w's worker left nothing of its own: its branch has no commits beyond
-// Base and its worktree is clean.
+// Base and its worktree is clean; not where git can't tell.
 func (o *Loop) nothingDone(ctx context.Context, w worker) bool {
 	c := o.cfg
-	return o.merger.CountCommits(ctx, c.Repo, c.Base+".."+w.br) == 0 && o.checkout.DirtyWorktree(ctx, w.wt) == ""
+	if n, err := o.merger.CountCommits(ctx, c.Repo, c.Base+".."+w.br); err != nil || n != 0 {
+		o.log.Raw("", err)
+		return false
+	}
+	dirty, err := o.checkout.DirtyWorktree(ctx, w.wt)
+	o.log.Raw("", err)
+	return err == nil && dirty == ""
 }
 
 // waitForMerge puts ticket t back in the queue, open, once its worker, w, has stopped with it still

@@ -278,7 +278,7 @@ func CommitSpec(ctx context.Context, repo, file string) (s Spec, committed bool,
 		return s, false, nil
 	}
 	verb := "add"
-	if g.Head(ctx, repo, "HEAD:"+rel) != "" {
+	if blob, _ := g.Head(ctx, repo, "HEAD:"+rel); blob != "" { // the message's verb only: "add" on failure
 		verb = "update"
 	}
 	msg := fmt.Sprintf("orchestra: %s spec %s\n\nThe spec orchestra --spec builds, at %s, kept where the workers on "+

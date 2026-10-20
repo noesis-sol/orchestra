@@ -58,15 +58,17 @@ type cleanCheckout struct{}
 func (cleanCheckout) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
 	return "", "main", nil
 }
-func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) string { return "" }
-func (cleanCheckout) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
-	return nil
+func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) (string, error) { return "", nil }
+func (cleanCheckout) Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error) {
+	return nil, nil
 }
 func (cleanCheckout) CurrentBranch(ctx context.Context, repo string) (string, error) {
 	return "main", nil
 }
-func (cleanCheckout) Head(ctx context.Context, repo, rev string) string      { return "abc" }
-func (cleanCheckout) TrackedFiles(ctx context.Context, repo string) []string { return nil }
+func (cleanCheckout) Head(ctx context.Context, repo, rev string) (string, error) { return "abc", nil }
+func (cleanCheckout) TrackedFiles(ctx context.Context, repo string) ([]string, error) {
+	return nil, nil
+}
 func (cleanCheckout) Attribute(ctx context.Context, repo, attr, path string) (string, error) {
 	return "unspecified", nil
 }
@@ -105,20 +107,28 @@ type upToDate struct{}
 func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
 	return true, nil
 }
-func (upToDate) MergeBase(ctx context.Context, repo, a, b string) string { return "" }
-func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
-	return ""
+func (upToDate) MergeBase(ctx context.Context, repo, a, b string) (string, error) { return "", nil }
+func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error) {
+	return "", nil
 }
-func (upToDate) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
-	return "", 0
+func (upToDate) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int, error) {
+	return "", 0, nil
 }
-func (upToDate) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string { return "" }
-func (upToDate) Rebase(ctx context.Context, worktree, onto string) (string, error)   { return "", nil }
-func (upToDate) AbortRebase(ctx context.Context, worktree string) (string, error)    { return "", nil }
-func (upToDate) ConflictedFiles(ctx context.Context, worktree string) []string       { return nil }
-func (upToDate) RebaseInProgress(ctx context.Context, worktree string) bool          { return false }
-func (upToDate) CountCommits(ctx context.Context, repo, revs string) int             { return 0 }
-func (upToDate) Unchanged(ctx context.Context, repo, base, branch string) bool       { return false }
+func (upToDate) CommitNamingOn(ctx context.Context, repo, rev, ticket string) (string, error) {
+	return "", nil
+}
+func (upToDate) Rebase(ctx context.Context, worktree, onto string) (string, error) { return "", nil }
+func (upToDate) AbortRebase(ctx context.Context, worktree string) (string, error)  { return "", nil }
+func (upToDate) ConflictedFiles(ctx context.Context, worktree string) ([]string, error) {
+	return nil, nil
+}
+func (upToDate) RebaseInProgress(ctx context.Context, worktree string) (bool, error) {
+	return false, nil
+}
+func (upToDate) CountCommits(ctx context.Context, repo, revs string) (int, error) { return 0, nil }
+func (upToDate) Unchanged(ctx context.Context, repo, base, branch string) (bool, error) {
+	return false, nil
+}
 func (upToDate) Holds(ctx context.Context, repo, base, branch string) (bool, error) {
 	return false, nil
 }

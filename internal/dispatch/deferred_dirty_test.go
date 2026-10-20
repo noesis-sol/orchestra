@@ -19,9 +19,9 @@ type dirtyWorktrees struct {
 	dirty map[string]bool
 }
 
-func (g dirtyWorktrees) DirtyWorktree(ctx context.Context, dir string) string {
+func (g dirtyWorktrees) DirtyWorktree(ctx context.Context, dir string) (string, error) {
 	if g.dirty[dir] {
-		return "?? wip.txt"
+		return "?? wip.txt", nil
 	}
 	return g.fakeGit.DirtyWorktree(ctx, dir)
 }

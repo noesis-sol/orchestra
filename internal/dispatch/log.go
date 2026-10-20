@@ -118,6 +118,9 @@ func (l *Log) RunLines() []string {
 
 // Raw appends tool output (git) to the log, as the bash version did.
 func (l *Log) Raw(out string, err error) {
+	if strings.TrimSpace(out) == "" && err == nil {
+		return // nothing to log
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if out = strings.TrimSpace(out); out != "" {

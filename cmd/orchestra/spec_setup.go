@@ -92,7 +92,10 @@ func (u specSetup) run(ctx context.Context) int {
 	default:
 		return code
 	}
-	before := git.Git{}.Changes(ctx, u.repo)
+	before, err := git.Git{}.Changes(ctx, u.repo)
+	if err != nil { // what the setup writes couldn't be told from what was there
+		return u.failed("couldn't read the checkout's state before setting it up: "+err.Error(), dispatch.ExitTool)
+	}
 	fmt.Fprintln(u.out, "orchestra init hasn't set this repository up: setting it up as init does without a terminal")
 	u.logLine("SPEC: setting up " + u.repo + ", which orchestra init hasn't, as init does without a terminal")
 	steps := project.SetUpBeads(ctx, u.repo, u.choice, u.getenv, func(what string) { fmt.Fprintln(u.out, what) })

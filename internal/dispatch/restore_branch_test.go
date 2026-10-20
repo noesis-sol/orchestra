@@ -12,10 +12,12 @@ import (
 
 // stubGit is git as a hand-back's worker left the ticket's worktree: whether a rebase is in progress and
 // can be aborted, the worktree's changes and what it has checked out, the branch's commit, and the
-// answers to the checks on it. It records the reset.
+// answers to the checks on it, or git failing to answer one (failing, the method's name). It records
+// the reset.
 type stubGit struct {
 	upToDate
 	cleanCheckout
+	failing      string
 	rebasing     bool
 	abortErr     error
 	dirty        string
@@ -31,15 +33,29 @@ type stubGit struct {
 	notNamingErr error
 }
 
-func (g *stubGit) RebaseInProgress(ctx context.Context, worktree string) bool { return g.rebasing }
+func (g *stubGit) RebaseInProgress(ctx context.Context, worktree string) (bool, error) {
+	return g.rebasing, g.fails("RebaseInProgress")
+}
+
+// fails is errStubGit when method is the one failing, else nil.
+func (g *stubGit) fails(method string) error {
+	if g.failing == method {
+		return errStubGit
+	}
+	return nil
+}
 func (g *stubGit) AbortRebase(ctx context.Context, worktree string) (string, error) {
 	if g.abortErr == nil {
 		g.rebasing = false
 	}
 	return "", g.abortErr
 }
-func (g *stubGit) DirtyWorktree(ctx context.Context, dir string) string { return g.dirty }
-func (g *stubGit) Head(ctx context.Context, repo, rev string) string    { return g.head }
+func (g *stubGit) DirtyWorktree(ctx context.Context, dir string) (string, error) {
+	return g.dirty, g.fails("DirtyWorktree")
+}
+func (g *stubGit) Head(ctx context.Context, repo, rev string) (string, error) {
+	return g.head, g.fails("Head")
+}
 func (g *stubGit) ResetBranch(ctx context.Context, worktree, rev string) (string, error) {
 	g.resetTo = rev
 	return "", g.resetErr
@@ -56,13 +72,17 @@ func (g *stubGit) CurrentBranch(ctx context.Context, repo string) (string, error
 func (g *stubGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) (bool, error) {
 	return !g.notAncestor, nil
 }
-func (g *stubGit) Unchanged(ctx context.Context, repo, base, branch string) bool { return g.unchanged }
-func (g *stubGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
-	return g.naming
+func (g *stubGit) Unchanged(ctx context.Context, repo, base, branch string) (bool, error) {
+	return g.unchanged, g.fails("Unchanged")
 }
-func (g *stubGit) CountCommits(ctx context.Context, repo, revs string) int { return g.commits }
-func (g *stubGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
-	return g.naming, g.commits
+func (g *stubGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error) {
+	return g.naming, nil
+}
+func (g *stubGit) CountCommits(ctx context.Context, repo, revs string) (int, error) {
+	return g.commits, g.fails("CountCommits")
+}
+func (g *stubGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int, error) {
+	return g.naming, g.commits, g.fails("OwnCommits")
 }
 func (g *stubGit) CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error) {
 	return g.notNaming, g.notNamingErr
@@ -191,8 +211,6 @@ func TestVerifyResolved(t *testing.T) {
 		{stubGit{commits: 2}, "no commit on wt/k-1 names k-1 any more"},
 		{stubGit{naming: "c1", commits: 3},
 			"wt/k-1 has 3 commits where the ticket had 2 (a commit made besides the rebase?)"},
-		{stubGit{naming: "c1", commits: -1},
-			"wt/k-1 has -1 commits where the ticket had 2 (a commit made besides the rebase?)"},
 	} {
 		g := tc.git
 		if got := stubLoop(t, &g).verifyResolved(context.Background(), stubStop); got != tc.want {
@@ -212,7 +230,6 @@ func TestVerifyFixed(t *testing.T) {
 		{stubGit{rebasing: true}, "", "its worker left a rebase in progress in /wt/k-1"},
 		{stubGit{dirty: " M a.go"}, "", "its worker left uncommitted changes in /wt/k-1"},
 		{stubGit{notAncestor: true}, "", "its worker rewrote the commits on wt/k-1 rather than add to them"},
-		{stubGit{commits: -1}, "", "git could not say what its worker committed"},
 		{stubGit{commits: 1, notNamingErr: errors.New("exit status 128")}, "",
 			"git could not say what its worker committed: exit status 128"},
 		{stubGit{}, "nothing", ""}, // nothing to fix: the check runs again

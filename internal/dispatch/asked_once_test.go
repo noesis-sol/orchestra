@@ -31,27 +31,27 @@ func (g *askedGit) IsAncestor(ctx context.Context, repo, ancestor, rev string) (
 	return g.fakeGit.IsAncestor(ctx, repo, ancestor, rev)
 }
 
-func (g *askedGit) CountCommits(ctx context.Context, repo, revs string) int {
+func (g *askedGit) CountCommits(ctx context.Context, repo, revs string) (int, error) {
 	g.ask("CountCommits " + revs)
 	return g.fakeGit.CountCommits(ctx, repo, revs)
 }
 
-func (g *askedGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
+func (g *askedGit) CommitNaming(ctx context.Context, repo, base, branch, ticket string) (string, error) {
 	g.ask("CommitNaming " + base + ".." + branch)
 	return g.fakeGit.CommitNaming(ctx, repo, base, branch, ticket)
 }
 
-func (g *askedGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
+func (g *askedGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int, error) {
 	g.ask("OwnCommits " + base + ".." + branch)
 	return g.fakeGit.OwnCommits(ctx, repo, base, branch, ticket)
 }
 
-func (g *askedGit) Head(ctx context.Context, repo, rev string) string {
+func (g *askedGit) Head(ctx context.Context, repo, rev string) (string, error) {
 	g.ask("Head " + rev)
 	return g.fakeGit.Head(ctx, repo, rev)
 }
 
-func (g *askedGit) DirtyWorktree(ctx context.Context, dir string) string {
+func (g *askedGit) DirtyWorktree(ctx context.Context, dir string) (string, error) {
 	g.ask("DirtyWorktree " + filepath.Base(dir))
 	return g.fakeGit.DirtyWorktree(ctx, dir)
 }

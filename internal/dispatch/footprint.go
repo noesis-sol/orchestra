@@ -1011,7 +1011,12 @@ func (o *Loop) footprintOn() bool { return o.cfg.Concurrency > 1 && !o.cfg.NoFoo
 // reading those compared by function from the checkout.
 func (r *runState) readFiles(ctx context.Context) {
 	c := r.o.cfg
-	r.files = newRepoFiles(r.o.checkout.TrackedFiles(ctx, c.Repo), checkCommands(c))
+	tracked, err := r.o.checkout.TrackedFiles(ctx, c.Repo)
+	r.o.log.Raw("", err)
+	if err != nil {
+		tracked = nil // the footprints go by the names alone
+	}
+	r.files = newRepoFiles(tracked, checkCommands(c))
 	r.files.read = func(file string) ([]byte, error) { return ReadSource(c.Repo, file) }
 	r.files.union = r.mergesByUnion
 }

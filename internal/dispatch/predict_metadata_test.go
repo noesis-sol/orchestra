@@ -42,7 +42,7 @@ func TestPredictedPathWithASpaceReadsBackWhole(t *testing.T) {
 	if fp := r.footprintOf(b); !slices.Equal(fp.Files, want) || !fp.Predicted {
 		t.Errorf("footprint in this run: %+v", fp)
 	}
-	tracked := o.checkout.TrackedFiles(t.Context(), h.repo)
+	tracked, _ := o.checkout.TrackedFiles(t.Context(), h.repo)
 	if fp := TicketFootprint(b, tracked, ""); !slices.Equal(fp.Files, want) || !fp.Predicted {
 		t.Errorf("footprint in the next run: %+v", fp)
 	}

@@ -44,15 +44,15 @@ func write(t *testing.T, dir, name, content string) {
 func TestHeadIsEmptyBeforeTheFirstCommit(t *testing.T) {
 	ctx, g := context.Background(), Git{}
 	repo, git := newRepo(t)
-	if got := g.Head(ctx, repo, "HEAD"); got != "" {
-		t.Errorf("before the first commit: got %q", got)
+	if got, err := g.Head(ctx, repo, "HEAD"); got != "" || err != nil {
+		t.Errorf("before the first commit: got %q, %v", got, err)
 	}
 	git("commit", "-q", "--allow-empty", "-m", "Start")
-	if got := g.Head(ctx, repo, "HEAD"); len(got) != 40 {
+	if got := answered[string](t)(g.Head(ctx, repo, "HEAD")); len(got) != 40 {
 		t.Errorf("after it: got %q, want a commit", got)
 	}
-	if got := g.Head(ctx, repo, "no-such-branch"); got != "" {
-		t.Errorf("a missing branch: got %q", got)
+	if got, err := g.Head(ctx, repo, "no-such-branch"); got != "" || err != nil {
+		t.Errorf("a missing branch: got %q, %v", got, err)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	write(t, repo, "sub dir/b.md", "b\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "Start")
-	first := g.Head(ctx, repo, "HEAD")
+	first := answered[string](t)(g.Head(ctx, repo, "HEAD"))
 	if got := g.ChangedFiles(ctx, repo, "", first); !slices.Equal(got, []string{"a.md", "sub dir/b.md"}) {
 		t.Errorf("the first commit's files: %q", got)
 	}
@@ -72,10 +72,10 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	write(t, repo, "sub dir/b.md", "changed\n")
 	write(t, repo, "new/c.md", "c\n")
 	want := map[string]string{"renamed.md": "R ", "sub dir/b.md": " M", "new/c.md": "??"}
-	if got := g.Changes(ctx, repo); !maps.Equal(got, want) {
+	if got := answered[map[string]string](t)(g.Changes(ctx, repo)); !maps.Equal(got, want) {
 		t.Errorf("Changes = %q, want %q", got, want)
 	}
-	if got := g.Changes(ctx, repo, "new"); !maps.Equal(got, map[string]string{"new/c.md": "??"}) {
+	if got := answered[map[string]string](t)(g.Changes(ctx, repo, "new")); !maps.Equal(got, map[string]string{"new/c.md": "??"}) {
 		t.Errorf("Changes under new/ = %q", got)
 	}
 
@@ -88,8 +88,8 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	}
 
 	gone := filepath.Join(repo, "gone")
-	if got := g.Changes(ctx, gone); len(got) != 0 {
-		t.Errorf("a missing folder: %q", got)
+	if got, err := g.Changes(ctx, gone); len(got) != 0 || err == nil {
+		t.Errorf("a missing folder: %q, %v; want git's error", got, err)
 	}
 	if got := g.ChangedFiles(ctx, gone, first, "HEAD"); len(got) != 0 {
 		t.Errorf("a missing folder: %q", got)
@@ -102,7 +102,8 @@ func TestTracksAndMove(t *testing.T) {
 	write(t, repo, "tracked.md", "t\n")
 	write(t, repo, "untracked.md", "u\n")
 	git("add", "tracked.md")
-	if !g.Tracks(ctx, repo, "tracked.md") || g.Tracks(ctx, repo, "untracked.md") {
+	tracks := func(path string) bool { return answered[bool](t)(g.Tracks(ctx, repo, path)) }
+	if !tracks("tracked.md") || tracks("untracked.md") {
 		t.Error("Tracks should tell tracked.md from untracked.md")
 	}
 	if out, err := g.Move(ctx, repo, "tracked.md", "sub/moved.md"); err == nil {
@@ -114,7 +115,7 @@ func TestTracksAndMove(t *testing.T) {
 	if out, err := g.Move(ctx, repo, "tracked.md", "sub/moved.md"); err != nil {
 		t.Fatalf("Move: %v\n%s", err, out)
 	}
-	if got := g.Changes(ctx, repo); got["sub/moved.md"] != "A " {
+	if got := answered[map[string]string](t)(g.Changes(ctx, repo)); got["sub/moved.md"] != "A " {
 		t.Errorf("the move should be staged: %q", got)
 	}
 }

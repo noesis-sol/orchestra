@@ -20,8 +20,16 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 		o.leaveOffBranch(keep, w, on)
 		return nil
 	}
-	commit, own := o.merger.OwnCommits(keep, c.Repo, c.Base, br, id)
-	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
+	own, err := o.ownCommits(keep, c.Base, br, id)
+	if err != nil {
+		return o.gitFailedMerging(keep, w, fmt.Sprintf("which commits %s has beyond %s", br, c.Base), err)
+	}
+	dirty, err := askGit(keep, o, nil, func() (string, error) { return o.checkout.DirtyWorktree(keep, wt) })
+	if err != nil {
+		return o.gitFailedMerging(keep, w, "whether "+wt+" has uncommitted changes", err)
+	}
+	commit := own.naming
+	switch closedOutcomeOf(commit, own.n, dirty != "") {
 	case closedNoChange:
 		repo := &lockGuard{mu: &o.repoMu}
 		defer repo.release() // let go of even if the cleanup panics
@@ -62,7 +70,8 @@ const uncommittedShown = 5
 // M a.go, ?? cmd/orchestra/orchestra", and "and N more" after the first uncommittedShown. It is ""
 // when git can't say.
 func (o *Loop) uncommittedList(ctx context.Context, wt string) string {
-	changes := o.checkout.Changes(ctx, wt)
+	changes, err := o.checkout.Changes(ctx, wt) // none on failure: the list only explains
+	o.log.Raw("", err)
 	var files []string
 	for f := range changes {
 		if !strings.HasPrefix(f, ".orchestra/run/") {
@@ -118,8 +127,8 @@ func (o *Loop) mergeNamed(ctx context.Context, w worker, named string) *stopReas
 	o.mayCheckAhead(w) // checked ahead of its turn while the ticket before it is (see train.go)
 	m.queue.lock()
 	defer m.queue.release() // held on every return but a stop's; a hand-back lets go of it and takes it again
-	if !m.board(ctx) {
-		return nil // set aside
+	if boarded, stop := m.board(ctx); !boarded {
+		return stop // set aside, or git failed
 	}
 	stop, done := mergePasses(func(rebase bool) (mergeStep, *stopReason) { return m.pass(ctx, rebase) })
 	if !done {
@@ -195,14 +204,22 @@ func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReaso
 	m.repo.lock()
 	// Its commits may undo each other, as when its worker found the change on Base already and
 	// reverted its own: rebasing them would replay the revert onto Base's change.
-	if m.dropUnchanged(c.Base, fmt.Sprintf("the commits on %s, taken together, change nothing", m.w.br)) {
-		return mergeDone, nil
+	if done, stop := m.dropUnchanged(c.Base, fmt.Sprintf("the commits on %s, taken together, change nothing",
+		m.w.br)); done {
+		return mergeDone, stop
 	}
-	// Where git can't tell, the branch is taken for one off Base: rebased, which leaves one on top of
-	// Base as it is, or left for Base to move.
-	if on, _ := m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br); on {
+	on, err := askGit(m.keep, m.o, m.repo, func() (bool, error) {
+		return m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br)
+	})
+	if err != nil {
+		return m.gitFailed(fmt.Sprintf("whether %s is on top of %s", m.w.br, c.Base), err)
+	}
+	if on {
 		// What the fast-forward brings onto Base: the very code checked, when it was checked in this merge.
-		at := m.o.checkout.Head(m.keep, c.Repo, m.w.br)
+		at, err := m.o.head(m.keep, m.repo, m.w.br)
+		if err != nil {
+			return m.gitFailed("where "+m.w.br+" is", err)
+		}
 		if c.Check == "" || at != "" && at == m.checked {
 			return mergeDone, m.fastForward(at)
 		}
@@ -214,27 +231,42 @@ func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReaso
 		m.repo.unlock()
 		return mergeBaseMoved, nil
 	}
-	r, conflicted, done := m.rebase()
+	r, conflicted, done, stop := m.rebase()
 	switch {
 	case done:
-		return mergeDone, nil
+		return mergeDone, stop
 	case conflicted:
 		return m.resolveConflict(ctx, r)
 	}
 	return m.checkClean(ctx, r)
 }
 
+// gitFailed ends the merge, git having failed to tell what it turns on (see gitFailedMerging). It is
+// called with repo held, and lets go of it.
+func (m *mergeRun) gitFailed(what string, err error) (mergeStep, *stopReason) {
+	m.repo.unlock()
+	return mergeDone, m.o.gitFailedMerging(m.keep, m.w, what, err)
+}
+
 // dropUnchanged closes the ticket as unchanged, for why (see closedUnchanged), when the commits on its
-// branch beyond onto, taken together, change nothing, and says whether it did. It is called with repo
-// held, and lets go of it only when it did.
-func (m *mergeRun) dropUnchanged(onto, why string) bool {
-	if !m.o.merger.Unchanged(m.keep, m.o.cfg.Repo, onto, m.w.br) {
-		return false
+// branch beyond onto, taken together, change nothing, and says whether the merge is over: it did, or
+// git could not tell, the run stopping then. It is called with repo held, and lets go of it only when
+// the merge is over.
+func (m *mergeRun) dropUnchanged(onto, why string) (bool, *stopReason) {
+	unchanged, err := askGit(m.keep, m.o, m.repo, func() (bool, error) {
+		return m.o.merger.Unchanged(m.keep, m.o.cfg.Repo, onto, m.w.br)
+	})
+	switch {
+	case err != nil:
+		_, stop := m.gitFailed(fmt.Sprintf("whether the commits on %s change anything", m.w.br), err)
+		return true, stop
+	case !unchanged:
+		return false, nil
 	}
 	m.o.dropBranch(m.keep, m.w.wt)
 	m.repo.unlock()
 	m.o.closedUnchanged(m.keep, m.w, why, m.repo)
-	return true
+	return true, nil
 }
 
 // checkOnTop checks the ticket's branch, on top of Base already as its worker left it at head, before
@@ -242,7 +274,11 @@ func (m *mergeRun) dropUnchanged(onto, why string) bool {
 // ticket aside. It is called with repo held.
 func (m *mergeRun) checkOnTop(ctx context.Context, head string) (mergeStep, *stopReason) {
 	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
-	r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: head, onTop: true}
+	onto, err := o.head(keep, m.repo, c.Base)
+	if err != nil {
+		return m.gitFailed("where "+c.Base+" is", err)
+	}
+	r := rebaseStop{worker: w, onto: onto, head: head, onTop: true}
 	m.repo.unlock()
 	o.info("  %s is on top of %s already: checking it with '%s' before it merges", w.br, c.Base, c.Check)
 	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
@@ -269,8 +305,7 @@ func (m *mergeRun) afterCheck(r rebaseStop, res checked, stop *stopReason) (merg
 	return mergeAgain, nil
 }
 
-// fastForward merges the ticket's branch, on top of Base and at commit at ("" when git couldn't say),
-// into it and cleans up after it, or returns the reason to stop when the main checkout isn't ready for
+// fastForward merges the ticket's branch, on top of Base and at commit at, into it and cleans up after it, or returns the reason to stop when the main checkout isn't ready for
 // it or git won't. It is called with repo held.
 func (m *mergeRun) fastForward(at string) *stopReason {
 	o, c, keep := m.o, m.o.cfg, m.keep
@@ -282,7 +317,11 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 		return s
 	}
 	commit := m.commitNaming(at)
-	before := o.checkout.Head(keep, c.Repo, c.Base)
+	before, err := o.head(keep, m.repo, c.Base)
+	if err != nil { // the settings the merge brings would go unread
+		m.repo.unlock()
+		return o.gitFailedMerging(keep, m.w, "where "+c.Base+" is", err)
+	}
 	out, err := o.merger.FastForward(keep, c.Repo, br)
 	o.log.Raw(out, err)
 	if err != nil {
@@ -295,9 +334,6 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 	o.countMerge()
 	// What it brought may be what a setup that failed needed, or a new setup (see leaveSetupFailed).
 	o.retrySetups()
-	if at == "" { // git couldn't say before
-		at = o.checkout.Head(keep, c.Repo, c.Base)
-	}
 	o.takeSettings(keep, id, before, at) // Base is where the branch was
 	cleaned := o.removeWorktree(keep, id, wt, br)
 	m.repo.unlock()
@@ -319,51 +355,88 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 // commitNaming is the latest commit on the ticket's branch, not on Base, naming its ticket, as the
 // fast-forward names it, the branch's head being at: finish's (named) while it is that head still, as
 // nothing has moved the branch since, else git's. A rebase, its train's included, or its worker working
-// on a hand-back gives the branch a new head. It is called with repo held.
+// on a hand-back gives the branch a new head. It is "" when git can't say, which only the lines on the
+// merge show. It is called with repo held.
 func (m *mergeRun) commitNaming(at string) string {
 	if hash, _, _ := strings.Cut(m.named, " "); hash != "" && strings.HasPrefix(at, hash) {
 		return m.named // git log's abbreviated hash, of the full one Head gives
 	}
-	return m.o.merger.CommitNaming(m.keep, m.o.cfg.Repo, m.o.cfg.Base, m.w.br, m.w.id)
+	naming, err := m.o.merger.CommitNaming(m.keep, m.o.cfg.Repo, m.o.cfg.Base, m.w.br, m.w.id)
+	m.o.log.Raw("", err)
+	return naming
 }
 
 // rebase rebases the ticket's branch onto Base, which moved on while the ticket ran, and returns the
 // rebase as it went: conflicted when it stopped on conflicts, in progress still, or done when the
-// ticket was set aside instead. It is called with repo held, and lets go of it only when done.
+// ticket was set aside instead, or git failed to tell what the rebase turns on (stop says why the run
+// stops then). It is called with repo held, and lets go of it only when done.
 //
 // git rebases what the worktree has checked out, which must be the branch, as its worker may have
 // switched since finish looked, resolving a conflict. git won't rebase a worktree with uncommitted
 // changes, as a check that rewrites the files it tracks leaves.
-func (m *mergeRun) rebase() (r rebaseStop, conflicted, done bool) {
+func (m *mergeRun) rebase() (r rebaseStop, conflicted, done bool, stop *stopReason) {
 	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
+	failed := func(what string, err error) (rebaseStop, bool, bool, *stopReason) {
+		_, stop := m.gitFailed(what, err)
+		return r, false, true, stop
+	}
 	if on := o.offBranch(keep, w); on != "" {
 		m.repo.unlock()
 		o.leaveOffBranch(keep, w, on)
-		return r, false, true
+		return r, false, true, nil
 	}
-	if files := o.uncommitted(keep, w.wt); len(files) > 0 {
+	files, err := askGit(keep, o, m.repo, func() ([]string, error) { return o.uncommitted(keep, w.wt) })
+	switch {
+	case err != nil:
+		return failed("whether "+w.wt+" has uncommitted changes", err)
+	case len(files) > 0:
 		m.repo.unlock()
 		o.leaveDirtyWorktree(keep, w, files)
-		return r, false, true
+		return r, false, true, nil
 	}
-	r = rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, w.br)}
-	r.own = o.merger.CountCommits(keep, c.Repo, r.onto+".."+w.br)
+	r = rebaseStop{worker: w}
+	if r.onto, err = o.head(keep, m.repo, c.Base); err != nil {
+		return failed("where "+c.Base+" is", err)
+	}
+	// Where the branch was, which a failed hand-back puts it back to, and its own commits, which one
+	// mustn't add to.
+	if r.head, err = o.head(keep, m.repo, w.br); err != nil {
+		return failed("where "+w.br+" is", err)
+	}
+	r.own, err = askGit(keep, o, m.repo, func() (int, error) {
+		return o.merger.CountCommits(keep, c.Repo, r.onto+".."+w.br)
+	})
+	if err != nil {
+		return failed(fmt.Sprintf("how many commits %s has beyond %s", w.br, c.Base), err)
+	}
 	out, err := o.merger.Rebase(keep, w.wt, c.Base)
 	o.log.Raw(out, err)
-	if err != nil && !o.merger.RebaseInProgress(keep, w.wt) { // it didn't start, or stopped on nothing to resolve
+	if err == nil {
+		return r, false, false, nil
+	}
+	stopped, inErr := askGit(keep, o, m.repo, func() (bool, error) { return o.merger.RebaseInProgress(keep, w.wt) })
+	switch {
+	case inErr != nil:
+		return failed(fmt.Sprintf("whether the rebase of %s onto %s stopped on conflicts", w.br, c.Base), inErr)
+	case !stopped: // it didn't start, or stopped on nothing to resolve
 		m.repo.unlock()
 		o.leaveRebaseFailed(keep, w, err)
-		return r, false, true
+		return r, false, true, nil
 	}
-	return r, err != nil, false
+	return r, true, false, nil
 }
 
 // resolveConflict hands r, a rebase stopped on conflicts, back to the ticket's worker to resolve
 // when it can be, and checks the result, or sets the ticket aside. It is called with repo held.
 func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep, *stopReason) {
 	o, c, keep := m.o, m.o.cfg, m.keep
-	r.files = o.merger.ConflictedFiles(keep, r.wt)
-	if why := o.whyNotHandBack(keep, r, m.handedBack); why != "" {
+	files, err := o.merger.ConflictedFiles(keep, r.wt)
+	r.files = files
+	why := gitCantTell("which files the rebase stopped on", err)
+	if err == nil {
+		why = o.whyNotHandBack(keep, r, m.handedBack)
+	}
+	if why != "" {
 		if err := o.abortRebase(keep, r.wt); err != nil {
 			why += "; its rebase could not be aborted, so " + r.wt + " is left mid-rebase"
 		}
@@ -390,9 +463,9 @@ func (m *mergeRun) resolveConflict(ctx context.Context, r rebaseStop) (mergeStep
 	}
 	if why == "" {
 		m.repo.lock()
-		if m.dropUnchanged(r.onto, fmt.Sprintf("its worker found the changes of %s on %s already "+
-			"and skipped them in the rebase", r.br, c.Base)) {
-			return mergeDone, nil
+		if done, stop := m.dropUnchanged(r.onto, fmt.Sprintf("its worker found the changes of %s on %s already "+
+			"and skipped them in the rebase", r.br, c.Base)); done {
+			return mergeDone, stop
 		}
 		m.repo.unlock()
 		// Checked once, where it merges: a check on r.onto would be run again on the branch rebased.
@@ -441,9 +514,9 @@ func (m *mergeRun) stoppedRebase(r rebaseStop) (mergeStep, *stopReason) {
 // it as unchanged when git dropped its commits. It is called with repo held.
 func (m *mergeRun) checkClean(ctx context.Context, r rebaseStop) (mergeStep, *stopReason) {
 	o, c := m.o, m.o.cfg
-	if m.dropUnchanged(c.Base, fmt.Sprintf("rebased onto %s, which has its changes already, %s changes nothing",
-		c.Base, r.br)) { // git dropped its commits: Base has their changes
-		return mergeDone, nil
+	if done, stop := m.dropUnchanged(c.Base, fmt.Sprintf("rebased onto %s, which has its changes already, "+
+		"%s changes nothing", c.Base, r.br)); done { // git dropped its commits: Base has their changes
+		return mergeDone, stop
 	}
 	m.repo.unlock()
 	o.info("  rebased %s onto %s, which moved on while it ran", r.br, c.Base)
@@ -474,10 +547,11 @@ func (o *Loop) notFastForwarded(ctx context.Context, w worker, err error) *stopR
 
 // inTheWay lists, sorted, the files that br changes on top of Base and that the main checkout has
 // uncommitted changes to, untracked files included: a fast-forward would overwrite them, so git
-// refuses it. It lists none when git can't say.
+// refuses it. It lists none when git can't say, git's own reason then the one the run stops with.
 func (o *Loop) inTheWay(ctx context.Context, br string) []string {
 	c := o.cfg
-	local := o.checkout.Changes(ctx, c.Repo)
+	local, err := o.checkout.Changes(ctx, c.Repo)
+	o.log.Raw("", err)
 	if len(local) == 0 {
 		return nil
 	}
@@ -493,16 +567,20 @@ func (o *Loop) inTheWay(ctx context.Context, br string) []string {
 
 // uncommitted lists, sorted, the tracked files that worktree wt has uncommitted changes to, staged
 // or not, outside .orchestra/run/: git won't rebase it then. Untracked files don't count, as they
-// don't stop a rebase. It lists none when git can't say.
-func (o *Loop) uncommitted(ctx context.Context, wt string) []string {
+// don't stop a rebase. It returns git's error when git can't say.
+func (o *Loop) uncommitted(ctx context.Context, wt string) ([]string, error) {
+	changes, err := o.checkout.Changes(ctx, wt)
+	if err != nil {
+		return nil, err
+	}
 	var files []string
-	for f, code := range o.checkout.Changes(ctx, wt) {
+	for f, code := range changes {
 		if code != "??" && code != "!!" && !strings.HasPrefix(f, ".orchestra/run/") {
 			files = append(files, f)
 		}
 	}
 	slices.Sort(files)
-	return files
+	return files, nil
 }
 
 // leaveDirtyWorktree sets aside w's ticket, not rebased onto Base, which moved on while it ran, as
@@ -536,7 +614,8 @@ func (o *Loop) offBranch(ctx context.Context, w worker) string {
 		return ""
 	case on != "":
 		return on + " checked out"
-	case o.merger.RebaseInProgress(ctx, w.wt):
+	}
+	if rebasing, _ := o.merger.RebaseInProgress(ctx, w.wt); rebasing { // the wording only: off the branch either way
 		return "a rebase in progress, on a detached HEAD"
 	}
 	return "a detached HEAD"
@@ -723,8 +802,8 @@ const (
 )
 
 // A closed ticket is merged only with a commit naming it and a clean worktree. One with no commit
-// naming it, whose branch has no commits beyond Base (own, -1 when git can't count them) and whose
-// worktree is clean, closed with no change of its own: there is nothing to merge, or to review.
+// naming it, whose branch has no commits beyond Base (own) and whose worktree is clean, closed with no
+// change of its own: there is nothing to merge, or to review.
 func closedOutcomeOf(commit string, own int, worktreeDirty bool) closedOutcome {
 	switch {
 	case commit == "" && own == 0 && !worktreeDirty:

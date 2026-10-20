@@ -466,7 +466,11 @@ func orText(v, def string) string {
 // movePrompt moves the legacy prompt, with 'git mv' when git tracks it so the move is staged.
 func movePrompt(ctx context.Context, repo, from, to string) error {
 	rel, _ := filepath.Rel(repo, from) // both paths are under repo, so Rel can't fail
-	if g := (git.Git{}); g.Tracks(ctx, repo, rel) {
+	g := git.Git{}
+	switch tracked, err := g.Tracks(ctx, repo, rel); {
+	case err != nil: // a rename of a tracked file would leave its deletion unstaged
+		return fmt.Errorf("cannot tell whether git tracks %s: %w", rel, err)
+	case tracked:
 		relTo, _ := filepath.Rel(repo, to)
 		_, err := g.Move(ctx, repo, rel, relTo)
 		return err
@@ -596,10 +600,10 @@ func NextSteps(
 	}
 	// The next steps are advice: a git status that fails only leaves out the commit step.
 	var commit []string
-	if len(git.Git{}.Changes(ctx, repo, Dir, legacyPrompt)) > 0 {
+	if changes, _ := (git.Git{}).Changes(ctx, repo, Dir, legacyPrompt); len(changes) > 0 {
 		commit = append(commit, Dir+"/")
 	}
-	if len(git.Git{}.Changes(ctx, repo, attributesName)) > 0 {
+	if changes, _ := (git.Git{}).Changes(ctx, repo, attributesName); len(changes) > 0 {
 		commit = append(commit, attributesName)
 	}
 	for _, s := range steps {

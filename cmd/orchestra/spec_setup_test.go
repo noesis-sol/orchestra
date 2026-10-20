@@ -211,7 +211,7 @@ func TestSpecRunSetupProblems(t *testing.T) {
 // notSetUp checks that the repository has no commit yet, and neither settings nor runners.
 func notSetUp(t *testing.T, repo string) {
 	t.Helper()
-	if head := (git.Git{}).Head(context.Background(), repo, "HEAD"); head != "" {
+	if head, _ := (git.Git{}).Head(context.Background(), repo, "HEAD"); head != "" {
 		t.Errorf("committed %s", head)
 	}
 	for _, p := range []string{project.SettingsPath(repo), filepath.Join(repo, "scripts")} {

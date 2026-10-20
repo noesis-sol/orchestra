@@ -44,7 +44,7 @@ func TestAFixLeftOffItsBranchIsRejected(t *testing.T) {
 					"onto main, after it was handed back to its worker to fix once"; !strings.Contains(ev, want) {
 					t.Errorf("events lack %q:\n%s", want, ev)
 				}
-				fixed := h.mem.Head(t.Context(), h.repo, "wt/A")
+				fixed := h.mem.head("wt/A")
 				notes := h.beads.notesOf("A")
 				if want := "(1) its worker left " + wt + " with " + tc.on + ", not wt/A; wt/A is left at " +
 					short(fixed) + ", as " + wt + " has " + tc.on; !strings.Contains(notes, want) {

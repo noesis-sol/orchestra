@@ -102,7 +102,8 @@ func (o *Loop) closedWhy(ctx context.Context, id string) string {
 func (o *Loop) branchWhy(ctx context.Context, id string) string {
 	c := o.cfg
 	why, first := o.branches.why(id, o.pickHead(ctx), func() string {
-		return o.checkout.Head(ctx, c.Repo, branchOf(id))
+		tip, _ := o.checkout.Head(ctx, c.Repo, branchOf(id)) // "" when git can't say: asked again
+		return tip
 	}, func() (string, error) {
 		return branchOff(ctx, c, o.worktrees, o.merger, id)
 	})
@@ -126,7 +127,8 @@ func (o *Loop) pickHead(ctx context.Context) string {
 	if at.head != "" && at.pick == pick {
 		return at.head
 	}
-	head := o.checkout.Head(ctx, o.cfg.Repo, o.cfg.Base)
+	head, err := o.checkout.Head(ctx, o.cfg.Repo, o.cfg.Base)
+	o.log.Raw("", err)
 	o.mu.Lock()
 	o.baseAt = pickedHead{pick: pick, head: head}
 	o.mu.Unlock()

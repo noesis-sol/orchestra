@@ -253,7 +253,9 @@ func (o *Loop) Run(ctx context.Context) int {
 func (o *Loop) begin(ctx context.Context) {
 	c := o.cfg
 	o.started = time.Now()
-	o.startHead = o.checkout.Head(ctx, c.Repo, c.Base)
+	var err error // "" on failure: the reviewer reads no commits
+	o.startHead, err = o.checkout.Head(ctx, c.Repo, c.Base)
+	o.log.Raw("", err)
 	ticketLimit := "none"
 	if c.TicketLimit > 0 {
 		ticketLimit = command.ShortDuration(c.TicketLimit)

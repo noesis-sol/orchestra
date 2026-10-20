@@ -40,7 +40,11 @@ func (o *Loop) awaitRecheck(ctx context.Context, w worker, onto string) string {
 	if onto == "" {
 		return "" // git couldn't say what it was checked on, so nor when Base moves on from it
 	}
-	rc := recheck{w: w, title: o.titleOf(w.id), onto: onto, head: o.checkout.Head(ctx, c.Repo, w.br)}
+	head, err := o.checkout.Head(ctx, c.Repo, w.br)
+	if err != nil { // nor whether it is as it failed, when Base has moved on
+		return fmt.Sprintf("; not checked again in this run, as git could not say where %s is%s", w.br, because(err))
+	}
+	rc := recheck{w: w, title: o.titleOf(w.id), onto: onto, head: head}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.rechecks = append(o.rechecks, rc)
@@ -66,7 +70,11 @@ func (o *Loop) dueRecheck(ctx context.Context, running map[string]bool) (recheck
 	if len(waiting) == 0 {
 		return recheck{}, false
 	}
-	base := o.checkout.Head(ctx, c.Repo, c.Base)
+	base, err := o.checkout.Head(ctx, c.Repo, c.Base)
+	if err != nil { // asked again at the next poll
+		o.log.Raw("", err)
+		return recheck{}, false
+	}
 	for i, rc := range waiting {
 		if running[rc.w.id] {
 			continue // taken up once its merge has returned
@@ -158,10 +166,16 @@ func (o *Loop) whyNotRecheck(ctx context.Context, rc recheck) string {
 	case st != StatusClosed:
 		return "it is " + string(st) + " now"
 	}
-	switch {
-	case o.checkout.DirtyWorktree(ctx, w.wt) != "":
+	switch dirty, err := o.checkout.DirtyWorktree(ctx, w.wt); {
+	case err != nil:
+		return gitCantTell("whether "+w.wt+" has uncommitted changes", err)
+	case dirty != "":
 		return w.wt + " has uncommitted changes"
-	case o.checkout.Head(ctx, c.Repo, w.br) != rc.head:
+	}
+	switch head, err := o.checkout.Head(ctx, c.Repo, w.br); {
+	case err != nil:
+		return gitCantTell("where "+w.br+" is", err)
+	case head != rc.head:
 		return w.br + " has moved since its check failed"
 	}
 	switch st, err := o.agents.Status(ctx, o.agentName(w.id)); {

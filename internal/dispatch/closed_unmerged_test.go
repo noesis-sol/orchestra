@@ -31,7 +31,7 @@ type branchAsks struct {
 }
 
 func (b *branchAsks) HasBranch(ctx context.Context, repo, branch string) (bool, error) {
-	head := b.Head(ctx, repo, b.base)
+	head := b.head(b.base)
 	b.mu.Lock()
 	b.asked[branch] = append(b.asked[branch], head)
 	b.mu.Unlock()

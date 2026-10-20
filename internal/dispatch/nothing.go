@@ -210,10 +210,13 @@ func startBranches(c Config, worktrees WorktreeCheckout, merger Merger) func(ctx
 	var head string
 	return func(ctx context.Context, id string) string {
 		if head == "" {
-			head = worktrees.Head(ctx, c.Repo, c.Base)
+			head, _ = worktrees.Head(ctx, c.Repo, c.Base) // "" when git can't say: asked again
 		}
-		why, _ := b.why(id, head, func() string { return worktrees.Head(ctx, c.Repo, branchOf(id)) },
-			func() (string, error) { return branchOff(ctx, c, worktrees, merger, id) })
+		tip := func() string {
+			tip, _ := worktrees.Head(ctx, c.Repo, branchOf(id)) // "" when git can't say: asked again
+			return tip
+		}
+		why, _ := b.why(id, head, tip, func() (string, error) { return branchOff(ctx, c, worktrees, merger, id) })
 		return why
 	}
 }

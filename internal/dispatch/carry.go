@@ -327,7 +327,9 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 	var said []string
 	add := func(id string, w workerSpot) {
 		if w.fork == "" {
-			w.fork = o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
+			var err error // "" on failure: the next run takes the branch's tip alone for its own
+			w.fork, err = o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
+			o.log.Raw("", err)
 		}
 		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Terminal: o.cfg.Terminal,
 			Tab: w.tab, Pane: w.pane, Worktree: w.wt, Fork: w.fork, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title,

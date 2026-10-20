@@ -85,9 +85,14 @@ func (o *Loop) fullCheckTimeout() time.Duration {
 func (o *Loop) FullCheck(ctx context.Context) {
 	c := o.cfg
 	keep := context.WithoutCancel(ctx) // the worktree is made and removed whole
-	f := fullCheck{at: o.checkout.Head(keep, c.Repo, c.Base)}
+	var f fullCheck
 	defer func() { o.setFullCheck(f) }()
-	wt, err := o.fullCheckWorktree(keep, f.at)
+	at, err := o.checkout.Head(keep, c.Repo, c.Base)
+	f.at = at
+	wt := ""
+	if err == nil {
+		wt, err = o.fullCheckWorktree(keep, f.at)
+	}
 	if err != nil {
 		f.outcome = FullCheckNotRun
 		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Text: fmt.Sprintf(

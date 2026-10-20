@@ -99,7 +99,9 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWo
 	// When git can't list the worktrees, none is reused, and adding one fails with git's reason.
 	if wt, _ := o.worktrees.WorktreeOf(ctx, c.Repo, br); wt != "" {
 		o.info("  reusing worktree %s (%s)", wt, br)
-		p = preparedWorktree{wt: wt, before: o.checkout.Head(ctx, c.Repo, br)}
+		before, err := o.checkout.Head(ctx, c.Repo, br) // "" when git can't say, as documented
+		o.log.Raw("", err)
+		p = preparedWorktree{wt: wt, before: before}
 		return p, !o.refreshBranch(ctx, wt, br), nil
 	}
 	has, err := o.worktrees.HasBranch(ctx, c.Repo, br)
@@ -133,13 +135,19 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWo
 func (o *Loop) earlierNote(ctx context.Context, br, wt string) string {
 	base := o.cfg.Base
 	var left []string
-	switch n := o.merger.CountCommits(ctx, o.cfg.Repo, base+".."+br); {
+	switch n, err := o.merger.CountCommits(ctx, o.cfg.Repo, base+".."+br); {
+	case err != nil:
+		left = append(left, fmt.Sprintf("commits that %s may not have, git could not count them (git log %s..HEAD)",
+			base, base))
 	case n == 1:
 		left = append(left, fmt.Sprintf("1 commit that %s doesn't have (git log %s..HEAD)", base, base))
 	case n > 1:
 		left = append(left, fmt.Sprintf("%d commits that %s doesn't have (git log %s..HEAD)", n, base, base))
 	}
-	if o.checkout.DirtyWorktree(ctx, wt) != "" {
+	switch dirty, err := o.checkout.DirtyWorktree(ctx, wt); {
+	case err != nil:
+		left = append(left, "uncommitted changes, maybe: git could not tell (git status)")
+	case dirty != "":
 		left = append(left, "uncommitted changes (git status)")
 	}
 	if len(left) == 0 {
@@ -514,17 +522,28 @@ func (o *Loop) typedPrompt(ctx context.Context, agent, prompt string) string {
 
 // refreshBranch rebases a returning ticket's branch onto Base, which has moved on since the branch
 // was cut, so its worker starts from current code. A failed rebase is undone and it returns false:
-// the branch conflicts with Base.
+// the branch conflicts with Base. Where git can't tell whether the branch is behind Base, or whether its
+// worktree has uncommitted changes, it is left as it is, and its merge rebases it.
 func (o *Loop) refreshBranch(ctx context.Context, wt, br string) bool {
 	c := o.cfg
-	// Where git can't tell, the branch is rebased, which leaves one on top of Base as it is.
-	if on, _ := o.merger.IsAncestor(ctx, c.Repo, c.Base, br); on {
+	skipped := func(why string) bool {
+		o.emit(Event{Kind: EvWarn, Text: "  REBASE_SKIPPED: " + why})
+		return true
+	}
+	gitFailed := func(what string, err error) bool {
+		return skipped(fmt.Sprintf("%s, so %s is left as it is until it merges", gitCantTell(what, err), br))
+	}
+	switch on, err := o.merger.IsAncestor(ctx, c.Repo, c.Base, br); {
+	case err != nil:
+		return gitFailed(fmt.Sprintf("whether %s is on top of %s", br, c.Base), err)
+	case on:
 		return true // already on top of Base
 	}
-	if d := o.checkout.DirtyWorktree(ctx, wt); d != "" {
-		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
-			"  REBASE_SKIPPED: %s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base)})
-		return true
+	switch d, err := o.checkout.DirtyWorktree(ctx, wt); {
+	case err != nil:
+		return gitFailed("whether "+wt+" has uncommitted changes", err)
+	case d != "":
+		return skipped(fmt.Sprintf("%s has uncommitted changes, so %s stays behind %s until it merges", wt, br, c.Base))
 	}
 	out, err := o.merger.Rebase(ctx, wt, c.Base)
 	o.log.Raw(out, err)

@@ -82,15 +82,18 @@ func TestCommitNamingIgnoresLongerIDs(t *testing.T) {
 	commit(t, repo, "x-123: Fix a follow-up")
 	commit(t, repo, "x-12.1: Fix the child")
 	g := Git{}
-	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12"); got != "" {
+	naming := func(ticket string) string {
+		return answered[string](t)(g.CommitNaming(context.Background(), repo, "main", "wt/x-12", ticket))
+	}
+	if got := naming("x-12"); got != "" {
 		t.Errorf("commits naming x-123 and x-12.1 must not count as naming x-12, got %q", got)
 	}
-	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12.1"); !strings.HasSuffix(got, " x-12.1: Fix the child") {
+	if got := naming("x-12.1"); !strings.HasSuffix(got, " x-12.1: Fix the child") {
 		t.Errorf("got %q", got)
 	}
 	commit(t, repo, "x-12: Fix the loop\n\nAlso see x-123.")
 	commit(t, repo, "Tidy up after x-12.1")
-	if got := g.CommitNaming(context.Background(), repo, "main", "wt/x-12", "x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
+	if got := naming("x-12"); !strings.HasSuffix(got, " x-12: Fix the loop") {
 		t.Errorf("got %q, want the commit naming x-12", got)
 	}
 }
@@ -118,7 +121,7 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 	git("add", ".")
 	git("commit", "-q", "-m", "init")
 	write(".orchestra/run/prompt.md", "Work on it.\n") // the ticket's scratch
-	if d := (Git{}).DirtyWorktree(context.Background(), dir); d != "" {
+	if d := answered[string](t)((Git{}).DirtyWorktree(context.Background(), dir)); d != "" {
 		t.Errorf(".orchestra/run/ should not count: %q", d)
 	}
 
@@ -127,7 +130,7 @@ func TestDirtyWorktreeCountsWhatDirtyTreeLeavesOut(t *testing.T) {
 	if d, err := (Git{}).DirtyTree(context.Background(), dir); d != "" || err != nil {
 		t.Errorf("the main checkout's check should leave out .claude/ and .beads/: %q", d)
 	}
-	d := (Git{}).DirtyWorktree(context.Background(), dir)
+	d := answered[string](t)((Git{}).DirtyWorktree(context.Background(), dir))
 	if !strings.Contains(d, ".claude/settings.json") || !strings.Contains(d, ".beads/") {
 		t.Errorf("a worktree's check should count .claude/ and .beads/: %q", d)
 	}

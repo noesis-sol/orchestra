@@ -73,7 +73,11 @@ func CommitSetUp(ctx context.Context, repo string, before map[string]string, fil
 	}
 	g := git.Git{}
 	paths := []string{rel}
-	for p, st := range g.Changes(ctx, repo) {
+	after, err := g.Changes(ctx, repo)
+	if err != nil { // what the setup wrote would be left out of the commit
+		return "", nil, fmt.Errorf("cannot tell what the setup wrote: %w", err)
+	}
+	for p, st := range after {
 		if before[p] != st && p != rel {
 			paths = append(paths, p)
 		}

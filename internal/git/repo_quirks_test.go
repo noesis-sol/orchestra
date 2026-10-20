@@ -75,10 +75,10 @@ func TestLogIgnoresShowSignature(t *testing.T) {
 	want := strings.TrimSpace(git("rev-parse", "--short", "HEAD")) + " x-1: Fix the loop"
 	g := Git{}
 	ctx := context.Background()
-	if got := g.CommitNaming(ctx, repo, "main", "wt/x-1", "x-1"); got != want {
+	if got := answered[string](t)(g.CommitNaming(ctx, repo, "main", "wt/x-1", "x-1")); got != want {
 		t.Errorf("CommitNaming = %q, want %q", got, want)
 	}
-	if got := g.CommitNamingOn(ctx, repo, "wt/x-1", "x-1"); got != want {
+	if got := answered[string](t)(g.CommitNamingOn(ctx, repo, "wt/x-1", "x-1")); got != want {
 		t.Errorf("CommitNamingOn = %q, want %q", got, want)
 	}
 	if got := g.Subjects(ctx, repo, "main..wt/x-1"); got != want+"\n" {
@@ -108,13 +108,13 @@ func TestRevisionsAreNotReadAsPaths(t *testing.T) {
 
 	g := Git{}
 	ctx := context.Background()
-	if got := g.CommitNamingOn(ctx, repo, "main", "x-1"); !strings.HasSuffix(got, " x-1: Add files named like revisions") {
+	if got := answered[string](t)(g.CommitNamingOn(ctx, repo, "main", "x-1")); !strings.HasSuffix(got, " x-1: Add files named like revisions") {
 		t.Errorf("CommitNamingOn(main) = %q", got)
 	}
-	if got := g.CommitNamingOn(ctx, repo, "wt/x-2", "x-2"); !strings.HasSuffix(got, " x-2: Fix the loop") {
+	if got := answered[string](t)(g.CommitNamingOn(ctx, repo, "wt/x-2", "x-2")); !strings.HasSuffix(got, " x-2: Fix the loop") {
 		t.Errorf("CommitNamingOn(wt/x-2) = %q", got)
 	}
-	if got := g.CountCommits(ctx, repo, "main"); got != 1 {
+	if got := answered[int](t)(g.CountCommits(ctx, repo, "main")); got != 1 {
 		t.Errorf("CountCommits(main) = %d, want 1", got)
 	}
 	if got := g.Subjects(ctx, repo, "main"); !strings.HasSuffix(got, " x-1: Add files named like revisions\n") {
@@ -130,7 +130,8 @@ func TestRevisionsAreNotReadAsPaths(t *testing.T) {
 	if out, err := g.ResetBranch(ctx, repo, "main"); err != nil {
 		t.Fatalf("ResetBranch(main): %v\n%s", err, out)
 	}
-	if got, want := g.Head(ctx, repo, "wt/x-2"), g.Head(ctx, repo, "main"); got != want {
+	head := answered[string](t)
+	if got, want := head(g.Head(ctx, repo, "wt/x-2")), head(g.Head(ctx, repo, "main")); got != want {
 		t.Errorf("wt/x-2 is at %s after the reset, want main's %s", got, want)
 	}
 }
@@ -160,7 +161,7 @@ func TestConflictedFilesKeepsNamesExact(t *testing.T) {
 		t.Fatalf("the rebase should stop on a conflict:\n%s", out)
 	}
 
-	got := (Git{}).ConflictedFiles(context.Background(), repo)
+	got := answered[[]string](t)((Git{}).ConflictedFiles(context.Background(), repo))
 	slices.Sort(got)
 	if !slices.Equal(got, names) {
 		t.Errorf("ConflictedFiles = %q, want %q", got, names)

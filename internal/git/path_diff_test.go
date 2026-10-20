@@ -16,11 +16,11 @@ func TestPathDiff(t *testing.T) {
 	write(t, repo, "other.md", "one\n")
 	git("add", ".")
 	git("commit", "-q", "-m", "Add the spec")
-	first := g.Head(ctx, repo, "HEAD")
+	first := answered[string](t)(g.Head(ctx, repo, "HEAD"))
 	write(t, repo, "docs/app[1].md", "# An app\n\nIt lists things, sorted.\n")
 	write(t, repo, "other.md", "two\n")
 	git("commit", "-q", "-am", "Change the spec")
-	second := g.Head(ctx, repo, "HEAD")
+	second := answered[string](t)(g.Head(ctx, repo, "HEAD"))
 
 	diff, err := g.PathDiff(ctx, repo, first, second, "docs/app[1].md")
 	if err != nil || !strings.HasPrefix(diff, "diff --git a/docs/app[1].md b/docs/app[1].md\n") ||

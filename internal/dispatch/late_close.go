@@ -31,7 +31,8 @@ type leftOpen struct {
 // isn't closed the label holds nothing.
 func (o *Loop) leaveOpen(ctx context.Context, w worker) {
 	w.since = time.Now()
-	head := o.checkout.Head(ctx, o.cfg.Repo, w.br)
+	head, err := o.checkout.Head(ctx, o.cfg.Repo, w.br) // "" on failure: its work is not taken for none
+	o.log.Raw("", err)
 	o.mu.Lock()
 	o.leftOpen[w.id] = leftOpen{w: w, head: head}
 	labelled := o.labelled[w.id]
