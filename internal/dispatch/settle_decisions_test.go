@@ -38,7 +38,7 @@ func TestSettleReadsTheHooksOnceAPoll(t *testing.T) {
 		if _, stop := o.waitSettled(t.Context(), w, start, nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
-		if polls := a.reads - 1; hooks.uses != polls || hooks.records != polls { // none once it is gone
+		if polls := a.reads - goneReads; hooks.uses != polls || hooks.records != polls { // none once it is gone
 			t.Errorf("read the last tool use %d times and the hooks' record %d times in %d polls, want once a poll",
 				hooks.uses, hooks.records, polls)
 		}

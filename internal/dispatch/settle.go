@@ -18,8 +18,9 @@ import (
 // not there either has settled, gone. A status the terminal fails to read says nothing about the
 // worker, so the wait goes on through maxFailedReads of them in a row before the run stops; so does one
 // of its ticket's that bd fails to read while the worker is idle, which neither settles it nor tells it
-// to continue. A worker going on too long stops the run, or is reported (see overTime). Each status
-// read goes to report (nil: none), for the dashboard; what its hooks reported is read once a poll
+// to continue. One the terminal shows nowhere is read again until it has been so for goneGrace, and has
+// settled, gone, only then. A worker going on too long stops the run, or is reported (see overTime).
+// Each status read goes to report (nil: none), for the dashboard; what its hooks reported is read once a poll
 // (hooksOf), for every decision the poll makes. A worker whose turn ends with its ticket still in
 // progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
 // whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
@@ -33,7 +34,7 @@ func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
 ) (idleAt time.Time, stop *stopReason) {
 	var idle idleWait
-	var blocked, unknown streak
+	var blocked, unknown, gone streak
 	var limit limitWait
 	defer func() { o.usage.done(w.id, &limit, idleAt, stop) }()
 	failed := 0
@@ -54,6 +55,9 @@ func (o *Loop) waitSettled(
 			continue
 		}
 		failed = 0
+		if goneFor := gone.track(st == StateGone); st == StateGone && goneFor <= goneGrace {
+			continue // read again: it may be back under its name, or unnamed in its pane (see goneGrace)
+		}
 		if st == StateGone {
 			limit.leave(time.Now(), st)
 			o.info("  %s settled: its worker is gone", w.id)
@@ -318,6 +322,14 @@ const blockedLimit = 4 * time.Minute
 // unknownLimit is how long a worker's status may stay unknown (the terminal can't tell what it is doing)
 // before the run stops for it.
 const unknownLimit = 5 * time.Minute
+
+// goneGrace is how long a worker the terminal shows neither under its name nor in its pane is read
+// again before it settles, gone. Herdr can lose sight of a worker that is still at work for a moment:
+// a Claude Code the worker runs in its pane, with the pane's Herdr variables, reports itself as the
+// pane's agent through Herdr's hook, and as it ends the pane may show no agent until the worker's own
+// next hook. A worker taken for gone has its session resumed in a new tab, beside the one still at
+// work, and one resumed already stops the run (PAUSED) (tutti's run of 2026-10-18).
+const goneGrace = 30 * time.Second
 
 // longRunning is how long a worker may go on, without a ticket limit, before the run reports it.
 const longRunning = 2 * time.Hour

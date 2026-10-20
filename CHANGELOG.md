@@ -82,6 +82,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker the terminal shows neither under its name nor in its pane is
+  read again for 30 seconds before it is taken for gone: Herdr can lose
+  sight of a worker still at work for a moment, as a Claude Code it runs
+  in its pane ends. In tutti's run of 2026-10-18, tutti-nrg.64's worker,
+  resumed in a new tab, was taken for gone a minute later and stopped the
+  run (`PAUSED`), though the next run found it in that tab.
 - A ticket set aside and merged by hand while the run goes on is found
   as the base moves on: the log says it was merged by hand, its
   `unmerged` label is removed, the tickets it blocks start, and the end

@@ -56,6 +56,10 @@ func (a *scriptedAgents) Status(ctx context.Context, name string) (AgentState, e
 	return AgentState(st), nil
 }
 
+// goneReads is how many times waitSettled reads a worker's status once it is gone: the first time,
+// and then a poll apart until it has been gone for longer than goneGrace.
+const goneReads = int(goneGrace/statusPoll) + 2
+
 // newSettleLoop is a loop waiting on a worker whose statuses are script, on the real poll: the
 // tests call it inside synctest.Test.
 func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, string) {
@@ -80,8 +84,8 @@ func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
-		if a.reads != 4 {
-			t.Errorf("read the status %d times, want 4: the wait should last until the worker is gone", a.reads)
+		if want := 3 + goneReads; a.reads != want {
+			t.Errorf("read the status %d times, want %d: the wait should last until the worker is gone", a.reads, want)
 		}
 		if logged := read(t, logPath); !strings.Contains(logged, "server busy") {
 			t.Errorf("the failed read should be logged:\n%s", logged)
@@ -100,8 +104,10 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, w.report); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
-		if a.reads != 4 || time.Since(start) != 3*statusPoll {
-			t.Errorf("read the status %d times in %s, want 4 in %s: once a poll", a.reads, time.Since(start), 3*statusPoll)
+		want := 3 + goneReads
+		if a.reads != want || time.Since(start) != time.Duration(want-1)*statusPoll {
+			t.Errorf("read the status %d times in %s, want %d in %s: once a poll", a.reads, time.Since(start), want,
+				time.Duration(want-1)*statusPoll)
 		}
 		if want := []AgentState{"working", "blocked", "working"}; !slices.Equal(a.screens, want) {
 			t.Errorf("screen reads were given %q, want %q: once a poll with the worker, none once it is gone", a.screens, want)
