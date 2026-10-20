@@ -25,15 +25,18 @@ const (
 )
 
 // earlierStep is what work does with a returning ticket's earlier worker in state st, asked saying
-// the ticket is back from a question asked in this run. One at work, or that the terminal can't
-// tell the state of (which may be at work, as settling counts it: see waitSettled), is adopted
-// when it was left by a question, and stops the run otherwise. One left idle or done by a question
-// is told to carry on, and any other idle or done has its tab closed (see closeEarlier). Any other
-// still there is renamed.
+// the ticket is back from a question asked in this run. One waiting on the usage limit is adopted:
+// it carries on after the reset, told to or by itself, and a second worker beside it would too. One
+// at work, or that the terminal can't tell the state of (which may be at work, as settling counts it:
+// see waitSettled), is adopted when it was left by a question, and stops the run otherwise. One left
+// idle or done by a question is told to carry on, and any other idle or done has its tab closed (see
+// closeEarlier). Any other still there is renamed.
 func earlierStep(st AgentState, asked bool) earlierAction {
 	switch st {
 	case StateGone:
 		return leaveEarlier
+	case StateLimited:
+		return adoptEarlier
 	case StateWorking, StateBlocked, StateUnknown:
 		if asked {
 			return adoptEarlier
@@ -129,6 +132,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 // unnamed in its pane (see earlierState). It is looked at before the worktree is touched: one still
 // at work there must not have its branch rebased under it. One left by a question asked in this run
 // may have had its answer in its tab and carried on: it is adopted, or, idle, told the answer is in.
+// One waiting on the usage limit is adopted, found by its name when the run has no record of it.
 // Any other idle or done has its tab closed (see closeEarlier). Any other is renamed so the new
 // worker can have the name; its tab stays as it is. One Herdr can't tell the state of is read again
 // for a while, and then counts as still at work. It returns the earlier worker's state as last read,
@@ -147,6 +151,16 @@ func (r *ticketRun) takeUpEarlier(ctx context.Context, earlier workerSpot, asked
 	}
 	switch earlierStep(st, asked) {
 	case adoptEarlier:
+		if earlier.wt == "" { // one the run has no record of, as one an earlier run left at the limit
+			if earlier = r.foundEarlier(ctx); ctx.Err() != nil {
+				return st, true, errInterrupted
+			}
+			if earlier.wt == "" {
+				return st, true, halt(ExitTool, stopAgentBusy,
+					": an earlier worker for %s is still %s, its worktree unknown; stopping rather than starting a "+
+						"second one on %s", id, stillIn(st, "its tab"), r.br)
+			}
+		}
 		o.info("  %s's earlier worker is still %s; adopting it rather than starting another",
 			id, stillIn(st, "tab "+earlier.tab))
 		return st, true, r.adopt(ctx, earlier, st, adopted)
@@ -201,7 +215,7 @@ func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, st Agen
 			": cannot tell whether %s's earlier worker took up being told %s: %v", id, earlier.told(), err).causedBy(err)
 	}
 	switch st {
-	case StateWorking, StateBlocked, StateUnknown:
+	case StateWorking, StateBlocked, StateUnknown, StateLimited:
 		o.info("  %s's earlier worker in tab %s is %s after being told %s; adopting it rather than starting another",
 			id, earlier.tab, st, earlier.told())
 		return st, true, r.adopt(ctx, earlier, st, adopted)
@@ -260,7 +274,7 @@ func (r *ticketRun) foundEarlier(ctx context.Context) workerSpot {
 	tab, err := o.namer.AgentTab(ctx, r.agent)
 	if err != nil {
 		if ctx.Err() == nil {
-			o.log.Raw("", fmt.Errorf("cannot find the tab of %s's earlier worker, to close it: %w", r.id, err))
+			o.log.Raw("", fmt.Errorf("cannot find the tab of %s's earlier worker: %w", r.id, err))
 		}
 		return workerSpot{}
 	}

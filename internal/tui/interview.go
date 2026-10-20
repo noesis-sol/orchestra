@@ -35,13 +35,13 @@ func (p InterviewProgress) Line(width int) string {
 		if p.Title != "" {
 			tail = " (" + plural(p.Tickets, "ticket", "tickets") + ")"
 		}
-		// The title gives way first, so that a narrow pane still shows how many tickets there are.
+		// The title gives way first, then the head, so that a narrow pane still shows how many tickets
+		// there are.
 		room := width - ansi.StringWidth(head+": "+tail)
-		line := closedStyle.Render(head)
-		if p.Title != "" && room > 0 {
-			line += ": " + ansi.Truncate(oneLine(p.Title), room, "…") + dimStyle.Render(tail)
+		if p.Title == "" || room <= 0 {
+			return closedStyle.Render(ansi.Truncate(head, width-ansi.StringWidth(tail), "…")) + dimStyle.Render(tail)
 		}
-		return ansi.Truncate(line, width, "…")
+		return closedStyle.Render(head) + ": " + ansi.Truncate(oneLine(p.Title), room, "…") + dimStyle.Render(tail)
 	}
 	line := interviewState(p.Agent) + "  " + dimStyle.Render(p.Elapsed.Truncate(time.Second).String())
 	if p.Counted {

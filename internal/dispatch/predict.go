@@ -177,15 +177,33 @@ func (o *Loop) predict(ctx context.Context, t Ticket) {
 	if err := o.notes.SetMetadata(ctx, t.ID, PredictedKey, string(list)); err != nil {
 		o.log.Raw("", err)
 	}
-	o.givePrediction(t, files, tracked)
+	o.givePrediction(ctx, t, files, tracked)
 	o.info("  %s footprint predicted: %s", t.ID, strings.Join(files, ", "))
 }
 
-// givePrediction gives ticket t, when it is running with an empty footprint, its predicted files.
-func (o *Loop) givePrediction(t Ticket, files, tracked []string) {
+// givePrediction gives ticket t, when it is running with an empty footprint, its predicted files,
+// but those git merges by union, as the footprints leave them out.
+func (o *Loop) givePrediction(ctx context.Context, t Ticket, files, tracked []string) {
+	if !o.footprintEmpty(t.ID) {
+		return
+	}
+	repo := newRepoFiles(tracked, checkCommands(o.cfg))
+	repo.union = func(f string) bool {
+		u, _ := o.mergedByUnion(ctx, f) // one git can't answer is not merged by union
+		return u
+	}
+	fp := predictedFootprint(files, repo, specFile(t)) // outside the lock: it asks git
 	o.mu.Lock()
 	defer o.mu.Unlock() // deferred: a panic must not leave the loop locked
 	if r := o.footprints[t.ID]; r != nil && r.fp.Empty() {
-		r.fp = predictedFootprint(files, newRepoFiles(tracked, checkCommands(o.cfg)), specFile(t))
+		r.fp = fp
 	}
+}
+
+// footprintEmpty reports whether ticket id is running with an empty footprint.
+func (o *Loop) footprintEmpty(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	r := o.footprints[id]
+	return r != nil && r.fp.Empty()
 }

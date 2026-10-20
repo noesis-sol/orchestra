@@ -147,7 +147,8 @@ func TestPredictedFilesLeaveOutTheOwnSpec(t *testing.T) {
 	if fp := r.footprintOf(tk); !slices.Equal(fp.Files, want.Files) || !fp.Predicted {
 		t.Errorf("predicted in this run: %+v, want %+v", fp, want)
 	}
-	o.givePrediction(tk, []string{"docs/shop-spec.md", "README.md"}, trackedWithOwnSpec)
+	o.checkout = cleanCheckout{}
+	o.givePrediction(t.Context(), tk, []string{"docs/shop-spec.md", "README.md"}, trackedWithOwnSpec)
 	if fp := o.footprints["A"].fp; !slices.Equal(fp.Files, want.Files) || !fp.Predicted {
 		t.Errorf("given the running ticket: %+v, want %+v", fp, want)
 	}

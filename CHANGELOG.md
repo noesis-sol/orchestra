@@ -35,6 +35,19 @@ All notable changes to orchestra are documented here. The format follows
   or is stopped then ends the run as before, the environment ticket's worker
   left as a stopped run leaves its workers. On a terminal the run's lines
   show above the breakdown's spinner, and the dashboard opens once it is over.
+### Fixed
+
+- The feature interview's line keeps the epic's ticket count in a narrow
+  pane: with no room for the title, `Filed <epic> (12 tickets)` cuts the
+  epic's ID rather than drop the count.
+- A worker's own `/resume` no longer reads as gone, in tmux and cmux, between
+  the `SessionEnd` that ends its session and the `SessionStart` of the one it
+  resumes, as a `/clear` doesn't.
+- A footprint predicted for a ticket already running leaves out the files git
+  merges by union (the changelog), as every other footprint does.
+- A ticket dispatched again while its earlier worker waits on the usage limit
+  in its tab adopts that worker, which carries on after the reset, rather than
+  starting a second worker in the same worktree beside it.
 
 ## [0.8.5] - 2026-10-20
 

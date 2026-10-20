@@ -60,8 +60,8 @@ func (UI) Read(records, dir string) (dispatch.AgentState, func(screen func() (st
 // State is what the Claude session whose hooks write to the folder records (see Records) is doing,
 // as they tell it:
 //
-//   - gone once a SessionEnd came after the last SessionStart, unless it ended to clear the session,
-//     which starts another at once;
+//   - gone once a SessionEnd came after the last SessionStart, unless it ended to clear the session
+//     or to resume another (the worker's own /resume), which starts another at once;
 //   - blocked while a permission prompt one of its agents asked is not answered: that agent's tool
 //     not done since, nor a prompt, nor the notification that it waits at its prompt (as after a
 //     refusal, which ends the turn), whatever its other agents report meanwhile; or after a
@@ -309,8 +309,8 @@ func readAsked(root *os.Root) record {
 
 // readSessions reads the hooks' notes, one JSON line each, for the sessions' starts and ends and the
 // subagents running at now, skipping a line it can't read, as one in a newer format; the notes were
-// last written at noted, and the last tool use reported at used. A session ended to be cleared is
-// followed by another, which may not have started yet.
+// last written at noted, and the last tool use reported at used. A session ended to be cleared, or to
+// resume another, is followed by another, which may not have started yet.
 func readSessions(b []byte, noted, used, now time.Time) sessions {
 	var s sessions
 	sc := bufio.NewScanner(bytes.NewReader(b))
@@ -323,7 +323,7 @@ func readSessions(b []byte, noted, used, now time.Time) sessions {
 		case "SessionStart":
 			s.started, s.ended = true, false
 		case "SessionEnd":
-			s.ended = e.Reason != "clear"
+			s.ended = e.Reason != "clear" && e.Reason != "resume"
 		}
 	}
 	r := parseEvents(b, noted)

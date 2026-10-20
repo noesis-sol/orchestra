@@ -58,7 +58,10 @@ func TestInterviewProgressLineFitsThePane(t *testing.T) {
 	}{
 		{filed, 60, "Filed orchestra-cv4: Talk a typed feature throu… (4 tickets)"},
 		{filed, 35, "Filed orchestra-cv4: T… (4 tickets)"},
-		{filed, 20, "Filed orchestra-cv4"},
+		{filed, 31, "Filed orchestra-cv4 (4 tickets)"},
+		{filed, 20, "Filed o… (4 tickets)"},
+		{InterviewProgress{Epic: "orchestra-cv4"}, 20, "Filed orchestra-cv4"},
+		{InterviewProgress{Epic: "orchestra-cv4abcdefgh"}, 20, "Filed orchestra-cv4…"},
 		{InterviewProgress{Agent: dispatch.StateBlocked, Elapsed: 3 * time.Minute}, 30, "claude is waiting for a permi…"},
 	} {
 		got := tc.p.Line(tc.width)

@@ -1024,12 +1024,19 @@ func (r *runState) mergesByUnion(f string) bool {
 	if u, ok := r.unions[f]; ok {
 		return u
 	}
-	merge, err := r.o.checkout.Attribute(r.ctx, r.o.cfg.Repo, "merge", f)
+	u, err := r.o.mergedByUnion(r.ctx, f)
 	if err != nil {
 		return false
 	}
-	r.unions[f] = merge == "union"
-	return r.unions[f]
+	r.unions[f] = u
+	return u
+}
+
+// mergedByUnion reports whether git merges repository file f by union, as .gitattributes says
+// (git check-attr merge), or the error git gave.
+func (o *Loop) mergedByUnion(ctx context.Context, f string) (bool, error) {
+	merge, err := o.checkout.Attribute(ctx, o.cfg.Repo, "merge", f)
+	return err == nil && merge == "union", err
 }
 
 // checkCommands are the project's check commands, the merge check's, the full check's and a worker's
