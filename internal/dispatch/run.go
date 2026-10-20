@@ -331,6 +331,9 @@ type runState struct {
 	// The files git merges by union, or not, as git said in this run (mergesByUnion).
 	unionMu sync.Mutex
 	unions  map[string]bool
+	// The files each ticket's branch changes on top of Base, as git said while it waited (branchChanges).
+	branchMu sync.Mutex
+	branches map[string][]string
 
 	machine *machine // the run's registration among the machine's orchestra runs
 
@@ -342,7 +345,8 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
-		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(), filing: o.cfg.filingDone(),
+		warned: map[string]bool{}, unions: map[string]bool{}, branches: map[string][]string{},
+		machine: o.register(), filing: o.cfg.filingDone(),
 		baseSeen: o.startHead, // as loadUnmerged asked
 	}
 	r.setCount(o.cfg.DoneSoFar)

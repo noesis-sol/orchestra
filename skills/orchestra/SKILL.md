@@ -234,7 +234,9 @@ of the two names no functions, the same file) as a running ticket, shares an `ar
 it, or names a file its worker has edited, waits for a later slot while the next ticket takes this
 one. A file counts only when one of the two is to change it: one its `files` metadata lists, or, for a
 ticket without, one its text names, but a document only in a sentence asking to change it (`Update
-docs/guide.md`), not citing it (`per CLAUDE.md`). Its notes don't count. Naming files and functions in a ticket's description
+docs/guide.md`), not citing it (`per CLAUDE.md`). Its notes don't count. A ticket with
+commits on its branch, reopened or carried over, goes by the files its branch changes and its `files`
+metadata instead of its text. Naming files and functions in a ticket's description
 helps; so does `bd update <id> --set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
 predictor organ guesses its files in the background and caches them as `predicted_files` metadata.
 `"footprint": false` in `settings.json` turns it off.

@@ -47,6 +47,14 @@ All notable changes to orchestra are documented here. The format follows
   functions it doesn't change, and kept it from running beside tickets over
   them. On tutti's log, 101 of its 649 skips rested on notes alone; on
   orchestra's, 13 of 621.
+- A ticket with commits on its branch, reopened or carried over, is
+  footprinted from the files its branch changes on top of the base, with
+  its `files` metadata and area labels, rather than from its text, which
+  names what it read and was told as well (`<id> footprint: … (from its
+  branch)`). tutti-nrg.64, whose branch changes only a contract test and
+  the changelog, was skipped on 19 Oct over `src/run/run.ts`, through a
+  function its description names, and over `scripts/check.sh`; replayed on
+  tutti's log, those are the 3 of its 649 skips that drop.
 - `CLOSED_UNCOMMITTED` names the files left uncommitted in the ticket's
   worktree, in its warning and the ticket's note (a few, then how many
   more), each after its `git status` code, `??` marking an untracked one,

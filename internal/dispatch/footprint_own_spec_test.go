@@ -145,10 +145,12 @@ func TestPredictedFilesLeaveOutTheOwnSpec(t *testing.T) {
 
 	tk := fromSpec("docs/shop-spec.md", "", "Add the cart", "Build the cart, as docs/shop-spec.md says.")
 	tk.ID = "A"
+	g := newFakeGit("main") // A has no branch
 	o := &Loop{predictor: newPredictor(), ledger: newLedger()}
+	o.worktrees, o.merger, o.history = g, g, g
 	o.footprints["A"] = &runFootprint{}
 	o.setPrediction("A", []string{"docs/shop-spec.md", "README.md"})
-	r := &runState{o: o, files: newRepoFiles(trackedWithOwnSpec, "")}
+	r := &runState{o: o, files: newRepoFiles(trackedWithOwnSpec, ""), branches: map[string][]string{}}
 	if fp := r.footprintOf(tk); !slices.Equal(fp.Files, want.Files) || !fp.Predicted {
 		t.Errorf("predicted in this run: %+v, want %+v", fp, want)
 	}

@@ -112,13 +112,17 @@ func (p *predictor) queuePrediction(t Ticket) {
 }
 
 // queuePredictions queues the ready tickets naming nothing that haven't been queued in this run.
-// A solo ticket runs alone anyway, and the skipped ones (running, set aside) are left out.
+// A solo ticket runs alone anyway, and the skipped ones (running, set aside) are left out, as is one
+// whose branch changes files: its footprint is its branch's (branchFootprint).
 func (r *runState) queuePredictions(ready []Ticket, skip map[string]bool) {
 	if !r.o.predicting() {
 		return
 	}
 	for _, t := range ready {
-		if skip[t.ID] || HasLabel(t, SoloLabel) || !r.footprintOf(t).Empty() {
+		if skip[t.ID] || HasLabel(t, SoloLabel) {
+			continue
+		}
+		if fp := r.footprintOf(t); !fp.Empty() || fp.Branch {
 			continue
 		}
 		r.o.queuePrediction(t)

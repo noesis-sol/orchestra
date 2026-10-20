@@ -56,6 +56,10 @@ type Footprint struct {
 	Areas []string // area:<name> labels
 	// Predicted says Files are the predictor's guess for a ticket naming nothing (PredictedKey).
 	Predicted bool
+	// Branch says Files are those the ticket's branch changes on top of the base, with those its files
+	// metadata lists (branchFootprint): a ticket with commits on its branch, reopened or carried over,
+	// has done its work there, and its text names what it read and was told as well.
+	Branch bool
 }
 
 // AreaPrefix starts a label naming the part of the project a ticket works on: tickets carrying
@@ -85,6 +89,9 @@ func (f Footprint) String() string {
 	s := strings.Join(slices.Concat(f.Funcs, f.Files, f.Globs, f.Areas), ", ")
 	if f.Predicted {
 		s += " (predicted)"
+	}
+	if f.Branch {
+		s += " (from its branch)"
 	}
 	return s
 }
@@ -732,6 +739,36 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	return fp
 }
 
+// branchFootprint is the footprint of ticket t whose branch changes files changed on top of the base:
+// those files and the files and globs its files metadata lists, all to be changed (Listed), and its
+// area labels; not what its text names. The files git merges by union never count, those the check
+// commands name and specs do: the branch changes them.
+func branchFootprint(t Ticket, changed []string, repo *repoFiles) Footprint {
+	files, globs := map[string]bool{}, map[string]bool{}
+	for _, f := range changed {
+		files[f] = true
+	}
+	for _, f := range metadataList(t, FilesKey) {
+		found, gs := repo.listed(f)
+		for _, p := range found {
+			files[p] = true
+		}
+		for _, g := range gs {
+			globs[g] = true
+		}
+	}
+	maps.DeleteFunc(files, func(f string, _ bool) bool { return repo.unioned(f) })
+	fp := Footprint{Files: slices.Sorted(maps.Keys(files)), Globs: slices.Sorted(maps.Keys(globs)),
+		Listed: true, Branch: true}
+	for _, l := range t.Labels {
+		if strings.HasPrefix(l, AreaPrefix) && len(l) > len(AreaPrefix) {
+			fp.Areas = append(fp.Areas, l)
+		}
+	}
+	sort.Strings(fp.Areas)
+	return fp
+}
+
 // pathsIn returns the repository files the words of text that may be paths name, but those named in
 // passing (inPassing) by a ticket from spec, each with whether text asks to change it (asksChange), and
 // the Type.method words among them that name no file.
@@ -1072,9 +1109,13 @@ func ReadSource(repo, file string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, maxSource))
 }
 
-// footprintOf is ready ticket t's footprint: TicketFootprint, or, for a ticket naming nothing, the
-// prediction made in this run when bd hasn't handed back the one cached on the ticket.
+// footprintOf is ready ticket t's footprint: for a ticket whose branch changes files on top of Base,
+// branchFootprint; else TicketFootprint, or, for a ticket naming nothing, the prediction made in this
+// run when bd hasn't handed back the one cached on the ticket.
 func (r *runState) footprintOf(t Ticket) Footprint {
+	if changed := r.branchChanges(t.ID); len(changed) > 0 {
+		return branchFootprint(t, changed, r.files)
+	}
 	fp := ticketFootprint(t, r.files)
 	if fp.Empty() {
 		if files := r.o.prediction(t.ID); len(files) > 0 {
@@ -1082,6 +1123,41 @@ func (r *runState) footprintOf(t Ticket) Footprint {
 		}
 	}
 	return fp
+}
+
+// branchChanges lists the files ticket id's branch changes on top of Base, since their merge base, in
+// the form the footprints' files are in; none when it has no branch, or one changing nothing. git is
+// asked once a ticket while it waits: its branch changes only while it runs, and endFootprint forgets
+// the answer then. An answer git couldn't give isn't kept.
+func (r *runState) branchChanges(id string) []string {
+	r.branchMu.Lock()
+	changed, ok := r.branches[id]
+	r.branchMu.Unlock()
+	if ok {
+		return changed
+	}
+	o, c, br := r.o, r.o.cfg, branchOf(id)
+	has, err := o.worktrees.HasBranch(r.ctx, c.Repo, br)
+	if err != nil {
+		o.log.Raw("", err)
+		return nil
+	}
+	if has {
+		base, err := o.merger.MergeBase(r.ctx, c.Repo, c.Base, br)
+		if err != nil {
+			o.log.Raw("", err)
+			return nil
+		}
+		if base != "" {
+			for _, f := range o.history.ChangedFiles(r.ctx, c.Repo, base, br) {
+				changed = append(changed, r.files.file(f))
+			}
+		}
+	}
+	r.branchMu.Lock()
+	r.branches[id] = changed
+	r.branchMu.Unlock()
+	return changed
 }
 
 // startFootprint records a dispatched ticket's footprint, and logs it. A ticket adopted as the run
@@ -1117,6 +1193,9 @@ func (r *runState) endFootprint(id string) {
 	o.mu.Lock()
 	delete(o.footprints, id)
 	o.mu.Unlock()
+	r.branchMu.Lock()
+	delete(r.branches, id) // its worker may have committed: read its branch again
+	r.branchMu.Unlock()
 	r.skipSaid.forget(id)
 }
 
