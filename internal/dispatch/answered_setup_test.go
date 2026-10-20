@@ -16,9 +16,9 @@ import (
 // other whose setup failed, no longer set aside as a ticket that asked: a merge lets it be taken
 // again, and the run's end names it as waiting on its setup (orchestra-3w84).
 
-// A asks Q and its worker goes; B answers Q and merges a changed lockfile, which A's rebase brings
-// in, and from then on A's setup fails. C's merge lets A be taken again, its setup fails again, and
-// the run ends naming A under SETUP_WAITS, not set aside.
+// A asks Q and its worker goes; B merges a changed lockfile and Q is answered as it lands, so A's
+// rebase brings it in, and from then on A's setup fails. C, filed then too, merges next and lets A
+// be taken again, its setup fails again, and the run ends naming A under SETUP_WAITS, not set aside.
 func TestAnAnsweredTicketWhoseSetupFailsIsTakenAgain(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -29,16 +29,17 @@ func TestAnAnsweredTicketWhoseSetupFailsIsTakenAgain(t *testing.T) {
 		h.cfg.Setup, h.cfg.SetupFiles = cmd, project.DefaultSetupFiles
 		h.beads.add("A", "first", 1)
 		h.beads.add("B", "second", 2)
-		h.beads.add("C", "third", 3)
 		h.worker("A", asksAndGoes)
 		h.worker("B", func(w *fakeWorker) AgentState {
 			if err := os.WriteFile(broken, nil, 0o644); err != nil {
 				t.Error(err)
 			}
-			return answersThenFinishes("package-lock.json")(w)
+			return finishes("package-lock.json")(w)
 		})
 		h.worker("C", finishes("c.txt"))
-		o, code := h.run()
+		o := h.loop()
+		o.merger = answersOnMerge{h.mem, h.beads, "wt/B"}
+		code := o.Run(context.Background())
 		out := filepath.Join(h.worktree("A"), ".orchestra", "run", setupLogName)
 		final := "READY_EMPTY after 3 tickets; SETUP_WAITS: A waits on the setup that failed in its worktree " +
 			"(the whole output is in " + out + "); fix the setup, then run again"
@@ -58,6 +59,26 @@ func TestAnAnsweredTicketWhoseSetupFailsIsTakenAgain(t *testing.T) {
 			t.Errorf("A is %s, want open", st)
 		}
 	})
+}
+
+// answersOnMerge is git whose fast-forward of branch onto the base has the maintainer answer Q and
+// file C as it lands. The loop starts the next ticket while a merge is under way: answered before
+// B's merge lands, A could be taken again, and rebased, without B's lockfile (orchestra-v1zw).
+type answersOnMerge struct {
+	*fakeGit
+	beads  *fakeBeads
+	branch string
+}
+
+func (m answersOnMerge) FastForward(ctx context.Context, repo, branch string) (string, error) {
+	out, err := m.fakeGit.FastForward(ctx, repo, branch)
+	if err == nil && branch == m.branch {
+		m.beads.mu.Lock()
+		defer m.beads.mu.Unlock()
+		m.beads.tickets["Q"].Status = "closed"
+		m.beads.addLocked("C", "third", 3) // in the same change: bd ready sees A and C back at once
+	}
+	return out, err
 }
 
 // claimedReady is a tracker whose bd ready lists ticket id as in progress, as a worker claimed it,
