@@ -25,22 +25,23 @@ type Finished struct{}
 
 // Dashboard is the live view of a run, a Bubble Tea model.
 type Dashboard struct {
-	cfg         dispatch.Config
-	spin        spinner.Model
-	active      map[string]dispatch.Status // running workers, by ticket
-	stopping    bool                       // something stopped the run; the running ones are finishing
-	limited     bool                       // the run holds for the account's usage limit
-	limitReset  time.Time                  // when that limit resets; zero when not known
-	shared      int                        // the other orchestra runs going on the machine
-	load        *load.Reading              // the machine's load as last read; nil until the loop first reads it
-	draining    bool                       // the maintainer asked to stop after the running tickets
-	drainFrom   []string                   // the tickets running when the run began to wind down, oldest first
-	asking      bool                       // the question whether to stop after them, or to go on, is open
+	cfg  dispatch.Config
+	spin spinner.Model
+	// records: every ticket of the run, its row and its worker's status, in the rows' order (oldest
+	// first, those that came to an end in the order they did)
+	records     []record
+	stopping    bool          // something stopped the run; the running ones are finishing
+	limited     bool          // the run holds for the account's usage limit
+	limitReset  time.Time     // when that limit resets; zero when not known
+	shared      int           // the other orchestra runs going on the machine
+	load        *load.Reading // the machine's load as last read; nil until the loop first reads it
+	draining    bool          // the maintainer asked to stop after the running tickets
+	drainFrom   []string      // the tickets running when the run began to wind down, oldest first
+	asking      bool          // the question whether to stop after them, or to go on, is open
 	closed      int
 	triaged     int
 	width       int
 	height      int
-	rows        []ticketRow // every ticket picked up in this run, oldest first
 	interrupted bool
 	final       *dispatch.Event     // the stop or done event, printed by main after exit
 	received    int                 // events received before it quit, for ProgramSink.Handoff
@@ -175,11 +176,12 @@ func (m Dashboard) frame(w int) string {
 // summary is the run's summary, printed on the normal screen once the dashboard has closed: the
 // title, the totals and every ticket of the run, at width w and however many lines that takes.
 func (m Dashboard) summary(w int) string {
-	if len(m.rows) == 0 {
+	rows := len(m.rows())
+	if rows == 0 {
 		return stack(m.titleLine(w), m.statsTable(w))
 	}
 	// Every row, and the Tickets label and the table's borders.
-	return stack(m.titleLine(w), m.statsTable(w), m.tickets(w, len(m.rows)+sectionChrome))
+	return stack(m.titleLine(w), m.statsTable(w), m.tickets(w, rows+sectionChrome))
 }
 
 // The lines a section of the dashboard, Tickets or Current, takes besides its rows: its label, and
@@ -291,7 +293,7 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	}
 	if tickets != "" {
 		// More workers than the run may have: the labels go, then the workers give way.
-		return m.cut(stack(title, stats, m.ticketsTable(w, lines-labelLines), m.workerList(w)), foot)
+		return m.cut(stack(title, stats, m.rowsTable(w, lines-labelLines, m.rowsBesideCurrent()), m.workerList(w)), foot)
 	}
 	top := stack(title, m.statsLine(w))
 	// A pane too short for a steady form: the workers get every line the foot leaves as it is now,

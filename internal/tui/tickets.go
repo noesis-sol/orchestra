@@ -77,45 +77,95 @@ type ticketRow struct {
 	triage    string // the triage organ's verdict
 }
 
-func (m *Dashboard) rowIndex(id string) int {
-	for i, r := range slices.Backward(m.rows) {
-		if r.id == id {
-			return i
-		}
+// record is all the dashboard knows of one ticket of the run: its row in the tickets table, once an
+// event has given it one, and its worker's status while it runs. Each ticket has one record, so what
+// Current and the tickets table show of it can't disagree on whether it runs.
+type record struct {
+	row     ticketRow
+	listed  bool            // it has a row: an event picked it up or set it; a status alone gives it none
+	running bool            // its worker runs: status is its latest, until a Gone one
+	status  dispatch.Status // its worker's latest status, while running
+}
+
+// section is where a frame shows a ticket: in Current, in the tickets table, or, a worker's status
+// alone with no event about its ticket yet, nowhere.
+type section int
+
+const (
+	nowhere section = iota
+	inCurrent
+	inTable
+)
+
+// section is where a frame that draws Current shows r's ticket: in Current while its worker runs,
+// else in the tickets table once it has a row; never both. A ticket's end event (closed, deferred,
+// blocked) comes before the status that takes it out of Current, so its row, no longer live, comes in
+// only as it leaves. A frame without Current (the summary, a pane too small for both) shows every row
+// in the table.
+func (r record) section() section {
+	switch {
+	case r.running:
+		return inCurrent
+	case r.listed:
+		return inTable
 	}
-	return -1
+	return nowhere
+}
+
+// find is the index of ticket id's record, or -1.
+func (m Dashboard) find(id string) int {
+	return slices.IndexFunc(m.records, func(r record) bool { return r.row.id == id })
+}
+
+// hasRow reports whether ticket id has a row in the tickets table.
+func (m Dashboard) hasRow(id string) bool {
+	i := m.find(id)
+	return i >= 0 && m.records[i].listed
+}
+
+// rows are the tickets table's rows, every ticket that has one, in their order.
+func (m Dashboard) rows() []ticketRow {
+	var rows []ticketRow
+	for _, r := range m.listedRecords() {
+		rows = append(rows, r.row)
+	}
+	return rows
+}
+
+// listedRecords are the records of the tickets that have a row, in the rows' order.
+func (m Dashboard) listedRecords() []record {
+	return slices.DeleteFunc(slices.Clone(m.records), func(r record) bool { return !r.listed })
+}
+
+// listRow gives ticket id a row, if it has none, to be set to state to, and returns its record's
+// index. A new row comes last, as does one whose worker is no longer at it as it is set to to: the
+// rows are in the order their tickets came to an end, so that one leaving Current comes in under the
+// others in the tickets table beside it.
+func (m *Dashboard) listRow(id string, to rowState) int {
+	i := m.find(id)
+	if i < 0 {
+		m.records = append(m.records, record{row: ticketRow{id: id}})
+		i = len(m.records) - 1
+	}
+	if r := m.records[i]; !r.listed || rowLooks[r.row.state].live && !rowLooks[to].live {
+		m.records = append(slices.Delete(m.records, i, i+1), r)
+		i = len(m.records) - 1
+	}
+	m.records[i].listed = true
+	return i
 }
 
 // setRow sets ticket id's row to state, with note. A row whose worker is no longer at it moves to the
-// end, so that the rows are in the order their tickets came to an end and one leaving Current comes in
-// under the others in the tickets table beside it.
+// end (see listRow).
 func (m *Dashboard) setRow(id string, state rowState, note string) {
-	i := m.rowIndex(id)
-	if i < 0 {
-		m.rows = append(m.rows, ticketRow{id: id})
-		i = len(m.rows) - 1
-	}
-	if rowLooks[m.rows[i].state].live && !rowLooks[state].live {
-		r := m.rows[i]
-		m.rows = append(slices.Delete(m.rows, i, i+1), r)
-		i = len(m.rows) - 1
-	}
-	m.rows[i].state, m.rows[i].note = state, note
+	i := m.listRow(id, state)
+	m.records[i].row.state, m.records[i].row.note = state, note
 }
 
-// rowsBesideCurrent are the rows the tickets table has when Current is drawn with it: all but the rows
-// of the tickets Current shows, which would repeat them, whatever their state. A ticket's end event
-// (closed, deferred, blocked) comes before the status that takes it out of Current, so its row, no
-// longer live, comes in only as it leaves.
-func (m Dashboard) rowsBesideCurrent() []ticketRow {
-	var rows []ticketRow
-	for _, r := range m.rows {
-		if _, current := m.active[r.id]; current {
-			continue
-		}
-		rows = append(rows, r)
-	}
-	return rows
+// rowsBesideCurrent are the records of the rows the tickets table has when Current is drawn with it:
+// those of the tickets the frame shows in the table (see record.section).
+func (m Dashboard) rowsBesideCurrent() []record {
+	return slices.DeleteFunc(slices.Clone(m.records), func(r record) bool { return r.section() != inTable })
 }
 
 // markBlocked shows ev's ticket as blocked, its work done but its merge waiting on the maintainer, with
@@ -141,7 +191,7 @@ func (m Dashboard) setAside() int { return m.count(tallySetAside) }
 // count is how many rows count under t.
 func (m Dashboard) count(t tally) int {
 	n := 0
-	for _, r := range m.rows {
+	for _, r := range m.rows() {
 		if rowLooks[r.state].tally == t {
 			n++
 		}
@@ -152,14 +202,10 @@ func (m Dashboard) count(t tally) int {
 // pickUp shows ticket id as picked up. A ticket back from a question, or deferred earlier in the
 // run, keeps its row, which drops the old verdict; title "" keeps the row's.
 func (m *Dashboard) pickUp(id, title string) {
-	i := m.rowIndex(id)
-	if i < 0 {
-		m.rows = append(m.rows, ticketRow{id: id, title: title, state: rowWorking})
-		return
-	}
-	m.rows[i].state, m.rows[i].note, m.rows[i].triage = rowWorking, "", ""
+	r := &m.records[m.listRow(id, rowWorking)]
+	r.row.state, r.row.note, r.row.triage = rowWorking, "", ""
 	if title != "" {
-		m.rows[i].title = title
+		r.row.title = title
 	}
 }
 
@@ -217,34 +263,35 @@ func aboutWidth(w, idWidth int) int {
 
 // ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
 // the tickets leave, and when there are more the oldest give way to a count of them.
-func (m Dashboard) ticketsTable(w, lines int) string { return m.rowsTable(w, lines, m.rows) }
+func (m Dashboard) ticketsTable(w, lines int) string { return m.rowsTable(w, lines, m.listedRecords()) }
 
-// rowsTable is ticketsTable listing rows.
-func (m Dashboard) rowsTable(w, lines int, rows []ticketRow) string {
+// rowsTable is ticketsTable listing the rows of recs.
+func (m Dashboard) rowsTable(w, lines int, recs []record) string {
 	idWidth := minIDWidth
-	for _, r := range rows {
-		idWidth = max(idWidth, ansi.StringWidth(oneLine(r.id)))
+	for _, r := range recs {
+		idWidth = max(idWidth, ansi.StringWidth(oneLine(r.row.id)))
 	}
 	// IDs longer than a third of the table are cut, so the titles keep their room
 	idWidth = min(idWidth, max(w/3, minIDWidth))
 	about := aboutWidth(w, idWidth)
 	hidden := 0
 	limit := max(lines-borderLines, 1)
-	if len(rows) > limit {
-		hidden = len(rows) - (limit - 1)
-		rows = rows[hidden:]
+	if len(recs) > limit {
+		hidden = len(recs) - (limit - 1)
+		recs = recs[hidden:]
 	}
 	var data [][]string
 	if hidden > 0 {
 		more := ansi.Truncate("earlier tickets, see the log", max(about, minAboutWidth), "…")
 		data = append(data, []string{"", dimStyle.Render(fmt.Sprintf("+%d", hidden)), dimStyle.Render(more)})
 	}
-	for _, r := range rows {
+	for _, rec := range recs {
 		var worker *look
-		if st, ok := m.active[r.id]; ok {
-			l := workerLook(st)
+		if rec.running {
+			l := workerLook(rec.status)
 			worker = &l
 		}
+		r := rec.row
 		r.id = ansi.Truncate(oneLine(r.id), idWidth, "…") // a worker files tickets, so an ID is untrusted
 		c := r.cells(about, worker)
 		data = append(data, c[:])
@@ -303,7 +350,7 @@ func (m Dashboard) totals() []total {
 // it frees its slot as it goes to merge, and the Current list shows it beside them.
 func (m Dashboard) inSlots() int {
 	n := 0
-	for _, st := range m.active {
+	for _, st := range m.Running() {
 		if st.Merge == dispatch.MergeNone && !st.Resolving && !st.Fixing {
 			n++
 		}

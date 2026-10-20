@@ -65,7 +65,7 @@ A failed check keeps go test's events (`go test -json`, every test's output) in 
 go run gotest.tools/gotestsum@v1.13.0 --format=standard-quiet --raw-command -- cat <file>
 ```
 
-The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzTicketFootprint`, `FuzzGlobsMeet` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
+The functions that read text a model, a worker or a ticket's author wrote have fuzz tests, each in a `_fuzz_test.go` file: `FuzzTicketFootprint`, `FuzzGlobsMeet` and `FuzzIDProblem` (`internal/dispatch`), `FuzzAgentName` and `FuzzReadAgent` (`internal/herdr`) and `FuzzParseLinked` (`internal/beads`). The dashboard has one too, `FuzzEachTicketShowsOnce` (`internal/tui`): it sends the dashboard any sequence of the loop's events and workers' statuses, and checks that no frame shows a ticket twice. `go test` and the check run only their seeds, as ordinary tests. After changing one of those functions, fuzz it for a minute or so; Go fuzzes one target of one package at a time:
 
 ```
 go test -run '^$' -fuzz '^FuzzTicketFootprint$' -fuzztime 60s ./internal/dispatch

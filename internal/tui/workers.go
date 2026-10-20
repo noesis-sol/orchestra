@@ -152,8 +152,10 @@ func workerBorder(running ...dispatch.Status) lipgloss.TerminalColor {
 // their numbers stay put.
 func (m Dashboard) Running() []dispatch.Status {
 	var l []dispatch.Status
-	for _, st := range m.active {
-		l = append(l, st)
+	for _, r := range m.records {
+		if r.section() == inCurrent {
+			l = append(l, r.status)
+		}
 	}
 	sort.Slice(l, func(i, j int) bool {
 		if !l[i].Started.Equal(l[j].Started) {

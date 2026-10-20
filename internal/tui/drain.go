@@ -24,7 +24,7 @@ func (m Dashboard) windDownLine(w int) string {
 	lead := " " + strings.Join(squares, " ") + "  "
 	words := windDownStyle.Bold(true).Render("Winding down")
 	rests := []string{"nothing running, ending now"}
-	if n := len(m.active); n > 0 {
+	if n := len(m.Running()); n > 0 {
 		rests = []string{fmt.Sprintf("%d running, no new tickets", n), fmt.Sprintf("%d running", n)}
 	}
 	for _, rest := range rests {
@@ -42,10 +42,8 @@ func (m Dashboard) windDownLine(w int) string {
 // it runs, then its row state's (rowLooks).
 func (m Dashboard) windDownSquare(id string) string {
 	style := windDownStyle // still running, or gone from Current with no row
-	if _, running := m.active[id]; !running {
-		if i := m.rowIndex(id); i >= 0 {
-			style = rowLooks[m.rows[i].state].square
-		}
+	if i := m.find(id); i >= 0 && m.records[i].section() == inTable {
+		style = rowLooks[m.records[i].row.state].square
 	}
 	return style.Render("■")
 }
@@ -85,7 +83,7 @@ func (m Dashboard) drainQuestion() drainQuestion {
 		ids[i] = oneLine(id)
 	}
 	lead, list, tail := dispatch.DrainWords(ids)
-	switch len(m.active) {
+	switch len(ids) {
 	case 0:
 		q.about = "No new tickets will start. Nothing is running, so the run ends now."
 		q.keys = yesNo("stop", "keep going")

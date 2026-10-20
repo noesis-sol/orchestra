@@ -159,7 +159,7 @@ func TestWorkerBoxesKeepTheirHeight(t *testing.T) {
 	for _, w := range []int{66, 119, 120, 135} {
 		for n := 1; n <= 5; n++ {
 			m := numberedDashboard(t, n, &focused)
-			st := m.active["k-01"]
+			st := m.statusOf("k-01")
 			st.Title = long
 			m = setStatus(m, st)
 			quiet := m.workerPanels(w)

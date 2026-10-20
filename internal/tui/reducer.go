@@ -78,17 +78,25 @@ func (m *Dashboard) press(key string) keyAction {
 
 // applyStatus takes in a worker's status: it runs, or with Gone it no longer does.
 func (m *Dashboard) applyStatus(st dispatch.Status) {
+	i := m.find(st.Ticket)
 	if st.Gone {
-		delete(m.active, st.Ticket)
+		switch {
+		case i < 0:
+		case m.records[i].listed:
+			m.records[i].running, m.records[i].status = false, dispatch.Status{}
+		default: // nothing to show of it once its worker has gone
+			m.records = slices.Delete(m.records, i, i+1)
+		}
 		return
-	}
-	if m.active == nil {
-		m.active = map[string]dispatch.Status{}
 	}
 	if m.draining && !slices.Contains(m.drainFrom, st.Ticket) { // its status late, or one taken back
 		m.drainFrom = append(m.drainFrom, st.Ticket)
 	}
-	m.active[st.Ticket] = st
+	if i < 0 {
+		m.records = append(m.records, record{row: ticketRow{id: st.Ticket}})
+		i = len(m.records) - 1
+	}
+	m.records[i].running, m.records[i].status = true, st
 }
 
 // apply takes in one of the loop's events and reports whether the dashboard quits on it. Events
@@ -132,8 +140,8 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 	case dispatch.EvTriage:
 		m.triaged++
 		// A verdict on an earlier deferral, in after the ticket came back, would outlast the next.
-		if i := m.rowIndex(ev.Ticket); i >= 0 && m.rows[i].state == rowDeferred {
-			m.rows[i].triage = ev.Detail + " · " + ev.Title
+		if i := m.find(ev.Ticket); i >= 0 && m.records[i].listed && m.records[i].row.state == rowDeferred {
+			m.records[i].row.triage = ev.Detail + " · " + ev.Title
 		}
 	case dispatch.EvDrain, dispatch.EvResume: // as asked here, or with SIGUSR1
 		m.setDraining(ev.Kind == dispatch.EvDrain)
@@ -154,7 +162,7 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 		if ev.Kind == dispatch.EvStop {
 			m.markBlocked(ev) // the ticket the run stopped over, as it merged, with nothing else running
 			// Each to the end as it stops, in the order they were.
-			for _, r := range slices.Clone(m.rows) {
+			for _, r := range m.rows() {
 				if rowLooks[r.state].live {
 					m.setRow(r.id, rowStopped, r.note)
 				}

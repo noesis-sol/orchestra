@@ -122,7 +122,7 @@ func TestWideGridRowsAreEquallyTall(t *testing.T) {
 		left := (w - 1) / 2
 		for _, c := range cases {
 			m := numberedDashboard(t, 2, &focused)
-			st := m.active[c.tall]
+			st := m.statusOf(c.tall)
 			if c.activity {
 				st.Activity = "⏺ Bash(scripts/check.sh)"
 			} else {

@@ -14,7 +14,7 @@ import (
 // the numbers; with no key to name, the line is empty.
 func (m Dashboard) hintLine(w int) string {
 	var keys []keyHint
-	if n := min(len(m.active), numbered); n > 0 && !m.asking && m.focus != nil {
+	if n := min(len(m.Running()), numbered); n > 0 && !m.asking && m.focus != nil {
 		k := keyHint{key: "1", does: "go to the worker's tab", short: "worker tab"}
 		if n > 1 {
 			k.key, k.does = fmt.Sprintf("1–%d", n), "go to a worker's tab"

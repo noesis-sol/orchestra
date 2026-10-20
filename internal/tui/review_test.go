@@ -24,7 +24,7 @@ func TestWarningsAboutARunningTicketKeepItsRowWorking(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1",
 			Text: "  WATCH_FAILED for k-1: panic: oops; its status is not shown until it takes its prompt"})
 	v := fullTable(m)
-	if m.rows[0].state != rowWorking || !strings.Contains(v, "▶ testing") || strings.Contains(v, "! review") {
+	if m.rows()[0].state != rowWorking || !strings.Contains(v, "▶ testing") || strings.Contains(v, "! review") {
 		t.Errorf("k-1 should still show as testing, not for review:\n%s", v)
 	}
 }
@@ -36,7 +36,7 @@ func TestTriageFailureKeepsTheDeferralsReason(t *testing.T) {
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-1", Detail: "still open, noted for review"},
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Text: "  TRIAGE_FAILED for k-1: claude: exit status 1"})
 	v := ansi.Strip(m.View())
-	if m.rows[0].state != rowDeferred || !strings.Contains(v, "↷ deferred") ||
+	if m.rows()[0].state != rowDeferred || !strings.Contains(v, "↷ deferred") ||
 		!strings.Contains(v, "still open, noted for review") || strings.Contains(v, "! review") {
 		t.Errorf("k-1 should stay deferred with its reason:\n%s", v)
 	}
@@ -56,7 +56,7 @@ func TestWarningsThatSetATicketAsideShowItForReview(t *testing.T) {
 				dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 				dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Text: text})
 			v := ansi.Strip(m.View())
-			if m.rows[0].state != rowReview || !strings.Contains(v, "! review") ||
+			if m.rows()[0].state != rowReview || !strings.Contains(v, "! review") ||
 				!strings.Contains(v, "left for review, see the log") {
 				t.Errorf("k-1 should show for review:\n%s", v)
 			}
@@ -81,8 +81,8 @@ func TestTicketDeferredAgainShowsTheNewReason(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := runEvents(reviewDashboard(t), evs...)
 			v := ansi.Strip(m.View())
-			if len(m.rows) != 1 || !strings.Contains(v, "by the worker") || strings.Contains(v, "simulator") || m.triaged != 1 {
-				t.Errorf("rows %+v, triaged %d; want k-1's one row with the new reason:\n%s", m.rows, m.triaged, v)
+			if len(m.rows()) != 1 || !strings.Contains(v, "by the worker") || strings.Contains(v, "simulator") || m.triaged != 1 {
+				t.Errorf("rows %+v, triaged %d; want k-1's one row with the new reason:\n%s", m.rows(), m.triaged, v)
 			}
 			m = runEvents(m, dispatch.Event{Kind: dispatch.EvTriage, Ticket: "k-1", Detail: "ticket · high", Title: "needs a decision"})
 			if v := ansi.Strip(m.View()); !strings.Contains(v, "◆ ticket · high · needs a decision") {

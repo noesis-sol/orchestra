@@ -78,7 +78,7 @@ func (f *fixture) picked(id, title string) *fixture {
 func (f *fixture) status(sts ...dispatch.Status) *fixture {
 	f.t.Helper()
 	for _, st := range sts {
-		if !st.Gone && f.m.rowIndex(st.Ticket) < 0 {
+		if !st.Gone && !f.m.hasRow(st.Ticket) {
 			f.t.Fatalf("a status for %s, which no dispatch event picked up", st.Ticket)
 		}
 		f.send(statusMsg(st))
@@ -140,8 +140,16 @@ func setStatus(m Dashboard, st dispatch.Status) Dashboard {
 	return next.(Dashboard)
 }
 
+// statusOf is the status of ticket id's running worker, or none.
+func (m Dashboard) statusOf(id string) dispatch.Status {
+	if i := m.find(id); i >= 0 {
+		return m.records[i].status
+	}
+	return dispatch.Status{}
+}
+
 // reported sends m each running worker's status with change made to it, as the workers report. The
-// dashboard m was built from takes the change too: their workers are one map.
+// dashboard m was built from takes the change too: their records are one slice.
 func reported(m Dashboard, change func(st *dispatch.Status)) Dashboard {
 	for _, st := range m.Running() {
 		change(&st)

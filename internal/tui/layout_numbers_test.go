@@ -99,9 +99,13 @@ func TestQueueCount(t *testing.T) {
 
 // The run's totals count from the dashboard's state, the workers out of its slots, one at the least.
 func TestTotalsCountTheRun(t *testing.T) {
-	m := Dashboard{closed: 2, triaged: 1, active: map[string]dispatch.Status{"k-9": {}}, rows: []ticketRow{
-		{id: "k-1", state: rowDeferred}, {id: "k-2", state: rowReview}, {id: "k-3", state: rowAsked},
-	}}
+	m := run(t).running(dispatch.Status{Ticket: "k-9"}).event(
+		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-1"},
+		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-2", Aside: true},
+		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-3"},
+		dispatch.Event{Kind: dispatch.EvTriage, Ticket: "k-1", Detail: "split"},
+		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-4"},
+		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-5"}).dash()
 	var got []string
 	for _, t := range m.totals() {
 		got = append(got, ansi.Strip(t.part()))

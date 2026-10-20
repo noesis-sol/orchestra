@@ -21,7 +21,7 @@ func TestReviewRowShowsWhyTheTicketWasSetAside(t *testing.T) {
 				dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 				dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Detail: tc.why, Text: tc.text})
 			v := ansi.Strip(m.View())
-			if m.rows[0].state != rowReview || !strings.Contains(v, "! review") || !strings.Contains(v, tc.why) ||
+			if m.rows()[0].state != rowReview || !strings.Contains(v, "! review") || !strings.Contains(v, tc.why) ||
 				strings.Contains(v, "see the log") {
 				t.Errorf("k-1 should show for review, saying %q:\n%s", tc.why, v)
 			}

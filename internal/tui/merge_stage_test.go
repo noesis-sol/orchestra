@@ -76,7 +76,7 @@ func TestFinishedWorkerHasNoSpinner(t *testing.T) {
 
 func TestHandedBackTicketJoinsTheMergeQueueAgain(t *testing.T) {
 	m := mergeDashboard(t)
-	st := m.active["kinieta-m1"]
+	st := m.statusOf("kinieta-m1")
 	for _, c := range []struct {
 		name       string
 		set        func(*dispatch.Status)

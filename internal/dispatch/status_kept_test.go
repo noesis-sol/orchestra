@@ -71,6 +71,10 @@ func TestStatusShownIsTheOneKept(t *testing.T) {
 	if st := kept("its worker at the fix", PhaseFixing); !st.Fixing || st.Activity != editingA {
 		t.Errorf("a read should keep the hand-back: %+v", st)
 	}
+	o.showMerge("A", MergeRunning, 0) // as a stop retakes the queue for it
+	if st := kept("the queue retaken mid-hand-back", PhaseFixing); !st.Fixing || st.Merge != MergeNone {
+		t.Errorf("a ticket handed back should stay so until its worker is done: %+v", st)
+	}
 	o.setHandedBack("A", handNone)
 	kept("its fix done", PhaseWorking)
 	o.showMerge("A", MergeRunning, 0)

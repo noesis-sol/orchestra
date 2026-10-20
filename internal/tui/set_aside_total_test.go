@@ -24,8 +24,8 @@ func TestReopenedTicketsLeaveTheSetAsideTotal(t *testing.T) {
 	m = runEvents(m,
 		dispatch.Event{Kind: dispatch.EvReopened, Ticket: "k-1", Detail: "the run held for the environment"},
 		dispatch.Event{Kind: dispatch.EvReopened, Ticket: "k-2", Detail: "the run held for the environment"})
-	if n := m.setAside(); n != 0 || m.rows[0].state != rowWaiting || m.rows[1].state != rowWaiting {
-		t.Fatalf("set aside %d, rows %+v; want both waiting, none set aside", n, m.rows)
+	if n := m.setAside(); n != 0 || m.rows()[0].state != rowWaiting || m.rows()[1].state != rowWaiting {
+		t.Fatalf("set aside %d, rows %+v; want both waiting, none set aside", n, m.rows())
 	}
 	m.width, m.height = 80, 40
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "back in the queue: the run held for the environment") {

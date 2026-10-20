@@ -186,8 +186,8 @@ func TestQueueEventUpdatesTheQueueCount(t *testing.T) {
 	if m.queue.Queued != 3 {
 		t.Errorf("queued = %d, want 3", m.queue.Queued)
 	}
-	if len(m.rows) != 1 {
-		t.Errorf("a queue count should add no row: %d rows", len(m.rows))
+	if len(m.rows()) != 1 {
+		t.Errorf("a queue count should add no row: %d rows", len(m.rows()))
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 // rowsOf is m's rows as "id state: note", for comparing; the state is its word in the tickets table.
 func rowsOf(m Dashboard) []string {
 	var rows []string
-	for _, r := range m.rows {
+	for _, r := range m.rows() {
 		rows = append(rows, fmt.Sprintf("%s %s: %s", r.id, rowLooks[r.state].word, r.note))
 	}
 	return rows
@@ -92,7 +92,7 @@ func TestApplyAfterQuittingTakesNothingIn(t *testing.T) {
 	if !m.apply(dispatch.Event{Kind: dispatch.EvDone}) {
 		t.Fatal("the run's end should quit the dashboard")
 	}
-	if m.apply(dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-1"}) || m.received != 1 || len(m.rows) != 0 {
+	if m.apply(dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-1"}) || m.received != 1 || len(m.rows()) != 0 {
 		t.Errorf("an event after quitting was taken in: received %d, rows %q", m.received, rowsOf(m))
 	}
 }
@@ -104,9 +104,9 @@ func TestApplyTriageGoesOnDeferredRows(t *testing.T) {
 	m.apply(dispatch.Event{Kind: dispatch.EvTriage, Ticket: "k-1", Detail: "split", Title: "too big"})
 	m.apply(dispatch.Event{Kind: dispatch.EvDispatch, Ticket: "k-2"})
 	m.apply(dispatch.Event{Kind: dispatch.EvTriage, Ticket: "k-2", Detail: "retry", Title: "flaky"})
-	if m.rows[0].triage != "split · too big" || m.rows[1].triage != "" || m.triaged != 2 {
+	if m.rows()[0].triage != "split · too big" || m.rows()[1].triage != "" || m.triaged != 2 {
 		t.Errorf("triage %q and %q, %d verdicts; want it on the deferred row only, 2 verdicts",
-			m.rows[0].triage, m.rows[1].triage, m.triaged)
+			m.rows()[0].triage, m.rows()[1].triage, m.triaged)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestApplyStatusTracksTheRunningWorkers(t *testing.T) {
 	m.apply(dispatch.Event{Kind: dispatch.EvDrain})
 	m.applyStatus(dispatch.Status{Ticket: "k-2"})
 	m.applyStatus(dispatch.Status{Ticket: "k-1", Gone: true})
-	if _, ok := m.active["k-1"]; ok || len(m.active) != 1 {
-		t.Errorf("running %v, want k-2 alone", m.active)
+	if ids := m.runningIDs(); !slices.Equal(ids, []string{"k-2"}) {
+		t.Errorf("running %q, want k-2 alone", ids)
 	}
 	if !m.draining || !slices.Equal(m.drainFrom, []string{"k-1", "k-2"}) {
 		t.Errorf("draining %v from %q, want true from k-1 and k-2", m.draining, m.drainFrom)

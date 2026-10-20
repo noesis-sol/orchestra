@@ -49,8 +49,8 @@ func TestDashboardHoldWithoutTicket(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.View()), "stopping") {
 		t.Error("a hold found before dispatching should show the run as stopping")
 	}
-	if len(m.rows) != 1 {
-		t.Errorf("%d ticket rows, want 1: a hold with no ticket adds none", len(m.rows))
+	if len(m.rows()) != 1 {
+		t.Errorf("%d ticket rows, want 1: a hold with no ticket adds none", len(m.rows()))
 	}
 }
 

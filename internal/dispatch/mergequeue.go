@@ -162,8 +162,8 @@ func (t mergeTurn) Unlock() {
 
 // showMerge shows ticket id at stage of its merge on the dashboard, at place in line when it is
 // queued (1: next), its worker done with it, and how its check ahead of its turn goes, if it has one
-// (see trainActivity). A ticket no longer worked on isn't shown. The caller holds merges.mu, so the
-// places shown follow the line as it changes.
+// (see trainActivity). A ticket no longer worked on isn't shown, and one handed back to its worker
+// stays so. The caller holds merges.mu, so the places shown follow the line as it changes.
 func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 	phase := PhaseQueued
 	if stage == MergeRunning {
@@ -174,6 +174,11 @@ func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 		train = o.merges.trainActivity(id) // one checked ahead of its turn says how it goes
 	}
 	o.updateActive(id, func(st *Status) {
+		if st.handedBack() {
+			// Its worker has it until setHandedBack says it is done: a stop retakes the queue for it
+			// mid-hand-back, its rebase or failing check left to the worker.
+			return
+		}
 		st.enter(phase, place)
 		st.Agent, st.Doing, st.Permission, st.Unreadable = StateDone, "", false, false
 		// A ticket checked again says so (see recheck).
