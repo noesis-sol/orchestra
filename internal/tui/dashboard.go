@@ -232,10 +232,11 @@ func (m Dashboard) slots() int { return max(m.cfg.Concurrency, 1) }
 // can't redraw a view taller than the terminal. The tickets table's height, its Tickets label
 // included, comes from the pane's alone (tableLines), and blank rows fill it, so it stays put while
 // workers come, report and go; it is left out of a pane too short for it and one line per worker the
-// run may have. The workers get what is left: a box each, or one line each, chosen with room for the
-// winding-down line so that line doesn't change it. Below that the layout gives way step by step: the
-// totals on one line, without the load line, which has the workers they then carry, then the Current
-// label and the Tickets label with it, then cut, keeping footer.
+// run may have. A blank line sets the title apart from the load line where the pane has room for it
+// too, and is the first to go. The workers get what is left: a box each, or one line each, chosen with
+// room for the winding-down line so that line doesn't change it. Below that the layout gives way step
+// by step: the totals on one line, without the load line, which has the workers they then carry, then
+// the Current label and the Tickets label with it, then cut, keeping footer.
 // An empty footer takes no line.
 func (m Dashboard) layout(w int, title, footer string) string {
 	var foot []string
@@ -251,20 +252,27 @@ func (m Dashboard) layout(w int, title, footer string) string {
 	panels, list := withCurrentLabel(m.workerPanels(w)), withCurrentLabel(m.workerList(w))
 	// One line per worker the run may have, in a box headed Current, and a one-line winding-down line.
 	need := lineCount(title) + lineCount(stats) + m.slots() + sectionChrome + m.footLines()
-	if lines := tableLines(m.height); need+lines <= m.height {
-		top := stack(title, stats, m.tickets(w, lines))
+	lines := tableLines(m.height)
+	var tickets string
+	if need+lines <= m.height {
+		tickets, need = m.tickets(w, lines), need+lines
+	}
+	// The title with the blank line below it, in a pane with a line to spare for it beside the rest
+	// at its steady height, so that it doesn't come and go as workers do; then the title alone.
+	heads := []string{title}
+	if need < m.height {
+		heads = []string{title + "\n", title}
+	}
+	for _, head := range heads {
 		for _, workers := range []string{panels, list} {
-			if fits(steady, top, workers) {
-				return with(top, workers)
+			if fits(steady, head, stats, tickets, workers) {
+				return with(head, stats, tickets, workers)
 			}
 		}
+	}
+	if tickets != "" {
 		// More workers than the run may have: the labels go, then the workers give way.
 		return m.cut(stack(title, stats, m.ticketsTable(w, lines-labelLines), m.workerList(w)), foot)
-	}
-	for _, workers := range []string{panels, list} {
-		if fits(steady, title, stats, workers) {
-			return with(title, stats, workers)
-		}
 	}
 	top := stack(title, m.statsLine(w))
 	// A pane too short for a steady form: the workers get every line the foot leaves as it is now,

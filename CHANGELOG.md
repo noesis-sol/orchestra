@@ -23,6 +23,9 @@ All notable changes to orchestra are documented here. The format follows
   checked in its turn as before. `"merge_train"` in `settings.json` says how
   many are checked ahead (default 1; `0` for none); none is while the run
   holds at the machine's cap on workers.
+- The dashboard leaves a blank line between its title line and the load line
+  under it, so the two no longer run together. A pane too short for it drops
+  the blank line first, before any line with something on it.
 
 ## [0.8.5] - 2026-10-20
 

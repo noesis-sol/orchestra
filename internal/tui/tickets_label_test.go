@@ -55,16 +55,16 @@ func TestTheTicketsLabelSavesTheWorkersALine(t *testing.T) {
 	}
 	var focused []string
 	m := numberedDashboard(3, &focused)
-	// 35 lines held the table and one line per worker; now a box each fits under the same 7 tickets,
-	// below the title, the load line and the strip.
-	m.width, m.height = 66, 35
+	// 37 lines held the table and one line per worker; now a box each fits under the same 8 tickets,
+	// below the title, the blank line under it, the load line and the strip.
+	m.width, m.height = 66, 37
 	view := m.View()
-	checkWithinPane(t, view, 66, 35)
+	checkWithinPane(t, view, 66, 37)
 	if form := workerForm(view); form != "label true, 3 boxes" {
-		t.Errorf("66x35: the workers show as %s, want 3 boxes:\n%s", form, ansi.Strip(view))
+		t.Errorf("66x37: the workers show as %s, want 3 boxes:\n%s", form, ansi.Strip(view))
 	}
-	if top, height := tableSpan(view); top != 7 || height != 10 {
-		t.Errorf("66x35: the table at line %d, %d lines, want line 7, 10 lines:\n%s", top, height, ansi.Strip(view))
+	if top, height := tableSpan(view); top != 8 || height != 11 {
+		t.Errorf("66x37: the table at line %d, %d lines, want line 8, 11 lines:\n%s", top, height, ansi.Strip(view))
 	}
 }
 
