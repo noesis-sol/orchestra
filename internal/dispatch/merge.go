@@ -31,12 +31,57 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 		o.leaveFor(keep, id, asideNoCommit, "closed without a commit", "", fmt.Sprintf(
 			"no commit on %s names %s; worktree %s and tab %s left for review", br, id, wt, tab))
 	case closedDirty:
-		o.leaveFor(keep, id, asideUncommitted, "closed with uncommitted changes", "", fmt.Sprintf(
-			"%s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab))
+		o.leaveUncommitted(keep, w, commit)
 	case closedMerge:
 		return o.mergeNamed(ctx, w, commit)
 	}
 	return nil
+}
+
+// leaveUncommitted sets aside w's ticket, closed with commit naming it, as its worktree has
+// uncommitted changes, naming the files in the warning and the ticket's note (see uncommittedList), so
+// the maintainer can tell a forgotten source file from a stray build output without opening it.
+func (o *Loop) leaveUncommitted(ctx context.Context, w worker, commit string) {
+	c := o.cfg
+	what := "has uncommitted changes"
+	if files := o.uncommittedList(ctx, w.wt); files != "" {
+		what += " (" + files + ")"
+	}
+	todo := fmt.Sprintf("commit them or remove them, then merge %s into %s", w.br, c.Base)
+	o.appendNotes(ctx, w.id, fmt.Sprintf("Orchestra: %s closed (%s) but %s %s, so it was left for review; %s.",
+		w.id, commit, w.wt, what, todo))
+	o.leaveFor(ctx, w.id, asideUncommitted, "closed with uncommitted changes", "", fmt.Sprintf(
+		"%s closed (%s) but %s %s; worktree and tab %s left for review (%s)", w.id, commit, w.wt, what, w.tab, todo))
+}
+
+// uncommittedShown is how many uncommitted files uncommittedList names before saying how many more.
+const uncommittedShown = 5
+
+// uncommittedList names the files worktree wt has uncommitted changes to outside .orchestra/run/,
+// sorted, each after its code in git status --porcelain ("M", "??" for untracked, …): "uncommitted:
+// M a.go, ?? cmd/orchestra/orchestra", and "and N more" after the first uncommittedShown. It is ""
+// when git can't say.
+func (o *Loop) uncommittedList(ctx context.Context, wt string) string {
+	changes := o.checkout.Changes(ctx, wt)
+	var files []string
+	for f := range changes {
+		if !strings.HasPrefix(f, ".orchestra/run/") {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	slices.Sort(files)
+	var shown []string
+	for _, f := range files[:min(len(files), uncommittedShown)] {
+		shown = append(shown, strings.TrimSpace(changes[f])+" "+f)
+	}
+	list := "uncommitted: " + strings.Join(shown, ", ")
+	if more := len(files) - len(shown); more > 0 {
+		list += fmt.Sprintf(" and %d more", more)
+	}
+	return list
 }
 
 // merge brings w's finished ticket's branch onto Base, one ticket at a time, once the project's check

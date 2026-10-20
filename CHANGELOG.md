@@ -6,6 +6,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `CLOSED_UNCOMMITTED` names the files left uncommitted in the ticket's
+  worktree, in its warning and the ticket's note (a few, then how many
+  more), each after its `git status` code, `??` marking an untracked one,
+  so a stray build output is told from a forgotten source file without
+  opening the worktree; it says to commit or remove them, then merge.
+
 ### Fixed
 
 - A ticket coming to an end (closed, deferred, left for review or blocked

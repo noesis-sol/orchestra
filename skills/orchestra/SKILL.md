@@ -484,8 +484,9 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 - `CLOSED_WITHOUT_COMMIT`: closed, but its branch has commits and none names it, or it has none and
   its worktree has uncommitted changes. A ticket closed with no commits and no changes says `<id>
   closed with no change` instead, and its worktree, branch and tab are removed.
-- `CLOSED_UNCOMMITTED`: closed with a commit naming it, but its worktree has uncommitted changes:
-  commit or discard them, then merge its branch by hand.
+- `CLOSED_UNCOMMITTED`: closed with a commit naming it, but its worktree has uncommitted changes,
+  which the warning and the ticket's note name, a few at most, each after its `git status --porcelain`
+  code (`?? <file>` untracked, `M <file>` changed): commit or discard them, then merge its branch by hand.
 - `OFF_BRANCH`: closed, but its worktree has another branch or a detached HEAD checked out rather
   than its own `wt/<id>`, as when its worker switched, against its rules. Nothing was rebased,
   checked or merged. Look at both branches with the user, bring the work onto `wt/<id>`, switch the
