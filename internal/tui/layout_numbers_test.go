@@ -24,8 +24,7 @@ func TestAboutWidthIsTheLastColumnsRoom(t *testing.T) {
 		}
 		id := strings.Repeat("k", tc.idWidth)
 		for _, extra := range []int{0, 1} {
-			m := NewDashboard(dispatch.Config{}, func() {}, func(bool) {}, func(string) {})
-			m.pickUp(id, strings.Repeat("t", got+extra))
+			m := run(t).config(dispatch.Config{}).picked(id, strings.Repeat("t", got+extra)).dash()
 			table := ansi.Strip(m.ticketsTable(tc.w, 3))
 			if width := lipgloss.Width(table); width != tc.w {
 				t.Errorf("a table %d wide, IDs %d: it is %d wide:\n%s", tc.w, tc.idWidth, width, table)

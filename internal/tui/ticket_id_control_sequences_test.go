@@ -15,7 +15,7 @@ import (
 func TestDashboardDropsControlSequencesInTicketIDs(t *testing.T) {
 	styled(t)
 	for name, id := range attacks {
-		m := runEvents(reviewDashboard(),
+		m := runEvents(reviewDashboard(t),
 			dispatch.Event{Kind: dispatch.EvDeferred, Ticket: id, Detail: "its ID can't name a branch"},
 			dispatch.Event{Kind: dispatch.EvWarn, Ticket: id + "2", Aside: true, Text: "WARN not deferred"},
 			dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: id + "3", Title: "Fix it",

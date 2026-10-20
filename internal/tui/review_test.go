@@ -9,16 +9,13 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-func reviewDashboard() Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m.width, m.height = 80, 40
-	return m
-}
+// reviewDashboard is a run 80x40 with nothing picked up yet.
+func reviewDashboard(t *testing.T) Dashboard { return run(t).sized(80, 40).dash() }
 
 // A warning about a ticket still running leaves its row working, with what its worker is doing,
 // rather than marking it for review while the Current box shows it at work.
 func TestWarningsAboutARunningTicketKeepItsRowWorking(t *testing.T) {
-	m := runEvents(reviewDashboard(), dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"})
+	m := runEvents(reviewDashboard(t), dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"})
 	next, _ := m.Update(statusMsg(dispatch.Status{Ticket: "k-1", Title: "Repeat a timeline", Started: time.Now(),
 		Agent: dispatch.StateWorking, Doing: "testing"}))
 	m = runEvents(next.(Dashboard),
@@ -34,7 +31,7 @@ func TestWarningsAboutARunningTicketKeepItsRowWorking(t *testing.T) {
 
 // A failed triage leaves a deferred ticket deferred, with the deferral's reason.
 func TestTriageFailureKeepsTheDeferralsReason(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-1", Detail: "still open, noted for review"},
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Text: "  TRIAGE_FAILED for k-1: claude: exit status 1"})
@@ -55,7 +52,7 @@ func TestWarningsThatSetATicketAsideShowItForReview(t *testing.T) {
 	} {
 		code, _, _ := strings.Cut(strings.TrimSpace(text), ":")
 		t.Run(code, func(t *testing.T) {
-			m := runEvents(reviewDashboard(),
+			m := runEvents(reviewDashboard(t),
 				dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 				dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Text: text})
 			v := ansi.Strip(m.View())
@@ -82,7 +79,7 @@ func TestTicketDeferredAgainShowsTheNewReason(t *testing.T) {
 		"verdict after it came back":  append(first[:2:2], back, verdict, again),
 	} {
 		t.Run(name, func(t *testing.T) {
-			m := runEvents(reviewDashboard(), evs...)
+			m := runEvents(reviewDashboard(t), evs...)
 			v := ansi.Strip(m.View())
 			if len(m.rows) != 1 || !strings.Contains(v, "by the worker") || strings.Contains(v, "simulator") || m.triaged != 1 {
 				t.Errorf("rows %+v, triaged %d; want k-1's one row with the new reason:\n%s", m.rows, m.triaged, v)

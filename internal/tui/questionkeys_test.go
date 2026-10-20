@@ -22,11 +22,13 @@ var questionStates = []struct {
 }
 
 // questionDashboard is a dashboard with the stop question open in the given state.
-func questionDashboard(workers int, draining bool) Dashboard {
+func questionDashboard(t *testing.T, workers int, draining bool) Dashboard {
 	var focused []string
-	m := numberedDashboard(workers, &focused)
-	m.draining, m.asking = draining, true
-	return m
+	f := numberedRun(t, workers, &focused)
+	if draining {
+		f.keys("s", "y")
+	}
+	return f.keys("s").dash()
 }
 
 // The stop question names y and n as the hint names its keys: each key bold in keyStyle's colour,
@@ -42,7 +44,7 @@ func TestStopQuestionKeysLookLikeTheHint(t *testing.T) {
 	}{{true, "\x1b[1;38;2;229;231;235m"}, {false, "\x1b[1;38;2;55;65;81m"}} {
 		lipgloss.SetHasDarkBackground(c.dark)
 		for _, s := range questionStates {
-			m := questionDashboard(s.workers, s.draining)
+			m := questionDashboard(t, s.workers, s.draining)
 			modal := m.modal(80)
 			for _, want := range []string{c.key + "y", c.key + "n", faint + " " + s.yDoes, faint + " " + s.nDoes} {
 				if !strings.Contains(modal, want) {
@@ -65,7 +67,7 @@ func TestStopQuestionKeepsItsWidths(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	for _, s := range questionStates {
-		m := questionDashboard(s.workers, s.draining)
+		m := questionDashboard(t, s.workers, s.draining)
 		q := m.drainQuestion()
 		for w := 36; w <= 100; w++ { // the box shows from 36 columns
 			plain := box(min(w-4, 64), 0, yellow, lipgloss.JoinVertical(lipgloss.Left, q.ask, "", q.about, "", s.keys))

@@ -16,15 +16,15 @@ import (
 func TestIdleWorkersAreFaint(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
-	m := NewDashboard(dispatch.Config{Limit: 40, Concurrency: 4}, func() {}, func(bool) {}, func(string) {})
-	m.width, m.height = 120, 40
+	f := run(t).config(dispatch.Config{Limit: 40, Concurrency: 4}).sized(120, 40)
+	m := f.dash()
 
 	line := m.loadLine(120)
 	if faint := dimStyle.Render("▶ 0 of 4 workers"); faint == "▶ 0 of 4 workers" || !strings.Contains(line, faint) {
 		t.Errorf("the load line doesn't read a faint \"▶ 0 of 4 workers\": %q", line)
 	}
 
-	m.active = map[string]dispatch.Status{"bd-1": {Ticket: "bd-1", Title: "One"}}
+	m = f.running(dispatch.Status{Ticket: "bd-1", Title: "One"}).dash()
 	line = m.loadLine(120)
 	if !strings.Contains(line, pickedStyle.Render("▶ 1")+dimStyle.Render(" of 4 workers")) {
 		t.Errorf("one worker running isn't a bright 1 and a faint \" of 4 workers\": %q", line)

@@ -27,7 +27,7 @@ func checkWithinPane(t *testing.T, view string, w, h int) {
 // A title, a triage verdict or a question with line breaks in it takes one line of its row and of
 // the worker list, so the tickets table still fits beside the worker's box.
 func TestTextWithLineBreaksTakesOneLine(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Fix the\nthing"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Second"},
 		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-2", Detail: "still open"},
@@ -71,17 +71,13 @@ func TestDrainQuestionOverWideCharactersFitsThePane(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipped by -short: draws the dashboard at every width and three heights")
 	}
-	var calls []bool
-	cancelled := false
-	base := drainDashboard(&calls, &cancelled)
-	base.active["k-1"] = dispatch.Status{Ticket: "k-1", Title: strings.Repeat("日本語", 20),
-		Started: time.Now().Add(-2 * time.Minute), Agent: "working"}
-	base.active["k-2"] = dispatch.Status{Ticket: "k-2", Title: "x" + strings.Repeat("チケット🙂", 15),
-		Started: time.Now().Add(-time.Minute), Agent: "working"}
-	base = runEvents(base,
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: strings.Repeat("日本語", 20)},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "x" + strings.Repeat("チケット🙂", 15)},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "k-30", Title: "ab" + strings.Repeat("表示", 30)})
+	now := time.Now()
+	base := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}).
+		running(dispatch.Status{Ticket: "k-1", Title: strings.Repeat("日本語", 20), Started: now.Add(-2 * time.Minute),
+			Agent: "working"},
+			dispatch.Status{Ticket: "k-2", Title: "x" + strings.Repeat("チケット🙂", 15), Started: now.Add(-time.Minute),
+				Agent: "working"}).
+		picked("k-30", "ab"+strings.Repeat("表示", 30)).sized(80, 40).dash()
 	m := press(base, "s")
 	for w := 36; w <= 130; w++ {
 		for _, h := range []int{16, 24, 40} {

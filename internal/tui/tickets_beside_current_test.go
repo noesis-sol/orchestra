@@ -28,25 +28,16 @@ func tableInView(t *testing.T, m Dashboard) string {
 // besideCurrentDashboard has two tickets that came to an end, k-1 merged and k-2 deferred, and two
 // whose workers are at them, k-3 and k-4.
 func besideCurrentDashboard(t *testing.T) Dashboard {
-	t.Helper()
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m,
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Merged first"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Deferred second"},
-		dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-1", Detail: "abc1234 merged into batch"},
-		dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-2", Detail: "still open"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "k-3", Title: "Still at work"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 4, Ticket: "k-4", Title: "Running its checks"})
-	m.width, m.height = 90, 40
 	now := time.Now()
-	for _, st := range []dispatch.Status{
-		{Ticket: "k-3", Title: "Still at work", Started: now.Add(-2 * time.Minute), Agent: dispatch.StateWorking},
-		{Ticket: "k-4", Title: "Running its checks", Started: now.Add(-time.Minute), Agent: dispatch.StateWorking,
-			Doing: dispatch.DoingTesting},
-	} {
-		m = withStatus(m, statusMsg(st))
-	}
-	return m
+	return run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}).
+		picked("k-1", "Merged first").picked("k-2", "Deferred second").
+		closed("k-1", "abc1234 merged into batch").
+		event(dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-2", Detail: "still open"}).
+		running(dispatch.Status{Ticket: "k-3", Title: "Still at work", Started: now.Add(-2 * time.Minute),
+			Agent: dispatch.StateWorking},
+			dispatch.Status{Ticket: "k-4", Title: "Running its checks", Started: now.Add(-time.Minute),
+				Agent: dispatch.StateWorking, Doing: dispatch.DoingTesting}).
+		sized(90, 40).dash()
 }
 
 // With Current drawn, the tickets table leaves out the tickets it shows: its rows are those that came
@@ -85,9 +76,9 @@ func TestTicketsTableKeepsRunningTicketsWithoutCurrent(t *testing.T) {
 func TestFinishedTicketJoinsTheTableAsItLeavesCurrent(t *testing.T) {
 	m := besideCurrentDashboard(t)
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-4", Detail: "def5678 merged into batch"})
-	m = withStatus(m, statusMsg(dispatch.Status{Ticket: "k-4", Gone: true}))
+	m = setStatus(m, dispatch.Status{Ticket: "k-4", Gone: true})
 	m = runEvents(m, dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-3", Detail: "which way?"})
-	m = withStatus(m, statusMsg(dispatch.Status{Ticket: "k-3", Gone: true}))
+	m = setStatus(m, dispatch.Status{Ticket: "k-3", Gone: true})
 	view := ansi.Strip(m.View())
 	_, rest, _ := strings.Cut(view, "  Tickets")
 	order := []string{"k-1", "k-2", "k-4", "k-3"}

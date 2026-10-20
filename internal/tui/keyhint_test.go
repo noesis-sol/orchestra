@@ -32,7 +32,7 @@ func TestKeyHintInEveryStateAndWidth(t *testing.T) {
 	var focused []string
 	for _, s := range hintStates {
 		for _, workers := range []int{2, 0} {
-			m := numberedDashboard(workers, &focused)
+			m := numberedDashboard(t, workers, &focused)
 			m.stopping, m.draining, m.asking = s.stopping, s.draining, s.asking
 			want := s.twoWorkers
 			if workers == 0 {
@@ -60,7 +60,7 @@ func TestCtrlCStopsAtOnceInEveryState(t *testing.T) {
 	var focused []string
 	for _, s := range hintStates {
 		cancelled := false
-		m := numberedDashboard(2, &focused)
+		m := numberedDashboard(t, 2, &focused)
 		m.cancel = func() { cancelled = true }
 		m.stopping, m.draining, m.asking = s.stopping, s.draining, s.asking
 		if m = press(m, "ctrl+c"); !cancelled || !m.Interrupted() {
@@ -77,7 +77,7 @@ func TestKeyHintKeysAreBrighterThanWhatTheyDo(t *testing.T) {
 	defer lipgloss.SetHasDarkBackground(true)
 	const faint = "\x1b[2m"
 	var focused []string
-	m := numberedDashboard(2, &focused)
+	m := numberedDashboard(t, 2, &focused)
 	for _, c := range []struct {
 		dark bool
 		key  string // bold (1) and the exact colour: #E5E7EB on dark, #374151 on light
@@ -98,7 +98,7 @@ func TestKeyHintKeysAreBrighterThanWhatTheyDo(t *testing.T) {
 // line, rather than leaving an empty one at the bottom.
 func TestNoHintTakesNoLine(t *testing.T) {
 	var focused []string
-	m := numberedDashboard(0, &focused)
+	m := numberedDashboard(t, 0, &focused)
 	m.stopping = true
 	m.width, m.height = 70, 30
 	lines := strings.Split(ansi.Strip(m.View()), "\n")

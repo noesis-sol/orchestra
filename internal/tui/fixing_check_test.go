@@ -11,11 +11,8 @@ import (
 )
 
 func TestWorkerFixingItsCheckShowsFixingCheck(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
-	m.width, m.height = 70, 40
-	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
-		Agent: "working", Doing: "testing", Fixing: true}}
+	m := run(t).running(dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Fixing: true}).sized(70, 40).dash()
 	if view := ansi.Strip(m.View()); !strings.Contains(fullTable(m), "⟳ fixing ") || !strings.Contains(view, "kinieta-ce1  fixing check") {
 		t.Errorf("a worker fixing its check should show fixing check:\n%s", view)
 	}

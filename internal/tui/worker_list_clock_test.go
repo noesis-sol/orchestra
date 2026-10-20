@@ -13,7 +13,7 @@ import (
 // A time that gains a digit while the compact list is drawn (59s to 1m0s) still fits its column: each
 // line's cells are read once, so the times stay right-aligned and the titles at one column.
 func TestWorkerListReadsTheClockOncePerLine(t *testing.T) {
-	m := columnsDashboard(
+	m := columnsDashboard(t,
 		dispatch.Status{Ticket: "k-1", Title: "First", Started: ago(59 * time.Second), Agent: dispatch.StateWorking},
 		dispatch.Status{Ticket: "k-2", Title: "Second", Started: ago(3 * time.Second), Agent: dispatch.StateWorking},
 	)

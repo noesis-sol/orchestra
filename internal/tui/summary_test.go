@@ -10,14 +10,12 @@ import (
 )
 
 // endedRun is a dashboard whose run picked up and closed n tickets, then ended.
-func endedRun(n int) Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-10-02"}, func() {}, func(bool) {}, func(string) {})
+func endedRun(t *testing.T, n int) Dashboard {
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-10-02"})
 	for i := range n {
-		id := fmt.Sprintf("kinieta-%03d", i)
-		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},
-			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-10-02"})
+		f.done(fmt.Sprintf("kinieta-%03d", i), "A ticket", "abc1234 merged into batch/2026-10-02")
 	}
-	return runEvents(m, dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY"})
+	return f.event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY"}).dash()
 }
 
 // printedEnd is what main prints once the dashboard m has closed, on a terminal width columns wide:
@@ -34,7 +32,7 @@ func printedEnd(m Dashboard, width int) string {
 // prints the run's summary on the normal screen, where it isn't cut to the pane's height: the title,
 // the totals and every ticket, as wide as the terminal is now, then the run's last line.
 func TestSummaryAfterTheDashboardIsWhole(t *testing.T) {
-	m := endedRun(40)
+	m := endedRun(t, 40)
 	m.width, m.height = 120, 8 // the pane as the dashboard last saw it: short, and wider than now
 	out := ansi.Strip(printedEnd(m, 80))
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
@@ -66,7 +64,7 @@ func TestSummaryAfterTheDashboardIsWhole(t *testing.T) {
 // A run that picked up no ticket has no tickets table, and no blank line in its place; a dashboard
 // that never started has no summary.
 func TestSummaryWithoutTickets(t *testing.T) {
-	out := ansi.Strip(printedEnd(endedRun(0), 80))
+	out := ansi.Strip(printedEnd(endedRun(t, 0), 80))
 	if strings.Contains(out, "Tickets") || strings.Contains(out, "\n\n") {
 		t.Errorf("a run without tickets printed:\n%s", out)
 	}

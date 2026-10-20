@@ -16,12 +16,12 @@ func TestDoneWorkerReadsPlainGreen(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	m.active = map[string]dispatch.Status{}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3})
 	for i, state := range []dispatch.AgentState{dispatch.StateDone, dispatch.StateWorking, dispatch.StateIdle} {
 		id := fmt.Sprintf("kinieta-w%d", i)
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: state}
+		f.running(dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: state})
 	}
+	m := f.dash()
 	done := doneStyle.Render("done")
 	if done == closedStyle.Render("done") || done == deferredStyle.Render("done") {
 		t.Fatalf("done should be plain green, neither bold like a completed row nor set-aside yellow: %q", done)

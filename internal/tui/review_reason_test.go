@@ -17,7 +17,7 @@ func TestReviewRowShowsWhyTheTicketWasSetAside(t *testing.T) {
 		{"closed without a commit", "  CLOSED_WITHOUT_COMMIT: no commit on wt/k-1 names k-1; worktree wt and tab t1 left for review"},
 	} {
 		t.Run(tc.why, func(t *testing.T) {
-			m := runEvents(reviewDashboard(),
+			m := runEvents(reviewDashboard(t),
 				dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 				dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Detail: tc.why, Text: tc.text})
 			v := ansi.Strip(m.View())
@@ -32,7 +32,7 @@ func TestReviewRowShowsWhyTheTicketWasSetAside(t *testing.T) {
 // A long reason is cut to the row's width rather than wrapping the table.
 func TestReviewRowCutsALongReason(t *testing.T) {
 	why := "worker finished without closing; see tab t1 and worktree /Users/someone/worktrees/k-1"
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Detail: why, Text: "  DEFER_FAILED: …"})
 	v := ansi.Strip(m.View())

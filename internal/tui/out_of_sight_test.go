@@ -11,7 +11,7 @@ import (
 // do nothing and the hint leaves them out, and the dashboard says how to see the tabs instead.
 func TestWorkersOutOfSightHaveNoNumberKeys(t *testing.T) {
 	var focused []string
-	m := numberedDashboard(2, &focused)
+	m := numberedDashboard(t, 2, &focused)
 	m.focus = nil
 	m.cfg.Watch = "tmux attach -t orchestra-app"
 	m = press(m, "1", "2")

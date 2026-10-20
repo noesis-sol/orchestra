@@ -8,13 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
-	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // The tickets table has no header row and no rule under it: its rows start below its top border.
 func TestTicketsTableHasNoHeaderRow(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m.rows = []ticketRow{{id: "k-01", state: rowDone, note: "abc1234 merged"}, {id: "k-02", title: "Second"}}
+	m := run(t).done("k-01", "", "abc1234 merged").picked("k-02", "Second").dash()
 	table := ansi.Strip(m.ticketsTable(80, 4))
 	lines := strings.Split(table, "\n")
 	if len(lines) != 4 || !strings.HasPrefix(lines[0], "╭") || !strings.Contains(lines[1], "k-01") ||
@@ -34,7 +32,7 @@ func TestTicketsLabelIsLikeCurrentInItsOwnColour(t *testing.T) {
 	lipgloss.SetHasDarkBackground(true)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	var focused []string
-	m := numberedDashboard(3, &focused)
+	m := numberedDashboard(t, 3, &focused)
 	m.width, m.height = 70, 40
 	v := m.View()
 	// Bold (1), with the exact dark-background chalk #E5E7EB and cyan #22D3EE.
@@ -54,7 +52,7 @@ func TestTheTicketsLabelSavesTheWorkersALine(t *testing.T) {
 		}
 	}
 	var focused []string
-	m := numberedDashboard(3, &focused)
+	m := numberedDashboard(t, 3, &focused)
 	// 37 lines held the table and one line per worker; now a box each fits under the same 8 tickets,
 	// below the title, the blank line under it, the load line and the strip.
 	m.width, m.height = 66, 37
@@ -73,7 +71,7 @@ func TestTheTicketsLabelSavesTheWorkersALine(t *testing.T) {
 // in a run that may have two, as after its concurrency was lowered.
 func TestTheTicketsLabelGoesWithCurrent(t *testing.T) {
 	var focused []string
-	m := numberedDashboard(3, &focused)
+	m := numberedDashboard(t, 3, &focused)
 	m.cfg.Concurrency = 2
 	m.width = 66
 	for h, want := range map[int]string{20: "label false, 1 boxes; table 5 lines", 19: "label true, 1 boxes; table 0 lines"} {

@@ -45,7 +45,7 @@ func TestRunEndSaysWhichTicketsWaitOnAFailedSetup(t *testing.T) {
 			waits + "\n  SCOPE_OPEN: k-1: …\n",
 	} {
 		var b strings.Builder
-		Printer{Out: &b, Styled: true, Width: 400}.End(ended(dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: text}))
+		Printer{Out: &b, Styled: true, Width: 400}.End(ended(t, dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: text}))
 		if got := ansi.Strip(b.String()); got != want {
 			t.Errorf("%s:\n got %q\nwant %q", text, got, want)
 		}
@@ -55,7 +55,7 @@ func TestRunEndSaysWhichTicketsWaitOnAFailedSetup(t *testing.T) {
 	lipgloss.SetHasDarkBackground(true)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	var b strings.Builder
-	Printer{Out: &b, Styled: true, Width: 400}.End(ended(dispatch.Event{Kind: dispatch.EvDone, N: 2,
+	Printer{Out: &b, Styled: true, Width: 400}.End(ended(t, dispatch.Event{Kind: dispatch.EvDone, N: 2,
 		Text: "READY_EMPTY after 2 tickets; " + waits}))
 	if yellow := "\x1b[38;2;250;204;21m  SETUP_WAITS: k-2"; !strings.Contains(b.String(), yellow) {
 		t.Errorf("printed %q, want %q in it", b.String(), yellow)

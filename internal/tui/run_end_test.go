@@ -12,8 +12,8 @@ import (
 )
 
 // ended is a dashboard whose run ended with ev an hour and 12 minutes after it began.
-func ended(ev dispatch.Event) Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+func ended(t *testing.T, ev dispatch.Event) Dashboard {
+	m := run(t).dash()
 	m.began = time.Date(2026, 10, 2, 10, 35, 0, 0, time.Local)
 	ev.Time = m.began.Add(72 * time.Minute)
 	return runEvents(m, ev)
@@ -36,7 +36,7 @@ func TestRunEndsWithAClosingLine(t *testing.T) {
 			"♪ Completed the Run  no tickets · 1h12m\n  SCOPE_OPEN: k-1: 1 of its 2 subtickets not done: k-2 (deferred; a b)\n"},
 	} {
 		var b strings.Builder
-		Printer{Out: &b, Styled: true, Width: 200}.End(ended(dispatch.Event{Kind: dispatch.EvDone, N: tc.n, Limit: 40,
+		Printer{Out: &b, Styled: true, Width: 200}.End(ended(t, dispatch.Event{Kind: dispatch.EvDone, N: tc.n, Limit: 40,
 			Text: tc.text}))
 		if got := ansi.Strip(b.String()); got != tc.want {
 			t.Errorf("%s:\n got %q\nwant %q", tc.text, got, tc.want)
@@ -62,7 +62,7 @@ func TestRunEndColours(t *testing.T) {
 		"DRAINED after 2 tickets; SCOPE_UNREADABLE: k-1 …": yellow + "  SCOPE_UNREADABLE: k-1 …",
 	} {
 		var b strings.Builder
-		Printer{Out: &b, Styled: true, Width: 200}.End(ended(dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: text}))
+		Printer{Out: &b, Styled: true, Width: 200}.End(ended(t, dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: text}))
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("%s: printed %q, want %q in it", text, b.String(), want)
 		}
@@ -73,12 +73,12 @@ func TestRunEndColours(t *testing.T) {
 // and a stop keeps its red line on a terminal.
 func TestRunEndKeepsTheLogWordingOffTheTerminal(t *testing.T) {
 	var b strings.Builder
-	Printer{Out: &b}.End(ended(dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: "READY_EMPTY after 2 tickets"}))
+	Printer{Out: &b}.End(ended(t, dispatch.Event{Kind: dispatch.EvDone, N: 2, Text: "READY_EMPTY after 2 tickets"}))
 	if got := b.String(); !strings.HasSuffix(got, " 11:47:00 READY_EMPTY after 2 tickets\n") {
 		t.Errorf("plain output printed %q", got)
 	}
 	b.Reset()
-	Printer{Out: &b, Styled: true, Width: 200}.End(ended(dispatch.Event{Kind: dispatch.EvStop, Text: "PAUSED: k-1 idle"}))
+	Printer{Out: &b, Styled: true, Width: 200}.End(ended(t, dispatch.Event{Kind: dispatch.EvStop, Text: "PAUSED: k-1 idle"}))
 	if got := ansi.Strip(b.String()); got != "11:47:00 ■ PAUSED: k-1 idle\n" {
 		t.Errorf("a stop printed %q", got)
 	}

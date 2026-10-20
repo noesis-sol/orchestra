@@ -21,18 +21,13 @@ const (
 
 // windingDown is a dashboard with four workers running, winding down as confirmed with s and y.
 func windingDown(t *testing.T) Dashboard {
-	t.Helper()
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 4}, func() {}, func(bool) {},
-		func(string) {})
-	m.width, m.height = 80, 40
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 4}).sized(80, 40)
 	now := time.Now()
-	m.active = map[string]dispatch.Status{}
 	for i, id := range []string{"orchestra-evsp", "orchestra-74b2.18", "orchestra-6i2h", "orchestra-a1b"} {
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Ticket " + id, Agent: "working",
-			Started: now.Add(-time.Duration(4-i) * time.Minute)}
-		m.pickUp(id, "Ticket "+id)
+		f.running(dispatch.Status{Ticket: id, Title: "Ticket " + id, Agent: "working",
+			Started: now.Add(-time.Duration(4-i) * time.Minute)})
 	}
-	return press(m, "s", "y")
+	return f.keys("s", "y").dash()
 }
 
 func receive(m Dashboard, msgs ...tea.Msg) Dashboard {
@@ -131,9 +126,7 @@ func TestWindDownLineStartsAgainWhenAskedAgain(t *testing.T) {
 		t.Errorf("asked again with three running: %q", got)
 	}
 
-	m = NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m.width, m.height = 80, 40
-	m = receive(m, eventMsg(dispatch.Event{Kind: dispatch.EvDrain, Text: "DRAIN: stopping now, as nothing is running"}))
+	m = receive(run(t).sized(80, 40).dash(), eventMsg(dispatch.Event{Kind: dispatch.EvDrain, Text: "DRAIN: stopping now, as nothing is running"}))
 	if got := ansi.Strip(m.windDownLine(80)); got != " ■  Winding down · nothing running, ending now" {
 		t.Errorf("asked with nothing running: %q", got)
 	}

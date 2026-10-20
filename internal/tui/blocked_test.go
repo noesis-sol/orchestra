@@ -43,7 +43,7 @@ const dirtyWhy = "main checkout has uncommitted changes"
 // A hold met before merging (DIRTY_TREE) blocks the finished ticket while another still runs; once
 // the run stops over it, that other is stopped, and the blocked one stays blocked.
 func TestAHoldBeforeMergingShowsTheTicketBlocked(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Undo a property edit"},
 		dispatch.Event{Kind: dispatch.EvHold, Ticket: "k-1", Blocked: dirtyWhy,
@@ -76,7 +76,7 @@ func TestAHoldBeforeMergingShowsTheTicketBlocked(t *testing.T) {
 // A run that stops over a finished ticket's merge with nothing else running, so with no hold
 // before it, shows that ticket blocked rather than stopped.
 func TestAStopOverAMergeShowsTheTicketBlocked(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvStop, Ticket: "k-1", Detail: "MERGE_FAILED", Blocked: "does not fast-forward onto batch",
 			Text: "MERGE_FAILED: wt/k-1 does not fast-forward onto batch; …"})
@@ -93,7 +93,7 @@ func TestAStopOverAMergeShowsTheTicketBlocked(t *testing.T) {
 // A merge conflict sets its ticket aside blocked, naming the files, where a failing check leaves
 // it for review.
 func TestAMergeConflictShowsTheTicketBlocked(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Undo a property edit"},
 		dispatch.Event{Kind: dispatch.EvWarn, Ticket: "k-1", Aside: true, Detail: "conflicts with batch",
@@ -115,7 +115,7 @@ func TestAMergeConflictShowsTheTicketBlocked(t *testing.T) {
 // A hold over a ticket that isn't about its merge (a worker paused) shows the ticket stopped, and
 // doesn't count it under Needs you.
 func TestAHoldThatIsNotAboutAMergeShowsTheTicketStopped(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvHold, Ticket: "k-1", Text: "HOLD: PAUSED: k-1 still in_progress after 12m; …"})
 	v := ansi.Strip(m.View())
@@ -129,7 +129,7 @@ func TestAHoldThatIsNotAboutAMergeShowsTheTicketStopped(t *testing.T) {
 
 // Needs you counts the questions and the blocked merges together; the narrow line says the same.
 func TestNeedsYouCountsQuestionsAndBlockedMerges(t *testing.T) {
-	m := runEvents(reviewDashboard(),
+	m := runEvents(reviewDashboard(t),
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: "Choose the licence"},
 		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Repeat a timeline"},
 		dispatch.Event{Kind: dispatch.EvAsked, Ticket: "k-1", Detail: "q-1: MIT or Apache?"},

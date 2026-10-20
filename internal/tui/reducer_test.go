@@ -155,12 +155,10 @@ func TestPress(t *testing.T) {
 		{name: "a number while asking", asking: true, key: "1", wantAsking: true},
 		{name: "another key", key: "x"},
 	} {
-		m := NewDashboard(dispatch.Config{}, func() {}, func(bool) {}, func(string) {})
 		now := time.Now()
-		m.active = map[string]dispatch.Status{
-			"k-1": {Ticket: "k-1", Tab: "tab-1", Started: now.Add(-time.Minute)},
-			"k-2": {Ticket: "k-2", Tab: "tab-2", Started: now},
-		}
+		m := run(t).config(dispatch.Config{}).
+			running(dispatch.Status{Ticket: "k-1", Tab: "tab-1", Started: now.Add(-time.Minute)},
+				dispatch.Status{Ticket: "k-2", Tab: "tab-2", Started: now}).dash()
 		m.asking, m.draining, m.stopping = c.asking, c.draining, c.stop
 		got := m.press(c.key)
 		if got.quit != c.want.quit || got.focusTab != c.want.focusTab ||
@@ -177,8 +175,7 @@ func TestPress(t *testing.T) {
 
 // With the workers' tabs out of sight, a number goes nowhere.
 func TestPressANumberWithTheTabsOutOfSight(t *testing.T) {
-	m := NewDashboard(dispatch.Config{}, func() {}, func(bool) {}, nil)
-	m.active = map[string]dispatch.Status{"k-1": {Ticket: "k-1", Tab: "tab-1"}}
+	m := run(t).config(dispatch.Config{}).onFocus(nil).running(dispatch.Status{Ticket: "k-1", Tab: "tab-1"}).dash()
 	if got := m.press("1"); got.focusTab != "" {
 		t.Errorf("went to %q with no focus callback", got.focusTab)
 	}

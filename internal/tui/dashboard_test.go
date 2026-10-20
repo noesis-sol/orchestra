@@ -50,14 +50,16 @@ func TestTicketLinesUseExactColours(t *testing.T) {
 }
 
 func TestViewFitsThePaneWidth(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {}, func(string) {})
-	m.closed, m.queued = 2, 17
-	m.rows = []ticketRow{{id: "kinieta-vzg", state: rowDeferred, note: "still open, noted for review"}}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}).
+		done("kinieta-a01", "First", "abc1234 merged").done("kinieta-a02", "Second", "def5678 merged").
+		picked("kinieta-vzg", "Noted").
+		event(dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "kinieta-vzg", Detail: "still open, noted for review"}).
+		running(dispatch.Status{Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
+			Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
+			Activity: "⏺ Bash(scripts/ci-local.sh lint ios && git status --short && git diff --stat)"}).
+		queue(17).sized(80, 40)
+	m := f.dash()
 	m.began = time.Now().Add(-12 * time.Minute)
-	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-y6j", Title: "Warn in debug builds when a chain call is silently ignored",
-		Tab: "w2B:t9", Started: time.Now().Add(-134 * time.Second), Agent: "working",
-		Activity: "⏺ Bash(scripts/ci-local.sh lint ios && git status --short && git diff --stat)"}}
-	m.height = 40
 	for _, w := range []int{30, 45, 66, 120} {
 		m.width = w
 		view := m.View()
@@ -70,8 +72,7 @@ func TestViewFitsThePaneWidth(t *testing.T) {
 			t.Logf("preview at %d columns:\n%s", w, ansi.Strip(view))
 		}
 	}
-	m.active = nil
-	m.width = 66
+	m = f.closed("kinieta-y6j", "0a1b2c3 merged").gone("kinieta-y6j").sized(66, 40).dash()
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "picking the next ticket") {
 		t.Errorf("idle view: %s", v)
 	}
@@ -86,13 +87,13 @@ func runEvents(m Dashboard, evs ...dispatch.Event) Dashboard {
 }
 
 func TestViewFitsThePaneHeight(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"}, func() {}, func(bool) {}, func(string) {})
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-09-28"})
 	for i := range 50 { // more than 120x50 shows
-		id := fmt.Sprintf("kinieta-%03d", i)
-		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket title long enough to need truncating in a narrow pane"},
-			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged into batch/2026-09-28"})
+		f.done(fmt.Sprintf("kinieta-%03d", i), "A ticket title long enough to need truncating in a narrow pane",
+			"abc1234 merged into batch/2026-09-28")
 	}
-	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-049", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}}
+	m := f.running(dispatch.Status{Ticket: "kinieta-050", Title: "t", Tab: "w2B:t9", Started: time.Now(), Agent: "working",
+		Activity: "⏺ Bash(scripts/ci-local.sh)"}).dash()
 	for _, size := range [][2]int{{40, 30}, {66, 36}, {120, 50}} {
 		m.width, m.height = size[0], size[1]
 		lines := strings.Split(m.View(), "\n")

@@ -39,7 +39,7 @@ func TestFinishingTicketShowsInOnePlace(t *testing.T) {
 				t.Errorf("until its status says it's gone, k-4 should show in Current alone:\ntable:%s\nCurrent:%s",
 					table, current)
 			}
-			m = withStatus(m, statusMsg(dispatch.Status{Ticket: "k-4", Gone: true}))
+			m = setStatus(m, dispatch.Status{Ticket: "k-4", Gone: true})
 			if table, current := tableInView(t, m), currentInView(t, m); !strings.Contains(table, "k-4") ||
 				strings.Contains(current, "k-4") {
 				t.Errorf("once gone, k-4 should show in the tickets table alone:\ntable:%s\nCurrent:%s", table, current)

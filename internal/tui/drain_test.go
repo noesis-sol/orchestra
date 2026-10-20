@@ -11,17 +11,14 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// drainDashboard is a dashboard with two workers running, recording the drain calls.
-func drainDashboard(calls *[]bool, cancelled *bool) Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}, func() { *cancelled = true },
-		func(on bool) { *calls = append(*calls, on) }, func(string) {})
-	m.width, m.height = 80, 40
+// drainDashboard is a dashboard 80x40 with two workers running, recording the drain calls.
+func drainDashboard(t *testing.T, calls *[]bool, cancelled *bool) Dashboard {
 	now := time.Now()
-	m.active = map[string]dispatch.Status{
-		"k-1": {Ticket: "k-1", Title: "First", Started: now.Add(-2 * time.Minute), Agent: "working"},
-		"k-2": {Ticket: "k-2", Title: "Second", Started: now.Add(-time.Minute), Agent: "working"},
-	}
-	return m
+	return run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 2}).
+		onCancel(func() { *cancelled = true }).onDrain(func(on bool) { *calls = append(*calls, on) }).
+		running(dispatch.Status{Ticket: "k-1", Title: "First", Started: now.Add(-2 * time.Minute), Agent: "working"},
+			dispatch.Status{Ticket: "k-2", Title: "Second", Started: now.Add(-time.Minute), Agent: "working"}).
+		sized(80, 40).dash()
 }
 
 func press(m Dashboard, keys ...string) Dashboard {
@@ -44,7 +41,7 @@ func press(m Dashboard, keys ...string) Dashboard {
 func TestSAsksBeforeStoppingAfterTheRunningTickets(t *testing.T) {
 	var calls []bool
 	cancelled := false
-	m := drainDashboard(&calls, &cancelled)
+	m := drainDashboard(t, &calls, &cancelled)
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "1–2 to go to a worker's tab · s to stop after the current tickets") {
 		t.Errorf("hint missing:\n%s", v)
 	}
@@ -95,7 +92,7 @@ func TestNoOrEscClosesTheQuestionWithoutAnything(t *testing.T) {
 	for _, key := range []string{"n", "esc"} {
 		var calls []bool
 		cancelled := false
-		m := press(drainDashboard(&calls, &cancelled), "s", key)
+		m := press(drainDashboard(t, &calls, &cancelled), "s", key)
 		v := ansi.Strip(m.View())
 		if len(calls) != 0 || m.draining || strings.Contains(v, "Stop after the running tickets?") || strings.Contains(v, "stopping") {
 			t.Errorf("%s: calls %v, view:\n%s", key, calls, v)
@@ -109,7 +106,7 @@ func TestNoOrEscClosesTheQuestionWithoutAnything(t *testing.T) {
 func TestCtrlCStopsAtOnceWithTheQuestionOpen(t *testing.T) {
 	var calls []bool
 	cancelled := false
-	m := press(drainDashboard(&calls, &cancelled), "s", "ctrl+c")
+	m := press(drainDashboard(t, &calls, &cancelled), "s", "ctrl+c")
 	if !cancelled || !m.Interrupted() || len(calls) != 0 {
 		t.Errorf("cancelled %v, interrupted %v, drain calls %v", cancelled, m.Interrupted(), calls)
 	}
@@ -119,7 +116,7 @@ func TestDrainQuestionFitsTheWindow(t *testing.T) {
 	var calls []bool
 	cancelled := false
 	for _, size := range [][2]int{{80, 40}, {40, 30}, {80, 10}, {60, 6}, {30, 5}} {
-		m := press(drainDashboard(&calls, &cancelled), "s")
+		m := press(drainDashboard(t, &calls, &cancelled), "s")
 		m.width, m.height = size[0], size[1]
 		view := m.View()
 		lines := strings.Split(view, "\n")
@@ -146,7 +143,7 @@ func TestDrainQuestionFitsTheWindow(t *testing.T) {
 func TestDrainEventsShowOnTheDashboard(t *testing.T) {
 	var calls []bool
 	cancelled := false
-	m := runEvents(drainDashboard(&calls, &cancelled), dispatch.Event{Kind: dispatch.EvDrain, Text: "DRAIN: stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start, asked by SIGUSR1"})
+	m := runEvents(drainDashboard(t, &calls, &cancelled), dispatch.Event{Kind: dispatch.EvDrain, Text: "DRAIN: stopping after the 2 running tickets finish (k-1, k-2): no new tickets will start, asked by SIGUSR1"})
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "■ ■  Winding down · 2 running, no new tickets") {
 		t.Errorf("drain not shown:\n%s", v)
 	}
@@ -177,22 +174,16 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 		{30, 7, "1–2 worker tab · s keep going", " ■ ■  Winding down · 2 running", false},
 	}
 	for _, size := range sizes {
-		var calls []bool
-		cancelled := false
-		m := drainDashboard(&calls, &cancelled)
 		now := time.Now()
-		m.active = map[string]dispatch.Status{
-			"orchestra-20w": {Ticket: "orchestra-20w", Title: "Settle a Claude worker at its Stop hook", Started: now.Add(-2 * time.Minute), Agent: "working"},
-			"orchestra-a1b": {Ticket: "orchestra-a1b", Title: "Make every external command cancellable", Started: now.Add(-time.Minute), Agent: "working"},
-		}
-		m.cfg.Version = "v0.1.2-0.20261001072042-ec29c72a1b2c+dirty"
-		m.cfg.Base = "batch/2026-10-01"
-		m.queued = 4
-		m.width, m.height = size.w, size.h
+		f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-10-01", Concurrency: 2,
+			Version: "v0.1.2-0.20261001072042-ec29c72a1b2c+dirty"})
 		for i := range 6 {
-			m.rows = append(m.rows, ticketRow{id: fmt.Sprintf("orchestra-%03d", i), title: "Done earlier", state: rowDone, note: "abc1234 merged"})
+			f.done(fmt.Sprintf("orchestra-%03d", i), "Done earlier", "abc1234 merged")
 		}
-		m = press(m, "s", "y")
+		m := f.running(
+			dispatch.Status{Ticket: "orchestra-20w", Title: "Settle a Claude worker at its Stop hook", Started: now.Add(-2 * time.Minute), Agent: "working"},
+			dispatch.Status{Ticket: "orchestra-a1b", Title: "Make every external command cancellable", Started: now.Add(-time.Minute), Agent: "working"}).
+			queue(4).sized(size.w, size.h).keys("s", "y").dash()
 
 		view := m.View()
 		lines := strings.Split(view, "\n")
@@ -234,7 +225,7 @@ func TestWindingDownIsShownInAnyPane(t *testing.T) {
 func TestWindingDownFollowsTheRunningTickets(t *testing.T) {
 	var calls []bool
 	cancelled := false
-	m := press(drainDashboard(&calls, &cancelled), "s", "y")
+	m := press(drainDashboard(t, &calls, &cancelled), "s", "y")
 	next, _ := m.Update(statusMsg(dispatch.Status{Ticket: "k-1", Gone: true}))
 	m = next.(Dashboard)
 	if v := ansi.Strip(m.View()); !strings.Contains(v, " ■ ■  Winding down · 1 running, no new tickets") {

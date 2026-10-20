@@ -52,50 +52,33 @@ func workerForm(view string) string {
 	return fmt.Sprintf("label %v, %d boxes", label, boxes)
 }
 
-func setStatus(m Dashboard, st dispatch.Status) Dashboard {
-	next, _ := m.Update(statusMsg(st))
-	return next.(Dashboard)
-}
-
 // steadyRun takes a dashboard w by h through a run, calling look after each step: workers start,
 // report, the run winds down and goes on again, workers finish and tickets pile up.
-func steadyRun(w, h int, look func(step string, m Dashboard)) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-10-06", Concurrency: 3}, func() {},
-		func(bool) {}, func(string) {})
-	m.width, m.height = w, h
-	look("idle", m)
+func steadyRun(t *testing.T, w, h int, look func(step string, m Dashboard)) {
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-10-06", Concurrency: 3}).sized(w, h)
+	look("idle", f.dash())
 	now := time.Now()
 	titles := []string{"Add a way to repeat a timeline", "Open the property model",
 		"Competing timelines on the same view and property fight each other every frame, so cut them"}
 	for i, title := range titles {
 		id := fmt.Sprintf("k-%d", i+1)
-		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: title})
-		m = setStatus(m, dispatch.Status{Ticket: id, Title: title, Started: now.Add(time.Duration(i) * time.Second),
-			Agent: dispatch.StateWorking})
-		look(id+" starts", m)
+		look(id+" starts", f.running(dispatch.Status{Ticket: id, Title: title,
+			Started: now.Add(time.Duration(i) * time.Second), Agent: dispatch.StateWorking}).dash())
 	}
 	for i, title := range titles {
 		id := fmt.Sprintf("k-%d", i+1)
-		m = setStatus(m, dispatch.Status{Ticket: id, Title: title, Started: now.Add(time.Duration(i) * time.Second),
-			Agent: dispatch.StateWorking, Doing: "testing", Activity: "⏺ Bash(scripts/check.sh)"})
-		look(id+" reports", m)
+		look(id+" reports", f.status(dispatch.Status{Ticket: id, Title: title,
+			Started: now.Add(time.Duration(i) * time.Second), Agent: dispatch.StateWorking, Doing: "testing",
+			Activity: "⏺ Bash(scripts/check.sh)"}).dash())
 	}
-	m = press(m, "s", "y")
-	look("winding down", m)
-	m = press(m, "s", "y")
-	look("going on", m)
-	m = setStatus(m, dispatch.Status{Ticket: "k-1", Gone: true})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvClosed, Ticket: "k-1", Detail: "abc1234 merged"})
-	look("k-1 finishes", m)
+	look("winding down", f.keys("s", "y").dash())
+	look("going on", f.keys("s", "y").dash())
+	look("k-1 finishes", f.gone("k-1").closed("k-1", "abc1234 merged").dash())
 	for i := range 12 {
-		id := fmt.Sprintf("k-%d", i+10)
-		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 4, Ticket: id, Title: "Done meanwhile"},
-			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "def5678 merged"})
+		f.done(fmt.Sprintf("k-%d", i+10), "Done meanwhile", "def5678 merged")
 	}
-	look("12 more tickets", m)
-	m = setStatus(m, dispatch.Status{Ticket: "k-2", Gone: true})
-	m = setStatus(m, dispatch.Status{Ticket: "k-3", Gone: true})
-	look("all finish", m)
+	look("12 more tickets", f.dash())
+	look("all finish", f.gone("k-2", "k-3").dash())
 }
 
 // The tickets table's height comes from the pane's: about a third of it, for 3 to 10 tickets, and
@@ -106,8 +89,9 @@ func TestTicketsTableHeightComesFromThePane(t *testing.T) {
 			t.Errorf("a pane %d tall: the table takes %d lines, want %d", h, got, want)
 		}
 	}
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
+	f := run(t)
 	for n := range 16 {
+		m := f.dash()
 		for _, lines := range []int{6, 9, 13} {
 			table := m.tickets(80, lines)
 			if got := lipgloss.Height(table); got != lines {
@@ -119,8 +103,7 @@ func TestTicketsTableHeightComesFromThePane(t *testing.T) {
 					!more, more, plain)
 			}
 		}
-		m.rows = append(m.rows, ticketRow{id: fmt.Sprintf("k-%02d", n), title: "A ticket", state: rowDone,
-			note: "abc1234 merged"})
+		f.done(fmt.Sprintf("k-%02d", n), "A ticket", "abc1234 merged")
 	}
 }
 
@@ -130,7 +113,7 @@ func TestTicketsTableStaysPut(t *testing.T) {
 	for _, size := range [][2]int{{80, 40}, {135, 45}, {66, 30}, {100, 24}, {140, 36}, {50, 28}, {120, 22}} {
 		w, h := size[0], size[1]
 		first := ""
-		steadyRun(w, h, func(step string, m Dashboard) {
+		steadyRun(t, w, h, func(step string, m Dashboard) {
 			view := m.View()
 			checkWithinPane(t, view, w, h)
 			top, height := tableSpan(view)
@@ -155,7 +138,7 @@ func TestTicketsTableStaysPut(t *testing.T) {
 func TestShortPaneDropsTheTableForGood(t *testing.T) {
 	for _, size := range [][2]int{{80, 19}, {135, 14}, {66, 11}, {40, 8}} {
 		w, h := size[0], size[1]
-		steadyRun(w, h, func(step string, m Dashboard) {
+		steadyRun(t, w, h, func(step string, m Dashboard) {
 			view := m.View()
 			checkWithinPane(t, view, w, h)
 			if top, _ := tableSpan(view); top >= 0 {
@@ -175,15 +158,12 @@ func TestWorkerBoxesKeepTheirHeight(t *testing.T) {
 	var focused []string
 	for _, w := range []int{66, 119, 120, 135} {
 		for n := 1; n <= 5; n++ {
-			m := numberedDashboard(n, &focused)
+			m := numberedDashboard(t, n, &focused)
 			st := m.active["k-01"]
 			st.Title = long
-			m.active["k-01"] = st
+			m = setStatus(m, st)
 			quiet := m.workerPanels(w)
-			for id, st := range m.active {
-				st.Activity = "⏺ Bash(go test ./...)"
-				m.active[id] = st
-			}
+			m = reported(m, func(st *dispatch.Status) { st.Activity = "⏺ Bash(go test ./...)" })
 			busy := m.workerPanels(w)
 			if lipgloss.Height(quiet) != lipgloss.Height(busy) {
 				t.Errorf("%d wide, %d workers: the boxes take %d lines, %d once they report:\n%s\n%s", w, n,
@@ -225,12 +205,12 @@ func TestWorkerAreaChangesOnlyWithTheWorkers(t *testing.T) {
 			for h := 12; h <= 45; h++ {
 				for n := 1; n <= 5; n++ {
 					var focused []string
-					m := numberedDashboard(n, &focused)
-					m.cfg.Concurrency = 3
-					m.width, m.height = w, h
+					f := numberedRun(t, n, &focused).sized(w, h)
 					for i := range 4 {
-						m.rows = append(m.rows, ticketRow{id: fmt.Sprintf("k-%02d", i+20), title: "Done", state: rowDone})
+						f.done(fmt.Sprintf("k-%02d", i+20), "Done", "")
 					}
+					m := f.dash()
+					m.cfg.Concurrency = 3
 					look := func(m Dashboard) string {
 						view := m.View()
 						checkWithinPane(t, view, w, h)
@@ -238,10 +218,7 @@ func TestWorkerAreaChangesOnlyWithTheWorkers(t *testing.T) {
 						return fmt.Sprintf("%s; table at line %d, %d lines", workerForm(view), top, height)
 					}
 					quiet := look(m)
-					for id, st := range m.active {
-						st.Activity = "⏺ Bash(go test ./...)"
-						m.active[id] = st
-					}
+					m = reported(m, func(st *dispatch.Status) { st.Activity = "⏺ Bash(go test ./...)" })
 					if got := look(m); got != quiet {
 						t.Errorf("%dx%d, %d workers: %s once they report, was %s:\n%s", w, h, n, got, quiet,
 							ansi.Strip(m.View()))
@@ -267,24 +244,24 @@ func TestDashboardFitsEveryPane(t *testing.T) {
 	}
 	var dashboards [][3]Dashboard // by workers: quiet, reporting, winding down
 	for n := 0; n <= 11; n++ {
-		var focused []string
-		m := numberedDashboard(n, &focused)
-		m.cfg.Concurrency = max(n, 3)
-		for i := range 15 {
-			m.rows = append(m.rows, ticketRow{id: fmt.Sprintf("k-%02d", i+20), title: "A ticket", state: rowDone,
-				note: "abc1234 merged"})
+		// Each built anew: the workers of dashboards built one from another are one map.
+		build := func(activity bool) Dashboard {
+			var focused []string
+			f := numberedRun(t, n, &focused)
+			for i := range 15 {
+				f.done(fmt.Sprintf("k-%02d", i+20), "A ticket", "abc1234 merged")
+			}
+			m := reported(f.dash(), func(st *dispatch.Status) {
+				st.Title = strings.Repeat("A long title that wraps ", 5)
+				if activity {
+					st.Activity = "⏺ " + strings.Repeat("Bash(go test ./...) ", 10)
+				}
+			})
+			m.cfg.Concurrency = max(n, 3)
+			return m
 		}
-		for id, st := range m.active {
-			st.Title = strings.Repeat("A long title that wraps ", 5)
-			m.active[id] = st
-		}
-		busy := m
-		busy.active = map[string]dispatch.Status{}
-		for id, st := range m.active {
-			st.Activity = "⏺ " + strings.Repeat("Bash(go test ./...) ", 10)
-			busy.active[id] = st
-		}
-		dashboards = append(dashboards, [3]Dashboard{m, busy, press(busy, "s", "y")})
+		busy := build(true)
+		dashboards = append(dashboards, [3]Dashboard{build(false), busy, press(busy, "s", "y")})
 	}
 	// A few groups of widths run side by side, each width in turn: drawing allocates so much that more
 	// at once spend more CPU in the garbage collector's pauses than they save in time.

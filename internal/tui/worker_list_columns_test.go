@@ -11,16 +11,15 @@ import (
 )
 
 // columnsDashboard is a dashboard whose clock stands still, with the workers given running.
-func columnsDashboard(running ...dispatch.Status) Dashboard {
-	m := reviewDashboard()
-	at := m.began.Add(time.Hour)
-	m.now = func() time.Time { return at }
-	m.active = map[string]dispatch.Status{}
+func columnsDashboard(t *testing.T, running ...dispatch.Status) Dashboard {
+	f := run(t).sized(80, 40)
+	at := f.dash().began.Add(time.Hour)
+	f.clock(func() time.Time { return at })
 	for _, st := range running {
 		st.Started = at.Add(-st.Started.Sub(time.Time{}))
-		m.active[st.Ticket] = st
+		f.running(st)
 	}
-	return m
+	return f.dash()
 }
 
 // ago is a start time that columnsDashboard reads as d before its clock.
@@ -46,7 +45,7 @@ func TestWorkerListLinesUpItsColumns(t *testing.T) {
 		"tutti-a":       {"working", "1m0s", "Work on it"},
 		"tutti-bbbb":    {"to merge (2nd)", "59m59s", "Merge it"},
 	}
-	m := columnsDashboard(
+	m := columnsDashboard(t,
 		dispatch.Status{Ticket: "tutti-bbbb", Title: "Merge it", Started: ago(59*time.Minute + 59*time.Second),
 			Agent: dispatch.StateDone, Merge: dispatch.MergeQueued, Place: 2},
 		dispatch.Status{Ticket: "tutti-nrg.5.9", Title: "Resolve the conflicts", Started: ago(41*time.Minute + 5*time.Second),
@@ -100,7 +99,7 @@ func TestWorkerListLinesUpItsColumns(t *testing.T) {
 
 // Rows of one width get no padding beyond the two spaces between their cells.
 func TestWorkerListOfOneWidthIsNotPadded(t *testing.T) {
-	m := columnsDashboard(
+	m := columnsDashboard(t,
 		dispatch.Status{Ticket: "k-1", Title: "First", Started: ago(2 * time.Minute), Agent: dispatch.StateWorking},
 		dispatch.Status{Ticket: "k-2", Title: "Second", Started: ago(time.Minute), Agent: dispatch.StateWorking},
 	)

@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
 // gridHead matches a worker box's first line: its number and ticket ID.
@@ -59,7 +60,7 @@ func TestWideGridPutsTwoBoxesToARow(t *testing.T) {
 	for _, w := range []int{120, 135, 200} {
 		left := (w - 1) / 2
 		for _, c := range cases {
-			view := numberedDashboard(c.workers, &focused).workerPanels(w)
+			view := numberedDashboard(t, c.workers, &focused).workerPanels(w)
 			var rows []string
 			for _, heads := range gridHeads(view) {
 				rows = append(rows, strings.Join(heads, ","))
@@ -120,14 +121,14 @@ func TestWideGridRowsAreEquallyTall(t *testing.T) {
 	for _, w := range []int{120, 135, 200} {
 		left := (w - 1) / 2
 		for _, c := range cases {
-			m := numberedDashboard(2, &focused)
+			m := numberedDashboard(t, 2, &focused)
 			st := m.active[c.tall]
 			if c.activity {
 				st.Activity = "⏺ Bash(scripts/check.sh)"
 			} else {
 				st.Title = long[:min(len(long), 2*(left-6)-10)] // two lines, inside the two-line limit
 			}
-			m.active[c.tall] = st
+			m = setStatus(m, st)
 			view := m.workerPanels(w)
 			lines := strings.Split(ansi.Strip(view), "\n")
 			want := 5 // the borders, the head, a line of title and the activity's
@@ -159,7 +160,7 @@ func TestWideGridRowsAreEquallyTall(t *testing.T) {
 func TestNarrowPaneStacksTheBoxes(t *testing.T) {
 	var focused []string
 	for _, w := range []int{67, 119} {
-		view := numberedDashboard(4, &focused).workerPanels(w)
+		view := numberedDashboard(t, 4, &focused).workerPanels(w)
 		var rows []string
 		for _, heads := range gridHeads(view) {
 			rows = append(rows, strings.Join(heads, ","))
@@ -179,7 +180,7 @@ func TestNarrowPaneStacksTheBoxes(t *testing.T) {
 // The layout follows the pane's width on the next frame: two columns at 135, one at 67, two again.
 func TestGridFollowsTheResize(t *testing.T) {
 	var focused []string
-	var m tea.Model = numberedDashboard(4, &focused)
+	var m tea.Model = numberedDashboard(t, 4, &focused)
 	for _, step := range []struct {
 		width   int
 		columns int
@@ -201,12 +202,10 @@ func TestWideGridFitsThePane(t *testing.T) {
 	for _, w := range []int{120, 135, 200} {
 		for n := 1; n <= 5; n++ {
 			for _, h := range []int{60, 24, 12} {
-				m := numberedDashboard(n, &focused)
-				for id, st := range m.active {
+				m := reported(numberedDashboard(t, n, &focused), func(st *dispatch.Status) {
 					st.Title = strings.Repeat("A long title that wraps ", 10)
 					st.Activity = "⏺ " + strings.Repeat("Bash(go test ./...) ", 20)
-					m.active[id] = st
-				}
+				})
 				m.width, m.height = w, h
 				checkWithinPane(t, m.View(), w, h)
 			}

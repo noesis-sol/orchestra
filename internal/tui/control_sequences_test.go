@@ -51,7 +51,7 @@ func styled(t *testing.T) {
 func TestDashboardDropsControlSequences(t *testing.T) {
 	styled(t)
 	for name, text := range attacks {
-		m := runEvents(reviewDashboard(),
+		m := runEvents(reviewDashboard(t),
 			dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "k-1", Title: text},
 			dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "k-2", Title: "Second"},
 			dispatch.Event{Kind: dispatch.EvDeferred, Ticket: "k-2", Detail: "still open"},

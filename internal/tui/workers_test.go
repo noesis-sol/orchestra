@@ -13,14 +13,13 @@ import (
 )
 
 func TestDashboardShowsSeveralWorkers(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	m.active = map[string]dispatch.Status{}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3})
 	for i, title := range []string{"Competing timelines on the same view and property fight each other every frame",
 		"Open the property Dashboard", "Warn in debug builds when a chain call is silently ignored"} {
 		id := fmt.Sprintf("kinieta-%d", i)
-		m.active[id] = dispatch.Status{Ticket: id, Title: title, Started: time.Now().Add(-time.Duration(i) * time.Minute), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+		f.running(dispatch.Status{Ticket: id, Title: title, Started: time.Now().Add(-time.Duration(i) * time.Minute), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"})
 	}
-	m.width, m.height = 66, 40
+	m := f.sized(66, 40).dash()
 	v := m.View()
 	if lines := strings.Split(v, "\n"); len(lines) > m.height {
 		t.Errorf("view is %d lines", len(lines))
@@ -66,18 +65,16 @@ func TestDashboardProbeEndsTheHold(t *testing.T) {
 }
 
 func TestDashboardFitsShortPanes(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch/2026-09-28", Concurrency: 3})
 	for i := range 30 {
-		id := fmt.Sprintf("kinieta-%03d", i)
-		m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: i + 1, Ticket: id, Title: "A ticket"},
-			dispatch.Event{Kind: dispatch.EvClosed, Ticket: id, Detail: "abc1234 merged"})
+		f.done(fmt.Sprintf("kinieta-%03d", i), "A ticket", "abc1234 merged")
 	}
-	m.active = map[string]dispatch.Status{}
 	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines on the same view and property fight each other every frame",
-			Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+		f.running(dispatch.Status{Ticket: id, Title: "Competing timelines on the same view and property fight each other every frame",
+			Started: time.Now(), Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"})
 	}
+	m := f.dash()
 	for _, size := range [][2]int{{140, 16}, {66, 12}, {40, 8}, {66, 24}, {120, 50}} {
 		m.width, m.height = size[0], size[1]
 		v := m.View()
@@ -128,13 +125,13 @@ func TestDashboardShowsTheSoloTicket(t *testing.T) {
 }
 
 func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	m.active = map[string]dispatch.Status{}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3})
 	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now().Add(-time.Duration(3-i) * time.Minute),
-			Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"}
+		f.running(dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now().Add(-time.Duration(3-i) * time.Minute),
+			Agent: "working", Activity: "⏺ Bash(scripts/ci-local.sh)"})
 	}
+	m := f.dash()
 	// labelAbove reports whether the line after the Current label opens the workers' box.
 	labelAbove := func(v string) bool {
 		lines := strings.Split(ansi.Strip(v), "\n")
@@ -163,8 +160,7 @@ func TestCurrentLabelHeadsTheWorkers(t *testing.T) {
 	if strings.Contains(v, "Current") || !strings.Contains(v, "kinieta-w2") || !strings.Contains(v, "s stop after current") {
 		t.Errorf("the label should be dropped before anything else:\n%s", v)
 	}
-	m.active = nil
-	m.width, m.height = 70, 40
+	m = f.gone("kinieta-w0", "kinieta-w1", "kinieta-w2").sized(70, 40).dash()
 	if v := m.View(); !labelAbove(v) || !strings.Contains(ansi.Strip(v), "picking the next ticket") {
 		t.Errorf("the idle box should be headed Current too:\n%s", ansi.Strip(v))
 	}
@@ -174,12 +170,12 @@ func TestCurrentLabelIsBoldInTheWorkingColour(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	m.active = map[string]dispatch.Status{}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3})
 	for i := range 3 {
 		id := fmt.Sprintf("kinieta-w%d", i)
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: "working"}
+		f.running(dispatch.Status{Ticket: id, Title: "Competing timelines", Started: time.Now(), Agent: "working"})
 	}
+	m := f.dash()
 	// Bold (1) and the exact dark-background cyan #22D3EE, which terminal themes can't remap.
 	label := "  \x1b[1;38;2;34;211;238mCurrent\x1b[0m"
 	for _, c := range []struct {
@@ -214,9 +210,8 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 		t.Errorf("short title = %q", got)
 	}
 
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m.width, m.height = 66, 40
-	m.active = map[string]dispatch.Status{"x": {Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working", Activity: "✻ Cooking… (8m 10s)"}}
+	m := run(t).running(dispatch.Status{Ticket: "kinieta-vzg", Title: title, Started: time.Now(), Agent: "working",
+		Activity: "✻ Cooking… (8m 10s)"}).sized(66, 40).dash()
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "Competing timelines") || !strings.Contains(v, "other every frame") {
 		t.Errorf("the whole title should be visible when it fits in 3 lines:\n%s", v)
@@ -229,12 +224,10 @@ func TestActiveTitleWrapsToAFewLines(t *testing.T) {
 }
 
 func TestWorkerShowsWhatItIsDoing(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
-	m.width, m.height = 70, 40
 	status := dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
 		Agent: "working", Doing: "testing", Activity: "⏺ Running the full local CI · 59s"}
-	m.active = map[string]dispatch.Status{"kinieta-ce1": status}
+	f := run(t).running(status).sized(70, 40)
+	m := f.dash()
 	view := ansi.Strip(m.View())
 	if !strings.Contains(fullTable(m), "▶ testing") || !strings.Contains(view, "kinieta-ce1  testing") ||
 		strings.Contains(view, "working") {
@@ -242,7 +235,7 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 	}
 
 	status.Agent = "blocked" // a dialog outranks the last report
-	m.active["kinieta-ce1"] = status
+	m = f.status(status).dash()
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "blocked") || !strings.Contains(fullTable(m), "▶ working") {
 		t.Errorf("a blocked worker should show blocked:\n%s", view)
 	}
@@ -250,22 +243,16 @@ func TestWorkerShowsWhatItIsDoing(t *testing.T) {
 
 // A status Herdr failed to read shows as unreadable, not as the empty state it comes with.
 func TestWorkerWhoseStatusCannotBeReadShowsUnreadable(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
-	m.width, m.height = 70, 40
-	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
-		Unreadable: true}}
+	m := run(t).running(dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Unreadable: true}).sized(70, 40).dash()
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "kinieta-ce1  unreadable") {
 		t.Errorf("a worker whose status can't be read should show unreadable:\n%s", view)
 	}
 }
 
 func TestWorkerResolvingItsRebaseShowsResolving(t *testing.T) {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch"}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m, dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline"})
-	m.width, m.height = 70, 40
-	m.active = map[string]dispatch.Status{"kinieta-ce1": {Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
-		Agent: "working", Doing: "testing", Resolving: true}}
+	m := run(t).running(dispatch.Status{Ticket: "kinieta-ce1", Title: "Add a way to repeat a timeline", Started: time.Now(),
+		Agent: "working", Doing: "testing", Resolving: true}).sized(70, 40).dash()
 	if view := ansi.Strip(m.View()); !strings.Contains(fullTable(m), "⟳ resolving") ||
 		!strings.Contains(view, "kinieta-ce1  resolving") {
 		t.Errorf("a worker resolving its rebase should show resolving:\n%s", view)

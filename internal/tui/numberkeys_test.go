@@ -11,36 +11,39 @@ import (
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 )
 
-// numberedDashboard is a dashboard with n workers running, k-01 the oldest, recording the tabs it
-// asks to focus. Each worker's tab is t<its number>, but k-03's: it has none.
-func numberedDashboard(n int, focused *[]string) Dashboard {
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: n}, func() {}, func(bool) {},
-		func(tab string) { *focused = append(*focused, tab) })
-	m.width, m.height = 80, 60
-	m.active = map[string]dispatch.Status{}
+// numberedRun is a run 80x60 with n workers running, k-01 the oldest, recording the tabs it asks to
+// focus. Each worker's tab is t<its number>, but k-03's: it has none.
+func numberedRun(t *testing.T, n int, focused *[]string) *fixture {
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: n}).
+		onFocus(func(tab string) { *focused = append(*focused, tab) }).sized(80, 60)
 	now := time.Now()
 	for i := 1; i <= n; i++ {
 		id, tab := fmt.Sprintf("k-%02d", i), fmt.Sprintf("t%d", i)
 		if i == 3 {
 			tab = ""
 		}
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Ticket " + id, Tab: tab,
-			Started: now.Add(-time.Duration(n-i) * time.Minute), Agent: "working"}
+		f.running(dispatch.Status{Ticket: id, Title: "Ticket " + id, Tab: tab,
+			Started: now.Add(-time.Duration(n-i) * time.Minute), Agent: "working"})
 	}
-	return m
+	return f
+}
+
+// numberedDashboard is numberedRun's dashboard.
+func numberedDashboard(t *testing.T, n int, focused *[]string) Dashboard {
+	return numberedRun(t, n, focused).dash()
 }
 
 // Pressing a worker's number focuses its tab; not a number with no worker, one beyond the ninth,
 // nor a worker without a tab.
 func TestNumberKeysFocusTheWorkersTabs(t *testing.T) {
 	var focused []string
-	press(numberedDashboard(11, &focused), "2", "1", "3", "9", "0", "a")
+	press(numberedDashboard(t, 11, &focused), "2", "1", "3", "9", "0", "a")
 	if want := []string{"t2", "t1", "t9"}; strings.Join(focused, " ") != strings.Join(want, " ") {
 		t.Errorf("focused %v, want %v", focused, want)
 	}
 
 	focused = nil
-	press(numberedDashboard(2, &focused), "3", "5")
+	press(numberedDashboard(t, 2, &focused), "3", "5")
 	if len(focused) != 0 {
 		t.Errorf("numbers with no worker focused %v", focused)
 	}
@@ -49,7 +52,7 @@ func TestNumberKeysFocusTheWorkersTabs(t *testing.T) {
 // The numbers follow the list as it stands: when a worker finishes, the next one takes its number.
 func TestNumberKeysFollowTheRunningWorkers(t *testing.T) {
 	var focused []string
-	m := numberedDashboard(2, &focused)
+	m := numberedDashboard(t, 2, &focused)
 	next, _ := m.Update(statusMsg(dispatch.Status{Ticket: "k-01", Gone: true}))
 	press(next.(Dashboard), "1", "2")
 	if strings.Join(focused, " ") != "t2" {
@@ -60,7 +63,7 @@ func TestNumberKeysFollowTheRunningWorkers(t *testing.T) {
 // While the stop question is open the numbers do nothing, and afterwards they work again.
 func TestNumberKeysWaitForTheStopQuestion(t *testing.T) {
 	var focused []string
-	m := press(numberedDashboard(2, &focused), "s", "1", "2")
+	m := press(numberedDashboard(t, 2, &focused), "s", "1", "2")
 	if len(focused) != 0 || !m.asking {
 		t.Errorf("focused %v with the question open (asking %v)", focused, m.asking)
 	}
@@ -77,7 +80,7 @@ func TestNumberKeysWaitForTheStopQuestion(t *testing.T) {
 // tenth and later get none, but keep their line in line with the others.
 func TestWorkersShowTheirNumbers(t *testing.T) {
 	var focused []string
-	m := numberedDashboard(10, &focused)
+	m := numberedDashboard(t, 10, &focused)
 	numbered := regexp.MustCompile(`│ (\d+)? +\S+ +(k-\d+)  working`)
 	for name, view := range map[string]string{"boxes": m.workerPanels(80), "list": m.workerList(80)} {
 		var got []string
@@ -118,12 +121,12 @@ func TestHintNamesTheNumberKeys(t *testing.T) {
 		{0, 80, "  s to stop after the current tickets"},
 	}
 	for _, c := range cases {
-		m := numberedDashboard(c.workers, &focused)
+		m := numberedDashboard(t, c.workers, &focused)
 		if got := ansi.Strip(m.hintLine(c.w)); got != c.want {
 			t.Errorf("%d workers, %d wide: %q, want %q", c.workers, c.w, got, c.want)
 		}
 	}
-	m := numberedDashboard(2, &focused)
+	m := numberedDashboard(t, 2, &focused)
 	m.stopping = true
 	if got := ansi.Strip(m.hintLine(80)); got != "  1–2 to go to a worker's tab" {
 		t.Errorf("stopping: %q", got)

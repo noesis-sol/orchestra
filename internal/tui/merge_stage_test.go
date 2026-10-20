@@ -15,29 +15,15 @@ import (
 // mergeDashboard is a dashboard with three tickets picked up: one merging, one second in line to
 // merge, and one whose worker still works.
 func mergeDashboard(t *testing.T) Dashboard {
-	t.Helper()
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}, func() {}, func(bool) {}, func(string) {})
-	m = runEvents(m,
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 1, Ticket: "kinieta-m1", Title: "Merging now"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 2, Ticket: "kinieta-q2", Title: "Second in line"},
-		dispatch.Event{Kind: dispatch.EvDispatch, N: 3, Ticket: "kinieta-w3", Title: "Still at work"})
-	m.width, m.height = 90, 40
 	now := time.Now()
-	for _, st := range []dispatch.Status{
-		{Ticket: "kinieta-m1", Title: "Merging now", Started: now.Add(-3 * time.Minute), Agent: dispatch.StateDone,
-			Merge: dispatch.MergeRunning, Activity: "merging into batch"},
-		{Ticket: "kinieta-q2", Title: "Second in line", Started: now.Add(-2 * time.Minute), Agent: dispatch.StateDone,
-			Merge: dispatch.MergeQueued, Place: 2},
-		{Ticket: "kinieta-w3", Title: "Still at work", Started: now.Add(-time.Minute), Agent: dispatch.StateWorking},
-	} {
-		m = withStatus(m, statusMsg(st))
-	}
-	return m
-}
-
-func withStatus(m Dashboard, msg statusMsg) Dashboard {
-	next, _ := m.Update(msg)
-	return next.(Dashboard)
+	return run(t).config(dispatch.Config{Limit: 40, Base: "batch", Concurrency: 3}).
+		running(dispatch.Status{Ticket: "kinieta-m1", Title: "Merging now", Started: now.Add(-3 * time.Minute),
+			Agent: dispatch.StateDone, Merge: dispatch.MergeRunning, Activity: "merging into batch"},
+			dispatch.Status{Ticket: "kinieta-q2", Title: "Second in line", Started: now.Add(-2 * time.Minute),
+				Agent: dispatch.StateDone, Merge: dispatch.MergeQueued, Place: 2},
+			dispatch.Status{Ticket: "kinieta-w3", Title: "Still at work", Started: now.Add(-time.Minute),
+				Agent: dispatch.StateWorking}).
+		sized(90, 40).dash()
 }
 
 func TestFinishedTicketsShowTheirMergeStage(t *testing.T) {
@@ -110,7 +96,7 @@ func TestHandedBackTicketJoinsTheMergeQueueAgain(t *testing.T) {
 		}, "◆ merging", "kinieta-m1  merging "},
 	} {
 		c.set(&st)
-		m = withStatus(m, statusMsg(st))
+		m = setStatus(m, st)
 		if view := ansi.Strip(m.View()); !strings.Contains(fullTable(m), c.row) || !strings.Contains(view, c.label) {
 			t.Errorf("%s: the view should show %q in the table and %q in Current:\n%s", c.name, c.row, c.label, view)
 		}

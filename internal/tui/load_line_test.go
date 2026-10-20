@@ -19,17 +19,11 @@ func gbs(n float64) int64 { return int64(n * gb) }
 
 // loadedDashboard is a dashboard 120x40 with four workers in four slots, given reading r.
 func loadedDashboard(t *testing.T, r load.Reading) Dashboard {
-	t.Helper()
-	m := NewDashboard(dispatch.Config{Limit: 40, Base: "main", Concurrency: 4}, func() {}, func(bool) {},
-		func(string) {})
-	m.width, m.height = 120, 40
-	m.active = map[string]dispatch.Status{}
+	f := run(t).config(dispatch.Config{Limit: 40, Base: "main", Concurrency: 4}).sized(120, 40)
 	for _, id := range []string{"k-1", "k-2", "k-3", "k-4"} {
-		m.active[id] = dispatch.Status{Ticket: id, Title: "Ticket " + id, Started: time.Now(),
-			Agent: dispatch.StateWorking}
+		f.running(dispatch.Status{Ticket: id, Title: "Ticket " + id, Started: time.Now(), Agent: dispatch.StateWorking})
 	}
-	next, _ := m.Update(loadMsg(r))
-	return next.(Dashboard)
+	return f.send(loadMsg(r)).dash()
 }
 
 // reading is four workers taking 4.8 GB together, the merge check 1.4 GB, at pressure normal and a
