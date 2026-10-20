@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -234,10 +233,6 @@ func (f featureTalk) logLine(text string) {
 // returns the epic handed back so far, if any; ended by the user without a hand-back, or with one
 // orchestra can't read (said on b.err), errNotHandedBack.
 func (b refineBreakdown) talkFeature(ctx context.Context, request, run string) (string, error) {
-	prompt, err := project.WriteRefinePrompt(b.claude.repo, project.RefineFeature)
-	if err != nil {
-		return "", fmt.Errorf("cannot write the session's instructions: %w", err)
-	}
 	// One line, which brings the description in: Claude Code attaches a file named after @ to the
 	// message, as the user's own message would, and Herdr types claude's command into the pane's
 	// shell, which takes no argument with line breaks.
@@ -246,31 +241,16 @@ func (b refineBreakdown) talkFeature(ctx context.Context, request, run string) (
 		return "", fmt.Errorf("cannot write the description for it: %w", err)
 	}
 	message := featureMessage(run, file)
-	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, message, project.RefineFeature) }
-	session := terminal
-	if b.pane != "" {
-		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, claude: b.claude, fallback: terminal,
-			out: b.out, err: b.err, progress: b.line, about: featureSubject{first: message, tracker: b.epics}}.talk
-	}
-	err = session(ctx, prompt)
-	epic, fileErr := project.FiledFeature(b.claude.repo)
-	var exit *exec.ExitError
-	switch {
-	case ctx.Err() != nil:
-		return epic, ctx.Err()
-	case errors.As(err, &exit):
-		fmt.Fprintln(b.err, "claude ended with", exit) // it may have handed the epic back all the same
-	case err != nil:
-		return "", err
-	}
-	switch {
-	case errors.Is(fileErr, project.ErrNoFeature):
-		return "", errNotHandedBack
-	case fileErr != nil:
-		fmt.Fprintln(b.err, "orchestra can't read the epic the interview handed back:", fileErr)
-		return "", errNotHandedBack
-	}
-	return epic, nil
+	return b.talk(ctx, talkSubject{
+		mode:    project.RefineFeature,
+		message: message,
+		pane:    featureSubject{first: message, tracker: b.epics},
+		filed:   func(context.Context) string { return "" }, // featureTalk looks for it under the feature run
+		unreadable: func(err error) error {
+			fmt.Fprintln(b.err, "orchestra can't read the epic the interview handed back:", err)
+			return errNotHandedBack
+		},
+	})
 }
 
 // featureSubject is a feature's session as the subject of a session in a pane: its first message,
@@ -283,8 +263,7 @@ type featureSubject struct {
 func (f featureSubject) message(string) (string, error) { return f.first, nil }
 
 func (featureSubject) handedBack(repo string) (string, bool) {
-	epic, err := project.FiledFeature(repo)
-	return epic, err == nil // a file that names no epic hands nothing back: /exit ends that session
+	return handedBackIn(repo, project.RefineFeature)
 }
 
 func (featureSubject) name() string { return "the interview" }

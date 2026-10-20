@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// FiledFeature reads the epic from feature.json, and says what is wrong with one that names none.
-func TestFiledFeatureReadsTheEpic(t *testing.T) {
+// FiledEpic reads a feature's epic from feature.json, and says what is wrong with one that names none.
+func TestFiledEpicReadsAFeaturesEpic(t *testing.T) {
 	for _, tc := range []struct {
 		file, epic, err string
 	}{
@@ -25,7 +25,7 @@ func TestFiledFeatureReadsTheEpic(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(repo, RunPath(FeatureName)), []byte(tc.file), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		epic, err := FiledFeature(repo)
+		epic, err := FiledEpic(repo, RefineFeature)
 		if epic != tc.epic || (tc.err == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), tc.err) {
 			t.Errorf("%q: got %q, %v", tc.file, epic, err)
 		}

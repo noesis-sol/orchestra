@@ -29,7 +29,7 @@ func readText(t *testing.T, p string) string {
 }
 
 // WriteRefinePrompt writes the instructions of a breakdown with the user over the headless ones, and
-// removes the spec.json an earlier refinement left, so that FiledSpec only reads this one's. They
+// removes the spec.json an earlier refinement left, so that FiledEpic only reads this one's. They
 // keep the headless rules for the tree and its filing, ask in the interview's rounds only where the
 // spec leaves a decision open, put the decisions in the root epic's description, ask for a go-ahead
 // before filing, and hand the root epic back in spec.json; the headless parts are gone.
@@ -46,8 +46,8 @@ func TestWriteRefinePromptWritesTheRefineSections(t *testing.T) {
 	if err != nil || p != filepath.Join(repo, RunPath("spec-prompt.md")) {
 		t.Fatalf("WriteRefinePrompt: %q, %v", p, err)
 	}
-	if _, err := FiledSpec(repo); !errors.Is(err, ErrNoSpecRoot) {
-		t.Errorf("after WriteRefinePrompt: %v, want ErrNoSpecRoot", err)
+	if _, err := FiledEpic(repo, RefineSpec); !errors.Is(err, ErrNoHandBack) {
+		t.Errorf("after WriteRefinePrompt: %v, want ErrNoHandBack", err)
 	}
 	text := readText(t, p)
 	for _, want := range []string{
@@ -96,13 +96,13 @@ func TestWriteTerminalRefineSaysHowToHandBack(t *testing.T) {
 		strings.Contains(text, "it closes this session by itself") {
 		t.Errorf("the instructions on the terminal:\n%s", text)
 	}
-	if root, err := FiledSpec(repo); root != "s-1" || err != nil {
+	if root, err := FiledEpic(repo, RefineSpec); root != "s-1" || err != nil {
 		t.Errorf("spec.json reads %q, %v", root, err)
 	}
 }
 
-// FiledSpec reads the root epic from spec.json, and says what is wrong with one that names none.
-func TestFiledSpecReadsTheRootEpic(t *testing.T) {
+// FiledEpic reads a refinement's root epic from spec.json, and says what is wrong with one that names none.
+func TestFiledEpicReadsARefinementsRoot(t *testing.T) {
 	for _, tc := range []struct {
 		file, root, err string
 	}{
@@ -118,12 +118,12 @@ func TestFiledSpecReadsTheRootEpic(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		root, err := FiledSpec(repo)
+		root, err := FiledEpic(repo, RefineSpec)
 		if root != tc.root || (tc.err == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), tc.err) {
 			t.Errorf("%q: got %q, %v", tc.file, root, err)
 		}
-		if tc.file == "" && !errors.Is(err, ErrNoSpecRoot) {
-			t.Errorf("no file: %v, want ErrNoSpecRoot", err)
+		if tc.file == "" && !errors.Is(err, ErrNoHandBack) {
+			t.Errorf("no file: %v, want ErrNoHandBack", err)
 		}
 	}
 }

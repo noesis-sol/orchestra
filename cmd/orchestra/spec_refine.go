@@ -87,43 +87,68 @@ func (b refineBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (bre
 	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
-	prompt, err := project.WriteRefinePrompt(b.claude.repo, refineMode(r.Update != nil))
+	b.logLine("SPEC: refining " + r.Path + " with claude and you")
+	root, err := b.talk(ctx, talkSubject{
+		mode:    refineMode(r.Update != nil),
+		message: refineMessage(r.Spec, r.Update),
+		pane:    refineSubject{spec: r.Spec, update: r.Update, tracker: b.tracker, every: refineCountEvery},
+		filed:   func(ctx context.Context) string { return filedRoot(ctx, b.tracker, r.Spec) },
+		unreadable: func(err error) error {
+			return fmt.Errorf("can't read the root epic it handed back: %w", err)
+		},
+	})
+	return breakdownResult{Root: root}, err
+}
+
+// talkSubject is what a breakdown with the user (refineBreakdown.talk) talks through: a spec's
+// refinement or a feature's interview.
+type talkSubject struct {
+	mode    project.RefineMode // which instructions the session has, and the file it hands its epic back in
+	message string             // its first message, one line
+	pane    paneSubject        // the session as one in a pane beside orchestra's
+	// filed is the epic bd has for the session, when it stopped or failed without handing back one
+	// orchestra can read; "" for none.
+	filed func(ctx context.Context) string
+	// unreadable is talk's error when the session handed back a file orchestra can't read (err).
+	unreadable func(err error) error
+}
+
+// talk runs the session about s with the user: in a pane split off orchestra's when it runs in one,
+// else on orchestra's terminal. It returns the epic the session handed back. Stopped, it returns the
+// epic handed back so far, else the one s.filed gives; failing, or with a hand-back orchestra can't
+// read (s.unreadable), the one s.filed gives; ended by the user without a hand-back, errNotHandedBack.
+func (b refineBreakdown) talk(ctx context.Context, s talkSubject) (string, error) {
+	prompt, err := project.WriteRefinePrompt(b.claude.repo, s.mode)
 	if err != nil {
-		return breakdownResult{}, fmt.Errorf("cannot write the refinement's instructions: %w", err)
+		return "", fmt.Errorf("cannot write %s's instructions: %w", s.pane.name(), err)
 	}
-	message := refineMessage(r.Spec, r.Update)
-	terminal := func(ctx context.Context, _ string) error {
-		return b.terminal(ctx, message, refineMode(r.Update != nil))
-	}
+	terminal := func(ctx context.Context, _ string) error { return b.terminal(ctx, s.message, s.mode) }
 	session := terminal
 	if b.pane != "" {
 		session = paneSession{panes: b.panes, pane: b.pane, hooks: b.hooks, claude: b.claude, fallback: terminal,
-			out: b.out, err: b.err, progress: b.line,
-			about: refineSubject{spec: r.Spec, update: r.Update, tracker: b.tracker, every: refineCountEvery}}.talk
+			out: b.out, err: b.err, progress: b.line, about: s.pane}.talk
 	}
-	b.logLine("SPEC: refining " + r.Path + " with claude and you")
 	err = session(ctx, prompt)
-	root, rootErr := project.FiledSpec(b.claude.repo)
+	epic, fileErr := project.FiledEpic(b.claude.repo, s.mode)
 	var exit *exec.ExitError
 	switch {
 	case ctx.Err() != nil:
-		if root == "" {
-			root = filedRoot(ctx, b.tracker, r.Spec)
+		if epic == "" {
+			epic = s.filed(ctx)
 		}
-		return breakdownResult{Root: root}, ctx.Err()
+		return epic, ctx.Err()
 	case errors.As(err, &exit):
-		fmt.Fprintln(b.err, "claude ended with", exit) // it may have handed the root epic back all the same
+		fmt.Fprintln(b.err, "claude ended with", exit) // it may have handed the epic back all the same
 	case err != nil:
-		return breakdownResult{Root: filedRoot(ctx, b.tracker, r.Spec)}, err
+		return s.filed(ctx), err
 	}
 	switch {
-	case errors.Is(rootErr, project.ErrNoSpecRoot):
-		return breakdownResult{}, errNotHandedBack
-	case rootErr != nil:
-		return breakdownResult{Root: filedRoot(ctx, b.tracker, r.Spec)},
-			fmt.Errorf("can't read the root epic it handed back: %w", rootErr)
+	case errors.Is(fileErr, project.ErrNoHandBack):
+		return "", errNotHandedBack
+	case fileErr != nil:
+		return s.filed(ctx), s.unreadable(fileErr)
 	}
-	return breakdownResult{Root: root}, nil
+	return epic, nil
 }
 
 // refineMessage is the refinement's first message, one line: the spec it breaks down with the user;
@@ -154,11 +179,9 @@ func refineMode(update bool) project.RefineMode {
 // which interrupts and clears with it.
 func refineOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, message string, m project.RefineMode,
 	stdin io.Reader, stdout, stderr io.Writer) error {
+	intro, needsTerminal := refineOnTerminalSays(m)
 	if !isTerminal(stdin) || !isTerminal(stdout) {
-		if m == project.RefineFeature {
-			return errFeatureNeedsTerminal
-		}
-		return errRefineNeedsTerminal
+		return needsTerminal
 	}
 	prompt, err := project.WriteTerminalRefine(s.repo, m)
 	if err != nil {
@@ -169,13 +192,7 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, me
 	if err != nil {
 		return err
 	}
-	if m == project.RefineFeature {
-		fmt.Fprintln(stdout, "Talking the feature through with claude, which files it as tickets once you agree. "+
-			"Type /exit to come back.")
-	} else {
-		fmt.Fprintln(stdout, "Breaking the spec down with claude, which asks you only what the spec leaves open and "+
-			"files the tickets once you agree. Type /exit to come back.")
-	}
+	fmt.Fprintln(stdout, intro)
 	defer stops.dropInterrupts()()
 	defer keepTerminal(stdin)()
 	err = command.Interactive(ctx, s.repo, stdin, stdout, stderr, "claude", args...)
@@ -184,6 +201,17 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, me
 		return fmt.Errorf("couldn't start %w", e)
 	}
 	return err
+}
+
+// refineOnTerminalSays is what a breakdown with the user in mode m says as it takes orchestra's
+// terminal, and its error where there is none to take.
+func refineOnTerminalSays(m project.RefineMode) (intro string, needsTerminal error) {
+	if m == project.RefineFeature {
+		return "Talking the feature through with claude, which files it as tickets once you agree. " +
+			"Type /exit to come back.", errFeatureNeedsTerminal
+	}
+	return "Breaking the spec down with claude, which asks you only what the spec leaves open and " +
+		"files the tickets once you agree. Type /exit to come back.", errRefineNeedsTerminal
 }
 
 // notHandedBack ends a spec run whose refinement the user left without it handing a root epic back
@@ -219,9 +247,8 @@ type refineSubject struct {
 
 func (s refineSubject) message(string) (string, error) { return refineMessage(s.spec, s.update), nil }
 
-func (refineSubject) handedBack(repo string) (string, bool) {
-	root, err := project.FiledSpec(repo)
-	return root, err == nil // a file that names no epic hands nothing back: /exit ends that session
+func (s refineSubject) handedBack(repo string) (string, bool) {
+	return handedBackIn(repo, refineMode(s.update != nil))
 }
 
 func (refineSubject) name() string { return "the refinement" }

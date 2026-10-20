@@ -167,16 +167,6 @@ func WriteSpecUpdate(repo string, text []byte) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-// ErrNoSpecRoot is FiledSpec's error when the refinement handed nothing back: it wrote no spec.json.
-var ErrNoSpecRoot = errors.New("no " + SpecName)
-
-// FiledSpec returns the root epic a spec's refinement in the main checkout repo handed back, as its
-// spec.json names it. Without the file the error is ErrNoSpecRoot; a file that can't be read, or
-// names no epic, is an error saying so.
-func FiledSpec(repo string) (string, error) {
-	return handedBack(repo, SpecName, ErrNoSpecRoot)
-}
-
 // ErrSpecEmpty is ReadSpec's error for a spec with nothing but whitespace in it.
 var ErrSpecEmpty = errors.New("the spec is empty")
 

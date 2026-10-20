@@ -61,7 +61,7 @@ func TestSpecModesRenderAsTheirGoldenFiles(t *testing.T) {
 // full and the decisions, with the spec's rules for tickets, filing and checking the tree, and hands
 // the epic back in feature.json; nothing of a spec's (its metadata, an earlier breakdown of it, a
 // project's environment) is left. WriteRefinePrompt removes the feature.json an earlier breakdown
-// left, so that FiledFeature only reads this one's, and leaves spec.json alone.
+// left, so that FiledEpic only reads this one's, and leaves spec.json alone.
 func TestFeatureModeRendersTheFeatureSections(t *testing.T) {
 	want := []string{
 		"# Feature breakdown",
@@ -133,11 +133,11 @@ func TestFeatureModeRendersTheFeatureSections(t *testing.T) {
 					t.Errorf("the feature's instructions have %q", g)
 				}
 			}
-			if root, err := FiledSpec(repo); root != "s-1" || err != nil {
+			if root, err := FiledEpic(repo, RefineSpec); root != "s-1" || err != nil {
 				t.Errorf("spec.json reads %q, %v; want it left as it was", root, err)
 			}
-			_, err = FiledFeature(repo)
-			if pane := tc.name == "in a pane"; pane != errors.Is(err, ErrNoFeature) {
+			_, err = FiledEpic(repo, RefineFeature)
+			if pane := tc.name == "in a pane"; pane != errors.Is(err, ErrNoHandBack) {
 				t.Errorf("feature.json after writing the instructions %s: %v", tc.name, err)
 			}
 		})

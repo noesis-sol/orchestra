@@ -41,30 +41,25 @@ func WriteFeatureRequest(repo, request string) (string, error) {
 	return rel, nil
 }
 
-// ErrNoFeature is FiledFeature's error when the session handed nothing back: it wrote no feature.json.
-var ErrNoFeature = errors.New("no " + FeatureName)
+// ErrNoHandBack is FiledEpic's error when the session handed nothing back: it wrote no spec.json, or
+// feature.json for a feature.
+var ErrNoHandBack = errors.New("nothing handed back")
 
-// FiledFeature returns the epic a feature's session in the main checkout repo filed, as its
-// feature.json names it. Without the file the error is ErrNoFeature; a file that can't be read, or
-// names no epic, is an error saying so.
-func FiledFeature(repo string) (string, error) {
-	return handedBack(repo, FeatureName, ErrNoFeature)
-}
-
-// handedBack returns the epic a session in the main checkout repo handed back to orchestra in the
-// file name in .orchestra/run/, {"epic":"<id>"}. Without the file the error is none; a file that
-// can't be read, or names no epic, is an error saying so.
-func handedBack(repo, name string, none error) (string, error) {
+// FiledEpic returns the epic a breakdown with the user in mode m, in the main checkout repo, handed
+// back to orchestra: the root epic a spec's refinement names in spec.json, or the epic a feature's
+// session names in feature.json, {"epic":"<id>"}. Without the file the error is ErrNoHandBack; a file
+// that can't be read, or names no epic, is an error saying so.
+func FiledEpic(repo string, m RefineMode) (string, error) {
 	root, err := OpenRun(repo)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = root.Close() }() // read-only
-	rel := RunPath(name)
+	rel := RunPath(m.handBack())
 	b, err := root.ReadFile(rel)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return "", none
+		return "", fmt.Errorf("%w: no %s", ErrNoHandBack, m.handBack())
 	case err != nil:
 		return "", RunError(repo, rel, err)
 	}

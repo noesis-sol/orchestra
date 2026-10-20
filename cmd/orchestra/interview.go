@@ -74,6 +74,13 @@ type paneSubject interface {
 	shown(line *tui.InterviewLine, began time.Time) paneShown
 }
 
+// handedBackIn is a paneSubject's handedBack for a breakdown with the user in mode m: the epic its file
+// in repo names.
+func handedBackIn(repo string, m project.RefineMode) (string, bool) {
+	epic, err := project.FiledEpic(repo, m)
+	return epic, err == nil // a file that names no epic hands nothing back: /exit ends that session
+}
+
 // paneShown is what orchestra's pane shows of a session in a pane, under its fixed message, from
 // paneSession.wait's readings.
 type paneShown interface {
