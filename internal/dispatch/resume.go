@@ -11,7 +11,9 @@ import (
 // restarted) is started again in a new tab in its worktree, resuming that session: it has all it
 // knew of the ticket, and is told to carry on. That happens on its own, once per ticket in a run,
 // for a worker this run started or adopted, and for one the last run left behind; a worker gone
-// again stops the run (PAUSED), and the next run resumes it once more. Its old tab is left as it is.
+// again stops the run (PAUSED), and the next run resumes it once more, or, should it be back in its
+// tab and idle there (taken for gone as it lost its name, say), tells it to carry on. Its old tab is
+// left as it is.
 // A ticket whose worker should stay stopped is deferred before its tab is closed.
 //
 // A ticket back through bd ready from a question, its earlier worker gone, has that worker's session
@@ -47,13 +49,14 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 		return r.resumeSession(ctx, w.wt, w.tab, "", goneMidTicket, s)
 	}
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, "")
-	again := ""
+	o.placedGone(id)
+	next := ""
 	if ok {
-		again = fmt.Sprintf("; its session %s was resumed once in this run already, and the next run resumes it again",
-			s.ID)
+		next = fmt.Sprintf("; its session %s was resumed once in this run already: the next run resumes it "+
+			"again, or tells it to carry on should it be back in its tab", s.ID)
 	}
 	return halt(ExitStuck, stopPaused, ": %s still in_progress, its worker gone from tab %s (worktree %s)%s; "+
-		"stopping so it can be looked at", id, w.tab, w.wt, again)
+		"stopping so it can be looked at", id, w.tab, w.wt, next)
 }
 
 // resumedInTab says asked ticket t, whose worker w is gone from its tab with the ticket in progress,

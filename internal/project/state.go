@@ -41,6 +41,9 @@ type LeftWorker struct {
 	// For a ticket left running when the run stopped: why it stopped, as its final line begins
 	// (PAUSED, BLOCKED, TICKET_LIMIT, INTERRUPTED, …).
 	Left string `json:"left,omitempty"`
+	// Gone: it stopped the run as its worker was gone from its tab, not waiting on the maintainer, so
+	// the next run, finding it back there and idle, tells it to carry on.
+	Gone bool `json:"gone,omitempty"`
 }
 
 // RunState is what a run leaves for the next one in StateName.

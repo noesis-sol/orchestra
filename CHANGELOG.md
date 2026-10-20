@@ -48,6 +48,13 @@ All notable changes to orchestra are documented here. The format follows
   merged; otherwise the worker's turn is stopped (Escape) and it is told the
   hand-back is over and its branch put back, naming the commit its attempt
   had got to, before the branch is put back and the ticket set aside.
+- A worker that stopped the run as gone from its tab a second time
+  (`PAUSED: … was resumed once in this run already`), then found back in
+  its tab and idle by the next run (one taken for gone as it lost its
+  name), is told to carry on and adopted, rather than left waiting for the
+  maintainer while the PAUSED line said the next run would resume it
+  (tutti-nrg.64's worker sat idle 17 hours). The line now says the next run
+  resumes it again, or tells it to carry on should it be back in its tab.
 - A ticket coming to an end (closed, deferred, left for review or blocked
   from merging) no longer shows twice on the dashboard for a moment, in
   Current and in the tickets table beside it: its row comes into the table

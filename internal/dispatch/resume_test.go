@@ -97,7 +97,8 @@ func TestGoneWorkerIsResumedOncePerRun(t *testing.T) {
 		h.worker("A", vanishes, vanishes, finishes("a.txt"))
 		o, code := h.run()
 		want := "PAUSED: A still in_progress, its worker gone from tab tab2 (worktree " + h.worktree("A") +
-			"); its session " + testSession + " was resumed once in this run already, and the next run resumes it again; " +
+			"); its session " + testSession + " was resumed once in this run already: the next run resumes it again, " +
+			"or tells it to carry on should it be back in its tab; " +
 			"stopping so it can be looked at"
 		if code != ExitStuck || o.Final() != want {
 			t.Fatalf("run 1: exit %d, final %q\nwant %q\n%s", code, o.Final(), want, h.sink.text())

@@ -25,7 +25,9 @@ type adoption struct {
 // run takes no more tickets) only a closed one is, to be merged, and one whose worker is gone (see
 // below); one in progress is left to leaveAsked. One still in progress whose worker is idle with
 // the question open waits on, as does one Herdr can't tell about, and one the last run left running
-// whose worker is idle: it waits for the maintainer, as it did when that run stopped. One its
+// whose worker is idle: it waits for the maintainer, as it did when that run stopped, unless that run
+// stopped as its worker was gone from its tab (workerSpot.gone): back there, it waits on no one, and
+// is adopted to be told to carry on (see adoptAsked). One its
 // worker deferred is set aside as deferred. One in progress whose worker is gone is adopted to have
 // its session resumed, once in a run (see resumeSession), whatever taking: an adoption counts toward
 // no limit. Without a session to resume, it stops the run, as a paused ticket does: the reason is
@@ -52,7 +54,7 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 		case StatusDeferred:
 			o.askedDeferred(ctx, t, w)
 		case StatusClosed:
-			adopt = append(adopt, r.answeredInTab(t, w))
+			adopt = append(adopt, r.answeredInTab(t, w, ""))
 		case StatusInProgress:
 			st, err := o.earlierState(ctx, id, w, 1)
 			if ctx.Err() != nil {
@@ -72,10 +74,10 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 				}
 				return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))
 			case !taking, st == StateUnknown,
-				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || w.question == ""):
+				(st == StateIdle || st == StateDone) && (OpenQuestion(t) != nil || (w.question == "" && !w.gone)):
 				// left as it is: read again at the next poll, or labelled as the run ends
 			default:
-				adopt = append(adopt, r.answeredInTab(t, w))
+				adopt = append(adopt, r.answeredInTab(t, w, st))
 			}
 		}
 	}
@@ -84,8 +86,9 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 
 // answeredInTab says asked ticket t comes back, its worker w having claimed it again or closed it
 // in its tab, and records its footprint; the caller counts it running. One the last run left
-// running, with no question, comes back the same way.
-func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
+// running, with no question, comes back the same way, as does one that run stopped for as its
+// worker was gone, found back in its tab. st is the worker's state, "" when not read.
+func (r *runState) answeredInTab(t Ticket, w workerSpot, st AgentState) adoption {
 	o, id := r.o, t.ID
 	o.book.answer(id) // back from a question: set aside again, it stays out
 	o.book.setParent(id, t.Parent)
@@ -93,6 +96,8 @@ func (r *runState) answeredInTab(t Ticket, w workerSpot) adoption {
 	switch {
 	case t.Status == StatusClosed:
 		what = "closed"
+	case w.question == "" && (st == StateIdle || st == StateDone):
+		what = "back and " + string(st)
 	case w.question == "":
 		what = "at work again"
 	}
@@ -237,6 +242,9 @@ type workerSpot struct {
 	title    string
 	hooks    bool     // it reports through hooks
 	left     stopKind // why the last run left it running; "" for a question
+	// gone: it stopped the run with its worker gone from its tab (see pausedGone), so it waits on no
+	// one: found back there and idle, it is told to carry on (see followAsked).
+	gone bool
 }
 
 // after is what the worker was left after, for a line about it: "its question Q", or "the last run

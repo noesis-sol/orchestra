@@ -45,7 +45,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			continue
 		}
 		w := workerSpot{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
-			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left)}
+			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left), gone: e.Gone}
 		if !project.SameTerminal(e.Terminal, o.cfg.Terminal) {
 			o.keptOut = append(o.keptOut, e)
 			elsewhere[e.Terminal] = append(elsewhere[e.Terminal], e.Ticket+" ("+w.state()+")")
@@ -178,7 +178,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 		}
 	}
 	if q := OpenQuestion(t); q != nil {
-		w.question, w.title, w.left = q.ID, q.Title, ""
+		w.question, w.title, w.left, w.gone = q.ID, q.Title, "", false
 	}
 	// Read whatever the ticket's status, so that a worker left unnamed is named before anything looks
 	// for it by its name.
@@ -331,7 +331,7 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 		}
 		left = append(left, project.LeftWorker{Ticket: id, Agent: o.agentName(id), Terminal: o.cfg.Terminal,
 			Tab: w.tab, Pane: w.pane, Worktree: w.wt, Fork: w.fork, Hooks: w.hooks, Question: w.question, QuestionTitle: w.title,
-			Left: string(w.left)})
+			Left: string(w.left), Gone: w.gone})
 		said = append(said, id+" ("+w.state()+")")
 	}
 	for _, id := range o.askedList() {
@@ -394,6 +394,18 @@ func (o *Loop) stoppedBy(id string, s *stopReason) {
 	defer o.mu.Unlock()
 	if w, ok := o.placed[id]; ok {
 		w.left = s.kind
+		o.placed[id] = w
+	}
+}
+
+// placedGone records that ticket id's worker stops the run as it is gone from its tab (see
+// pausedGone): should it be back there, idle, when the next run carries it over, it is told to carry
+// on rather than left waiting on the maintainer.
+func (o *Loop) placedGone(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if w, ok := o.placed[id]; ok {
+		w.gone = true
 		o.placed[id] = w
 	}
 }
