@@ -115,11 +115,11 @@ func TestPlanLinksLeaveOutTheCheckCommandsFiles(t *testing.T) {
 		listing(planTicket("c", 3, "2026-09-01T00:00:00Z", "Make the check faster.")),
 		listing(planTicket("d", 4, "2026-09-01T00:00:00Z", "Lint in the check.")),
 	}
-	got := linkList(PlanLinks(open, nil, trackedWithCheck, "scripts/check.sh", linesOf(50, nil), nil))
+	got := linkList(PlanLinks(open, nil, trackedWithCheck, "scripts/check.sh", linesOf(50, nil), nil, nil))
 	if want := []string{"c>d:scripts/check.sh"}; !slices.Equal(got, want) {
 		t.Errorf("links %q, want %q", got, want)
 	}
-	got = linkList(PlanLinks(open, nil, trackedWithCheck, "", linesOf(50, nil), nil))
+	got = linkList(PlanLinks(open, nil, trackedWithCheck, "", linesOf(50, nil), nil, nil))
 	if want := []string{"a>b:scripts/check.sh", "b>c:scripts/check.sh", "c>d:scripts/check.sh"}; !slices.Equal(got, want) {
 		t.Errorf("without a check command: links %q, want %q", got, want)
 	}

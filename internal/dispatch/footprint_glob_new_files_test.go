@@ -162,7 +162,7 @@ func TestPlanLinksAGlobToANewFileItWouldMatch(t *testing.T) {
 		open[i].Priority = &p
 	}
 	for _, lines := range []int{50, 500} {
-		got, want := linkList(PlanLinks(open, nil, trackedNested, "", read(lines), nil)), []string{"a>b:internal/dispatch/cart.go"}
+		got, want := linkList(PlanLinks(open, nil, trackedNested, "", read(lines), nil, nil)), []string{"a>b:internal/dispatch/cart.go"}
 		if !slices.Equal(got, want) {
 			t.Errorf("files of %d lines: links %q, want %q", lines, got, want)
 		}

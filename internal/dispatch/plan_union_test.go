@@ -18,7 +18,7 @@ func TestPlanLinksLeaveOutUnionMergedFiles(t *testing.T) {
 		asked = append(asked, f)
 		return f == "CHANGELOG.md"
 	}
-	if got := PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), union); len(got) != 0 {
+	if got := PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), union, nil); len(got) != 0 {
 		t.Errorf("a changelog merged by union: links %q, want none", linkList(got))
 	}
 	if !slices.Contains(asked, "CHANGELOG.md") {
@@ -26,11 +26,11 @@ func TestPlanLinksLeaveOutUnionMergedFiles(t *testing.T) {
 	}
 
 	want := []string{"a>b:CHANGELOG.md"}
-	if got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), nil)); !slices.Equal(got, want) {
+	if got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), nil, nil)); !slices.Equal(got, want) {
 		t.Errorf("no union check: links %q, want %q", got, want)
 	}
 	readme := func(f string) bool { return f == "README.md" }
-	if got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), readme)); !slices.Equal(got, want) {
+	if got := linkList(PlanLinks(open, nil, trackedHere, "", linesOf(50, nil), readme, nil)); !slices.Equal(got, want) {
 		t.Errorf("only README.md merged by union: links %q, want %q", got, want)
 	}
 }

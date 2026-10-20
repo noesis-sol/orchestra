@@ -33,9 +33,12 @@ const SmallFileLines = 200
 // metadata names (SpecKey), unless its files metadata lists them, don't link tickets either, and a
 // pair already ordered by existing links, directly or through other tickets, gets none; each ticket
 // is linked to the nearest one before it first, so tickets
-// touching one function form a chain.
+// touching one function form a chain. branches holds, by ticket ID, the files a ticket's branch
+// changes on top of the checked-out branch, since their merge base: a ticket with some, reopened or
+// carried over, is footprinted from them, its files metadata and its area labels (branchFootprint),
+// as the loop does, rather than from its text.
 func PlanLinks(open []Ticket, existing []Link, tracked []string, check string,
-	read func(file string) ([]byte, error), union func(file string) bool) []Link {
+	read func(file string) ([]byte, error), union func(file string) bool, branches map[string][]string) []Link {
 	ts := slices.Clone(open)
 	slices.SortStableFunc(ts, func(a, b Ticket) int {
 		return cmp.Or(
@@ -49,6 +52,14 @@ func PlanLinks(open []Ticket, existing []Link, tracked []string, check string,
 	repo.union = union
 	fps := make([]Footprint, len(ts))
 	for i, t := range ts {
+		if changed := branches[t.ID]; len(changed) > 0 {
+			files := make([]string, len(changed))
+			for k, f := range changed {
+				files[k] = repo.file(f)
+			}
+			fps[i] = branchFootprint(t, files, repo)
+			continue
+		}
 		// A predicted footprint is a guess: good enough to keep two tickets apart for a while, not
 		// to order them for good.
 		if fps[i] = ticketFootprint(t, repo); fps[i].Predicted {

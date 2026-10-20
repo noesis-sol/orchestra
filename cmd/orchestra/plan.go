@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -75,9 +76,17 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 		fmt.Fprintln(stderr, "orchestra plan: cannot list the files git tracks:", err)
 		tracked = nil
 	}
+	branches, err := branchChanges(stop.ctx, repo, open)
+	switch {
+	case stop.stopped():
+		return stoppedReading(stderr)
+	case err != nil: // every footprint goes by its ticket's text
+		fmt.Fprintln(stderr, "orchestra plan: cannot read the tickets' branches:", err)
+	}
 	// a footprint leaves out the files any of the checks names
 	links := dispatch.PlanLinks(open, existing, tracked, settings.CheckCommands(),
-		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(stop.ctx, repo))
+		func(file string) ([]byte, error) { return dispatch.ReadSource(repo, file) }, mergesByUnion(stop.ctx, repo),
+		branches)
 	if stop.stopped() {
 		return stoppedReading(stderr)
 	}
@@ -155,6 +164,37 @@ func stoppedPlan(stderr io.Writer, added, notAdded []string) int {
 	}
 	fmt.Fprintf(stderr, "%s. Not added: %s.\n", line, strings.Join(notAdded, ", "))
 	return dispatch.ExitInterrupted
+}
+
+// branchChanges returns, by ticket ID, the files the branch of each open ticket that has one (wt/<id>)
+// changes on top of repo's checked-out HEAD, since their merge base, as PlanLinks takes them. The
+// branches git can't answer for are left out, and the first error returned with the rest.
+func branchChanges(ctx context.Context, repo string, open []dispatch.Ticket) (map[string][]string, error) {
+	listed, err := git.Git{}.BranchesStartingWith(ctx, repo, "wt/")
+	if err != nil {
+		return nil, err
+	}
+	has := map[string]bool{}
+	for _, b := range listed {
+		has[b] = true
+	}
+	changes := map[string][]string{}
+	var first error
+	for _, t := range open {
+		br := "wt/" + t.ID
+		if !has[br] {
+			continue
+		}
+		base, err := git.Git{}.MergeBase(ctx, repo, "HEAD", br)
+		if err != nil {
+			first = cmp.Or(first, err)
+			continue
+		}
+		if base != "" { // no common history: nothing done on top of HEAD
+			changes[t.ID] = git.Git{}.ChangedFiles(ctx, repo, base, br)
+		}
+	}
+	return changes, first
 }
 
 // mergesByUnion reports whether git merges a file of repo by union, as .gitattributes says (git

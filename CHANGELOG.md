@@ -62,6 +62,11 @@ All notable changes to orchestra are documented here. The format follows
   the changelog, was skipped on 19 Oct over `src/run/run.ts`, through a
   function its description names, and over `scripts/check.sh`; replayed on
   tutti's log, those are the 3 of its 649 skips that drop.
+- `orchestra plan` footprints a ticket with commits on its branch
+  (`wt/<id>`) as the run does: from the files its branch changes on top of
+  the checked-out branch, its `files` metadata and area labels, rather than
+  from its text, so it no longer proposes a link for a reopened ticket over
+  a file only its text names, nor misses one over a file its branch changes.
 - `CLOSED_UNCOMMITTED` names the files left uncommitted in the ticket's
   worktree, in its warning and the ticket's note (a few, then how many
   more), each after its `git status` code, `??` marking an untracked one,

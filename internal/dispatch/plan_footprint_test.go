@@ -17,14 +17,14 @@ func TestPlanLinksFindFunctionsInFiles(t *testing.T) {
 	}
 	merge := "func (o *Loop) merge() {}\n"
 	sources := sourceOf(map[string]string{"internal/dispatch/merge.go": merge})
-	got := linkList(PlanLinks(open, nil, trackedHere, "", sources, nil))
+	got := linkList(PlanLinks(open, nil, trackedHere, "", sources, nil, nil))
 	// merge.go doesn't mention pickNext: c works elsewhere.
 	if want := []string{"a>b:internal/dispatch/merge.go"}; !slices.Equal(got, want) {
 		t.Errorf("links %q, want %q", got, want)
 	}
 
 	large := sourceOf(map[string]string{"internal/dispatch/merge.go": merge + strings.Repeat("\n", SmallFileLines)})
-	if got := PlanLinks(open, nil, trackedHere, "", large, nil); len(got) != 0 {
+	if got := PlanLinks(open, nil, trackedHere, "", large, nil, nil); len(got) != 0 {
 		t.Errorf("a large file: links %q, want none", linkList(got))
 	}
 }
@@ -38,13 +38,13 @@ func TestPlanLinksCompareByFunctionPerFile(t *testing.T) {
 		planTicket("b", 2, "", "Describe refreshBranch() in README.md."),
 	}
 	readme := sourceOf(map[string]string{"README.md": "refreshBranch brings the branch up to date.\n"})
-	got := linkList(PlanLinks(open, nil, trackedHere, "", readme, nil))
+	got := linkList(PlanLinks(open, nil, trackedHere, "", readme, nil, nil))
 	if want := []string{"a>b:README.md"}; !slices.Equal(got, want) {
 		t.Errorf("links %q, want %q", got, want)
 	}
 
 	both := sourceOf(map[string]string{"README.md": "refreshBranch, then waitSettled.\n"})
-	if got := PlanLinks(open, nil, trackedHere, "", both, nil); len(got) != 0 {
+	if got := PlanLinks(open, nil, trackedHere, "", both, nil, nil); len(got) != 0 {
 		t.Errorf("both functions in the file: links %q, want none", linkList(got))
 	}
 }
