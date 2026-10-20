@@ -23,7 +23,7 @@ import (
 // see when it may start). Each call goes into bd-calls.
 const earlyBd = `#!/bin/sh
 d=$(dirname "$0")
-for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
+call=; for a in "$@"; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/bd-calls"
 n=$(cat "$d/bd-n" 2>/dev/null || echo 0)
 root='{"id":"s-1","title":"An app","status":"open","issue_type":"epic","priority":1}'
 env='{"id":"s-1.1","title":"Set up the project","status":"open","issue_type":"task","priority":0,"parent":"s-1","labels":["solo"]}'

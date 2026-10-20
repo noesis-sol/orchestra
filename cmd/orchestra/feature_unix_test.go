@@ -30,7 +30,7 @@ echo 'fake claude: bye'
 `)
 	faketool.Write(t, dir, "bd", `#!/bin/sh
 d='`+dir+`'
-for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
+call=; for a in "$@"; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/bd-calls"
 case "$1" in
 show) echo "[{\"id\":\"$2\",\"status\":\"open\",\"issue_type\":\"epic\"}]" ;;
 list|ready) echo '[]' ;;

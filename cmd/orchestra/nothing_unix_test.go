@@ -52,7 +52,7 @@ func nothingTools(t *testing.T, b backlog) string {
 	}
 	faketool.Write(t, dir, "bd", `#!/bin/sh
 d='`+dir+`'
-for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
+call=; for a in "$@"; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/bd-calls"
 answer() { if [ -f "$d/$1" ]; then cat "$d/$1"; else echo "${2:-[]}"; fi; }
 parent=; prev=
 for a in "$@"; do [ "$prev" = --parent ] && parent=$a; prev=$a; done

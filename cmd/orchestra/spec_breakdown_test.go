@@ -32,11 +32,12 @@ import (
 // bd list (by --parent, or by the spec's --metadata-field) read filed, bd show --json saying as bd
 // does when it has no issue by the ID; bd update --set-metadata k=v adds k to the issue's metadata,
 // once; bd dep cycles prints cycles, else none; bd ready finds nothing ready. Each call goes into
-// bd-calls, its arguments followed by |. Titles, acceptance criteria, labels and metadata go into
-// filed as they are given: tests give them without characters JSON escapes.
+// bd-calls, its arguments followed by |, as one line in one write, so calls run side by side don't
+// interleave. Titles, acceptance criteria, labels and metadata go into filed as they are given: tests
+// give them without characters JSON escapes.
 const filingBd = `#!/bin/sh
 d=$(dirname "$0")
-for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
+call=; for a in "$@"; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/bd-calls"
 cmd=$1; shift; first=$1
 parent= field= type=task title= acceptance= metadata='{}' labels= json= set=
 while [ $# -gt 0 ]; do

@@ -87,7 +87,7 @@ func newRunFixture(t *testing.T, script, resumed []string) *tmuxRun {
 
 	r.write(filepath.Join(r.bdDir, "status"), "open\n")
 	faketool.Write(t, bin, "bd", `d='`+r.bdDir+`'
-for a; do printf '%s|' "$a"; done >> "$d/calls"; echo >> "$d/calls"
+call=; for a; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/calls"
 st=$(cat "$d/status")
 ticket() { printf '[{"id":"tx-1","title":"Add the feature","status":"%s","priority":2,"issue_type":"task"}]\n' "$st"; }
 case "$1 $2" in

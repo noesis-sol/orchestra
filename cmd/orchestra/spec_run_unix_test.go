@@ -22,7 +22,7 @@ import (
 // arguments followed by |.
 const specTreeBd = `#!/bin/sh
 d=$(dirname "$0")
-for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
+call=; for a in "$@"; do call=$call$a'|'; done; printf '%s\n' "$call" >> "$d/bd-calls"
 cmd=$1 first=$2 parent=
 while [ $# -gt 0 ]; do [ "$1" = --parent ] && parent=$2; shift; done
 case "$cmd" in
