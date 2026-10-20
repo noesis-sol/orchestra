@@ -108,7 +108,10 @@ func TestSpecRunSetsUpAnEmptyRepository(t *testing.T) {
 				t.Fatal(err)
 			}
 			given := project.Given[int]{Value: tc.concurrent, Given: tc.args != nil}
-			if want := project.ChoiceSettings(project.Settings{}, specSetupChoice(repo, given, "claude")); !reflect.DeepEqual(settings, want) {
+			want := project.ChoiceSettings(project.Settings{}, specSetupChoice(repo, given, "claude"))
+			// The worker prompt written from the template, whose version the settings record; no verifier.
+			want.Templates = &project.Templates{WorkerPrompt: project.CurrentTemplates().WorkerPrompt}
+			if !reflect.DeepEqual(settings, want) {
 				t.Errorf("settings %+v, the run read %+v", settings, want)
 			}
 			if settings.Concurrency != tc.concurrent || settings.MCPServers == nil || len(*settings.MCPServers) != 0 {

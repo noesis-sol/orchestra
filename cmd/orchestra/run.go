@@ -409,6 +409,9 @@ func (s *session) runLoop(ctx context.Context) int {
 	organCtx, cancelOrgans := context.WithCancel(base)
 	defer cancelOrgans()
 	cfg.Version, cfg.Machine = s.e.version, runsDir(e.getenv)
+	if !cfg.ownPrompt { // a prompt of the run's own, not the project's, came from no template
+		cfg.TemplateNotes = project.TemplateNotes(cfg.Repo)
+	}
 	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()

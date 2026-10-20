@@ -269,6 +269,9 @@ func (o *Loop) begin(ctx context.Context) {
 		o.info("  spec: epic %s, broken down from: %s", c.Ticket, c.Spec)
 	}
 	o.sayMCP()
+	for _, note := range c.TemplateNotes {
+		o.info("  templates: %s", note)
+	}
 	help, err := o.claudeHelp(ctx)
 	o.permission = o.permissionArgs(ctx, help, err)
 	o.unusedTools = o.unusedToolArgs(help)

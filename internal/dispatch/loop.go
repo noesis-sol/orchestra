@@ -509,6 +509,9 @@ type Config struct {
 	// Spec is the spec (--spec) Ticket, its root epic, was broken down from: its path in the
 	// repository; "" for none.
 	Spec string
+	// TemplateNotes say, as the run starts, which of the project's files orchestra wrote from its templates
+	// lack changes made to them since, and how to take them (project.TemplateNotes); none for none.
+	TemplateNotes []string
 	// Filing is the scope still being filed as the run starts on it, as a spec's breakdown files the
 	// rest after its environment ticket; nil when it is filed already.
 	Filing       *Filing

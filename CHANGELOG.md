@@ -6,6 +6,21 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A run says under its `START` line when the project's worker prompt or
+  verifier is older than orchestra's templates, naming the sections changed
+  since and what changed in them (`templates: .orchestra/worker-prompt.md is
+  older than orchestra's worker prompt template, which has since changed the
+  opening (…) and Close (…)`), and `orchestra init` says it of the files it
+  keeps. `orchestra init --update` takes the changes: it rewrites only those
+  sections from the templates, keeping the rest of each file, the project's
+  own sections included, prints the diff and leaves the commit to you.
+  `settings.json` now records the version of each template the files came
+  from (`"templates"`), as `init` writes them; a project set up before has
+  its files read for each change's words instead. tutti's prompt of
+  2026-10-16 still had its workers and verifier run the whole merge check.
+
 ### Changed
 
 - `CLOSED_UNCOMMITTED` names the files left uncommitted in the ticket's

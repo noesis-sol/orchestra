@@ -107,7 +107,7 @@ func ApplyVerifier(_ context.Context, repo string, c Choice) ([]Step, error) {
 	var commit []string
 	p := filepath.Join(repo, filepath.FromSlash(VerifierPath))
 	if fileExists(p) {
-		did = append(did, VerifierPath+" is there; left as it is")
+		did = append(did, VerifierPath+" is there; left as it is"+keptNote(repo, VerifierPath))
 	} else {
 		fast, err := runnerSuites(repo, FastRunner)
 		if err != nil {

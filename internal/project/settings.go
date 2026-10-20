@@ -83,6 +83,10 @@ type Settings struct {
 	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
 	// server Claude Code finds; [] gives them none.
 	MCPServers *[]string `json:"mcp_servers,omitempty"`
+	// Templates are the versions of orchestra's templates the worker prompt and the verifier came from,
+	// which init records as it writes them and 'orchestra init --update' as it brings them up to date.
+	// Absent: written before versions were recorded (see OutdatedTemplates).
+	Templates *Templates `json:"templates,omitempty"`
 	// WorkerEffort is the effort Claude workers are started at (claude --effort), unless
 	// --worker-effort says otherwise. Empty: DefaultWorkerEffort.
 	WorkerEffort string `json:"worker_effort,omitempty"`

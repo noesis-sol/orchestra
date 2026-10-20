@@ -328,7 +328,7 @@ func Init(ctx context.Context, repo string, checks PromptChecks, force bool) ([]
 	switch {
 	case fileExists(prompt) && !force:
 		done = append(done, Step{Kind: StepKept, Label: "worker prompt",
-			Detail: rel + " is there; left as it is (--force replaces it with the template)"})
+			Detail: rel + " is there; left as it is (--force replaces it with the template)" + keptNote(repo, rel)})
 	case !fileExists(prompt) && fileExists(legacy) && !force:
 		if err := movePrompt(ctx, repo, legacy, prompt); err != nil {
 			return done, err

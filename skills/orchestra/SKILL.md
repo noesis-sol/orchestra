@@ -122,7 +122,10 @@ Where the repository has a lockfile, pass `--setup "<command>"`, the command tha
 which orchestra runs in each new worktree before its worker starts, and before the merge check when a
 rebase changes a lockfile; `--setup ""` for none.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
-unless given `--force`; don't pass `--force` without the user's say-so. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
+unless given `--force`; don't pass `--force` without the user's say-so. Where a run's `START` lines or
+`init`'s summary say the worker prompt or the verifier is older than orchestra's templates (`templates: …`),
+`orchestra init --update` rewrites only the sections the templates changed, keeping the rest, and prints the diff:
+show the user the diff (a rewritten section loses the project's own edits in it), and commit if they agree. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 
 ## Launching a run
 

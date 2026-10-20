@@ -18,7 +18,8 @@ type Applier func(ctx context.Context, repo string, c Choice) ([]Step, error)
 
 // Apply sets the repository at repo up as the choice says: the worker prompt, replacing one that is
 // there where force is set; the runners; the settings; the changelog's union; the create-check-suite
-// skill; and the verifier, which reads the worker prompt and the runners written before it. It
+// skill; and the verifier, which reads the worker prompt and the runners written before it. Last, the
+// settings record the versions of the templates it wrote the worker prompt and the verifier from. It
 // returns each one's steps, stopping at the first error with the steps so far.
 //
 // Once it has started, it writes them all, though ctx ends meanwhile: a setup half written, the
@@ -39,7 +40,7 @@ func Apply(ctx context.Context, repo string, c Choice, force bool) ([]Step, erro
 			return steps, err
 		}
 	}
-	return steps, nil
+	return steps, recordTemplates(repo, steps)
 }
 
 // initPrompt is Init as an Applier: the worker prompt, with the runner as its check command and the

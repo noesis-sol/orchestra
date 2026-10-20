@@ -5,5 +5,8 @@
   "concurrent": 4,
   "check_fast_timeout": "15m",
   "check_full_timeout": "30m",
-  "mcp_servers": []
+  "mcp_servers": [],
+  "templates": {
+    "worker_prompt": 4
+  }
 }

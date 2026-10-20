@@ -33,6 +33,9 @@ func runInit(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	if !ok {
 		return code
 	}
+	if f.update {
+		return runInitUpdate(ctx, dir, f, getenv, stdout, stderr)
+	}
 	fail := func(why any) int {
 		fmt.Fprintln(stderr, "orchestra init:", why)
 		return dispatch.ExitSetup
@@ -157,6 +160,7 @@ type initFlags struct {
 	concurrent                               project.Given[int]
 	union, install, verifier                 project.Given[bool]
 	force                                    bool
+	update                                   bool   // --update: bring the worker prompt and verifier up to date alone
 	agent                                    string // the workers' agent kind, AGENT_KIND's by default
 }
 
@@ -164,7 +168,8 @@ type initFlags struct {
 const initSynopsis = "[--check-fast \"<command>\"] [--check-full \"<command>\"] " +
 	"[--check-fast-timeout D] [--check-full-timeout D]\n" +
 	"[--setup \"<command>\"] [--concurrent N] [--mcp names] [--changelog-union]\n" +
-	"[--install-beads] [--verifier] [--prefix name] [--agent kind] [--force]"
+	"[--install-beads] [--verifier] [--prefix name] [--agent kind] [--force]\n" +
+	"[--update]"
 
 // initAbout is what orchestra init -h says between its usage line and its flags.
 const initAbout = "Set up Beads and .orchestra/ in this repository. Where bd is missing, it offers to install it\n" +
@@ -180,7 +185,10 @@ const initAbout = "Set up Beads and .orchestra/ in this repository. Where bd is 
 	"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n" +
 	"ticket prefix, renaming every ticket when it changes. In a\n" +
 	"terminal it asks for anything the flags don't give. Run it from the main checkout, between\n" +
-	"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n\n"
+	"runs: it changes nothing in a linked worktree, or while a run holds the repository's lock.\n" +
+	"With --update, it does nothing else but bring the worker prompt and the verifier up to date\n" +
+	"with orchestra's templates: it rewrites the sections the templates changed since they were\n" +
+	"written, keeping the rest, and shows the diff to commit.\n\n"
 
 // parseInitFlags reads init's flags in args, --agent defaulting to AGENT_KIND. ok is false where
 // init stops there with code: after -h, or once it has told stderr what is wrong with them.
@@ -203,6 +211,9 @@ func parseInitFlags(args []string, getenv func(string) string, stderr io.Writer)
 		"in a worktree, run in each new one before its worker starts and before check-fast when a rebase changes a "+
 		"lockfile, e.g. \"npm ci\"; \"\" for none (offered for a lockfile when omitted; an existing setting is kept)")
 	fs.BoolVar(&f.force, "force", false, "replace an existing .orchestra/worker-prompt.md with the template")
+	fs.BoolVar(&f.update, "update", false, "only rewrite the sections of the worker prompt and "+project.VerifierPath+
+		" that orchestra's templates changed since they were written, keeping the rest, and show the diff; "+
+		"no other flag goes with it")
 	bindGiven(e, fs.BoolVar, &f.union, "changelog-union", "", false, parseOnOff, "add 'CHANGELOG.md merge=union' "+
 		"to .gitattributes, so two tickets' changelog entries don't conflict (asked when omitted; =false declines)")
 	bindGiven(e, fs.StringVar, &f.mcp, "mcp", "", "", parseText, "the MCP servers workers get, by name, "+
