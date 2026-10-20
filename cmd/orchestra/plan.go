@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os/signal"
+	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -79,18 +81,35 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 	}
 	fmt.Fprintf(stdout, "%s %s between the %s:\n",
 		verb, plural(len(links), "blocks link"), plural(len(open), "open ticket"))
-	failed := 0
-	for _, l := range links {
+	// A stop signal stops --apply between two links, saying which it added and which not; without the
+	// catch, Go would end it with no word between two bd dep add. The link under way is added whole:
+	// its bd runs on the parent context, in a process group of its own, out of the terminal's Ctrl+C.
+	stop, unwatch := ctx, func() {}
+	if *apply {
+		stop, unwatch = signal.NotifyContext(ctx, stopSignals...)
+	}
+	defer unwatch()
+	var added, notAdded []string
+	for i, l := range links {
+		if stop.Err() != nil && ctx.Err() == nil {
+			for _, l := range links[i:] {
+				notAdded = append(notAdded, waits(l))
+			}
+			return stoppedPlan(stderr, added, notAdded)
+		}
 		fmt.Fprintf(stdout, "  %s (%s) waits for %s (%s): both touch %s\n",
 			l.Blocked, prios[l.Blocked], l.Blocker, prios[l.Blocker], l.Why)
 		if !*apply {
 			continue
 		}
 		if err := tracker.AddBlock(ctx, l.Blocker, l.Blocked); err != nil {
-			failed++
+			notAdded = append(notAdded, waits(l))
 			fmt.Fprintf(stderr, "orchestra plan: bd dep add %s %s: %v\n", l.Blocked, l.Blocker, err)
+			continue
 		}
+		added = append(added, waits(l))
 	}
+	failed := len(notAdded)
 	switch {
 	case !*apply:
 		fmt.Fprintln(stdout, "Nothing changed. Add them with: orchestra plan --apply")
@@ -101,6 +120,21 @@ func runPlan(ctx context.Context, dir string, args []string, stdout, stderr io.W
 		fmt.Fprintf(stdout, "Added %s.\n", plural(len(links), "link"))
 	}
 	return dispatch.ExitOK
+}
+
+// waits names link l as stoppedPlan lists it: "k-2 waits for k-1".
+func waits(l dispatch.Link) string { return l.Blocked + " waits for " + l.Blocker }
+
+// stoppedPlan says that a stop signal stopped plan --apply with the links added and those not, and
+// returns exit code 130.
+func stoppedPlan(stderr io.Writer, added, notAdded []string) int {
+	total := len(added) + len(notAdded)
+	line := fmt.Sprintf("orchestra plan: stopped. Added %d of %s", len(added), plural(total, "link"))
+	if len(added) > 0 {
+		line += ": " + strings.Join(added, ", ")
+	}
+	fmt.Fprintf(stderr, "%s. Not added: %s.\n", line, strings.Join(notAdded, ", "))
+	return dispatch.ExitInterrupted
 }
 
 // mergesByUnion reports whether git merges a file of repo by union, as .gitattributes says (git

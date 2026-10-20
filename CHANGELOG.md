@@ -22,6 +22,9 @@ All notable changes to orchestra are documented here. The format follows
   (a hold that came up as tickets started) is no longer handed back to its
   worker to fix: the merges hear of the hold at once, not on the run's next
   pass, up to 30 seconds later.
+- Ctrl+C (or SIGTERM) during `orchestra plan --apply` stops it between two
+  links, saying which links it added and which not, exit code 130, rather
+  than ending it partway with no word.
 
 ## [0.8.6] - 2026-10-20
 
