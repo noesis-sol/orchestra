@@ -45,7 +45,8 @@ type breakdownRequest struct {
 type breakdownResult struct {
 	Root        string // "" when it filed none
 	Assumptions []string
-	Problem     string // with no root epic, why it filed none, as it says; "" when it doesn't
+	Problem     string   // with no root epic, why it filed none, as it says; "" when it doesn't
+	Warnings    []string // what orchestra, filing the tree its answer gave, couldn't note or set on the root epic
 }
 
 // specBreakdown breaks a committed spec down into Beads tickets, which it files itself. Stopped (its
@@ -243,6 +244,9 @@ func (r specRun) broken(ctx context.Context, spec project.Spec, res breakdownRes
 		r.logLine(line)
 		return "", r.unfinished(ctx, spec, "")
 	}
+	for _, w := range res.Warnings {
+		r.warn(w)
+	}
 	if code := r.check(ctx, spec, res.Root); code != dispatch.ExitOK {
 		return "", code
 	}
@@ -311,9 +315,7 @@ func (r specRun) check(ctx context.Context, spec project.Spec, root string) int 
 		warnings, err = checkBreakdown(ctx, r.tracker, spec, root)
 	}
 	for _, w := range warnings {
-		w = planLine(w)
-		fmt.Fprintln(r.err, "warning: "+w)
-		r.logLine("SPEC: warning: " + w)
+		r.warn(w)
 	}
 	switch {
 	case ctx.Err() != nil:
@@ -325,6 +327,13 @@ func (r specRun) check(ctx context.Context, spec project.Spec, root string) int 
 		return r.unfinished(ctx, spec, "")
 	}
 	return dispatch.ExitOK
+}
+
+// warn says the warning w, about what the breakdown filed, and logs it.
+func (r specRun) warn(w string) {
+	w = planLine(w)
+	fmt.Fprintln(r.err, "warning: "+w)
+	r.logLine("SPEC: warning: " + w)
 }
 
 // commit commits the spec, once the main checkout has nothing uncommitted besides it, and says so;

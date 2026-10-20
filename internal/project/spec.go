@@ -85,6 +85,11 @@ func (m RefineMode) handBack() string {
 // filed for an earlier version of the spec, and Feature, with Refine alone, those of a feature.
 type specPromptData struct{ Refine, OnTerminal, Update, Feature bool }
 
+// TreeInAnswer tells whether the breakdown files the root epic and the environment ticket alone, and
+// gives the rest of the tree in its answer for orchestra to file: headless, for a spec broken down for
+// the first time.
+func (d specPromptData) TreeInAnswer() bool { return !d.Refine && !d.Update }
+
 // refined is the data of a breakdown with the user in mode m, on orchestra's own terminal with
 // onTerminal.
 func (m RefineMode) refined(onTerminal bool) specPromptData {

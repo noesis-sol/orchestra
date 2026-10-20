@@ -71,7 +71,8 @@ func TestSpecPromptsInUpdateMode(t *testing.T) {
 }
 
 // A new spec's instructions have none of the update's sections, and set the root epic's SHA-256 and
-// commit last of all, as the sign that its tree is filed.
+// commit last of all, as the sign that its tree is filed: with the user, the session sets them;
+// headless, orchestra does, once it has filed the tree the answer gives.
 func TestSpecPromptsForANewSpec(t *testing.T) {
 	for name, write := range map[string]func(repo string) (string, error){
 		"headless":                   func(repo string) (string, error) { return WriteSpecPrompt(repo, false) },
@@ -88,9 +89,17 @@ func TestSpecPromptsForANewSpec(t *testing.T) {
 				t.Errorf("%s: the instructions have %q", name, gone)
 			}
 		}
-		for _, want := range []string{`--metadata '{"spec":"<path>"}' --silent`, "Last of all, once everything is " +
+		wants := []string{`--metadata '{"spec":"<path>"}' --silent`, "Last of all, once everything is " +
 			"filed and checked, set the root epic's `spec_sha256` and `spec_commit`",
-			"a later run that finds them carries on with the tree as it is"} {
+			"a later run that finds them carries on with the tree as it is"}
+		if name == "headless" {
+			wants = []string{`--metadata '{"spec":"<path>"}' --silent`,
+				"sets the root epic's `spec_sha256` and `spec_commit` last of all"}
+			if strings.Contains(text, "--set-metadata") {
+				t.Errorf("%s: the instructions have the session set the root epic's metadata", name)
+			}
+		}
+		for _, want := range wants {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s: the instructions lack %q", name, want)
 			}

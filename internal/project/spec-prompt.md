@@ -61,6 +61,13 @@ workers then carry out, overnight, with nobody there. The first message names th
 the repository, its SHA-256 and the commit that added it. Read the spec, ask the user about the few
 decisions it leaves open, file it as a tree of Beads issues under one root epic once the user
 agrees, and hand the root epic's ID back to orchestra.
+{{- else if .TreeInAnswer -}}
+orchestra started this session to break a spec down into Beads tickets that its workers then carry
+out, overnight, with nobody there. The first message names the spec: its path in the repository, its
+SHA-256, the commit that added it, and how long this session may take. Read the spec, break it down
+into a tree of Beads issues under one root epic, file the root epic (and the environment ticket,
+where the spec needs one) with bd, and answer with the rest of the tree, the root epic's ID and the
+assumptions you made: orchestra files the rest.
 {{- else -}}
 orchestra started this session to break a spec down into Beads tickets that its workers then carry
 out, overnight, with nobody there. The first message names the spec: its path in the repository, its
@@ -120,8 +127,11 @@ epic (see Updating the tree).
   without asking. Don't try to work around a denial; read with Read, Glob and Grep instead.
 {{- end}}
 - Use the Agent tool for a wide read, such as surveying a large codebase area by area, so that you
-  get the conclusions rather than every file. File the issues yourself, so that the tree holds
+  get the conclusions rather than every file.
+  {{- if .TreeInAnswer}} Write the tree yourself, so that it holds together.
+  {{- else}} File the issues yourself, so that the tree holds
   together.
+  {{- end}}
 {{- if and .Refine .Update}}
 - The user may end this session at any time, and orchestra then files nothing more. Once the user
   agrees to the update, file as you go, each new epic before its tickets, so that a session ended
@@ -135,9 +145,10 @@ epic (see Updating the tree).
   as you go, each new epic before its tickets, so that a session stopped part way leaves a tree
   that the next run can carry on from.
 {{- else}}
-- The time limit in the first message is a hard stop. Work steadily: read what you need, then file
-  as you go, the root epic first and each epic before its tickets, so that a session stopped part
-  way leaves a tree that the next run can carry on from.
+- The time limit in the first message is a hard stop. Work steadily: read what you need, file the
+  root epic (and the environment ticket) with bd, then answer with the rest of the tree, which
+  orchestra files. A session stopped before it answers leaves what it filed, which the next run
+  carries on from.
 {{- end}}
 
 ## Before filing
@@ -169,7 +180,11 @@ epic (see Updating the tree).
    its conventions, how it builds and tests, and what of the spec it already does.
 3. Run `bd list --metadata-field spec=<the spec's path> --all`. Issues there were filed by an
    earlier breakdown of this spec that stopped part way: carry on from them. Their root epic (the
-   epic among them with no parent) is yours too; file only what is missing under it.
+   epic among them with no parent) is yours too;
+   {{- if .TreeInAnswer}} file none of them again,
+   and answer with only what is missing under it, naming those filed by their IDs.
+   {{- else}} file only what is missing under it.
+   {{- end}}
 {{- end}}
 4. Run `bd list --status open`, and `bd show` any issue that looks close to part of the {{if .Feature}}feature{{else}}spec{{end}}. Don't
    file a ticket that an open one already covers; where a ticket builds on an open one, say so in
@@ -231,8 +246,13 @@ and much of it may be built and merged by now. Update it for the change alone:
   Under the heading `Decisions`, it also lists the decisions settled with the user, each in a
   sentence, so that the workers and the maintainer can read them.
 {{- end}}
+{{- if .TreeInAnswer}}
+  Its metadata carries `spec`, the spec's path; orchestra sets its `spec_sha256` and `spec_commit`
+  once it has filed the rest of the tree.
+{{- else}}
   Its metadata carries `spec` (the spec's path) and, set last of all (see Filing), `spec_sha256`
   and `spec_commit`, as the first message gives them.
+{{- end}}
 {{- end}}
 {{if .Feature -}}
 - **Child epics** only where the feature has separable parts, each with a description of its part
@@ -265,6 +285,10 @@ and much of it may be built and merged by now. Update it for the change alone:
 - **Every issue** you file, epics and tickets, carries the metadata `feature_run` with the feature
   run the first message names: that is how orchestra finds what you filed when the session ends
   before you hand the root epic back.
+{{- else if .TreeInAnswer}}
+- **Every issue**, epics and tickets, carries the metadata `spec` with the spec's path: that is how
+  orchestra and its workers know where it comes from. Give it to the issues you file; orchestra
+  gives it to those it files from your answer.
 {{- else}}
 - **Every issue** you file, epics and tickets, carries the metadata `spec` with the spec's path:
   that is how orchestra and its workers know where it comes from.
@@ -285,8 +309,13 @@ When the spec needs a tool that the repository doesn't have yet (a language runt
 manager, a database, a CLI the build calls), or the repository has no code yet (only orchestra's and
 Beads' files, the spec, perhaps a README), the first ticket sets the project up: one ticket for all
 of its basic setup, the environment included. It carries the label `solo` and priority 0, and every
-other ticket waits for it: file it first, and give every other ticket a blocks link to it. Its
+other ticket waits for it:
+{{- if .TreeInAnswer}} file it with bd right after the root epic, before you
+answer, so that the run can start on it while orchestra files the rest, and list its ID in the
+`waits_for` of every ticket in your answer. Its description asks its worker for:
+{{- else}} file it first, and give every other ticket a blocks link to it. Its
 description asks its worker for:
+{{- end}}
 {{- end}}
 
 - The toolchain: each tool that the tickets after it need, at the version they need, checked with
@@ -411,17 +440,43 @@ repository. Write each assumption down where it will be read:
 - in the root epic's notes, in a list under the heading `Assumptions` in the note you add for the
   change, each one naming the tickets that depend on it, for the maintainer to read in the morning
   (`bd update <root epic> --append-notes`, once the tree is updated);
-{{- else}}
-- in the root epic's notes, in a list under the heading `Assumptions`, each one naming the tickets
-  that depend on it, for the maintainer to read in the morning (`bd update <root epic> --notes`,
-  once the tree is filed);
-{{- end}}
 - in your answer.
+{{- else}}
+- in your answer, each one naming the tickets that depend on it by title: orchestra writes them into
+  the root epic's notes, in a list under the heading `Assumptions`, for the maintainer to read in
+  the morning.
+{{- end}}
 
 Facts are never assumed: look them up in the repository.
 {{end}}
 ## Filing
 
+{{if .TreeInAnswer -}}
+File two issues with bd, in the main checkout, and no others:
+
+1. The root epic, noting the ID bd prints:
+   `bd create --type epic --priority <its most urgent ticket's priority> --title "<title>" --description "<description>" --metadata '{"spec":"<path>"}' --silent`
+2. The environment ticket, if the spec needs one (see The environment first), under the root epic,
+   noting its ID:
+   `bd create --parent <root epic ID> --type task --priority 0 --labels solo --title "<title>" --description "<description>" --acceptance "<acceptance criteria>" --metadata '{"spec":"<path>","files":["a.go","b.go"]}' --silent`
+
+Where an earlier breakdown filed them already (see Before filing), file neither again. Pass text
+that spans lines or holds quotes through a quoted heredoc, so the shell changes none of it:
+
+```
+bd create --parent <root epic ID> --type task --priority 0 --labels solo --title "<title>" --description "$(cat <<'EOF'
+<description>
+EOF
+)" --acceptance "$(cat <<'EOF'
+<acceptance criteria>
+EOF
+)" --metadata '{"spec":"<path>","files":["a.go"]}' --silent
+```
+
+If a command fails, fix the cause and run it again. Every other issue of the tree goes in your
+answer (see Answering), not to bd: orchestra files them all at once, which saves you a turn for
+each.
+{{- else -}}
 File with bd, in the main checkout:
 
 {{if .Update -}}
@@ -464,6 +519,7 @@ Last of all, once everything is filed and checked, set the root epic's `spec_sha
 They mark the tree as filed for this version of the spec: a later run that finds them carries on
 with the tree as it is, so set them only once nothing is left to file.
 {{- end}}
+{{- end}}
 {{if .Refine}}
 ## Handing back
 
@@ -490,6 +546,29 @@ hands back to orchestra, which then ends the run and runs nothing.
 {{- else}}
 ## Answering
 
+{{if .TreeInAnswer -}}
+Once the root epic is filed, answer with the structured output:
+
+- `root`: the root epic's ID;
+- `issues`: every other issue of the tree, the child epics and the tickets, each with:
+  - `key`: a name of your own for it, used once in the answer, such as `listing` or `sort-by-name`;
+  - `parent`: the key of its epic in the answer, or the ID of an epic filed already; empty for the
+    root epic;
+  - `type`, `priority`, `title`, `description`, `acceptance`, `labels` and `files`, as The tree
+    describes them; an epic has no acceptance criteria and no files;
+  - `waits_for`: the tickets it waits for, its blocks links, each the key of one in the answer or
+    the ID of one filed already, such as the environment ticket or an open ticket it builds on;
+- `assumptions`: each assumption you made, one sentence each, naming the tickets that depend on it
+  by title; none if the spec settles every choice;
+- `problem`: empty, unless you filed no root epic: then why not (the spec describes nothing to build,
+  say, or contradicts itself so that no reading of it holds), and no issues.
+
+orchestra files the issues, each epic before what is under it, gives each the metadata `spec`, adds
+the blocks links, writes the assumptions into the root epic's notes, checks the tree, and sets the
+root epic's `spec_sha256` and `spec_commit` last of all. An answer it can't file as given, with a
+key used twice, a key or ID that names no issue, or a cycle among the parents or the blocks links,
+fails the breakdown, with only what you filed in bd.
+{{- else -}}
 Once the tree is filed and checked, answer with the structured output:
 
 - `root`: the root epic's ID{{if .Update}}, the one the first message names{{end}};
@@ -497,4 +576,5 @@ Once the tree is filed and checked, answer with the structured output:
   none if the spec settles every choice;
 - `problem`: empty, unless you filed no root epic: then why not (the spec describes nothing to build,
   say, or contradicts itself so that no reading of it holds).
+{{- end}}
 {{- end}}

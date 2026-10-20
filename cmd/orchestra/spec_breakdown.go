@@ -27,21 +27,24 @@ import (
 // (the project's CLAUDE.md and settings, as a feature's session has) but no MCP servers besides a
 // worker's (dispatch.Config.SessionMCP), breaks it down. Its instructions (internal/project's
 // spec-prompt.md) are appended to its system prompt; its first message names the committed spec. It
-// reads with Read, Glob, Grep and Agent, files the tickets with bd through Bash, which runs nothing
-// else but read-only git, and answers with the root epic and the assumptions it made (--json-schema),
-// streaming what it does (stream-json) for the progress shown.
+// reads with Read, Glob, Grep and Agent, files with bd through Bash, which runs nothing else but
+// read-only git, and answers with the root epic and the assumptions it made (--json-schema), streaming
+// what it does (stream-json) for the progress shown. Breaking the spec down for the first time, it
+// files the root epic and the environment ticket alone, and its answer gives the rest of the tree,
+// which orchestra files (spec_tree.go); an update files through bd all it changes.
 
-// specSchema is the breakdown's answer: the root epic's ID, the assumptions it made, and, with no
-// root epic, why it filed none.
+// specSchema is an update's answer: the root epic's ID, the assumptions it made, and, with no root
+// epic, why it filed none. A breakdown for the first time answers specTreeSchema.
 const specSchema = `{"type":"object","properties":{"root":{"type":"string"},` +
 	`"assumptions":{"type":"array","items":{"type":"string"}},"problem":{"type":"string"}},` +
 	`"required":["root","assumptions"]}`
 
-// specAnswer is the breakdown's answer, as specSchema has it: a breakdownResult.
+// specAnswer is the breakdown's answer, as specSchema or specTreeSchema has it.
 type specAnswer struct {
-	Root        string   `json:"root"`
-	Assumptions []string `json:"assumptions"`
-	Problem     string   `json:"problem"`
+	Root        string      `json:"root"`
+	Assumptions []string    `json:"assumptions"`
+	Problem     string      `json:"problem"`
+	Issues      []specIssue `json:"issues"` // for orchestra to file under the root epic; none in an update
 }
 
 // specTools are the breakdown's tools: it reads, has sub-agents read, and runs bd and git.
@@ -69,8 +72,8 @@ type headlessBreakdown struct {
 	chrome  []string      // --chrome or --no-chrome, as workers get Chrome (dispatch.Config.SessionChrome)
 	say     tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
 	log     *dispatch.Log // nil in tests
-	// bd, which has what a session that gave no answer filed
-	tracker    specLister
+	// bd, which has what a session that gave no answer filed, and files the tree its answer gives
+	tracker    specBd
 	countEvery time.Duration // specCountEvery; tests give their own
 }
 
@@ -83,9 +86,10 @@ func newHeadlessBreakdown(s *session) headlessBreakdown {
 		countEvery: specCountEvery}
 }
 
-// BreakDown runs the session on the spec r names, and returns the root epic its answer names and the
-// assumptions it made. A session that fails, runs out of time or is stopped gives no answer: the root
-// epic is then the one it filed, as bd has it, if any.
+// BreakDown runs the session on the spec r names, files the tree its answer gives (fileAnswerTree), and
+// returns the root epic its answer names and the assumptions it made. A session that fails, runs out
+// of time or is stopped gives no answer: the root epic is then the one it filed, as bd has it, if
+// any. An answer orchestra can't file is an error, with the root epic it names.
 func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (breakdownResult, error) {
 	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
@@ -99,7 +103,11 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 		return breakdownResult{}, fmt.Errorf("the breakdown %w", err)
 	}
 	effort := cmp.Or(h.effort, project.DefaultSpecEffort)
-	args := specArgs(prompt, servers, effort, claudeHelp(ctx))
+	schema := specTreeSchema
+	if r.Update != nil {
+		schema = specSchema
+	}
+	args := specArgs(prompt, servers, effort, claudeHelp(ctx), schema)
 	h.logLine(fmt.Sprintf("SPEC: breaking %s down with claude (effort %s, time limit %s)", r.Path, effort,
 		command.ShortDuration(h.limit)))
 	progress := startSpecProgress(h.say, h.log, h.countEvery)
@@ -118,8 +126,37 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 		progress.end(ctx.Err() != nil)
 		return breakdownResult{Root: filedRoot(ctx, h.tracker, r.Spec)}, err
 	}
+	res := breakdownResult{Root: answer.Root, Assumptions: answer.Assumptions, Problem: answer.Problem}
+	if r.Update == nil && answer.Root != "" {
+		if res.Warnings, err = h.fileAnswer(ctx, r.Spec, answer, stream.filed); err != nil {
+			progress.end(ctx.Err() != nil)
+			return res, err
+		}
+	}
 	progress.done()
-	return breakdownResult(answer), nil
+	return res, nil
+}
+
+// fileAnswer files the tree the answer a gives for spec (fileAnswerTree), telling filed of each issue
+// filed, and logs what it filed. It returns the warnings about the root epic.
+func (h headlessBreakdown) fileAnswer(ctx context.Context, spec project.Spec, a specAnswer,
+	filed func(issues []filedIssue, ids []string)) ([]string, error) {
+	if len(a.Issues) > 0 {
+		h.logLine(fmt.Sprintf("SPEC: filing the %s of the breakdown's answer under %s", plural(len(a.Issues), "issue"),
+			a.Root))
+	}
+	began := time.Now()
+	done, err := fileAnswerTree(ctx, h.tracker, spec, a, func(f filedIssue, id string) {
+		filed([]filedIssue{f}, []string{id})
+	})
+	if err != nil {
+		return nil, err
+	}
+	if done.issues > 0 {
+		h.logLine(fmt.Sprintf("SPEC: filed %s and %s from the breakdown's answer (%s)", plural(done.issues, "issue"),
+			plural(done.links, "later blocks link"), command.ShortDuration(time.Since(began).Round(time.Second))))
+	}
+	return done.warnings, nil
 }
 
 // specArgs is the session's command line, past claude, for the instructions in prompt: its tools, its
@@ -128,7 +165,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 // and the stream of what it does. Its first message comes on stdin: an argument after the rules' list
 // would be read as one of them. dontAsk denies whatever the rules don't allow, whatever mode the
 // user's settings start Claude Code in; --permission-prompts none denies what would still prompt.
-func specArgs(prompt string, servers []string, effort, help string) []string {
+func specArgs(prompt string, servers []string, effort, help, schema string) []string {
 	args := slices.Concat([]string{"-p", "--append-system-prompt-file", prompt, "--tools", specTools}, servers,
 		[]string{"--allowedTools"})
 	args = append(args, specAllowed...)
@@ -138,7 +175,7 @@ func specArgs(prompt string, servers []string, effort, help string) []string {
 	if organ.ListsFlag(help, "--permission-prompts") {
 		args = append(args, "--permission-prompts", "none")
 	}
-	return append(args, "--output-format", "stream-json", "--verbose", "--json-schema", specSchema,
+	return append(args, "--output-format", "stream-json", "--verbose", "--json-schema", schema,
 		"--effort", effort)
 }
 
@@ -175,6 +212,12 @@ func specMessage(r breakdownRequest, limit time.Duration) string {
 // specLister is bd as a breakdown reads what it filed: the issues carrying the spec's metadata.
 type specLister interface {
 	WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error)
+}
+
+// specBd is bd as the headless breakdown has it: it reads what it filed, and files its answer's tree.
+type specBd interface {
+	specLister
+	treeFiler
 }
 
 // filedRoot is the root epic of the spec that bd has, as rootAmong finds it, or "": after a session

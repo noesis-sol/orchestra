@@ -26,17 +26,19 @@ import (
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
-// filingBd is a bd that files what bd create is given, as a line of JSON in filed: the first issue
-// without a parent as s-1, each other as its parent's ID and its number among the parent's children.
-// bd show and bd list (by --parent, or by the spec's --metadata-field) read filed; bd dep cycles
-// prints cycles, else none; bd ready finds nothing ready. Each call goes into bd-calls, its arguments
-// followed by |. Titles, acceptance criteria and metadata go into filed as they are given: tests give
-// them without characters JSON escapes.
+// filingBd is a bd that files what bd create is given, its flags as --flag value or --flag=value, as
+// a line of JSON in filed: the first issue without a parent as s-1, each other as its parent's ID and
+// its number among the parent's children; with --json it prints {"id":…}, else the ID. bd show and
+// bd list (by --parent, or by the spec's --metadata-field) read filed, bd show --json saying as bd
+// does when it has no issue by the ID; bd update --set-metadata k=v adds k to the issue's metadata,
+// once; bd dep cycles prints cycles, else none; bd ready finds nothing ready. Each call goes into
+// bd-calls, its arguments followed by |. Titles, acceptance criteria, labels and metadata go into
+// filed as they are given: tests give them without characters JSON escapes.
 const filingBd = `#!/bin/sh
 d=$(dirname "$0")
 for a in "$@"; do printf '%s|' "$a"; done >> "$d/bd-calls"; echo >> "$d/bd-calls"
 cmd=$1; shift; first=$1
-parent= field= type=task title= acceptance= metadata='{}'
+parent= field= type=task title= acceptance= metadata='{}' labels= json= set=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--parent) parent=$2; shift ;;
@@ -45,6 +47,15 @@ while [ $# -gt 0 ]; do
 	--title) title=$2; shift ;;
 	--acceptance) acceptance=$2; shift ;;
 	--metadata) metadata=$2; shift ;;
+	--labels) labels=$2; shift ;;
+	--set-metadata) set=$2; shift ;;
+	--parent=*) parent=${1#*=} ;;
+	--type=*) type=${1#*=} ;;
+	--title=*) title=${1#*=} ;;
+	--acceptance=*) acceptance=${1#*=} ;;
+	--metadata=*) metadata=${1#*=} ;;
+	--labels=*) labels=${1#*=} ;;
+	--json) json=1 ;;
 	esac
 	shift
 done
@@ -54,13 +65,23 @@ create)
 	if [ -z "$parent" ]; then id=s-1; else
 		n=$(grep -c "\"parent\":\"$parent\"" "$d/filed" 2>/dev/null); id="$parent.$((n+1))"
 	fi
-	printf '{"id":"%s","title":"%s","status":"open","issue_type":"%s","parent":"%s","acceptance_criteria":"%s","metadata":%s}\n' \
-		"$id" "$title" "$type" "$parent" "$acceptance" "$metadata" >> "$d/filed"
-	echo "$id" ;;
+	[ -z "$labels" ] || labels=$(printf '"%s"' "$labels" | sed 's/,/","/g')
+	printf '{"id":"%s","title":"%s","status":"open","issue_type":"%s","parent":"%s","acceptance_criteria":"%s","labels":[%s],"metadata":%s}\n' \
+		"$id" "$title" "$type" "$parent" "$acceptance" "$labels" "$metadata" >> "$d/filed"
+	if [ -n "$json" ]; then printf '{"id":"%s"}\n' "$id"; else echo "$id"; fi ;;
 show)
 	l=$(grep "\"id\":\"$first\"," "$d/filed" 2>/dev/null)
-	[ -n "$l" ] || { echo "Error: no issue found matching \"$first\"" >&2; exit 1; }
+	[ -n "$l" ] || {
+		[ -n "$json" ] && echo '{"error":"no issues found matching the provided IDs"}'
+		echo "Error: no issue found matching \"$first\"" >&2; exit 1
+	}
 	echo "[$l]" ;;
+update)
+	if [ -n "$set" ]; then
+		kv="\"${set%%=*}\":\"${set#*=}\""
+		sed "/\"id\":\"$first\",/{s|{}}\$|{@}}|;s|}}\$|,$kv}}|;s|{@,|{|;}" "$d/filed" > "$d/filed.new"
+		mv "$d/filed.new" "$d/filed"
+	fi ;;
 list)
 	if [ -n "$parent" ]; then listed "\"parent\":\"$parent\""
 	elif [ -n "$field" ]; then listed "\"spec\":\"${field#spec=}\""
@@ -168,16 +189,34 @@ func breakdownFixture(t *testing.T, help, body string) (repo, spec, tools string
 	return repo, spec, tools
 }
 
-// A spec run without --refine breaks the spec down in claude -p: the session files the tree with bd
-// and answers with its root epic and assumptions, and the run is scoped to that epic. Plain output
-// says each epic as it is filed, and the log has them, the session's cost and the assumptions.
+// answerTree is the rest of an app's tree, as the headless breakdown's answer gives it under its root
+// epic s-1: the epic Listing, with the tickets List the things (solo) and Name the things, which waits
+// for it; and the ticket Sort the things, under the root epic, which waits for List the things too,
+// given before it. filingBd files them as s-1.1, s-1.1.1, s-1.1.2 and s-1.2.
+var answerTree = []specIssue{
+	{Key: "listing", Type: "epic", Priority: 1, Title: "Listing", Description: "Lists things."},
+	{Key: "sort", Type: "task", Priority: 2, Title: "Sort the things", Description: "Sorts.", Acceptance: "Sorts them",
+		Files: []string{"sort.go"}, WaitsFor: []string{"list"}},
+	{Key: "list", Parent: "listing", Type: "task", Priority: 1, Title: "List the things", Description: "Lists.",
+		Acceptance: "Lists them", Labels: []string{"solo"}, Files: []string{"list.go"}},
+	{Key: "names", Parent: "listing", Type: "task", Priority: 2, Title: "Name the things", Description: "Names.",
+		Acceptance: "Names them", Files: []string{"names.go"}, WaitsFor: []string{" list "}},
+}
+
+// A spec run without --refine breaks the spec down in claude -p: the session files the root epic with
+// bd and answers with it, the rest of the tree and its assumptions. orchestra files the rest, each
+// issue under its parent with its labels, its files and the spec in its metadata and its blocks
+// links, notes the assumptions on the root epic and sets its SHA-256 and commit last; the tree passes
+// the checks, and the run is scoped to the root epic. Plain output says each epic as it is filed, and
+// the log has them, the session's cost, what orchestra filed and the assumptions.
 func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
-	repo, spec, tools := breakdownFixture(t, helpWithPrompts, fileTree(t)+answering(t, specAnswer{Root: "s-1",
-		Assumptions: []string{" Things are sorted by name, A to Z (s-1.2). ", ""}}))
+	root := filing(t, "toolu_1", "bd create --type epic --priority 1 --title 'An app' --metadata "+specMeta+" --silent")
+	repo, spec, tools := breakdownFixture(t, helpWithPrompts, root+answering(t, specAnswer{Root: "s-1",
+		Assumptions: []string{" Things are sorted by name, A to Z (Sort the things). ", ""}, Issues: answerTree}))
 	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
@@ -185,8 +224,8 @@ func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 	const kept = ".orchestra/specs/app.md"
 	for _, want := range []string{" breaking the spec down with claude… (ctrl+c stops)\n",
 		" SPEC: filed epic s-1: An app\n", " SPEC: filed epic s-1.1: Listing\n",
-		"broke the spec down into s-1 (2 epics, 2 tickets)\n",
-		"Assumed where the spec leaves a choice open:\n  - Things are sorted by name, A to Z (s-1.2).\n",
+		"broke the spec down into s-1 (2 epics, 3 tickets)\n",
+		"Assumed where the spec leaves a choice open:\n  - Things are sorted by name, A to Z (Sort the things).\n",
 		" ○ Nothing under s-1 is ready to run\n"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
@@ -199,16 +238,41 @@ func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 		!strings.Contains(in, "- time limit: 1h, after which orchestra stops this session\n") {
 		t.Errorf("the first message:\n%s", in)
 	}
-	if calls := read(t, filepath.Join(tools, "bd-calls")); !strings.Contains(calls,
-		"ready|--json|--limit|0|--exclude-label|human|--exclude-type|epic|--parent|s-1|\n") ||
-		strings.Contains(calls, "update|") {
-		t.Errorf("the run wasn't scoped to s-1, or the root epic's metadata was set again:\n%s", calls)
+	const meta = `|--metadata={"files":["%s"],"spec":".orchestra/specs/app.md"}|`
+	calls := read(t, filepath.Join(tools, "bd-calls"))
+	var at []int
+	for _, want := range []string{
+		"create|--json|--title=Listing|--description=Lists things.|--type=epic|--priority=1|--parent=s-1|" +
+			`--metadata={"spec":".orchestra/specs/app.md"}|`,
+		"create|--json|--title=Sort the things|--description=Sorts.|--type=task|--priority=2|--acceptance=Sorts them|" +
+			"--parent=s-1" + fmt.Sprintf(meta, "sort.go"),
+		"create|--json|--title=List the things|--description=Lists.|--type=task|--priority=1|--acceptance=Lists them|" +
+			"--parent=s-1.1|--labels=solo" + fmt.Sprintf(meta, "list.go"),
+		"create|--json|--title=Name the things|--description=Names.|--type=task|--priority=2|--acceptance=Names them|" +
+			"--parent=s-1.1|--deps=blocked-by:s-1.1.1" + fmt.Sprintf(meta, "names.go"),
+		"dep|add|s-1.2|s-1.1.1|",
+		"update|s-1|--append-notes|Assumptions\n\n- Things are sorted by name, A to Z (Sort the things).|",
+		"update|s-1|--set-metadata|spec_sha256=",
+		"update|s-1|--set-metadata|spec_commit=",
+		"ready|--json|--limit|0|--exclude-label|human|--exclude-type|epic|--parent|s-1|\n",
+	} {
+		i := strings.Index(calls, want)
+		if i < 0 {
+			t.Errorf("bd wasn't called with %q:\n%s", want, calls)
+		}
+		at = append(at, i)
+	}
+	if !slices.IsSorted(at) {
+		t.Errorf("bd was called out of order (%v):\n%s", at, calls)
 	}
 	log := unstamped(read(t, filepath.Join(repo, project.Dir, "orchestra.log")))
 	for _, want := range []string{"SPEC: breaking " + kept + " down with claude (effort high, time limit 1h)\n",
 		"SPEC: filed epic s-1: An app\n", "SPEC: filed epic s-1.1: Listing\n",
-		"SPEC: breakdown $1.2500 in 30 turns, ", ", session sess-1\n", "SPEC: broken down into s-1 (2 epics, 2 tickets)\n",
-		"SPEC: assumed: Things are sorted by name, A to Z (s-1.2).\n"} {
+		"SPEC: breakdown $1.2500 in 30 turns, ", ", session sess-1\n",
+		"SPEC: filing the 4 issues of the breakdown's answer under s-1\n",
+		"SPEC: filed 4 issues and 1 later blocks link from the breakdown's answer (",
+		"SPEC: broken down into s-1 (2 epics, 3 tickets)\n",
+		"SPEC: assumed: Things are sorted by name, A to Z (Sort the things).\n"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log lacks %q:\n%s", want, log)
 		}
@@ -304,7 +368,8 @@ var testSpec = project.Spec{Path: ".orchestra/specs/app.md", SHA256: strings.Rep
 // The session is claude -p in the main checkout with the breakdown's instructions, its tools Read,
 // Glob, Grep, Agent and Bash, no MCP servers (the project chose none), Bash allowed only bd and read-only git, Edit, Write and NotebookEdit
 // denied, nothing that would ask allowed (--permission-prompts none only where claude lists it), the
-// answer's schema, the stream of what it does, and the effort; its first message names the spec.
+// answer's schema (the tree's, for a spec broken down for the first time), the stream of what it does,
+// and the effort; its first message names the spec.
 func TestSpecBreakdownCommandLine(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -330,7 +395,7 @@ func TestSpecBreakdownCommandLine(t *testing.T) {
 				"Bash(git status *)", "Bash(git ls-files *)", "Bash(git ls-tree *)", "Bash(git grep *)",
 				"Bash(git blame *)", "Bash(git rev-parse *)", "Bash(git cat-file *)",
 				"--disallowedTools", "Edit", "Write", "NotebookEdit", "--permission-mode", "dontAsk"}, tc.prompts,
-				[]string{"--output-format", "stream-json", "--verbose", "--json-schema", specSchema, "--effort", "max"})
+				[]string{"--output-format", "stream-json", "--verbose", "--json-schema", specTreeSchema, "--effort", "max"})
 			if got := strings.Split(strings.TrimSuffix(read(t, filepath.Join(tools, "claude-args")), "\n"), "\n"); !reflect.DeepEqual(got, want) {
 				t.Errorf("claude ran with\n%q\nwant\n%q", got, want)
 			}
@@ -788,7 +853,8 @@ func TestSpecRunRefusesARootThatIsNotAnEpic(t *testing.T) {
 	}
 }
 
-// The checks' warnings are said on stderr and logged, and the run goes on.
+// The checks' warnings are said on stderr and logged, and the run goes on. The root epic's SHA-256
+// and commit, which orchestra sets after the headless breakdown's answer, are none of them.
 func TestSpecRunWarnsOfWhatIsAmissInTheTree(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -806,8 +872,10 @@ func TestSpecRunWarnsOfWhatIsAmissInTheTree(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}
 	log := read(t, filepath.Join(repo, project.Dir, "orchestra.log"))
+	if strings.Contains(stderr, "metadata out or wrong") {
+		t.Errorf("a warning that the root epic's metadata was left out:\n%s", stderr)
+	}
 	for _, want := range []string{
-		"the breakdown left s-1's spec_sha256, spec_commit metadata out or wrong; orchestra set it\n",
 		"tickets under s-1 without files metadata, whose files orchestra guesses (1): s-1.1\n",
 		"tickets under s-1 without acceptance criteria (1): s-1.1\n",
 		"a blocks cycle: s-1.1 → s-1 → s-1.1; none of them can start until it is broken (bd dep remove)\n",

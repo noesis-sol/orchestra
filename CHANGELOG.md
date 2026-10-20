@@ -58,6 +58,16 @@ All notable changes to orchestra are documented here. The format follows
   signal, not all of them in the worst one's: with only the CPU past its
   threshold, only the CPU reads amber, and the pressure stays green. The
   memory, which has no threshold, is uncoloured.
+- A spec's headless breakdown files only the root epic and the environment
+  setup ticket with `bd`, and gives the rest of the tree in its answer, which
+  orchestra files: each epic before what is under it, every issue with the
+  spec's metadata, then the blocks links, the assumptions in the root epic's
+  notes and its `spec_sha256` and `spec_commit` last. The session no longer
+  takes a turn for each `bd create`, each re-reading its whole context: on
+  tutti's spec, 46 of its 56 turns. An answer orchestra can't file as given
+  (a key used twice, a key that names no issue, a cycle) files none of it
+  and ends the run as a breakdown that didn't finish does. An update of the
+  tree, and a breakdown with `--refine`, still file through `bd` themselves.
 
 ## [0.8.5] - 2026-10-20
 

@@ -30,16 +30,16 @@ func TestWriteSpecPromptWritesTheInstructions(t *testing.T) {
 	for _, want := range []string{
 		"# Spec breakdown",
 		"never ask one", // the spec is final
-		"the most conservative reading consistent with it", // where it leaves a choice open
-		"under the heading `Assumptions`",                  // in the root epic's notes
-		"--set-metadata spec_sha256=<sha256>",              // the root epic's, set last
-		"carries the metadata `spec`",                      // every issue's
-		"label `solo` and priority 0",                      // the scaffold of a project with no code
+		"the most conservative reading consistent with it",                 // where it leaves a choice open
+		"under the heading `Assumptions`",                                  // in the root epic's notes
+		"sets the root epic's `spec_sha256` and `spec_commit` last of all", // by orchestra
+		"carries the metadata `spec`",                                      // every issue's
+		"label `solo` and priority 0",                                      // the scaffold of a project with no code
 		"`check_fast`", "`check_full`",
 		"Don't file a ticket that an open one already covers",
 		"never put a file name in text that many tickets share",
 		"<<'EOF'",
-		"`root`", "`assumptions`", "`problem`",
+		"`root`", "`assumptions`", "`problem`", "`issues`", "`key`", "`parent`", "`waits_for`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the instructions lack %q", want)

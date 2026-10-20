@@ -513,6 +513,7 @@ type NewTicket struct {
 	Parent                         string   // "" for none
 	BlockedBy                      []string // the tickets it waits for
 	Files                          []string
+	Metadata                       map[string]string // more of its metadata, besides its files
 	Labels                         []string
 }
 
@@ -523,9 +524,9 @@ func (b Tracker) FileBug(ctx context.Context, title, description, label string) 
 }
 
 // Create files the ticket and returns its ID. Files go in the metadata under dispatch.FilesKey,
-// which footprint scheduling reads. When bd's output can't be read, the error carries bd's stderr.
-// When bd has no ticket by the parent's ID or one it waits for, it files nothing: bd would link the
-// ticket to one whose ID starts with it.
+// which footprint scheduling reads, with the rest of its Metadata. When bd's output can't be read,
+// the error carries bd's stderr. When bd has no ticket by the parent's ID or one it waits for, it
+// files nothing: bd would link the ticket to one whose ID starts with it.
 func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	linked := t.BlockedBy
 	if t.Parent != "" {
@@ -548,12 +549,19 @@ func (b Tracker) Create(ctx context.Context, t NewTicket) (string, error) {
 	if len(t.Labels) > 0 {
 		args = append(args, "--labels="+strings.Join(t.Labels, ","))
 	}
-	if len(t.Files) > 0 {
-		meta, err := json.Marshal(map[string][]string{dispatch.FilesKey: t.Files})
+	if len(t.Files) > 0 || len(t.Metadata) > 0 {
+		meta := map[string]any{}
+		for k, v := range t.Metadata {
+			meta[k] = v
+		}
+		if len(t.Files) > 0 {
+			meta[dispatch.FilesKey] = t.Files
+		}
+		b, err := json.Marshal(meta)
 		if err != nil {
 			return "", err
 		}
-		args = append(args, "--metadata="+string(meta))
+		args = append(args, "--metadata="+string(b))
 	}
 	out, runErr := b.bd(ctx, command.WriteLimit, args...)
 	if runErr != nil {

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,6 @@ func TestSpecBreakdownFilesTheEnvironmentFirst(t *testing.T) {
 		"or the repository has no code yet",
 		"one ticket for all of its basic setup, the environment included",
 		"label `solo` and priority 0", "every other ticket waits for it",
-		"file it first, and give every other ticket a blocks link to it",
 		"The toolchain: each tool that the tickets after it need, at the version they need",
 		"checked with its version command and installed where it is missing",
 		"with a user-level package manager or the tool's own installer", "never with `sudo`",
@@ -54,11 +54,23 @@ func TestSpecBreakdownFilesTheEnvironmentFirst(t *testing.T) {
 		"in its Build & Test section, and its README saying what to install and how, with the versions",
 		"A spec that adds a tool to a repository with code", "gets the ticket all the same, without the scaffold",
 	}
-	for name, write := range map[string]func(repo string) (string, error){
-		"headless":                   func(repo string) (string, error) { return WriteSpecPrompt(repo, false) },
-		"refinement in a pane":       func(repo string) (string, error) { return WriteRefinePrompt(repo, RefineSpec) },
-		"refinement on the terminal": func(repo string) (string, error) { return WriteTerminalRefine(repo, RefineSpec) },
+	// The headless breakdown files it with bd and has the tickets of its answer wait for it; one with
+	// the user files it first and links every other ticket to it.
+	const (
+		inAnswer = "file it with bd right after the root epic, before you answer, so that the run can start on it " +
+			"while orchestra files the rest, and list its ID in the `waits_for` of every ticket in your answer"
+		filedFirst = "file it first, and give every other ticket a blocks link to it"
+	)
+	for name, tc := range map[string]struct {
+		write func(repo string) (string, error)
+		link  string
+	}{
+		"headless":                   {func(repo string) (string, error) { return WriteSpecPrompt(repo, false) }, inAnswer},
+		"refinement in a pane":       {func(repo string) (string, error) { return WriteRefinePrompt(repo, RefineSpec) }, filedFirst},
+		"refinement on the terminal": {func(repo string) (string, error) { return WriteTerminalRefine(repo, RefineSpec) }, filedFirst},
 	} {
+		write := tc.write
+		want := append(slices.Clone(want), tc.link)
 		t.Run(name, func(t *testing.T) {
 			p, err := write(runFolder(t))
 			if err != nil {
