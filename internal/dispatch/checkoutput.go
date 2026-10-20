@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -193,19 +194,33 @@ func (c *checkOutput) scanFailure(line []byte) {
 	}
 }
 
-// saysFailed reports whether line, t trimmed, says what failed, as failedAnywhere or failedAtStart
-// matches it. Go's regexp reads a long line at a few MB a second, slower than a check that loops can
-// print: each is tried only on a line that holds text every line it matches holds, which a plain
-// search finds much faster.
+// saysFailed reports whether line, t trimmed, says what failed, as failedAnywhere, failedTest or
+// failedAtStart matches it. Go's regexp reads a long line at a few MB a second, slower than a check
+// that loops can print: each is tried only on a line that holds text every line it matches holds,
+// which a plain search finds much faster.
 func saysFailed(t, line []byte) bool {
 	if (bytes.Contains(t, []byte("FAIL")) || bytes.Contains(t, []byte("DATA RACE")) ||
 		bytes.Contains(t, []byte("race detected"))) && failedAnywhere.Match(t) {
+		return true
+	}
+	if mayFailTest(t) && failedTest.Match(t) {
 		return true
 	}
 	// A colon, but for a tool's own error and gotestsum's DONE line.
 	may := bytes.IndexByte(line, ':') >= 0 || bytes.HasPrefix(line, []byte("DONE ")) ||
 		bytes.HasPrefix(line, []byte("level=error")) || len(line) >= 5 && bytes.EqualFold(line[:5], []byte("error"))
 	return may && failedAtStart.Match(line)
+}
+
+// mayFailTest reports whether t holds text every line failedTest matches holds: a word for failing, a
+// panic, a numbered item's ") ", TAP's "not ok", or a runner's mark for a failed test at its start.
+func mayFailTest(t []byte) bool {
+	if bytes.Contains(t, []byte("FAIL")) || bytes.Contains(t, []byte("fail")) || bytes.Contains(t, []byte(") ")) ||
+		bytes.Contains(t, []byte("panicked")) || bytes.HasPrefix(t, []byte("not ok")) {
+		return true
+	}
+	r, _ := utf8.DecodeRune(t)
+	return strings.ContainsRune(failedMarks, r)
 }
 
 // failures is the lines that say what failed, each once, at most maxSaid of them, each cut to
@@ -254,12 +269,24 @@ var (
 	// (go test's FAIL and --- FAIL:, gotestsum's === FAIL:, a bare FAIL saying nothing more aside), or
 	// that the race detector found a data race, in the test --- FAIL: then names.
 	failedAnywhere = regexp.MustCompile(`^(FAIL\W+\S|--- FAIL|=== FAIL)|DATA RACE|race detected`)
+	// failedTest matches a line of a check's output, trimmed, in which another test runner than go
+	// test says a test failed, naming it, or counts the failures: bun's (fail), jest's ✕ and ● (its
+	// FAIL line is failedAnywhere's), vitest's ×, bun's ✗ and node's ✖ (vitest's FAIL and cargo
+	// nextest's are failedAnywhere's too), pytest's FAILED in its summary or after the test's path,
+	// cargo's "test … ... FAILED", "test result: FAILED" and a test's panic, mocha's "1) …" and "N
+	// failing", TAP's "not ok", and the counts of failures jest, vitest, pytest and bun end with.
+	failedTest = regexp.MustCompile(`^(\(fail\) |[` + failedMarks + `] \S|FAILED |\S+::\S+ FAILED\b|` +
+		`test .* \.\.\. FAILED$|test result: FAILED|thread '.*' panicked at |\d+\) \S|not ok \d|` +
+		`[1-9]\d* fail(ing)?$|(Tests|Test Suites|Test Files):?\s+[1-9]\d* failed\b|=+ (.*\D)?[1-9]\d* failed\b)`)
 	// failedAtStart matches a line that, unindented, says what failed: a panic (a test that timed out),
 	// a tool's own error, gotestsum's count of failures, golangci-lint's of issues, and a lint, vet or
 	// build error, which starts with its file's position. A failing test's own messages are indented.
 	failedAtStart = regexp.MustCompile(`^(panic:|(?i:error)\b|fatal:|level=error|DONE \d.*fail|\d+ issues?:|` +
 		`[^\s:]+\.\w+:\d+(:\d+)?: )`)
 )
+
+// failedMarks are the marks test runners put before a test that failed (see failedTest).
+const failedMarks = "✕×✗✖●"
 
 // flakyPrefix starts a line of a check's output that says a test failed and then passed on a rerun:
 // a convention for any project's check, which docs/setup.md's The checks documents.

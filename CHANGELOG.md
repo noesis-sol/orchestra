@@ -48,6 +48,15 @@ All notable changes to orchestra are documented here. The format follows
   with the branch on top of the base, or a fix committed is taken as its
   answer, checked and merged. A worker that hadn't finished is told, after
   the reset, to carry on with the hand-back rather than with its ticket.
+- A failed check's hand-back (FIXING), its `CHECKS_FAILED` evidence and the
+  run report quote the lines in which test runners other than go test name
+  a failed test or count the failures: bun's `(fail) <test>`, jest's `✕`
+  and `●`, vitest's `×`, node's `✖`, pytest's `FAILED <path>::<test>`,
+  cargo's `test <name> ... FAILED`, `test result: FAILED` and the test's
+  panic, mocha's numbered failures and `N failing`, and TAP's `not ok`.
+  Lines were picked by go test's words alone, so tutti's hand-backs quoted
+  bun's `error: expect(received).toBe(expected)` without the test, and its
+  workers searched `check.log` for it.
 - A hand-back (resolving a conflict, fixing a failing check) past its time
   limit with its worker still at it no longer puts the branch back under
   the worker without a word: a rebase that has finished, with the branch on

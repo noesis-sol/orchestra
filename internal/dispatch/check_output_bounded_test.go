@@ -73,12 +73,14 @@ func TestSaysFailedIsWhatTheRegexpsMatch(t *testing.T) {
 	words := []string{"", "FAIL", "FAIL\t./a", "FAIL:", "--- FAIL", "=== FAIL", "DATA RACE", "WARNING: DATA RACE",
 		"race detected", "panic:", "panic", "error", "Error", "ERROR:", "errors", "error_x", "fatal:", "level=error",
 		"level=warn", "DONE 3 tests, 1 failure", "DONE x fail", "12 issues:", "1 issue:", "a.go:1: x", "a.go:1:2: x",
-		"a.go:x: ", "ok", "  ", "\t", ":", "x"}
+		"a.go:x: ", "ok", "  ", "\t", ":", "x", "(fail)", "(fail) ", "fail", "failing", "failed", "FAILED", "✕ ", "× ",
+		"✗", "●", "a::b", "test", "...", "test result:", "thread 'a'", "panicked at", "1)", ") ", "not ok", "1", "Tests:",
+		"Test Files", "=", "==="}
 	for _, a := range words {
 		for _, b := range words {
 			for _, line := range []string{a + b, a + " " + b, "  " + a + b} {
 				t1 := []byte(strings.TrimSpace(line))
-				want := failedAnywhere.Match(t1) || failedAtStart.Match([]byte(line))
+				want := failedAnywhere.Match(t1) || failedTest.Match(t1) || failedAtStart.Match([]byte(line))
 				if got := saysFailed(t1, []byte(line)); got != want {
 					t.Errorf("%q: saysFailed %v, the regexps %v", line, got, want)
 				}

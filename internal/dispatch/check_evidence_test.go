@@ -209,8 +209,8 @@ func TestWhatAFailedCheckSaidIsBounded(t *testing.T) {
 	}
 }
 
-// failureLines picks the lines of a failed check's output that say what failed, as failedAnywhere and
-// failedAtStart match them, with the tests still running when go test timed out, which the lines
+// failureLines picks the lines of a failed check's output that say what failed, as failedAnywhere,
+// failedTest and failedAtStart match them, with the tests still running when go test timed out, which the lines
 // after its "running tests:" name. Each is kept once, and at most maxSaid of them, the last saying
 // how many more there are. A check's output is read as it is printed (see checkOutput.failures).
 func failureLines(out string) []string {
