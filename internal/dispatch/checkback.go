@@ -226,10 +226,10 @@ func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checke
 		"(%d of %d, up to %s)", o.failedHow(res.setup, res.err), r.branchOn(c.Base), r.tab, n, c.CheckHandBacks,
 		command.ShortDuration(o.handBackLimit()))
 	prompt := o.fixPrompt(context.WithoutCancel(ctx), r, res)
-	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, at, func(late bool) string {
+	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, at, func(unsettled bool) string {
 		var rejected string
 		fixed, rejected = o.verifyFixed(ctx, r, at)
-		if late && rejected == "" && fixed == committedNothing {
+		if unsettled && rejected == "" && fixed == committedNothing {
 			return "its worker has committed no fix yet" // still at it: not done
 		}
 		return rejected

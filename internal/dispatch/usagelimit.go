@@ -19,8 +19,9 @@ import (
 // limit too, and each worker that reached it waits, neither told to continue nor settled, nor counted
 // toward the hold for the environment (see waitSettled), the time not counting toward its ticket
 // limit. A worker handed its finished ticket back (see waitResolved) waits the same way, the time not
-// counting toward the hand-back's time limit; one limited as it is handed back is given the hand-back
-// where it would be told to carry on. A minute after the limit resets (Claude Code says when, to the
+// counting toward the hand-back's time limit, unless git shows it had done what it was handed back as
+// its turn ended (see handBackTo); one limited as it is handed back is given the hand-back where it
+// would be told to carry on. A minute after the limit resets (Claude Code says when, to the
 // minute), each worker still limited is told to carry on, and the hold lifts; Claude Code's own
 // automatic continue, when on, has carried it on by then. When the reset isn't known, one limited
 // worker is told to carry on every limitRetry, to try the limit. A worker seen going on for
@@ -531,12 +532,12 @@ func carryOnAfterLimit(id string) string {
 }
 
 // tellAfterLimit tells the limited worker w to carry on now that the usage limit has reset, or may
-// have, with msg: with its ticket (carryOnAfterLimit), or with the hand-back it waited to be given (see
-// waitResolved). It reports whether it took that up. Escape goes first: with Claude Code's automatic
-// continue off, it asks what to do in a dialog that text typed into would answer, and Escape dismisses
-// it; with it on, Escape cancels its own continue if it still waits, which this message takes the
-// place of. One that has gone on since its status was read, its own continue having fired, is not
-// interrupted: it isn't told.
+// have, with msg: with its ticket (carryOnAfterLimit), with its hand-back (carryOnHandBack), or with
+// the hand-back it waited to be given (see waitResolved). It reports whether it took that up. Escape
+// goes first: with Claude Code's automatic continue off, it asks what to do in a dialog that text typed
+// into would answer, and Escape dismisses it; with it on, Escape cancels its own continue if it still
+// waits, which this message takes the place of. One that has gone on since its status was read, its
+// own continue having fired, is not interrupted: it isn't told.
 func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait, msg string) bool {
 	if st, err := o.agents.Status(ctx, w.agent); err == nil && st != StateLimited {
 		return false // gone on by itself: the polls that follow see it

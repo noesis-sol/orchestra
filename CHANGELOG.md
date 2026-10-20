@@ -41,6 +41,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker handed its ticket back (resolving a conflict, fixing a failing
+  check) whose turn ends on the account's usage limit as it finishes no
+  longer holds its ticket, and those after it, until the limit resets:
+  while it shows limited, orchestra looks at git, and a rebase finished,
+  with the branch on top of the base, or a fix committed is taken as its
+  answer, checked and merged. A worker that hadn't finished is told, after
+  the reset, to carry on with the hand-back rather than with its ticket.
 - A hand-back (resolving a conflict, fixing a failing check) past its time
   limit with its worker still at it no longer puts the branch back under
   the worker without a word: a rebase that has finished, with the branch on

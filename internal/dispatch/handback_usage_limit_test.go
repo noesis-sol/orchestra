@@ -55,7 +55,8 @@ func checkRan(dir, id string) bool {
 
 // A worker handed its failing check back that reaches the usage limit holds the run: no new ticket
 // starts, and it isn't set aside when the hand-back's 20 minutes are up, as the time it waits doesn't
-// count. A minute after the reset it is told to carry on, Escape first, and its fix merges.
+// count. A minute after the reset it is told to carry on with the hand-back, Escape first, and its fix
+// merges.
 func TestAWorkerLimitedInAHandBackHoldsTheRunUntilTheReset(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -89,7 +90,8 @@ func TestAWorkerLimitedInAHandBackHoldsTheRunUntilTheReset(t *testing.T) {
 		if got := h.herdr.typedTo("A"); !equal(got, []string{"prompt", "esc", "prompt"}) {
 			t.Errorf("typed to A: %q, want the hand-back, then Escape and one message", got)
 		}
-		if got := h.herdr.pastedText("A"); len(got) != 2 || !strings.Contains(got[1], "usage limit has reset. Carry on with A") {
+		if got := h.herdr.pastedText("A"); len(got) != 2 ||
+			!strings.Contains(got[1], "usage limit has reset. Carry on where you left off with the failing check") {
 			t.Errorf("pasted to A: %q", got)
 		}
 		logged := h.logged()
