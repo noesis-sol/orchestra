@@ -131,6 +131,7 @@ func slowTriage(t *testing.T, started string) string {
 // Ctrl+C during "finishing triage…" skips the organs: the triage in progress and the deferrals
 // still queued are dropped, with no TRIAGE_FAILED for any of them.
 func TestSkippingTheOrgansDropsTriageQuietly(t *testing.T) {
+	t.Parallel()
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
@@ -180,6 +181,7 @@ func TestSkippingTheOrgansDropsTriageQuietly(t *testing.T) {
 
 // Once the organs are skipped, a ticket deferred before FinishTriage has run gathers no evidence.
 func TestNoEvidenceOnceTheOrgansAreSkipped(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

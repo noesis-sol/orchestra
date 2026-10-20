@@ -55,6 +55,7 @@ func TestNothingToRunKeepsADeferredTicketsDirtyWorktree(t *testing.T) {
 }
 
 func TestStartKeepsADeferredTicketsDirtyWorktree(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		deferredTickets(h.beads)

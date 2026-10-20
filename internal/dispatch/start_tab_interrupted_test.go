@@ -27,6 +27,7 @@ func (tabCreateCut) TabLabel(ctx context.Context, tab string) (string, bool, err
 // Ctrl+C while Herdr opens a worker's tab interrupts the run, and the log keeps what CreateTab said
 // became of the tab.
 func TestTabCreateCutByCtrlCIsLogged(t *testing.T) {
+	t.Parallel()
 	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")

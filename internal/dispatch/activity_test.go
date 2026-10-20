@@ -3,6 +3,7 @@ package dispatch
 import "testing"
 
 func TestDoingOf(t *testing.T) {
+	t.Parallel()
 	bash := func(cmd string) ToolUse { return ToolUse{Event: "PreToolUse", Tool: "Bash", Command: cmd} }
 	cases := []struct {
 		u     ToolUse

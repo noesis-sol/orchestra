@@ -16,6 +16,7 @@ import (
 // internal/dispatch/cart.go, as it overlaps one listing a file that is there, but not one listing a
 // new internal/dispatch/cart.ts, nor a file in a folder it matched nothing in.
 func TestAGlobHoldsTheNewFilesItWouldMatch(t *testing.T) {
+	t.Parallel()
 	dispatchGo := []string{"internal/dispatch/loop.go", "internal/dispatch/loop_test.go", "internal/dispatch/run.go"}
 	for _, c := range []struct {
 		entry        string
@@ -73,6 +74,7 @@ func TestAGlobHoldsTheNewFilesItWouldMatch(t *testing.T) {
 // A partial glob is anchored at every folder it matched in, and at none other; a folder's name with
 // brackets (a SvelteKit route) is a part of the anchored glob as it is, matching itself.
 func TestAGlobIsAnchoredWhereItMatched(t *testing.T) {
+	t.Parallel()
 	tracked := []string{"cmd/dispatch/main.go", "internal/dispatch/loop.go", "internal/tui/run.go"}
 	glob := TicketFootprint(listing("a", "dispatch/*.go"), tracked, "")
 	if want := []string{"cmd/dispatch/*.go", "internal/dispatch/*.go"}; !slices.Equal(glob.Globs, want) {
@@ -109,6 +111,7 @@ func TestAGlobIsAnchoredWhereItMatched(t *testing.T) {
 // one, as before: by function in a file where both name functions it mentions. A file one of them
 // adds that the glob would match is shared.
 func TestAGlobKeepsComparingItsFilesByFunction(t *testing.T) {
+	t.Parallel()
 	tracked := []string{"README.md", "pkg/x.go"}
 	in := sourcesIn(map[string]string{"pkg/x.go": "package pkg\n\nfunc Foo() {}\n\nfunc Bar() {}\n"})
 	naming := func(id, fn string, files ...string) Footprint {
@@ -143,6 +146,7 @@ func TestAGlobKeepsComparingItsFilesByFunction(t *testing.T) {
 // one listing a new internal/dispatch/cart.go, which counts as small however large the files there
 // are, but not with one listing a new internal/dispatch/cart.ts.
 func TestPlanLinksAGlobToANewFileItWouldMatch(t *testing.T) {
+	t.Parallel()
 	read := func(lines int) func(string) ([]byte, error) {
 		return func(p string) ([]byte, error) {
 			if !slices.Contains(trackedNested, p) {

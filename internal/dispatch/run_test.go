@@ -46,6 +46,7 @@ func (h *holdSink) Event(ev Event) {
 }
 
 func TestEveryWorkersStopReasonIsReported(t *testing.T) {
+	t.Parallel()
 	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
@@ -150,6 +151,7 @@ func newDeferringLoop(t *testing.T) (*Loop, deferringTickets, *goneSink) {
 // naming it once it has waited a while, so triage closes and the reviewer reads the loop only once
 // it has stopped changing.
 func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o, tk, sink := newDeferringLoop(t)
 		ctx, cancel := context.WithCancel(t.Context())
@@ -440,6 +442,7 @@ func waiting(s *runSink) []string {
 }
 
 func TestInterruptLineNamesTheWorkersLeftRunning(t *testing.T) {
+	t.Parallel()
 	if got := InterruptLine("with Ctrl+C", nil); got != "INTERRUPTED: stopped with Ctrl+C; a running worker keeps its tab and worktree" {
 		t.Errorf("no workers: %q", got)
 	}

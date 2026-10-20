@@ -141,6 +141,7 @@ func TestInterruptLabelsTheTicketLeftRunning(t *testing.T) {
 // A ticket left running that bd can't label is warned about, with the command to label it by hand;
 // one labelled already isn't labelled again.
 func TestTicketLeftRunningLabelFailureIsWarned(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

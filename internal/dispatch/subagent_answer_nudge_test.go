@@ -55,6 +55,7 @@ func TestWorkerIdleAsItsSubagentStopsIsNotNudged(t *testing.T) {
 // grace, saying why; one that stopped before the Stop, or the stop the hooks don't place (a fork's,
 // at the end of the turn), leaves the turn ended at the Stop.
 func TestSubagentStoppedAfterTheStopIsMidTurn(t *testing.T) {
+	t.Parallel()
 	stop := time.Now().Add(-time.Minute)
 	hooks := &recordReporter{records: map[string]HookRecord{"wt": {SubagentStopped: stop.Add(time.Second)}}}
 	w := worker{wt: "wt", hooks: true}

@@ -7,6 +7,7 @@ import (
 
 // metadataField reads a key from the metadata as bd gives it: an object, or one encoded as a string.
 func TestMetadataFieldReadsAnObjectOrOneInAString(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, meta, key, want string
 	}{

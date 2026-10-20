@@ -56,6 +56,7 @@ var errPromptNotStarted = errors.New("the agent did not start")
 // terminal typed for it: cmux before 0.65 types a line attaching the file a prompt of several lines
 // is in, which shows none of its lines, and from 0.65 pastes it.
 func TestLostEnterAfterATypedLinePressesEnter(t *testing.T) {
+	t.Parallel()
 	prompt := "Work on orchestra-1: the check fails on main.\n\nRead the ticket first, then fix the test it names."
 	for _, c := range []struct{ name, typed string }{
 		{"cmux 0.64, through a file", "My message to you is in @.orchestra/run/cmux-prompt-c1.md : read it, " +

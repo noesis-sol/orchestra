@@ -236,6 +236,7 @@ func TestAWorkerContinuedByClaudeCodeIsNotToldAgain(t *testing.T) {
 // with the reset its words give, when the run holds for nothing; while it holds, another refusal starts no
 // other hold.
 func TestAnOrganRefusedForTheLimitStartsTheHold(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

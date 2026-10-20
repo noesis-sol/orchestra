@@ -30,6 +30,7 @@ func fromSpec(spec, extra, title, text string) Ticket {
 // specs under .orchestra/specs/ are, so they run side by side. The metadata may name it with ./ or
 // spaces, or hold it encoded in a string, as bd may give it.
 func TestTicketsFromASpecInTheRepositoryRunSideBySide(t *testing.T) {
+	t.Parallel()
 	for _, spec := range []string{"docs/shop-spec.md", "./docs/shop-spec.md", " docs//shop-spec.md\n"} {
 		for _, cite := range []string{"docs/shop-spec.md", "./docs/shop-spec.md", "docs/shop-spec.md:40", "shop-spec.md"} {
 			for _, tracked := range [][]string{trackedWithOwnSpec, nil} {
@@ -70,6 +71,7 @@ func TestTicketsFromASpecInTheRepositoryRunSideBySide(t *testing.T) {
 // A ticket listing its spec in its files metadata works on it: it overlaps another listing it, and
 // one naming it without coming from it.
 func TestATicketListingItsSpecCountsIt(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedWithOwnSpec, nil} {
 		listed := fromSpec("docs/shop-spec.md", `{"files": ["docs/shop-spec.md"]}`,
 			"Revise the spec", "Reword docs/shop-spec.md's Cart.")
@@ -91,6 +93,7 @@ func TestATicketListingItsSpecCountsIt(t *testing.T) {
 // A ticket that doesn't come from the spec counts it when it names it: one without spec metadata,
 // one from another spec, and one whose spec metadata is no path in the repository.
 func TestATicketFromNoSpecCountsTheSpec(t *testing.T) {
+	t.Parallel()
 	text := "Fix a typo in docs/shop-spec.md."
 	for name, tk := range map[string]Ticket{
 		"no metadata":             {Title: "Fix a typo", Description: text},
@@ -114,6 +117,7 @@ func TestATicketFromNoSpecCountsTheSpec(t *testing.T) {
 
 // The spec's name may be in either Unicode form, in its metadata, in the text and as git lists it.
 func TestTheOwnSpecInEitherUnicodeForm(t *testing.T) {
+	t.Parallel()
 	nfc, nfd := "docs/café.md", norm.NFD.String("docs/café.md")
 	for _, listed := range []string{nfc, nfd} {
 		for _, spec := range []string{nfc, nfd} {
@@ -131,6 +135,7 @@ func TestTheOwnSpecInEitherUnicodeForm(t *testing.T) {
 // The files predicted for a ticket from a spec leave the spec out too: those cached on it, those
 // predicted in this run for a ready ticket, and those given a running one.
 func TestPredictedFilesLeaveOutTheOwnSpec(t *testing.T) {
+	t.Parallel()
 	cached := fromSpec("docs/shop-spec.md", `{"predicted_files": "docs/shop-spec.md,README.md"}`,
 		"Add the cart", "Build the cart, as docs/shop-spec.md says.")
 	want := Footprint{Files: []string{"README.md"}, Predicted: true}
@@ -157,6 +162,7 @@ func TestPredictedFilesLeaveOutTheOwnSpec(t *testing.T) {
 // orchestra plan reads the same footprints: tickets citing their spec in the repository get no link
 // for it, and tickets listing it get one.
 func TestPlanLinksLeaveOutTheOwnSpec(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Build the cart, as docs/shop-spec.md says under Cart."),
 		planTicket("b", 2, "", "Build checkout, as docs/shop-spec.md says under Checkout."),

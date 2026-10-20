@@ -25,6 +25,7 @@ func (f flakyCheckout) DirtyTree(ctx context.Context, dir string) (string, error
 // A git call that fails says nothing about the checkout: it is tried again, and when it keeps
 // failing the run stops for git, not for uncommitted changes.
 func TestFailingGitIsNotADirtyTree(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		fails int
 		want  string

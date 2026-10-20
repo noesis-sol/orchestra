@@ -230,6 +230,7 @@ func TestFullCheckFailureFilesOneTicketForItsSuite(t *testing.T) {
 
 // A check that says nothing of its suites is named for the check itself.
 func TestFullCheckWithoutSuiteLinesIsNamedForItself(t *testing.T) {
+	t.Parallel()
 	if got := failingSuite([]byte("ok\nFAIL\n")); got != "" {
 		t.Errorf("suite %q", got)
 	}

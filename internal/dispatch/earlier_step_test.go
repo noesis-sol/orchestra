@@ -5,6 +5,7 @@ import "testing"
 // A returning ticket's earlier worker is adopted, told to carry on, renamed or left, or stops the
 // run, by its state and whether it was left by a question asked in this run.
 func TestEarlierStep(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		st    AgentState
 		asked bool
@@ -34,6 +35,7 @@ func TestEarlierStep(t *testing.T) {
 }
 
 func TestStillIn(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		st   AgentState
 		want string

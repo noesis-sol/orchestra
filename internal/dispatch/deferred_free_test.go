@@ -105,6 +105,7 @@ func TestNothingToRunDropsTheDeferredListWhenBdFails(t *testing.T) {
 
 // The START block lists them too, after the tickets left unmerged, and the run leaves them deferred.
 func TestStartListsTheDeferredTicketsWhoseBlockersMerged(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		deferredTickets(h.beads)
@@ -134,6 +135,7 @@ func TestStartListsTheDeferredTicketsWhoseBlockersMerged(t *testing.T) {
 
 // A bd failure drops the START block's list, with a line in the log, and the run goes on.
 func TestStartGoesOnWhenBdCantListTheDeferredTickets(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		deferredTickets(h.beads)

@@ -8,6 +8,7 @@ import (
 // Go's keywords and builtins, and calls into standard packages, are not functions a ticket works on:
 // two tickets naming func() or synctest.Wait() don't overlap for it.
 func TestTicketFootprintLeavesOutKeywordsAndStdCalls(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, text string
 		want       []string
@@ -42,6 +43,7 @@ func TestTicketFootprintLeavesOutKeywordsAndStdCalls(t *testing.T) {
 
 // The acceptance case: func(), synctest.Test() and synctest.Wait() leave the real names alone.
 func TestTicketFootprintKeepsRealNamesBesideKeywords(t *testing.T) {
+	t.Parallel()
 	tk := Ticket{ID: "x", Title: "Settle Loop.merge in a bubble",
 		Description: "Run it in synctest.Test() as `synctest.Test(t, func(t *testing.T){…})` and call synctest.Wait() " +
 			"where `waitSettled` polled; func() literals stay. Loop.merge still calls `o.agentName(id)`."}

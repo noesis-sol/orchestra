@@ -5,6 +5,7 @@ import "testing"
 // A reason is said the first time, again only once it changes, and after forget whatever it is; no
 // reason is never said, and clears the last one.
 func TestSayOnceSaysAReasonAgainOnlyWhenItChanges(t *testing.T) {
+	t.Parallel()
 	steps := []struct {
 		id, why string
 		forget  bool

@@ -104,6 +104,7 @@ func TestAResolutionLeftOffItsBranchIsRejected(t *testing.T) {
 // On a stub git: the verifiers reject a worktree off its branch, and restoreBranch resets nothing then,
 // as a reset in the worktree would reset what it has checked out.
 func TestAWorktreeOffItsBranchIsRejectedAndNotReset(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ on, says string }{
 		{"other", "other checked out"},
 		{"HEAD", "a detached HEAD"},

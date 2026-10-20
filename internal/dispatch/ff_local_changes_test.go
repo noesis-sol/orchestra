@@ -30,6 +30,7 @@ func writeFile(t *testing.T, dir, file, content string) {
 }
 
 func TestMergeStopsOnLocalChangesUnderExcludedPaths(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, file string
 		tracked    bool // committed on main before the ticket; else the ticket adds it, untracked in the checkout
@@ -91,6 +92,7 @@ func (refusingMerger) FastForward(ctx context.Context, repo, branch string) (str
 // A fast-forward refused for another reason, local changes to files the branch doesn't change
 // included, still stops with MERGE_FAILED, which now says what git said.
 func TestMergeFailedSaysWhatGitSaid(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.merger = refusingMerger{}
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")

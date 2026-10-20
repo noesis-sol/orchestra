@@ -101,6 +101,7 @@ func (failingDescendants) Descendants(context.Context, string) ([]Ticket, error)
 // A failed read of a scope's descendants keeps the last count, as nothing depends on it; without a
 // scope, the count is bd's list of tickets not closed.
 func TestUnclosedKeepsTheLastCountOnAFailedRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := newRunState(ctx, New(Config{Ticket: "R"}, nil, "", Deps{Tickets: failingDescendants{}}))
 	open, _ := r.o.tickets.Unclosed(ctx)
@@ -122,6 +123,7 @@ func TestUnclosedKeepsTheLastCountOnAFailedRead(t *testing.T) {
 
 // The event stream's dispatch and queue records give the count; one not yet read is left out.
 func TestEventRecordGivesUnclosed(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		ev   Event
 		want any // the record's unclosed; nil for none

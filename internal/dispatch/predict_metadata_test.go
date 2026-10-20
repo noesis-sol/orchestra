@@ -50,6 +50,7 @@ func TestPredictedPathWithASpaceReadsBackWhole(t *testing.T) {
 
 // A prediction cached before it was a JSON list, joined with commas, still reads as it did.
 func TestPredictionCachedWithCommasStillReads(t *testing.T) {
+	t.Parallel()
 	meta := []byte(`{"predicted_files": "internal/dispatch/run.go,internal/tui/run.go"}`)
 	got := metadataList(Ticket{Metadata: meta}, PredictedKey)
 	if !slices.Equal(got, []string{"internal/dispatch/run.go", "internal/tui/run.go"}) {

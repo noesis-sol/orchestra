@@ -44,6 +44,7 @@ func TestFollowUpLinkedAfterItsLinksWereReadWaitsForItsSource(t *testing.T) {
 // bd ready still counts one. With a slot free, k-b is picked, its links are read again, and it
 // waits for k-d.
 func TestSwappedBlockerHoldsTheTicketPicked(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.cfg.Concurrency = 2
 	one := 1

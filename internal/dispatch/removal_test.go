@@ -10,6 +10,7 @@ import (
 // (a variable, a glob) or a directory it guards, wherever the rm is in the command; one with literal
 // paths, and rm as another program's argument, are not.
 func TestGuardedRemoval(t *testing.T) {
+	t.Parallel()
 	scratch := "/private/tmp/claude-501/-Users-me-Projects-fideo-worktrees-fideo-lgl/scratchpad"
 	for _, c := range []struct{ cmd, want string }{
 		// The three removals that stalled workers in a run on fideo.
@@ -49,6 +50,7 @@ func TestGuardedRemoval(t *testing.T) {
 // The evidence tells a removal the safety check held from a prompt an allow rule would spare, and
 // says that no allow rule skips the check.
 func TestHeldRemovalEvidence(t *testing.T) {
+	t.Parallel()
 	rec := HookRecord{Permissions: []Permission{
 		{Tool: "Bash", Command: "ffprobe -v error in.mp4"},
 		{Tool: "Bash", Command: "S=/tmp/s; cd $S && rm -f $S/*.mp4", Removal: "rm -f $S/*.mp4"},

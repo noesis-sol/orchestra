@@ -55,6 +55,7 @@ func TestSubagentQuietSoLongNoLongerHoldsTheTurn(t *testing.T) {
 // A subagent counts as running while hooks report, by a note or a tool use of any agent, and no
 // longer once none has for SubagentQuiet; with none started, none runs.
 func TestSubagentsRunning(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	recent, old := now.Add(-time.Minute), now.Add(-SubagentQuiet)
 	for _, c := range []struct {

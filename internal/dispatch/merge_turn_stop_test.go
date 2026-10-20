@@ -167,6 +167,7 @@ func TestAStopAsARebaseConflictsAbortsIt(t *testing.T) {
 // A ticket waiting in the merge queue as the run stops leaves the line without taking a turn: those
 // behind it move up, and its Unlock passes on nothing, the queue not being its own.
 func TestMergeQueueLetsATicketGiveUpItsTurnAsTheRunStops(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		sink := &stageSink{}
 		o := New(Config{Base: "main"}, nil, "", Deps{})

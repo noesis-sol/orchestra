@@ -62,6 +62,7 @@ func TestTheRunsOrganCostIsLoggedAndReported(t *testing.T) {
 
 // Before any organ call, the reviewer is told none said what it cost, and the report says nothing of it.
 func TestNoOrganCostBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	o := New(Config{}, nil, "", Deps{})
 	if got := o.organCostEvidence(); got != "No organ call before this report said what it cost." {
 		t.Errorf("evidence %q", got)

@@ -485,6 +485,7 @@ func limitedClaude(t *testing.T) string {
 
 // Triage refused for the usage limit is skipped with a line saying so, not a TRIAGE_FAILED warning.
 func TestTriageRefusedForTheUsageLimitIsSkipped(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

@@ -95,6 +95,7 @@ func (*subagentsRunning) HookRecord(string) HookRecord { return HookRecord{Subag
 // Only a PreToolUse record written after a Stop no prompt has cleared, while no subagent runs,
 // leaves the turn ended; an adopted worker's Stop from before its adoption doesn't count.
 func TestTurnEndedThroughAReplacedStop(t *testing.T) {
+	t.Parallel()
 	since := time.Now()
 	stop := since.Add(time.Second)
 	cases := []struct {

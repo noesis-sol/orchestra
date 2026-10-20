@@ -102,6 +102,7 @@ func TestAPassingChecksFlakyLinesAreWarnings(t *testing.T) {
 // The output of a check that fails in a worktree whose .orchestra is a symlink is not written where
 // the link points: CHECKS_FAILED names the log, which has the end of it.
 func TestAFailingChecksOutputIsNotWrittenThroughASymlink(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "echo 'checked'; exit 1")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")

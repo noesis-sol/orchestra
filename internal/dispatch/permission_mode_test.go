@@ -69,6 +69,7 @@ func permissionWarnings(h *harness) []string {
 }
 
 func TestListsPermissionMode(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		help, mode string
 		want       bool

@@ -11,6 +11,7 @@ const bothNamesHelp = `  --permission-mode <mode>  (choices: "acceptEdits", "aut
 `
 
 func TestListedPermissionMode(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		help, mode, want string
 	}{

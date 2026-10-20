@@ -9,6 +9,7 @@ import (
 // Each scanner of a ticket's text finds its own kind of name: paths, calls with their parentheses,
 // and code spans.
 func TestFootprintScanners(t *testing.T) {
+	t.Parallel()
 	repo := newRepoFiles([]string{"internal/dispatch/run.go", "internal/dispatch/loop.go", "scripts/check.sh"},
 		"scripts/check.sh")
 	cases := []struct {
@@ -47,6 +48,7 @@ func TestFootprintScanners(t *testing.T) {
 // Two running tickets' workers editing the same file are found once per pair and file, in the
 // order of the tickets' IDs.
 func TestSharedEdits(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		edited map[string][]string

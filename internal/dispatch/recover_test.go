@@ -87,6 +87,7 @@ func (n panickyNotes) AppendNotes(ctx context.Context, id, note string) error {
 
 // A panic in triage fails that ticket's triage, and triage goes on with the next.
 func TestTriagePanicOnlyFailsTriage(t *testing.T) {
+	t.Parallel()
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
@@ -126,6 +127,7 @@ func (panickyAgents) Status(ctx context.Context, name string) (AgentState, error
 
 // A panic watching a worker stops only the watching.
 func TestWatcherPanicOnlyStopsWatching(t *testing.T) {
+	t.Parallel()
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {
@@ -148,6 +150,7 @@ func TestWatcherPanicOnlyStopsWatching(t *testing.T) {
 
 // A worker's panic on a runtime error keeps it as the stop's cause.
 func TestPanicStopKeepsTheRuntimeError(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

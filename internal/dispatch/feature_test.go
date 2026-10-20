@@ -36,6 +36,7 @@ func TestFeatureRunNamesTheFeatureAndTheEpic(t *testing.T) {
 }
 
 func TestScopeLabel(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		c    Config
 		want string

@@ -15,6 +15,7 @@ import (
 // match from the repository's root, as a name kept for a new file is: the two overlap. A file or folder
 // it can't match is no part of it, nor is a glob matching other files.
 func TestAGlobInANewFolderHoldsTheFilesItWouldMatch(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedHere, {}, nil} {
 		for _, entry := range []string{"web/src/*.ts", "./web/src/*.ts", "web//src/*.ts", "web/lib/../src/*.ts"} {
 			fp := TicketFootprint(listing("a", entry), tracked, "")
@@ -86,6 +87,7 @@ func TestAGlobInANewFolderHoldsTheFilesItWouldMatch(t *testing.T) {
 // and two patterns meet when their literal beginnings and ends allow a name both match, or the name
 // one of them is written as.
 func TestPartsOfGlobsMeet(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		x, y string
 		want bool
@@ -120,6 +122,7 @@ func TestPartsOfGlobsMeet(t *testing.T) {
 // orchestra plan reads the same footprints: a ticket listing a glob in a new folder is ordered with
 // one listing a file it would match, not with one listing a file elsewhere.
 func TestPlanLinksAGlobInANewFolderToTheFilesItWouldMatch(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedHere, {}, nil} {
 		open := []Ticket{listing("a", "web/src/*.ts"), listing("b", "web/src/cart.ts"), listing("c", "web/lib/a.ts")}
 		for i, p := range []int{1, 2, 3} {

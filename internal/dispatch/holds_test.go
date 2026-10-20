@@ -66,6 +66,7 @@ func (f *mergeFixture) next(t *testing.T, running map[string]bool) string {
 }
 
 func TestDependentWaitsWhileItsBlockerIsInFlight(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	tk := aBlocksB()
 	tk.ready = append(tk.ready, Ticket{ID: "k-c", Status: "open"})
@@ -88,6 +89,7 @@ func TestDependentWaitsWhileItsBlockerIsInFlight(t *testing.T) {
 }
 
 func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		check string
@@ -141,6 +143,7 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 }
 
 func TestDependentStartsOnceItsBlockerMerges(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "exit 3")
 	f.orch.tickets = aBlocksB()
 	wt := f.ticket(t, "k-a", "a.txt", "a\n")
@@ -164,6 +167,7 @@ func TestDependentStartsOnceItsBlockerMerges(t *testing.T) {
 }
 
 func TestDependentWaitsWhenItsDependenciesCannotBeRead(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.tickets = fakeTickets{ready: []Ticket{{ID: "k-b", Status: "open"}}}
 	if got := f.next(t, map[string]bool{"k-a": true}); got != "" {
@@ -186,6 +190,7 @@ func (c countingTickets) Show(ctx context.Context, id string) (Ticket, error) {
 }
 
 func TestBlockersAreReadOncePerRun(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	one, none := 1, 0
 	tk := aBlocksB()
@@ -222,6 +227,7 @@ func TestBlockersAreReadOncePerRun(t *testing.T) {
 }
 
 func TestBlockersAreReadEachTimeWithoutACount(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	counting := countingTickets{aBlocksB(), map[string]int{}}
 	f.orch.tickets = counting
@@ -239,6 +245,7 @@ func TestBlockersAreReadEachTimeWithoutACount(t *testing.T) {
 // it as ready again only once the question is answered, and then it comes back. Set aside again
 // after that, it stays out.
 func TestSetAsideTicketsStayOutUnlessTheirQuestionWasAnswered(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)
@@ -266,6 +273,7 @@ func labelledA() fakeTickets {
 }
 
 func TestUnmergedLabelStaysUntilACommitNamingTheTicketIsOnBase(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.tickets = labelledA()
 	f.git(f.repo, "branch", "wt/k-a") // cut, never committed to
@@ -296,6 +304,7 @@ func (closedUnreadable) Closed(ctx context.Context, label string) ([]Ticket, err
 }
 
 func TestRunStopsWhenTheUnmergedTicketsCannotBeListed(t *testing.T) {
+	t.Parallel()
 	noLeaks(t)
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
@@ -313,6 +322,7 @@ func TestRunStopsWhenTheUnmergedTicketsCannotBeListed(t *testing.T) {
 }
 
 func TestLabelFailureIsWarned(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.notes = brokenBd(nil)
 	f.orch.tickets = aBlocksB()

@@ -18,6 +18,7 @@ func (noAbort) AbortRebase(ctx context.Context, worktree string) (string, error)
 
 // A conflict that can't be aborted is still set aside, saying the worktree is mid-rebase.
 func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.merger = noAbort{}
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
@@ -38,6 +39,7 @@ func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
 
 // After a failed hand-back, an abort that fails is what the ticket's note says, not "aborted".
 func TestUndoResolutionWhoseAbortFailsSaysSo(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.merger = noAbort{}
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
@@ -53,6 +55,7 @@ func TestUndoResolutionWhoseAbortFailsSaysSo(t *testing.T) {
 
 // A returning ticket whose refresh can't be aborted is reported as left mid-rebase.
 func TestRefreshBranchWhoseAbortFailsSaysSo(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.merger = noAbort{}
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")

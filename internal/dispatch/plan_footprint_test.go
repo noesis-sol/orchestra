@@ -9,6 +9,7 @@ import (
 // A ticket naming only functions works on the files that mention them, so it is ordered with one
 // naming such a file, when the file is small.
 func TestPlanLinksFindFunctionsInFiles(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Retry in `Loop.merge`."),
 		planTicket("b", 2, "", "Tidy internal/dispatch/merge.go."),
@@ -31,6 +32,7 @@ func TestPlanLinksFindFunctionsInFiles(t *testing.T) {
 // Tickets that both name functions are compared on a file by function only when both name functions
 // it mentions: a stray name elsewhere (a test's helper) doesn't keep them apart.
 func TestPlanLinksCompareByFunctionPerFile(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Reword README.md, as `waitSettled` in the tests expects."),
 		planTicket("b", 2, "", "Describe refreshBranch() in README.md."),

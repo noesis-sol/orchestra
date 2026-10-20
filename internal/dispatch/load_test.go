@@ -55,6 +55,7 @@ func loadLoop(panes *fakePanes, listing *string) *Loop {
 // orchestra's own, counts apart; a worker whose pane or roots aren't known is unknown. The terminal is
 // asked for a pane's roots once, and again once they are gone or it couldn't say.
 func TestReadLoadSumsEachWorkersTree(t *testing.T) {
+	t.Parallel()
 	panes := &fakePanes{roots: map[string][]int{"pa": {300}}, asked: map[string]int{}}
 	listing := loadListing
 	o := loadLoop(panes, &listing)
@@ -113,6 +114,7 @@ func (plainSink) Status(Status) {}
 // The run reads the machine's load every loadEvery for a sink that takes it, and for one that doesn't,
 // never.
 func TestTheRunReadsTheLoadForTheDashboard(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{roots: map[string][]int{"pa": {300}, "pb": {400}}, asked: map[string]int{}}
 		listing := loadListing

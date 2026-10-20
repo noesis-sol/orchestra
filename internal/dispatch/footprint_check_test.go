@@ -15,6 +15,7 @@ var trackedWithCheck = append(slices.Clone(trackedHere), "scripts/check.sh")
 // The files the check command names are left out of the files a ticket's text names, and of its
 // predicted files, whatever words the command wraps them in; its files metadata still lists them.
 func TestTicketFootprintLeavesOutTheCheckCommandsFiles(t *testing.T) {
+	t.Parallel()
 	text := Ticket{Description: "Say hello in internal/tui/run.go.", AcceptanceCriteria: "scripts/check.sh passes."}
 	for _, check := range []string{"scripts/check.sh", "./scripts/check.sh -fast", "go vet ./... && sh scripts/check.sh",
 		"bash check.sh"} {
@@ -103,6 +104,7 @@ func TestTicketsNamingTheCheckScriptRunSideBySide(t *testing.T) {
 // orchestra plan links no two tickets for the check script they ask to pass, and still links two
 // that list it in their files metadata.
 func TestPlanLinksLeaveOutTheCheckCommandsFiles(t *testing.T) {
+	t.Parallel()
 	listing := func(tk Ticket) Ticket {
 		tk.Metadata = []byte(`{"files": ["scripts/check.sh"]}`)
 		return tk

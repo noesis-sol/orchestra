@@ -13,6 +13,7 @@ import (
 
 // A command run says how it failed: it fails, or did not finish within its time limit.
 func TestCommandRunHow(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err  error
 		want string
@@ -35,6 +36,7 @@ func TestCommandRunHow(t *testing.T) {
 // What a failed command said is the lines of its output that say what failed, or else its last lines,
 // or nothing when it printed nothing.
 func TestCommandRunSaid(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, output string
 		want         []string
@@ -61,6 +63,7 @@ func TestCommandRunSaid(t *testing.T) {
 // limit for them all. Only the case that times out has a short limit: the others' is one that starting
 // their shells under load (several workers' race checks at once) can't reach.
 func TestRunLimited(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ran := filepath.Join(dir, "ran")
 	cases := []struct {
@@ -95,6 +98,7 @@ func TestRunLimited(t *testing.T) {
 
 // A command stopped by its caller has not timed out: the time limit did not stop it.
 func TestRunLimitedCancelledIsNotTimedOut(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	run, failed := runLimited(ctx, t.TempDir(), time.Minute, "sleep 5")

@@ -15,6 +15,7 @@ import (
 // does, is set aside as dirty, naming the files, not as a conflict left mid-rebase: git refuses to
 // start the rebase, so there is nothing to resolve or abort.
 func TestMergeOfADirtyWorktreeSaysItIsDirty(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
@@ -50,6 +51,7 @@ func TestMergeOfADirtyWorktreeSaysItIsDirty(t *testing.T) {
 
 // An untracked file doesn't stop a rebase, so it doesn't stop the merge either.
 func TestMergeRebasesAWorktreeWithAnUntrackedFile(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
@@ -74,6 +76,7 @@ func (noStart) Rebase(ctx context.Context, worktree, onto string) (string, error
 // A rebase that fails without stopping on conflicts is set aside as such: there is no conflict to
 // hand back to the worker, and no rebase to abort.
 func TestMergeWhoseRebaseDoesNotStartSaysSo(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.orch.merger = noStart{}
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")

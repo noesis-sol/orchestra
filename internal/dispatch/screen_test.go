@@ -6,6 +6,7 @@ import (
 )
 
 func TestLastActivitySkipsTheInputBoxAndStatusBar(t *testing.T) {
+	t.Parallel()
 	screen := strings.Join([]string{
 		"⏺ Read(Package.swift)",
 		"  ⎿  Read 40 lines",
@@ -27,6 +28,7 @@ func TestLastActivitySkipsTheInputBoxAndStatusBar(t *testing.T) {
 }
 
 func TestInputHoldsOnlyAnUnsentPrompt(t *testing.T) {
+	t.Parallel()
 	prompt := "You are responsible for exactly one Beads ticket: kinieta-vzg. Do not work on any other ticket.\n" +
 		"- If you cannot finish: note why on the ticket, defer it, and stop.\n\nWhen you are finished, say DONE and stop.\n"
 	chrome := "\n─────────\n  ⏵⏵ auto mode on (shift+tab to cycle)"

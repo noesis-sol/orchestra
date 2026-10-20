@@ -4,6 +4,7 @@ import "testing"
 
 // The note on a ticket whose worker is gone from its tab says after what, when it is known.
 func TestWorkerGoneNote(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		after, want string
 	}{

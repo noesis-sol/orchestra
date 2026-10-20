@@ -27,6 +27,7 @@ func (s fakeMergeState) closedWhy(ctx context.Context, id string) string { retur
 // TestPendingWhy pins the one rule for whether a ticket blocking another has merged: the holds, a
 // worker stopped with nothing done and the deferred tickets freed all ask it.
 func TestPendingWhy(t *testing.T) {
+	t.Parallel()
 	s := fakeMergeState{
 		busyIDs:  map[string]bool{"k-run": true, "k-ask": true},
 		leftTabs: map[string]string{"k-tab": "tab7"},
@@ -60,6 +61,7 @@ func TestPendingWhy(t *testing.T) {
 // tickets: the holds from their snapshot, and a run's start from the workers left and the tickets
 // labelled unmerged.
 func TestPendingWhyStates(t *testing.T) {
+	t.Parallel()
 	h := holds{running: map[string]bool{"k-run": true}, asked: map[string]bool{"k-ask": true},
 		unmerged: func(id string) string { return map[string]string{"k-left": earlierRun}[id] }}
 	st := newStartState([]project.LeftWorker{{Ticket: "k-run"}}, []Ticket{{ID: "k-left", Status: StatusClosed}})
@@ -83,6 +85,7 @@ func TestPendingWhyStates(t *testing.T) {
 // nothing done waits only for the blockers the run knows have not merged. One whose UnmergedLabel bd
 // couldn't remove once it merged has merged, as the holds and DEFERRED_FREE find it.
 func TestUnmergedBlockersStaleLabel(t *testing.T) {
+	t.Parallel()
 	g := newFakeGit("main") // no branches: each closed blocker's work is on main, as far as git says
 	o := New(Config{Base: "main"}, nil, "", Deps{Checkout: g, Worktrees: g, Merger: g})
 	o.active = map[string]Status{"k-run": {Ticket: "k-run"}}

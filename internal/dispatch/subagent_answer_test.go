@@ -52,6 +52,7 @@ func TestWorkerIdleAsItsSubagentStopsIsNotPaused(t *testing.T) {
 // A worker idle past the grace, its last subagent stopped a moment ago, has been quiet only since
 // that stop; one whose hooks noted nothing since it went idle, since then.
 func TestQuietForCountsFromTheHooksLastNote(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	since := now.Add(-2 * idleGrace)
 	w := worker{wt: "wt", hooks: true}

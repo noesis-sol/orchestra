@@ -51,6 +51,7 @@ func TestWorkerWaitsOnASubagentPastItsStop(t *testing.T) {
 // A Stop with a subagent still running doesn't end the turn: the worker settles only after the idle
 // grace, and says why.
 func TestStopWithASubagentRunningIsMidTurn(t *testing.T) {
+	t.Parallel()
 	stop := time.Now()
 	u := ToolUse{Event: "Stop", At: stop, Stopped: stop}
 	w := worker{wt: "wt", hooks: true}

@@ -65,6 +65,7 @@ func (f *mergeFixture) onMain(t *testing.T, file, content string) {
 }
 
 func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true") // checked as it is, without a rebase
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
@@ -83,6 +84,7 @@ func TestMergeFastForwardsWhenMainHasNotMoved(t *testing.T) {
 }
 
 func TestMergeRebasesAndRechecksWhenMainMoved(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "test -f a.txt && test -f b.txt") // passes only on the rebased tree
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
@@ -100,6 +102,7 @@ func TestMergeRebasesAndRechecksWhenMainMoved(t *testing.T) {
 }
 
 func TestMergeLeavesAConflictForReview(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
 	f.onMain(t, "shared.txt", "line 1 from main\n")
@@ -122,6 +125,7 @@ func TestMergeLeavesAConflictForReview(t *testing.T) {
 }
 
 func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "exit 3")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
@@ -140,6 +144,7 @@ func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
 // A hung check is stopped at the check timeout and its ticket set aside, which frees the merge
 // queue for the next finished ticket.
 func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "if test -f a.txt; then sleep 60; fi") // hangs on k-1 only
 	f.orch.cfg.CheckTimeout = 300 * time.Millisecond
 	hung := f.ticket(t, "k-1", "a.txt", "a\n")
@@ -169,6 +174,7 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 }
 
 func TestMergeCheckTimeoutDefaultsTo30Minutes(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	if got := f.orch.checkTimeout(); got != 30*time.Minute {
 		t.Errorf("checkTimeout = %s", got)
@@ -176,6 +182,7 @@ func TestMergeCheckTimeoutDefaultsTo30Minutes(t *testing.T) {
 }
 
 func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
@@ -190,6 +197,7 @@ func TestMergeWithoutACheckCommandSaysSo(t *testing.T) {
 // A fast-forward moves whichever branch the main checkout is on, so switching it off Base while
 // a ticket runs must stop the run rather than land the ticket on the other branch.
 func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	f.git(f.repo, "branch", "other")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
@@ -212,6 +220,7 @@ func TestMergeStopsWhenTheCheckoutLeftBase(t *testing.T) {
 }
 
 func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	if err := os.WriteFile(filepath.Join(f.repo, "shared.txt"), []byte("edited by hand\n"), 0o644); err != nil {
@@ -234,6 +243,7 @@ func TestMergeStopsOnUncommittedChangesInTheCheckout(t *testing.T) {
 }
 
 func TestWorkersMergingAtTheSameTimeBothLand(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	const n = 4
 	wts := make([]string, n)

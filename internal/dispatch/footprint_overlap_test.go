@@ -35,6 +35,7 @@ var trackedNested = []string{
 
 // A bare name means every file of that name, the one at the top included.
 func TestTicketFootprintMeansEveryFileOfThatName(t *testing.T) {
+	t.Parallel()
 	all := []string{"internal/dispatch/run.go", "internal/tui/run.go", "run.go"}
 	if fp := TicketFootprint(Ticket{Description: "Picking lives in run.go."}, trackedNested, ""); !slices.Equal(fp.Files, all) {
 		t.Errorf("in the text: %q, want %q", fp.Files, all)
@@ -54,6 +55,7 @@ func TestTicketFootprintMeansEveryFileOfThatName(t *testing.T) {
 // A folder or a glob in the files metadata means the files under it or matching it, and a folder
 // is kept too, for the files another ticket adds in it.
 func TestFilesMetadataTakesFoldersAndGlobs(t *testing.T) {
+	t.Parallel()
 	dispatchFiles := []string{"internal/dispatch/", "internal/dispatch/loop.go", "internal/dispatch/loop_test.go",
 		"internal/dispatch/run.go"}
 	cases := []struct {
@@ -91,6 +93,7 @@ func TestFilesMetadataTakesFoldersAndGlobs(t *testing.T) {
 // A ticket naming only functions overlaps one naming the file they are in, and one naming a
 // function the shared file doesn't mention compares by file.
 func TestSharedLocatesFunctionsInFiles(t *testing.T) {
+	t.Parallel()
 	in := sourcesIn(map[string]string{
 		"loop.go": "type Loop struct{}\nfunc (o *Loop) merge() { pickNext() }\nfunc (o *Loop) wait() {}",
 		"pick.go": "func pickNext() {}",
@@ -122,6 +125,7 @@ func TestSharedLocatesFunctionsInFiles(t *testing.T) {
 
 // t.Run(), GitHub and iOS are no functions of the project's; o.log.Raw() is one.
 func TestTicketFootprintTightensFunctionNames(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, text string
 		want       []string

@@ -5,6 +5,7 @@ import "testing"
 // The solo queue keeps which solo ticket runs, is next or first in line, and says why tickets wait
 // only when that changes.
 func TestSoloQueueUpdate(t *testing.T) {
+	t.Parallel()
 	const waits = "waiting for solo ticket s to finish"
 	const next = "solo ticket n is next: no new tickets start until the running ones finish, then it runs alone"
 	a := &Ticket{ID: "a"}

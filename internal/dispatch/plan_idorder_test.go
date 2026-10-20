@@ -7,6 +7,7 @@ import (
 )
 
 func TestPlanLinksSameSecondTicketsByIDNumber(t *testing.T) {
+	t.Parallel()
 	// Filed in one burst: same priority, same created_at second. Text order would put e.10 first.
 	open := []Ticket{
 		planTicket("e.10", 2, "2026-10-04T09:00:00Z", "Retry in `Loop.merge` (internal/dispatch/merge.go)."),
@@ -19,6 +20,7 @@ func TestPlanLinksSameSecondTicketsByIDNumber(t *testing.T) {
 }
 
 func TestCompareIDsOrdersSubticketNumbersAsNumbers(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		"e", "e.1", "e.1.3", "e.1.20", "e.2", "e.9", "e.10", "e.x",
 		"orchestra-4wb", "orchestra-4wb.2", "orchestra-4wb.12", "orchestra-zdl",

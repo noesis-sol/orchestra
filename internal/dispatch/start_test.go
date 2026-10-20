@@ -52,6 +52,7 @@ func (h *refusingHerdr) SendKeys(ctx context.Context, name string, keys ...strin
 func (h *refusingHerdr) WaitStarted(ctx context.Context, name string) bool               { return false }
 
 func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
+	t.Parallel()
 	for _, launch := range []bool{false, true} {
 		f := newMergeFixture(t, "true")
 		h := &refusingHerdr{}
@@ -77,6 +78,7 @@ func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 
 // A probe whose start fails, with no agent left in its pane, reports the start's error.
 func TestAProbeThatCannotStartReportsWhy(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	h := &refusingHerdr{}
 	o := f.orch
@@ -89,6 +91,7 @@ func TestAProbeThatCannotStartReportsWhy(t *testing.T) {
 }
 
 func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "true")
 	old := f.ticket(t, "k-1", "a.txt", "a\n")
 	if err := os.RemoveAll(old); err != nil {
@@ -112,6 +115,7 @@ func TestPrepareWorktreeReplacesADeletedFolder(t *testing.T) {
 }
 
 func TestAnUnreadableStatusIsNotAClaim(t *testing.T) {
+	t.Parallel()
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 // as it overlaps one listing a file that is there. A folder of a name it begins with is no part of
 // it.
 func TestAListedFolderHoldsTheNewFilesUnderIt(t *testing.T) {
+	t.Parallel()
 	want := []string{"internal/dispatch/", "internal/dispatch/loop.go", "internal/dispatch/loop_test.go",
 		"internal/dispatch/run.go"}
 	entries := []string{"internal/dispatch/", "internal/dispatch", "./internal/dispatch/.", "dispatch/", "dispatch"}
@@ -59,6 +60,7 @@ func TestAListedFolderHoldsTheNewFilesUnderIt(t *testing.T) {
 // function in a file where both name functions it mentions, so tickets naming different functions
 // in the only file there run side by side. A file one of them adds in it is shared.
 func TestAListedFolderKeepsComparingItsFilesByFunction(t *testing.T) {
+	t.Parallel()
 	tracked := []string{"README.md", "pkg/x.go"}
 	in := sourcesIn(map[string]string{"pkg/x.go": "package pkg\n\nfunc Foo() {}\n\nfunc Bar() {}\n"})
 	naming := func(id, fn string, files ...string) Footprint {
@@ -92,6 +94,7 @@ func TestAListedFolderKeepsComparingItsFilesByFunction(t *testing.T) {
 // another listing it when every file there is large, nor when both name different functions in
 // the small file there.
 func TestPlanLinksAListedFolderToANewFileInIt(t *testing.T) {
+	t.Parallel()
 	read := func(lines int) func(string) ([]byte, error) {
 		return func(p string) ([]byte, error) {
 			if !slices.Contains(trackedNested, p) {

@@ -130,6 +130,7 @@ func TestFollowUpOfANotRunningTicketStartsAtOnce(t *testing.T) {
 // A follow-up of a ticket an earlier run left unmerged is no ticket to start: nothing is ready to
 // run, and the line says what holds it. The run, given the same tickets, holds it too.
 func TestNothingToRunHoldsAFollowUpOfAnUnmergedTicket(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		h.beads.add("U", "conflicted", 1, UnmergedLabel)

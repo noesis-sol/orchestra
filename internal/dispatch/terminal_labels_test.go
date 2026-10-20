@@ -16,6 +16,7 @@ var terminalLabels = map[string]TerminalLabel{
 // A terminal is named as the run's labels have it, "" as Herdr, where workers ran before there was a
 // choice; one they lack by its name, its tabs in a workspace.
 func TestTerminalLabel(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		labels   map[string]TerminalLabel
 		terminal string

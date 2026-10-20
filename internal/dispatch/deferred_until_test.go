@@ -63,6 +63,7 @@ func TestNothingToRunLeavesOutTicketsDeferredUntilLater(t *testing.T) {
 }
 
 func TestStartLeavesOutTicketsDeferredUntilLater(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		deferredUntilTickets(h.beads, time.Now())

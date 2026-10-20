@@ -14,6 +14,7 @@ import (
 )
 
 func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
+	t.Parallel()
 	o := New(Config{}, nil, "", Deps{})
 	for _, id := range []string{"a", "b", "a", "c"} {
 		o.markAside(id)
@@ -24,6 +25,7 @@ func TestSetAsideKeepsOrderWithoutRepeats(t *testing.T) {
 }
 
 func TestLastLines(t *testing.T) {
+	t.Parallel()
 	if got := lastLines("1\n2\n3\n4\n", 2); got != "3\n4" {
 		t.Errorf("got %q", got)
 	}
@@ -34,6 +36,7 @@ func TestLastLines(t *testing.T) {
 //	ORGAN_LIVE=1 LIVE_REPO=~/Projects/kinieta LIVE_BASE=<branch> LIVE_START=<commit> \
 //	LIVE_TICKET=<deferred id> LIVE_WT=<its worktree> go test -run TestLiveOrgans -v
 func TestLiveOrgans(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("ORGAN_LIVE") != "1" {
 		t.Skip("set ORGAN_LIVE=1 to call the real claude")
 	}
@@ -88,6 +91,7 @@ func (l liveTickets) Describe(ctx context.Context, id string) string {
 }
 
 func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "reports")
 	o := &Loop{cfg: Config{ReportsDir: dir}, started: time.Date(2026, 9, 30, 14, 5, 9, 0, time.Local)}
 	path, err := o.SaveReport("# report\n")
@@ -109,6 +113,7 @@ func TestSaveReportNamesTheFileAfterTheRunStart(t *testing.T) {
 }
 
 func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

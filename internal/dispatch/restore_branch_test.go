@@ -85,6 +85,7 @@ var stubStop = rebaseStop{worker: worker{id: "k-1", br: "wt/k-1", wt: "/wt/k-1"}
 	own: 2}
 
 func TestRestoreBranch(t *testing.T) {
+	t.Parallel()
 	failed := errors.New("exit status 128")
 	for _, tc := range []struct {
 		name    string
@@ -123,6 +124,7 @@ func restoredAs(x restored) restored {
 }
 
 func TestAfterResolution(t *testing.T) {
+	t.Parallel()
 	failed := errors.New("exit status 128")
 	for _, tc := range []struct {
 		x    restored
@@ -149,6 +151,7 @@ func TestAfterResolution(t *testing.T) {
 }
 
 func TestAfterFix(t *testing.T) {
+	t.Parallel()
 	failed := errors.New("exit status 128")
 	for _, tc := range []struct {
 		x    restored
@@ -171,6 +174,7 @@ func TestAfterFix(t *testing.T) {
 }
 
 func TestVerifyResolved(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		git  stubGit
 		want string
@@ -195,6 +199,7 @@ func TestVerifyResolved(t *testing.T) {
 }
 
 func TestVerifyFixed(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		git        stubGit
 		fixed, why string

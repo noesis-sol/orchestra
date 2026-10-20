@@ -23,6 +23,7 @@ func listing(id string, files ...string) Ticket {
 // name it begins with (web/srcx/) is no part of it, and a name written without a trailing slash is
 // a file.
 func TestANewFolderInFilesMetadataHoldsItsFiles(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedHere, {}, nil} {
 		for _, entry := range []string{"web/src/", "./web/src/", "web//src/", "web/src/./", "web/lib/../src/", "web/src/ui/.."} {
 			if fp := TicketFootprint(listing("a", entry), tracked, ""); !slices.Equal(fp.Files, []string{"web/src/"}) {
@@ -85,6 +86,7 @@ func TestANewFolderInFilesMetadataHoldsItsFiles(t *testing.T) {
 // orchestra plan reads the same footprints: a ticket listing a new folder is ordered with one
 // listing a file under it, not with one in a folder of a name it begins with.
 func TestPlanLinksANewFolderToTheFilesUnderIt(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedHere, {}, nil} {
 		open := []Ticket{listing("a", "web/src/"), listing("b", "web/src/cart.ts"), listing("c", "web/srcx/a.ts")}
 		for i, p := range []int{1, 2, 3} {

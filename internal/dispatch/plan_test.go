@@ -41,6 +41,7 @@ func linkList(links []Link) []string {
 }
 
 func TestPlanLinksTheHigherPriorityTicketFirst(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("low", 3, "2026-09-01T00:00:00Z", "Retry in `Loop.merge` (internal/dispatch/merge.go)."),
 		planTicket("high", 1, "2026-09-30T00:00:00Z", "Log each rebase in Loop.merge()."),
@@ -63,6 +64,7 @@ func TestPlanLinksTheHigherPriorityTicketFirst(t *testing.T) {
 }
 
 func TestPlanLinksSmallFilesOnly(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Reword the intro in README.md."),
 		planTicket("b", 2, "", "Add a section to README.md and internal/dispatch/loop.go."),
@@ -78,6 +80,7 @@ func TestPlanLinksSmallFilesOnly(t *testing.T) {
 }
 
 func TestPlanLinksByFunctionWhenBothNameOne(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Change `waitSettled` in README.md."),
 		planTicket("b", 2, "", "Change refreshBranch() in README.md."),
@@ -93,6 +96,7 @@ func TestPlanLinksByFunctionWhenBothNameOne(t *testing.T) {
 }
 
 func TestPlanLinksChainAndSkipOrderedPairs(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Change `Loop.merge`."),
 		planTicket("b", 2, "", "Change `Loop.merge`."),
@@ -111,6 +115,7 @@ func TestPlanLinksChainAndSkipOrderedPairs(t *testing.T) {
 }
 
 func TestPlanLinksIgnoresAreasAndTicketsNamingNothing(t *testing.T) {
+	t.Parallel()
 	a := planTicket("a", 1, "", "Make it faster.")
 	b := planTicket("b", 2, "", "Make it nicer.")
 	a.Labels, b.Labels = []string{"area:tui"}, []string{"area:tui"}
@@ -121,6 +126,7 @@ func TestPlanLinksIgnoresAreasAndTicketsNamingNothing(t *testing.T) {
 
 // A predicted footprint is a guess: it keeps tickets apart while they run, but doesn't order them.
 func TestPlanLinksIgnoresPredictedFiles(t *testing.T) {
+	t.Parallel()
 	a := planTicket("a", 1, "", "Make it faster.")
 	b := planTicket("b", 2, "", "Change internal/dispatch/run.go.")
 	a.Metadata = []byte(`{"predicted_files": "internal/dispatch/run.go"}`)

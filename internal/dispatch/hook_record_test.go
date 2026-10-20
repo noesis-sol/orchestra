@@ -166,6 +166,7 @@ func TestSubagentsAndCompactionsAreShown(t *testing.T) {
 }
 
 func TestHookRecordEvidence(t *testing.T) {
+	t.Parallel()
 	if got := (HookRecord{Subagents: 2}).Evidence(); got != "" {
 		t.Errorf("nothing for triage in running subagents: %q", got)
 	}

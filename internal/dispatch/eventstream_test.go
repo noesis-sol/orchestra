@@ -159,6 +159,7 @@ func TestARunRecordsItsEvents(t *testing.T) {
 
 // The kinds' names are the stream's interface: each kind has its own, lowercase.
 func TestKindNames(t *testing.T) {
+	t.Parallel()
 	want := map[Kind]string{EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred",
 		EvWarn: "warn", EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
 		EvReopened: "reopened", EvHold: "hold", EvDrain: "drain", EvResume: "resume", EvQueue: "queue",

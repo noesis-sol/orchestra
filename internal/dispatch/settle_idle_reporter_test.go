@@ -45,6 +45,7 @@ func TestIdleGraceSettleNamesTheRecordsWriter(t *testing.T) {
 }
 
 func TestToolUseReporter(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 10, 7, 9, 24, 2, 0, time.Local)
 	for _, c := range []struct {
 		u    ToolUse

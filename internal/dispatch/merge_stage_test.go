@@ -45,6 +45,7 @@ func (s *stageSink) shown() []string {
 }
 
 func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		sink := &stageSink{}
 		o := New(Config{Base: "main"}, nil, "", Deps{})
@@ -116,6 +117,7 @@ func TestMergeQueueShowsEachTicketsStageAndPlace(t *testing.T) {
 }
 
 func TestMergeQueueShowsNoTicketNotWorkedOn(t *testing.T) {
+	t.Parallel()
 	sink := &stageSink{}
 	o := New(Config{Base: "main"}, nil, "", Deps{})
 	o.sink = sink
@@ -128,6 +130,7 @@ func TestMergeQueueShowsNoTicketNotWorkedOn(t *testing.T) {
 }
 
 func TestMergeShowsTheTicketMergingWhileItsCheckRuns(t *testing.T) {
+	t.Parallel()
 	f := newMergeFixture(t, "test -f a.txt && test -f b.txt")
 	sink := &stageSink{}
 	f.orch.sink = sink

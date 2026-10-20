@@ -9,6 +9,7 @@ import (
 // The forms a files or predicted_files entry comes in, including a list stored as a string, which
 // is what bd update <id> --set-metadata 'files=["a.go","b.go"]' writes.
 func TestMetadataListReadsEveryForm(t *testing.T) {
+	t.Parallel()
 	organ := []string{"internal/organ/screen.go", "internal/organ/screen_test.go", "internal/organ/organ.go"}
 	two := []string{"internal/tui/run.go", "docs/new.md"}
 	cases := []struct {
@@ -48,6 +49,7 @@ func TestMetadataListReadsEveryForm(t *testing.T) {
 // A list stored as a string leaves no quotes or brackets in the footprint, whether it is the
 // ticket's files or its predicted files.
 func TestTicketFootprintReadsAListInAString(t *testing.T) {
+	t.Parallel()
 	tracked := append(slices.Clone(trackedHere),
 		"internal/organ/screen.go", "internal/organ/screen_test.go", "internal/organ/organ.go")
 	want := []string{"internal/organ/organ.go", "internal/organ/screen.go", "internal/organ/screen_test.go"}

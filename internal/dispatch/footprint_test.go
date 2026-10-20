@@ -17,6 +17,7 @@ var trackedHere = []string{
 }
 
 func TestTicketFootprintNamesFilesAndFunctions(t *testing.T) {
+	t.Parallel()
 	tk := Ticket{ID: "x", Title: "Hand a conflict back from Loop.merge",
 		Description: "When `Loop.merge` (internal/dispatch/loop.go:1125) aborts, call `o.agentName(id)` and `deliverPrompt`, " +
 			"then refreshBranch() and `os.WriteFile(p, b, 0o644)`. The hooks write .orchestra/run/activity.json (internal/claude/claude.go). " +
@@ -52,6 +53,7 @@ func TestTicketFootprintNamesFilesAndFunctions(t *testing.T) {
 }
 
 func TestTicketFootprintFromLabelsAndMetadata(t *testing.T) {
+	t.Parallel()
 	for _, meta := range []string{
 		`{"files": ["internal/tui/run.go", "docs/new.md"], "team": "x"}`,
 		`{"files": "internal/tui/run.go, docs/new.md"}`,
@@ -70,6 +72,7 @@ func TestTicketFootprintFromLabelsAndMetadata(t *testing.T) {
 
 // The predicted files count only for a ticket naming nothing else.
 func TestTicketFootprintFallsBackOnPredictedFiles(t *testing.T) {
+	t.Parallel()
 	predicted := []byte(`{"predicted_files": "internal/dispatch/run.go,internal/nowhere/z.go", "files": []}`)
 	fp := TicketFootprint(Ticket{Title: "Say hello", Metadata: predicted}, trackedHere, "")
 	if !slices.Equal(fp.Files, []string{"internal/dispatch/run.go"}) || !fp.Predicted {
@@ -88,6 +91,7 @@ func TestTicketFootprintFallsBackOnPredictedFiles(t *testing.T) {
 }
 
 func TestSharedComparesFunctionsWhenBothNameThem(t *testing.T) {
+	t.Parallel()
 	merge := Footprint{Files: []string{"merge.go"}, Funcs: []string{"Loop.merge"}}
 	cases := []struct {
 		name         string

@@ -15,6 +15,7 @@ import (
 )
 
 func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
+	t.Parallel()
 	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
 	none := func(Ticket) holdKind { return notHeld }
 	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, none, 1, ""); tk == nil || tk.ID != "b" || q.queued != 2 {
@@ -37,6 +38,7 @@ func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
 // A solo ticket runs alone: nothing starts beside it, and one first in line holds back the tickets
 // behind it until nothing runs.
 func TestPickNextRunsASoloTicketAlone(t *testing.T) {
+	t.Parallel()
 	solo := []string{SoloLabel}
 	none := func(Ticket) holdKind { return notHeld }
 	ready := []Ticket{{ID: "a"}, {ID: "b"}}
@@ -81,6 +83,7 @@ func (o onceReady) Ready(context.Context, string) ([]Ticket, error) {
 }
 
 func TestDispatchTimeStopWithTicketsInFlightHolds(t *testing.T) {
+	t.Parallel()
 	noLeaks(t)
 	logPath := filepath.Join(t.TempDir(), "orchestra.log")
 	log, err := OpenLog(logPath, false, "t")
@@ -123,6 +126,7 @@ type unreadableReady struct{ brokenBd }
 func (unreadableReady) Ready(context.Context, string) ([]Ticket, error) { return nil, errBd }
 
 func TestReadyUnreadableSaysWhy(t *testing.T) {
+	t.Parallel()
 	log, err := OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
 	if err != nil {
 		t.Fatal(err)

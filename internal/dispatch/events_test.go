@@ -10,6 +10,7 @@ import (
 // The osascript command takes the notice and project as arguments, so quotes in them can't break
 // the script, and a leading - isn't taken for an option. The project alone is the title.
 func TestNotificationPassesTextAsArguments(t *testing.T) {
+	t.Parallel()
 	args := notification(`my "repo"\`, `-x "closed" \ it`)
 	n := len(args)
 	if n < 3 || args[n-3] != "--" || args[n-2] != `-x "closed" \ it` || args[n-1] != `my "repo"\` {

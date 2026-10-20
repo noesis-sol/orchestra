@@ -56,6 +56,7 @@ func TestFinishingNamesWhatAStopDoesNotCutShort(t *testing.T) {
 
 // Several at once come by ticket.
 func TestFinishingIsByTicket(t *testing.T) {
+	t.Parallel()
 	o := New(Config{}, nil, "", Deps{})
 	defer o.markFinishing("b-2", finishMerge)()
 	unmark := o.markFinishing("a-1", finishWorktree)
@@ -70,6 +71,7 @@ func TestFinishingIsByTicket(t *testing.T) {
 }
 
 func TestUnderWayLineSaysHowToAbandonIt(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		under []Finishing
 		again string
@@ -90,6 +92,7 @@ func TestUnderWayLineSaysHowToAbandonIt(t *testing.T) {
 }
 
 func TestQuitLineNamesWhatIsLeftAndAbandoned(t *testing.T) {
+	t.Parallel()
 	a1, a2 := Status{Ticket: "a-1", Tab: "w1:2"}, Status{Ticket: "a-2", Tab: "w1:3"}
 	for _, tc := range []struct {
 		why       string

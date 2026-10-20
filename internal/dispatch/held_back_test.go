@@ -12,6 +12,7 @@ import (
 // pickNext counts the ready tickets it holds back by what holds them, apart from those queued for a
 // slot; a ticket skipped (running, or set aside) counts in neither.
 func TestPickNextCountsHeldBackTicketsByReason(t *testing.T) {
+	t.Parallel()
 	kinds := map[string]holdKind{"o": heldOverlap, "p": heldParent, "b": heldBlocked, "f": heldFollowUp, "o2": heldOverlap}
 	held := func(t Ticket) holdKind { return kinds[t.ID] }
 	ready := []Ticket{{ID: "o"}, {ID: "a"}, {ID: "p"}, {ID: "b"}, {ID: "f"}, {ID: "o2"}, {ID: "c"}, {ID: "r"}}

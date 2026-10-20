@@ -10,6 +10,7 @@ import (
 )
 
 func TestOutcomes(t *testing.T) {
+	t.Parallel()
 	for status, want := range map[TicketStatus]outcome{
 		"closed": outcomeClosed, "deferred": outcomeDeferred, "in_progress": outcomePaused,
 		"unknown": outcomeUnreadable, "open": outcomeUnfinished, "blocked": outcomeUnfinished,
@@ -36,6 +37,7 @@ func TestOutcomes(t *testing.T) {
 }
 
 func TestStatusUnreadableSaysWhy(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("skipped by -short: waits out the failing bd's retries, 3s apart")
 	}
@@ -90,6 +92,7 @@ func TestRunGoesOnPastATicketItsWorkerDefers(t *testing.T) {
 }
 
 func TestAFailedDeferKeepsTheTicketOutOfTheRun(t *testing.T) {
+	t.Parallel()
 	// The worker never takes its prompt, and bd can't defer the ticket, so bd still lists it as
 	// ready: it must not be dispatched again in this run.
 	o, sink, logged, code := brokenBdRun(t, promptAgents{promptErr: fmt.Errorf("paste lost")})

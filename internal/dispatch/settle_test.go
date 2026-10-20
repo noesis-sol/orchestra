@@ -12,6 +12,7 @@ import (
 )
 
 func TestIdleWorkerWithTicketInProgressGetsGrace(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		status TicketStatus
 		idle   time.Duration
@@ -73,6 +74,7 @@ func newSettleLoop(t *testing.T, script ...string) (*Loop, *scriptedAgents, stri
 
 // A status Herdr fails to read once says nothing about the worker: the wait goes on.
 func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
 		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
@@ -90,6 +92,7 @@ func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 // Each poll of a busy worker reads its status once, and its screen once, knowing the status: two
 // Herdr calls, where a second status read for the dashboard and a failed scrollback read made four.
 func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o, a, _ := newSettleLoop(t, "working", "blocked", "working")
 		w := o.newWatcher("wt", Status{Ticket: "A"})
@@ -107,6 +110,7 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 }
 
 func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		script := make([]string, maxFailedReads+5)
 		for i := range script {
@@ -127,6 +131,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 
 // Without a ticket limit, a worker going on for long is reported once, and the wait goes on.
 func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		script := make([]string, 2*longRunning/statusPoll) // working for four hours
 		for i := range script {

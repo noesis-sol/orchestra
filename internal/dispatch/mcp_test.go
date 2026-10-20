@@ -179,6 +179,7 @@ func TestARefusedMCPArgumentStopsTheRun(t *testing.T) {
 }
 
 func TestMCPLabelAndWarning(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		kind  string
 		mcp   *[]mcp.Server

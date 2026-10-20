@@ -130,14 +130,14 @@ func TestCheckOutputBoundsWhatItHolds(t *testing.T) {
 
 // orchestra-74b2.24 on 2026-10-14: the check's whole output was read into memory, and copied again
 // as it was searched and saved, so a check that loops printing held all of it until its time limit.
-// A check that prints 128 MB has orchestra allocate a fraction of that, and its whole output is
+// A check that prints 32 MB has orchestra allocate a fraction of that, and its whole output is
 // still kept in the worktree, its end in the log and what failed for the reviewer.
 func TestAChecksEndlessOutputIsNotHeldInMemory(t *testing.T) {
 	if testing.Short() {
-		t.Skip("prints 128 MB")
+		t.Skip("prints 32 MB")
 	}
 	// Not parallel: the allocations measured are the whole test binary's, so this test runs alone.
-	const size = 128 << 20
+	const size = 32 << 20
 	f := newMergeFixture(t, fmt.Sprintf(`l=$(printf '%%0999d' 0); yes "$l" | head -c %d; echo; `+
 		`echo '--- FAIL: TestLoop (0.00s)'; echo 'FAIL ./a'; exit 1`, size))
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")

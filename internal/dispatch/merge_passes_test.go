@@ -7,6 +7,7 @@ import "testing"
 // moved again. A pass after its worker worked on the branch, the queue let go of meanwhile, doesn't
 // count.
 func TestMergePasses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		steps  []mergeStep // what each pass says, in turn

@@ -141,6 +141,7 @@ func TestNothingToRunGoesAheadWhenBdCantShowTheBlockers(t *testing.T) {
 // What the check finds held, the loop holds: a run of the same tickets starts none of them and ends
 // at once, each one's hold said.
 func TestNothingToRunHoldsWhatTheLoopHolds(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := newTimedHarness(t)
 		h.cfg.ExcludeTypes = []string{"epic"}

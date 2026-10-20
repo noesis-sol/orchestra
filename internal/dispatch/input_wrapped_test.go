@@ -10,6 +10,7 @@ import (
 // a space gives the prompt back, so a prompt wrapped within the first 40 runes inputHolds compares
 // still matches and isn't sent again. The screen is Claude Code 2.1.299's in a pane 44 columns wide.
 func TestInputHoldsAPromptWrappedInItsFirstWords(t *testing.T) {
+	t.Parallel()
 	prompt := "You are responsible for exactly one Beads ticket: orchestra-74b2.37. Do not work on any other " +
 		"ticket. Supercalifragilisticexpialidociousandmorewordsjoinedtogetherwithoutspaces end."
 	screen := strings.Join([]string{

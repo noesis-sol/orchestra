@@ -252,6 +252,7 @@ func TestScopeOfOneAndTheLimit(t *testing.T) {
 // A subticket closed but not yet merged, running or left unmerged, still holds its parent: bd no
 // longer lists it as open.
 func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
+	t.Parallel()
 	o := New(Config{}, nil, "", Deps{Tickets: fakeTickets{}})
 	o.setParent("C", "P")
 	o.setParent("D", "Q")

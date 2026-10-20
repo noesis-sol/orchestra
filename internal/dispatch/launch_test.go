@@ -11,6 +11,7 @@ import (
 // work returns a reason to stop; one whose work returns none is no longer active. Either way, the
 // result says how its worker settled, as work set it.
 func TestLaunchRecoversAPanicAndClearsAFinishedTicket(t *testing.T) {
+	t.Parallel()
 	stopped := halt(ExitTool, stopTerminalFailed, ": the terminal is gone")
 	for _, tc := range []struct {
 		name       string

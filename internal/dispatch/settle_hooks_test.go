@@ -152,6 +152,7 @@ func TestWithoutHooksAnOpenTicketGetsAStartUpGrace(t *testing.T) {
 // An adopted worker's hooks' record may still end with the Stop of the turn it asked in: a report
 // from before it was adopted (or of unknown time) doesn't count, one since does.
 func TestIdleSettledIgnoresReportsBeforeTheAdoption(t *testing.T) {
+	t.Parallel()
 	since := time.Now()
 	cases := []struct {
 		name    string

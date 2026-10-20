@@ -12,6 +12,7 @@ var trackedWithSpec = append(slices.Clone(trackedHere), ".orchestra/specs/shop.m
 // is left out of their footprints, as the check command's files are, so they run side by side.
 // Listed in a ticket's files metadata, it counts.
 func TestTicketsCitingASpecRunSideBySide(t *testing.T) {
+	t.Parallel()
 	for _, cite := range []string{".orchestra/specs/shop.md", "./.orchestra/specs/shop.md", "specs/shop.md", "shop.md"} {
 		for _, tracked := range [][]string{trackedWithSpec, nil} {
 			if cite != ".orchestra/specs/shop.md" && cite != "./.orchestra/specs/shop.md" && tracked == nil {
@@ -69,6 +70,7 @@ func TestTicketsCitingASpecRunSideBySide(t *testing.T) {
 
 // orchestra plan reads the same footprints: tickets citing one spec get no link for it.
 func TestPlanLinksLeaveOutTheSpec(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Build the cart, as .orchestra/specs/shop.md says under Cart."),
 		planTicket("b", 2, "", "Build checkout, as .orchestra/specs/shop.md says under Checkout."),
@@ -90,6 +92,7 @@ func TestPlanLinksLeaveOutTheSpec(t *testing.T) {
 // known, so two tickets listing it overlap; named only in a ticket's text, it counts in a folder
 // that exists. A path out of the repository never counts.
 func TestTicketsListingAFileInANewFolderOverlap(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedHere, {}, nil} {
 		for _, c := range []struct{ entry, want string }{
 			{"web/src/cart.ts", "web/src/cart.ts"}, {"./web/src/cart.ts", "web/src/cart.ts"}, {"Makefile", "Makefile"},

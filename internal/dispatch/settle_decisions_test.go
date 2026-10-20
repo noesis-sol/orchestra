@@ -26,6 +26,7 @@ func (r *countingReporter) HookRecord(wt string) HookRecord {
 // The settle loop reads a worker's hooks once a poll, whatever it decides from them: whether it
 // waits on a permission prompt, whether its turn ended, how long it has been quiet.
 func TestSettleReadsTheHooksOnceAPoll(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o, a, _ := newSettleLoop(t, "working", "idle", "blocked", "idle")
 		hooks := &countingReporter{}
@@ -47,6 +48,7 @@ func TestSettleReadsTheHooksOnceAPoll(t *testing.T) {
 // The hooks of a worker without them read as nothing; a report of a turn before the worker was
 // adopted doesn't count, though its time is kept.
 func TestHooksOf(t *testing.T) {
+	t.Parallel()
 	adopted := time.Now()
 	rec := HookRecord{Subagents: 1, Noted: adopted}
 	cases := []struct {
@@ -87,6 +89,7 @@ func TestHooksOf(t *testing.T) {
 }
 
 func TestTurnEnded(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	stop := now.Add(-time.Minute)
 	cases := []struct {
@@ -133,6 +136,7 @@ func TestTurnEnded(t *testing.T) {
 }
 
 func TestAsksPermission(t *testing.T) {
+	t.Parallel()
 	asked := ToolUse{Event: EventPermission, Tool: "Bash", At: time.Now()}
 	cases := []struct {
 		name string
@@ -158,6 +162,7 @@ func TestAsksPermission(t *testing.T) {
 }
 
 func TestQuietFor(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	idle := now.Add(-time.Hour)
 	running := HookRecord{Subagents: 1, Noted: now.Add(-30 * time.Minute)}
@@ -184,6 +189,7 @@ func TestQuietFor(t *testing.T) {
 }
 
 func TestIdleSettledDecisions(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	stop := now.Add(-time.Minute)
 	adopted := now.Add(-time.Hour)
@@ -240,6 +246,7 @@ func TestIdleSettledDecisions(t *testing.T) {
 // A worker stuck in a state the run can't wait out stops it, saying why; one that only passed
 // through it doesn't.
 func TestStuck(t *testing.T) {
+	t.Parallel()
 	w := worker{id: "A", tab: "tab"}
 	long := func(d time.Duration) streak { return streak{since: time.Now().Add(-d - time.Second)} }
 	cases := []struct {

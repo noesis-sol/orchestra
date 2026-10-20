@@ -10,6 +10,7 @@ import (
 // The dashboard's why for a ticket set aside by its check says whether the check or its setup
 // failed or timed out.
 func TestChecksFailedDetail(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		setup, timedOut bool
 		want            string
@@ -28,6 +29,7 @@ func TestChecksFailedDetail(t *testing.T) {
 
 // failedHow names what failed, the check or its setup, and how: it fails, or did not finish.
 func TestFailedHow(t *testing.T) {
+	t.Parallel()
 	o := &Loop{cfg: Config{Check: "make check", Setup: "npm ci", CheckTimeout: 5 * time.Minute}}
 	cases := []struct {
 		setup bool

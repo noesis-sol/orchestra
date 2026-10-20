@@ -18,6 +18,7 @@ var trackedRoutes = []string{
 // editing it, whether the repository's files are known (the file there or a new one), empty or unknown.
 // It still matches what its class does (pages/i.tsx), and nothing else.
 func TestAListedNameWithABracketMeansThatFile(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedRoutes, trackedHere, {}, nil} {
 		route := TicketFootprint(listing("a", "pages/[id].tsx"), tracked, "")
 		if slices.Equal(tracked, trackedRoutes) {
@@ -74,6 +75,7 @@ func TestAListedNameWithABracketMeansThatFile(t *testing.T) {
 // files under it: the repository's, with its files known, and any another ticket names or a worker
 // edits, with them empty or unknown. A folder beside it is no part of it.
 func TestAListedFolderWithABracketTakesInItsFiles(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedRoutes, {}, nil} {
 		route := TicketFootprint(listing("a", "src/routes/[slug]/"), tracked, "")
 		if slices.Equal(tracked, trackedRoutes) {
@@ -114,6 +116,7 @@ func TestAListedFolderWithABracketTakesInItsFiles(t *testing.T) {
 // orchestra plan reads the same footprints: a ticket listing pages/[id].tsx is ordered with one listing
 // that file, not with one listing pages/x.tsx.
 func TestPlanLinksAListedNameWithABracketToThatFile(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range [][]string{trackedRoutes, {}, nil} {
 		open := []Ticket{listing("a", "pages/[id].tsx"), listing("b", "./pages/[id].tsx"), listing("c", "pages/x.tsx")}
 		for i, p := range []int{1, 2, 3} {
@@ -130,6 +133,7 @@ func TestPlanLinksAListedNameWithABracketToThatFile(t *testing.T) {
 // path.Match takes and the name written as it is, the file's its name alone, which a class or a * in
 // it doesn't widen.
 func TestAPartOfAGlobMeetsTheNameAsWritten(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		x, y part
 		want bool

@@ -8,6 +8,7 @@ import (
 // A changelog git merges by union links no tickets, however short: both tickets' lines are kept. A
 // file the union check doesn't name, and every file without one, still does.
 func TestPlanLinksLeaveOutUnionMergedFiles(t *testing.T) {
+	t.Parallel()
 	open := []Ticket{
 		planTicket("a", 1, "", "Add a CHANGELOG.md entry for the retry."),
 		planTicket("b", 2, "", "Add a CHANGELOG.md entry for the dashboard."),
