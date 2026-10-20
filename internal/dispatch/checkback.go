@@ -218,7 +218,7 @@ func times(n int) string {
 // verifyFixed). It returns what the worker committed, as in "2 commits", or why the hand-back failed,
 // or the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the usage limit's. Neither
 // lock is held: the worker may take minutes. The time limit is the one for resolving conflicts, from
-// the hand-back (see handBackTo).
+// the hand-back (see handBackTo): a fix committed by then is checked, its worker still at it or not.
 func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checked, n int) (fixed, why string,
 	stop *stopReason) {
 	c := o.cfg
@@ -226,9 +226,12 @@ func (o *Loop) fixCheck(ctx context.Context, r rebaseStop, at string, res checke
 		"(%d of %d, up to %s)", o.failedHow(res.setup, res.err), r.branchOn(c.Base), r.tab, n, c.CheckHandBacks,
 		command.ShortDuration(o.handBackLimit()))
 	prompt := o.fixPrompt(context.WithoutCancel(ctx), r, res)
-	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, func() string {
+	why, stop = o.handBackTo(ctx, r, handFixing, line, prompt, at, func(late bool) string {
 		var rejected string
 		fixed, rejected = o.verifyFixed(ctx, r, at)
+		if late && rejected == "" && fixed == committedNothing {
+			return "its worker has committed no fix yet" // still at it: not done
+		}
 		return rejected
 	})
 	return fixed, why, stop

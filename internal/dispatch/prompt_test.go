@@ -53,15 +53,19 @@ func TestTheResolveTimeoutRunsFromTheHandBack(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		h := handBackHarness(t, func(w *fakeWorker) AgentState { return "working" })
+		h.worker("A", idles) // told, at the limit, that the hand-back is over
 		h.herdr.promptTakes = time.Minute
-		var handedBack time.Time
-		h.herdr.onPrompt = func(id string) { handedBack = time.Now() }
+		var prompted []time.Time
+		h.herdr.onPrompt = func(id string) { prompted = append(prompted, time.Now()) }
 		if _, code := h.run(); code != ExitOK {
 			t.Fatalf("exit %d\n%s", code, h.sink.text())
 		}
 		limit := project.DefaultResolveTimeout
-		if took := time.Since(handedBack); took < limit || took > limit+2*statusPoll {
-			t.Errorf("set aside %s after the hand-back, want %s", took, limit)
+		if len(prompted) != 2 {
+			t.Fatalf("%d prompts, want the hand-back and the word that it is over\n%s", len(prompted), h.sink.text())
+		}
+		if took := prompted[1].Sub(prompted[0]) - escapeSettle; took < limit || took > limit+2*statusPoll {
+			t.Errorf("ended %s after the hand-back, want %s", took, limit)
 		}
 		if ev := h.sink.text(); !strings.Contains(ev, "handed back to its worker, but its worker was still working after 20m") {
 			t.Errorf("events:\n%s", ev)

@@ -26,6 +26,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A hand-back (resolving a conflict, fixing a failing check) past its time
+  limit with its worker still at it no longer puts the branch back under
+  the worker without a word: a rebase that has finished, with the branch on
+  top of the base, or a fix committed by then is taken as it is, checked and
+  merged; otherwise the worker's turn is stopped (Escape) and it is told the
+  hand-back is over and its branch put back, naming the commit its attempt
+  had got to, before the branch is put back and the ticket set aside.
 - A ticket coming to an end (closed, deferred, left for review or blocked
   from merging) no longer shows twice on the dashboard for a moment, in
   Current and in the tickets table beside it: its row comes into the table

@@ -180,7 +180,7 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 
 // A hand-back its worker doesn't finish in time sets the ticket aside as a failed resolution does:
 // a worker idle with the rebase still stopped once its idle grace is over, and one still working at
-// the hand-back's time limit.
+// the hand-back's time limit, which is stopped and told first (see late_handback_test.go).
 func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -190,7 +190,7 @@ func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
 		why     string
 	}{
 		{"unfinished", func(w *fakeWorker) AgentState { return "idle" }, idleGrace, "its worker left the rebase unfinished"},
-		{"timed out", func(w *fakeWorker) AgentState { return "working" }, project.DefaultResolveTimeout,
+		{"timed out", func(w *fakeWorker) AgentState { return "working" }, project.DefaultResolveTimeout + escapeSettle,
 			"its worker was still working after 20m"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,9 +207,13 @@ func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
 					w.commit("shared.txt")
 					w.close()
 					return "idle"
-				}, tc.resolve)
+				}, tc.resolve, idles) // idles: told the hand-back is over, when it is still working
 				var handedBack time.Time
-				h.herdr.onPrompt = func(id string) { handedBack = time.Now() }
+				h.herdr.onPrompt = func(id string) {
+					if handedBack.IsZero() {
+						handedBack = time.Now()
+					}
+				}
 				o, code := h.run()
 				if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 					t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())

@@ -33,6 +33,7 @@ type fakeGit struct {
 	worktrees map[string]string       // the branch each worktree folder is on
 	conflicts map[string][]string     // the files each of these branches' rebases stops on
 	rebasing  map[string]bool         // worktree folders with a rebase stopped in them
+	replaying map[string][]fakeCommit // the history HEAD is at in these folders mid-rebase (see replayed)
 	dirty     map[string]string       // the uncommitted changes in these worktree folders, as git status shows them
 	unions    map[string]bool         // the files .gitattributes merges by union (merge=union)
 	replaced  [][]fakeCommit          // the histories rebases and resets moved branches from, as git keeps their commits
@@ -189,9 +190,16 @@ func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error
 	return g.base, nil
 }
 
+// Head is the commit rev is on; "HEAD" in a worktree is its branch's, or where its rebase has got to.
 func (g *fakeGit) Head(ctx context.Context, repo, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if br, ok := g.worktrees[repo]; ok && rev == "HEAD" {
+		rev = br
+		if cs := g.replaying[repo]; len(cs) > 0 {
+			return cs[len(cs)-1].hash, nil
+		}
+	}
 	if cs := g.resolve(rev); len(cs) > 0 {
 		return cs[len(cs)-1].hash, nil
 	}
@@ -453,6 +461,7 @@ func (g *fakeGit) AbortRebase(ctx context.Context, worktree string) (string, err
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	delete(g.rebasing, worktree)
+	delete(g.replaying, worktree)
 	return "", nil
 }
 

@@ -95,7 +95,7 @@ func (o *Loop) resolvePrompt(r rebaseStop) string {
 func (o *Loop) handBack(ctx context.Context, r rebaseStop) (string, *stopReason) {
 	line := fmt.Sprintf("  RESOLVING: %s conflicts with %s in %s; handed back to its worker in tab %s to resolve "+
 		"(up to %s)", r.br, o.cfg.Base, strings.Join(r.files, ", "), r.tab, command.ShortDuration(o.handBackLimit()))
-	return o.handBackTo(ctx, r, handResolving, line, o.resolvePrompt(r), func() string {
+	return o.handBackTo(ctx, r, handResolving, line, o.resolvePrompt(r), r.head, func(bool) string {
 		return o.verifyResolved(ctx, r)
 	})
 }
@@ -121,14 +121,16 @@ func (o *Loop) handBackLimit() time.Duration {
 // as it is and the ticket handed back still: errInterrupted after Ctrl+C, or the usage limit's (see
 // limitStop). Neither lock is held: the worker may take minutes, or wait out the usage limit. The time
 // limit, handBackLimit, runs from the hand-back, not from when the worker is seen to take it, and
-// leaves out the time it waits on the usage limit.
-func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line, prompt string,
-	verify func() string) (string, *stopReason) {
+// leaves out the time it waits on the usage limit. A worker still at it past the limit is stopped and
+// told what becomes of its work (see endLate): verify, told it is late, says whether that is done
+// already; to is the commit the caller puts the branch back at when the hand-back fails.
+func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line, prompt, to string,
+	verify func(late bool) string) (string, *stopReason) {
 	limit := o.handBackLimit()
 	deadline := time.Now().Add(limit)
 	watch := o.newWatcher(r.wt, o.setHandedBack(r.id, mode))
 	o.emit(Event{Kind: EvInfo, Ticket: r.id, Text: line})
-	why, stop := o.waitResolved(ctx, r.worker, prompt, deadline, limit, watch.report)
+	why, late, stop := o.waitResolved(ctx, r.worker, prompt, deadline, limit, watch.report)
 	if stop == nil && ctx.Err() != nil {
 		stop = errInterrupted
 	}
@@ -136,24 +138,115 @@ func (o *Loop) handBackTo(ctx context.Context, r rebaseStop, mode handMode, line
 		return "", stop
 	}
 	o.setHandedBack(r.id, handNone)
-	if why != "" {
+	switch {
+	case late:
+		return o.endLate(ctx, r, mode, to, why, verify(true)), nil
+	case why != "":
 		return why, nil
 	}
-	return verify(), nil
+	return verify(false), nil
+}
+
+// endLate ends the hand-back of r's ticket to its worker, still at it as the time limit passed, as why
+// says, and returns why the hand-back failed, or "" when what git has is done already, as verify found
+// it at the limit (rejected says why not): the rebase finished, with the branch on top of Base, or a fix
+// committed. The limit runs on the clock, whatever the machine's load, and a worker may be past it with
+// its work committed, running the tests after (tutti-nrg.5.9's had committed its resolution 9 minutes
+// before). Either way its turn is stopped, with Escape as at the usage limit, and it is told: that its
+// branch goes on as it is to be checked and merged, or that the hand-back is over and the branch put
+// back at to, its attempt named, before the caller puts it back (see undoResolution, undoFix), so that
+// it doesn't go on working on a ticket set aside.
+func (o *Loop) endLate(ctx context.Context, r rebaseStop, mode handMode, to, why, rejected string) string {
+	keep := context.WithoutCancel(ctx) // a read cut short would name no commit
+	limit := command.ShortDuration(o.handBackLimit())
+	if rejected == "" {
+		at, err := o.checkout.Head(keep, o.cfg.Repo, r.br)
+		o.log.Raw("", err)
+		done := "its fix is committed"
+		if mode == handResolving {
+			done = "its rebase has finished"
+		}
+		o.info("  %s's worker was still at its hand-back after %s, but %s: %s is taken as it is", r.id, limit, done,
+			r.br)
+		o.interruptWith(ctx, r.worker, handBackTaken(r, mode, limit, at, o.cfg.Check))
+		return ""
+	}
+	attempt := o.attempt(keep, r, to)
+	o.interruptWith(ctx, r.worker, handBackOver(r, mode, limit, to, attempt))
+	o.info("  %s's worker was stopped and told its hand-back is over", r.id)
+	return why
+}
+
+// attempt is the commit r's worker got to on its hand-back, its worktree's HEAD, as the branch is to
+// be put back at to: "" when it is there, or at the commit the branch was rebased onto, the worker
+// having committed nothing of its attempt, or when git can't say.
+func (o *Loop) attempt(ctx context.Context, r rebaseStop, to string) string {
+	head, err := o.checkout.Head(ctx, r.wt, "HEAD")
+	o.log.Raw("", err)
+	if head == to || head == r.onto {
+		return ""
+	}
+	return head
+}
+
+// interruptWith stops the turn of the worker w, still at its hand-back past the time limit, with
+// Escape, as tellAfterLimit does, and gives it msg.
+func (o *Loop) interruptWith(ctx context.Context, w worker, msg string) {
+	if err := o.agents.SendKeys(ctx, w.agent, "esc"); err != nil {
+		o.log.Raw("", fmt.Errorf("cannot press Escape for %s: %w", w.agent, err))
+	}
+	if !sleep(ctx, escapeSettle) {
+		return
+	}
+	if !o.deliverPrompt(ctx, w.agent, msg) && ctx.Err() == nil {
+		o.log.Raw("", fmt.Errorf("%s's worker did not take the message that its hand-back is over", w.id))
+	}
+}
+
+// handBackTaken is what the worker on r's ticket is told when its hand-back as mode says is past the
+// time limit, limit, with what it was asked done already: its branch, at commit at, is taken as it is,
+// to be checked with check and merged.
+func handBackTaken(r rebaseStop, mode handMode, limit, at, check string) string {
+	what := "fix is committed"
+	if mode == handResolving {
+		what = "rebase has finished"
+	}
+	return fmt.Sprintf("Orchestra: the %s for this hand-back is up, and your %s, so orchestra has stopped you "+
+		"and takes %s as it is now, at %s, to check with '%s' and merge. Leave %s as it is: no more commits, "+
+		"no amending, no git commands in it, no ticket changes. Say DONE.",
+		limit, what, r.br, short(at), check, r.wt)
+}
+
+// handBackOver is what the worker on r's ticket is told when its hand-back as mode says is past the
+// time limit, limit, and not done: the hand-back is over, the branch put back at to and the ticket set
+// aside, its attempt (see attempt) kept in git.
+func handBackOver(r rebaseStop, mode handMode, limit, to, attempt string) string {
+	back := fmt.Sprintf("puts %s back at %s, where the check failed,", r.br, short(to))
+	if mode == handResolving {
+		back = fmt.Sprintf("aborts the rebase if it is still in progress, puts %s back at %s, where it was "+
+			"before the rebase,", r.br, short(to))
+	}
+	kept := "Nothing of your attempt was committed, so none of it is kept."
+	if attempt != "" {
+		kept = fmt.Sprintf("Your attempt so far is commit %s, which git keeps (git show %s).", attempt, attempt)
+	}
+	return fmt.Sprintf("Orchestra: the %s for this hand-back is up, so orchestra has stopped you and ends it: "+
+		"it %s and sets %s aside for review. %s Don't work on it any more: no git commands in %s, no ticket "+
+		"changes. Say DONE.", limit, back, r.id, kept, r.wt)
 }
 
 // waitResolved hands the worker w its finished ticket back with prompt and waits for it to settle once
 // it has started on it: idle with the rebase over, idle for idleGrace with it still in progress (its
 // own background command may keep it idle), gone, or still busy at deadline, limit after the
-// hand-back, which it returns as the reason, as it does a prompt not taken. A worker at the account's
-// usage limit, as it is handed back or later, joins the run's hold (see limitPoll), the time it waits
-// not counting toward limit: one limited as it is handed back is given prompt where the hold tells it
-// to carry on, or once it goes idle by itself, and one limited later is told to carry on. It returns
-// the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the hold's once it has lasted
-// Config.UsageLimitWait. Each status read goes to report; one the terminal has no agent under its name
-// for is looked for in its pane (see workerState).
+// hand-back, which it returns as the reason with late set, as it does a prompt not taken without. A
+// worker at the account's usage limit, as it is handed back or later, joins the run's hold (see
+// limitPoll), the time it waits not counting toward limit: one limited as it is handed back is given
+// prompt where the hold tells it to carry on, or once it goes idle by itself, and one limited later is
+// told to carry on. It returns the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the
+// hold's once it has lasted Config.UsageLimitWait. Each status read goes to report; one the terminal
+// has no agent under its name for is looked for in its pane (see workerState).
 func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadline time.Time, limit time.Duration,
-	report func(context.Context, AgentState, error)) (why string, stop *stopReason) {
+	report func(context.Context, AgentState, error)) (why string, late bool, stop *stopReason) {
 	var lw limitWait
 	var idleSince, settled time.Time
 	defer func() { o.usage.done(w.id, &lw, settled, stop) }()
@@ -169,11 +262,11 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		o.info("  %s's worker is at the usage limit: it is handed back once the limit lifts, the wait not counting "+
 			"toward the %s", w.id, command.ShortDuration(limit))
 	} else if why := give(); why != "" {
-		return why, nil
+		return why, false, nil
 	}
 	for polled := false; ; polled = true {
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
-			return "", errInterrupted
+			return "", false, errInterrupted
 		}
 		st, err := o.workerState(ctx, w)
 		report(ctx, st, err)
@@ -183,9 +276,9 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		case st == StateGone:
 			lw.leave(time.Now(), st)
 			if !given {
-				return "its worker is gone", nil
+				return "its worker is gone", false, nil
 			}
-			return "", nil
+			return "", false, nil
 		default:
 			var h hooksSeen
 			msg := carryOnAfterLimit(w.id)
@@ -197,7 +290,7 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 			}
 			stop, told := o.limitPoll(ctx, w, st, h, &lw, msg)
 			if stop != nil {
-				return "", stop
+				return "", false, stop
 			}
 			if told {
 				given, idleSince = true, time.Time{}
@@ -207,7 +300,7 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		idle := err == nil && (st == StateIdle || st == StateDone)
 		if idle && !given { // past the limit by itself: handed back now
 			if why := give(); why != "" {
-				return why, nil
+				return why, false, nil
 			}
 			continue
 		}
@@ -220,17 +313,17 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt string, deadli
 		// A rebase git can't tell is over is waited for as one in progress: its worker may be at it still.
 		if idle && (!o.rebasing(ctx, w.wt) || time.Since(idleSince) >= idleGrace) {
 			settled = time.Now()
-			return "", nil
+			return "", false, nil
 		}
 		if now := time.Now(); now.After(deadline.Add(lw.limited(now))) {
 			if idle {
 				settled = now
-				return "", nil // what it left is checked next
+				return "", false, nil // what it left is checked next
 			}
 			if err != nil {
-				return fmt.Sprintf("its worker's status could still not be read after %s", command.ShortDuration(limit)), nil
+				return fmt.Sprintf("its worker's status could still not be read after %s", command.ShortDuration(limit)), true, nil
 			}
-			return fmt.Sprintf("its worker was still %s after %s", st, command.ShortDuration(limit)), nil
+			return fmt.Sprintf("its worker was still %s after %s", st, command.ShortDuration(limit)), true, nil
 		}
 	}
 }
