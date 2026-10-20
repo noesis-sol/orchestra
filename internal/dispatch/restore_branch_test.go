@@ -61,6 +61,9 @@ func (g *stubGit) CommitNaming(ctx context.Context, repo, base, branch, ticket s
 	return g.naming
 }
 func (g *stubGit) CountCommits(ctx context.Context, repo, revs string) int { return g.commits }
+func (g *stubGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
+	return g.naming, g.commits
+}
 func (g *stubGit) CommitNotNaming(ctx context.Context, repo, revs, ticket string) (string, error) {
 	return g.notNaming, g.notNamingErr
 }

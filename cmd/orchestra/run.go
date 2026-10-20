@@ -148,7 +148,10 @@ func parseArgs(fs *flag.FlagSet, args []string, cmd string) (code int, ok bool) 
 // A run reads its configuration, opens its session (held until it ends: the lock, the stop
 // signals' watch, the log), settles what it works on (the question, and a feature typed there or
 // given with --feature), then runs its loop and the organ phase after it.
+//
+// Each asks git where the repository is once (git.Remember), however many of its steps need it.
 func run(ctx context.Context, args []string, e cmdEnv) (err error) {
+	ctx = git.Remember(ctx)
 	if len(args) > 1 {
 		if args[1] == "hook" { // hidden: Claude Code runs it as a worker's hook, which package claude serves itself
 			return status(claude.Hook(args[2:], e.getenv, e.stdin, e.stderr))

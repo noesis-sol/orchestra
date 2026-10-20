@@ -14,13 +14,13 @@ type signallingCheckout struct {
 	failed chan struct{}
 }
 
-func (s signallingCheckout) DirtyTree(ctx context.Context, dir string) (string, error) {
+func (s signallingCheckout) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
 	select {
 	case <-s.failed:
-		return "", nil
+		return "", "main", nil
 	default:
 		close(s.failed)
-		return "", errors.New("git -C repo status --porcelain: signal: killed")
+		return "", "", errors.New("git -C repo status --porcelain: signal: killed")
 	}
 }
 

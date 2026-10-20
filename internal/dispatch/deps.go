@@ -184,8 +184,9 @@ type Session struct {
 
 // Checkout is what the loop checks about the main checkout and worktrees (git).
 type Checkout interface {
-	// uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/
-	DirtyTree(ctx context.Context, dir string) (string, error)
+	// uncommitted work in the main checkout outside .claude/, .beads/, .orchestra/, and the branch it is on
+	// as git status names it ("" on a detached HEAD), from one git command
+	DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error)
 	// uncommitted work in a ticket's worktree outside .orchestra/run/
 	DirtyWorktree(ctx context.Context, dir string) string
 	// each changed or untracked file in repo (under paths, if any) to its code in git status --porcelain
@@ -217,6 +218,8 @@ type Merger interface {
 	IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
 	MergeBase(ctx context.Context, repo, a, b string) string // their best common ancestor; "" if git can't say
 	CommitNaming(ctx context.Context, repo, base, branch, ticket string) string
+	// CommitNaming and CountCommits of base..branch from one git command: "" and -1 when git can't list them
+	OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int)
 	// the latest commit reachable from rev naming the ticket
 	CommitNamingOn(ctx context.Context, repo, rev, ticket string) string
 	// the oldest commit in revs (a..b) whose message doesn't name the ticket; "" when each one does

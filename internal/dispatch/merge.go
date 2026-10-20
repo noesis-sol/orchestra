@@ -20,8 +20,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 		o.leaveOffBranch(keep, w, on)
 		return nil
 	}
-	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
-	own := o.merger.CountCommits(keep, c.Repo, c.Base+".."+br)
+	commit, own := o.merger.OwnCommits(keep, c.Repo, c.Base, br, id)
 	switch closedOutcomeOf(commit, own, o.checkout.DirtyWorktree(keep, wt) != "") {
 	case closedNoChange:
 		repo := &lockGuard{mu: &o.repoMu}

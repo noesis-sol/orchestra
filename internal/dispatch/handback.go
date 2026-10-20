@@ -272,10 +272,11 @@ func (o *Loop) verifyResolved(ctx context.Context, r rebaseStop) string {
 		return fmt.Sprintf("%s is not on top of %s as it was rebased onto", r.br, c.Base)
 	case o.merger.Unchanged(keep, c.Repo, r.onto, r.br):
 		return ""
-	case o.merger.CommitNaming(keep, c.Repo, r.onto, r.br, r.id) == "":
-		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id)
 	}
-	if n := o.merger.CountCommits(keep, c.Repo, r.onto+".."+r.br); n < 0 || n > r.own {
+	switch naming, n := o.merger.OwnCommits(keep, c.Repo, r.onto, r.br, r.id); {
+	case naming == "":
+		return fmt.Sprintf("no commit on %s names %s any more", r.br, r.id)
+	case n < 0 || n > r.own:
 		return fmt.Sprintf("%s has %d commits where the ticket had %d (a commit made besides the rebase?)",
 			r.br, n, r.own)
 	}

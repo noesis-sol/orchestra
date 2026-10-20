@@ -82,6 +82,7 @@ func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 type preparedWorktree struct {
 	wt     string
 	fresh  bool   // made now: nothing is installed in it
+	cut    bool   // its branch too, from Base: on top of it, with nothing of an earlier attempt
 	before string // a reused one's branch's commit before its rebase onto Base; "" when git can't say
 }
 
@@ -101,13 +102,13 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWo
 		p = preparedWorktree{wt: wt, before: o.checkout.Head(ctx, c.Repo, br)}
 		return p, !o.refreshBranch(ctx, wt, br), nil
 	}
-	p = preparedWorktree{wt: filepath.Join(c.WTRoot, id), fresh: true}
+	p = preparedWorktree{wt: filepath.Join(c.WTRoot, id), fresh: true, cut: !o.worktrees.HasBranch(ctx, c.Repo, br)}
 	var out string
 	var err error
-	if o.worktrees.HasBranch(ctx, c.Repo, br) {
-		out, err = o.worktrees.AddWorktree(ctx, c.Repo, p.wt, br)
-	} else {
+	if p.cut {
 		out, err = o.worktrees.NewWorktree(ctx, c.Repo, p.wt, br, c.Base)
+	} else {
+		out, err = o.worktrees.AddWorktree(ctx, c.Repo, p.wt, br)
 	}
 	o.log.Raw(out, err)
 	if err != nil {
@@ -115,6 +116,9 @@ func (o *Loop) prepareWorktree(ctx context.Context, id, br string) (p preparedWo
 			id, p.wt, c.LogPath).causedBy(err)
 	}
 	o.info("  worktree %s on %s", p.wt, br)
+	if p.cut {
+		return p, false, nil // on top of Base, which it was cut from as the repository lock is held
+	}
 	return p, !o.refreshBranch(ctx, p.wt, br), nil
 }
 

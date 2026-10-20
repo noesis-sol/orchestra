@@ -72,6 +72,7 @@ type ticketRun struct {
 	// Each command still has its time limit.
 	keep context.Context
 	how  settling // how the worker settled, set as it does
+	cut  bool     // its branch was cut from Base for this worker: no earlier attempt left anything on it
 }
 
 // newTicketRun is ticket t's run, its worker started or adopted on ctx.
@@ -111,6 +112,7 @@ func (r *ticketRun) work(ctx context.Context) *stopReason {
 	if done {
 		return stop
 	}
+	r.cut = p.cut
 	// The worker starts with the project's dependencies installed (see setUpWorktree).
 	if done, stop := r.setUpWorktree(ctx, p); done {
 		return stop
@@ -400,7 +402,7 @@ type workerSetup struct {
 // it must: a run file leading out of the worktree sets the ticket aside (see setAsideEscaped), and
 // the MCP servers failing otherwise stop the run.
 func (r *ticketRun) setup(ctx context.Context, wt string, resumed bool) (workerSetup, bool, *stopReason) {
-	ws, err := r.o.workerFiles(ctx, r.t, wt, resumed)
+	ws, err := r.o.workerFiles(ctx, r.t, wt, resumed, r.cut)
 	if e := escapeOf(err); e != nil {
 		return ws, true, r.o.setAsideEscaped(r.keep, r.t, wt, e)
 	}
@@ -413,8 +415,9 @@ func (r *ticketRun) setup(ctx context.Context, wt string, resumed bool) (workerS
 // workerFiles prepares ticket t's worker's files in worktree wt: its MCP servers, its standing
 // rules, a new worker's prompt file and a Claude worker's hooks. It returns the first error that
 // stops the worker from starting: an escape (see escapeOf), or the MCP servers failing. The others
-// the worker does without are logged, and left out.
-func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed bool) (workerSetup, error) {
+// the worker does without are logged, and left out. cut says its branch was cut from Base for it, so
+// a new worker is told of no earlier attempt without asking git (see earlierNote).
+func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cut bool) (workerSetup, error) {
 	c, id := o.cfg, t.ID
 	var ws workerSetup
 	// A Claude worker gets the project's MCP servers and no others. Without them it would start with
@@ -437,7 +440,11 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed boo
 	}
 
 	if !resumed {
-		first := firstNotes(t, o.earlierNote(ctx, branchOf(id), wt))
+		earlier := ""
+		if !cut {
+			earlier = o.earlierNote(ctx, branchOf(id), wt)
+		}
+		first := firstNotes(t, earlier)
 		ws.full = o.fullPrompt(id, first)
 		ws.prompt = ws.full
 		if ws.args.rules != nil {

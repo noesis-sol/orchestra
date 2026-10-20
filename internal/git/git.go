@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -18,9 +19,10 @@ import (
 //
 // What a failed git call reads as, method by method: IsAncestor, Unchanged, Holds, Tracks and
 // HasBranch report false; RebaseInProgress true, as a rebase can't be shown to be over; DirtyWorktree
-// git's error text, as uncommitted work it can't rule out; CountCommits -1; CommitNaming(On), MergeBase,
-// Head and the texts for people (ShortStatus, OneLineLog, DiffStat, Subjects) ""; Changes,
-// ChangedFiles, ConflictedFiles and TrackedFiles none. The other methods return git's error.
+// git's error text, as uncommitted work it can't rule out; CountCommits -1, and OwnCommits "" and -1;
+// CommitNaming(On), MergeBase, Head and the texts for people (ShortStatus, OneLineLog, DiffStat,
+// Subjects) ""; Changes, ChangedFiles, ConflictedFiles and TrackedFiles none. The other methods return
+// git's error.
 type Git struct{}
 
 // readGit runs a git command that changes nothing, in dir ("" for the working directory), within
@@ -52,8 +54,7 @@ func (g Git) DirtyTree(ctx context.Context, dir string) (string, error) {
 // DirtyTreeBesides is DirtyTree leaving out these paths too, relative to dir and taken literally:
 // a file orchestra is about to commit, such as a spec.
 func (Git) DirtyTreeBesides(ctx context.Context, dir string, paths ...string) (string, error) {
-	args := []string{"-C", dir, "status", "--porcelain",
-		"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra"}
+	args := append([]string{"-C", dir, "status", "--porcelain"}, treePaths...)
 	for _, p := range paths {
 		args = append(args, ":(exclude,literal)"+p)
 	}
@@ -62,6 +63,49 @@ func (Git) DirtyTreeBesides(ctx context.Context, dir string, paths ...string) (s
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// treePaths are the paths DirtyTree looks at, for git status: all but .claude/, .beads/ and
+// .orchestra/.
+var treePaths = []string{"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra"}
+
+// DirtyTreeAndBranch is DirtyTree and the branch checked out in dir, from one git status: "" on a
+// detached HEAD. The branch is named as git status names it, which unlike CurrentBranch never puts
+// heads/ before it where a tag has the same name. It returns git's error when git can't tell.
+func (Git) DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error) {
+	// --no-ahead-behind: the branch line says nothing of its upstream that git has to count.
+	args := append([]string{"-C", dir, "status", "--porcelain", "--branch", "--no-ahead-behind"}, treePaths...)
+	out, err := readGit(ctx, "", args...)
+	if err != nil {
+		return "", "", err
+	}
+	line, rest, _ := strings.Cut(out, "\n")
+	branch, ok := branchOfStatus(line)
+	if !ok {
+		return "", "", errors.New("git status printed no branch line, but " + strconv.Quote(line))
+	}
+	return strings.TrimSpace(rest), branch, nil
+}
+
+// branchOfStatus reads the branch line of 'git status --porcelain --branch': "## main", "## main...origin/main
+// [different]", "## No commits yet on main" (or "## Initial commit on main" before git 2.17), or "## HEAD (no
+// branch)" when detached, which is "". A branch's name holds neither a space nor "..".
+func branchOfStatus(line string) (string, bool) {
+	line, ok := strings.CutPrefix(line, "## ")
+	if !ok {
+		return "", false
+	}
+	if line == "HEAD (no branch)" {
+		return "", true
+	}
+	for _, unborn := range []string{"No commits yet on ", "Initial commit on "} {
+		if b, ok := strings.CutPrefix(line, unborn); ok {
+			return b, true
+		}
+	}
+	line, _, _ = strings.Cut(line, "...")
+	line, _, _ = strings.Cut(line, " ")
+	return line, true
 }
 
 // DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
@@ -121,6 +165,11 @@ func (Git) CurrentBranch(ctx context.Context, repo string) (string, error) {
 // CommonDir returns the absolute path of the git directory repo's worktrees share: the main
 // checkout's .git, or a bare repository's own directory.
 func (Git) CommonDir(ctx context.Context, repo string) (string, error) {
+	if l, err := locate(ctx, repo); err == nil {
+		return l.common, nil
+	}
+	// A bare repository, or a git directory, has no top level for locate to find; and the error is the
+	// common directory's.
 	out, err := readGit(ctx, repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", err
@@ -131,6 +180,10 @@ func (Git) CommonDir(ctx context.Context, repo string) (string, error) {
 // TopLevel returns the top folder of the checkout dir is in ("" for the working directory), or
 // git's error when dir is not in one.
 func (Git) TopLevel(ctx context.Context, dir string) (string, error) {
+	if l, err := locate(ctx, dir); err == nil {
+		return l.top, nil
+	}
+	// The git directories locate asks for too may be what git can't read: the error is the top level's.
 	out, err := readGit(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
@@ -140,16 +193,92 @@ func (Git) TopLevel(ctx context.Context, dir string) (string, error) {
 
 // LinkedWorktree reports whether repo is a linked worktree rather than the main checkout: its git
 // directory is not the common one. It returns git's error when git can't tell.
-func (g Git) LinkedWorktree(ctx context.Context, repo string) (bool, error) {
-	gitDir, err := readGit(ctx, repo, "rev-parse", "--absolute-git-dir")
+func (Git) LinkedWorktree(ctx context.Context, repo string) (bool, error) {
+	if l, err := locate(ctx, repo); err == nil {
+		return l.gitDir != l.common, nil
+	}
+	// A bare repository, or a git directory, has no top level for locate to find, nor worktrees; and
+	// the error is the git directories'.
+	out, err := readGit(ctx, repo, "rev-parse", "--path-format=absolute", "--absolute-git-dir", "--git-common-dir")
 	if err != nil {
 		return false, err
 	}
-	commonDir, err := g.CommonDir(ctx, repo)
-	if err != nil {
-		return false, err
+	gitDir, commonDir, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	return gitDir != commonDir, nil
+}
+
+// location is where a checkout is, as git rev-parse gives it: its top folder, its own git directory
+// (a linked worktree's is in the common one) and the git directory its worktrees share, all absolute.
+type location struct {
+	top, gitDir, common string
+}
+
+// locate returns where the checkout holding dir ("" for the working directory) is, from one git
+// rev-parse, or from what a ctx made by Remember remembers. It returns git's error when dir is not
+// in a checkout, as in a bare repository, or git can't tell any of the three: each caller then asks
+// git for what it needs alone, for that answer or git's error about it.
+func locate(ctx context.Context, dir string) (location, error) {
+	mem, _ := ctx.Value(locationsKey{}).(*locations)
+	if l, ok := mem.of(dir); ok {
+		return l, nil
 	}
-	return strings.TrimSpace(gitDir) != commonDir, nil
+	out, err := readGit(ctx, dir, "rev-parse", "--path-format=absolute",
+		"--show-toplevel", "--absolute-git-dir", "--git-common-dir")
+	if err != nil {
+		return location{}, err
+	}
+	paths := strings.Split(strings.TrimSpace(out), "\n")
+	if len(paths) != 3 {
+		return location{}, errors.New("git rev-parse gave " + strconv.Itoa(len(paths)) +
+			" lines for 3 paths: a path with a newline in it? " + strconv.Quote(out))
+	}
+	l := location{top: paths[0], gitDir: paths[1], common: paths[2]}
+	mem.remember(dir, l)
+	return l, nil
+}
+
+// Remember returns ctx with a memory, for one orchestra command, of where the checkouts it asks about
+// are: then TopLevel, CommonDir and LinkedWorktree ask git about a folder once, rather than at each
+// call, and once asked about a folder in a checkout, not about its top folder. Where a checkout is
+// doesn't change while orchestra runs: it neither makes repositories nor moves them. A failure isn't
+// remembered.
+func Remember(ctx context.Context) context.Context {
+	return context.WithValue(ctx, locationsKey{}, &locations{byDir: map[string]location{}})
+}
+
+// locationsKey is the key of a ctx's locations.
+type locationsKey struct{}
+
+// locations is what a ctx made by Remember remembers: each folder asked about, by its path, and
+// each checkout's top folder. A nil *locations remembers nothing.
+type locations struct {
+	mu    sync.Mutex
+	byDir map[string]location
+}
+
+// of returns what is remembered of dir, if anything. The working directory ("") isn't remembered:
+// it is the process's, which may change.
+func (m *locations) of(dir string) (location, bool) {
+	if m == nil || dir == "" {
+		return location{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l, ok := m.byDir[dir]
+	return l, ok
+}
+
+// remember keeps l, the location of the checkout dir is in, for dir and for its top folder.
+func (m *locations) remember(dir string, l location) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if dir != "" {
+		m.byDir[dir] = l
+	}
+	m.byDir[l.top] = l
 }
 
 // parseWorktreeOf returns the path of the worktree that has branch checked out, from
@@ -220,6 +349,17 @@ func (Git) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string 
 	out, _ := readGit(ctx, repo, "log", "--no-show-signature",
 		"--fixed-strings", "--grep="+ticket, "--format=%h %s%x00%B%x1e", rev, "--")
 	return latestNaming(out, ticket)
+}
+
+// OwnCommits is CommitNaming and CountCommits of base..branch from one git log: the latest commit on
+// branch, not on base, whose message names the ticket, as "<hash> <subject>" cut to 70 characters, or
+// ""; and how many commits branch has that base hasn't, or -1 when git can't list them.
+func (Git) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (naming string, own int) {
+	out, err := readGit(ctx, repo, "log", "--no-show-signature", "--format=%h %s%x00%B%x1e", base+".."+branch, "--")
+	if err != nil {
+		return "", -1
+	}
+	return latestNaming(out, ticket), strings.Count(out, "\x1e")
 }
 
 // CommitNotNaming returns the oldest commit in revs, a range such as a..b, whose message doesn't name

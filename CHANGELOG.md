@@ -38,6 +38,15 @@ All notable changes to orchestra are documented here. The format follows
   or is stopped then ends the run as before, the environment ticket's worker
   left as a stopped run leaves its workers. On a terminal the run's lines
   show above the breakdown's spinner, and the dashboard opens once it is over.
+- orchestra runs fewer git commands, with the same results. Each orchestra
+  command asks git where the repository is once, with one `git rev-parse`,
+  rather than up to five times (its top folder, whether it is the main
+  checkout, where the run lock and the exclusions are). The run reads the
+  main checkout's changes and branch with one `git status --branch` rather
+  than a status and a `git symbolic-ref`; asks nothing of a ticket's branch
+  it has just cut from the base until the ticket finishes; and reads a
+  finished branch's commit naming its ticket and its count of commits with
+  one `git log`. A one-ticket run went from 30 git commands to 22.
 ### Fixed
 
 - The feature interview's line keeps the epic's ticket count in a narrow

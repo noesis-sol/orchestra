@@ -14,12 +14,12 @@ type flakyCheckout struct {
 	fails *int
 }
 
-func (f flakyCheckout) DirtyTree(ctx context.Context, dir string) (string, error) {
+func (f flakyCheckout) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
 	if *f.fails > 0 {
 		*f.fails--
-		return "", errors.New("git -C repo status --porcelain: signal: killed")
+		return "", "", errors.New("git -C repo status --porcelain: signal: killed")
 	}
-	return "", nil
+	return "", "main", nil
 }
 
 // A git call that fails says nothing about the checkout: it is tried again, and when it keeps

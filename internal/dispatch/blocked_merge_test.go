@@ -19,11 +19,11 @@ type dirtyCheckout struct {
 	dirty *atomic.Bool
 }
 
-func (c dirtyCheckout) DirtyTree(ctx context.Context, dir string) (string, error) {
+func (c dirtyCheckout) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
 	if c.dirty.Load() {
-		return " M notes.txt", nil
+		return " M notes.txt", "main", nil
 	}
-	return "", nil
+	return "", "main", nil
 }
 
 // eventsOf is the events of kind k the run emitted.

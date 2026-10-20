@@ -55,8 +55,10 @@ func (readyTickets) Closed(ctx context.Context, label string) ([]Ticket, error) 
 
 type cleanCheckout struct{}
 
-func (cleanCheckout) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
-func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) string      { return "" }
+func (cleanCheckout) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
+	return "", "main", nil
+}
+func (cleanCheckout) DirtyWorktree(ctx context.Context, dir string) string { return "" }
 func (cleanCheckout) Changes(ctx context.Context, repo string, paths ...string) map[string]string {
 	return nil
 }
@@ -102,6 +104,9 @@ func (upToDate) IsAncestor(ctx context.Context, repo, ancestor, rev string) bool
 func (upToDate) MergeBase(ctx context.Context, repo, a, b string) string         { return "" }
 func (upToDate) CommitNaming(ctx context.Context, repo, base, branch, ticket string) string {
 	return ""
+}
+func (upToDate) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
+	return "", 0
 }
 func (upToDate) CommitNamingOn(ctx context.Context, repo, rev, ticket string) string { return "" }
 func (upToDate) Rebase(ctx context.Context, worktree, onto string) (string, error)   { return "", nil }

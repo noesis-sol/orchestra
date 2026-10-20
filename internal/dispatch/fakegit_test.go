@@ -165,7 +165,11 @@ func (g *fakeGit) only(base, rev string) []fakeCommit {
 
 // Checkout
 
-func (g *fakeGit) DirtyTree(ctx context.Context, dir string) (string, error) { return "", nil }
+// DirtyTreeAndBranch is a clean main checkout on the branch CurrentBranch says.
+func (g *fakeGit) DirtyTreeAndBranch(ctx context.Context, dir string) (string, string, error) {
+	br, err := g.CurrentBranch(ctx, dir)
+	return "", br, err
+}
 func (g *fakeGit) DirtyWorktree(ctx context.Context, dir string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -351,6 +355,11 @@ func (g *fakeGit) CommitNaming(ctx context.Context, repo, base, branch, ticket s
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return naming(g.only(base, branch), ticket)
+}
+
+// OwnCommits is CommitNaming and CountCommits of base..branch.
+func (g *fakeGit) OwnCommits(ctx context.Context, repo, base, branch, ticket string) (string, int) {
+	return g.CommitNaming(ctx, repo, base, branch, ticket), g.CountCommits(ctx, repo, base+".."+branch)
 }
 
 // CommitNamingOn is the latest commit in rev's history, in a range a..b or in rev^! (rev alone),

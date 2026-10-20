@@ -908,7 +908,7 @@ func (o *Loop) checkoutUnready(ctx context.Context, leftForReview string, lock s
 			": uncommitted changes in %s; stopping%s. Inspect with: git status", c.Repo, leftForReview),
 			"main checkout has uncommitted changes")
 	}
-	if branch != c.Base {
+	if !isBranch(branch, c.Base) {
 		return stop(halt(ExitDirty, stopDirtyTree,
 			": %s is no longer on %s; stopping%s. Check it out again to continue.", c.Repo, c.Base, leftForReview),
 			"main checkout is not on "+c.Base)
@@ -927,9 +927,7 @@ func (o *Loop) readCheckout(ctx context.Context, lock sync.Locker) (dirty, branc
 	c := o.cfg
 	for try := 1; ; try++ {
 		lock.Lock()
-		if dirty, err = o.checkout.DirtyTree(ctx, c.Repo); err == nil {
-			branch, err = o.checkout.CurrentBranch(ctx, c.Repo)
-		}
+		dirty, branch, err = o.checkout.DirtyTreeAndBranch(ctx, c.Repo)
 		lock.Unlock()
 		if err == nil {
 			return dirty, branch, nil
@@ -939,6 +937,13 @@ func (o *Loop) readCheckout(ctx context.Context, lock sync.Locker) (dirty, branc
 		}
 		o.log.Raw("", err) // tried again; only the error returned is the caller's to report
 	}
+}
+
+// isBranch reports whether branch, as git status names it, is base, as 'git symbolic-ref --short' named
+// it at the start: the branch's name, or with heads/ or refs/heads/ before it where a tag or another
+// ref has that name too.
+func isBranch(branch, base string) bool {
+	return branch != "" && (base == branch || base == "heads/"+branch || base == "refs/heads/"+branch)
 }
 
 // alreadyLocked is the lock readCheckout takes for a caller that holds repoMu already.
