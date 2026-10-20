@@ -579,7 +579,7 @@ func (r *runState) waitOutLimit() bool {
 		case !on || len(lifted) > 0:
 			return true
 		case !now.Before(giveUp):
-			r.stops.add(halt(ExitUsageLimit, stopUsageLimit, ": the run held for the usage limit for %s (%s), "+
+			r.addStop(halt(ExitUsageLimit, stopUsageLimit, ": the run held for the usage limit for %s (%s), "+
 				"with nothing running; stopping", command.ShortDuration(now.Sub(since)), resetsSaid(reset, now)))
 			return false
 		}

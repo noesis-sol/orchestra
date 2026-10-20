@@ -206,7 +206,6 @@ func (o *Loop) Run(ctx context.Context) int {
 	for {
 		r.takeDrainRequest()
 		r.heedEnvironment()
-		r.sayNoMore()
 		r.lookAround()
 		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
@@ -366,6 +365,14 @@ func (l *stops) add(s *stopReason) (first bool) {
 	return false
 }
 
+// addStop records s among the run's stops, telling the merges at once that the run holds (see
+// sayNoMore), and reports whether it is the first.
+func (r *runState) addStop(s *stopReason) (first bool) {
+	first = r.stops.add(s)
+	r.sayNoMore()
+	return first
+}
+
 // line is the line the run ends with: the first reason, then "; also" and each of the others.
 func (l *stops) line() string {
 	return strings.Join(append([]string{l.first.Error()}, l.others...), "; also ")
@@ -403,6 +410,7 @@ func (r *runState) wouldTake() bool {
 func (r *runState) hear(req drainRequest) bool {
 	if req.on != r.drained {
 		r.drained = req.on
+		r.sayNoMore()
 		r.o.emit(drainEvent(req.on, req.how, r.inflight))
 	}
 	return r.drained
@@ -420,7 +428,8 @@ func (r *runState) takeDrainRequest() bool {
 }
 
 // sayNoMore tells the merges why the run takes on no more work, if it doesn't: it holds for a stop, or
-// the maintainer asked it to wind down (see Loop.noMore).
+// the maintainer asked it to wind down (see Loop.noMore). It is called as soon as either changes, so a
+// merge reads what Run would answer now, not at its next pass.
 func (r *runState) sayNoMore() {
 	why := ""
 	switch {
@@ -442,7 +451,7 @@ func (r *runState) heedEnvironment() {
 		return
 	}
 	r.envSaid = true
-	r.stops.add(s)
+	r.addStop(s)
 	r.sayHold(s, "")
 }
 
@@ -465,7 +474,7 @@ func (r *runState) startTickets() {
 	for r.taking() && r.ctx.Err() == nil && r.slotFree() {
 		t, q, s := r.next()
 		if s != nil {
-			r.stops.add(s)
+			r.addStop(s)
 			r.sayHold(s, "")
 			return
 		}
@@ -554,7 +563,7 @@ func (r *runState) follow() bool {
 		})
 	}
 	if s != nil {
-		r.stops.add(s)
+		r.addStop(s)
 	}
 	return late || len(adopt) > 0
 }
@@ -575,7 +584,9 @@ func (r *runState) goOnWhenEmpty() bool {
 	if s == nil || len(r.stops.others) > 0 {
 		return false
 	}
-	if r.stops.first = r.o.probeEnvironment(r.ctx, s, r.takeDrainRequest, r.hear); r.stops.first != nil {
+	r.stops.first = r.o.probeEnvironment(r.ctx, s, r.takeDrainRequest, r.hear)
+	r.sayNoMore()
+	if r.stops.first != nil {
 		return false
 	}
 	r.envSaid = false
@@ -605,7 +616,7 @@ func (r *runState) returned(res result) {
 	}
 	// Every reason is shown as it arrives. The first decides the exit code; the final line gives it
 	// and then the others.
-	if first := r.stops.add(res.stop.over(res.id)); len(r.inflight) > 0 || !first {
+	if first := r.addStop(res.stop.over(res.id)); len(r.inflight) > 0 || !first {
 		o.emit(Event{Kind: EvHold, Ticket: res.id, Blocked: res.stop.blocked, Text: holdLine(res.stop, len(r.inflight))})
 	}
 }

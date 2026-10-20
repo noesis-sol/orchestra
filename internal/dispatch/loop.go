@@ -189,9 +189,9 @@ type ledger struct {
 	// check after the run went, once it has run (see FullCheck).
 	mergedN     int
 	fullChecked *fullCheck
-	// noMore is why the run takes on no more work, as Run last saw it: it winds down, or holds for a
-	// stop; "" while it takes tickets. A merge reads it before handing a failed check back to its
-	// worker (see whyNotFixCheck).
+	// noMore is why the run takes on no more work, as Run says it each time its stops or its winding
+	// down change (see runState.sayNoMore): it winds down, or holds for a stop; "" while it takes
+	// tickets. A merge reads it before handing a failed check back to its worker (see whyNotFixCheck).
 	noMore string
 }
 

@@ -18,6 +18,10 @@ All notable changes to orchestra are documented here. The format follows
   answer, and the tickets it blocks wait, saying git can't tell, until git
   answers at a later poll. Starting a ticket whose branch git can't look up
   stops the run (`WORKTREE_FAILED`) with git's error.
+- A ticket whose check fails while the run has just stopped taking tickets
+  (a hold that came up as tickets started) is no longer handed back to its
+  worker to fix: the merges hear of the hold at once, not on the run's next
+  pass, up to 30 seconds later.
 
 ## [0.8.6] - 2026-10-20
 
