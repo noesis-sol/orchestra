@@ -127,6 +127,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `setup.go` | the setup command (`setup`): run in a ticket's new worktree before its worker starts, and a setup that fails there (`SETUP_FAILED`); run before the check on a finished ticket's branch when a dependency file changed since it last ran; taken from `.orchestra/settings.json` as a merge changes it |
 | `holds.go` | tickets held for a blocker or a source ticket not yet merged, or for their subtickets; `pendingWhy`, the one rule for whether a ticket has merged |
 | `unmerged.go` | tickets closed but not merged: the `unmerged` label, those earlier runs left, whether one has merged since by hand |
+| `handmerged.go` | tickets closed but not merged that are merged by hand during the run, found as Base moves on; the checks once more a drain or a stop drops |
 | `aside.go` | setting a ticket aside: its note, deferring it, the tickets set aside in this run |
 | `late_close.go` | tickets set aside with their workers left in their tabs: following them, and merging one closed there (`LATE_CLOSE`) |
 | `closed_unmerged.go` | closed tickets whose work is only on their branch, which hold what they block (`CLOSED_UNMERGED`) |

@@ -15,8 +15,10 @@ import (
 // merge): it merges if the check passes now, a rebase that stops on conflicts is handed back to its
 // worker, and it stays set aside if the check fails again. Each ticket is checked again at most
 // once, taking a slot as a running ticket does, and none is while the run winds down or holds, or
-// while a solo ticket runs or is next. One whose check failed in code its own commits change isn't
-// kept: another ticket's change won't fix that.
+// while a solo ticket runs or is next: winding down, or stopped as it ends, the run says of each
+// ticket waiting that it won't be (see dropRechecks). One whose check failed in code its own commits
+// change isn't kept: another ticket's change won't fix that. One merged by hand meanwhile isn't
+// checked again (see mergedByHand).
 
 // recheck is a ticket set aside for a failed check, to be checked again: its worker, its title, the
 // commit of Base its check failed on and its branch's commit then.
@@ -47,6 +49,11 @@ func (o *Loop) awaitRecheck(ctx context.Context, w worker, onto string) string {
 	rc := recheck{w: w, title: o.titleOf(w.id), onto: onto, head: head}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	// Read under mu, as Run drops the tickets waiting once it hears the run wind down (see dropRechecks):
+	// one set aside after that isn't kept.
+	if o.gate.held(gateDrain) {
+		return "; not checked again in this run, as it winds down"
+	}
 	o.rechecks = append(o.rechecks, rc)
 	return fmt.Sprintf("; checked once more if %s moves on in this run", c.Base)
 }

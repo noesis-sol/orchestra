@@ -161,6 +161,7 @@ type ledger struct {
 	active    map[string]Status // tickets being worked on; left set for those still running at the end
 	finishing map[string]string // what each worker is doing that Ctrl+C doesn't stop: finishMerge, say
 	labelled  map[string]bool   // tickets carrying UnmergedLabel, which a merge removes
+	forks     map[string]string // where each one's branch was cut from Base (ForkKey), for mergedByHand
 	rechecks  []recheck         // tickets set aside for a failed check, to check again once Base moves on
 	rechecked map[string]bool   // tickets taken up to be checked again (see dueRecheck)
 	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
@@ -188,7 +189,7 @@ func newLedger() ledger {
 	return ledger{
 		active: map[string]Status{}, finishing: map[string]string{},
 		labelled: map[string]bool{}, rechecked: map[string]bool{}, blockers: map[string]blockLinks{},
-		placed: map[string]workerSpot{}, footprints: map[string]*runFootprint{},
+		placed: map[string]workerSpot{}, footprints: map[string]*runFootprint{}, forks: map[string]string{},
 	}
 }
 

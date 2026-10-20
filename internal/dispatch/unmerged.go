@@ -34,6 +34,7 @@ func (o *Loop) loadUnmerged(ctx context.Context) *stopReason {
 		o.book.setParent(id, t.Parent)
 		o.book.noteUnmerged(id, earlierRun)
 		o.setLabelled(id, true)
+		o.setFork(id, forkOf(t))
 	}
 	return nil
 }
@@ -182,6 +183,7 @@ func (o *Loop) leaveRunning(ctx context.Context) {
 func (o *Loop) label(ctx context.Context, id string) bool {
 	fork, err := o.merger.MergeBase(ctx, o.cfg.Repo, o.cfg.Base, branchOf(id))
 	o.log.Raw("", err) // none noted then, as for a branch with no commit in common with Base
+	o.setFork(id, fork)
 	if fork != "" {
 		if err := o.notes.SetMetadata(ctx, id, ForkKey, fork); err != nil {
 			o.log.Raw("", err) // a later run then takes the branch's tip alone for its own
@@ -228,6 +230,17 @@ func (o *Loop) setLabelled(id string, labelled bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.labelled[id] = labelled
+}
+
+// setFork keeps fork as where ticket id's branch was cut from Base, as its ForkKey notes it; "" keeps
+// nothing.
+func (o *Loop) setFork(id, fork string) {
+	if !isHash(fork) {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.forks[id] = fork
 }
 
 // busy reports whether ticket id's worker runs, its work merges, or it waits on a question, or is

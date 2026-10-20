@@ -49,6 +49,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A ticket set aside and merged by hand while the run goes on is found
+  as the base moves on: the log says it was merged by hand, its
+  `unmerged` label is removed, the tickets it blocks start, and the end
+  line and the run report count it closed rather than set aside, where
+  tutti's run of 2026-10-19 still listed tutti-nrg.8.6 as set aside. A
+  drain, or a run that stops, now names each ticket it keeps from its
+  promised check once more (`<id> is not checked again in this run, as
+  the run winds down`), which it dropped without a word.
+
 - A worker handed a conflicting rebase back to resolve is told to run the
   project's setup (`"setup"`) once the rebase has finished and before its
   tests, when the rebase brings in a change to a file `"setup_files"`

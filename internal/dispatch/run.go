@@ -207,6 +207,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.takeDrainRequest()
 		r.heedEnvironment()
 		r.lookAround()
+		r.mergedByHand()   // before checking them again
 		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
 		r.startTickets()
 		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
@@ -332,6 +333,8 @@ type runState struct {
 	unions  map[string]bool
 
 	machine *machine // the run's registration among the machine's orchestra runs
+
+	baseSeen string // the commit Base was on as mergedByHand last asked git of the tickets not merged
 }
 
 func newRunState(ctx context.Context, o *Loop) *runState {
@@ -340,6 +343,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
 		warned: map[string]bool{}, unions: map[string]bool{}, machine: o.register(), filing: o.cfg.filingDone(),
+		baseSeen: o.startHead, // as loadUnmerged asked
 	}
 	r.setCount(o.cfg.DoneSoFar)
 	o.gate.register(gateMachine, r.machineEnd)
@@ -410,6 +414,9 @@ func (r *runState) wouldTake() bool { return r.o.gate.open(gateMachine, gateUsag
 func (r *runState) hear(req drainRequest) bool {
 	if r.o.gate.set(gateDrain, gateHold{on: req.on, why: "the run is winding down"}) {
 		r.o.emit(drainEvent(req.on, req.how, r.inflight))
+		if req.on {
+			r.o.dropRechecks("the run winds down")
+		}
 	}
 	return req.on
 }
@@ -645,12 +652,16 @@ func (r *runState) end() int {
 	o, c := r.o, r.o.cfg
 	interrupted := r.ctx.Err() != nil
 	o.awaitInflight(r.keep, r.results, r.inflight) // after Ctrl+C: otherwise none is in flight
+	if !interrupted {
+		r.mergedByHand() // for the end line and the reviewer
+	}
 	o.leaveBehind(r.ctx)
 	var end string
 	switch {
 	case interrupted:
 		return o.interrupted(r.ctx)
 	case o.gate.firstStop() != nil:
+		o.dropRechecks("the run stopped")
 		return o.stop(o.gate.firstStop(), o.gate.stopLine())
 	case r.drained():
 		end = fmt.Sprintf("DRAINED after %d tickets", r.count)
