@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -72,6 +73,9 @@ const (
 type App struct {
 	t      testing.TB
 	home   string             // its home folder
+	cli    string             // a folder holding only a link to the app's CLI, as cmux, for the test's PATH
+	env    []string           // the app's environment, without cmux's variables
+	setenv bool               // whether CMUX_SOCKET_PATH names the socket in the process's environment (Start)
 	cmd    *exec.Cmd          // the running app; nil once quit
 	exited chan struct{}      // closed once it has exited
 	watch  *watchdog.Watchdog // quits it should the test binary exit first; nil once it has exited
@@ -83,11 +87,31 @@ type App struct {
 }
 
 // Start starts a cmux of the test's own, waits until its socket answers and returns it, with
-// CMUX_SOCKET_PATH naming its socket for the rest of the test, the variables cmux sets in its
-// terminals unset, and the app's CLI first on PATH, so that orchestra's adapter talks to it. It skips the test under
-// -short, unless asked for (Require), and where another cmux runs, or fails it there with
-// ORCHESTRA_REQUIRE_CMUX=1. The app is quit, and the test waits for it to exit, as the test ends.
+// CMUX_SOCKET_PATH naming its socket for the rest of the test (again after Restart), the variables
+// cmux sets in its terminals unset, and the app's CLI first on PATH, so that orchestra's adapter
+// talks to it. It sets those variables in the process's environment, which rules out t.Parallel: a
+// test running in parallel calls StartContext instead. It skips the test under -short, unless asked
+// for (Require), and where another cmux runs, or fails it there with ORCHESTRA_REQUIRE_CMUX=1. The
+// app is quit, and the test waits for it to exit, as the test ends.
 func Start(t testing.TB) *App {
+	t.Helper()
+	a, ctx := StartContext(context.Background(), t)
+	for _, v := range append([]string{"PATH", "CMUX_SOCKET_PATH"}, cmuxVars...) {
+		t.Setenv(v, command.Getenv(ctx, v))
+	}
+	a.setenv = true
+	return a
+}
+
+// cmuxVars are the variables cmux sets in its terminals, unset for the test, should it run in one,
+// but for CMUX_SOCKET_PATH, which names the test's socket.
+var cmuxVars = []string{"CMUX_SOCKET", "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_TAB_ID", "CMUX_PANEL_ID"}
+
+// StartContext is Start leaving the process's environment as it is, for a test that runs in
+// parallel: it starts the app with the environment ctx gives commands (command.WithEnv), and returns
+// it with ctx with the variables Start sets added to it (App.Context), for the commands the test runs
+// with it to reach the app. They still take turns with every other test that runs cmux.
+func StartContext(ctx context.Context, t testing.TB) (*App, context.Context) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipped by -short: starts the cmux app")
@@ -106,15 +130,17 @@ func Start(t testing.TB) *App {
 		a.Quit()
 		_ = os.RemoveAll(home) // the app is gone by then; a leftover is no failure
 	})
-	for _, v := range []string{"CMUX_SOCKET", "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_TAB_ID", "CMUX_PANEL_ID"} {
-		t.Setenv(v, "")
-	}
 	// orchestra runs the cmux on PATH, which is to be the app's own CLI.
-	cli := t.TempDir()
-	if err := os.Symlink(cliPath(), filepath.Join(cli, "cmux")); err != nil {
+	a.cli = t.TempDir()
+	if err := os.Symlink(cliPath(), filepath.Join(a.cli, "cmux")); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", cli+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, kv := range command.Environ(ctx) {
+		if !strings.HasPrefix(kv, "CMUX_") {
+			a.env = append(a.env, kv)
+		}
+	}
+	a.env = append(a.env, "PATH="+a.cli+string(os.PathListSeparator)+command.Getenv(ctx, "PATH"))
 	a.start()
 	t.Logf("%s", strings.TrimSpace(a.Version()))
 	tree := a.Tree()
@@ -123,7 +149,22 @@ func Start(t testing.TB) *App {
 	}
 	a.Own = tree.Order[0]
 	a.OwnSurface = tree.Surfaces[a.Own][0]
-	return a
+	return a, a.Context(ctx)
+}
+
+// Context returns ctx with what has the commands run with it reach the app added to it
+// (command.WithEnv): CMUX_SOCKET_PATH naming its socket, the other variables cmux sets in its
+// terminals unset, and the app's CLI first on PATH, unless it is there already. After Restart, the
+// socket may be another: a test calls Context again for it.
+func (a *App) Context(ctx context.Context) context.Context {
+	env := []string{"CMUX_SOCKET_PATH=" + a.Socket}
+	for _, v := range cmuxVars {
+		env = append(env, v+"=")
+	}
+	if path := command.Getenv(ctx, "PATH"); !strings.HasPrefix(path, a.cli+string(os.PathListSeparator)) {
+		env = append(env, "PATH="+a.cli+string(os.PathListSeparator)+path)
+	}
+	return command.WithEnv(ctx, env...)
 }
 
 // Require skips the test where cmux isn't installed, or where the tests that need it weren't asked
@@ -200,7 +241,7 @@ func running(t testing.TB) int {
 }
 
 // start starts the app in its home folder and waits until its socket answers, which then names it
-// for the test (CMUX_SOCKET_PATH).
+// for the test (CMUX_SOCKET_PATH), in the process's environment too after Start.
 func (a *App) start() {
 	a.t.Helper()
 	state := filepath.Join(a.home, ".local", "state", "cmux")
@@ -222,7 +263,7 @@ func (a *App) start() {
 	// HOME keeps cmux's files, CFFIXED_USER_HOME those macOS keeps for it (its settings, its saved
 	// session), in the test's folder. Its terminals' shells are login shells, whose HOME is the
 	// user's again.
-	cmd.Env = append(env(), "HOME="+a.home, "CFFIXED_USER_HOME="+a.home, "CMUX_SOCKET_MODE=allowAll")
+	cmd.Env = append(slices.Clip(a.env), "HOME="+a.home, "CFFIXED_USER_HOME="+a.home, "CMUX_SOCKET_MODE=allowAll")
 	if err := cmd.Start(); err != nil {
 		a.t.Fatal(err)
 	}
@@ -255,20 +296,10 @@ func (a *App) start() {
 			a.t.Fatalf("cmux's socket didn't answer within %s of its start; its output:\n%s", startLimit, a.log())
 		}
 	}
-	a.t.Setenv("CMUX_SOCKET_PATH", a.Socket)
-	a.CLI("ping")
-}
-
-// env is the test's environment for the app, without what cmux sets in its terminals, should the
-// test run in one.
-func env() []string {
-	var e []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "CMUX_") {
-			e = append(e, kv)
-		}
+	if a.setenv {
+		a.t.Setenv("CMUX_SOCKET_PATH", a.Socket)
 	}
-	return e
+	a.CLI("ping")
 }
 
 // answers reports whether something listens on the socket at path.
@@ -310,7 +341,8 @@ func (a *App) quit() {
 }
 
 // Restart starts the app again, after Quit, in the same home folder: it restores the workspaces
-// it had, as cmux does after a restart, and its socket names it again for the test.
+// it had, as cmux does after a restart, and its socket names it again for the test: in the process's
+// environment after Start, in the context Context returns after StartContext.
 func (a *App) Restart() {
 	a.t.Helper()
 	if a.cmd != nil {
@@ -349,7 +381,7 @@ func (a *App) Version() string {
 // fails.
 func (a *App) CLI(args ...string) string {
 	a.t.Helper()
-	out, err := command.Output(context.Background(), command.ReadLimit, "", cliPath(),
+	out, err := command.Output(a.Context(context.Background()), command.ReadLimit, "", cliPath(),
 		append([]string{"--id-format", "uuids"}, args...)...)
 	if err != nil {
 		a.t.Fatalf("%v; cmux's output:\n%s", err, a.log())

@@ -17,10 +17,11 @@ import (
 )
 
 // The scenarios in this file are whole runs as orchestra makes them with workers in cmux: the loop on
-// the real cmux (an app of the test's own, cmuxtest.Start), and otherwise as the tmux runs of
+// the real cmux (an app of the test's own, cmuxtest.StartContext), and otherwise as the tmux runs of
 // tmux_run_test.go are made, with the same repository, tracker and fake Claude Code. The app's first
 // workspace stands for orchestra's own, where it would run, and a workspace of the user's is opened
-// beside it, which the run must leave alone.
+// beside it, which the run must leave alone. They run in parallel with the package's other tests,
+// the app's variables in the run's context, but take turns with every other test that runs cmux.
 
 // cmuxRun is a run whose workers are in cmux.
 type cmuxRun struct {
@@ -33,14 +34,18 @@ type cmuxRun struct {
 // newCmuxRun is newTmuxRun's run with the workers in cmux.
 func newCmuxRun(t *testing.T, script, resumed []string) *cmuxRun {
 	t.Helper()
-	app := cmuxtest.Start(t)
-	r := &cmuxRun{tmuxRun: newRunFixture(t, script, resumed), app: app}
-	r.term = cmux.Terminal{Book: filepath.Join(r.repo, project.RunPath(cmux.BookName)), Own: app.Own}
+	if testing.Short() {
+		t.Skip("skipped by -short: a whole run in the cmux app")
+	}
+	cmuxtest.Require(t) // before the fixture's repository is made for nothing
+	r := &cmuxRun{tmuxRun: newRunFixture(t, script, resumed)}
+	r.app, r.ctx = cmuxtest.StartContext(r.ctx, t)
+	r.term = cmux.Terminal{Book: filepath.Join(r.repo, project.RunPath(cmux.BookName)), Own: r.app.Own}
 	r.terminal, r.kind = r.term, project.TerminalCmux
 	var made struct {
 		Workspace string `json:"workspace_id"`
 	}
-	if err := json.Unmarshal([]byte(app.CLI("--json", "workspace", "create", "--name", "mine", "--focus", "false")),
+	if err := json.Unmarshal([]byte(r.app.CLI("--json", "workspace", "create", "--name", "mine", "--focus", "false")),
 		&made); err != nil || made.Workspace == "" {
 		t.Fatalf("the user's workspace: %v", err)
 	}
@@ -115,6 +120,7 @@ func (r *cmuxRun) promptGiven(n int, want string) {
 // switching to it; the worker is given its prompt, works on it, claims, commits and closes its ticket,
 // and settles at its Stop hook; the ticket is merged and its workspace closed, and only it.
 func TestCmuxRunMergesATicket(t *testing.T) {
+	t.Parallel()
 	// A turn of a few seconds, which reading the worker's state through cmux 0.65's top, at times
 	// a second or two, can't miss.
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 3s"}, work), nil)
@@ -141,6 +147,7 @@ func TestCmuxRunMergesATicket(t *testing.T) {
 // A worker that waits on a permission prompt is blocked, as the dashboard shows, until it is allowed
 // in its workspace; then it finishes its ticket, which merges.
 func TestCmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
+	t.Parallel()
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"write feature.txt the feature",
 		`permission git add feature.txt && git commit -q -m "$ID: Add the feature"`, `bash bd close "$ID"`, "stop",
 		"idle"}), nil)
@@ -159,6 +166,7 @@ func TestCmuxRunWaitsOnAPermissionPrompt(t *testing.T) {
 // Ctrl+C while a worker works leaves its workspace, and the worker in it, running; the next run
 // carries it over by its workspace's UUID, and merges its ticket once the worker is done.
 func TestCmuxRunCarriesAWorkerOverAfterCtrlC(t *testing.T) {
+	t.Parallel()
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 3s"}, work), nil)
 	ctx, stop := context.WithCancel(r.ctx)
 	defer stop()
@@ -188,6 +196,7 @@ func TestCmuxRunCarriesAWorkerOverAfterCtrlC(t *testing.T) {
 // workspace, but with a shell in it, not the worker; the next run resumes the worker's session in a
 // new workspace and merges its ticket.
 func TestCmuxRunResumesAWorkerAfterCmuxQuits(t *testing.T) {
+	t.Parallel()
 	r := newCmuxRun(t, slices.Concat(claimed, []string{"sleep 2m"}),
 		slices.Concat([]string{"start", "prompt", "sleep 1s"}, work))
 	ctx, stop := context.WithCancel(r.ctx)
@@ -207,6 +216,7 @@ func TestCmuxRunResumesAWorkerAfterCmuxQuits(t *testing.T) {
 		t.Logf("with cmux gone, the run went on until stopped: %d", <-done)
 	}
 	r.app.Restart()
+	r.ctx = r.app.Context(r.ctx) // its socket, which may be another
 	if got := r.workerTab(r.app.Tree()); got != tab {
 		t.Fatalf("cmux restored workspace %q as tx-1, want the worker's, %s", got, tab)
 	}
