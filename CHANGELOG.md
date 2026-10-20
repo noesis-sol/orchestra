@@ -51,6 +51,16 @@ All notable changes to orchestra are documented here. The format follows
   bullet that starts `Give a check its time` from
   `internal/project/verifier.md` into the Rules of
   `.claude/agents/verifier.md`.
+- A verifier round sees what the earlier rounds of the same ticket found:
+  the worker prompt's Verify section has the worker give it each earlier
+  round's verdict and the gaps it raised (still nothing of the worker's
+  reasoning), the verifier checks each again and says where it disagrees
+  with one, and why, in a line that starts `DISAGREES WITH ROUND <n>:`,
+  and the worker then notes both rounds' findings on the ticket and asks
+  the maintainer which holds rather than go round again. Each round
+  started blind: on 2026-10-20 one of tutti's verifier rounds held a
+  requirement one way and a later one the other, and the worker deferred
+  after three FAILs. `orchestra init --update` takes the change.
 
 ### Fixed
 

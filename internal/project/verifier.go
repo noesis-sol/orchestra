@@ -37,6 +37,11 @@ const verifierSection = "\n## Verify\n" +
 	"- Fix each gap it reports that affects correctness or the ticket's requirements, commit, run your\n" +
 	"  checks again, and ask it again with the new commit and commands. The rest is optional: note on\n" +
 	"  the ticket any you leave.\n" +
+	"- From the second round on, give it the earlier rounds' findings too: each round's verdict and the\n" +
+	"  gaps it raised, as it gave them, still nothing of your reasoning, so that it weighs them rather\n" +
+	"  than start blind. When it disagrees with an earlier round (a line that starts DISAGREES WITH\n" +
+	"  ROUND), don't go round again to settle it: note both rounds' findings on the ticket and ask the\n" +
+	"  maintainer which holds, as a question, as under Close.\n" +
 	"- After three rounds that still end in FAIL, note its findings on the ticket. Close the ticket only\n" +
 	"  when you judge them outside the ticket's requirements; otherwise defer it, as under Close.\n"
 

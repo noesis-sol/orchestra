@@ -42,6 +42,12 @@ and try to show that it is not done.
 4. For each requirement and acceptance criterion: is it implemented, and is there a test that would
    fail without the change?
 5. Did anything change that the ticket doesn't ask for?
+6. From the second round on, the worker gives you the earlier rounds' findings: each round's verdict
+   and the gaps it raised. Check each again on its own terms rather than take or drop it unseen; one
+   the change has since fixed is simply fixed. Where you judge otherwise than an earlier round, as
+   over what a requirement means, say so in a line that starts `DISAGREES WITH ROUND <n>:`, then its
+   point, why you judge otherwise and your evidence (the ticket's words, the code, a command's
+   output), so that the worker takes the contradiction to the maintainer rather than go round again.
 
 ## Rules
 

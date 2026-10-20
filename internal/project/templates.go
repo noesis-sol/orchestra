@@ -43,6 +43,8 @@ var promptChanges = []TemplateChange{
 	{3, "Close", "a ticket closes once the worker's own checks pass", "Close the ticket only when your checks pass"},
 	{4, verifyHeading, "the worker gives the verifier the commit at which its checks passed and the commands " +
 		"it ran there, so that it needn't run them again", "commit at which your checks passed"},
+	{5, verifyHeading, "a later round is given the earlier rounds' findings, and a disagreement between rounds " +
+		"goes to the maintainer rather than round again", "earlier rounds' findings"},
 }
 
 // verifierChanges are the changes to the verifier's template, verifier.md.
@@ -56,6 +58,8 @@ var verifierChanges = []TemplateChange{
 		"and runs the suites only on what the change touches", "Leave the whole suite to orchestra"},
 	{3, "Rules", "a check gets Bash's longest timeout, and one that takes longer runs in the background, waited " +
 		"on with short waits", "Give a check its time"},
+	{4, "How to verify", "it weighs the earlier rounds' findings and says where it disagrees with one, and why",
+		"DISAGREES WITH ROUND"},
 }
 
 // verifyHeading is the heading of the worker prompt's section that runs the verifier.

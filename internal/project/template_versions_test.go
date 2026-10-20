@@ -14,8 +14,8 @@ import (
 // The templates as their last recorded versions have them. A change to a template is a new version of
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
-	promptTemplateSum   = "2b66b41a9f75e77619e9583c1980d40b8f6990f5f4069347a6aad3decc25da1c"
-	verifierTemplateSum = "7ac912ee75359b432244595656a9abf1e5c3c1818107028422479da751335972"
+	promptTemplateSum   = "5ece7210e1c79f7ae3a36848e7b9939b6acf315eb8c50842acba944bc599b90f"
+	verifierTemplateSum = "38b3f1c5704ffd42e66a327ff867b120d3c7ac46eeca8c85a7d97f2e2ee63fbf"
 )
 
 func sum(text string) string {
