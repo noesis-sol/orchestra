@@ -101,7 +101,7 @@ func TestAStopEndsAMergeWaitingForItsTurn(t *testing.T) {
 		if h.mem.inRebase(h.worktree("B")) {
 			t.Error("B's worktree is left mid-rebase")
 		}
-		if strings.Contains(ev, "RESOLVING") || strings.Contains(o.Final(), "resolv") {
+		if h.sink.tagged("RESOLVING") || strings.Contains(o.Final(), "resolv") {
 			t.Errorf("nothing was handed back to resolve: final %q\n%s", o.Final(), ev)
 		}
 		if got := closedIDs(h); !equal(got, []string{"A"}) {
@@ -152,7 +152,7 @@ func TestAStopAsARebaseConflictsAbortsIt(t *testing.T) {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		ev := h.sink.text()
-		if len(handed) > 0 || strings.Contains(ev, "RESOLVING") || strings.Contains(o.Final(), "resolv") {
+		if len(handed) > 0 || h.sink.tagged("RESOLVING") || strings.Contains(o.Final(), "resolv") {
 			t.Errorf("nothing was handed back to resolve (shown handed back: %v): final %q\n%s", handed, o.Final(), ev)
 		}
 		if h.mem.inRebase(h.worktree("B")) {

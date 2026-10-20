@@ -53,9 +53,9 @@ func TestAFailingChecksWholeOutputIsKeptInItsWorktree(t *testing.T) {
 	if got := read(t, saved); got != want.String() {
 		t.Errorf("%s holds:\n%s\nwant:\n%s", saved, got, want.String())
 	}
-	if ev := h.sink.text(); !strings.Contains(ev, "CHECKS_FAILED: A closed, but '"+h.cfg.Check+"' fails on wt/A") ||
-		!strings.Contains(ev, "left for review (output is in "+saved+")") {
-		t.Errorf("CHECKS_FAILED should name %s; events:\n%s", saved, ev)
+	if !h.sink.warnedWith("CHECKS_FAILED", "A", "A closed, but '"+h.cfg.Check+"' fails on wt/A") ||
+		!h.sink.warnedWith("CHECKS_FAILED", "A", "left for review (output is in "+saved+")") {
+		t.Errorf("CHECKS_FAILED should name %s; events:\n%s", saved, h.sink.text())
 	}
 	log := h.logged()
 	if !strings.Contains(log, "screen line 100\nFAIL cmd/orchestra") {
@@ -94,8 +94,8 @@ func TestAPassingChecksFlakyLinesAreWarnings(t *testing.T) {
 			t.Errorf("a FLAKY warning should not set A aside: %+v", ev)
 		}
 	}
-	if log := h.logged(); !strings.Contains(log, "FLAKY: A's check") {
-		t.Errorf("the log should have the warnings:\n%s", log)
+	if !h.sink.warnedWith("FLAKY", "", "A's check") || !containsWords(h.logged(), "FLAKY: A's check") {
+		t.Errorf("the log should have the warnings:\n%s", h.logged())
 	}
 }
 
@@ -113,8 +113,8 @@ func TestAFailingChecksOutputIsNotWrittenThroughASymlink(t *testing.T) {
 	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
-	if ev := f.sink.text(); !strings.Contains(ev, "CHECKS_FAILED: k-1") || !strings.Contains(ev, "(output is in log)") {
-		t.Errorf("CHECKS_FAILED should name the log; events:\n%s", ev)
+	if !f.sink.warnedWith("CHECKS_FAILED", "k-1", "(output is in log)") {
+		t.Errorf("CHECKS_FAILED should name the log; events:\n%s", f.sink.text())
 	}
 	if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
 		t.Errorf("written where the symlink points: %v (%v)", entries, err)

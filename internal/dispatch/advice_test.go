@@ -120,16 +120,16 @@ func TestTriageQueuedAfterFinishIsDropped(t *testing.T) {
 	}
 	o := New(Config{}, log, "", Deps{Advisor: organ.Client{Bin: filepath.Join(t.TempDir(), "no-claude")},
 		AdviceCtx: context.Background()})
-	o.sink = &recordSink{}
+	sink := &recordSink{}
+	o.sink = sink
 	o.queueTriage(context.Background(), organ.Deferral{ID: "before-start"}) // triage off: nothing happens
 	o.StartTriage()
 	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
 	o.FinishTriage(context.Background())
 	o.queueTriage(context.Background(), organ.Deferral{ID: "B"})
 	o.FinishTriage(context.Background()) // a second call returns too
-	got := o.sink.(*recordSink).text()
-	if !strings.Contains(got, "TRIAGE_FAILED for A") || strings.Contains(got, " B:") || strings.Contains(got, "before-start") {
-		t.Errorf("A should be triaged (and fail, without claude), B and before-start dropped:\n%s", got)
+	if !sink.warned("TRIAGE_FAILED", "A") || len(sink.ofTicket("B")) > 0 || len(sink.ofTicket("before-start")) > 0 {
+		t.Errorf("A should be triaged (and fail, without claude), B and before-start dropped:\n%s", sink.text())
 	}
 	if len(o.triageQ) != 0 {
 		t.Errorf("queue = %v", o.triageQ)

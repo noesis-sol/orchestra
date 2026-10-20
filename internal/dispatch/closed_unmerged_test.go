@@ -99,9 +99,9 @@ func TestClosedTicketWithItsBranchOffBaseHoldsItsDependents(t *testing.T) {
 			}
 		}
 		var warned []string
-		for _, w := range h.sink.of(EvWarn) {
-			if strings.Contains(w, "CLOSED_UNMERGED") {
-				warned = append(warned, w)
+		for _, w := range h.sink.eventsOf(EvWarn) {
+			if tagOf(w) == "CLOSED_UNMERGED" {
+				warned = append(warned, strings.TrimSpace(w.Ticket+" "+w.Text))
 			}
 		}
 		if !equal(warned, []string{closedUnmergedWarning}) {
@@ -189,8 +189,8 @@ func TestClosedBlockerWithNothingOffBaseHoldsNothing(t *testing.T) {
 				if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 					t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 				}
-				if ev := h.sink.text(); strings.Contains(ev, "waits") || strings.Contains(ev, "CLOSED_UNMERGED") {
-					t.Errorf("B held, or A warned of:\n%s", ev)
+				if strings.Contains(h.sink.text(), "waits") || h.sink.warned("CLOSED_UNMERGED", "") {
+					t.Errorf("B held, or A warned of:\n%s", h.sink.text())
 				}
 			})
 		})

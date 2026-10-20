@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/git"
@@ -26,8 +25,8 @@ func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
 	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
 		t.Fatal(s)
 	}
-	if ev := f.sink.text(); !strings.Contains(ev, "MERGE_CONFLICT: k-1") || !strings.Contains(ev, "its rebase could not be aborted, so "+wt+" is left mid-rebase") {
-		t.Errorf("events:\n%s", ev)
+	if !f.sink.warnedWith("MERGE_CONFLICT", "k-1", "its rebase could not be aborted, so "+wt+" is left mid-rebase") {
+		t.Errorf("events:\n%s", f.sink.text())
 	}
 	if !rebaseInProgress(t, wt) {
 		t.Error("the fake abort should leave the rebase in progress")
@@ -63,7 +62,7 @@ func TestRefreshBranchWhoseAbortFailsSaysSo(t *testing.T) {
 	if f.orch.refreshBranch(context.Background(), wt, "wt/k-1") {
 		t.Fatal("a branch conflicting with main should not count as refreshed")
 	}
-	if ev := f.sink.text(); !strings.Contains(ev, "REBASE_ABORT_FAILED: "+wt+" is left mid-rebase onto main") {
-		t.Errorf("events:\n%s", ev)
+	if !f.sink.warnedWith("REBASE_ABORT_FAILED", "", wt+" is left mid-rebase onto main") {
+		t.Errorf("events:\n%s", f.sink.text())
 	}
 }

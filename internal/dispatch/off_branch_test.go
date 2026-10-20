@@ -45,11 +45,11 @@ func TestATicketWhoseWorktreeLeftItsBranchIsSetAside(t *testing.T) {
 				h.worker("A", leavesItsBranch("a.txt", tc.branch))
 				o, _ := h.run()
 				ev := h.sink.text()
-				if want := "OFF_BRANCH: A closed, but its worktree " + h.worktree("A") + " " + tc.want +
-					"; worktree and tab "; !strings.Contains(ev, want) {
-					t.Errorf("events lack %q:\n%s", want, ev)
+				if want := "A closed, but its worktree " + h.worktree("A") + " " + tc.want +
+					"; worktree and tab "; !h.sink.warnedWith("OFF_BRANCH", "A", want) {
+					t.Errorf("events lack OFF_BRANCH: %q:\n%s", want, ev)
 				}
-				if strings.Contains(ev, "MERGE_CONFLICT") {
+				if h.sink.warned("MERGE_CONFLICT", "") {
 					t.Errorf("events say MERGE_CONFLICT:\n%s", ev)
 				}
 				if n := checkRuns(t, dir, "A"); n != 0 {

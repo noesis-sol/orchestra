@@ -140,7 +140,7 @@ func checkMergedInTurn(t *testing.T, h *harness, merged []string) {
 			t.Errorf("%s dispatched (event %d) before %s merged (event %d):\n%s", id, started, blocker, mergedAt, ev)
 		}
 	}
-	if strings.Contains(ev, "ENVIRONMENT") {
+	if h.sink.heldFor(stopEnvironment) {
 		t.Errorf("the run held for the environment:\n%s", ev)
 	}
 	if tabs := openTabs(h); len(tabs) != 0 {
@@ -333,10 +333,10 @@ func TestTuttiBlockerClosedByHandOffMainHoldsItsDependents(t *testing.T) {
 				t.Errorf("events say %q %d times, want once:\n%s", want, strings.Count(ev, want), ev)
 			}
 		}
-		if n := strings.Count(ev, "CLOSED_UNMERGED"); n != 1 {
+		if n := len(h.sink.matching(EvWarn, "CLOSED_UNMERGED", "", "")); n != 1 {
 			t.Errorf("%d CLOSED_UNMERGED warnings, want one:\n%s", n, ev)
 		}
-		if strings.Contains(ev, "ENVIRONMENT") {
+		if h.sink.heldFor(stopEnvironment) {
 			t.Errorf("the run held for the environment:\n%s", ev)
 		}
 		if tabs := openTabs(h); len(tabs) != 0 {

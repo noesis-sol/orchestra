@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -65,10 +64,9 @@ func TestACheckIsNotHandedBackOnceTheRunHoldsInTheSamePass(t *testing.T) {
 			})
 		}}
 		o.Run(t.Context())
-		ev := h.sink.text()
-		if !strings.Contains(ev, "CHECKS_FAILED: A closed, but '"+h.cfg.Check+"' fails on wt/A rebased onto main; "+
-			"not handed back to its worker: the run holds (DIRTY_TREE: ") || strings.Contains(ev, "FIXING") {
-			t.Errorf("events:\n%s", ev)
+		if !h.sink.warnedWith("CHECKS_FAILED", "A", "A closed, but '"+h.cfg.Check+"' fails on wt/A rebased onto main; "+
+			"not handed back to its worker: the run holds (DIRTY_TREE: ") || h.sink.tagged("FIXING") {
+			t.Errorf("events:\n%s", h.sink.text())
 		}
 		if p := h.herdr.pastedTo(); len(p) > 0 {
 			t.Errorf("nothing should be pasted: %v", p)

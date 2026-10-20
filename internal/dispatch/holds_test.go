@@ -332,8 +332,8 @@ func TestLabelFailureIsWarned(t *testing.T) {
 	if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil { // CLOSED_WITHOUT_COMMIT
 		t.Fatal(s)
 	}
-	if ev := f.sink.text(); !strings.Contains(ev, "LABEL_FAILED: bd could not label k-a 'unmerged': bd defer A") {
-		t.Errorf("events:\n%s", ev)
+	if !f.sink.warnedWith("LABEL_FAILED", "k-a", "bd could not label k-a 'unmerged': bd defer A") {
+		t.Errorf("events:\n%s", f.sink.text())
 	}
 	if got := f.next(t, nil); got != "" {
 		t.Errorf("next = %q, want k-b held in this run all the same", got)

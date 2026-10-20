@@ -63,7 +63,7 @@ func TestACheckFailingOnTheRebasedBranchIsFixedByItsWorker(t *testing.T) {
 				t.Errorf("events lack %q:\n%s", want, ev)
 			}
 		}
-		if strings.Contains(ev, "CHECKS_FAILED") {
+		if h.sink.warned("CHECKS_FAILED", "") {
 			t.Errorf("events:\n%s", ev)
 		}
 		if !shown.Fixing || shown.Resolving || shown.Agent != StateIdle {
@@ -192,10 +192,9 @@ func TestACheckIsNotHandedBackWhenItCannotBe(t *testing.T) {
 				})
 				o = h.loop()
 				o.Run(t.Context())
-				ev := h.sink.text()
-				if !strings.Contains(ev, "CHECKS_FAILED: A closed, but '"+h.cfg.Check+"' fails on wt/A rebased onto main; "+
-					"not handed back to its worker: "+tc.why+"; worktree ") || strings.Contains(ev, "FIXING") {
-					t.Errorf("events:\n%s", ev)
+				if !h.sink.warnedWith("CHECKS_FAILED", "A", "A closed, but '"+h.cfg.Check+"' fails on wt/A rebased onto main; "+
+					"not handed back to its worker: "+tc.why+"; worktree ") || h.sink.tagged("FIXING") {
+					t.Errorf("events:\n%s", h.sink.text())
 				}
 				if p := h.herdr.pastedTo(); len(p) > 0 {
 					t.Errorf("nothing should be pasted: %v", p)
@@ -261,8 +260,8 @@ func TestAFixLeftUncommittedSetsTheResolvedTicketAside(t *testing.T) {
 	want := "but '! grep -q '<<<<<<<' shared.txt' fails on the resolved wt/A (output is in " +
 		filepath.Join(wt, ".orchestra", "run", "check.log") + "), and was handed back to its worker to fix once: " +
 		"(1) its worker left uncommitted changes in " + wt + "; " + wt + " is left as its worker left it"
-	if ev := h.sink.text(); !strings.Contains(ev, "MERGE_CONFLICT: A closed") || !strings.Contains(ev, want) {
-		t.Errorf("events lack %q:\n%s", want, ev)
+	if !h.sink.warnedWith("MERGE_CONFLICT", "A", want) {
+		t.Errorf("events lack %q:\n%s", want, h.sink.text())
 	}
 	if n := h.beads.notesOf("A"); !strings.Contains(n, "its worker was asked to resolve the rebase, "+want) {
 		t.Errorf("notes:\n%s", n)

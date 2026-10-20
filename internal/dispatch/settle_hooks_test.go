@@ -94,7 +94,7 @@ func TestWorkerStoppedWithItsTicketOpenIsDeferred(t *testing.T) {
 		if took := time.Since(start); took >= startGrace {
 			t.Errorf("settled after %s, the start-up grace", took)
 		}
-		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "A", "still open, noted for review") {
 			t.Errorf("deferred: %q", got)
 		}
 		if logged := h.logged(); !strings.Contains(logged, "A settled: Stop hook at ") {
@@ -139,7 +139,7 @@ func TestWithoutHooksAnOpenTicketGetsAStartUpGrace(t *testing.T) {
 			if took := time.Since(began); took < startGrace || took > startGrace+statusPoll {
 				t.Errorf("settled after %s, want once the %s grace is over", took, startGrace)
 			}
-			if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "A still open -> noted and deferred") {
+			if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "A", "still open, noted for review") {
 				t.Errorf("deferred: %q", got)
 			}
 			if logged := h.logged(); !strings.Contains(logged, "A settled: idle 3m after it started, with the ticket still open") {

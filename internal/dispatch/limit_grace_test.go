@@ -224,8 +224,8 @@ func TestAWorkerContinuedByClaudeCodeIsNotToldAgain(t *testing.T) {
 				if b := h.sink.dispatchedAt("B"); b.Before(reset) {
 					t.Errorf("B started at %s, before the reset (%s)", b, reset)
 				}
-				if logged := h.logged(); strings.Contains(logged, "set aside") || strings.Contains(logged, "deferred by worker") {
-					t.Errorf("A was set aside:\n%s", logged)
+				if h.sink.setAside("A") {
+					t.Errorf("A was set aside:\n%s", h.logged())
 				}
 			})
 		})

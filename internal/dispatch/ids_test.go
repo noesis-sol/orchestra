@@ -38,8 +38,8 @@ func TestTicketsWithPathCharactersAreSetAside(t *testing.T) {
 			if notes := h.beads.notesOf(bad); !strings.Contains(notes, why) || !strings.Contains(notes, "bd rename "+bad) {
 				t.Errorf("%s's notes don't say %q and how to bring it back:\n%s", bad, why, notes)
 			}
-			if out := h.sink.text(); !strings.Contains(out, "BAD_TICKET_ID: "+why+": "+bad) {
-				t.Errorf("no BAD_TICKET_ID line for %s:\n%s", bad, out)
+			if len(h.sink.matching(EvDeferred, "BAD_TICKET_ID", bad, why+": "+bad)) == 0 {
+				t.Errorf("no BAD_TICKET_ID line for %s:\n%s", bad, h.sink.text())
 			}
 			if branches := h.git(h.repo, "branch", "--list", "wt/x*"); strings.TrimSpace(branches) != "" {
 				t.Errorf("a branch was made for %s: %s", bad, branches)
@@ -83,10 +83,10 @@ func TestBadTicketIDKeptOutWhenDeferFails(t *testing.T) {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
 	out := h.sink.text()
-	if !strings.Contains(out, "DEFER_FAILED: IDs with path characters can't be run: x-a/b") {
+	if !h.sink.warnedWith("DEFER_FAILED", "x-a/b", "IDs with path characters can't be run: x-a/b") {
 		t.Errorf("no DEFER_FAILED line:\n%s", out)
 	}
-	if n := strings.Count(out, "DEFER_FAILED"); n != 1 {
+	if n := len(h.sink.matching(EvWarn, "DEFER_FAILED", "", "")); n != 1 {
 		t.Errorf("warned %d times, want once:\n%s", n, out)
 	}
 	if args := h.herdr.argsFor("x-a/b"); len(args) != 0 {

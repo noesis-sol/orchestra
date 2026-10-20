@@ -109,7 +109,7 @@ func TestAConflictResolvedByItsWorkerMerges(t *testing.T) {
 			t.Errorf("no %q in events:\n%s", want, ev)
 		}
 	}
-	if strings.Contains(ev, "MERGE_CONFLICT") {
+	if h.sink.warned("MERGE_CONFLICT", "") {
 		t.Errorf("events:\n%s", ev)
 	}
 	if got := read(t, filepath.Join(h.repo, "shared.txt")); got != "main\nA\n" {
@@ -151,9 +151,9 @@ func TestAFailedResolutionSetsTheTicketAside(t *testing.T) {
 			if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 			}
-			ev := h.sink.text()
-			if !strings.Contains(ev, "MERGE_CONFLICT: A closed, but wt/A conflicts with main") || !strings.Contains(ev, "handed back to its worker, but "+tc.why) {
-				t.Errorf("events:\n%s", ev)
+			if !h.sink.warnedWith("MERGE_CONFLICT", "A", "A closed, but wt/A conflicts with main") ||
+				!h.sink.warnedWith("MERGE_CONFLICT", "A", "handed back to its worker, but "+tc.why) {
+				t.Errorf("events:\n%s", h.sink.text())
 			}
 			if n := h.beads.notesOf("A"); !strings.Contains(n, "its worker was asked to resolve the rebase, but "+tc.why) {
 				t.Errorf("notes:\n%s", n)
@@ -217,10 +217,9 @@ func TestAHandBackNotFinishedInTimeSetsTheTicketAside(t *testing.T) {
 				if took := time.Since(handedBack); took < tc.after || took > tc.after+2*statusPoll {
 					t.Errorf("set aside %s after the hand-back, want %s", took, tc.after)
 				}
-				ev := h.sink.text()
-				if !strings.Contains(ev, "MERGE_CONFLICT: A closed, but wt/A conflicts with main") ||
-					!strings.Contains(ev, "handed back to its worker, but "+tc.why+"; the rebase was aborted") {
-					t.Errorf("events:\n%s", ev)
+				if !h.sink.warnedWith("MERGE_CONFLICT", "A", "A closed, but wt/A conflicts with main") ||
+					!h.sink.warnedWith("MERGE_CONFLICT", "A", "handed back to its worker, but "+tc.why+"; the rebase was aborted") {
+					t.Errorf("events:\n%s", h.sink.text())
 				}
 				if n := h.beads.notesOf("A"); !strings.Contains(n, "its worker was asked to resolve the rebase, but "+tc.why) {
 					t.Errorf("notes:\n%s", n)
@@ -246,8 +245,9 @@ func TestAConflictIsNotHandedBackWithoutACheckCommand(t *testing.T) {
 	h.beads.add("A", "first", 1)
 	h.worker("A", conflicting(h.repo))
 	h.run()
-	if ev := h.sink.text(); !strings.Contains(ev, "not handed back to its worker: there is no check command in .orchestra/settings.json") || strings.Contains(ev, "RESOLVING") {
-		t.Errorf("events:\n%s", ev)
+	if !h.sink.warnedWith("MERGE_CONFLICT", "A", "not handed back to its worker: there is no check command in .orchestra/settings.json") ||
+		h.sink.tagged("RESOLVING") {
+		t.Errorf("events:\n%s", h.sink.text())
 	}
 	if p := h.herdr.pastedTo(); len(p) > 0 {
 		t.Errorf("nothing should be pasted: %v", p)
@@ -263,8 +263,8 @@ func TestAConflictIsNotHandedBackWhenItsWorkerIsGone(t *testing.T) {
 		return "gone"
 	})
 	h.run()
-	if ev := h.sink.text(); !strings.Contains(ev, "not handed back to its worker: its worker is gone") || strings.Contains(ev, "RESOLVING") {
-		t.Errorf("events:\n%s", ev)
+	if !h.sink.warnedWith("MERGE_CONFLICT", "A", "not handed back to its worker: its worker is gone") || h.sink.tagged("RESOLVING") {
+		t.Errorf("events:\n%s", h.sink.text())
 	}
 	if rebaseInProgress(t, h.worktree("A")) {
 		t.Error("the rebase should be aborted")
@@ -310,7 +310,7 @@ func TestBaseMovingDuringAResolutionIsRebasedAgain(t *testing.T) {
 				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 			}
 			ev := h.sink.text()
-			if !strings.Contains(ev, "A closed") || strings.Contains(ev, "MERGE_CONFLICT") {
+			if !h.sink.has(EvClosed, "A") || h.sink.warned("MERGE_CONFLICT", "") {
 				t.Errorf("events:\n%s", ev)
 			}
 			if n := strings.Count(ev, "RESOLVING: wt/A"); n != 1+len(tc.more) {
@@ -391,7 +391,7 @@ func TestInterruptDuringAResolutionLeavesTheRebase(t *testing.T) {
 	if !rebaseInProgress(t, h.worktree("A")) {
 		t.Error("the rebase should be left in progress")
 	}
-	if strings.Contains(h.sink.text(), "MERGE_CONFLICT") {
+	if h.sink.warned("MERGE_CONFLICT", "") {
 		t.Errorf("events:\n%s", h.sink.text())
 	}
 }

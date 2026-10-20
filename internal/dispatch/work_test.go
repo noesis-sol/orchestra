@@ -68,11 +68,11 @@ func TestRunGoesOnPastATicketItsWorkerDefers(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.HasPrefix(got[0], "A   A deferred by worker") {
+	if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "A", "by the worker") {
 		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
 	}
 	// Triage got the deferral, and fails here without claude; A stays deferred, not set aside for review.
-	if !strings.Contains(h.sink.text(), "TRIAGE_FAILED for A") {
+	if !h.sink.warned("TRIAGE_FAILED", "A") {
 		t.Errorf("A was not triaged:\n%s", h.sink.text())
 	}
 	for _, ev := range h.sink.events {
@@ -108,8 +108,8 @@ func TestAFailedDeferKeepsTheTicketOutOfTheRun(t *testing.T) {
 		case EvDeferred:
 			deferred++
 		case EvWarn:
-			warned = warned || ev.Ticket == "A" && ev.Aside && strings.Contains(ev.Text, "DEFER_FAILED") &&
-				strings.Contains(ev.Text, "database is locked (another bd holds it)")
+			warned = warned || ev.Ticket == "A" && ev.Aside && tagOf(ev) == "DEFER_FAILED" &&
+				containsWords(ev.Text, "database is locked (another bd holds it)")
 		}
 	}
 	if dispatched != 1 {

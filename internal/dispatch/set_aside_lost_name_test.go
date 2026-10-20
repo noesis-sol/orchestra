@@ -120,7 +120,7 @@ func TestWorkerThatLosesItsNameBeforeAHandBackGetsIt(t *testing.T) {
 				t.Errorf("no %q in events:\n%s", want, ev)
 			}
 		}
-		if strings.Contains(ev, "MERGE_CONFLICT") || strings.Contains(ev, "its worker is gone") {
+		if h.sink.warned("MERGE_CONFLICT", "") || h.sink.setAside("A") || strings.Contains(ev, "its worker is gone") {
 			t.Errorf("A was set aside:\n%s", ev)
 		}
 		if got := closedIDs(h); !equal(got, []string{"A"}) {

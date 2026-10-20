@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 )
 
 // recordSink keeps events for assertions.
 type recordSink struct {
-	mu     sync.Mutex
-	events []Event
+	sinkEvents
 }
 
 func (r *recordSink) Event(ev Event) { r.mu.Lock(); r.events = append(r.events, ev); r.mu.Unlock() }

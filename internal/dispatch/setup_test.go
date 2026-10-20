@@ -256,8 +256,8 @@ func TestAResolvedRebaseWhoseSetupFailsIsSetAside(t *testing.T) {
 	}
 	why := "handed back to its worker, but the setup '" + h.cfg.Setup + "', run before the check, fails on the " +
 		"resolved wt/A (output is in "
-	if ev := h.sink.text(); !strings.Contains(ev, "MERGE_CONFLICT: A closed") || !strings.Contains(ev, why) {
-		t.Errorf("events lack %q:\n%s", why, ev)
+	if !h.sink.warnedWith("MERGE_CONFLICT", "A", why) {
+		t.Errorf("events lack %q:\n%s", why, h.sink.text())
 	}
 	if !unmergedLabel(t, h, "A") {
 		t.Error("A should be labelled unmerged")

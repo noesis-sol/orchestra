@@ -108,7 +108,7 @@ func TestACheckFailingOnABranchOnTopOfBaseIsFixedByItsWorker(t *testing.T) {
 		if strings.Contains(prompt, "landed") || strings.Contains(prompt, "rebased") {
 			t.Errorf("nothing landed, and nothing was rebased:\n%s", prompt)
 		}
-		if strings.Contains(ev, "CHECKS_FAILED") {
+		if h.sink.warned("CHECKS_FAILED", "") {
 			t.Errorf("events:\n%s", ev)
 		}
 		if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || !strings.Contains(log, "A: fix admin_test.go") {
@@ -170,13 +170,14 @@ func TestABranchOnTopOfBaseThatChangesNothingIsNotChecked(t *testing.T) {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		ev := h.sink.text()
-		if !strings.Contains(ev, "A closed with no change: the commits on wt/A, taken together, change nothing") {
+		if !h.sink.detailed(EvClosed, "A", "no change to merge") ||
+			!containsWords(ev, "A closed with no change: the commits on wt/A, taken together, change nothing") {
 			t.Errorf("want A closed with no change:\n%s", ev)
 		}
 		if n := checkRuns(t, dir, "A"); n != 0 {
 			t.Errorf("A's check ran %d times, want none", n)
 		}
-		if strings.Contains(ev, "CHECKS_FAILED") || strings.Contains(ev, "checking it with") {
+		if h.sink.warned("CHECKS_FAILED", "") || strings.Contains(ev, "checking it with") {
 			t.Errorf("A should not be checked:\n%s", ev)
 		}
 	})

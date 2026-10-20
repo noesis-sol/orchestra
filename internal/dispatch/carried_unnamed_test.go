@@ -200,7 +200,7 @@ func TestUnnamedWorkerIsNamedOnlyInItsTicketsTab(t *testing.T) {
 					t.Errorf("the agent in pane1 was named %q; want it left unnamed", name)
 				}
 				gone := warnings(h, "A")
-				if c.gone != (len(gone) == 1 && strings.Contains(gone[0], "WORKER_GONE: A is in progress")) {
+				if c.gone != (len(gone) == 1 && h.sink.warned("WORKER_GONE", "A")) {
 					t.Errorf("A warned about (dropped as gone: %v):\n%s", c.gone, strings.Join(gone, "\n"))
 				}
 				if left := saved(t, h); c.gone == (len(left) == 1) {

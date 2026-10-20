@@ -194,7 +194,7 @@ func TestFullCheckFailureFilesOneTicketForItsSuite(t *testing.T) {
 			}
 		}
 		if ev.Detail != FullCheckFailed || ev.Suite != "lint" || ev.Output != saved || ev.Ticket != bug.ID ||
-			!strings.Contains(ev.Text, "FULL_CHECK_FAILED: '"+h.cfg.CheckFull+"' fails on main at ") ||
+			tagOf(ev) != "FULL_CHECK_FAILED" || !containsWords(ev.Text, "'"+h.cfg.CheckFull+"' fails on main at ") ||
 			!strings.HasSuffix(ev.Text, "; filed "+bug.ID) {
 			t.Errorf("its event: %+v", ev)
 		}

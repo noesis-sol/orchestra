@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"slices"
-	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -126,8 +125,8 @@ func TestRunsWaitWakesForTheGate(t *testing.T) {
 		if why, _ := r.wait(waits{}); why != wokeDrain || r.drained() {
 			t.Errorf("a request to take tickets again: %v, drained %v", why, r.drained())
 		}
-		if ev := sink.text(); !strings.Contains(ev, "DRAIN cancelled") {
-			t.Errorf("events:\n%s", ev)
+		if !sink.has(EvResume, "") {
+			t.Errorf("events:\n%s", sink.text())
 		}
 		if why, _ := r.wait(waits{timer: time.After(time.Minute)}); why != wokeTimer {
 			t.Errorf("nothing else: %v, want the timer", why)

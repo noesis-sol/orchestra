@@ -31,7 +31,7 @@ func TestCarriedGoneWorkerIsResumedWhenTheRunTakesNoMore(t *testing.T) {
 		h.beads.add("C", "third", 3)
 		h.cfg.Limit, h.cfg.DoneSoFar = 1, 1
 		o, code := h.run()
-		if code != ExitOK || strings.Contains(o.Final(), "PAUSED") {
+		if code != ExitOK || h.sink.stopped() == stopPaused {
 			t.Fatalf("run 2: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		starts := h.herdr.argsFor("A")
@@ -72,7 +72,7 @@ func TestAskedGoneWorkerIsDroppedWhenTheRunTakesNoMore(t *testing.T) {
 		}))
 		h.worker("B", answersAfter(time.Minute+7*time.Second, answered, time.Hour, "b.txt"))
 		o, code := h.run()
-		if code != ExitOK || strings.Contains(o.Final(), "PAUSED") {
+		if code != ExitOK || h.sink.stopped() == stopPaused {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		want := "A   WORKER_GONE: A is in progress after its question Q, but its worker is gone from tab tab1 " +

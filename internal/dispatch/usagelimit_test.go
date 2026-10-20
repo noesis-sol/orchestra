@@ -70,19 +70,6 @@ func carriesOn(hooks *hookReporter, file string, took time.Duration) behaviour {
 	}
 }
 
-// eventsOf returns the events of kind k the sink got, in order.
-func (s *runSink) eventsOf(k Kind) []Event {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var l []Event
-	for _, ev := range s.events {
-		if ev.Kind == k {
-			l = append(l, ev)
-		}
-	}
-	return l
-}
-
 // dispatchedAt is when ticket id was dispatched, zero if it wasn't.
 func (s *runSink) dispatchedAt(id string) time.Time {
 	for _, ev := range s.eventsOf(EvDispatch) {
@@ -495,9 +482,10 @@ func TestTriageRefusedForTheUsageLimitIsSkipped(t *testing.T) {
 	o.StartTriage()
 	o.queueTriage(context.Background(), organ.Deferral{ID: "A"})
 	o.FinishTriage(context.Background())
-	got := o.sink.(*recordSink).text()
+	sink := o.sink.(*recordSink)
+	got := sink.text()
 	if want := "triage of A skipped: claude is at the account's usage limit (" + limitWords + ")"; !strings.Contains(got, want) ||
-		strings.Contains(got, "TRIAGE_FAILED") {
+		sink.warned("TRIAGE_FAILED", "") {
 		t.Errorf("logged:\n%s\nwant %q", got, want)
 	}
 }

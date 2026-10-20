@@ -114,7 +114,7 @@ func TestTicketWithCommitsBlockedByARunningTicketIsDeferred(t *testing.T) {
 		if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "B still open -> noted and deferred") {
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "B", "still open, noted for review") {
 			t.Errorf("deferred %q, want B, noted for review", got)
 		}
 		if got := h.sink.of(EvWaits); len(got) != 0 {
@@ -143,7 +143,7 @@ func TestTicketBlockedByAMergedTicketIsDeferred(t *testing.T) {
 		if got := closedIDs(h); !equal(got, []string{"A"}) {
 			t.Errorf("merged %v, want A", got)
 		}
-		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "B still open -> noted and deferred") {
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "B", "still open, noted for review") {
 			t.Errorf("deferred %q, want B, noted for review", got)
 		}
 		if got := h.sink.of(EvWaits); len(got) != 0 {

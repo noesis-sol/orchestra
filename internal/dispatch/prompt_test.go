@@ -99,7 +99,8 @@ func TestTheProbeWatchesItsWorkerWork(t *testing.T) {
 				}
 				switch tc.code {
 				case ExitOK:
-					if !strings.Contains(h.logged(), "PROBE_OK: a worker without a ticket ran a command 1m after the hold; taking tickets again") {
+					if !h.sink.has(EvProbed, "") || !containsWords(h.logged(),
+						"PROBE_OK: a worker without a ticket ran a command 1m after the hold; taking tickets again") {
 						t.Errorf("no PROBE_OK line:\n%s", h.logged())
 					}
 				default:

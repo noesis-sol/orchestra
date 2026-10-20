@@ -40,9 +40,9 @@ func TestReviewInputGivesTheClosedTicketsCloseReasons(t *testing.T) {
 		if code != ExitOK {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.logged())
 		}
-		if ev := h.sink.text(); !strings.Contains(ev, "B closed with no change") ||
-			!strings.Contains(ev, "A closed (") {
-			t.Fatalf("want A merged and B closed with no change:\n%s", ev)
+		if !h.sink.detailed(EvClosed, "B", "no change to merge") || !h.sink.has(EvClosed, "A") ||
+			h.sink.detailed(EvClosed, "A", "no change to merge") {
+			t.Fatalf("want A merged and B closed with no change:\n%s", h.sink.text())
 		}
 		in := o.reviewInput(t.Context(), code, o.Final())
 		_, section, ok := strings.Cut(in, "## Tickets closed in this run")

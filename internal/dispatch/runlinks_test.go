@@ -67,8 +67,8 @@ func TestRunFolderLinksInsideTheWorktreeSetTheTicketAside(t *testing.T) {
 			if !strings.Contains(notes, why) || !strings.Contains(notes, "rm "+named) || !strings.Contains(notes, "bd undefer A") {
 				t.Errorf("A's notes don't say %q, how to remove the link and how to bring it back:\n%s", why, notes)
 			}
-			if out := h.sink.text(); !strings.Contains(out, "RUN_FILES_OUTSIDE: "+why) || !strings.Contains(out, named) {
-				t.Errorf("no RUN_FILES_OUTSIDE line saying %q and naming %s:\n%s", why, named, out)
+			if l := h.sink.matching(EvDeferred, "RUN_FILES_OUTSIDE", "A", why); len(l) == 0 || !containsWords(l[0].Text, named) {
+				t.Errorf("no RUN_FILES_OUTSIDE line saying %q and naming %s:\n%s", why, named, h.sink.text())
 			}
 			if out := h.git(wt, "status", "--porcelain", "--untracked-files=all", "--", "docs"); out != "" {
 				t.Errorf("run files were written where the link points:\n%s", out)

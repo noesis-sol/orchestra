@@ -161,8 +161,8 @@ func TestAChecksEndlessOutputIsNotHeldInMemory(t *testing.T) {
 	if fi, err := os.Stat(saved); err != nil || fi.Size() != want {
 		t.Errorf("%s should hold the whole output, %d bytes: %v %v", saved, want, fi, err)
 	}
-	if ev := f.sink.text(); !strings.Contains(ev, "CHECKS_FAILED: k-1") || !strings.Contains(ev, "(output is in "+saved+")") {
-		t.Errorf("CHECKS_FAILED should name %s; events:\n%s", saved, ev)
+	if !f.sink.warnedWith("CHECKS_FAILED", "k-1", "(output is in "+saved+")") {
+		t.Errorf("CHECKS_FAILED should name %s; events:\n%s", saved, f.sink.text())
 	}
 	r, _ := f.orch.book.get("k-1")
 	if said := r.failedCheck; said == nil || !slices.Equal(said.said, []string{"--- FAIL: TestLoop (0.00s)", "FAIL ./a"}) {

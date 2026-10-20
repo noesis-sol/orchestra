@@ -95,7 +95,7 @@ func TestOneWorkerFailingAtOnceChangesNothing(t *testing.T) {
 				t.Errorf("%s is %s, want %s", id, st, want)
 			}
 		}
-		if strings.Contains(h.logged(), "ENVIRONMENT") {
+		if h.sink.heldFor(stopEnvironment) {
 			t.Errorf("held for the environment:\n%s", h.logged())
 		}
 	})

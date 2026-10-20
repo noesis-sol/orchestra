@@ -59,8 +59,8 @@ func TestTheReviewerIsToldWhatAFailedCheckSaid(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if ev := h.sink.text(); !strings.Contains(ev, "CHECKS_FAILED: A closed") {
-		t.Fatalf("A should be set aside for its failed check; events:\n%s", ev)
+	if !h.sink.warned("CHECKS_FAILED", "A") {
+		t.Fatalf("A should be set aside for its failed check; events:\n%s", h.sink.text())
 	}
 
 	in := o.reviewInput(t.Context(), code, o.Final())

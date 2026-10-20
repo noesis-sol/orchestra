@@ -48,8 +48,8 @@ func TestAResolvedRebaseIsCheckedOnceOnTheBaseItMergesOnto(t *testing.T) {
 				t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 			}
 			ev := h.sink.text()
-			if !strings.Contains(ev, "A closed") || strings.Contains(ev, "MERGE_CONFLICT") {
-				t.Errorf("events:\n%s", ev)
+			if !h.sink.has(EvClosed, "A") || h.sink.warned("MERGE_CONFLICT", "") {
+				t.Errorf("events:\n%s", h.sink.text())
 			}
 			if n := checkRuns(t, dir, "A"); n != 1 {
 				t.Errorf("A's check ran %d times, want once:\n%s", n, ev)

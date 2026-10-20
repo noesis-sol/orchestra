@@ -116,7 +116,7 @@ func TestMergeLeavesAConflictForReview(t *testing.T) {
 	if f.git(f.repo, "rev-parse", "main") != before {
 		t.Error("main must not change on a conflict")
 	}
-	if !strings.Contains(f.sink.text(), "MERGE_CONFLICT: k-1") {
+	if !f.sink.warned("MERGE_CONFLICT", "k-1") {
 		t.Errorf("events:\n%s", f.sink.text())
 	}
 	if st := f.git(wt, "status", "--porcelain"); st != "" {
@@ -139,7 +139,7 @@ func TestMergeLeavesAFailingRecheckForReview(t *testing.T) {
 	if f.git(f.repo, "rev-parse", "main") != before {
 		t.Error("main must not change when the checks fail")
 	}
-	if !strings.Contains(f.sink.text(), "CHECKS_FAILED: k-1") {
+	if !f.sink.warned("CHECKS_FAILED", "k-1") {
 		t.Errorf("events:\n%s", f.sink.text())
 	}
 }
@@ -161,9 +161,9 @@ func TestMergeStopsACheckPastItsTimeout(t *testing.T) {
 	if took := time.Since(start); took > f.orch.cfg.CheckTimeout+15*time.Second {
 		t.Errorf("the check was stopped after %s", took)
 	}
-	ev := f.sink.text()
-	if !strings.Contains(ev, "CHECKS_FAILED: k-1 closed, but 'if test -f a.txt; then sleep 60; fi' did not finish within 300ms on wt/k-1") {
-		t.Errorf("events:\n%s", ev)
+	if !f.sink.warnedWith("CHECKS_FAILED", "k-1",
+		"k-1 closed, but 'if test -f a.txt; then sleep 60; fi' did not finish within 300ms on wt/k-1") {
+		t.Errorf("events:\n%s", f.sink.text())
 	}
 	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)
@@ -324,8 +324,8 @@ func TestClosedTicketWithUncommittedClaudeChangeIsNotMerged(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_UNCOMMITTED: A closed") || !strings.Contains(ev, "has uncommitted changes") {
-		t.Errorf("events:\n%s", ev)
+	if !h.sink.warnedWith("CLOSED_UNCOMMITTED", "A", "has uncommitted changes") {
+		t.Errorf("events:\n%s", h.sink.text())
 	}
 	if log := h.mainLog(); strings.Contains(log, "A: add a.txt") {
 		t.Errorf("A should not be merged:\n%s", log)

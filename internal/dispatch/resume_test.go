@@ -113,8 +113,8 @@ func TestGoneWorkerIsResumedOncePerRun(t *testing.T) {
 		if starts := h.herdr.argsFor("A"); len(starts) != 3 || !resumedWith(starts[2], testSession) {
 			t.Fatalf("starts %q; want run 2 to resume %s", starts, testSession)
 		}
-		if ev := h.sink.text(); !strings.Contains(ev, "RESUMED: A's worker is gone from tab tab2 with the ticket in progress") {
-			t.Errorf("run 2 should resume A's worker gone from tab2:\n%s", ev)
+		if !h.sink.warnedWith("RESUMED", "A", "A's worker is gone from tab tab2 with the ticket in progress") {
+			t.Errorf("run 2 should resume A's worker gone from tab2:\n%s", h.sink.text())
 		}
 		if got := closedIDs(h); !equal(got, []string{"A"}) {
 			t.Errorf("merged %v; want A", got)

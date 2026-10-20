@@ -76,16 +76,15 @@ func TestPermissionPromptShownAsIdleStopsAsBlocked(t *testing.T) {
 		if !shown.Permission || shown.Agent != StateIdle {
 			t.Errorf("the dashboard should show the worker waiting on its prompt: %+v", shown)
 		}
-		got := h.sink.of(EvWarn)
 		n := 0
-		for _, l := range got {
-			if strings.Contains(l, "PERMISSION_PROMPT: A's worker waits on a permission prompt for Bash (rm -rf build) "+
-				"in tab tab1; allow or deny it there") {
+		for _, ev := range h.sink.eventsOf(EvWarn) {
+			if ev.Ticket == "A" && tagOf(ev) == "PERMISSION_PROMPT" && containsWords(ev.Text,
+				"A's worker waits on a permission prompt for Bash (rm -rf build) in tab tab1; allow or deny it there") {
 				n++
 			}
 		}
 		if n != 1 {
-			t.Errorf("want the prompt logged once: %q", got)
+			t.Errorf("want the prompt logged once: %q", h.sink.of(EvWarn))
 		}
 	})
 }

@@ -65,7 +65,7 @@ func TestATicketIsNotCheckedAgainWhileItsOwnMergeRuns(t *testing.T) {
 		o.notes = &slowLabel{Notes: o.notes, id: "A", delay: 2 * readyPoll, before: func() {
 			h.mem.commit("main", "by hand: c.txt", "c.txt")
 		}, then: func() {
-			if strings.Contains(h.sink.text(), "RECHECK: A") {
+			if len(h.sink.matching(EvInfo, "RECHECK", "A", "")) > 0 {
 				t.Error("A was taken up to be checked again while its own merge was still under way")
 			}
 		}}

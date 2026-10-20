@@ -63,7 +63,7 @@ func TestASkippedCommitMergesTheRest(t *testing.T) {
 			t.Errorf("no %q in events:\n%s", want, ev)
 		}
 	}
-	if strings.Contains(ev, "MERGE_CONFLICT") || strings.Contains(ev, "no change") {
+	if h.sink.warned("MERGE_CONFLICT", "") || h.sink.detailed(EvClosed, "A", "no change to merge") {
 		t.Errorf("A should merge its other commit:\n%s", ev)
 	}
 	if log := h.mainLog(); !strings.Contains(log, "A: add a.txt") || strings.Contains(log, "A: add shared.txt") {

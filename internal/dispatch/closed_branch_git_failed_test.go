@@ -118,7 +118,7 @@ func TestClosedTicketGitCantLookUpHoldsItsDependents(t *testing.T) {
 			errShowRef.Error() + ")"; !strings.Contains(ev, want) {
 			t.Errorf("events don't say %q:\n%s", want, ev)
 		}
-		if strings.Contains(ev, "CLOSED_UNMERGED") {
+		if h.sink.warned("CLOSED_UNMERGED", "") {
 			t.Errorf("A warned of as closed unmerged:\n%s", ev)
 		}
 		if n := strings.Count(strings.Join(g.heads(), " "), start); n < 3 {

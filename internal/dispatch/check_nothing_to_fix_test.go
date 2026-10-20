@@ -42,7 +42,7 @@ func TestACheckHandBackWithNothingCommittedIsCheckedAgain(t *testing.T) {
 				t.Errorf("events lack %q:\n%s", want, ev)
 			}
 		}
-		if strings.Contains(ev, "CHECKS_FAILED") {
+		if h.sink.warned("CHECKS_FAILED", "") {
 			t.Errorf("events:\n%s", ev)
 		}
 		if n := checkRuns(t, dir, "A"); n != 2 {

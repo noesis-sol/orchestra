@@ -27,10 +27,11 @@ func TestMergeOfADirtyWorktreeSaysItIsDirty(t *testing.T) {
 		t.Fatal(s)
 	}
 	ev := f.sink.text()
-	if !strings.Contains(ev, "DIRTY_WORKTREE: k-1 closed, but "+wt+" has uncommitted changes to a.txt") {
+	if !f.sink.warnedWith("DIRTY_WORKTREE", "k-1", "k-1 closed, but "+wt+" has uncommitted changes to a.txt") ||
+		f.sink.warned("MERGE_CONFLICT", "") {
 		t.Errorf("events:\n%s", ev)
 	}
-	for _, wrong := range []string{"MERGE_CONFLICT", "mid-rebase", "could not say what the rebase stopped on"} {
+	for _, wrong := range []string{"mid-rebase", "could not say what the rebase stopped on"} {
 		if strings.Contains(ev, wrong) {
 			t.Errorf("events say %q:\n%s", wrong, ev)
 		}
@@ -85,14 +86,12 @@ func TestMergeWhoseRebaseDoesNotStartSaysSo(t *testing.T) {
 		t.Fatal(s)
 	}
 	ev := f.sink.text()
-	if !strings.Contains(ev, "REBASE_FAILED: k-1 closed, but git could not rebase wt/k-1 onto main, which moved on "+
-		"while it ran: git rebase main: exit status 128") {
+	if !f.sink.warnedWith("REBASE_FAILED", "k-1", "k-1 closed, but git could not rebase wt/k-1 onto main, which moved on "+
+		"while it ran: git rebase main: exit status 128") || f.sink.warned("MERGE_CONFLICT", "") {
 		t.Errorf("events:\n%s", ev)
 	}
-	for _, wrong := range []string{"MERGE_CONFLICT", "mid-rebase"} {
-		if strings.Contains(ev, wrong) {
-			t.Errorf("events say %q:\n%s", wrong, ev)
-		}
+	if strings.Contains(ev, "mid-rebase") {
+		t.Errorf("events say mid-rebase:\n%s", ev)
 	}
 	if got := f.orch.asideList(); len(got) != 1 || got[0] != "k-1" {
 		t.Errorf("set aside = %v", got)

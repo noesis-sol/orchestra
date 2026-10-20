@@ -34,9 +34,8 @@ func TestClosedUncommittedNamesTheFiles(t *testing.T) {
 	}
 	files := "uncommitted: M a.txt, ?? cmd/orchestra/orchestra"
 	todo := "commit them or remove them, then merge wt/A into main"
-	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_UNCOMMITTED: A closed") ||
-		!strings.Contains(ev, files) || !strings.Contains(ev, todo) {
-		t.Errorf("the warning should name %q and say %q:\n%s", files, todo, ev)
+	if !h.sink.warnedWith("CLOSED_UNCOMMITTED", "A", files) || !h.sink.warnedWith("CLOSED_UNCOMMITTED", "A", todo) {
+		t.Errorf("the warning should name %q and say %q:\n%s", files, todo, h.sink.text())
 	}
 	if notes := h.beads.notesOf("A"); !strings.Contains(notes, files) || !strings.Contains(notes, todo) {
 		t.Errorf("A's note should name %q and say %q:\n%s", files, todo, notes)

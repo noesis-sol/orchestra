@@ -89,9 +89,9 @@ func TestAResolutionLeftOffItsBranchIsRejected(t *testing.T) {
 	}
 	wt := h.worktree("A")
 	want := "handed back to its worker, but its worker left " + wt + " with a detached HEAD, not wt/A; wt/A is left at "
-	if ev := h.sink.text(); !strings.Contains(ev, "MERGE_CONFLICT: A closed") || !strings.Contains(ev, want) ||
-		!strings.Contains(ev, "before the rebase), as "+wt+" has a detached HEAD") {
-		t.Errorf("events lack %q:\n%s", want, ev)
+	if !h.sink.warnedWith("MERGE_CONFLICT", "A", want) ||
+		!h.sink.warnedWith("MERGE_CONFLICT", "A", "before the rebase), as "+wt+" has a detached HEAD") {
+		t.Errorf("events lack %q:\n%s", want, h.sink.text())
 	}
 	if got := read(t, filepath.Join(h.repo, "shared.txt")); got != "main\n" {
 		t.Errorf("main must not change: shared.txt = %q", got)

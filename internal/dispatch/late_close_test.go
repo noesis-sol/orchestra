@@ -193,7 +193,7 @@ func TestLeftOpenWorkerWhoseTabIsGoneIsNoLongerFollowed(t *testing.T) {
 			"it is no longer followed"; !strings.Contains(ev, want) {
 			t.Errorf("events lack %q:\n%s", want, ev)
 		}
-		if strings.Contains(ev, "LATE_CLOSE") || slices.Contains(closedIDs(h), "A") {
+		if h.sink.tagged("LATE_CLOSE") || slices.Contains(closedIDs(h), "A") {
 			t.Errorf("A, its worker gone, was merged as a late close:\n%s", ev)
 		}
 		if got := o.leftOpenList(); len(got) != 0 {

@@ -84,7 +84,7 @@ func TestAMergeWhileBaseKeepsMoving(t *testing.T) {
 					if !strings.Contains(main, "A: add a.txt") {
 						t.Errorf("A should be merged:\n%s", main)
 					}
-					if strings.Contains(ev, "MERGE_CONFLICT") {
+					if h.sink.warned("MERGE_CONFLICT", "") {
 						t.Errorf("events say MERGE_CONFLICT:\n%s", ev)
 					}
 					return

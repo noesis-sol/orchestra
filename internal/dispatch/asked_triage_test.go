@@ -64,8 +64,8 @@ func TestInterruptTriagesNoAskedTicketDeferredInItsTab(t *testing.T) {
 				t.Errorf("%s: %d reads, want none after Ctrl+C", what, got)
 			}
 		}
-		if got := h.sink.text(); strings.Contains(got, "TRIAGE_FAILED") {
-			t.Errorf("A was queued for triage:\n%s", got)
+		if h.sink.warned("TRIAGE_FAILED", "") {
+			t.Errorf("A was queued for triage:\n%s", h.sink.text())
 		}
 	})
 }
@@ -144,7 +144,8 @@ func TestRunEndsWithTriageFullAndWaitingOnIt(t *testing.T) {
 		if got := h.sink.of(EvInfo); !strings.Contains(strings.Join(got, "\n"), want) {
 			t.Errorf("want %q:\n%s", want, h.sink.text())
 		}
-		if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.HasPrefix(got[0], "A   A deferred by worker after its question Q") {
+		if got := h.sink.of(EvDeferred); len(got) != 1 || !h.sink.detailed(EvDeferred, "A", "by the worker") ||
+			!containsWords(got[0], "A deferred by worker after its question Q") {
 			t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
 		}
 		if a := h.statusOf("A"); a != "deferred" {

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -108,10 +106,8 @@ func TestATicketNotReopenedAfterItsSetupFailedIsNotListedAsWaiting(t *testing.T)
 		if code != ExitOK || o.Final() != final {
 			t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), final, h.sink.text())
 		}
-		if got := warnings(h, "A"); !slices.ContainsFunc(got, func(w string) bool {
-			return strings.Contains(w, "REOPEN_FAILED: A stays in_progress, so it won't be back in the queue")
-		}) {
-			t.Errorf("warnings on A %q, want REOPEN_FAILED", got)
+		if !h.sink.warnedWith("REOPEN_FAILED", "A", "A stays in_progress, so it won't be back in the queue") {
+			t.Errorf("warnings on A %q, want REOPEN_FAILED", warnings(h, "A"))
 		}
 	})
 }

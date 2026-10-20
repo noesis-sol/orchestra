@@ -215,7 +215,7 @@ func TestAHoldGivingUpDuringAHandBackStopsTheRun(t *testing.T) {
 		h.reporter = hooks
 		h.cfg.UsageLimitWait = time.Hour
 		o, code := h.run()
-		if code != ExitUsageLimit || !strings.Contains(o.Final(), "USAGE_LIMIT") {
+		if code != ExitUsageLimit || h.sink.stopped() != stopUsageLimit {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
 		left := "; its failing check, handed back to fix, is left to its worker: once it has committed the fix, " +

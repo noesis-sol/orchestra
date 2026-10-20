@@ -156,7 +156,8 @@ func TestReturningTicketThatConflictsIsSetAside(t *testing.T) {
 	if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 		t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if got := h.sink.of(EvDeferred); len(got) != 1 || !strings.Contains(got[0], "REBASE_FAILED: wt/A conflicts with main -> A deferred without starting a worker") {
+	if got := h.sink.of(EvDeferred); len(got) != 1 ||
+		len(h.sink.matching(EvDeferred, "REBASE_FAILED", "A", "wt/A conflicts with main -> A deferred without starting a worker")) != 1 {
 		t.Errorf("deferred:\n%s", strings.Join(got, "\n"))
 	}
 	if st, _ := h.beads.Status(context.Background(), "A"); st != "deferred" {

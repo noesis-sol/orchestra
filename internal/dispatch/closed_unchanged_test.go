@@ -47,7 +47,7 @@ func TestTicketClosedWithNoChangeIsCleanedUp(t *testing.T) {
 		"so there is nothing to merge; worktree, branch and tab removed") {
 		t.Errorf("events:\n%s", ev)
 	}
-	if strings.Contains(ev, "CLOSED_WITHOUT_COMMIT: no commit on wt/A") || strings.Contains(ev, "B waits") {
+	if h.sink.warned("CLOSED_WITHOUT_COMMIT", "A") || strings.Contains(ev, "B waits") {
 		t.Errorf("A should not be left for review, nor hold B:\n%s", ev)
 	}
 	if i := slices.IndexFunc(h.sink.events, func(e Event) bool { return e.Ticket == "A" && e.Kind == EvClosed }); i < 0 ||
@@ -70,7 +70,7 @@ func TestTicketClosedWithNoChangeIsCleanedUp(t *testing.T) {
 		t.Errorf("B should merge once A closed:\n%s", log)
 	}
 
-	if !strings.Contains(ev, "CLOSED_WITHOUT_COMMIT: no commit on wt/C names C") {
+	if !h.sink.warnedWith("CLOSED_WITHOUT_COMMIT", "C", "no commit on wt/C names C") {
 		t.Errorf("C has a commit that doesn't name it, so it should be left for review:\n%s", ev)
 	}
 	if !exists(h.worktree("C")) || h.git(h.repo, "branch", "--list", "wt/C") == "" {
@@ -96,8 +96,8 @@ func TestTicketClosedWithNothingCommittedIsCleanedUp(t *testing.T) {
 		if code != ExitOK || o.Final() != "READY_EMPTY after 2 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if ev := h.sink.text(); !strings.Contains(ev, "A closed with no change") || strings.Contains(ev, "CLOSED_WITHOUT_COMMIT") {
-			t.Errorf("events:\n%s", ev)
+		if !h.sink.detailed(EvClosed, "A", "no change to merge") || h.sink.warned("CLOSED_WITHOUT_COMMIT", "") {
+			t.Errorf("events:\n%s", h.sink.text())
 		}
 		if exists(h.worktree("A")) || slices.Contains(h.mem.branchList(), "wt/A") {
 			t.Errorf("A's worktree and branch should be removed: branches %v", h.mem.branchList())

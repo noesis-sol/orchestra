@@ -180,7 +180,7 @@ func TestInterruptedRunWaitsForItsWorkers(t *testing.T) {
 			t.Error("Run returned before its worker did")
 		}
 		o.FinishTriage(t.Context())
-		if strings.Contains(sink.text(), "TRIAGE") {
+		if sink.has(EvTriage, "") || sink.warned("TRIAGE_FAILED", "") {
 			t.Errorf("a deferral after Ctrl+C should not be triaged:\n%s", sink.text())
 		}
 	})
@@ -236,11 +236,12 @@ func TestHoldLetsTheRunningWorkerFinish(t *testing.T) {
 		h.worker("A", func(w *fakeWorker) AgentState { w.claim(); return "idle" })
 		h.worker("B", func(w *fakeWorker) AgentState { <-h.sink.held; return finishes("b.txt")(w) })
 		o, code := h.run()
-		if code != ExitStuck || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") || strings.Contains(o.Final(), "also") {
+		if code != ExitStuck || h.sink.stopped() != stopPaused || !strings.HasPrefix(o.Final(), "PAUSED: A still in_progress") ||
+			strings.Contains(o.Final(), "also") {
 			t.Fatalf("exit %d, final %q", code, o.Final())
 		}
 		holds := h.sink.of(EvHold)
-		if len(holds) != 1 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED: A still in_progress") ||
+		if len(holds) != 1 || h.sink.blocked("A") != stopPaused || !strings.HasPrefix(holds[0], "A HOLD: PAUSED: A still in_progress") ||
 			!strings.HasSuffix(holds[0], "; no new tickets while the 1 running finish") {
 			t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
 		}
@@ -277,7 +278,7 @@ func TestBothWorkersStopReasonsAreReported(t *testing.T) {
 			t.Errorf("final %q", final)
 		}
 		holds := h.sink.of(EvHold)
-		if len(holds) != 2 || !strings.HasPrefix(holds[0], "A HOLD: PAUSED") || !strings.HasPrefix(holds[1], "B HOLD: BLOCKED") {
+		if len(holds) != 2 || h.sink.blocked("A") != stopPaused || h.sink.blocked("B") != stopBlocked {
 			t.Errorf("holds:\n%s", strings.Join(holds, "\n"))
 		}
 		if got := activeIDs(o); len(got) != 2 {
@@ -402,7 +403,7 @@ func TestMergeUnderWayFinishesAfterInterrupt(t *testing.T) {
 		if code := o.Run(ctx); code != ExitInterrupted {
 			t.Fatalf("exit %d, want %d\n%s", code, ExitInterrupted, h.sink.text())
 		}
-		if got := h.sink.of(EvClosed); len(got) != 1 || !strings.Contains(got[0], "A closed (") {
+		if got := h.sink.of(EvClosed); len(got) != 1 || !h.sink.has(EvClosed, "A") || h.sink.detailed(EvClosed, "A", "no change to merge") {
 			t.Errorf("closed:\n%s", strings.Join(got, "\n"))
 		}
 		if !strings.Contains(h.mainLog(), "A: add a.txt") {

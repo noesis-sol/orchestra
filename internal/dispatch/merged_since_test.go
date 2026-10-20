@@ -66,8 +66,8 @@ func TestUnmergedBranchWithNoCommitsIsNotMergedByAnOlderCommit(t *testing.T) {
 	if o, code := h.run(); code != ExitOK {
 		t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 	}
-	if ev := h.sink.text(); !strings.Contains(ev, "CLOSED_WITHOUT_COMMIT: no commit on wt/A names A") {
-		t.Fatalf("run 1 should leave A unmerged:\n%s", ev)
+	if !h.sink.warnedWith("CLOSED_WITHOUT_COMMIT", "A", "no commit on wt/A names A") {
+		t.Fatalf("run 1 should leave A unmerged:\n%s", h.sink.text())
 	}
 	if got := h.beads.metadata("A", ForkKey); got != fork {
 		t.Errorf("A's %s = %q, want main as wt/A was cut from it, %s", ForkKey, got, fork)

@@ -64,7 +64,7 @@ func TestFilesMergedByUnionDontKeepTicketsApart(t *testing.T) {
 			if !strings.Contains(log, c.footprint) {
 				t.Errorf("%s: log lacks %q:\n%s", c.name, c.footprint, log)
 			}
-			if strings.Contains(log, "LIKELY_CONFLICT") {
+			if h.sink.warned("LIKELY_CONFLICT", "") {
 				t.Errorf("%s: warned of a likely conflict:\n%s", c.name, log)
 			}
 			skip := "skipping B: touches "

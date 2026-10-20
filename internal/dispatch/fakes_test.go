@@ -403,13 +403,12 @@ func (a *alerts) has(text string) bool {
 
 // runSink records events and closes held on the first HOLD.
 type runSink struct {
-	mu     sync.Mutex
-	events []Event
-	gone   []string
-	last   map[string]Status // each ticket's latest status, as the dashboard shows it
-	held   chan struct{}
-	once   sync.Once
-	check  func() // run after each event: the ticket book's invariants (see checkBook); nil for none
+	sinkEvents
+	gone  []string
+	last  map[string]Status // each ticket's latest status, as the dashboard shows it
+	held  chan struct{}
+	once  sync.Once
+	check func() // run after each event: the ticket book's invariants (see checkBook); nil for none
 }
 
 func (s *runSink) Event(ev Event) {

@@ -97,10 +97,8 @@ func TestFullCheckCleanupFailedQuotesAWorktreeWithASpace(t *testing.T) {
 		}
 		o.FullCheck(t.Context())
 		var warned string
-		for _, w := range h.sink.of(EvWarn) {
-			if strings.Contains(w, "CLEANUP_FAILED: the full check's worktree") {
-				warned = w
-			}
+		for _, w := range h.sink.matching(EvWarn, "CLEANUP_FAILED", "", "the full check's worktree") {
+			warned = w.Text
 		}
 		if warned == "" {
 			t.Fatalf("no CLEANUP_FAILED for the full check's worktree:\n%s", h.sink.text())

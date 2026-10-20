@@ -68,8 +68,8 @@ func TestRunFilesOutsideTheWorktreeSetTheTicketAside(t *testing.T) {
 			if notes := h.beads.notesOf("A"); !strings.Contains(notes, why) || !strings.Contains(notes, "bd undefer A") {
 				t.Errorf("A's notes don't say %q and how to bring it back:\n%s", why, notes)
 			}
-			if out := h.sink.text(); !strings.Contains(out, "RUN_FILES_OUTSIDE: "+why) {
-				t.Errorf("no RUN_FILES_OUTSIDE line saying %q:\n%s", why, out)
+			if len(h.sink.matching(EvDeferred, "RUN_FILES_OUTSIDE", "A", why)) == 0 {
+				t.Errorf("no RUN_FILES_OUTSIDE line saying %q:\n%s", why, h.sink.text())
 			}
 			if !strings.Contains(h.logged(), filepath.FromSlash(tc.link)) {
 				t.Errorf("the log doesn't name %s:\n%s", tc.link, h.logged())

@@ -55,7 +55,8 @@ func TestCtrlCDuringARecheckLeavesTheTicketSetAside(t *testing.T) {
 			t.Fatalf("exit %d, final %q, want %q\n%s", code, o.Final(), want, h.sink.text())
 		}
 		ev := h.sink.text()
-		if !strings.Contains(ev, "RECHECK: A") || !strings.Contains(ev, "  A's check once more was cut short; it stays set aside\n") {
+		if len(h.sink.matching(EvInfo, "RECHECK", "A", "")) == 0 ||
+			!strings.Contains(ev, "  A's check once more was cut short; it stays set aside\n") {
 			t.Errorf("events should say A's check once more was cut short:\n%s", ev)
 		}
 		if strings.Contains(ev, "A is left running") {

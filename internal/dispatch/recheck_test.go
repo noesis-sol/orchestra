@@ -257,7 +257,7 @@ func TestATicketWhoseCheckFailedInItsOwnCodeIsNotCheckedAgain(t *testing.T) {
 		}
 		ev := h.sink.text()
 		if !strings.Contains(ev, "/check.log); not checked again in this run, as it failed in internal/a, "+
-			"which A's own commits change\n") || strings.Contains(ev, "RECHECK") {
+			"which A's own commits change\n") || h.sink.tagged("RECHECK") {
 			t.Errorf("A should not be checked again:\n%s", ev)
 		}
 	})
@@ -284,7 +284,7 @@ func TestADrainingRunChecksNoTicketAgain(t *testing.T) {
 		if code := o.Run(t.Context()); code != ExitOK || o.Final() != "DRAINED after 2 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if n := checkRuns(t, dir, "A"); n != 1 || strings.Contains(h.sink.text(), "RECHECK") {
+		if n := checkRuns(t, dir, "A"); n != 1 || h.sink.tagged("RECHECK") {
 			t.Errorf("A's check ran %d times, want once:\n%s", n, h.sink.text())
 		}
 	})

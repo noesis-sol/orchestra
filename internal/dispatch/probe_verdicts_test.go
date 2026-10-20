@@ -107,7 +107,7 @@ func TestVerdictsFromAfterTheProbeHoldTheRun(t *testing.T) {
 		h.worker("D", defers)
 		// E, if it starts before D's verdict, finishes once the run holds.
 		h.worker("E", func(w *fakeWorker) AgentState {
-			waitFor(func() bool { return strings.Contains(h.sink.text(), "HOLD: ENVIRONMENT: triage blamed") })
+			waitFor(func() bool { return len(h.sink.matching(EvHold, string(stopEnvironment), "", "triage blamed")) > 0 })
 			return finishes("e.txt")(w)
 		})
 		h.worker(probeID, runsProbe)
