@@ -102,7 +102,7 @@ func TestFeatureStoppedBeforeHandingBackNamesItsEpic(t *testing.T) {
 	defer cancel()
 	var out, errOut strings.Builder
 	var message string
-	b := refineBreakdown{repo: repo, out: &out, err: &errOut,
+	b := refineBreakdown{claude: claudeSession{repo: repo}, out: &out, err: &errOut,
 		terminal: func(_ context.Context, m string, _ project.RefineMode) error {
 			message = m
 			cancel()

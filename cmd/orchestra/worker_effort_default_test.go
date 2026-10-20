@@ -59,10 +59,10 @@ func TestRefineSessionStartsAtTheWorkersEffort(t *testing.T) {
 		var out strings.Builder
 		b := newRefineBreakdown(&session{cfg: c, e: cmdEnv{getenv: func(string) string { return "" },
 			stdin: strings.NewReader(""), stdout: &out, stderr: &out}})
-		if b.effort != tc.want {
-			t.Errorf("%s: the session's effort is %q, want %q", tc.name, b.effort, tc.want)
+		if b.claude.effort != tc.want {
+			t.Errorf("%s: the session's effort is %q, want %q", tc.name, b.claude.effort, tc.want)
 		}
-		b.repo, b.pane, b.epics, b.tracker = t.TempDir(), "w1:p1", filedEpic{}, &filedTree{}
+		b.claude.repo, b.pane, b.epics, b.tracker = t.TempDir(), "w1:p1", filedEpic{}, &filedTree{}
 		b.terminal = func(context.Context, string, project.RefineMode) error {
 			t.Errorf("%s: the session fell back to the terminal", tc.name)
 			return nil

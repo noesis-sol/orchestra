@@ -44,7 +44,7 @@ func TestCmuxInterviewInASplit(t *testing.T) {
 	term := cmux.Terminal{Book: filepath.Join(repo, project.RunPath(cmux.BookName)), Own: app.Own}
 	var out, errOut strings.Builder
 	var split []string // orchestra's workspace's terminals, while claude talks the feature through
-	b := refineBreakdown{repo: repo, pane: app.OwnSurface, hooks: true, epics: filedEpic{}, out: &out, err: &errOut,
+	b := refineBreakdown{claude: claudeSession{repo: repo}, pane: app.OwnSurface, hooks: true, epics: filedEpic{}, out: &out, err: &errOut,
 		panes: watchedPanes{term, func() { split = app.Tree().Surfaces[app.Own] }},
 		terminal: func(context.Context, string, project.RefineMode) error {
 			t.Error("the interview fell back to orchestra's terminal")

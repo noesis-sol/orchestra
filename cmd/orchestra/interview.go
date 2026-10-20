@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
 
@@ -49,10 +47,7 @@ type paneSession struct {
 	// hooks has claude report through hooks, to project.InterviewRun: a terminal that reads its
 	// state from them (tmux, cmux) needs them.
 	hooks    bool
-	repo     string                                         // the main checkout, where claude runs
-	effort   string                                         // claude's --effort; "" for Claude Code's default
-	servers  []mcp.Server                                   // the MCP servers claude gets, and no others
-	chrome   []string                                       // --chrome or --no-chrome (sessionMCPArgs)
+	claude   claudeSession                                  // how claude starts, in the main checkout
 	fallback func(ctx context.Context, prompt string) error // the session on the terminal
 	out, err io.Writer
 	// Where the session stands, on a line under the fixed message, when out is a terminal (nil
@@ -128,27 +123,26 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 // open splits orchestra's pane and starts claude in the new one, in the main checkout, and returns
 // the new pane's ID ("" if none was made) once Herdr sees claude in it.
 func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
-	message, err := p.about.message(p.repo)
+	repo := p.claude.repo
+	message, err := p.about.message(repo)
 	if err != nil {
 		return "", err
 	}
-	mcpArgs, err := sessionMCPArgs(p.repo, p.servers, p.chrome)
-	if err != nil {
-		return "", err
-	}
-	args := slices.Concat([]string{"--append-system-prompt-file", prompt}, effortArgs(p.effort), mcpArgs)
+	var report []string
 	if p.hooks {
-		report, err := claude.Reporter{}.ReportArgsIn(p.repo, project.InterviewRun)
-		if err != nil {
+		if report, err = (claude.Reporter{}).ReportArgsIn(repo, project.InterviewRun); err != nil {
 			return "", fmt.Errorf("cannot set up its hooks: %w", err)
 		}
-		args = append(args, report...)
 	}
-	pane, err := p.panes.SplitPane(ctx, p.pane, p.repo)
+	args, err := p.claude.args(prompt, append(report, "--", message)...)
 	if err != nil {
 		return "", err
 	}
-	if err := p.panes.LaunchInPane(ctx, pane, "claude", append(args, "--", message)); err != nil {
+	pane, err := p.panes.SplitPane(ctx, p.pane, repo)
+	if err != nil {
+		return "", err
+	}
+	if err := p.panes.LaunchInPane(ctx, pane, "claude", args); err != nil {
 		return pane, err
 	}
 	return pane, p.started(ctx, pane)
@@ -205,7 +199,7 @@ func (p paneSession) wait(ctx context.Context, pane string, began time.Time) {
 			return
 		case <-time.After(interviewPoll):
 		}
-		epic, filed := about.handedBack(p.repo)
+		epic, filed := about.handedBack(p.claude.repo)
 		_, _, st, err := p.panes.PaneAgent(ctx, pane)
 		switch {
 		case err != nil:

@@ -170,7 +170,7 @@ type talkedThrough struct {
 func talkFeatureThrough(t *testing.T, repo string, tree featureEpicTracker, epic string) talkedThrough {
 	t.Helper()
 	var out, errOut strings.Builder
-	b := refineBreakdown{repo: repo, out: &out, err: &errOut,
+	b := refineBreakdown{claude: claudeSession{repo: repo}, out: &out, err: &errOut,
 		terminal: func(context.Context, string, project.RefineMode) error {
 			if epic != "" {
 				if err := os.WriteFile(filepath.Join(repo, project.RunPath(project.FeatureName)),
@@ -218,9 +218,9 @@ func TestFeatureNeedsATerminal(t *testing.T) {
 	repo := featureRepo(t)
 	tree := newFeatureTree()
 	var out, errOut strings.Builder
-	b := refineBreakdown{repo: repo, out: &out, err: &errOut,
+	b := refineBreakdown{claude: claudeSession{repo: repo}, out: &out, err: &errOut,
 		terminal: func(ctx context.Context, message string, m project.RefineMode) error {
-			return refineOnTerminal(ctx, nil, repo, "", nil, nil, message, m, strings.NewReader(""), &out, &errOut)
+			return refineOnTerminal(ctx, nil, claudeSession{repo: repo}, message, m, strings.NewReader(""), &out, &errOut)
 		}}
 	epic, code := featureTalk{request: paneRequest, repo: repo, breakdown: b, tracker: tree, out: &out,
 		err: &errOut}.run(testCtx(t.Context(), t))

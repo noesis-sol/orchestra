@@ -157,7 +157,7 @@ func interviewInPaneOn(ctx context.Context, t *testing.T, repo string, panes *fa
 	t.Helper()
 	var o paneOutcome
 	var out, errOut strings.Builder
-	b := refineBreakdown{repo: repo, pane: "w1:p1", panes: panes, epics: filedEpic{}, out: &out, err: &errOut,
+	b := refineBreakdown{claude: claudeSession{repo: repo}, pane: "w1:p1", panes: panes, epics: filedEpic{}, out: &out, err: &errOut,
 		terminal: func(_ context.Context, message string, m project.RefineMode) error {
 			if m != project.RefineFeature {
 				t.Errorf("the terminal session is in mode %v, not a feature's", m)

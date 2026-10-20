@@ -16,7 +16,6 @@ import (
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
-	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
@@ -64,14 +63,12 @@ const specCountEvery = time.Minute
 
 // headlessBreakdown breaks a spec down in claude -p, as a specBreakdown.
 type headlessBreakdown struct {
-	repo   string        // the main checkout, where claude runs
+	// claude is how the session starts: in the main checkout, at the spec's effort ("" for
+	// project.DefaultSpecEffort).
+	claude claudeSession
 	limit  time.Duration // how long the session may take
-	effort string
-	// servers are the MCP servers it gets, and no others: none but the project's chosen ones
-	servers []mcp.Server
-	chrome  []string      // --chrome or --no-chrome, as workers get Chrome (dispatch.Config.SessionChrome)
-	say     tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
-	log     *dispatch.Log // nil in tests
+	say    tui.Printer   // where its progress shows: a terminal's busy line, or plain lines
+	log    *dispatch.Log // nil in tests
 	// bd, which has what a session that gave no answer filed, and files the tree its answer gives
 	tracker    specBd
 	countEvery time.Duration // specCountEvery; tests give their own
@@ -81,9 +78,8 @@ type headlessBreakdown struct {
 // unless the run is plain.
 func newHeadlessBreakdown(s *session) headlessBreakdown {
 	c := s.cfg
-	return headlessBreakdown{repo: c.Repo, limit: c.SpecTimeout, effort: c.SpecEffort, servers: c.SessionMCP(),
-		chrome: c.SessionChrome(), say: s.printer(), log: s.log, tracker: beads.Tracker{Repo: c.Repo},
-		countEvery: specCountEvery}
+	return headlessBreakdown{claude: c.claudeSession(c.SpecEffort), limit: c.SpecTimeout, say: s.printer(),
+		log: s.log, tracker: beads.Tracker{Repo: c.Repo}, countEvery: specCountEvery}
 }
 
 // BreakDown runs the session on the spec r names, files the tree its answer gives (fileAnswerTree), and
@@ -94,15 +90,16 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return breakdownResult{}, errors.New(why)
 	}
-	prompt, err := project.WriteSpecPrompt(h.repo, r.Update != nil)
+	repo := h.claude.repo
+	prompt, err := project.WriteSpecPrompt(repo, r.Update != nil)
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("cannot write the breakdown's instructions: %w", err)
 	}
-	servers, err := sessionMCPArgs(h.repo, h.servers, h.chrome)
+	servers, err := h.claude.mcpArgs()
 	if err != nil {
 		return breakdownResult{}, fmt.Errorf("the breakdown %w", err)
 	}
-	effort := cmp.Or(h.effort, project.DefaultSpecEffort)
+	effort := cmp.Or(h.claude.effort, project.DefaultSpecEffort)
 	schema := specTreeSchema
 	if r.Update != nil {
 		schema = specSchema
@@ -118,7 +115,7 @@ func (h headlessBreakdown) BreakDown(ctx context.Context, r breakdownRequest) (b
 		}
 	}}
 	began := time.Now()
-	err = command.Stream(ctx, h.limit, h.repo, nil, specMessage(r, h.limit), stream, "claude", args...)
+	err = command.Stream(ctx, h.limit, repo, nil, specMessage(r, h.limit), stream, "claude", args...)
 	stream.end()
 	h.logSession(stream, time.Since(began))
 	answer, err := stream.answer(ctx, err)
@@ -160,7 +157,7 @@ func (h headlessBreakdown) fileAnswer(ctx context.Context, spec project.Spec, a 
 }
 
 // specArgs is the session's command line, past claude, for the instructions in prompt: its tools, its
-// MCP servers and Chrome (servers, from sessionMCPArgs), the tools' rules, nothing that would ask for
+// MCP servers and Chrome (servers, from claudeSession.mcpArgs), the tools' rules, nothing that would ask for
 // a permission (help, claude's --help, says whether it has --permission-prompts), its answer's schema
 // and the stream of what it does. Its first message comes on stdin: an argument after the rules' list
 // would be read as one of them. dontAsk denies whatever the rules don't allow, whatever mode the

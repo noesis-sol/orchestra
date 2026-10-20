@@ -18,7 +18,7 @@ func TestInterviewInATmuxPaneReportsThroughHooks(t *testing.T) {
 	for _, hooks := range []bool{true, false} {
 		repo, _ := gitRepo(t)
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle}}
-		s := paneSession{panes: panes, pane: "%1", repo: repo, hooks: hooks, about: featureSubject{first: paneMessage}}
+		s := paneSession{panes: panes, pane: "%1", claude: claudeSession{repo: repo}, hooks: hooks, about: featureSubject{first: paneMessage}}
 		if _, err := s.open(context.Background(), "/prompt.md"); err != nil {
 			t.Fatal(err)
 		}

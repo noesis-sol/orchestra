@@ -85,7 +85,7 @@ func TestSpecBreakdownGetsTheWorkersChrome(t *testing.T) {
 		onPath(t, tools)
 		var out strings.Builder
 		h := specBreakdownIn(repo, &out)
-		h.servers, h.chrome = sessionServers, chrome
+		h.claude.servers, h.claude.chrome = sessionServers, chrome
 		if _, err := h.BreakDown(testCtx(context.Background(), t), breakdownRequest{Spec: testSpec}); err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestPaneSessionGetsTheWorkersChrome(t *testing.T) {
 	for _, chrome := range [][]string{{"--no-chrome"}, {"--chrome"}, nil} {
 		repo := t.TempDir()
 		panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle}}
-		s := paneSession{panes: panes, pane: "%1", repo: repo, servers: sessionServers, chrome: chrome,
+		s := paneSession{panes: panes, pane: "%1", claude: claudeSession{repo: repo, servers: sessionServers, chrome: chrome},
 			about: featureSubject{first: paneMessage}}
 		if _, err := s.open(context.Background(), "/prompt.md"); err != nil {
 			t.Fatal(err)

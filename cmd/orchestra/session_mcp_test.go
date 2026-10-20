@@ -43,7 +43,7 @@ func TestSpecBreakdownGetsTheProjectsMCPServers(t *testing.T) {
 	onPath(t, tools)
 	var out strings.Builder
 	h := specBreakdownIn(repo, &out)
-	h.servers = sessionServers
+	h.claude.servers = sessionServers
 	if _, err := h.BreakDown(testCtx(context.Background(), t), breakdownRequest{Spec: testSpec}); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestPaneSessionGetsTheProjectsMCPServers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()
 			panes := &fakePanes{agent: []dispatch.AgentState{dispatch.StateIdle}}
-			s := paneSession{panes: panes, pane: "%1", repo: repo, servers: tc.servers,
+			s := paneSession{panes: panes, pane: "%1", claude: claudeSession{repo: repo, servers: tc.servers},
 				about: featureSubject{first: paneMessage}}
 			if _, err := s.open(context.Background(), "/prompt.md"); err != nil {
 				t.Fatal(err)

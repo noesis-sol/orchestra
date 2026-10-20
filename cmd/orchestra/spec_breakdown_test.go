@@ -349,7 +349,7 @@ func TestSpecBreakdownThatDoesNotFinishListsWhatItFiled(t *testing.T) {
 
 // specBreakdownIn is a headless breakdown in repo, with its progress in plain lines on out.
 func specBreakdownIn(repo string, out *strings.Builder) headlessBreakdown {
-	return headlessBreakdown{repo: repo, limit: time.Minute, effort: "max", say: tui.Printer{Out: out},
+	return headlessBreakdown{claude: claudeSession{repo: repo, effort: "max"}, limit: time.Minute, say: tui.Printer{Out: out},
 		tracker: beads.Tracker{Repo: repo}, countEvery: time.Hour}
 }
 
@@ -917,7 +917,7 @@ func TestLiveSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	h := headlessBreakdown{repo: repo, limit: 20 * time.Minute, effort: "medium", say: tui.Printer{Out: &out},
+	h := headlessBreakdown{claude: claudeSession{repo: repo, effort: "medium"}, limit: 20 * time.Minute, say: tui.Printer{Out: &out},
 		tracker: beads.Tracker{Repo: repo}, countEvery: time.Minute}
 	start := time.Now()
 	res, err := h.BreakDown(ctx, breakdownRequest{Spec: spec})
