@@ -51,6 +51,11 @@ All notable changes to orchestra are documented here. The format follows
   it has just cut from the base until the ticket finishes; and reads a
   finished branch's commit naming its ticket and its count of commits with
   one `git log`. A one-ticket run went from 30 git commands to 22.
+- A merge names the commit it brings in from what the ticket's finish read,
+  unless a rebase or a hand-back moved the branch since, rather than asking
+  `git log` again, and takes the base's new head from the branch it
+  fast-forwarded to rather than reading it again. A one-ticket run with a
+  check command runs three git commands fewer, one without it one fewer.
 ### Fixed
 
 - The feature interview's line keeps the epic's ticket count in a narrow

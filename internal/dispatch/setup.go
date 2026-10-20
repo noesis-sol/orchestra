@@ -312,11 +312,11 @@ func (o *Loop) retrySetups() {
 // takeSettings has the run take setup and setup_files from settings.json as ticket id's merge
 // committed it to Base, when the merge, from before, changed it: a setup set during the run counts
 // from then on, as the environment ticket a spec's breakdown files first sets it for the tickets after
-// it. One git can't read, or that doesn't parse, is warned of, and the setup stays as it was. The
-// caller holds repoMu, so Base stays where the merge left it.
-func (o *Loop) takeSettings(ctx context.Context, id, before string) {
+// it. One git can't read, or that doesn't parse, is warned of, and the setup stays as it was. now is
+// Base's commit after the merge: the branch's it fast-forwarded to. The caller holds repoMu, so Base
+// stays where the merge left it.
+func (o *Loop) takeSettings(ctx context.Context, id, before, now string) {
 	c := o.cfg
-	now := o.checkout.Head(ctx, c.Repo, c.Base)
 	if before == "" || now == "" ||
 		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
 		return

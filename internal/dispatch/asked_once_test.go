@@ -46,6 +46,11 @@ func (g *askedGit) OwnCommits(ctx context.Context, repo, base, branch, ticket st
 	return g.fakeGit.OwnCommits(ctx, repo, base, branch, ticket)
 }
 
+func (g *askedGit) Head(ctx context.Context, repo, rev string) string {
+	g.ask("Head " + rev)
+	return g.fakeGit.Head(ctx, repo, rev)
+}
+
 func (g *askedGit) DirtyWorktree(ctx context.Context, dir string) string {
 	g.ask("DirtyWorktree " + filepath.Base(dir))
 	return g.fakeGit.DirtyWorktree(ctx, dir)
@@ -58,7 +63,7 @@ func (g *askedGit) DirtyTreeAndBranch(ctx context.Context, dir string) (string, 
 
 // A new ticket's branch, cut from Base as its worktree is made, is on top of Base with nothing of an
 // earlier attempt: git is asked nothing of it until its worker finishes. Then one git log gives the
-// commit naming the ticket and how many it has, and the fast-forward names the commit it merges.
+// commit naming the ticket and how many it has, which the fast-forward names as it merges it.
 func TestANewTicketsBranchIsAskedAboutOnceItFinishes(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -73,12 +78,14 @@ func TestANewTicketsBranchIsAskedAboutOnceItFinishes(t *testing.T) {
 		}
 		// The main checkout before A starts, as A goes to merge, before its fast-forward, and once
 		// it has merged, as the loop looks for the next ticket; the loop and the merge ask side by side.
+		// Base's head as the run starts and before the fast-forward: after it, Base is at the branch's
+		// head, which the merge read as it found the branch on top of Base.
 		want := []string{
-			"DirtyTreeAndBranch",
+			"Head main", "DirtyTreeAndBranch", "Head wt/A",
 			"OwnCommits main..wt/A", "DirtyWorktree A",
 			"DirtyTreeAndBranch",
-			"IsAncestor main wt/A",
-			"DirtyTreeAndBranch", "CommitNaming main..wt/A",
+			"IsAncestor main wt/A", "Head wt/A",
+			"DirtyTreeAndBranch", "Head main",
 			"DirtyTreeAndBranch",
 		}
 		if got := slices.Sorted(slices.Values(g.asked)); !slices.Equal(got, slices.Sorted(slices.Values(want))) {

@@ -34,7 +34,7 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 		o.leaveFor(keep, id, asideUncommitted, "closed with uncommitted changes", "", fmt.Sprintf(
 			"%s closed (%s) but %s has uncommitted changes; worktree and tab %s left for review", id, commit, wt, tab))
 	case closedMerge:
-		return o.merge(ctx, w)
+		return o.mergeNamed(ctx, w, commit)
 	}
 	return nil
 }
@@ -52,11 +52,17 @@ func (o *Loop) finish(ctx context.Context, w worker) *stopReason {
 // its worker skipping those Base has already), has nothing to merge and is cleaned up as such (see
 // closedUnchanged).
 func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
+	return o.mergeNamed(ctx, w, "")
+}
+
+// mergeNamed is merge, named being the commit naming the ticket that finish read on its branch (see
+// mergeRun.commitNaming).
+func (o *Loop) mergeNamed(ctx context.Context, w worker, named string) *stopReason {
 	c := o.cfg
 	o.goToMerge(w.id) // its slot is free for the next ticket while it waits for its turn and merges
 	defer o.markFinishing(w.id, finishMerge)()
 	m := &mergeRun{
-		o: o, w: w,
+		o: o, w: w, named: named,
 		// Once begun, rebasing, merging and the notes on it finish though Ctrl+C comes, so the
 		// repository isn't left half merged; only the check and a worker resolving conflicts stop.
 		keep: context.WithoutCancel(ctx),
@@ -129,6 +135,7 @@ type mergeRun struct {
 	handedBack  int    // its rebase's conflicts handed back to its worker to resolve
 	fixes       fixes  // its failing check handed back to its worker to fix
 	checked     string // the branch's commit the check last passed on, on top of Base: it merges as it is
+	named       string // the commit naming the ticket, as finish read it on the branch (see commitNaming)
 }
 
 // pass merges the ticket's branch if it is on top of Base and checked there, or checks it there
@@ -147,11 +154,13 @@ func (m *mergeRun) pass(ctx context.Context, rebase bool) (mergeStep, *stopReaso
 		return mergeDone, nil
 	}
 	if m.o.merger.IsAncestor(m.keep, c.Repo, c.Base, m.w.br) {
-		if c.Check == "" || m.isChecked() {
-			return mergeDone, m.fastForward()
+		// What the fast-forward brings onto Base: the very code checked, when it was checked in this merge.
+		at := m.o.checkout.Head(m.keep, c.Repo, m.w.br)
+		if c.Check == "" || at != "" && at == m.checked {
+			return mergeDone, m.fastForward(at)
 		}
 		if rebase {
-			return m.checkOnTop(ctx)
+			return m.checkOnTop(ctx, at)
 		}
 	}
 	if !rebase {
@@ -181,20 +190,12 @@ func (m *mergeRun) dropUnchanged(onto, why string) bool {
 	return true
 }
 
-// isChecked reports whether the check has passed on the ticket's branch as it is now, in this merge:
-// a fast-forward then brings onto Base the very code checked. It is called with repo held.
-func (m *mergeRun) isChecked() bool {
-	at := m.o.checkout.Head(m.keep, m.o.cfg.Repo, m.w.br)
-	return at != "" && at == m.checked
-}
-
-// checkOnTop checks the ticket's branch, on top of Base already as its worker left it, before it
-// merges, as checkClean does a rebased one: a failure is handed back to its worker to fix or sets the
+// checkOnTop checks the ticket's branch, on top of Base already as its worker left it at head, before
+// it merges, as checkClean does a rebased one: a failure is handed back to its worker to fix or sets the
 // ticket aside. It is called with repo held.
-func (m *mergeRun) checkOnTop(ctx context.Context) (mergeStep, *stopReason) {
+func (m *mergeRun) checkOnTop(ctx context.Context, head string) (mergeStep, *stopReason) {
 	o, c, keep, w := m.o, m.o.cfg, m.keep, m.w
-	r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: o.checkout.Head(keep, c.Repo, w.br),
-		onTop: true}
+	r := rebaseStop{worker: w, onto: o.checkout.Head(keep, c.Repo, c.Base), head: head, onTop: true}
 	m.repo.unlock()
 	o.info("  %s is on top of %s already: checking it with '%s' before it merges", w.br, c.Base, c.Check)
 	res, stop := o.checkRebased(ctx, m.repo, m.queue, r, &m.fixes, false)
@@ -221,10 +222,10 @@ func (m *mergeRun) afterCheck(r rebaseStop, res checked, stop *stopReason) (merg
 	return mergeAgain, nil
 }
 
-// fastForward merges the ticket's branch, on top of Base, into it and cleans up after it, or returns
-// the reason to stop when the main checkout isn't ready for it or git won't. It is called with repo
-// held.
-func (m *mergeRun) fastForward() *stopReason {
+// fastForward merges the ticket's branch, on top of Base and at commit at ("" when git couldn't say),
+// into it and cleans up after it, or returns the reason to stop when the main checkout isn't ready for
+// it or git won't. It is called with repo held.
+func (m *mergeRun) fastForward(at string) *stopReason {
 	o, c, keep := m.o, m.o.cfg, m.keep
 	id, br, wt, tab := m.w.id, m.w.br, m.w.wt, m.w.tab
 	left := fmt.Sprintf(" before merging %s; worktree %s and tab %s left for review", br, wt, tab)
@@ -233,7 +234,7 @@ func (m *mergeRun) fastForward() *stopReason {
 		o.leaveUnmerged(keep, id, string(s.kind)) // DIRTY_TREE or GIT_FAILED
 		return s
 	}
-	commit := o.merger.CommitNaming(keep, c.Repo, c.Base, br, id)
+	commit := m.commitNaming(at)
 	before := o.checkout.Head(keep, c.Repo, c.Base)
 	out, err := o.merger.FastForward(keep, c.Repo, br)
 	o.log.Raw(out, err)
@@ -247,7 +248,10 @@ func (m *mergeRun) fastForward() *stopReason {
 	o.countMerge()
 	// What it brought may be what a setup that failed needed, or a new setup (see leaveSetupFailed).
 	o.retrySetups()
-	o.takeSettings(keep, id, before)
+	if at == "" { // git couldn't say before
+		at = o.checkout.Head(keep, c.Repo, c.Base)
+	}
+	o.takeSettings(keep, id, before, at) // Base is where the branch was
 	cleaned := o.removeWorktree(keep, id, wt, br)
 	m.repo.unlock()
 	hash, _, _ := strings.Cut(commit, " ")
@@ -263,6 +267,17 @@ func (m *mergeRun) fastForward() *stopReason {
 		"  %s closed (%s); merged into %s, but CLEANUP_FAILED for %s / %s (git output is in %s); tab %s left open",
 		id, commit, c.Base, wt, br, c.LogPath, tab)})
 	return nil
+}
+
+// commitNaming is the latest commit on the ticket's branch, not on Base, naming its ticket, as the
+// fast-forward names it, the branch's head being at: finish's (named) while it is that head still, as
+// nothing has moved the branch since, else git's. A rebase, its train's included, or its worker working
+// on a hand-back gives the branch a new head. It is called with repo held.
+func (m *mergeRun) commitNaming(at string) string {
+	if hash, _, _ := strings.Cut(m.named, " "); hash != "" && strings.HasPrefix(at, hash) {
+		return m.named // git log's abbreviated hash, of the full one Head gives
+	}
+	return m.o.merger.CommitNaming(m.keep, m.o.cfg.Repo, m.o.cfg.Base, m.w.br, m.w.id)
 }
 
 // rebase rebases the ticket's branch onto Base, which moved on while the ticket ran, and returns the
