@@ -685,8 +685,11 @@ func takePath(word string, take func(tok string) bool) {
 	}
 }
 
+// ticketFootprint builds t's footprint from its title, description, design, acceptance criteria, labels
+// and metadata, not its notes: they say what happened to the ticket (orchestra's, its workers', the
+// maintainer's), naming files and functions it doesn't change.
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
-	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria, t.Notes}, "\n")
+	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria}, "\n")
 	spec := specFile(t)
 	files, funcs := pathsIn(text, repo, spec)
 	maps.Copy(funcs, callsIn(text))

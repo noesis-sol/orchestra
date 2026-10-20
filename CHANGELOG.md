@@ -31,6 +31,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A ticket's footprint leaves out its notes: they say what happened to it
+  (orchestra's notes, its workers', a reopening's), naming files and
+  functions it doesn't change, and kept it from running beside tickets over
+  them. On tutti's log, 101 of its 649 skips rested on notes alone; on
+  orchestra's, 13 of 621.
 - `CLOSED_UNCOMMITTED` names the files left uncommitted in the ticket's
   worktree, in its warning and the ticket's note (a few, then how many
   more), each after its `git status` code, `??` marking an untracked one,

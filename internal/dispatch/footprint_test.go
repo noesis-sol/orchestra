@@ -22,7 +22,7 @@ func TestTicketFootprintNamesFilesAndFunctions(t *testing.T) {
 		Description: "When `Loop.merge` (internal/dispatch/loop.go:1125) aborts, call `o.agentName(id)` and `deliverPrompt`, " +
 			"then refreshBranch() and `os.WriteFile(p, b, 0o644)`. The hooks write .orchestra/run/activity.json (internal/claude/claude.go). " +
 			"See https://github.com/gastownhall/beads/blob/main/README.md, e.g. `go test ./...` and v0.2.0.",
-		Notes: "Moved to dispatch/merge.go; update settings.json and README.md. Add internal/dispatch/handback.go. " +
+		Design: "Moved to dispatch/merge.go; update settings.json and README.md. Add internal/dispatch/handback.go. " +
 			"Not /Users/me/Projects/x/y.go, nor internal/nowhere/z.go, nor (`solo`, `RESOLVING`).",
 		AcceptanceCriteria: "Tests in a new file(s)."}
 	fp := TicketFootprint(tk, trackedHere, "")

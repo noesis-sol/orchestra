@@ -31,7 +31,8 @@ type Ticket struct {
 	// "" when it has none. See DeferredUntilLater.
 	DeferUntil string `json:"defer_until"`
 
-	// The ticket's text and custom metadata, which say where it works (its Footprint).
+	// The ticket's text and custom metadata. All but its notes and close reason, which say what happened
+	// to it, say where it works (its Footprint).
 	Description        string          `json:"description"`
 	Design             string          `json:"design"`
 	AcceptanceCriteria string          `json:"acceptance_criteria"`
