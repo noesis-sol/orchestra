@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,31 @@ import (
 // gone, or is a process that started after the run did (the PID taken again since), is a run that
 // ended without removing it: it is ignored and removed. A folder that can't be read holds no run, and
 // one removed under the runs (a cache cleaner) is made again as each next writes.
+
+// DefaultMachineWorkers is Config.MachineWorkers on a machine of cores cores when neither
+// --machine-workers nor its variable gives it: half the cores, at least 2. Workers mostly wait on the
+// model, but their checks are CPU-heavy, and runs slowed sharply past about 4 checks at once on 10 cores.
+func DefaultMachineWorkers(cores int) int {
+	return max(cores/2, 2)
+}
+
+// DefaultMachineWorkersFrom is Config.MachineWorkersFrom for DefaultMachineWorkers on cores cores.
+func DefaultMachineWorkersFrom(cores int) string {
+	return fmt.Sprintf("default: half of %d cores", cores)
+}
+
+// machineWorkersLabel is the cap on the workers across the machine's runs as the START line says it:
+// the number, or none, and what gave it.
+func (c Config) machineWorkersLabel() string {
+	label := "none"
+	if c.MachineWorkers > 0 {
+		label = strconv.Itoa(c.MachineWorkers)
+	}
+	if c.MachineWorkersFrom != "" {
+		label += " (" + c.MachineWorkersFrom + ")"
+	}
+	return label
+}
 
 // registration is a run's file in the machine's folder of runs.
 type registration struct {

@@ -268,12 +268,16 @@ func (o *Loop) begin(ctx context.Context) {
 	if term.Where != "" {
 		where = term.Where
 	}
-	o.info("START orchestra %s in %s on %s%s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
-		"check timeout: %s, terminal: %s, %s: %s, agent: %s%s, worktrees: %s, MCP servers: %s)",
+	o.info("START orchestra %s in %s on %s%s%s (done so far: %d, limit: %s, concurrent: %d, machine workers: %s, "+
+		"ticket limit: %s, check timeout: %s, terminal: %s, %s: %s, agent: %s%s, worktrees: %s, MCP servers: %s)",
 		c.Version, c.Repo, c.Base, ScopeLabel(c), overnightLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency,
-		ticketLimit,
+		c.machineWorkersLabel(), ticketLimit,
 		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.Agent().Name, c.permissionLabel(),
 		c.WTRoot, c.mcpLabel())
+	if c.MachineWorkers > 0 && c.Concurrency > c.MachineWorkers {
+		o.info("  concurrent %d is above the machine's cap of %d workers: the run holds at it (HOLD: MACHINE), "+
+			"with fewer of its own as the machine's other runs have workers running", c.Concurrency, c.MachineWorkers)
+	}
 	if c.Watch != "" {
 		o.info("  to see the workers' tabs: %s", c.Watch)
 	}

@@ -3,8 +3,10 @@ package main
 import (
 	"io"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/update"
 )
 
@@ -37,21 +39,27 @@ func TestRunsDir(t *testing.T) {
 	}
 }
 
-// --machine-workers, or ORCHESTRA_MACHINE_WORKERS, caps the workers across the machine's runs; none by
-// default, and a value that isn't a whole number is a setup problem.
+// --machine-workers, or ORCHESTRA_MACHINE_WORKERS, caps the workers across the machine's runs; half the
+// cores by default, at least 2, 0 for no cap, and a value that isn't a whole number is a setup problem.
 func TestMachineWorkersFlag(t *testing.T) {
 	t.Parallel()
+	cores := runtime.NumCPU()
 	for _, tc := range []struct {
 		name    string
 		args    []string
 		env     map[string]string
 		want    int
+		from    string
 		problem bool
 	}{
-		{"default", nil, nil, 0, false},
-		{"variable", nil, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "8"}, 8, false},
-		{"flag over variable", []string{"--machine-workers", "6"}, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "8"}, 6, false},
-		{"not a number", nil, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "lots"}, 0, true},
+		{"default", nil, nil, dispatch.DefaultMachineWorkers(cores), dispatch.DefaultMachineWorkersFrom(cores), false},
+		{"variable", nil, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "8"}, 8, "ORCHESTRA_MACHINE_WORKERS", false},
+		{"no cap", nil, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "0"}, 0, "ORCHESTRA_MACHINE_WORKERS", false},
+		{"flag", []string{"--machine-workers", "3"}, nil, 3, "--machine-workers", false},
+		{"flag's no cap", []string{"--machine-workers", "0"}, nil, 0, "--machine-workers", false},
+		{"flag over variable", []string{"--machine-workers", "6"}, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "8"},
+			6, "--machine-workers", false},
+		{"not a number", nil, map[string]string{"ORCHESTRA_MACHINE_WORKERS": "lots"}, 0, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, problems, err := readFlags(tc.args, func(k string) string { return tc.env[k] }, io.Discard)
@@ -64,8 +72,9 @@ func TestMachineWorkersFlag(t *testing.T) {
 				}
 				return
 			}
-			if len(problems) > 0 || f.MachineWorkers != tc.want {
-				t.Errorf("MachineWorkers = %d, problems %q; want %d", f.MachineWorkers, problems, tc.want)
+			if len(problems) > 0 || f.MachineWorkers != tc.want || f.MachineWorkersFrom != tc.from {
+				t.Errorf("MachineWorkers = %d from %q, problems %q; want %d from %q",
+					f.MachineWorkers, f.MachineWorkersFrom, problems, tc.want, tc.from)
 			}
 		})
 	}

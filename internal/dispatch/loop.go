@@ -607,9 +607,11 @@ type Config struct {
 	UsageLimitWait time.Duration
 	// Machine is the folder the machine's orchestra runs register in (see machine); "" for none.
 	// MachineWorkers caps the workers running across them: a free slot waits while they are at it;
-	// 0 for no cap.
-	Machine        string
-	MachineWorkers int
+	// 0 for no cap. MachineWorkersFrom is what gave it, as the START line says: the flag, its variable,
+	// or the default (see DefaultMachineWorkers); "" for none said.
+	Machine            string
+	MachineWorkers     int
+	MachineWorkersFrom string
 	// MCP is the MCP servers Claude workers get and no others: those mcp_servers in
 	// .orchestra/settings.json names, with their definitions from this machine's Claude Code config.
 	// nil when the project hasn't chosen: workers then load every server Claude Code finds.

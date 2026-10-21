@@ -38,6 +38,15 @@ All notable changes to orchestra are documented here. The format follows
   fails (`BASE_UNFETCHED`) never stops the run. `--no-fetch` (or
   `ORCHESTRA_NO_FETCH=1`) skips it, for working offline.
 
+### Changed
+
+- `--machine-workers` (`ORCHESTRA_MACHINE_WORKERS`) has a default: half the
+  machine's cores, at least 2, so that several runs on one machine no longer
+  crowd it unchecked; `0` still means no cap. The START line says the cap
+  and what gave it (`machine workers: 5 (default: half of 10 cores)`), and
+  says once when the run's own `concurrent` is above it. The overnight
+  pre-flight's offer of a worker count keeps to the same default.
+
 ## [0.9.2] - 2026-10-21
 
 ### Added

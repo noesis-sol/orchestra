@@ -221,7 +221,8 @@ going that long after dispatch; `0` for none, overriding `settings.json`), `--ch
 `ORCHESTRA_NO_FETCH=1` (start on the base as it is, without fetching its upstream and fast-forwarding
 to it). `orchestra -h` lists them all.
 `--machine-workers N` / `ORCHESTRA_MACHINE_WORKERS` caps the workers across every orchestra run on
-the machine (none by default: a free slot waits at the cap, `HOLD: MACHINE`); a run beside another
+the machine (by default half the cores, at least 2, `0` for none: a free slot waits at the cap,
+`HOLD: MACHINE`; the START line says the cap and what gave it); a run beside another
 says `SHARED_MACHINE` once for it, as their checks slow each other down. Each Claude worker starts
 with its share of the cores, the machine's divided among the workers across its runs, in
 `ORCHESTRA_CORES` (for check scripts) and `GOFLAGS=-p=<share>`.

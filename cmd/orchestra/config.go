@@ -283,6 +283,7 @@ func loadConfig(
 type runFlags struct {
 	options
 	concurrency                                 project.Given[int]
+	machineWorkers                              project.Given[int] // see settleMachineWorkers
 	ticketLimit, checkTimeout, checkFullTimeout project.Given[time.Duration]
 	specTimeout                                 project.Given[time.Duration]
 	resolveConflicts                            project.Given[bool]
@@ -340,7 +341,19 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 	}
 	f.Feature = strings.TrimSpace(f.Feature)
 	f.Overnight = f.overnight.Value
+	settleMachineWorkers(&f.Config, f.machineWorkers, runtime.NumCPU())
 	return f, append(problems, checkFlagCombos(f)...), nil
+}
+
+// settleMachineWorkers sets c's cap on the workers across the machine's runs, and what gave it: given's,
+// from --machine-workers or ORCHESTRA_MACHINE_WORKERS, else the default for a machine of cores cores.
+func settleMachineWorkers(c *dispatch.Config, given project.Given[int], cores int) {
+	if given.Given {
+		c.MachineWorkers, c.MachineWorkersFrom = given.Value, given.Name
+		return
+	}
+	c.MachineWorkers = dispatch.DefaultMachineWorkers(cores)
+	c.MachineWorkersFrom = dispatch.DefaultMachineWorkersFrom(cores)
 }
 
 // printFlags lists the flags of fs as fs.PrintDefaults does, but with two dashes before a long flag's name
@@ -440,9 +453,10 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"tickets to work on at the same time (default: .orchestra/settings.json, else "+
 			strconv.Itoa(project.DefaultConcurrency)+") [ORCHESTRA_CONCURRENT]").
 		short("c")
-	bindWhole(e, &c.MachineWorkers, "machine-workers", "ORCHESTRA_MACHINE_WORKERS", 0,
+	machineWorkers := bindWhole(e, &f.machineWorkers.Value, "machine-workers", "ORCHESTRA_MACHINE_WORKERS", 0,
 		"start no ticket while this many workers run across the machine's orchestra runs, this one's included; "+
-			"0 for no cap (default: none) [ORCHESTRA_MACHINE_WORKERS]")
+			"0 for no cap (default: half the cores, at least 2) [ORCHESTRA_MACHINE_WORKERS]")
+	machineWorkers.given, machineWorkers.name = &f.machineWorkers.Given, &f.machineWorkers.Name
 	bindGiven(e, fs.DurationVar, &f.ticketLimit, "ticket-limit", "TICKET_LIMIT", 0, parseLimit,
 		"stop the run when a ticket's worker is still going this long after dispatch, e.g. 2h; 0 for none "+
 			"(default: .orchestra/settings.json, else none) [TICKET_LIMIT]")
