@@ -4,10 +4,46 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.2] - 2026-10-21
 
 ### Added
 
+- `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current
+  tickets as `--tickets` does, after a pre-flight checklist: each check
+  passed, warned of or failed, and in a terminal each fix orchestra can make
+  offered before the run starts. A failed check left refuses to start the
+  run (exit 2) unless answered at the terminal or overridden with
+  `--force-overnight`; without a terminal the checklist is printed. The
+  `START` line says `· overnight`, and the event stream's `start` record
+  `"overnight": true`.
+- The overnight pre-flight's checks that refuse to start the run, each with
+  its fix where orchestra can make one: a ticket limit (fix: none), one
+  ticket at a time (fix: 2 to 4, as the machine allows), workers in a
+  permission mode that asks (fix: `auto`), `claude` not starting or not
+  logged in, under 20 GB free where the worktrees go
+  (`"overnight_free_disk_gb"` in `settings.json`), and the merge check
+  failing on the base branch's head, run once in a worktree of its own
+  (its output in `.orchestra/run/check-base.log`).
+- The overnight pre-flight's warnings, each with its fix where orchestra can
+  make one: the account at its usage limit now, and when it resets (asked
+  with the smallest `claude` call), `"usage_limit_wait"` under 5h (fix: 6h),
+  no ticket limit (fix: 2h), another orchestra run on the machine, a busy
+  machine or a virtual machine (Docker's) holding over 4 GB, each named, the
+  machine on battery, a worker prompt or verifier older than orchestra's
+  templates (fix: `orchestra init --update`, committed), and how many
+  tickets are ready, and how many more wait only on questions.
+- An overnight run's pre-flight, once its checks clear the run to start,
+  puts every open question in the run's scope to the maintainer in the
+  answer talk, one by one with its options, before the run's first ticket.
+  A question left open, or every one without a terminal, is said in a
+  checklist of its own with the tickets it keeps waiting.
+- An overnight run keeps the machine from sleeping while it goes, the organ
+  phase included: `caffeinate -i -w <orchestra's PID>` on macOS,
+  `systemd-inhibit` on Linux, started once the pre-flight clears the run
+  and stopped as it ends. The checklist says so, and warns where the
+  command is missing.
+- `"keep_awake": true` in settings.json keeps the machine from sleeping
+  during every run, as an overnight run always does.
 - An overnight run (`--overnight`) sets aside a ticket it would otherwise
   stop for, rather than stopping at 1am: a worker idle with its ticket in
   progress, gone from its tab with no session to resume or gone a second
@@ -100,45 +136,6 @@ All notable changes to orchestra are documented here. The format follows
   `bd has no question open in the run's scope` included, which only the
   dashboard showed: an `a` pressed as the run ends opened a talk whose end
   the dashboard, closed by then, never showed, and the log said nothing.
-
-### Added
-
-- `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current
-  tickets as `--tickets` does, after a pre-flight checklist: each check
-  passed, warned of or failed, and in a terminal each fix orchestra can make
-  offered before the run starts. A failed check left refuses to start the
-  run (exit 2) unless answered at the terminal or overridden with
-  `--force-overnight`; without a terminal the checklist is printed. The
-  `START` line says `· overnight`, and the event stream's `start` record
-  `"overnight": true`.
-- The overnight pre-flight's checks that refuse to start the run, each with
-  its fix where orchestra can make one: a ticket limit (fix: none), one
-  ticket at a time (fix: 2 to 4, as the machine allows), workers in a
-  permission mode that asks (fix: `auto`), `claude` not starting or not
-  logged in, under 20 GB free where the worktrees go
-  (`"overnight_free_disk_gb"` in `settings.json`), and the merge check
-  failing on the base branch's head, run once in a worktree of its own
-  (its output in `.orchestra/run/check-base.log`).
-- The overnight pre-flight's warnings, each with its fix where orchestra can
-  make one: the account at its usage limit now, and when it resets (asked
-  with the smallest `claude` call), `"usage_limit_wait"` under 5h (fix: 6h),
-  no ticket limit (fix: 2h), another orchestra run on the machine, a busy
-  machine or a virtual machine (Docker's) holding over 4 GB, each named, the
-  machine on battery, a worker prompt or verifier older than orchestra's
-  templates (fix: `orchestra init --update`, committed), and how many
-  tickets are ready, and how many more wait only on questions.
-- An overnight run's pre-flight, once its checks clear the run to start,
-  puts every open question in the run's scope to the maintainer in the
-  answer talk, one by one with its options, before the run's first ticket.
-  A question left open, or every one without a terminal, is said in a
-  checklist of its own with the tickets it keeps waiting.
-- An overnight run keeps the machine from sleeping while it goes, the organ
-  phase included: `caffeinate -i -w <orchestra's PID>` on macOS,
-  `systemd-inhibit` on Linux, started once the pre-flight clears the run
-  and stopped as it ends. The checklist says so, and warns where the
-  command is missing.
-- `"keep_awake": true` in settings.json keeps the machine from sleeping
-  during every run, as an overnight run always does.
 
 ## [0.9.1] - 2026-10-21
 
@@ -3362,6 +3359,7 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[0.9.2]: https://github.com/noesis-sol/orchestra/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/noesis-sol/orchestra/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/noesis-sol/orchestra/compare/v0.8.6...v0.9.0
 [0.8.6]: https://github.com/noesis-sol/orchestra/compare/v0.8.5...v0.8.6
