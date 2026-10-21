@@ -86,7 +86,8 @@ func checkoutReady(ctx context.Context, c Config, g BaseFetchGit, besides []stri
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
 // fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup
 // and the requirements the commits it brought changed in settings.json, as a merge's do (see
-// takeSettings): the run read its settings before.
+// takeSettings), and the check commands, as a merge's don't (see takeChecks): the run read its settings
+// before.
 func (o *Loop) fetchBase(ctx context.Context) {
 	c := o.cfg
 	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
@@ -115,7 +116,10 @@ func (o *Loop) fetchBase(ctx context.Context) {
 			return
 		}
 		o.repoMu.Lock()
-		o.takeSettings(keep, "", "the fast-forward to "+f.Upstream, o.startHead, head)
+		by := "the fast-forward to " + f.Upstream
+		if s, ok := o.takeSettings(keep, "", by, o.startHead, head); ok {
+			o.takeChecks(by, s)
+		}
 		o.repoMu.Unlock()
 		o.startHead = head
 	}

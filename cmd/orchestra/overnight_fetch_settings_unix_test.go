@@ -52,7 +52,7 @@ func TestFetchCheckKeepsTheSettingsItCannotRead(t *testing.T) {
 	pushSettings(t, git, other, `{"setup": `)
 	wantResult(t, fetchCheck(runCtx(t), s), tui.CheckWarned, "fast-forwarded main to origin/main (1 commit), "+
 		"but .orchestra/settings.json could not be read again: ",
-		"; the run keeps the setup and the requirements it read before")
+		"; the run keeps the setup, the requirements and the checks it read before")
 	if s.cfg.Setup != "make old" {
 		t.Errorf("the setup is %q, want the one the run read before", s.cfg.Setup)
 	}

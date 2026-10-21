@@ -13,6 +13,13 @@ All notable changes to orchestra are documented here. The format follows
   until the talk was over, so that with nothing ready but questions and
   every one answered it still read `2 questions for you · a to answer`,
   never `answering in the pane on the right`.
+- A run whose start fast-forwards the base to its upstream takes the check
+  commands (`check_fast`, `check_full`, `check_own`) that fast-forward brings
+  in to `.orchestra/settings.json` (`CHECKS: the fast-forward to origin/main
+  changed …`), and so does the overnight pre-flight for its merge check of the
+  base. It kept the ones it read before, and ran a merge check renamed
+  upstream under its old name on the new head. A merge's still count from the
+  next run.
 - The overnight pre-flight's merge check of the base branch says when it
   couldn't remove its worktree, as one whose setup left read-only files (Go's
   module cache), with the `git worktree remove --force` command that removes

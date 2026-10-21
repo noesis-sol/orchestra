@@ -204,8 +204,8 @@ func existingDir(dir string) string {
 // fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), the warning
 // recorded in the event stream once it opens, as the run's start would, and fails where the main
 // checkout would stop the run before its first ticket: a spec the run is to commit may be uncommitted.
-// Nothing with --no-fetch. The run then takes the setup and the requirements the fast-forward brought
-// in (takeFetchedSettings), as a run's start does, before the other checks read them.
+// Nothing with --no-fetch. The run then takes the setup, the requirements and the check commands the
+// fast-forward brought in (takeFetchedSettings), as a run's start does, before the other checks read them.
 func fetchCheck(ctx context.Context, s *session) preflightResult {
 	return fetchCheckWith(ctx, s, git.Git{})
 }
@@ -239,7 +239,7 @@ func fetchCheckWith(ctx context.Context, s *session, g dispatch.BaseFetchGit) pr
 		s.fetched = f.Text
 		if err := s.takeFetchedSettings(); err != nil {
 			return preflightResult{verdict: tui.CheckWarned, text: fmt.Sprintf("%s, but %s could not be read "+
-				"again: %s; the run keeps the setup and the requirements it read before", f.Text,
+				"again: %s; the run keeps the setup, the requirements and the checks it read before", f.Text,
 				project.SettingsFile, oneLine(err.Error()))}
 		}
 		return preflightResult{verdict: tui.CheckPassed, text: f.Text}
@@ -249,9 +249,10 @@ func fetchCheckWith(ctx context.Context, s *session, g dispatch.BaseFetchGit) pr
 	return preflightResult{verdict: tui.CheckPassed, text: c.Base + " has every commit of " + f.Upstream}
 }
 
-// takeFetchedSettings has the run take setup, setup_files and requires from settings.json as the
-// pre-flight's fast-forward left it, as a run's start takes those its own fast-forward brings in
-// (dispatch's takeSettings): the run read them before. Settings it can't read or resolve leave them
+// takeFetchedSettings has the run take setup, setup_files, requires and the check commands from
+// settings.json as the pre-flight's fast-forward left it, as a run's start takes those its own
+// fast-forward brings in (dispatch's takeSettings and takeChecks): the run read them before, and the
+// base check runs the merge check after it. Settings it can't read or resolve leave them
 // as they were, and the error says why.
 func (s *session) takeFetchedSettings() error {
 	settings, _, err := project.LoadSettings(s.cfg.Repo)
@@ -267,6 +268,7 @@ func (s *session) takeFetchedSettings() error {
 		return err
 	}
 	s.cfg.Setup, s.cfg.SetupFiles, s.cfg.Requires = settings.Setup, files, list
+	s.cfg.Check, s.cfg.CheckFull, s.cfg.CheckOwn = settings.CheckFast, settings.CheckFull, settings.CheckOwn
 	return nil
 }
 
