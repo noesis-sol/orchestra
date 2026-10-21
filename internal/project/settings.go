@@ -82,6 +82,10 @@ type Settings struct {
 	// before it stops (USAGE_LIMIT), as a duration such as "6h". Empty: DefaultUsageLimitWait; "0":
 	// it doesn't wait.
 	UsageLimitWait string `json:"usage_limit_wait,omitempty"`
+	// OvernightFreeDisk is how many GB of free disk an overnight run's pre-flight wants where the
+	// worktrees go, each holding its own dependencies, before it starts. Absent: DefaultOvernightFreeDisk;
+	// 0 doesn't check.
+	OvernightFreeDisk *int `json:"overnight_free_disk_gb,omitempty"`
 	// MCPServers names the MCP servers workers get, defined in each machine's Claude Code config
 	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
 	// server Claude Code finds; [] gives them none.
@@ -174,6 +178,10 @@ const (
 // DefaultUsageLimitWait is how long a run waits for the account's usage limit to reset when
 // settings.json doesn't say: longer than the five-hour session limit takes to reset.
 const DefaultUsageLimitWait = 6 * time.Hour
+
+// DefaultOvernightFreeDisk is how many GB of free disk an overnight run wants when settings.json
+// doesn't say: room for a night of worktrees, each with its own dependencies.
+const DefaultOvernightFreeDisk = 20
 
 // DefaultExcludeTypes are the issue types kept out of a run when settings.json names none.
 var DefaultExcludeTypes = []string{"epic"}
@@ -669,6 +677,13 @@ func ResolveEnvironmentHold(s Settings) (count int, window time.Duration, err er
 // reset: the project's setting, else DefaultUsageLimitWait; 0 for not at all.
 func ResolveUsageLimitWait(s Settings) (time.Duration, error) {
 	return fromSettings(durationSetting("usage_limit_wait", s.UsageLimitWait, "6h", true), DefaultUsageLimitWait)
+}
+
+// ResolveOvernightFreeDisk picks how many GB of free disk an overnight run wants where the worktrees
+// go: the project's setting, else DefaultOvernightFreeDisk; 0 for no check.
+func ResolveOvernightFreeDisk(s Settings) (int, error) {
+	return fromSettings(countSetting("overnight_free_disk_gb", "no check", s.OvernightFreeDisk),
+		DefaultOvernightFreeDisk)
 }
 
 // ResolveEnvironmentProbe picks how long after an environment hold, once no ticket runs, the run

@@ -148,6 +148,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
+| `basecheck.go` | the merge check (`check_fast`) run once on Base's head before an overnight run, in a worktree of its own, the setup first (`CheckBase`, for the pre-flight) |
 | `predict.go` | predicting the files of ready tickets that name none, in the background; the `predictor`, its queue and predictions |
 | `deps.go` | the interfaces to Beads, the terminal (Herdr, tmux or cmux), git and workers' reports, and the launch contract every terminal keeps to; aliases for `internal/agentio`'s types (`AgentState` and its states, `Reporter`, `Session`) |
 | `ticket.go` | aliases for `internal/tracker`'s vocabulary, which `internal/beads` imports rather than the run loop: `Ticket`, a Beads issue as the loop sees it, its status, labels, deferral and the question it waits on |

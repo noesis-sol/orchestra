@@ -211,6 +211,8 @@ type options struct {
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
 	// start an overnight run (Config.Overnight) though its pre-flight has failed checks left (--force-overnight)
 	forceOvernight bool
+	// the GB of free disk an overnight run's pre-flight wants where the worktrees go; 0 for no check
+	overnightFreeDisk int
 	// the permission mode workers start in on a run that isn't planned and on one that is (see settleWork)
 	permissionModes struct{ unplanned, planned string }
 	showVersion     bool
@@ -620,6 +622,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	keep2(&problems, &c.EnvHoldCount, &c.EnvHoldWindow)(project.ResolveEnvironmentHold(settings))
 	keep(&problems, &c.EnvProbe)(project.ResolveEnvironmentProbe(settings))
 	keep(&problems, &c.UsageLimitWait)(project.ResolveUsageLimitWait(settings))
+	keep(&problems, &c.overnightFreeDisk)(project.ResolveOvernightFreeDisk(settings))
 	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
 	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
 	keep(&problems, &c.Requires)(project.ResolveRequires(settings))

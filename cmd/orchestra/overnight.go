@@ -37,7 +37,9 @@ type preflightFix struct {
 }
 
 // preflightChecks are an overnight run's checks, in the order its checklist lists them.
-var preflightChecks = []preflightCheck{}
+var preflightChecks = []preflightCheck{
+	limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"), diskCheck(freeDisk), baseCheck,
+}
 
 // preflight clears an overnight run to start: it runs its checks, prints their checklist and, in a
 // terminal, offers their fixes and makes those taken. ok is false where the run ends there with code,

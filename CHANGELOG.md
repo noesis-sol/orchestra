@@ -43,6 +43,14 @@ All notable changes to orchestra are documented here. The format follows
   `--force-overnight`; without a terminal the checklist is printed. The
   `START` line says `· overnight`, and the event stream's `start` record
   `"overnight": true`.
+- The overnight pre-flight's checks that refuse to start the run, each with
+  its fix where orchestra can make one: a ticket limit (fix: none), one
+  ticket at a time (fix: 2 to 4, as the machine allows), workers in a
+  permission mode that asks (fix: `auto`), `claude` not starting or not
+  logged in, under 20 GB free where the worktrees go
+  (`"overnight_free_disk_gb"` in `settings.json`), and the merge check
+  failing on the base branch's head, run once in a worktree of its own
+  (its output in `.orchestra/run/check-base.log`).
 
 ## [0.9.1] - 2026-10-21
 
