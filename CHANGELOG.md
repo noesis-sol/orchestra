@@ -17,6 +17,12 @@ All notable changes to orchestra are documented here. The format follows
   and the run's end waited for its pane to close until the morning, holding
   the run lock and keeping the machine awake. The question waits for
   `orchestra answer`; the dashboard's **a** key still opens the talk.
+- The cap on workers across the machine's runs (`--machine-workers`) counts
+  only the workers at work, as a run's own slots do, not its tickets waiting
+  to merge. A run alone with `concurrent` at the cap (4 on an 8-core Mac by
+  default) held with `HOLD: MACHINE` whenever a ticket waited to merge,
+  instead of starting the next one, and pausing its merge train and its
+  hand-backs' clocks meanwhile.
 
 ## [0.9.3] - 2026-10-21
 

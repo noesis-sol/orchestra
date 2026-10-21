@@ -19,8 +19,9 @@ import (
 // Config.MachineWorkers or the load reading pressed, is left out of the limit, as the usage limit's
 // wait is, up to the limit again.
 
-// heldHandBack is lateHarness's run sharing the machine with another run, whose worker running keeps it
-// at Config.MachineWorkers while ticket B waits, until the returned function frees the other run's slot.
+// heldHandBack is lateHarness's run sharing the machine with another run, whose two workers running keep
+// it at Config.MachineWorkers while ticket B waits, A's hand-back included, which takes no slot, until the
+// returned function frees the other run's slots.
 func heldHandBack(t *testing.T) (*harness, func()) {
 	t.Helper()
 	h := lateHarness(t)
@@ -36,7 +37,7 @@ func heldHandBack(t *testing.T) (*harness, func()) {
 			t.Error(err)
 		}
 	}
-	writeOther(1)
+	writeOther(2)
 	h.cfg.Concurrency, h.cfg.MachineWorkers = 2, 2
 	h.beads.add("B", "ticket B", 2)
 	h.worker("B", slowly(time.Minute, "b.txt"))

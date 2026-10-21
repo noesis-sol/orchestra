@@ -223,7 +223,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.recheckTickets()  // before new tickets: each is done but for its merge, and others may wait on it
 		r.recheckRequires() // a merge changed them: before the next ticket starts
 		r.startTickets()
-		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
+		r.machine.running(r.slotsTaken()) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {
 			if r.awaitFiling() || r.goOnWhenEmpty() || r.awaitAnswers() {
 				continue

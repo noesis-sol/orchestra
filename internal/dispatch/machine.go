@@ -16,15 +16,15 @@ import (
 
 // Runs share the machine, and their checks slow each other down. Each run registers itself while it
 // runs, a file of its own in Config.Machine (orchestra's folder in the user's cache folder, runs/)
-// with its PID, repository, concurrent, start time and how many of its workers run, written again as
-// that changes, and removed as the run ends. A run reads the others' as it goes: it says once of
-// each other run that it is going (SHARED_MACHINE), and that it has ended; with
-// Config.MachineWorkers, a free slot waits while the workers running across all the runs are at that
-// cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the others: every
-// machinePoll while it holds, at the hold's end on the gate (see machine.hold). A file whose PID is
-// gone, or is a process that started after the run did (the PID taken again since), is a run that
-// ended without removing it: it is ignored and removed. A folder that can't be read holds no run, and
-// one removed under the runs (a cache cleaner) is made again as each next writes.
+// with its PID, repository, concurrent, start time and how many of its workers are at work (taking its
+// slots, not waiting to merge), written again as that changes, and removed as the run ends. A run reads
+// the others' as it goes: it says once of each other run that it is going (SHARED_MACHINE), and that it
+// has ended; with Config.MachineWorkers, a free slot waits while the workers at work across all the runs
+// are at that cap (HOLD: MACHINE), and is filled once one of them finishes, as the run next reads the
+// others: every machinePoll while it holds, at the hold's end on the gate (see machine.hold). A file
+// whose PID is gone, or is a process that started after the run did (the PID taken again since), is a
+// run that ended without removing it: it is ignored and removed. A folder that can't be read holds no
+// run, and one removed under the runs (a cache cleaner) is made again as each next writes.
 
 // DefaultMachineWorkers is Config.MachineWorkers on a machine of cores cores when neither
 // --machine-workers nor its variable gives it: half the cores, at least 2. Workers mostly wait on the
@@ -57,7 +57,7 @@ type registration struct {
 	Repo       string    `json:"repo"`
 	Concurrent int       `json:"concurrent"`
 	Started    time.Time `json:"started"`
-	Running    int       `json:"running"` // its workers running, merges and checks included
+	Running    int       `json:"running"` // its workers at work: those taking its slots (see runState.slotsTaken)
 }
 
 // registrationExt ends a registration's name; one being written ends in .tmp until it is renamed.
@@ -245,7 +245,7 @@ type OtherRun struct {
 	Repo       string
 	Concurrent int
 	Started    time.Time
-	Running    int // its workers running, merges and checks included
+	Running    int // its workers at work: those taking its slots, not its tickets waiting to merge
 }
 
 // OtherRuns are the orchestra runs registered in dir, a machine's folder of runs (Config.Machine), that
@@ -312,11 +312,11 @@ func processAlive(pid int) bool {
 }
 
 // lookAround reads the other runs on the machine, saying which started and ended, sharing the cores
-// with their workers (see shareCores), and writes how many of the run's own workers run. The hold for
-// Config.MachineWorkers ends once they are under it, and the dashboard hears so then, whether or not the
-// run goes on taking tickets.
+// with their workers (see shareCores), and writes how many of the run's own workers are at work (see
+// atCap). The hold for Config.MachineWorkers ends once they are under it, and the dashboard hears so
+// then, whether or not the run goes on taking tickets.
 func (r *runState) lookAround() {
-	r.machine.running(len(r.inflight))
+	r.machine.running(r.slotsTaken())
 	for _, ev := range r.machine.look() {
 		r.o.emit(ev)
 	}
@@ -329,18 +329,21 @@ func (r *runState) lookAround() {
 	}
 }
 
-// atCap reports whether the workers running across the machine's runs, as last read, this run's
-// included, are at Config.MachineWorkers, with one of this run's among them: a run never holds with no
-// worker of its own running, so that one at the cap with others' workers alone still gets on.
+// atCap reports whether the workers at work across the machine's runs, as last read, this run's
+// included, are at Config.MachineWorkers, with a ticket of this run's in flight: a run never holds with
+// none, so that one at the cap with others' workers alone still gets on. A run's workers at work are
+// those taking its slots (see slotsTaken): a ticket waiting to merge frees its place under the cap as it
+// frees its slot, so that a run alone with concurrent at the cap starts the next ticket meanwhile, as it
+// would without the cap.
 func (r *runState) atCap() bool {
-	limit, own := r.o.cfg.MachineWorkers, len(r.inflight)
-	return limit > 0 && own > 0 && own+r.machine.others >= limit
+	limit := r.o.cfg.MachineWorkers
+	return limit > 0 && len(r.inflight) > 0 && r.slotsTaken()+r.machine.others >= limit
 }
 
 // machineFull reports whether the ticket to start waits for a free slot across the machine (see
 // atCap), and says HOLD: MACHINE once as the run begins to hold.
 func (r *runState) machineFull() bool {
-	m, limit, own := r.machine, r.o.cfg.MachineWorkers, len(r.inflight)
+	m, limit, own := r.machine, r.o.cfg.MachineWorkers, r.slotsTaken()
 	if !r.atCap() {
 		m.hold(false)
 		return false
