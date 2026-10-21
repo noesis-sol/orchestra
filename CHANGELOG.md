@@ -57,6 +57,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A worker defers its ticket once the same problem has resisted three
+  different fixes, with a note on the ticket saying what it tried and what
+  each attempt showed, rather than loop on it until the ticket's time
+  limit. Three different approaches count, not three runs of the same
+  command. Recorded as the worker prompt template's version 11: an older
+  project is told so at a run's start, and `orchestra init --update` takes
+  it.
 - `--machine-workers` (`ORCHESTRA_MACHINE_WORKERS`) has a default: half the
   machine's cores, at least 2, so that several runs on one machine no longer
   crowd it unchecked; `0` still means no cap. The START line says the cap

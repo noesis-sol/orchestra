@@ -57,6 +57,8 @@ var promptChanges = []TemplateChange{
 		"talk to show", "discovered-from:TICKET_ID"},
 	{10, "Close", "a ticket closes with a hand-off as its reason, which the workers of the tickets it blocks are " +
 		"given as they start", "Close it with a hand-off"},
+	{11, "Close", "a problem that has resisted three different fixes is noted on the ticket, with what each " +
+		"attempt showed, and the ticket deferred", "resisted three different fixes"},
 }
 
 // RequiresRule is words only the worker prompt's rule on the requires list has (see promptChanges): a

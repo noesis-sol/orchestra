@@ -77,6 +77,10 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   (`bd dep add TICKET_ID <other>`), run
   `bd update TICKET_ID --status open --append-notes "Waiting on <other> to merge: <what you need from it>"`
   and stop. orchestra puts the ticket back in the queue until <other> merges.
+- When the same problem has resisted three different fixes, stop: note on the ticket what you
+  tried and what each attempt showed (`bd update TICKET_ID --append-notes "..."`), defer it
+  (`bd defer TICKET_ID`), and stop. Three different approaches count, not three runs of the same
+  command; rerunning a check that failed for reasons outside your change isn't an attempt.
 - If you cannot finish: note why on the ticket, defer it, and stop.
 
 ## Working unattended
