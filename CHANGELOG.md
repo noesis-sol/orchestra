@@ -88,6 +88,14 @@ All notable changes to orchestra are documented here. The format follows
   at `bd human respond` as the command-line way. The README, the docs and
   the skill describe the answer talk, the `a` key, `"questions"` and
   `orchestra answer`.
+
+### Fixed
+
+- The log says when the dashboard opens the answer talk and how it ended,
+  `bd has no question open in the run's scope` included, which only the
+  dashboard showed: an `a` pressed as the run ends opened a talk whose end
+  the dashboard, closed by then, never showed, and the log said nothing.
+
 ### Added
 
 - `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current

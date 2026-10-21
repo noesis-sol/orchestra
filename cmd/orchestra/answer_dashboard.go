@@ -92,8 +92,14 @@ func (a *answerTalks) callbacks() tui.AnswerTalk {
 }
 
 // start opens the talk in the background, with the keyboard focus or without: the dashboard's
-// callback, which mustn't block.
+// callback, which mustn't block. The log says it opens, and how it ended, even where the dashboard
+// has closed meanwhile, as at the run's end, and can't show why it failed.
 func (a *answerTalks) start(focus bool) {
+	how := "the answer talk opens on the a key"
+	if !focus {
+		how = "the answer talk opens by itself, unfocused"
+	}
+	a.log.Line(time.Now(), how)
 	live := newAnswerLive()
 	talk := a.talk
 	talk.aside, talk.live = !focus, live
@@ -107,12 +113,14 @@ func (a *answerTalks) start(focus bool) {
 		r, err := talk.answer(a.ctx, a.scope, "")
 		switch {
 		case a.ctx.Err() != nil: // the run stopped: the dashboard is closing
+			a.log.Line(time.Now(), "the answer talk closed as the run stopped")
 			return
-		case err != nil:
-			a.log.Raw("", fmt.Errorf("the answer talk: %w", err))
-		case len(r.Answered)+len(r.Open) == 0:
+		case err == nil && len(r.Answered)+len(r.Open) == 0:
 			err = errNothingToAnswer
-		default:
+		}
+		if err != nil {
+			a.log.Raw("", fmt.Errorf("the answer talk: %w", err))
+		} else {
 			a.log.Line(time.Now(), answeredLine(r))
 		}
 		a.send(tui.AnswerOver{Asked: slices.Concat(r.Answered, r.Open), Answered: r.Answered, Err: err})
