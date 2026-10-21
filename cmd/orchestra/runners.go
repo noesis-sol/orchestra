@@ -29,9 +29,10 @@ type loopRun struct {
 	filing       *specFiling // the spec's breakdown going on as the loop starts; nil for none
 }
 
-// organs runs the organ phase after the loop ended with code and its final line.
-func (r loopRun) organs(code int, final string, out tui.Printer) {
-	organPhase(r.base, r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
+// organs runs the organ phase after the loop ended with code and its final line, and reports whether
+// a stop signal skipped some of it.
+func (r loopRun) organs(code int, final string, out tui.Printer) bool {
+	return organPhase(r.base, r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
 }
 
 // runPlain runs the loop printing plain log lines (with --plain, or when stdout isn't a terminal),
@@ -157,6 +158,7 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	}
 	final, err := p.Run()
 	close(ran)
+	answers.dashboardClosed()
 	// A stop signal from here on goes to the organ phase, which it skips, until quitWith below: one
 	// that came while the dashboard closed was a further one, if a signal closed it.
 	r.stops.on(nil)
@@ -192,13 +194,13 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 		// Run waits for its workers, whose commands stop with it or at their time limits, and names
 		// any not back within a second below the INTERRUPTED line.
 		<-codes
-		r.organs(dispatch.ExitInterrupted, msg, sink)
-		answers.finish(r.stops, stdout) // closed as the run stopped
+		stopped := r.organs(dispatch.ExitInterrupted, msg, sink)
+		answers.finish(r.stops, stopped, stdout) // closed as the run stopped
 		return dispatch.ExitInterrupted
 	}
 	code := <-codes
-	r.organs(code, r.orch.Final(), sink)
-	answers.finish(r.stops, stdout)
+	stopped := r.organs(code, r.orch.Final(), sink)
+	answers.finish(r.stops, stopped, stdout)
 	return code
 }
 

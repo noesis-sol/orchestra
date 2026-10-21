@@ -77,8 +77,9 @@ func askedOnDashboard(t *testing.T, c options, backlog map[string]*answerIssue) 
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+	talks.dashboardClosed()
 	var said strings.Builder
-	talks.finish(&stopWatch{}, &said)
+	talks.finish(&stopWatch{}, false, &said)
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}

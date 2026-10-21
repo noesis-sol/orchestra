@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- At a run's end, a stop signal during the full check or the run report
+  closes the answer talk still open rather than wait for it, so that a kill
+  ends orchestra; an answer talk that ends during them is said once they are
+  over; and a talk the dashboard opened as the one before ended is waited on,
+  with Ctrl+C closing it, where orchestra hung, ignoring Ctrl+C.
 - A question that comes to wait while the answer talk waits on the
   maintainer is no longer typed into claude's input, where it was pasted
   after the answer they were half-way through typing and sent with it. It is

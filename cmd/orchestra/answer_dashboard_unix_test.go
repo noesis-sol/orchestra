@@ -70,7 +70,7 @@ func TestDashboardOpensTheAnswerTalkInAPane(t *testing.T) {
 		if want := []string{"split w1:p1 " + repo, "launch w1:p2 claude", "close w1:p2"}; !slices.Equal(panes.calls, want) {
 			t.Errorf("the terminal was asked to %q, want %q", panes.calls, want)
 		}
-		if talks.open.Load() {
+		if talks.open.Load() != nil {
 			t.Error("the talk is still counted open")
 		}
 	})

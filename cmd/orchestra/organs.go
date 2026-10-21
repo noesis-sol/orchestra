@@ -22,23 +22,31 @@ type organs interface {
 // stopSignals, skips whatever is left, and one that came while the loop wound down skips it all; so
 // does SIGTERM or SIGHUP at any time in the run. The one after the signal that skipped it ends
 // orchestra (see stopWatch.further). Its commands run with the environment ctx gives them
-// (command.WithEnv), and only the signals cancel it, not ctx.
+// (command.WithEnv), and only the signals cancel it, not ctx. It reports whether a stop signal skipped
+// some of it, which closes the answer talk still open rather than wait for it (answerTalks.finish).
 func organPhase(ctx context.Context, orch organs, c options, stops *stopWatch, log *dispatch.Log, code int,
 	final string, out tui.Printer, cancelOrgans func(),
-) {
+) (stopped bool) {
 	full := orch.FullCheckDue(code)
 	if !full && !c.Triage && !c.Review || stops.leaving() {
-		return
+		return false
 	}
 	ctx, stop := stops.context(context.WithoutCancel(ctx))
-	defer stop()
-	if ctx.Err() != nil {
-		return
+	if ctx.Err() == nil {
+		go func() {
+			<-ctx.Done()
+			cancelOrgans()
+		}()
+		runOrgans(ctx, orch, c, log, code, final, out, full)
 	}
-	go func() {
-		<-ctx.Done()
-		cancelOrgans()
-	}()
+	return stop()
+}
+
+// runOrgans runs the organ phase under ctx, which a stop signal cancels: the full check if full, then
+// triage and the run report, as c has them.
+func runOrgans(ctx context.Context, orch organs, c options, log *dispatch.Log, code int, final string,
+	out tui.Printer, full bool,
+) {
 	if full {
 		// The loop's own lines say what it runs and how it went; plain output has only those.
 		busy := out.Busy("", "Running the full check…", "(Ctrl+C skips)")

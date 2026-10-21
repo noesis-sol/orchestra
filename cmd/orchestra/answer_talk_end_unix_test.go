@@ -56,7 +56,8 @@ func TestRunEndSaysHowTheAnswerTalkEnded(t *testing.T) {
 				var sent []tea.Msg
 				talks, log := dashboardTalks(t, repo, logPath, panes, &sent)
 				talks.start(false)
-				talks.finish(stops, &out)
+				talks.dashboardClosed()
+				talks.finish(stops, false, &out)
 				if err := log.Close(); err != nil {
 					t.Fatal(err)
 				}
@@ -83,8 +84,9 @@ func TestRunEndSaysNothingOfATalkItsStopClosed(t *testing.T) {
 		talks, log := dashboardTalks(t, repo, logPath, &fakePanes{agent: []dispatch.AgentState{dispatch.StateWorking}},
 			&sent)
 		talks.start(false)
+		talks.dashboardClosed()
 		talks.cancel()
-		talks.finish(stops, &out)
+		talks.finish(stops, false, &out)
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
 		}

@@ -52,8 +52,9 @@ func TestAnswerKeyAsTheRunEndsIsLogged(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+	talks.dashboardClosed()
 	var out strings.Builder
-	talks.finish(&stopWatch{}, &out)
+	talks.finish(&stopWatch{}, false, &out)
 	if err := log.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,15 +92,16 @@ func TestAnswerTalkOpenAsTheRunEndsIsWaitedFor(t *testing.T) {
 		var sent []tea.Msg
 		talks, log := dashboardTalks(t, repo, logPath, panes, &sent)
 		talks.start(true) // the a key, the dashboard closing on Finished just after
+		talks.dashboardClosed()
 		var out strings.Builder
-		talks.finish(&stopWatch{}, &out)
+		talks.finish(&stopWatch{}, false, &out)
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out.String(), "The answer talk is still open in the pane on the right") {
 			t.Errorf("orchestra said %q", out.String())
 		}
-		if talks.open.Load() {
+		if talks.open.Load() != nil {
 			t.Error("the talk is still counted open")
 		}
 	})

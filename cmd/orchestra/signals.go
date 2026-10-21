@@ -228,13 +228,15 @@ func (w *stopWatch) further(s os.Signal) {
 }
 
 // context returns a copy of parent that the next stop signal cancels, as signal.NotifyContext does,
-// and the function that cancels it and stops listening.
-func (w *stopWatch) context(parent context.Context) (context.Context, context.CancelFunc) {
+// and the function that stops listening and cancels it, which reports whether a stop signal did first.
+func (w *stopWatch) context(parent context.Context) (context.Context, func() (stopped bool)) {
 	ctx, cancel := context.WithCancel(parent)
 	w.on(func(os.Signal) { cancel() })
-	return ctx, func() {
+	return ctx, func() bool {
 		w.on(nil)
+		stopped := ctx.Err() != nil
 		cancel()
+		return stopped
 	}
 }
 
