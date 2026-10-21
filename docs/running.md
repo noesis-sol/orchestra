@@ -285,6 +285,15 @@ The checks that fail, each refusing to start the run until it is fixed, in the c
 
 In a terminal it then offers, one by one, each fix orchestra can make (`Run without a limit?`, yes to start with), makes those you take before the run starts (`◆ Fixed: the run has no ticket limit`), and, while a failed check is left without its fix, asks `Start the run anyway, with 1 check failed?`, no to start with. Esc or Ctrl+C there exits with code 130, with nothing changed. A failed check left refuses to start the run, exit code 2, as a setup problem does: `orchestra --overnight cannot start: 1 check failed. Fix what the checklist says, or start anyway with --force-overnight.` `--force-overnight` starts the run with its failed checks left, without asking, and says so: `overnight pre-flight: starting with 1 check failed (--force-overnight)`. Without a terminal (plain output, `--plain`, or stdin or stdout not a terminal), nothing is asked and no fix made: the checklist is printed, plain, after the time (`  failed: LIMIT=10 is set: …`), and a failed check refuses to start the run unless `--force-overnight` is given. The log keeps the checklist and the fixes made, for the morning.
 
+Cleared to start, the pre-flight puts every open question in the run's scope (an issue labelled `human`: with `--ticket`, one that blocks the ticket or one under it, or is under it itself; else every one) to you before the run starts, so that none keeps its tickets waiting all night: in a terminal it opens the answer talk, a Claude Code session in a pane beside orchestra's (or on orchestra's terminal) that asks each question one by one with its options, the recommended one first and a free-form line, and records your answer with `bd human respond`, which closes the question and frees the tickets it blocked (`◆ Answered 2 questions`). The run starts once the talk is over. A question you leave open (`/exit` in the session), or every one without a terminal, is said in a checklist of its own with the tickets it keeps waiting, and in the log:
+
+```
+◆ Overnight pre-flight: 1 question left open
+  ! k-9 (Which flag name?): k-5 waits on it. Answer it with 'bd human respond k-9'
+```
+
+Ctrl+C during the talk exits with code 130 before the run starts, the answers given recorded.
+
 The `START` line says the run is overnight after its scope, `… on main · overnight (done so far: 0, …)`, and the event stream's `start` record has `"overnight": true`. `--overnight` goes with `--ticket` (the ticket and its subtickets, checked the same way) and with `--tickets`, and never asks what to work on; with `--spec` or `--feature` it is a setup problem, as is `--force-overnight` without it.
 
 ## Several tickets at once

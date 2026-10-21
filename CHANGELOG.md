@@ -59,6 +59,11 @@ All notable changes to orchestra are documented here. The format follows
   (`"overnight_free_disk_gb"` in `settings.json`), and the merge check
   failing on the base branch's head, run once in a worktree of its own
   (its output in `.orchestra/run/check-base.log`).
+- An overnight run's pre-flight, once its checks clear the run to start,
+  puts every open question in the run's scope to the maintainer in the
+  answer talk, one by one with its options, before the run's first ticket.
+  A question left open, or every one without a terminal, is said in a
+  checklist of its own with the tickets it keeps waiting.
 
 ## [0.9.1] - 2026-10-21
 

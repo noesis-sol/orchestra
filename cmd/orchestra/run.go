@@ -86,6 +86,8 @@ type cmdEnv struct {
 	breakdown      func(s *session) specBreakdown // a spec run's breakdown, nil for breakdownOf's: tests give their own
 	// an overnight run's pre-flight checks, nil for preflightChecks: tests give their own
 	preflight []preflightCheck
+	// the answer talk an overnight run's pre-flight opens, nil for newAnswerTalk's: tests give their own
+	answers func(s *session) answerTalk
 }
 
 // subcommand is a command of orchestra's other than a run, named by the argument after 'orchestra'.

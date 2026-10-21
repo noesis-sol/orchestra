@@ -51,7 +51,25 @@ var checkLooks = map[CheckVerdict]struct {
 // of, then a line for each check, its verdict's glyph before it on a terminal, its word in plain
 // output, after the time, as Say prints it.
 func (p Printer) Checklist(checks []PreflightCheck) {
-	head := "Overnight pre-flight: " + checklistCount(checks)
+	p.checklist("Overnight pre-flight: "+checklistCount(checks), checks)
+}
+
+// QuestionsLeft prints the questions an overnight run's pre-flight leaves open, each said in a line of
+// its own, as Checklist prints a warning: a heading that counts them, then their lines.
+func (p Printer) QuestionsLeft(questions []string) {
+	head := "Overnight pre-flight: 1 question left open"
+	if len(questions) != 1 {
+		head = fmt.Sprintf("Overnight pre-flight: %d questions left open", len(questions))
+	}
+	checks := make([]PreflightCheck, len(questions))
+	for i, q := range questions {
+		checks[i] = PreflightCheck{Verdict: CheckWarned, Text: q}
+	}
+	p.checklist(head, checks)
+}
+
+// checklist prints head, then a line for each check, as Checklist has them.
+func (p Printer) checklist(head string, checks []PreflightCheck) {
 	if !p.Styled {
 		p.sayPlain(head)
 		for _, c := range checks {

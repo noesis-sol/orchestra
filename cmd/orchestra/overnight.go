@@ -15,7 +15,8 @@ import (
 // some with a fix orchestra can make: the checklist lists them all; in a terminal each fix is offered,
 // then, while a failed check is left, whether to start anyway. A failed check left refuses to start
 // the run, exit code 2 as a setup problem's, unless --force-overnight or that answer overrides it.
-// Without a terminal nothing is asked: the checklist is printed, and a failed check refuses. The
+// Without a terminal nothing is asked: the checklist is printed, and a failed check refuses. Cleared
+// to start, the run's open questions are put to the maintainer (overnight_questions.go). The
 // pre-flight runs once the run holds its lock, before the run's start is recorded, so that the START
 // line and the start record give the run as its fixes left it.
 
@@ -42,8 +43,9 @@ var preflightChecks = []preflightCheck{
 }
 
 // preflight clears an overnight run to start: it runs its checks, prints their checklist and, in a
-// terminal, offers their fixes and makes those taken. ok is false where the run ends there with code,
-// all said: a failed check left, or the questions stopped. A run that isn't overnight passes at once.
+// terminal, offers their fixes and makes those taken, then puts the open questions to the maintainer
+// (askQuestions). ok is false where the run ends there with code, all said: a failed check left, or
+// the questions stopped. A run that isn't overnight passes at once.
 func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 	cfg, e := &s.cfg, s.e
 	if !cfg.Overnight {
@@ -67,7 +69,8 @@ func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 	say.Checklist(checklist(results))
 	s.logChecklist(results)
 	answer := tui.PreflightAnswer{Fix: make([]bool, len(results)), Force: cfg.forceOvernight}
-	if isTerminal(e.stdin) && !plainOutput(cfg.Plain, e.getenv, e.stdin, e.stdout) {
+	asks := isTerminal(e.stdin) && !plainOutput(cfg.Plain, e.getenv, e.stdin, e.stdout)
+	if asks {
 		var err error
 		answer, err = tui.AskPreflight(ctx, e.stdin, e.stdout, e.getenv("TERM"), checklist(results), cfg.forceOvernight)
 		switch {
@@ -92,7 +95,6 @@ func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 	}
 	switch {
 	case failed == 0:
-		return dispatch.ExitOK, true
 	case answer.Force:
 		how := "as answered"
 		if cfg.forceOvernight {
@@ -101,13 +103,14 @@ func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 		text := fmt.Sprintf("overnight pre-flight: starting with %s (%s)", tui.ChecksFailed(failed), how)
 		say.Warn(text)
 		s.log.Line(time.Now(), text)
-		return dispatch.ExitOK, true
+	default:
+		text := fmt.Sprintf("overnight pre-flight: %s", tui.ChecksFailed(failed))
+		s.log.Line(time.Now(), text+": the run doesn't start")
+		fmt.Fprintf(e.stderr, "orchestra --overnight cannot start: %s. Fix what the checklist says, "+
+			"or start anyway with --force-overnight.\n", tui.ChecksFailed(failed))
+		return dispatch.ExitSetup, false
 	}
-	text := fmt.Sprintf("overnight pre-flight: %s", tui.ChecksFailed(failed))
-	s.log.Line(time.Now(), text+": the run doesn't start")
-	fmt.Fprintf(e.stderr, "orchestra --overnight cannot start: %s. Fix what the checklist says, "+
-		"or start anyway with --force-overnight.\n", tui.ChecksFailed(failed))
-	return dispatch.ExitSetup, false
+	return s.askQuestions(ctx, asks) // overnight_questions.go
 }
 
 // makeFix makes the fix of r, as answered: it says what it did or why it couldn't, and returns the

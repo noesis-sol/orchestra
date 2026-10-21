@@ -24,13 +24,15 @@ var (
 
 // testEnv is the environment one test set: its variables, over its parent's, its working
 // directory, "" for its parent's, the breakdown of its spec runs, nil for its parent's, the build
-// orchestra is, nil for its parent's, and its overnight runs' pre-flight checks, nil for its parent's.
+// orchestra is, nil for its parent's, its overnight runs' pre-flight checks, nil for its parent's, and
+// the answer talk their pre-flight opens, nil for its parent's.
 type testEnv struct {
 	vars      map[string]string
 	dir       string
 	breakdown func(s *session) specBreakdown
 	build     *testBuild
 	preflight []preflightCheck
+	answers   func(s *session) answerTalk
 }
 
 // testBuild is the build a test's orchestra is, as cmdEnv has it: its version and where its releases are.
@@ -180,6 +182,16 @@ func preflightWith(t testing.TB, checks ...preflightCheck) {
 	e.preflight = checks
 }
 
+// answerWith has t's overnight runs open the answer talk a gives, as cmdEnv.answers, rather than
+// newAnswerTalk's.
+func answerWith(t testing.TB, a func(s *session) answerTalk) {
+	t.Helper()
+	e := envOf(t)
+	testEnvsMu.Lock()
+	defer testEnvsMu.Unlock()
+	e.answers = a
+}
+
 // buildOf makes t's orchestra the build of version v, its releases read from releases, as cmdEnv's
 // version and releases; else it is this build, its releases GitHub's.
 func buildOf(t testing.TB, v string, releases update.Updater) {
@@ -206,6 +218,12 @@ func testCmdEnv(t testing.TB, stdin io.Reader, stdout, stderr io.Writer) cmdEnv 
 	for _, te := range envs {
 		if te.preflight != nil {
 			e.preflight = te.preflight
+			break
+		}
+	}
+	for _, te := range envs {
+		if te.answers != nil {
+			e.answers = te.answers
 			break
 		}
 	}
