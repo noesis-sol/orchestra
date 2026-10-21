@@ -77,6 +77,30 @@ type answerTalks struct {
 	// deferred is what the loop, with nothing ready but questions, gave the next talk to say of the
 	// deferred tickets (see ask)
 	deferred atomic.Pointer[string]
+	// put is the questions put to the maintainer in a talk now over, marked as each talk ends, whatever
+	// the loop was doing then: a talk that opens by itself leaves them out, and the loop opens none on
+	// them alone (runAnswers.Questions). The a key's talk asks them again.
+	putMu sync.Mutex
+	put   map[string]bool
+}
+
+// markPut records the questions ids as put to the maintainer in a talk now over.
+func (a *answerTalks) markPut(ids []string) {
+	a.putMu.Lock()
+	defer a.putMu.Unlock()
+	if a.put == nil {
+		a.put = map[string]bool{}
+	}
+	for _, id := range ids {
+		a.put[id] = true
+	}
+}
+
+// wasPut reports whether the question id was put to the maintainer in a talk now over.
+func (a *answerTalks) wasPut(id string) bool {
+	a.putMu.Lock()
+	defer a.putMu.Unlock()
+	return a.put[id]
 }
 
 // answerEnd is how an answer talk ended: how it left its questions, and its error, if any.
@@ -99,8 +123,11 @@ func (a *answerTalks) callbacks() tui.AnswerTalk {
 }
 
 // start opens the talk in the background, with the keyboard focus or without: the dashboard's
-// callback, which mustn't block. The log says it opens, and how it ended, even where the dashboard
-// has closed meanwhile, as at the run's end, and can't show why it failed.
+// callback, which mustn't block. Opened without, by itself, it leaves out the questions put to the
+// maintainer in a talk now over; on the a key it asks every one open. Once it is over, the questions
+// it asked count as put, or every one it read where it failed before asking any, so that a talk that
+// can't open isn't opened again and again. The log says it opens, and how it ended, even where the
+// dashboard has closed meanwhile, as at the run's end, and can't show why it failed.
 func (a *answerTalks) start(focus bool) {
 	how := "the answer talk opens on the a key"
 	if !focus {
@@ -110,6 +137,9 @@ func (a *answerTalks) start(focus bool) {
 	live := newAnswerLive()
 	talk := a.talk
 	talk.aside, talk.live = !focus, live
+	if !focus {
+		talk.skip = a.wasPut
+	}
 	if d := a.deferred.Swap(nil); d != nil {
 		talk.deferred = *d
 	}
@@ -117,10 +147,21 @@ func (a *answerTalks) start(focus bool) {
 	a.open.Store(true)
 	a.wg.Go(func() {
 		defer a.open.Store(false)
-		r, err := talk.answer(a.ctx, a.scope, "")
-		if err == nil && len(r.Answered)+len(r.Open) == 0 {
-			err = errNothingToAnswer
+		qs, err := talk.read(a.ctx, a.scope, "")
+		var r answerResult
+		if err == nil && len(qs) > 0 {
+			r, err = talk.talkThrough(a.ctx, a.scope, qs)
 		}
+		put := slices.Concat(r.Answered, r.Open)
+		switch {
+		case err == nil && len(put) == 0:
+			err = errNothingToAnswer
+		case err != nil && len(put) == 0:
+			for _, q := range qs {
+				put = append(put, q.ID)
+			}
+		}
+		a.markPut(put) // before the dashboard hears of the end, and tells the loop waiting on it
 		a.ended.Store(&answerEnd{r: r, err: err})
 		if a.ctx.Err() != nil { // the run stopped: the dashboard is closing
 			a.log.Line(time.Now(), "the answer talk closed as the run stopped")

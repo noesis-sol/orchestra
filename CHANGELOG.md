@@ -12,6 +12,14 @@ All notable changes to orchestra are documented here. The format follows
   date (orchestra init --update) and commit that?") gives the run's workers
   the prompt it commits. The run had read the prompt before the fix, so every
   worker that night still followed the old one, with nothing saying so.
+- A question left open in an answer talk now over isn't put to you again in
+  the same run. A talk that ended while a ticket its answers freed was running
+  was reopened on its open questions once the queue ran dry, and every talk
+  that opened by itself asked again the questions an earlier one had left
+  open; the dashboard's **a** key and `orchestra answer` still ask them. A
+  question that came in as a talk was ending, before claude was given it, no
+  longer counts as asked: the next talk takes it up, where the run could end
+  naming it as left open.
 - The overnight pre-flight's fix for a permission mode that asks ("Start
   workers in auto permission mode?") starts the run's workers in auto, as its
   START line now says. It set a mode the run had already read, so workers

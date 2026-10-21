@@ -11,7 +11,8 @@ import (
 
 // fakeAnswers puts a run's questions to the maintainer as the dashboard's answer talk would: Questions
 // reads them from the fake bd, and Talk records each talk and has the maintainer (maintain) act on it,
-// then closes it after closeAfter. With noTalk, no talk can open.
+// then closes it after closeAfter, its questions then put to the maintainer (Question.Put). With
+// noTalk, no talk can open.
 type fakeAnswers struct {
 	beads      *fakeBeads
 	noTalk     bool
@@ -23,6 +24,7 @@ type fakeAnswers struct {
 	talks  [][]Question
 	told   []string // the deferred line each talk was given
 	closed bool     // the last talk is over
+	put    map[string]bool
 }
 
 func (f *fakeAnswers) Questions(context.Context) ([]Question, error) {
@@ -34,7 +36,9 @@ func (f *fakeAnswers) Questions(context.Context) ([]Question, error) {
 		if t := b.tickets[id]; !HasLabel(*t, HumanLabel) || t.Status == StatusClosed {
 			continue
 		}
-		q := Question{ID: id}
+		f.mu.Lock()
+		q := Question{ID: id, Put: f.put[id]}
+		f.mu.Unlock()
 		for _, other := range b.order {
 			for _, l := range b.links[other] {
 				if l.on == id && l.typ == "blocks" {
@@ -62,6 +66,12 @@ func (f *fakeAnswers) Talk(qs []Question, deferred string) <-chan struct{} {
 		time.Sleep(f.closeAfter)
 		f.mu.Lock()
 		f.closed = true
+		if f.put == nil {
+			f.put = map[string]bool{}
+		}
+		for _, q := range qs {
+			f.put[q.ID] = true
+		}
 		f.mu.Unlock()
 		close(over)
 	})

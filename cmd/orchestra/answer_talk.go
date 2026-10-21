@@ -288,7 +288,11 @@ type answerTalk struct {
 	// deferred is what it says of the deferred tickets, which aren't questions: how many, and where
 	// (see deferredText); "" for nothing, as only a run with nothing ready but questions gives it.
 	deferred string
-	hooks    bool // claude reports through hooks (see paneSession)
+	// skip leaves out of the talk the questions it reports true for, those that come to wait while it is
+	// open too: the questions put to the maintainer in a talk now over, for a talk the run opens by
+	// itself (see answerTalks.start); nil for none.
+	skip  func(id string) bool
+	hooks bool // claude reports through hooks (see paneSession)
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
 	tracker answerTracker
@@ -337,10 +341,25 @@ func answerTalkIn(c options, pane string) answerTalk {
 // with the user: in a pane split off orchestra's when it runs in one, else on orchestra's terminal. It
 // returns which were answered and which are still open; none of either when there was none to ask.
 func (a answerTalk) answer(ctx context.Context, scope, named string) (answerResult, error) {
-	qs, err := readQuestions(ctx, a.tracker, scope, named)
+	qs, err := a.read(ctx, scope, named)
 	if err != nil || len(qs) == 0 {
 		return answerResult{}, err
 	}
+	return a.talkThrough(ctx, scope, qs)
+}
+
+// read reads the questions the talk asks, in scope ("" for every one), or the one named, less those it
+// skips.
+func (a answerTalk) read(ctx context.Context, scope, named string) ([]question, error) {
+	qs, err := readQuestions(ctx, a.tracker, scope, named)
+	if a.skip != nil {
+		qs = slices.DeleteFunc(qs, func(q question) bool { return a.skip(q.ID) })
+	}
+	return qs, err
+}
+
+// talkThrough talks the questions qs, read in scope, through with the user, as answer does.
+func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question) (answerResult, error) {
 	if why := organ.Unavailable(ctx, "claude"); why != "" {
 		return answerResult{}, errors.New(why)
 	}
@@ -362,7 +381,7 @@ func (a answerTalk) answer(ctx context.Context, scope, named string) (answerResu
 	session := terminal
 	if a.pane != "" {
 		about := answerSubject{first: message, asked: asked, tracker: a.tracker, every: a.every, live: a.live,
-			scope: scope, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), repo: repo, err: a.err}
+			scope: scope, skip: a.skip, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), repo: repo, err: a.err}
 		ps := paneSession{panes: a.panes, pane: a.pane, hooks: a.hooks, claude: a.claude, fallback: terminal,
 			out: a.out, err: a.err, progress: a.line, about: about}
 		if a.aside {
@@ -371,7 +390,8 @@ func (a answerTalk) answer(ctx context.Context, scope, named string) (answerResu
 		session = ps.talk
 	}
 	err = session(ctx, prompt)
-	ids := asked.questions // those queued into it too
+	// those queued into it too, less those it ended before claude was given them: it never asked them
+	ids := slices.DeleteFunc(asked.questions, func(id string) bool { return slices.Contains(asked.unshown, id) })
 	var exit *exec.ExitError
 	switch {
 	case ctx.Err() != nil:
@@ -427,17 +447,19 @@ type answerSubject struct {
 	every   time.Duration
 	live    *answerLive // nil where nothing queues questions into the talk
 	scope   string
+	skip    func(id string) bool // the questions in scope it doesn't take in (see answerTalk.skip); nil for none
 	panes   answerPanes
 	agent   string // claude's name in the pane, once given the questions queued
 	repo    string
 	err     io.Writer
 }
 
-// answerAsked is the questions the talk asks, in order, those queued into it included, and whether bd
-// last said each was closed.
+// answerAsked is the questions the talk asks, in order, those queued into it included, whether bd
+// last said each was closed, and those queued that claude hasn't been given yet (unshown).
 type answerAsked struct {
 	questions []string
 	closed    bool
+	unshown   []string
 }
 
 func (s answerSubject) message(string) (string, error) { return s.first, nil }
@@ -582,6 +604,7 @@ func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 	select {
 	case g := <-s.given: // never ready while given is nil
 		s.given = nil
+		asked.unshown = slices.DeleteFunc(asked.unshown, func(id string) bool { return slices.Contains(g.ids, id) })
 		if g.err != nil {
 			fmt.Fprintf(s.subject.err, "orchestra couldn't give the answer talk %s: %s\n", strings.Join(g.ids, ", "),
 				dispatch.FirstLine(g.err.Error()))
@@ -598,6 +621,7 @@ func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 				dispatch.FirstLine(m.err.Error()))
 		case len(m.ids) > 0:
 			asked.questions, asked.closed = append(asked.questions, m.ids...), false
+			asked.unshown = append(asked.unshown, m.ids...)
 			s.pending.ids = append(s.pending.ids, m.ids...)
 			s.pending.message = m.message // it brings in the earlier ones too
 		}
@@ -616,13 +640,13 @@ func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 }
 
 // readMore reads from bd, in the background, the questions in the talk's scope that it doesn't ask
-// yet, and writes them, with those read before and not given to claude yet, to a file of their own for
+// yet nor skips, and writes them, with those read before and not given to claude yet, to a file of their own for
 // a message to bring in; the channel gives them once read, none when there are none.
 func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 	read := make(chan answerMore, 1) // the send doesn't block once the wait is over
 	asked, pending := slices.Clone(s.subject.asked.questions), slices.Clone(s.pending.ids)
 	s.batches = max(s.batches, 1) + 1
-	batch := s.batches
+	batch, skip := s.batches, s.subject.skip
 	go func() {
 		qs, err := readQuestions(ctx, s.subject.tracker, s.subject.scope, "")
 		if err != nil {
@@ -633,6 +657,7 @@ func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 		var fresh []string
 		for _, q := range qs {
 			switch {
+			case !slices.Contains(asked, q.ID) && skip != nil && skip(q.ID):
 			case !slices.Contains(asked, q.ID):
 				fresh = append(fresh, q.ID)
 				give = append(give, q)

@@ -23,7 +23,8 @@ type runAnswers struct {
 	talks   *answerTalks // nil where no talk can open
 }
 
-// Questions lists the open questions in the run's scope, each with the tickets not closed it blocks.
+// Questions lists the open questions in the run's scope, each with the tickets not closed it blocks, and
+// whether a talk now over put it to the maintainer.
 func (a runAnswers) Questions(ctx context.Context) ([]dispatch.Question, error) {
 	qs, err := readQuestions(ctx, a.tracker, a.scope, "")
 	if err != nil {
@@ -31,7 +32,7 @@ func (a runAnswers) Questions(ctx context.Context) ([]dispatch.Question, error) 
 	}
 	out := make([]dispatch.Question, len(qs))
 	for i, q := range qs {
-		out[i].ID = q.ID
+		out[i].ID, out[i].Put = q.ID, a.talks != nil && a.talks.wasPut(q.ID)
 		for _, b := range q.blocks {
 			if b.Status != dispatch.StatusClosed {
 				out[i].Holds = append(out[i].Holds, b.ID)

@@ -17,18 +17,20 @@ import (
 // questions left open and the tickets they hold. Deferred tickets aren't questions: the talk is told
 // how many there are, and under which parent, and releases them only when the maintainer asks.
 
-// Question is an open question for the maintainer in a run's scope: its ID, and the tickets waiting on
-// its answer.
+// Question is an open question for the maintainer in a run's scope: its ID, the tickets waiting on its
+// answer, and whether it was put to the maintainer in an answer talk now over (Put), however the run
+// was waiting then: a talk the run opens leaves it out, and one with only such questions opens none.
 type Question struct {
 	ID    string
 	Holds []string
+	Put   bool
 }
 
 // Answers is how a run puts its open questions to the maintainer once nothing else is ready (see
 // Loop.SetAnswers).
 type Answers interface {
 	// Questions lists the open questions in the run's scope: those under it, or blocking a ticket in
-	// it.
+	// it, each marked Put once a talk that put it to the maintainer is over.
 	Questions(ctx context.Context) ([]Question, error)
 	// Talk has the answer talk open on qs, told of the deferred tickets (deferred: how many, and where;
 	// "" for none), and returns a channel closed once that talk is over; nil where no talk can open
@@ -55,11 +57,11 @@ func (o *Loop) answerer() Answers {
 const answerPoll = 5 * time.Second
 
 // awaitAnswers is Run's step once nothing runs and nothing is ready, after goOnWhenEmpty: with open
-// questions in the run's scope that no talk now over has put to the maintainer, it has the answer talk
-// open on them and waits, reading bd every answerPoll, and reports whether the run goes on: a ticket
-// an answer freed is there to take (see freed). Once the talk is over with none, it looks again for
-// questions asked since, and the run ends, naming those still open (left, see questionsEnd). Where no
-// talk can open, it says to answer them with orchestra answer.
+// questions in the run's scope that no talk now over has put to the maintainer (Question.Put), it has
+// the answer talk open on them and waits, reading bd every answerPoll, and reports whether the run goes
+// on: a ticket an answer freed is there to take (see freed). Once the talk is over with none, it looks
+// again for questions asked since, and the run ends, naming those still open (left, see questionsEnd).
+// Where no talk can open, it says to answer them with orchestra answer.
 func (r *runState) awaitAnswers() bool {
 	o := r.o
 	a := o.answerer()
@@ -73,7 +75,7 @@ func (r *runState) awaitAnswers() bool {
 		return false
 	}
 	r.left = qs
-	if !slices.ContainsFunc(qs, func(q Question) bool { return !r.putTo[q.ID] }) {
+	if !slices.ContainsFunc(qs, func(q Question) bool { return !q.Put }) {
 		return false // none, or each put to the maintainer in a talk now over
 	}
 	over := a.Talk(qs, r.deferredLine())
@@ -90,9 +92,6 @@ func (r *runState) awaitAnswers() bool {
 		case wokeDone:
 			return false
 		case wokeTalk:
-			for _, q := range qs {
-				r.putTo[q.ID] = true
-			}
 			if r.freed() {
 				r.left = nil
 				return true
