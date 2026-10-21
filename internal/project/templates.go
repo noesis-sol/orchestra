@@ -49,6 +49,10 @@ var promptChanges = []TemplateChange{
 		"keep the ticket's notes current"},
 	{7, "", "a tool, service or permission a ticket needs of the machine goes in the requires list, and is " +
 		"installed with its entry's install, never by hand", RequiresRule},
+	{8, "Close", "a decision about another ticket is a question blocking that ticket, never only in the final " +
+		"message, which nobody reads", "`--deps blocks:<that ticket>`"},
+	{8, "Close", "every question gives 2 to 4 options, one recommended, in its metadata and its description",
+		"Every question gives 2 to 4 options"},
 }
 
 // RequiresRule is words only the worker prompt's rule on the requires list has (see promptChanges): a

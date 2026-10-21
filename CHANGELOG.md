@@ -4,6 +4,20 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The worker prompt has a worker file a decision only the maintainer can
+  make about another ticket, a follow-up it files or one it names, as a
+  question blocking that ticket, rather than leave it in its final message,
+  which nobody reads, for that ticket's worker to decide. Every question
+  gives 2 to 4 options, each a label and a one-line trade-off, one of them
+  recommended, in its description and in its metadata (`options` and
+  `recommended`). It is the worker prompt template's version 8, so a project
+  whose prompt lacks it is told under the `START` line and takes it with
+  `orchestra init --update`.
+
 ## [0.9.1] - 2026-10-21
 
 ### Added
