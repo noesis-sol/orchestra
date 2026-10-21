@@ -25,15 +25,15 @@ type workKind int
 
 const (
 	workUnsaid  workKind = iota // nothing said: the current tickets, unless the run asks (asksWork)
-	workTickets                 // the current tickets (--tickets, ORCHESTRA_TICKETS=1, or the question)
+	workTickets                 // the current tickets (--tickets, ORCHESTRA_TICKETS=1, --overnight, or the question)
 	workTicket                  // one ticket and its subtickets (--ticket, ORCHESTRA_TICKET)
 	workSpec                    // what a spec describes, broken down first (--spec, ORCHESTRA_SPEC, or the question)
 	workFeature                 // a feature request, talked through and filed first (--feature, or the question)
 )
 
 // work is what a run works on, its kind and what that kind needs. The flags keep it in the options'
-// fields they are bound to (specFile, Refine, Feature, Ticket and Tickets), which only work reads for
-// it, and putWork writes for the question's answer; the rest of the run asks work. Ticket is also the
+// fields they are bound to (specFile, Refine, Feature, Ticket, Tickets and Overnight), which only work
+// reads for it, and putWork writes for the question's answer; the rest of the run asks work. Ticket is also the
 // loop's scope, a planned run's epic once filed.
 type work struct {
 	kind    workKind
@@ -58,7 +58,7 @@ func (c options) work() work {
 		return work{kind: workFeature, feature: c.Feature}
 	case c.Ticket != "":
 		return work{kind: workTicket, ticket: c.Ticket}
-	case c.Tickets:
+	case c.Tickets || c.Overnight: // an overnight run runs them after its pre-flight (overnight.go)
 		return work{kind: workTickets}
 	}
 	return work{}
@@ -102,7 +102,8 @@ type givenMode struct {
 
 // modesGiven lists what the flags and variables of f say the run works on, a spec first, then a
 // feature, a ticket and the current tickets. --feature counts as given even empty; ORCHESTRA_TICKETS=1
-// doesn't, as a standing choice that whatever else is given overrides.
+// doesn't, as a standing choice that whatever else is given overrides. --overnight counts, given by its
+// flag or ORCHESTRA_OVERNIGHT=1: an overnight run's pre-flight checks a run of the current tickets.
 func (f *runFlags) modesGiven() []givenMode {
 	var given []givenMode
 	if f.specFile != "" {
@@ -118,6 +119,10 @@ func (f *runFlags) modesGiven() []givenMode {
 	}
 	if f.set["tickets"] && f.Tickets {
 		given = append(given, givenMode{kind: workTickets, name: "--tickets", runs: "the current tickets"})
+	}
+	if f.overnight.Given && f.Overnight {
+		given = append(given, givenMode{kind: workTickets, name: f.overnight.Name,
+			runs: "the current tickets overnight"})
 	}
 	return given
 }
@@ -157,7 +162,8 @@ func checkWorkFlags(f *runFlags) string {
 
 // asksWork reports whether the run c asks what to work on. terminal says whether stdin and stdout
 // are both a terminal, as the form is drawn on stdout. --feature, --spec (or ORCHESTRA_SPEC), --ticket
-// (or ORCHESTRA_TICKET), --tickets (or ORCHESTRA_TICKETS=1) and --plain say already. So does a run
+// (or ORCHESTRA_TICKET), --tickets (or ORCHESTRA_TICKETS=1), --overnight (or ORCHESTRA_OVERNIGHT=1) and
+// --plain say already. So does a run
 // whose --limit is reached: it starts nothing, and a feature would be filed with none of it run.
 func asksWork(c options, terminal bool) bool {
 	return terminal && c.work().kind == workUnsaid && !c.Plain && c.DoneSoFar < c.Limit

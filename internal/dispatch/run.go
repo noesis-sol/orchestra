@@ -264,9 +264,10 @@ func (o *Loop) begin(ctx context.Context) {
 	if term.Where != "" {
 		where = term.Where
 	}
-	o.info("START orchestra %s in %s on %s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
+	o.info("START orchestra %s in %s on %s%s%s (done so far: %d, limit: %s, concurrent: %d, ticket limit: %s, "+
 		"check timeout: %s, terminal: %s, %s: %s, agent: %s%s, worktrees: %s, MCP servers: %s)",
-		c.Version, c.Repo, c.Base, ScopeLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency, ticketLimit,
+		c.Version, c.Repo, c.Base, ScopeLabel(c), overnightLabel(c), c.DoneSoFar, LimitLabel(c.Limit), c.Concurrency,
+		ticketLimit,
 		command.ShortDuration(o.checkTimeout()), term.Name, term.Tabs, where, c.Agent().Name, c.permissionLabel(),
 		c.WTRoot, c.mcpLabel())
 	if c.Watch != "" {
@@ -285,6 +286,15 @@ func (o *Loop) begin(ctx context.Context) {
 	help, err := o.claudeHelp(ctx)
 	o.permission = o.permissionArgs(ctx, help, err)
 	o.unusedTools = o.unusedToolArgs(help)
+}
+
+// overnightLabel is what the START line says of an overnight run after its scope, " · overnight", and
+// "" of another.
+func overnightLabel(c Config) string {
+	if c.Overnight {
+		return " · overnight"
+	}
+	return ""
 }
 
 // claudeHelp is the workers' claude's --help, read once as the run begins: "" with no error for

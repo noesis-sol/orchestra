@@ -17,6 +17,16 @@ All notable changes to orchestra are documented here. The format follows
   `recommended`). It is the worker prompt template's version 8, so a project
   whose prompt lacks it is told under the `START` line and takes it with
   `orchestra init --update`.
+### Added
+
+- `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current
+  tickets as `--tickets` does, after a pre-flight checklist: each check
+  passed, warned of or failed, and in a terminal each fix orchestra can make
+  offered before the run starts. A failed check left refuses to start the
+  run (exit 2) unless answered at the terminal or overridden with
+  `--force-overnight`; without a terminal the checklist is printed. The
+  `START` line says `· overnight`, and the event stream's `start` record
+  `"overnight": true`.
 
 ## [0.9.1] - 2026-10-21
 

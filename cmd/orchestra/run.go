@@ -84,6 +84,8 @@ type cmdEnv struct {
 	version        string                         // this build's version, buildVersion's
 	releases       update.Updater                 // where the latest release is read: GitHub for the zero Updater
 	breakdown      func(s *session) specBreakdown // a spec run's breakdown, nil for breakdownOf's: tests give their own
+	// an overnight run's pre-flight checks, nil for preflightChecks: tests give their own
+	preflight []preflightCheck
 }
 
 // subcommand is a command of orchestra's other than a run, named by the argument after 'orchestra'.
@@ -181,8 +183,9 @@ func parseArgs(fs *flag.FlagSet, args []string, cmd string) (code int, ok bool) 
 // 'orchestra update …') or a run. It returns nil or an exitStatus.
 //
 // A run reads its configuration, opens its session (held until it ends: the lock, the stop
-// signals' watch, the log), settles what it works on (the question, and a feature typed there or
-// given with --feature), then runs its loop and the organ phase after it.
+// signals' watch, the log), clears an overnight run with its pre-flight (overnight.go), settles what it
+// works on (the question, and a feature typed there or given with --feature), then runs its loop and the
+// organ phase after it.
 //
 // Each asks git where the repository is once (git.Remember), however many of its steps need it.
 func run(ctx context.Context, args []string, e cmdEnv) (err error) {
@@ -202,6 +205,9 @@ func run(ctx context.Context, args []string, e cmdEnv) (err error) {
 	s, code := openSession(ctx, cfg, e)
 	defer s.close(&err)
 	if code != dispatch.ExitOK {
+		return status(code)
+	}
+	if code, ok := s.preflight(ctx); !ok {
 		return status(code)
 	}
 	if code, ok := s.chooseWork(ctx); !ok {
@@ -386,7 +392,8 @@ func (s *session) chooseWork(ctx context.Context) (code int, ok bool) {
 		cfg.Ticket, filedCode = s.talkFeature(ctx)
 	}
 	s.log.Begin(cfg.Repo, dispatch.RunStart{Started: s.started, Version: s.e.version, Repo: cfg.Repo,
-		Branch: cfg.Base, Scope: cfg.Ticket, Feature: w.feature, Spec: cfg.Spec, Concurrency: cfg.Concurrency})
+		Branch: cfg.Base, Scope: cfg.Ticket, Feature: w.feature, Spec: cfg.Spec, Overnight: cfg.Overnight,
+		Concurrency: cfg.Concurrency})
 	if w.planned() && cfg.Ticket == "" { // nothing filed to run
 		return filedCode, false
 	}

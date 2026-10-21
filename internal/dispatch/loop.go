@@ -526,6 +526,9 @@ type Config struct {
 	// Spec is the spec (--spec) Ticket, its root epic, was broken down from: its path in the
 	// repository; "" for none.
 	Spec string
+	// Overnight says the run is an overnight one (--overnight), cleared by its pre-flight to work through
+	// the night: the START line says so.
+	Overnight bool
 	// TemplateNotes say, as the run starts, which of the project's files orchestra wrote from its templates
 	// lack changes made to them since, and how to take them (project.TemplateNotes); none for none.
 	TemplateNotes []string

@@ -32,6 +32,7 @@ type RunStart struct {
 	Scope       string // the ticket the run is scoped to (--ticket, or a feature's epic); "" for all of bd ready
 	Feature     string // the feature request (--feature), if any
 	Spec        string // the spec (--spec), by its path in the repository, if any
+	Overnight   bool   // an overnight run (--overnight)
 	Concurrency int
 }
 
@@ -51,6 +52,7 @@ type startRecord struct {
 	Scope       string `json:"scope,omitempty"`
 	Feature     string `json:"feature,omitempty"`
 	Spec        string `json:"spec,omitempty"`
+	Overnight   bool   `json:"overnight,omitempty"`
 	Concurrency int    `json:"concurrency"`
 }
 
@@ -117,7 +119,7 @@ func (l *Log) Begin(repo string, s RunStart) {
 	l.events, l.run = f, s.Started
 	l.write(startRecord{recordHead: recordHead{Time: time.Now(), Run: s.Started, Kind: "start"},
 		Version: s.Version, Repo: s.Repo, Branch: s.Branch, Scope: s.Scope, Feature: s.Feature, Spec: s.Spec,
-		Concurrency: s.Concurrency})
+		Overnight: s.Overnight, Concurrency: s.Concurrency})
 }
 
 // openEvents opens the event stream in the main checkout repo for appending, making it if need be.

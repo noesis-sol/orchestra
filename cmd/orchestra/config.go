@@ -209,6 +209,8 @@ type options struct {
 	specFile     string // the spec to run (--spec, ORCHESTRA_SPEC), made absolute; Config.Spec is where it is kept
 	Refine       bool   // talk the spec through with the user before it is broken down (--refine)
 	Tickets      bool   // run the current tickets without asking what to work on (see asksWork)
+	// start an overnight run (Config.Overnight) though its pre-flight has failed checks left (--force-overnight)
+	forceOvernight bool
 	// the permission mode workers start in on a run that isn't planned and on one that is (see settleWork)
 	permissionModes struct{ unplanned, planned string }
 	showVersion     bool
@@ -279,7 +281,8 @@ type runFlags struct {
 	resolveConflicts                            project.Given[bool]
 	workerEffort, organEffort, specEffort       project.Given[string]
 	permissionMode                              project.Given[string]
-	set                                         map[string]bool // the flags the command line sets
+	overnight                                   project.Given[bool] // --overnight or ORCHESTRA_OVERNIGHT, as given
+	set                                         map[string]bool     // the flags the command line sets
 	env                                         envFlags
 }
 
@@ -302,7 +305,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 			"With --feature, talk the request through with you in a Claude Code session first, which files it as an "+
 			"epic and its tickets, and run those.\n"+
 			"With --spec, commit the spec and break it down into an epic and its tickets first, and run those.\n"+
-			"In a terminal, without --feature, --spec, --ticket, --tickets or --plain, it first asks which: "+
+			"In a terminal, without --feature, --spec, --ticket, --tickets, --overnight or --plain, it first asks which: "+
 			"the current tickets, a spec you pick (as --spec runs it), or a new feature you describe.\n\n")
 		printFlags(fs, "yes")
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 done, 2 setup problem, 3 worker blocked, paused or over its time, "+
@@ -329,6 +332,7 @@ func readFlags(args []string, getenv func(string) string, output io.Writer) (*ru
 		problems = append(problems, problem) // no flag: the variable alone turns the check off
 	}
 	f.Feature = strings.TrimSpace(f.Feature)
+	f.Overnight = f.overnight.Value
 	return f, append(problems, checkFlagCombos(f)...), nil
 }
 
@@ -457,6 +461,11 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	bindEnv(e, fs.BoolVar, &c.Tickets, "tickets", "ORCHESTRA_TICKETS", false, parseOnOff,
 		"run the current tickets without first asking, in a terminal, whether to run a spec or talk a new feature "+
 			"through instead [ORCHESTRA_TICKETS=1]")
+	bindGiven(e, fs.BoolVar, &f.overnight, "overnight", "ORCHESTRA_OVERNIGHT", false, parseOnOff,
+		"run the current tickets as --tickets does, after a pre-flight checklist: a failed check refuses to start "+
+			"until fixed, and in a terminal each fix orchestra can make is offered [ORCHESTRA_OVERNIGHT=1]")
+	fs.BoolVar(&c.forceOvernight, "force-overnight", false,
+		"with --overnight, start the run though checks of its pre-flight failed")
 	bindEnv(e, fs.BoolVar, &c.LaunchPrompt, "prompt-at-launch", "PROMPT_AT_LAUNCH", true, parseOnOff,
 		"start Claude workers with their prompt instead of pasting it in [PROMPT_AT_LAUNCH=0 turns off]")
 	fs.StringVar(&c.Feature, "feature", "",
@@ -485,12 +494,15 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 	return f
 }
 
-// checkFlagCombos checks how a run's flags go together: --yes, which is gone, and what they say the
-// run works on (see checkWorkFlags).
+// checkFlagCombos checks how a run's flags go together: --yes, which is gone, --force-overnight
+// without --overnight, and what they say the run works on (see checkWorkFlags).
 func checkFlagCombos(f *runFlags) []string {
 	if f.set["yes"] {
 		return []string{"--yes is gone: --feature always talks the feature through with you; " +
 			"orchestra --spec <file> runs a request written to a file unattended."}
+	}
+	if f.forceOvernight && !f.Overnight {
+		return []string{"--force-overnight only applies with --overnight."}
 	}
 	if p := checkWorkFlags(f); p != "" {
 		return []string{p}

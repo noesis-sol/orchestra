@@ -72,6 +72,7 @@ How a run goes:
 | `-c N` (`--concurrent`) | tickets at the same time, for this run |
 | `--tickets` | run the current tickets without asking first |
 | `--ticket <id>` | run only this ticket and its subtickets |
+| `--overnight` | run the current tickets after a pre-flight checklist that refuses to start on what would stop the run in the night ([Overnight](docs/running.md#overnight)) |
 | `--feature "<request>"` | talk a request through with you in Claude Code, which files it as an epic and its tickets, and run them |
 | `--spec <file>` | commit a spec, break it down into an epic and its tickets, and run them, unattended; `--refine` breaks it down with you |
 | `--ticket-limit 2h` | stop if a worker is still going this long after its ticket started |
