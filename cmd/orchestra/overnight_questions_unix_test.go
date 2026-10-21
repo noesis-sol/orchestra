@@ -69,8 +69,8 @@ func TestOvernightWithoutATerminalListsTheOpenQuestions(t *testing.T) {
 		t.Errorf("the talk opened without a terminal: %q", f.talks)
 	}
 	want := "Overnight pre-flight: 2 questions left open\n" +
-		"  warning: k-7 (Which encoding?): k-1.2 waits on it. Answer it with 'bd human respond k-7'\n" +
-		"  warning: k-9 (Which flag name?): k-5 waits on it. Answer it with 'bd human respond k-9'\n"
+		"  warning: k-7 (Which encoding?): k-1.2 waits on it. Answer it with 'orchestra answer k-7' (or 'bd human respond k-7')\n" +
+		"  warning: k-9 (Which flag name?): k-5 waits on it. Answer it with 'orchestra answer k-9' (or 'bd human respond k-9')\n"
 	if out := unstamped(stdout); !strings.Contains(out, want) {
 		t.Errorf("stdout lacks:\n%s\nin:\n%s", want, out)
 	}
@@ -120,10 +120,10 @@ func TestAQuestionLeftOpenSaysTheTicketsItKeepsWaiting(t *testing.T) {
 		q    question
 		want string
 	}{
-		{q(), "k-9 (Which flag?): it keeps no ticket waiting. Answer it with 'bd human respond k-9'"},
-		{q(closed, open("k-5")), "k-9 (Which flag?): k-5 waits on it. Answer it with 'bd human respond k-9'"},
+		{q(), "k-9 (Which flag?): it keeps no ticket waiting. Answer it with 'orchestra answer k-9' (or 'bd human respond k-9')"},
+		{q(closed, open("k-5")), "k-9 (Which flag?): k-5 waits on it. Answer it with 'orchestra answer k-9' (or 'bd human respond k-9')"},
 		{q(open("k-1"), open("k-2"), open("k-5")),
-			"k-9 (Which flag?): k-1, k-2 and k-5 wait on it. Answer it with 'bd human respond k-9'"},
+			"k-9 (Which flag?): k-1, k-2 and k-5 wait on it. Answer it with 'orchestra answer k-9' (or 'bd human respond k-9')"},
 	} {
 		if got := questionLeft(tc.q); got != tc.want {
 			t.Errorf("questionLeft = %q, want %q", got, tc.want)

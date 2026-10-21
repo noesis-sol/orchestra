@@ -59,6 +59,12 @@ All notable changes to orchestra are documented here. The format follows
   closed once nothing is left to answer. `"questions": "key"` in
   `settings.json` opens it on `a` only, as before; `"auto"` is the default.
   It replaces `"answer_on_ask"`.
+- The run report's Needs you, the `ASKED` line, the overnight pre-flight's
+  questions left open and `--ticket` on a question point at the answer
+  talk first (the dashboard's `a` key, `orchestra answer <question>`), and
+  at `bd human respond` as the command-line way. The README, the docs and
+  the skill describe the answer talk, the `a` key, `"questions"` and
+  `orchestra answer`.
 ### Added
 
 - `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current

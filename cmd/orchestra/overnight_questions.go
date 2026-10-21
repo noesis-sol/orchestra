@@ -82,7 +82,8 @@ func questionLeft(q question) string {
 	case n > 1:
 		keeps = strings.Join(waiting[:n-1], ", ") + " and " + waiting[n-1] + " wait on it"
 	}
-	return fmt.Sprintf("%s (%s): %s. Answer it with 'bd human respond %s'", q.ID, planLine(q.Title), keeps, q.ID)
+	return fmt.Sprintf("%s (%s): %s. Answer it with 'orchestra answer %s' (or 'bd human respond %s')",
+		q.ID, planLine(q.Title), keeps, q.ID, q.ID)
 }
 
 // questionsStopped ends a run stopped during its pre-flight's answer talk, the answers given recorded.

@@ -43,7 +43,8 @@ func TestAskingWorkerSettlesAtItsStop(t *testing.T) {
 		if took := time.Since(start); took >= time.Minute {
 			t.Errorf("the run took %s: A's worker should settle at its Stop, and B start at once", took)
 		}
-		if got := h.sink.of(EvAsked); len(got) != 1 || !strings.HasPrefix(got[0], "A   ASKED: A waits on your answer to Q (which way?)") {
+		if got := h.sink.of(EvAsked); len(got) != 1 || !strings.HasPrefix(got[0], "A   ASKED: A waits on your answer to Q (which way?)") ||
+			!strings.Contains(got[0], "answer with: the dashboard's a key, orchestra answer Q or bd human respond Q;") {
 			t.Errorf("asked:\n%s", strings.Join(got, "\n"))
 		}
 		if a, _ := h.beads.Show(context.Background(), "A"); a.Status != "open" {

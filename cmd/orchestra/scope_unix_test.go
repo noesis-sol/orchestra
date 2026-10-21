@@ -48,7 +48,7 @@ func TestConfigTicketScope(t *testing.T) {
 	for id, want := range map[string]string{
 		"k-none":   "Cannot read ticket k-none (--ticket): ",
 		"k-closed": "Ticket k-closed (--ticket) is closed: nothing to run. Reopen it with: bd update k-closed --status open",
-		"k-q":      "Ticket k-q (--ticket) is a question for you (label human), not work. Answer it with: bd human respond k-q",
+		"k-q":      "Ticket k-q (--ticket) is a question for you (label human), not work. Answer it with: orchestra answer k-q (or bd human respond k-q)",
 		"k-a/b": "Ticket k-a/b (--ticket): IDs with path characters can't be run: a ticket's ID names its worktree " +
 			"folder and its branch wt/<id>. Give it a plain ID with: bd rename k-a/b <new-id>",
 		"k-../../y": "Ticket k-../../y (--ticket): IDs with path characters can't be run",

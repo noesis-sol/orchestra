@@ -347,6 +347,13 @@ committed where it is. Run again later, the same command carries on with what is
   its ticket ID; `.orchestra/run/cmux.json` in the main checkout gives its workspace and terminal
   UUIDs, and `cmux read-screen --workspace <uuid> --surface <uuid>` reads its screen. In tmux and
   cmux, its state comes from its hooks' records in `.orchestra/run/` in its worktree.
+- **A question for the user** (`? for you` in the dashboard, `ASKED` in the log) is theirs to answer,
+  in the answer talk: a Claude Code session that offers each question's options, the recommended
+  one first, and records the answer with bd. The dashboard opens it in a pane beside itself as soon
+  as a question waits, without the focus (`"questions": "key"` in `settings.json`: only on its a
+  key), and a goes to it; `orchestra answer [--ticket <id>] [<question>]` runs it on the terminal
+  it is typed in, where orchestra runs in no pane, plainly or after a run. `bd human respond
+  <question> --response "…"` is the command-line way. Relay the question; don't answer it yourself.
 - **To wind the run down**, the user presses s in the dashboard and confirms with y: no new
   tickets start, the running ones finish and merge, and the run ends with `DRAINED` and exit 0.
   Asked by the user to do it for them, send `kill -USR1 <orchestra's pid>` (the PID from
@@ -449,7 +456,7 @@ ended with, say why it ended:
 
 | Last line | Exit | Meaning | What to do |
 |---|---|---|---|
-| `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached; `READY_EMPTY after 0 tickets: everything is done` (or `: nothing ready`) is a run that had nothing to run, which showed why in place of the dashboard and wrote no report | Read the report; the next step is usually the batch PR. With nothing to run, there is no report: relay the box (close the epics it names, answer the questions in `bd human list`, see what `bd blocked` holds). |
+| `READY_EMPTY`, `LIMIT_REACHED` | 0 | queue empty, or limit reached; `READY_EMPTY after 0 tickets: everything is done` (or `: nothing ready`) is a run that had nothing to run, which showed why in place of the dashboard and wrote no report | Read the report; the next step is usually the batch PR. With nothing to run, there is no report: relay the box (close the epics it names, have the user answer the questions with `orchestra answer`, see what `bd blocked` holds). |
 | `DRAINED`, after a `DRAIN: stopping after …` line | 0 | the user pressed s in the dashboard (or orchestra got SIGUSR1): no new tickets started, the running ones finished and merged | As for `READY_EMPTY`; the queue may still hold tickets for the next run. A `DRAIN cancelled` line means the user took it back. |
 | `…; SCOPE_DONE: …` | 0 | a `--ticket` run: the ticket and all its subtickets are merged (an epic is left to close) | Close an epic with `bd close <id>`; then the batch PR. |
 | `…; QUESTIONS_OPEN: …` | 0 | nothing was ready but tickets waiting on questions, and the answer talk closed with them open (or none could open: plain, no pane, overnight) | Relay each question and the tickets it holds; the user answers with `orchestra answer`, then runs again. |
@@ -495,12 +502,13 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   the earlier session's transcript is there to read.
 - `PROMPT_FAILED`: the worker never started on its prompt; deferred, safe to reopen.
 - `ASKED`: the worker asked the user a question, as a ticket labelled `human` that blocks the work.
-  Only the user answers it: `bd human respond <question> --response "…"`. The ticket then returns to
-  the queue, and its branch is rebased onto the current one when it is picked up. `ANSWERED` says it
-  came back. If its worker is still in its tab (answered there, say), orchestra adopts it instead,
+  Only the user answers it: in the answer talk, which the dashboard opens beside itself (its a key
+  goes to it), or with `orchestra answer <question>`; on the command line alone, with `bd human
+  respond <question> --response "…"`. The ticket then returns to the queue, and its branch is
+  rebased onto the current one when it is picked up. `ANSWERED` says it came back. If its worker is still in its tab (answered there, say), orchestra adopts it instead,
   or tells it, idle, that the question is answered, and merges its work as usual. A run that ends
   with the ticket still asked leaves it to the next run, which does the same: the user may answer
-  between runs, in the tab or with `bd human respond`.
+  between runs, in the tab or with `orchestra answer`.
 - `CLOSED_WITHOUT_COMMIT`: closed, but its branch has commits and none names it, or it has none and
   its worktree has uncommitted changes. A ticket closed with no commits and no changes says `<id>
   closed with no change` instead, and its worktree, branch and tab are removed.
@@ -643,7 +651,7 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
 | the prompt a worker was started with | `.orchestra/run/prompt.md` in its worktree |
 | the last tool a worker used (its `testing` / `editing` / `reading` status) | `.orchestra/run/activity.json` in its worktree, written by the hooks in `.orchestra/run/hooks.json`; the end of its last turn, `.orchestra/run/turn.json` |
 | the workers the last run left, for the next to carry on with | `.orchestra/run/state.json` in the main checkout |
-| questions for the user | `bd human list` |
+| questions for the user | `bd human list`; the user answers them with `orchestra answer` |
 
 ## Finishing a ticket by hand
 

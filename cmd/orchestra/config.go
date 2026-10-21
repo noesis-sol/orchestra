@@ -756,7 +756,7 @@ func scopeProblem(ctx context.Context, tickets interface {
 			"Ticket %s (--ticket) is closed: nothing to run. Reopen it with: bd update %s --status open", id, id)
 	case dispatch.HasLabel(t, dispatch.HumanLabel):
 		return fmt.Sprintf("Ticket %s (--ticket) is a question for you (label %s), not work. "+
-			"Answer it with: bd human respond %s", id, dispatch.HumanLabel, id)
+			"Answer it with: orchestra answer %s (or bd human respond %s)", id, dispatch.HumanLabel, id, id)
 	}
 	return ""
 }

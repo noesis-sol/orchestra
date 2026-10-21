@@ -654,8 +654,9 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		o.book.ask(id, workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
 		o.reopen(keep, id, info.Status, "come back once "+q.ID+" is answered") // back in the queue once answered
 		o.emit(Event{Kind: EvAsked, Ticket: id, Title: t.Title, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
-			"  ASKED: %s waits on your answer to %s (%s); answer with: bd human respond %s; worktree %s and tab %s left open",
-			id, q.ID, q.Title, q.ID, wt, tab)})
+			"  ASKED: %s waits on your answer to %s (%s); answer with: the dashboard's a key, orchestra answer %s "+
+				"or bd human respond %s; worktree %s and tab %s left open",
+			id, q.ID, q.Title, q.ID, q.ID, wt, tab)})
 		return nil
 	}
 	// A worker that found its ticket needs the code of a ticket not merged yet links that ticket as
