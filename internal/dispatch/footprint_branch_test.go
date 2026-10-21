@@ -60,11 +60,15 @@ func TestReopenedTicketsFootprintIsItsBranchs(t *testing.T) {
 		h.beads.describe("D", "Comment internal/dispatch/loop.go.")
 		cutBranch(h.mem, "wt/D") // nothing on top of main
 		var v overlap
-		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
-			v.awaits("A", "B", 20) // B starts beside A, however long its start takes
-			return finishes("a.txt")(w)
-		}))
-		for _, id := range []string{"B", "C", "D"} {
+		// A and B each wait for the other: B's worker may be prompted first, and one that finished at
+		// once would be gone before A's started, so the two would never be seen running together.
+		for _, p := range [][2]string{{"A", "B"}, {"B", "A"}} {
+			h.worker(p[0], v.runs(p[0], func(w *fakeWorker) AgentState {
+				v.awaits(p[0], p[1], 20) // the other starts beside it, however long its start takes
+				return finishes(strings.ToLower(p[0]) + ".txt")(w)
+			}))
+		}
+		for _, id := range []string{"C", "D"} {
 			h.worker(id, v.runs(id, finishes(strings.ToLower(id)+".txt")))
 		}
 		o, code := h.run()
