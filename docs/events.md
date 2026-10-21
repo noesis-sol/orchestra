@@ -49,21 +49,21 @@ Every record but `start`, `queue`, `check` and `end` also has `text`, its line i
 
 ### Where a ticket's time went
 
-The record that ends a ticket's part in the run, `closed`, `deferred` or a `warn` with `aside: true`, says how long it spent in each phase from when the run took it up (dispatched it, adopted its worker, or took it up again to merge it or check it once more) to that record, in seconds with one decimal:
+The record that ends a ticket's part in the run, `closed`, `deferred` or a `warn` with `aside: true`, says how long it spent in each phase from when the run first took it up (dispatched it, adopted its worker, or took it up again to merge it or check it once more) to that record, in seconds with one decimal:
 
 ```
 {"time":"2026-10-02T09:31:40.07+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"closed","ticket":"kinieta-kco","title":"Open the property model","detail":"ffd6ce4 merged into batch/2026-10-02","text":"…","phases":{"working":812.4,"waiting":41.0,"merging":133.2,"fixing":260.8},"hand_backs":{"resolve":0,"fix":1}}
 ```
 
-- `phases` gives each phase the [dashboard](dashboard.md) shows for a running ticket, and leaves out those it never entered: `working`, its worker at it, from its dispatch until its worker is done, and again after a hand-back; `waiting`, in the merge queue for its turn (**to merge**); `merging`, its merge under way: the rebase, the worktree's setup and the merge check; `resolving`, handed back to its worker to resolve its rebase's conflicts; `fixing`, handed back to fix its failing check. Time the run held for the usage limit or for the machine counts in the phase the ticket was in, as the dashboard shows it.
+- `phases` gives each phase the [dashboard](dashboard.md) shows for a running ticket, and leaves out those it never entered: `working`, its worker at it, from its dispatch until its worker is done, and again after a hand-back; `waiting`, in the merge queue for its turn (**to merge**); `merging`, its merge under way: the rebase, the worktree's setup and the merge check; `resolving`, handed back to its worker to resolve its rebase's conflicts; `fixing`, handed back to fix its failing check. Time the run held for the usage limit or for the machine counts in the phase the ticket was in, as the dashboard shows it. A ticket the run takes up more than once, as one that asks a question and comes back once it is answered, or one that waits for a ticket to merge and starts again, adds each time to the same phases; the wait between, for your answer or for the merge, counts in none of them, and nor does a wait for an answer that ends its part in the run, as when the run ends with the ticket still asking.
 - `hand_backs` counts the ticket's hand-backs in this run: `resolve`, for conflicts, and `fix`, for a failing check; both are given, 0 included.
-- `carried: true` marks a ticket carried over from an earlier run: its phases count from when this run took it up.
+- `carried: true` marks a ticket carried over from an earlier run: its phases count from when this run first took it up.
 
 A record about a ticket the run didn't take up has none of the three, and no other record has them.
 
 ### What a ticket's workers used
 
-The same record gives `tokens`, what the ticket's Claude Code workers used from when the run took it up, by model, as their sessions' transcripts say:
+The same record gives `tokens`, what the ticket's Claude Code workers used from when the run first took it up, by model, as their sessions' transcripts say:
 
 ```
 "tokens":{"claude-opus-5-5":{"input":1834,"output":52011,"cache_write":210334,"cache_read":8120443}}

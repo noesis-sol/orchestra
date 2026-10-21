@@ -86,7 +86,7 @@ type Event struct {
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
 	Aside bool
 	// Times: for an event that ends Ticket's part in the run (see endsPart), how long it spent in each
-	// phase since the run took it up; nil when the run didn't take it up.
+	// phase since the run first took it up; nil when the run didn't take it up.
 	Times *PhaseTimes
 	// Tokens: for an event that ends Ticket's part in the run, what its workers' sessions used since the run
 	// took it up, by model, as their transcripts say; nil when they can't say (see ticketTokens).

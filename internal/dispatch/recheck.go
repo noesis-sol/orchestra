@@ -134,6 +134,7 @@ func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 		if ctx.Err() != nil {
 			return errInterrupted // a read cut short says nothing of the ticket
 		}
+		o.clocks.drop(id) // taken up for nothing: a later record, as when it is merged by hand, has no phases
 		o.info("  %s is not checked again: %s; it stays set aside", id, why)
 		return nil
 	}

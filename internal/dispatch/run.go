@@ -633,6 +633,8 @@ func (r *runState) returned(res result) {
 		r.solo.running = ""
 	}
 	if res.stop == nil {
+		// Its part in the run not ended, as when it asked a question, its clock waits for it to be taken up again.
+		o.clocks.pause(res.id, time.Now())
 		o.parentDone(r.ctx, res.id, r.inflight)
 	}
 	if res.stop == nil || res.stop == errInterrupted {

@@ -14,6 +14,13 @@ All notable changes to orchestra are documented here. The format follows
   added to the questions file, which the talk reads again after each
   question, and given in a message only once every question claude was given
   is answered and its turn is over.
+- A ticket that asks a question, or waits for another to merge, and comes
+  back in the same run keeps its earlier time and tokens: its closed record
+  gave only its last period's phases, and left the tokens its workers used
+  before out of the record and the run's totals. The wait for your answer
+  counts in no phase, where it counted as working when the ticket's part ended
+  still asking. A ticket set aside and not checked again once more no longer
+  has the time until it is merged by hand counted as working.
 - The overnight pre-flight's fix for an old worker prompt ("Bring them up to
   date (orchestra init --update) and commit that?") gives the run's workers
   the prompt it commits. The run had read the prompt before the fix, so every

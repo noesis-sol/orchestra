@@ -7,7 +7,7 @@ import (
 )
 
 // What each ticket's workers used: the record that ends a ticket's part in the run gives the tokens its
-// workers' Claude Code sessions used from when the run took it up, by model, as their transcripts say
+// workers' Claude Code sessions used from when the run first took it up, by model, as their transcripts say
 // (Reporter.Tokens). Its workers' hooks note each session they start, so a ticket whose worker was
 // started again, or whose session was cleared, counts every session it had; a hand-back resumes the same
 // session, whose transcript is read once, at the record. The run's end record gives the run's totals
@@ -20,7 +20,7 @@ type unreadTranscripts struct {
 	said map[string]bool
 }
 
-// ticketTokens returns what ticket id's workers used from when the run took it up, by model; nil when
+// ticketTokens returns what ticket id's workers used from when the run first took it up, by model; nil when
 // the run didn't take it up, its workers don't report through hooks, or their transcripts say nothing.
 // A transcript that can't be read is left out, and said once in the log.
 func (o *Loop) ticketTokens(id string) Tokens {
