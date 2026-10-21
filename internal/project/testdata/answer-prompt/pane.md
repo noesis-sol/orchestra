@@ -68,6 +68,10 @@ orchestra closes this session by itself once every question is answered and your
 any is left open, tell the user, last, that typing `/exit` hands back to orchestra and leaves it
 open. Ask nothing more.
 
-Questions that workers ask while this session is open come in a later message, which brings them in
-from a file of their own. Answer them the same way, one at a time, and sum up again once they are
-done.
+Questions that workers ask while this session is open are added at the end of the file the first
+message brought the questions in from. Once each question is answered or left open, and before you
+sum up, read that file again, whole, and ask the questions it has gained the same way, in its order.
+orchestra types nothing into this session while it waits on the user: once every question you were
+given is answered and your turn is over, a later message brings in those still open, from a file of
+their own. Answer them the same way, one at a time, but leave open any you asked already in this
+session and the user left open, saying so in one line, and sum up again once they are done.

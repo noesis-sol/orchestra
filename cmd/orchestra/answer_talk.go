@@ -372,7 +372,7 @@ func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question
 	if err != nil {
 		return answerResult{}, fmt.Errorf("cannot write the answer talk's instructions: %w", err)
 	}
-	asked := &answerAsked{}
+	asked := &answerAsked{read: qs}
 	for _, q := range qs {
 		asked.questions = append(asked.questions, q.ID)
 	}
@@ -381,7 +381,8 @@ func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question
 	session := terminal
 	if a.pane != "" {
 		about := answerSubject{first: message, asked: asked, tracker: a.tracker, every: a.every, live: a.live,
-			scope: scope, skip: a.skip, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), repo: repo, err: a.err}
+			scope: scope, skip: a.skip, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), repo: repo,
+			deferred: a.deferred, err: a.err}
 		ps := paneSession{panes: a.panes, pane: a.pane, hooks: a.hooks, claude: a.claude, fallback: terminal,
 			out: a.out, err: a.err, progress: a.line, about: about}
 		if a.aside {
@@ -390,28 +391,33 @@ func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question
 		session = ps.talk
 	}
 	err = session(ctx, prompt)
-	// those queued into it too, less those it ended before claude was given them: it never asked them
-	ids := slices.DeleteFunc(asked.questions, func(id string) bool { return slices.Contains(asked.unshown, id) })
+	read := ctx
+	if ctx.Err() != nil {
+		read = context.WithoutCancel(ctx)
+	}
+	r := a.left(read, asked)
 	var exit *exec.ExitError
 	switch {
 	case ctx.Err() != nil:
-		return a.left(context.WithoutCancel(ctx), ids), ctx.Err()
+		return r, ctx.Err()
 	case errors.As(err, &exit):
 		fmt.Fprintln(a.err, "claude ended with", exit) // it may have recorded answers all the same
 	case err != nil:
-		return a.left(ctx, ids), err
+		return r, err
 	}
-	return a.left(ctx, ids), nil
+	return r, nil
 }
 
-// left reads from bd how the talk left the questions ids: closed ones answered, the rest open. One
-// bd can't read counts as open.
-func (a answerTalk) left(ctx context.Context, ids []string) answerResult {
+// left reads from bd how the talk left its questions, those queued into it too: closed ones answered,
+// the rest open. One bd can't read counts as open. A question queued that claude was never given and
+// is still open wasn't asked, for the dashboard to queue into the next talk.
+func (a answerTalk) left(ctx context.Context, asked *answerAsked) answerResult {
 	var r answerResult
-	for _, id := range ids {
-		if st, err := a.tracker.Status(ctx, id); err == nil && st == dispatch.StatusClosed {
+	for _, id := range asked.questions {
+		switch st, err := a.tracker.Status(ctx, id); {
+		case err == nil && st == dispatch.StatusClosed:
 			r.Answered = append(r.Answered, id)
-		} else {
+		case !slices.Contains(asked.waiting, id):
 			r.Open = append(r.Open, id)
 		}
 	}
@@ -439,7 +445,8 @@ func answerOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, me
 // questions it asks, and bd, which says every so often (every) how many of them are closed. The talk is
 // over, as an epic handed back ends a breakdown's, once all of them are (asked.closed, as answerShown
 // last read it). Under the dashboard (live), questions that come to wait while it is open are read
-// from bd in scope and given to claude in the pane, by the name agent, once its turn is over.
+// from bd in scope and added to the questions file, which claude reads again after each question,
+// and given to claude in the pane, by the name agent, those still open once it waits on nothing.
 type answerSubject struct {
 	first   string
 	asked   *answerAsked
@@ -451,15 +458,20 @@ type answerSubject struct {
 	panes   answerPanes
 	agent   string // claude's name in the pane, once given the questions queued
 	repo    string
-	err     io.Writer
+	// deferred is what the questions file says of the deferred tickets, as the talk's deferred, for
+	// the file rewritten with the questions queued.
+	deferred string
+	err      io.Writer
 }
 
-// answerAsked is the questions the talk asks, in order, those queued into it included, whether bd
-// last said each was closed, and those queued that claude hasn't been given yet (unshown).
+// answerAsked is the questions the talk asks, in order, those queued into it included, and whether bd
+// last said each was closed; those of them queued that claude hasn't been given in a message (waiting),
+// though the questions file has them; and the questions as that file gives them.
 type answerAsked struct {
 	questions []string
 	closed    bool
-	unshown   []string
+	waiting   []string
+	read      []question
 }
 
 func (s answerSubject) message(string) (string, error) { return s.first, nil }
@@ -533,8 +545,9 @@ func (l *answerLive) openPane() string {
 // answerShown reads, every so often, how many of the answer talk's questions bd has closed, for
 // answerSubject to tell when the talk is over, and shows it in orchestra's pane with claude's state
 // and the time so far, as an interview's line has them (drawn only when line isn't nil). Under the
-// dashboard, it reads the questions queued into the talk from bd and gives them to claude once its
-// turn is over: until claude has them, the talk isn't over.
+// dashboard, it reads the questions queued into the talk from bd, adds them to the questions file and
+// gives claude those still open once it waits on nothing: until claude has them or bd has closed
+// them, the talk isn't over.
 type answerShown struct {
 	line    *tui.InterviewLine
 	subject answerSubject
@@ -542,19 +555,26 @@ type answerShown struct {
 	now     tui.InterviewProgress
 	counted time.Time          // when bd was last asked
 	count   <-chan answerCount // how many are closed, once bd has said; nil when none is awaited
+	last    answerCount        // bd's last count
+	busy    time.Time          // when claude was last seen at work, not idle or done
 	more    <-chan answerMore  // the questions queued, once read from bd; nil when none are awaited
-	pending answerMore         // those read, for claude to be given once its turn is over
+	message string             // the message that brings in the questions waiting (subject.asked.waiting)
 	given   <-chan answerGiven // claude given them; nil when not awaited
 	batches int                // the files of questions written, the first one's included
 }
 
-// answerCount is how many of the talk's first total questions bd has closed; closed is -1 when bd
-// couldn't say.
-type answerCount struct{ closed, total int }
+// answerCount is how many of the talk's first total questions bd has closed, as asked from began:
+// which were counted (ids) and which of them are open; closed is -1 when bd couldn't say.
+type answerCount struct {
+	closed, total int
+	ids, open     []string
+	began         time.Time
+}
 
-// answerMore is questions queued into the talk, by ID, and the message that brings them in.
+// answerMore is questions queued into the talk, by ID and as read, and the message that brings them in.
 type answerMore struct {
 	ids     []string
+	qs      []question
 	message string
 	err     error // why bd couldn't be read for them
 }
@@ -576,8 +596,12 @@ func (s *answerShown) show(ctx context.Context, _ string, st dispatch.AgentState
 		if n.closed >= 0 {
 			s.now.Questions, s.now.Answered = n.total, n.closed
 			asked.closed = n.closed == n.total && n.total == len(asked.questions)
+			s.last = n
 		}
 	default: // not counted yet
+	}
+	if st != "" && st != dispatch.StateIdle && st != dispatch.StateDone {
+		s.busy = time.Now()
 	}
 	if s.count == nil && (s.counted.IsZero() || time.Since(s.counted) >= s.subject.every) {
 		s.counted, s.count = time.Now(), s.countClosed(ctx)
@@ -596,15 +620,16 @@ func (s *answerShown) show(ctx context.Context, _ string, st dispatch.AgentState
 }
 
 // queued takes in the questions queued into the talk: it reads from bd, once told, those in scope it
-// doesn't ask yet, which it then asks, and gives them to claude once its turn is over (st idle or
-// done), one batch at a time. Those claude couldn't be given are asked no longer: the dashboard queues
-// them into the next talk.
+// doesn't ask yet, which it then asks, and adds them to the questions file, which claude reads again
+// after each question. It types nothing into claude's input while the talk waits on the maintainer,
+// whose answer may be half typed there: it gives claude those still open, in a message, only once
+// claude waits on nothing (see atRest), one batch at a time. Those claude couldn't be given are asked
+// no longer: the dashboard queues them into the next talk.
 func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 	asked := s.subject.asked
 	select {
 	case g := <-s.given: // never ready while given is nil
 		s.given = nil
-		asked.unshown = slices.DeleteFunc(asked.unshown, func(id string) bool { return slices.Contains(g.ids, id) })
 		if g.err != nil {
 			fmt.Fprintf(s.subject.err, "orchestra couldn't give the answer talk %s: %s\n", strings.Join(g.ids, ", "),
 				dispatch.FirstLine(g.err.Error()))
@@ -621,9 +646,8 @@ func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 				dispatch.FirstLine(m.err.Error()))
 		case len(m.ids) > 0:
 			asked.questions, asked.closed = append(asked.questions, m.ids...), false
-			asked.unshown = append(asked.unshown, m.ids...)
-			s.pending.ids = append(s.pending.ids, m.ids...)
-			s.pending.message = m.message // it brings in the earlier ones too
+			asked.waiting, asked.read = append(asked.waiting, m.ids...), append(asked.read, m.qs...)
+			s.message = m.message // it brings in the earlier ones too
 		}
 	default:
 	}
@@ -634,17 +658,46 @@ func (s *answerShown) queued(ctx context.Context, st dispatch.AgentState) {
 		default:
 		}
 	}
-	if len(s.pending.ids) > 0 && s.given == nil && (st == dispatch.StateIdle || st == dispatch.StateDone) {
-		s.given, s.pending = s.give(ctx, s.pending), answerMore{}
+	if len(asked.waiting) > 0 && s.given == nil && (st == dispatch.StateIdle || st == dispatch.StateDone) &&
+		s.atRest() {
+		s.given = s.give(ctx, answerMore{ids: asked.waiting, message: s.message})
+		asked.waiting, s.message = nil, ""
 	}
 }
 
+// atRest reports whether claude may be given the questions waiting, in a message typed into its input:
+// only when bd's last count, asked after claude was last seen at work, has every question claude was
+// given closed, so that the talk waits on the maintainer for none, and one of those waiting still
+// open. Those waiting that bd has closed, which claude took up from the questions file, wait no longer.
+func (s *answerShown) atRest() bool {
+	asked, n := s.subject.asked, s.last
+	if n.began.IsZero() || !n.began.After(s.busy) {
+		return false
+	}
+	open := false
+	for _, id := range asked.questions {
+		closed := slices.Contains(n.ids, id) && !slices.Contains(n.open, id)
+		switch waiting := slices.Contains(asked.waiting, id); {
+		case !waiting && !closed:
+			return false // the talk may wait on the maintainer's answer to it
+		case waiting && !closed:
+			open = true
+		}
+	}
+	if !open {
+		asked.waiting, s.message = nil, ""
+	}
+	return open
+}
+
 // readMore reads from bd, in the background, the questions in the talk's scope that it doesn't ask
-// yet nor skips, and writes them, with those read before and not given to claude yet, to a file of their own for
-// a message to bring in; the channel gives them once read, none when there are none.
+// yet nor skips, adds them at the end of the questions file, and writes them, with those read before
+// and not given to claude yet, to a file of their own for a message to bring in; the channel gives them
+// once read, none when there are none.
 func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 	read := make(chan answerMore, 1) // the send doesn't block once the wait is over
-	asked, pending := slices.Clone(s.subject.asked.questions), slices.Clone(s.pending.ids)
+	asked, pending := slices.Clone(s.subject.asked.questions), slices.Clone(s.subject.asked.waiting)
+	all := slices.Clone(s.subject.asked.read)
 	s.batches = max(s.batches, 1) + 1
 	batch, skip := s.batches, s.subject.skip
 	go func() {
@@ -653,13 +706,13 @@ func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 			read <- answerMore{err: err}
 			return
 		}
-		var give []question
-		var fresh []string
+		var give, fresh []question
+		var ids []string
 		for _, q := range qs {
 			switch {
 			case !slices.Contains(asked, q.ID) && skip != nil && skip(q.ID):
 			case !slices.Contains(asked, q.ID):
-				fresh = append(fresh, q.ID)
+				ids, fresh = append(ids, q.ID), append(fresh, q)
 				give = append(give, q)
 			case slices.Contains(pending, q.ID):
 				give = append(give, q)
@@ -669,12 +722,17 @@ func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 			read <- answerMore{}
 			return
 		}
+		text := questionsText(slices.Concat(all, fresh)) + deferredText(s.subject.deferred)
+		if _, err := project.WriteAnswerQuestions(s.subject.repo, []byte(text)); err != nil {
+			read <- answerMore{err: err}
+			return
+		}
 		file, err := project.WriteAnswerMore(s.subject.repo, batch, []byte(questionsText(give)))
 		if err != nil {
 			read <- answerMore{err: err}
 			return
 		}
-		read <- answerMore{ids: fresh, message: moreMessage(file, len(give))}
+		read <- answerMore{ids: ids, qs: fresh, message: moreMessage(file, len(give))}
 	}()
 	return read
 }
@@ -699,9 +757,10 @@ func (s *answerShown) give(ctx context.Context, m answerMore) <-chan answerGiven
 // that the wait goes on reading the terminal meanwhile; the channel gives the count once read.
 func (s *answerShown) countClosed(ctx context.Context) <-chan answerCount {
 	read := make(chan answerCount, 1) // the send doesn't block once the wait is over
-	questions := slices.Clone(s.subject.asked.questions)
+	questions, began := slices.Clone(s.subject.asked.questions), time.Now()
 	go func() {
 		n := 0
+		var open []string
 		for _, id := range questions {
 			st, err := s.subject.tracker.Status(ctx, id)
 			if err != nil {
@@ -710,9 +769,11 @@ func (s *answerShown) countClosed(ctx context.Context) <-chan answerCount {
 			}
 			if st == dispatch.StatusClosed {
 				n++
+			} else {
+				open = append(open, id)
 			}
 		}
-		read <- answerCount{closed: n, total: len(questions)}
+		read <- answerCount{closed: n, total: len(questions), ids: questions, open: open, began: began}
 	}()
 	return read
 }

@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A question that comes to wait while the answer talk waits on the
+  maintainer is no longer typed into claude's input, where it was pasted
+  after the answer they were half-way through typing and sent with it. It is
+  added to the questions file, which the talk reads again after each
+  question, and given in a message only once every question claude was given
+  is answered and its turn is over.
 - The overnight pre-flight's fix for an old worker prompt ("Bring them up to
   date (orchestra init --update) and commit that?") gives the run's workers
   the prompt it commits. The run had read the prompt before the fix, so every

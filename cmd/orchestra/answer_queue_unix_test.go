@@ -120,8 +120,8 @@ func respond(t *testing.T, bd, q string) {
 
 // Opened by itself, the talk's pane is split aside, leaving the focus in orchestra's, and the a key
 // goes to it. A question that comes to wait while it is open is queued into it: once claude's turn is
-// over it is given the question, from a file of its own, and the pane closes only once both are
-// answered. The dashboard is told the talk asked both.
+// over, with the first answered, it is given the question, from a file of its own, and the pane closes
+// only once both are answered. The dashboard is told the talk asked both.
 func TestDashboardTalkOpensAsideAndTakesQueuedQuestions(t *testing.T) {
 	t.Parallel()
 	repo, bd, state := answerSetup(t, answerBacklog())
@@ -134,10 +134,10 @@ func TestDashboardTalkOpensAsideAndTakesQueuedQuestions(t *testing.T) {
 			switch _, _, prompts := panes.seen(); {
 			case read == 2:
 				talks.focus()
+				respond(t, bd, "k-7")
 				fileQuestion(t, state)
 				talks.queue()
 			case len(prompts) > 0 && !answered:
-				respond(t, bd, "k-7")
 				respond(t, bd, "k-8")
 				answered = true
 			case read > 200:
@@ -190,15 +190,12 @@ func TestDashboardTalkDropsAQuestionClaudeCouldNotBeGiven(t *testing.T) {
 		var talks *answerTalks
 		panes := &talkPanes{fakePanes: &fakePanes{agent: []dispatch.AgentState{dispatch.StateWorking,
 			dispatch.StateIdle}}, promptErr: errors.New("tmux: no such agent")}
-		var answered bool
 		panes.step = func(read int) {
-			switch _, _, prompts := panes.seen(); {
+			switch {
 			case read == 1:
+				respond(t, bd, "k-7")
 				fileQuestion(t, state)
 				talks.queue()
-			case len(prompts) > 0 && !answered:
-				respond(t, bd, "k-7")
-				answered = true
 			case read > 200:
 				t.Fatal("the talk never ended")
 			}
