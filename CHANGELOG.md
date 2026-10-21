@@ -64,6 +64,11 @@ All notable changes to orchestra are documented here. The format follows
   answer talk, one by one with its options, before the run's first ticket.
   A question left open, or every one without a terminal, is said in a
   checklist of its own with the tickets it keeps waiting.
+- An overnight run keeps the machine from sleeping while it goes, the organ
+  phase included: `caffeinate -i -w <orchestra's PID>` on macOS,
+  `systemd-inhibit` on Linux, started once the pre-flight clears the run
+  and stopped as it ends. The checklist says so, and warns where the
+  command is missing.
 
 ## [0.9.1] - 2026-10-21
 

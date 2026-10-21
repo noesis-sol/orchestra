@@ -296,6 +296,8 @@ Ctrl+C during the talk exits with code 130 before the run starts, the answers gi
 
 The `START` line says the run is overnight after its scope, `… on main · overnight (done so far: 0, …)`, and the event stream's `start` record has `"overnight": true`. `--overnight` goes with `--ticket` (the ticket and its subtickets, checked the same way) and with `--tickets`, and never asks what to work on; with `--spec` or `--feature` it is a setup problem, as is `--force-overnight` without it.
 
+An overnight run keeps the machine from sleeping while it goes, so that no worker is cut off mid-commit in the night: once the pre-flight has cleared the run it starts `caffeinate -i -w <orchestra's PID>` on macOS, or on Linux `systemd-inhibit --what=idle:sleep … tail --pid=<orchestra's PID> -f /dev/null`, and stops it as the run ends, after the organ phase; given orchestra's PID, the command ends by itself however orchestra ends. The checklist says so (`the machine is kept awake while the run goes (caffeinate)`), and warns where the command isn't on the PATH, or the system has none: set the machine not to sleep then. The log says when it started, and when it ended before the run did. Closing a laptop's lid still puts it to sleep.
+
 ## Several tickets at once
 
 With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:

@@ -25,8 +25,10 @@ type backlog struct {
 }
 
 // nothingTools puts on PATH a bd answering b, a claude and an osascript that only record their
-// calls (claude-calls, osascript-calls), and a herdr that fails. bd records its calls in bd-calls,
-// each argument followed by |. It returns the folder they keep their files in.
+// calls (claude-calls, osascript-calls), a herdr that fails, and a caffeinate and a systemd-inhibit
+// that record their arguments (caffeinate-calls, systemd-inhibit-calls) and run until stopped, adding
+// a line "stopped". bd records its calls in bd-calls, each argument followed by |. It returns the
+// folder they keep their files in.
 func nothingTools(t *testing.T, b backlog) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,6 +74,11 @@ esac
 			"echo '{\"is_error\":true,\"result\":\"not in this test\"}'\n")
 	}
 	faketool.Write(t, dir, "herdr", "#!/bin/sh\necho 'herdr: not in this test' >&2\nexit 1\n")
+	for _, name := range []string{"caffeinate", "systemd-inhibit"} { // an overnight run's keep-awake (keep_awake.go)
+		calls := filepath.Join(dir, name+"-calls")
+		faketool.Write(t, dir, name, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '"+calls+"'\n"+
+			"trap \"echo stopped >> '"+calls+"'; exit 0\" TERM\nwhile :; do sleep 1; done\n")
+	}
 	onPath(t, dir)
 	return dir
 }

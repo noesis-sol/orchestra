@@ -213,6 +213,7 @@ func run(ctx context.Context, args []string, e cmdEnv) (err error) {
 	if code, ok := s.preflight(ctx); !ok {
 		return status(code)
 	}
+	s.keepAwake(ctx) // an overnight run's, until the session closes (keep_awake.go)
 	if code, ok := s.chooseWork(ctx); !ok {
 		return status(code)
 	}

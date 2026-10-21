@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -40,6 +41,7 @@ type preflightFix struct {
 // preflightChecks are an overnight run's checks, in the order its checklist lists them.
 var preflightChecks = []preflightCheck{
 	limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"), diskCheck(freeDisk), baseCheck,
+	keepAwakeCheck(runtime.GOOS),
 }
 
 // preflight clears an overnight run to start: it runs its checks, prints their checklist and, in a
