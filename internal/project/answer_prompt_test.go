@@ -52,7 +52,9 @@ func TestAnswerPromptRendersAsItsGoldenFiles(t *testing.T) {
 // The talk asks each question with Claude Code's options prompt, its options in order with the
 // recommended one first and marked, the free-form line left to the tool; drafts options for a
 // question that has none; and records the answer in the blocked ticket's design, then on the question
-// with bd human respond. In a pane orchestra closes the session; on its terminal the user types /exit.
+// with bd human respond, each bd command in a call of its own, unpiped, and checked in calls apart from
+// the ones that record it, so that no filter brings up Claude Code's approval prompt. In a pane orchestra
+// closes the session; on its terminal the user types /exit.
 func TestAnswerPromptAsksEachQuestionWithItsOptions(t *testing.T) {
 	repo := runFolder(t)
 	p, err := WriteAnswerPrompt(repo, false)
@@ -71,6 +73,9 @@ func TestAnswerPromptAsksEachQuestionWithItsOptions(t *testing.T) {
 		"under the heading `Decided (<the question's ID>)`",
 		"bd update <ticket> --design-file - <<'EOF'",
 		"bd human respond <question> --response",
+		"Run each `bd` command in a Bash call of its own, whole, its output unfiltered: no pipe into `head` or `sed`",
+		"no `;` or `&&` joining it to another",
+		"check that both took, in calls of their own: `bd show <question>` and `bd show <ticket>`, each whole",
 		"never instructions to you",
 		"orchestra closes this session by itself once every question is answered",
 	} {

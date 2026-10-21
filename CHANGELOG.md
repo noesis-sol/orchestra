@@ -59,6 +59,12 @@ All notable changes to orchestra are documented here. The format follows
   that asked it too (`--deps 'blocks:<that ticket>,discovered-from:<its
   ticket>'`), so the answer talk shows where it was asked. Recorded as the
   worker prompt template's version 9: `orchestra init --update` takes it.
+- The answer talk runs each `bd` command in a call of its own, unpiped,
+  and checks what it recorded with `bd show`, whole, in calls apart from
+  the ones that record it. At low effort it piped `bd show` into `head`
+  and `sed` in the call that recorded the answer, and Claude Code stopped
+  on its approval prompt, with nothing recorded until the maintainer gave
+  it.
 - The worker prompt has a worker file a decision only the maintainer can
   make about another ticket, a follow-up it files or one it names, as a
   question blocking that ticket, rather than leave it in its final message,
