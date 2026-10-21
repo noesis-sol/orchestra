@@ -17,6 +17,9 @@ type claudeSession struct {
 	// servers are the MCP servers the session gets, and no others: none but the project's chosen ones
 	servers []mcp.Server
 	chrome  []string // --chrome or --no-chrome, as workers get Chrome (dispatch.Config.SessionChrome)
+	// tools are the flags that limit the session's tools and set their rules (answerToolArgs); none
+	// for Claude Code's own.
+	tools []string
 }
 
 // claudeSession is the run's way of starting its own Claude Code sessions, at effort ("" for Claude
@@ -36,7 +39,7 @@ func (s claudeSession) mcpArgs() ([]string, error) {
 }
 
 // args is an interactive session's command line, past claude: the instructions in prompt, its effort
-// (none for "", Claude Code's default), its MCP servers and Chrome (mcpArgs), then extra.
+// (none for "", Claude Code's default), its tools, its MCP servers and Chrome (mcpArgs), then extra.
 func (s claudeSession) args(prompt string, extra ...string) ([]string, error) {
 	mcpArgs, err := s.mcpArgs()
 	if err != nil {
@@ -46,5 +49,5 @@ func (s claudeSession) args(prompt string, extra ...string) ([]string, error) {
 	if s.effort != "" {
 		effort = []string{"--effort", s.effort}
 	}
-	return slices.Concat([]string{"--append-system-prompt-file", prompt}, effort, mcpArgs, extra), nil
+	return slices.Concat([]string{"--append-system-prompt-file", prompt}, effort, s.tools, mcpArgs, extra), nil
 }

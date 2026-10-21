@@ -6,6 +6,22 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The answer talk, where the maintainer answers the questions workers
+  asked: a Claude Code session in the main checkout, in a pane beside
+  orchestra's or on its terminal, given the open questions in the run's
+  scope (or one named) in `.orchestra/run/questions.md`, each with its
+  options, the recommended one first, the tickets it blocks and those it
+  was asked from. It asks each with Claude Code's options prompt
+  (AskUserQuestion, enabled whatever the workers' tools), the recommended
+  option marked and a free-form Other line, talks it through when asked,
+  writes the decision into the blocked ticket's design and records the
+  answer with `bd human respond`. A question without options in its
+  metadata gets options the session drafts and says are its own. It reads,
+  runs `bd` and read-only `git`, and edits no file; its pane closes once
+  every question is answered.
+
 ### Changed
 
 - The worker prompt has a worker file a decision only the maintainer can

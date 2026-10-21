@@ -24,6 +24,9 @@ type InterviewProgress struct {
 	// What a spec's refinement has filed so far, once bd has counted it (Counted).
 	Counted                  bool
 	FiledEpics, FiledTickets int
+	// How many of the answer talk's questions bd has closed (Answered of Questions), once it has said;
+	// Questions is 0 until then, and for any other session.
+	Questions, Answered int
 }
 
 // Line is the progress as one line, styled as the dashboard's are and at most width columns wide
@@ -47,6 +50,10 @@ func (p InterviewProgress) Line(width int) string {
 	if p.Counted {
 		line += dimStyle.Render(" · " + plural(p.FiledEpics, "epic", "epics") + ", " +
 			plural(p.FiledTickets, "ticket", "tickets") + " filed")
+	}
+	if p.Questions > 0 {
+		line += dimStyle.Render(fmt.Sprintf(" · %d of %s answered", p.Answered,
+			plural(p.Questions, "question", "questions")))
 	}
 	return ansi.Truncate(line, width, "…")
 }

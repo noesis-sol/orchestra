@@ -187,6 +187,15 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, me
 	if err != nil {
 		return fmt.Errorf("cannot write the refinement's instructions: %w", err)
 	}
+	return claudeOnTerminal(ctx, stops, s, prompt, message, intro, stdin, stdout, stderr)
+}
+
+// claudeOnTerminal runs one of orchestra's interactive sessions on its own terminal, started as s has
+// it with the instructions in prompt, message its first message, until the user exits it; intro is
+// what orchestra says as it hands claude the terminal. Ctrl+C is Claude Code's meanwhile, which
+// interrupts and clears with it.
+func claudeOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, prompt, message, intro string,
+	stdin io.Reader, stdout, stderr io.Writer) error {
 	// -- ends claude's options: the message after it is none of them.
 	args, err := s.args(prompt, "--", message)
 	if err != nil {
