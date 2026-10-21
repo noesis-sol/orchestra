@@ -385,7 +385,7 @@ func (r Reporter) HookRecord(worktree string) agentio.HookRecord {
 // parseEvents reads the hooks' notes, one JSON line each, the last of them noted at noted, skipping a
 // line it can't read, as one in a newer format. A subagent is running from its start to its stop,
 // matched by its ID; a stop with no start is of none of the worker's (Claude Code's forks at the end
-// of a turn note one).
+// of a turn note one). Each session started is listed once, by the first note of its start.
 func parseEvents(b []byte, noted time.Time) agentio.HookRecord {
 	r := agentio.HookRecord{Noted: noted}
 	running := map[string]bool{}
@@ -413,6 +413,10 @@ func parseEvents(b []byte, noted time.Time) agentio.HookRecord {
 			running[e.Agent] = true
 		case "SubagentStop":
 			delete(running, e.Agent)
+		case "SessionStart":
+			if s, ok := sessionNoted(e); ok && !slices.Contains(r.Sessions, s) {
+				r.Sessions = append(r.Sessions, s)
+			}
 		}
 	}
 	r.Subagents = len(running)

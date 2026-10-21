@@ -23,6 +23,13 @@ All notable changes to orchestra are documented here. The format follows
   `full_check` record gains the same `commit`, `seconds` and `result`.
   `docs/events.md` has a `jq` line giving each suite's median and slowest
   run. The log is as it was.
+- The same record gives `tokens`: what the ticket's Claude Code workers used
+  in the run, by model (`input`, `output`, `cache_write`, `cache_read`), from
+  their sessions' transcripts, every session and subagent counted, each
+  message once. The run's `end` record gives its totals: `tokens`, summed by
+  model, and `organs`, what its organ calls cost. A transcript that can't be
+  read is left out and logged once. docs/events.md has a `jq` line that sums
+  a run's tokens per model.
 
 ## [0.9.2] - 2026-10-21
 

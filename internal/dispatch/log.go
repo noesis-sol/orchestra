@@ -29,6 +29,10 @@ type Log struct {
 	eventsSaid bool       // the event stream failed, and the log has said so
 	begun      bool       // Begin has been called, whether or not the stream opened
 	early      []CheckRun // the checks that ended before Begin, for it to record (see Check)
+	// tokens and organs: what the run's tickets' records said their workers used, and what its organ calls
+	// cost, for its end record
+	tokens Tokens
+	organs organsRecord
 }
 
 // OpenLog opens the log file at path for appending. With notify, Notify shows macOS notifications

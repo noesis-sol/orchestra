@@ -147,6 +147,7 @@ The run loop, `internal/dispatch`, has one file per concern, its tests in the `_
 | `advice.go` | triage and the run review |
 | `hooktally.go` | what each ticket's workers' hooks noted in the run (permission prompts, compactions), for triage and the run review |
 | `organcost.go` | what the run's organ calls cost: logged with each call, summed for the run review |
+| `tokens.go` | what each ticket's workers used, by model, from their sessions' transcripts, for the record that ends its part in the run |
 | `fullcheck.go` | the full check (`check_full`) after a run that merged a ticket, in a worktree of its own, the setup first, and the ticket filed when it fails |
 | `basecheck.go` | the merge check (`check_fast`) run once on Base's head before an overnight run, in a worktree of its own, the setup first (`CheckBase`, for the pre-flight) |
 | `predict.go` | predicting the files of ready tickets that name none, in the background; the `predictor`, its queue and predictions |

@@ -138,6 +138,9 @@ type AgentHelp interface {
 // Session is a Claude Code worker's session, as its hooks recorded it (agentio.Session).
 type Session = agentio.Session
 
+// Tokens is what workers' sessions used, by model (agentio.Tokens).
+type Tokens = agentio.Tokens
+
 // Checkout is what the loop checks about the main checkout and worktrees (git). Each method returns
 // git's error beside its answer when git fails to answer, which is not the same as none or "".
 type Checkout interface {

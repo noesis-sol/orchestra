@@ -20,11 +20,12 @@ type PhaseTimes struct {
 	Carried         bool // carried over from an earlier run (see loadCarried)
 }
 
-// phaseClock times a ticket's phases: phase is the one it is in, since when.
+// phaseClock times a ticket's phases: phase is the one it is in, since when; taken, when the run took it up.
 type phaseClock struct {
 	PhaseTimes
 	phase Phase
 	since time.Time
+	taken time.Time
 }
 
 // phaseClocks are the running tickets' phase clocks, and the tickets carried over from an earlier run,
@@ -52,7 +53,7 @@ func (c *phaseClocks) start(id string, now time.Time) {
 	if c.clocks == nil {
 		c.clocks = map[string]*phaseClock{}
 	}
-	cl := &phaseClock{phase: PhaseWorking, since: now}
+	cl := &phaseClock{phase: PhaseWorking, since: now, taken: now}
 	cl.Entered[PhaseWorking], cl.Carried = true, c.carried[id]
 	c.clocks[id] = cl
 }
@@ -74,6 +75,17 @@ func (c *phaseClocks) enter(id string, p Phase, now time.Time) {
 	case PhaseFixing:
 		cl.Fixes++
 	}
+}
+
+// takenUp returns when the run took ticket id up, and false when its clock isn't running: the run didn't
+// take it up, or its part in the run has ended.
+func (c *phaseClocks) takenUp(id string) (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cl := c.clocks[id]; cl != nil {
+		return cl.taken, true
+	}
+	return time.Time{}, false
 }
 
 // end stops ticket id's clock at now and returns its times, or nil when it has none: the run didn't

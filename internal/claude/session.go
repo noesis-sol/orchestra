@@ -59,15 +59,25 @@ func (r Reporter) Session(worktree string) (agentio.Session, bool) {
 // sessionOf is the session the record in, read from sessionName, names (see Reporter.Session), and false
 // when it names none to resume.
 func sessionOf(in hookInput) (agentio.Session, bool) {
+	s, ok := sessionNoted(in)
+	if !ok {
+		return agentio.Session{}, false
+	}
+	if fi, err := os.Lstat(s.Transcript); err != nil || !fi.Mode().IsRegular() {
+		return agentio.Session{}, false
+	}
+	return s, true
+}
+
+// sessionNoted is the session a SessionStart's input or note in names, and false when it names none, or a
+// transcript that isn't where Claude Code keeps the session's: in may be the worker's to change.
+func sessionNoted(in hookInput) (agentio.Session, bool) {
 	if !sessionID.MatchString(in.Session) {
 		return agentio.Session{}, false
 	}
 	p := in.Transcript
 	if !filepath.IsAbs(p) || filepath.Base(p) != in.Session+".jsonl" ||
 		filepath.Base(filepath.Dir(filepath.Dir(p))) != "projects" {
-		return agentio.Session{}, false
-	}
-	if fi, err := os.Lstat(p); err != nil || !fi.Mode().IsRegular() {
 		return agentio.Session{}, false
 	}
 	return agentio.Session{ID: in.Session, Transcript: p}, true

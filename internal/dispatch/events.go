@@ -87,6 +87,9 @@ type Event struct {
 	// Times: for an event that ends Ticket's part in the run (see endsPart), how long it spent in each
 	// phase since the run took it up; nil when the run didn't take it up.
 	Times *PhaseTimes
+	// Tokens: for an event that ends Ticket's part in the run, what its workers' sessions used since the run
+	// took it up, by model, as their transcripts say; nil when they can't say (see ticketTokens).
+	Tokens Tokens
 	// Blocked: Ticket's work is done, but it can't merge until the maintainer acts; why, in a few
 	// words ("main checkout has uncommitted changes", "merge conflict in a.go"). Set on the EvHold or
 	// EvStop for a DIRTY_TREE, GIT_FAILED or MERGE_FAILED met as it merged, and on an EvWarn for its
@@ -181,11 +184,18 @@ type Sink interface {
 }
 
 func (o *Loop) emit(ev Event) {
+	var tokens Tokens
+	if endsPart(ev) {
+		tokens = o.ticketTokens(ev.Ticket) // read before the lock: the transcripts may be long
+	}
 	o.emitMu.Lock()
 	defer o.emitMu.Unlock()
 	ev.Time = time.Now()
 	if endsPart(ev) {
 		ev.Times = o.clocks.end(ev.Ticket, ev.Time)
+		if ev.Times != nil { // else another record ended its part as these were read
+			ev.Tokens = tokens
+		}
 	}
 	o.tally(&ev)
 	if ev.Kind != EvQueue {

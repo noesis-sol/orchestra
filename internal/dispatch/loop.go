@@ -75,6 +75,8 @@ type Loop struct {
 	// clocks: how long each running ticket has spent in each phase, for the record that ends its part
 	// (see endsPart).
 	clocks phaseClocks
+	// unread: the transcripts whose tokens a ticket's record left out, as they couldn't be read (see ticketTokens).
+	unread unreadTranscripts
 
 	organCost organCost // what the run's organ calls cost
 	hookTally hookTally // what the workers' hooks noted: permission prompts, compactions

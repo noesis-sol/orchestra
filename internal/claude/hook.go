@@ -262,6 +262,7 @@ func noteOf(event string, h hookInput) hookInput {
 		n.Agent, n.AgentType = h.Agent, h.AgentType
 	case "SessionStart":
 		n.Source = h.Source
+		n.Session, n.Transcript = h.Session, h.Transcript // whose transcript says what it used (Tokens)
 	case "SessionEnd":
 		n.Reason = h.Reason
 	}

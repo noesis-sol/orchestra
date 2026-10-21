@@ -91,6 +91,35 @@ type eventRecord struct {
 	Phases    *phasesRecord    `json:"phases,omitempty"`
 	HandBacks *handBacksRecord `json:"hand_backs,omitempty"`
 	Carried   bool             `json:"carried,omitempty"`
+	// Tokens: an event's Tokens, given only on a record that ends its ticket's part.
+	Tokens map[string]tokensRecord `json:"tokens,omitempty"`
+}
+
+// tokensRecord is what was used of one model (ModelTokens).
+type tokensRecord struct {
+	Input      int64 `json:"input"`
+	Output     int64 `json:"output"`
+	CacheWrite int64 `json:"cache_write"`
+	CacheRead  int64 `json:"cache_read"`
+}
+
+// tokensOf is t as the event stream gives it; nil for none.
+func tokensOf(t Tokens) map[string]tokensRecord {
+	if len(t) == 0 {
+		return nil
+	}
+	r := make(map[string]tokensRecord, len(t))
+	for model, n := range t {
+		r[model] = tokensRecord{Input: n.Input, Output: n.Output, CacheWrite: n.CacheWrite, CacheRead: n.CacheRead}
+	}
+	return r
+}
+
+// organsRecord is what the run's organ calls cost, as their results said.
+type organsRecord struct {
+	Calls   int     `json:"calls"`
+	Turns   int     `json:"turns"`
+	CostUSD float64 `json:"cost_usd"`
 }
 
 // checkRecord is a CheckRun: a check or a setup that ran, as it ended.
@@ -164,6 +193,10 @@ type soloRecord struct {
 type endRecord struct {
 	recordHead
 	Code int `json:"code"`
+	// Tokens: what the workers of the run's tickets used, the sum of their records' tokens, by model;
+	// Organs: what its organ calls cost. Each is left out when there is none.
+	Tokens map[string]tokensRecord `json:"tokens,omitempty"`
+	Organs *organsRecord           `json:"organs,omitempty"`
 }
 
 // Begin opens the event stream in the main checkout repo for the run s describes, and appends its
@@ -225,6 +258,7 @@ func (l *Log) Record(ev Event) {
 	if ev.Times != nil {
 		r.setTimes(*ev.Times)
 	}
+	r.Tokens = tokensOf(ev.Tokens)
 	if ev.Kind == EvLimited && !ev.Reset.IsZero() {
 		r.Reset = &ev.Reset
 	}
@@ -252,6 +286,7 @@ func (l *Log) Record(ev Event) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	r.Run = l.run
+	l.tokens = l.tokens.Add(ev.Tokens)
 	l.write(r)
 }
 
@@ -275,12 +310,18 @@ func (l *Log) writeCheck(c CheckRun) {
 		Result: c.Result, Output: c.Output, Train: c.Train})
 }
 
-// End appends the run's end record, with the exit code orchestra ends with, and closes the event
-// stream: from then on, records are dropped.
+// End appends the run's end record, with the exit code orchestra ends with and the run's totals of
+// tokens and organ costs, and closes the event stream: from then on, records are dropped.
 func (l *Log) End(code int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.write(endRecord{recordHead: recordHead{Time: time.Now(), Run: l.run, Kind: "end"}, Code: code})
+	end := endRecord{recordHead: recordHead{Time: time.Now(), Run: l.run, Kind: "end"}, Code: code,
+		Tokens: tokensOf(l.tokens)}
+	if l.organs.Calls > 0 {
+		organs := l.organs
+		end.Organs = &organs
+	}
+	l.write(end)
 	l.closeEvents()
 }
 

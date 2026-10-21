@@ -348,6 +348,8 @@ func (fakeReporter) EditedFiles(worktree string) []string        { return nil }
 func (fakeReporter) Session(worktree string) (Session, bool)     { return Session{}, false }
 func (fakeReporter) TranscriptTail(worktree string) string       { return "" }
 
+func (fakeReporter) Tokens(sessions []Session, since time.Time) (Tokens, []error) { return nil, nil }
+
 // ---- Notifications -------------------------------------------------------------------
 
 // alerts records the notifications a Log shows.

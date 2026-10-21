@@ -76,6 +76,7 @@ func (o *Loop) newWorkerHooks(id, wt string) {
 	}
 	h.before.Permissions = append(h.before.Permissions, h.latest.Permissions...)
 	h.before.Compactions = append(h.before.Compactions, h.latest.Compactions...)
+	h.before.Sessions = append(h.before.Sessions, h.latest.Sessions...)
 	h.wt, h.latest, h.gone = wt, HookRecord{}, false
 }
 

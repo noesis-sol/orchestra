@@ -91,6 +91,9 @@ type HookRecord struct {
 	// the worker's next turn); zero otherwise
 	SubagentStopped time.Time
 	Noted           time.Time // when the hooks last noted one of these, or a session's start or end; zero: never
+	// Sessions are the sessions whose start (or resumption, clearing or compaction) the hooks noted,
+	// oldest first, each once: whose transcripts say what the worker used (Reporter.Tokens)
+	Sessions []Session
 }
 
 // Permission is a permission prompt a worker's hooks noted.
@@ -142,6 +145,9 @@ type Reporter interface {
 	EditedFiles(worktree string) []string         // repository files the worker has edited so far
 	Session(worktree string) (Session, bool)      // the worker's session, false when there is none to resume
 	TranscriptTail(worktree string) string        // the end of its session's transcript, as text; "" if unreadable
+	// the tokens the sessions' transcripts, their subagents' too, say were used from since on, by model,
+	// with an error for each transcript that couldn't be read, whose tokens are left out
+	Tokens(sessions []Session, since time.Time) (Tokens, []error)
 	// ReportArgs for a worker with no worktree of its own, its records in the folder of that name in
 	// dir's .orchestra/run/ (project.ProbeRun, project.InterviewRun)
 	ReportArgsIn(dir, folder string) ([]string, error)
@@ -159,4 +165,27 @@ type EnvReporter interface {
 type Session struct {
 	ID         string // the session's ID, a UUID
 	Transcript string // the path of its transcript
+}
+
+// Tokens is what workers' sessions used, by model, as their transcripts say.
+type Tokens map[string]ModelTokens
+
+// ModelTokens is what was used of one model: the input not read from the prompt cache nor written to
+// it, the output, and the input written to the cache and read from it.
+type ModelTokens struct {
+	Input, Output, CacheWrite, CacheRead int64
+}
+
+// Add adds u's tokens to t's, which it makes when t is nil, and returns t.
+func (t Tokens) Add(u Tokens) Tokens {
+	for model, n := range u {
+		if t == nil {
+			t = Tokens{}
+		}
+		m := t[model]
+		m.Input, m.Output, m.CacheWrite, m.CacheRead = m.Input+n.Input, m.Output+n.Output,
+			m.CacheWrite+n.CacheWrite, m.CacheRead+n.CacheRead
+		t[model] = m
+	}
+	return t
 }

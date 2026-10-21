@@ -129,7 +129,7 @@ func TestHookRecordsAreTheShellHooks(t *testing.T) {
 	runHooks(t, settings, "PermissionRequest", `{"hook_event_name":"PermissionRequest"}`)
 	want := strings.Join([]string{
 		`{"v":1,"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"x"}}`,
-		`{"v":1,"hook_event_name":"SessionStart","source":"startup"}`,
+		`{"v":1,"hook_event_name":"SessionStart","session_id":"s","source":"startup"}`,
 		`{"v":1,"hook_event_name":"PreCompact","trigger":"auto"}`,
 		`{"v":1,"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":"Explore"}`,
 		`{"v":1,"hook_event_name":"SubagentStop","agent_id":"a1","agent_type":"Explore"}`,

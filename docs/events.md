@@ -43,7 +43,7 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `done` | the loop finished: `READY_EMPTY`, `LIMIT_REACHED` or `DRAINED`, with `QUESTIONS_OPEN` naming the questions a `READY_EMPTY` run ended on with nothing else ready and the tickets each holds, if any, `SETUP_WAITS` naming the ready tickets whose worktree's setup failed, if any, then `SCOPE_DONE` or `SCOPE_OPEN` in a scoped run; or the run had nothing to run: `READY_EMPTY after 0 tickets: everything is done`, or `: nothing ready` | |
 | `check` | a check or a setup orchestra ran ended; the log has no line for it | `suite`, which: `merge` (a ticket's merge check, `check_fast`, the merge train's included), `recheck` (the check [once more](running.md#tickets-set-aside) of a ticket set aside for its failed check), `full` (the full check), `base` (the [overnight](running.md#overnight) pre-flight's merge check of the base branch's head) or `setup` (the project's `setup` in a ticket's worktree, before its worker starts or before its check); `ticket`, whose check or setup it was, absent for `full` and `base`; `command`, what ran (for `full` and `base`, the check, the setup before it counted in its time); `commit`, the commit it ran on, as the log shortens it; `seconds`, from its start to its end, to a tenth; `result`: `passed`, `failed`, `timed_out` (stopped at its time limit) or `cut_short` (a stop or Ctrl+C ended it); `output`, where its whole output is, when it was kept: as it failed, timed out or was cut short; `train: true` when it ran ahead of its ticket's turn, as the second ticket of the merge train |
 | `full_check` | the [full check](running.md#the-full-check) after a run that ended by itself and merged a ticket, before triage finishes and the run report | `detail`, how it went: `passed`, `failed`, `timed out`, `skipped` (stopped with Ctrl+C) or `not run` (no worktree could be made for it); when it failed or timed out, `suite`, the suite it failed in (none when the setup before it failed), `output`, where its whole output is, and `ticket`, the ticket filed for that suite or the one open for it already; when it ran, `commit`, `seconds` and `result`, as its `check` record gives them |
-| `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes) |
+| `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes); `tokens` and `organs`, the run's totals (see [What a ticket's workers used](#what-a-tickets-workers-used)) |
 
 Every record but `start`, `queue`, `check` and `end` also has `text`, its line in the log as it is there, without the time. A `stop` or `done` record's text starts with the word that says how the loop ended (`PAUSED: …`, `READY_EMPTY after 12 tickets`), a `hold` record's with `HOLD: ` and that word. `solo` is there while a ticket labelled `solo` runs (`{"ticket":"<id>"}`) or is next (`{"ticket":"<id>","next":true}`). `held` is how many ready tickets wait for something besides a free slot, none of them among `queued`, and `held_by` how many each reason holds back, as in `{"overlap":3,"merge":1}`: `overlap`, a footprint overlapping a running ticket's; `parent`, subtickets not all closed and merged; `merge`, a ticket blocking it, or the one it was filed from, not merged yet; `solo`, a solo ticket running or next; `setup`, the setup failed in its worktree (`SETUP_FAILED`), until a ticket merges. Both are there only while a ticket is held back; the log says why each one waits. A field without a value is left out, except `queued`, `unclosed`, `shared` and `code`, which can be 0; `unclosed` is left out only before the run could read it. Kinds and fields may be added, but those here keep their names: read the ones you know and skip the rest.
 
@@ -60,6 +60,20 @@ The record that ends a ticket's part in the run, `closed`, `deferred` or a `warn
 - `carried: true` marks a ticket carried over from an earlier run: its phases count from when this run took it up.
 
 A record about a ticket the run didn't take up has none of the three, and no other record has them.
+
+### What a ticket's workers used
+
+The same record gives `tokens`, what the ticket's Claude Code workers used from when the run took it up, by model, as their sessions' transcripts say:
+
+```
+"tokens":{"claude-opus-5-5":{"input":1834,"output":52011,"cache_write":210334,"cache_read":8120443}}
+```
+
+- `input` is the input neither written to the prompt cache nor read from it, `cache_write` the input written to it, `cache_read` the input read from it, and `output` the output, thinking included; each is given, 0 included.
+- Every session the ticket's workers had in the run counts: the first, one a worker cleared into (`/clear`), a worker's started again, and the one resumed for a hand-back or an answer, read once. So do the subagents they ran, the verifier included, whose transcripts Claude Code keeps beside the session's. A message is counted once, though Claude Code writes one of several parts (thinking, text, tool calls) as a line each, and nothing from before the run took the ticket up is: a session resumed from an earlier run counts from then.
+- A transcript that is missing or can't be read is left out, and the log says so once. A record whose transcripts give nothing has no `tokens`: none could be read, the workers don't report through Claude Code's hooks, or the run didn't take the ticket up.
+
+The `end` record gives the run's totals: `tokens`, its tickets' summed by model, and `organs`, what its [organ](organs.md) calls cost, as their results said, as in `{"calls":3,"turns":5,"cost_usd":0.0456}`; each is left out when there is none. orchestra gives tokens, not prices: a subscription doesn't pay by the token, and prices change, so price them from your own table.
 
 A failing terminal, Herdr, tmux or cmux, stops the run as `TERMINAL_FAILED`; up to 0.6.0 it was `HERDR_FAILED`, so a script that matches the stop's word should look for both.
 
@@ -81,4 +95,5 @@ jq -r 'select(.kind == "start" and .spec) | .scope' $E | tail -n 1              
 jq -r --arg run "$run" 'select(.run == $run and .phases) | [.ticket, .kind, (.phases | to_entries | map("\(.key) \(.value)s") | join(", "))] | @tsv' $E   # its tickets' time per phase
 jq -rs 'map(select(.kind == "check")) | group_by(.suite)[] | (map(.seconds) | sort) as $s
   | "\(.[0].suite): \(length) runs, median \($s[length / 2 | floor])s, slowest \($s[-1])s"' $E   # each suite's median and slowest run
+jq -s --arg run "$run" '[.[] | select(.run == $run and .kind != "end") | .tokens // {} | to_entries[]] | group_by(.key) | map({(.[0].key): (map(.value) | {input: (map(.input) | add), output: (map(.output) | add), cache_write: (map(.cache_write) | add), cache_read: (map(.cache_read) | add)})}) | add' $E   # its tokens per model, its end record or not
 ```

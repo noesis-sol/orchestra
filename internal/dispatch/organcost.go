@@ -17,6 +17,11 @@ import (
 // OrganSpent logs what an organ call cost: "ORGAN triage: $0.0123 in 1 turn, 4.2s, session …".
 func (l *Log) OrganSpent(s organ.Spend) {
 	l.Line(time.Now(), "ORGAN "+s.String())
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.organs.Calls++
+	l.organs.Turns += s.Turns
+	l.organs.CostUSD += s.CostUSD
 }
 
 // organCost is what the run's organ calls cost, as their results said.
