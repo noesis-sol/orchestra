@@ -208,7 +208,8 @@ func pmsetOnBattery(out string) (bool, error) {
 
 // sysfsOnBattery reads Linux's power supplies, a folder each in supplies (/sys/class/power_supply):
 // the machine runs on battery where no mains supply is online and a battery is discharging. One with
-// no supplies at all, as a desktop or a virtual machine, runs on mains.
+// no supplies at all, as a desktop or a virtual machine, runs on mains. A device's battery (scope Device:
+// a wireless mouse's or keyboard's) powers that device, not the machine, and says nothing.
 func sysfsOnBattery(supplies fs.FS) (bool, error) {
 	entries, err := fs.ReadDir(supplies, ".")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -227,6 +228,9 @@ func sysfsOnBattery(supplies fs.FS) (bool, error) {
 		case "Mains", "USB":
 			mains = mains || read(e.Name(), "online") == "1"
 		case "Battery":
+			if read(e.Name(), "scope") == "Device" {
+				continue
+			}
 			discharging = discharging || read(e.Name(), "status") == "Discharging"
 		}
 	}

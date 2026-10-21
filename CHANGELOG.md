@@ -13,6 +13,10 @@ All notable changes to orchestra are documented here. The format follows
   module cache), with the `git worktree remove --force` command that removes
   it. The warning never showed: the worktree left was lost on its way back
   from the check.
+- The overnight pre-flight no longer warns a Linux desktop with a wireless
+  mouse or keyboard that the machine runs on battery: a power supply of scope
+  `Device`, a device's own battery, which reports `Discharging`, is left out
+  of the check.
 - The fetch of the base branch's upstream, at a run's start and as the
   overnight pre-flight's first check, runs ssh in batch mode
   (`-o BatchMode=yes` after `GIT_SSH_COMMAND`, `core.sshCommand` or `ssh`), so
