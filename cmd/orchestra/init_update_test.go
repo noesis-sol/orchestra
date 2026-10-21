@@ -42,7 +42,7 @@ func TestInitUpdateRewritesTheOlderSections(t *testing.T) {
 	}
 	flat := strings.Join(strings.Fields(stdout), " ")
 	for _, want := range []string{
-		"rewrote the opening and Close in .orchestra/worker-prompt.md from the template",
+		"rewrote the opening, Close and Working unattended in .orchestra/worker-prompt.md from the template",
 		"--- a/.orchestra/worker-prompt.md",
 		"-- Check your work with `scripts/check-fast.sh`",
 		"+- Leave the whole suite to orchestra",

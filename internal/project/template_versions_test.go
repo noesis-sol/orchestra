@@ -14,7 +14,7 @@ import (
 // The templates as their last recorded versions have them. A change to a template is a new version of
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
-	promptTemplateSum   = "5ece7210e1c79f7ae3a36848e7b9939b6acf315eb8c50842acba944bc599b90f"
+	promptTemplateSum   = "e2ce8acb12a3a51646694ed28c3357689205a09a4bf62bff4c1b4771c5fdccbb"
 	verifierTemplateSum = "925b141110e3006a95942db7d5df3ab6f9106755d379957f99ab8e5674715b65"
 )
 
@@ -119,6 +119,7 @@ func TestAnOlderWorkerPromptIsNoticed(t *testing.T) {
 		".orchestra/worker-prompt.md is older than orchestra's worker prompt template",
 		"the opening (a worker checks its own change and leaves the whole suite to the merge check)",
 		"Close (a ticket closes once the worker's own checks pass)",
+		"Working unattended (no to-do checklist is asked for",
 		"orchestra init --update",
 	} {
 		if !strings.Contains(notes[0], want) {
@@ -126,7 +127,7 @@ func TestAnOlderWorkerPromptIsNoticed(t *testing.T) {
 		}
 	}
 	// The changes it has, and the Verify section of a prompt that doesn't run the verifier, aren't named.
-	for _, not := range []string{"throwaway", "blocked-by", "Verify", "Working unattended"} {
+	for _, not := range []string{"throwaway", "blocked-by", "Verify"} {
 		if strings.Contains(notes[0], not) {
 			t.Errorf("the note names %q, which the prompt has or needn't:\n%s", not, notes[0])
 		}
@@ -158,11 +159,6 @@ func TestAnOlderVerifierIsNoticed(t *testing.T) {
 
 func TestUpdateTemplatesKeepsTheProjectsOwnText(t *testing.T) {
 	repo := templatesRepo(t, true)
-	before := readRepoFile(t, repo, Dir+"/"+promptName)
-	// An edit of the project's own in a section the templates haven't changed since.
-	before = strings.Replace(before, "When you are finished, say DONE and stop.", "When you are finished, say DONE.", 1)
-	writeRepoFile(t, repo, Dir+"/"+promptName, before)
-
 	steps, updates, err := UpdateTemplates(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -176,13 +172,14 @@ func TestUpdateTemplatesKeepsTheProjectsOwnText(t *testing.T) {
 		"- Close the ticket only when your checks pass after your last change.",
 		"commit at which your checks passed",
 		"## Project notes\n- Use pnpm, never npm.\n",
-		"When you are finished, say DONE.\n",
+		"keep the ticket's notes current, so you can carry on after it.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the updated prompt lacks %q:\n%s", want, prompt)
 		}
 	}
-	for _, gone := range []string{"Check your work with", "and nothing of your reasoning", "<check command>"} {
+	for _, gone := range []string{"Check your work with", "and nothing of your reasoning", "<check command>",
+		"todo checklist"} {
 		if strings.Contains(prompt, gone) {
 			t.Errorf("the updated prompt still has %q:\n%s", gone, prompt)
 		}
@@ -261,8 +258,8 @@ func TestInitSaysAKeptPromptIsOlder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(steps[0].Detail, "older than orchestra's template, which has since changed the opening and "+
-		"Close: orchestra init --update takes those sections") {
+	if !strings.Contains(steps[0].Detail, "older than orchestra's template, which has since changed the opening, "+
+		"Close and Working unattended: orchestra init --update takes those sections") {
 		t.Errorf("the worker prompt's step: %+v", steps[0])
 	}
 }

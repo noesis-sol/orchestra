@@ -45,6 +45,8 @@ var promptChanges = []TemplateChange{
 		"it ran there, so that it needn't run them again", "commit at which your checks passed"},
 	{5, verifyHeading, "a later round is given the earlier rounds' findings, and a disagreement between rounds " +
 		"goes to the maintainer rather than round again", "earlier rounds' findings"},
+	{6, "Working unattended", "no to-do checklist is asked for, which no worker kept and Beads' own guidance forbids",
+		"keep the ticket's notes current"},
 }
 
 // verifierChanges are the changes to the verifier's template, verifier.md.

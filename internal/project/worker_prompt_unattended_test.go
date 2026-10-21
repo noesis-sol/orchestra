@@ -34,7 +34,7 @@ func TestWorkerPromptEndsWithWorkingUnattended(t *testing.T) {
 			"a report because the turn has been long or a part is done",
 			"inviting the maintainer to redirect you or offering to wait, delete it and do the next thing",
 			"Your context is compacted as it fills, so don't cut work short because the conversation is long",
-			"keep the checklist and the ticket's notes current",
+			"keep the ticket's notes current, so you can carry on after it",
 		} {
 			if !strings.Contains(flat, want) {
 				t.Errorf("the %s prompt's Working unattended lacks %q:\n%s", name, want, section)

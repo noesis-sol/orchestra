@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The worker prompt no longer asks a worker to keep a ticket's acceptance
+  criteria as a to-do checklist (TodoWrite or TaskCreate): no worker did, and
+  Beads' own guidance, which every worker also gets, forbids it. It is the
+  worker prompt template's version 6, so a project whose prompt still asks
+  for one is told under the `START` line and takes it with `orchestra init
+  --update`.
+
 ## [0.9.0] - 2026-10-21
 
 ### Added
