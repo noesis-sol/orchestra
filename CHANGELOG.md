@@ -30,6 +30,12 @@ All notable changes to orchestra are documented here. The format follows
   than before. It kept the settings it read before, so worktrees went without
   a new setup and a new requirement was never checked. The overnight
   pre-flight reads them again after its fetch, for its checks and the run.
+- A run's start, and the overnight pre-flight, look at the main checkout
+  again right before fast-forwarding the base to its upstream, and
+  fast-forward nothing when it is no longer clean and on the base. A
+  `git switch` during the fetch had the branch switched to fast-forwarded
+  instead, before the run stopped with `DIRTY_TREE`, and an edit made
+  meanwhile was carried through the fast-forward.
 
 ## [0.9.3] - 2026-10-21
 

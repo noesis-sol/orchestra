@@ -42,29 +42,41 @@ type BaseFetchGit interface {
 
 // FetchBase brings c.Base up to its upstream as a run does as it starts (see above), for the overnight
 // pre-flight, before the run's loop exists: the pre-flight's checks then read the Base the run builds on,
-// and the run, given Config.BaseFetched, doesn't fetch again. The error says why it fetched nothing: the
-// main checkout has uncommitted changes, isn't on Base, or git couldn't read it, each of which stops
-// the run before its first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
+// and the run, given Config.BaseFetched, doesn't fetch again. The error says why it fast-forwarded
+// nothing: the main checkout has uncommitted changes, isn't on Base, or git couldn't read it, as it
+// started or after the fetch, right before the fast-forward, each of which stops the run before its
+// first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
 // starts.
 func FetchBase(ctx context.Context, c Config, g BaseFetchGit) (BaseFetched, error) {
 	if c.NoFetch {
 		return BaseFetched{}, nil
 	}
+	ready := func() error { return checkoutReady(ctx, c, g) }
+	if err := ready(); err != nil {
+		return BaseFetched{}, err
+	}
+	return fetchUpstream(ctx, c, g, new(sync.Mutex), ready)
+}
+
+// checkoutReady says why the main checkout isn't ready for FetchBase's fast-forward: it has
+// uncommitted changes, isn't on Base, or git couldn't read it. It returns nil when it is ready.
+func checkoutReady(ctx context.Context, c Config, g BaseFetchGit) error {
 	dirty, branch, err := g.DirtyTreeAndBranch(ctx, c.Repo)
 	switch {
 	case err != nil:
-		return BaseFetched{}, fmt.Errorf("git could not read the state of %s: %w", c.Repo, err)
+		return fmt.Errorf("git could not read the state of %s: %w", c.Repo, err)
 	case dirty != "":
-		return BaseFetched{}, fmt.Errorf("uncommitted changes in %s", c.Repo)
+		return fmt.Errorf("uncommitted changes in %s", c.Repo)
 	case !isBranch(branch, c.Base):
-		return BaseFetched{}, fmt.Errorf("%s isn't on %s", c.Repo, c.Base)
+		return fmt.Errorf("%s isn't on %s", c.Repo, c.Base)
 	}
-	return fetchUpstream(ctx, c, g, new(sync.Mutex)), nil
+	return nil
 }
 
 // fetchBase brings Base up to its upstream before the first ticket starts (see above), with the main
 // checkout clean and on Base: one that isn't stops the run before its first ticket, as it always has,
-// and nothing is fetched. It does nothing with Config.NoFetch, after the pre-flight's fetch
+// and nothing is fetched; one that changes during the fetch has nothing fast-forwarded, and stops the
+// run the same way. It does nothing with Config.NoFetch, after the pre-flight's fetch
 // (Config.BaseFetched), without the git to ask (Deps.Upstream), or for a Base that follows no
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
 // fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup
@@ -75,7 +87,16 @@ func (o *Loop) fetchBase(ctx context.Context) {
 	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
 		return
 	}
-	f := fetchUpstream(ctx, c, o.upstream, &o.repoMu)
+	ready := func() error {
+		if s := o.checkoutUnready(ctx, "", alreadyLocked{}); s != nil {
+			return s
+		}
+		return nil
+	}
+	f, err := fetchUpstream(ctx, c, o.upstream, &o.repoMu, ready)
+	if err != nil {
+		return // the checkout changed during the fetch: the run's first look at it stops the run
+	}
 	o.log.Raw(f.Output, nil)
 	switch {
 	case f.Warning != "":
@@ -96,29 +117,34 @@ func (o *Loop) fetchBase(ctx context.Context) {
 }
 
 // fetchUpstream fetches the upstream of Base, checked out in the main checkout, and fast-forwards Base
-// to it when Base is behind it only, holding lock while it does. Once begun, the fast-forward isn't cut
-// short by Ctrl+C; what Ctrl+C cuts short before it says nothing.
-func fetchUpstream(ctx context.Context, c Config, g Upstream, lock sync.Locker) BaseFetched {
+// to it when Base is behind it only, holding lock while it does. git fast-forwards whichever branch is
+// checked out, and the fetch may take a minute, so ready looks at the checkout again under lock right
+// before the fast-forward: when it says the checkout is no longer clean and on Base, nothing is
+// fast-forwarded and its error is fetchUpstream's, the only one it returns. Once begun, the
+// fast-forward isn't cut short by Ctrl+C; what Ctrl+C cuts short before it says nothing.
+func fetchUpstream(
+	ctx context.Context, c Config, g Upstream, lock sync.Locker, ready func() error,
+) (BaseFetched, error) {
 	var f BaseFetched
-	warn := func(kind, format string, a ...any) BaseFetched {
+	warn := func(kind, format string, a ...any) (BaseFetched, error) {
 		f.Warning, f.Text = kind, fmt.Sprintf(format, a...)
-		return f
+		return f, nil
 	}
 	ref, remote, remoteRef, err := g.UpstreamOf(ctx, c.Repo, c.Base)
 	switch {
 	case ctx.Err() != nil: // the run ends, and an answer it cut short says nothing
-		return BaseFetched{}
+		return BaseFetched{}, nil
 	case err != nil:
 		return warn(baseUnmoved, "could not read the upstream of %s%s; the run builds on %s as it is",
 			c.Base, because(err), c.Base)
 	case ref == "":
-		return f
+		return f, nil
 	}
 	f.Upstream = shortRef(ref)
 	up := f.Upstream
 	if out, err := g.Fetch(ctx, c.Repo, remote, remoteRef); err != nil {
 		if ctx.Err() != nil {
-			return BaseFetched{}
+			return BaseFetched{}, nil
 		}
 		f.Output = out
 		return warn(baseUnfetched, "could not fetch %s%s; the run builds on %s as it is", up, because(err), c.Base)
@@ -126,17 +152,21 @@ func fetchUpstream(ctx context.Context, c Config, g Upstream, lock sync.Locker) 
 	ahead, behind, err := g.AheadBehind(ctx, c.Repo, c.Base, ref)
 	switch {
 	case ctx.Err() != nil:
-		return BaseFetched{}
+		return BaseFetched{}, nil
 	case err != nil:
 		return warn(baseUnmoved, "could not compare %s with %s%s; the run builds on %s as it is",
 			c.Base, up, because(err), c.Base)
 	case behind == 0: // the same, or Base ahead only: what it has the next push takes
-		return f
+		return f, nil
 	case ahead > 0:
 		return warn(baseDiverged, "%s is %d ahead of and %d behind %s; the run builds on %s as it is",
 			c.Base, ahead, behind, up, c.Base)
 	}
 	lock.Lock()
+	if err := ready(); err != nil {
+		lock.Unlock()
+		return BaseFetched{}, err
+	}
 	out, err := g.FastForward(context.WithoutCancel(ctx), c.Repo, ref)
 	lock.Unlock()
 	if err != nil {
@@ -149,7 +179,7 @@ func fetchUpstream(ctx context.Context, c Config, g Upstream, lock sync.Locker) 
 		commits = fmt.Sprintf("%d commits", behind)
 	}
 	f.Behind, f.Text = behind, fmt.Sprintf("fast-forwarded %s to %s (%s)", c.Base, up, commits)
-	return f
+	return f, nil
 }
 
 // warnBase warns of what fetchBase met, kind being the word its line starts with.
