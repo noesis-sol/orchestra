@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // A run starts on Base as its upstream has it: where the upstream moved since the last pull (a push from
@@ -11,7 +12,8 @@ import (
 // Base, and the maintainer's next push would need a merge. fetchBase fetches the upstream's branch and
 // fast-forwards Base to it, when Base has no commits of its own; it never pushes, and never rewrites
 // anything. Nothing it meets stops the run: a fetch that fails, or a Base that has diverged, is warned
-// of, and the run builds on Base as it is.
+// of, and the run builds on Base as it is. An overnight run fetches before its pre-flight instead
+// (FetchBase), so that its checks read the Base the run builds on, and the run doesn't fetch again.
 
 // Base's warnings as the run starts, the word each line starts with, which the event's Detail gives.
 const (
@@ -20,79 +22,132 @@ const (
 	baseUnmoved   = "BASE_NOT_FAST_FORWARDED" // git failed to compare them, or to fast-forward Base
 )
 
+// BaseFetched is what fetching Base's upstream did (see FetchBase).
+type BaseFetched struct {
+	Upstream string // the upstream Base follows, as a person names it (origin/main); "" for none
+	Behind   int    // the commits Base was fast-forwarded by; 0 where it wasn't
+	// Warning is the word a warning's line starts with (BASE_UNFETCHED, BASE_DIVERGED,
+	// BASE_NOT_FAST_FORWARDED); "" for none.
+	Warning string
+	// Text is what the warning says, or for a fast-forward what it did; "" for neither.
+	Text   string
+	Output string // git's output of a fetch or a fast-forward that failed, for the log
+}
+
+// BaseFetchGit is what FetchBase asks of git: the main checkout's state, and Base's upstream.
+type BaseFetchGit interface {
+	Upstream
+	DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error)
+}
+
+// FetchBase brings c.Base up to its upstream as a run does as it starts (see above), for the overnight
+// pre-flight, before the run's loop exists: the pre-flight's checks then read the Base the run builds on,
+// and the run, given Config.BaseFetched, doesn't fetch again. The error says why it fetched nothing: the
+// main checkout has uncommitted changes, isn't on Base, or git couldn't read it, each of which stops
+// the run before its first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
+// starts.
+func FetchBase(ctx context.Context, c Config, g BaseFetchGit) (BaseFetched, error) {
+	if c.NoFetch {
+		return BaseFetched{}, nil
+	}
+	dirty, branch, err := g.DirtyTreeAndBranch(ctx, c.Repo)
+	switch {
+	case err != nil:
+		return BaseFetched{}, fmt.Errorf("git could not read the state of %s: %w", c.Repo, err)
+	case dirty != "":
+		return BaseFetched{}, fmt.Errorf("uncommitted changes in %s", c.Repo)
+	case !isBranch(branch, c.Base):
+		return BaseFetched{}, fmt.Errorf("%s isn't on %s", c.Repo, c.Base)
+	}
+	return fetchUpstream(ctx, c, g, new(sync.Mutex)), nil
+}
+
 // fetchBase brings Base up to its upstream before the first ticket starts (see above), with the main
 // checkout clean and on Base: one that isn't stops the run before its first ticket, as it always has,
-// and nothing is fetched. It does nothing with Config.NoFetch, without the git to ask (Deps.Upstream),
-// or for a Base that follows no upstream, as in a new repository. It moves the run's start (startHead)
-// to the commit it fast-forwards Base to, so the run report reads the run's own commits.
+// and nothing is fetched. It does nothing with Config.NoFetch, after the pre-flight's fetch
+// (Config.BaseFetched), without the git to ask (Deps.Upstream), or for a Base that follows no
+// upstream, as in a new repository. It moves the run's start (startHead) to the commit it
+// fast-forwards Base to, so the run report reads the run's own commits.
 func (o *Loop) fetchBase(ctx context.Context) {
-	c, g := o.cfg, o.upstream
-	if c.NoFetch || g == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
+	c := o.cfg
+	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
 		return
+	}
+	f := fetchUpstream(ctx, c, o.upstream, &o.repoMu)
+	o.log.Raw(f.Output, nil)
+	switch {
+	case f.Warning != "":
+		o.warnBase(f.Warning, f.Text)
+	case f.Behind > 0:
+		o.info("BASE: %s", f.Text)
+		head, err := o.checkout.Head(context.WithoutCancel(ctx), c.Repo, c.Base)
+		o.log.Raw("", err)
+		if head != "" {
+			o.startHead = head
+		}
+	}
+}
+
+// fetchUpstream fetches the upstream of Base, checked out in the main checkout, and fast-forwards Base
+// to it when Base is behind it only, holding lock while it does. Once begun, the fast-forward isn't cut
+// short by Ctrl+C; what Ctrl+C cuts short before it says nothing.
+func fetchUpstream(ctx context.Context, c Config, g Upstream, lock sync.Locker) BaseFetched {
+	var f BaseFetched
+	warn := func(kind, format string, a ...any) BaseFetched {
+		f.Warning, f.Text = kind, fmt.Sprintf(format, a...)
+		return f
 	}
 	ref, remote, remoteRef, err := g.UpstreamOf(ctx, c.Repo, c.Base)
-	if ctx.Err() != nil {
-		return // Ctrl+C: the run ends, and an answer it cut short says nothing
-	}
-	if err != nil {
-		o.warnBase(baseUnmoved, "could not read the upstream of %s%s; the run builds on %s as it is",
+	switch {
+	case ctx.Err() != nil: // the run ends, and an answer it cut short says nothing
+		return BaseFetched{}
+	case err != nil:
+		return warn(baseUnmoved, "could not read the upstream of %s%s; the run builds on %s as it is",
 			c.Base, because(err), c.Base)
-		return
+	case ref == "":
+		return f
 	}
-	if ref == "" {
-		return
-	}
-	up := shortRef(ref)
+	f.Upstream = shortRef(ref)
+	up := f.Upstream
 	if out, err := g.Fetch(ctx, c.Repo, remote, remoteRef); err != nil {
-		if ctx.Err() == nil {
-			o.log.Raw(out, nil)
-			o.warnBase(baseUnfetched, "could not fetch %s%s; the run builds on %s as it is", up, because(err), c.Base)
+		if ctx.Err() != nil {
+			return BaseFetched{}
 		}
-		return
+		f.Output = out
+		return warn(baseUnfetched, "could not fetch %s%s; the run builds on %s as it is", up, because(err), c.Base)
 	}
 	ahead, behind, err := g.AheadBehind(ctx, c.Repo, c.Base, ref)
 	switch {
 	case ctx.Err() != nil:
+		return BaseFetched{}
 	case err != nil:
-		o.warnBase(baseUnmoved, "could not compare %s with %s%s; the run builds on %s as it is",
+		return warn(baseUnmoved, "could not compare %s with %s%s; the run builds on %s as it is",
 			c.Base, up, because(err), c.Base)
 	case behind == 0: // the same, or Base ahead only: what it has the next push takes
+		return f
 	case ahead > 0:
-		o.warnBase(baseDiverged, "%s is %d ahead of and %d behind %s; the run builds on %s as it is",
+		return warn(baseDiverged, "%s is %d ahead of and %d behind %s; the run builds on %s as it is",
 			c.Base, ahead, behind, up, c.Base)
-	default:
-		o.fastForwardBase(ctx, ref, up, behind)
 	}
-}
-
-// fastForwardBase fast-forwards Base, checked out in the main checkout, to its upstream ref, behind
-// commits ahead of it, which up names for the log. Once begun, it isn't cut short by Ctrl+C.
-func (o *Loop) fastForwardBase(ctx context.Context, ref, up string, behind int) {
-	c, keep := o.cfg, context.WithoutCancel(ctx)
-	o.repoMu.Lock()
-	out, err := o.upstream.FastForward(keep, c.Repo, ref)
-	o.repoMu.Unlock()
+	lock.Lock()
+	out, err := g.FastForward(context.WithoutCancel(ctx), c.Repo, ref)
+	lock.Unlock()
 	if err != nil {
-		o.log.Raw(out, nil)
-		o.warnBase(baseUnmoved, "could not fast-forward %s to %s%s; the run builds on %s as it is",
+		f.Output = out
+		return warn(baseUnmoved, "could not fast-forward %s to %s%s; the run builds on %s as it is",
 			c.Base, up, because(err), c.Base)
-		return
 	}
 	commits := "1 commit"
 	if behind > 1 {
 		commits = fmt.Sprintf("%d commits", behind)
 	}
-	o.info("BASE: fast-forwarded %s to %s (%s)", c.Base, up, commits)
-	head, err := o.checkout.Head(keep, c.Repo, c.Base)
-	o.log.Raw("", err)
-	if head != "" {
-		o.startHead = head
-	}
+	f.Behind, f.Text = behind, fmt.Sprintf("fast-forwarded %s to %s (%s)", c.Base, up, commits)
+	return f
 }
 
 // warnBase warns of what fetchBase met, kind being the word its line starts with.
-func (o *Loop) warnBase(kind, format string, a ...any) {
-	o.emit(Event{Kind: EvWarn, Detail: kind, Text: "  " + kind + ": " + fmt.Sprintf(format, a...)})
+func (o *Loop) warnBase(kind, text string) {
+	o.emit(Event{Kind: EvWarn, Detail: kind, Text: "  " + kind + ": " + text})
 }
 
 // shortRef is how a person names ref: origin/main for refs/remotes/origin/main, main for refs/heads/main.

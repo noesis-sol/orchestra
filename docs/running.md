@@ -29,7 +29,7 @@ Before its first ticket too, once the main checkout is clean and on its branch, 
 - with both ahead of each other, starts on the branch as it is, with a warning: `BASE_DIVERGED: main is 2 ahead of and 3 behind origin/main; the run builds on main as it is`;
 - with the branch ahead, or the two the same, does nothing.
 
-A fetch that fails (offline, authentication, its time limit) is a warning, `BASE_UNFETCHED: could not fetch origin/main: <cause>; the run builds on main as it is`, and the run goes on; `BASE_NOT_FAST_FORWARDED` says the same of git failing to compare the two or to fast-forward. None of them stops a run, and the [event stream](events.md)'s `warn` record gives the word in its `detail`. A branch with no upstream, as in a new repository, is left as it is. The run never pushes, and never rewrites a commit. `--no-fetch` (or `ORCHESTRA_NO_FETCH=1`) skips all of it, for working offline.
+A fetch that fails (offline, authentication, its time limit) is a warning, `BASE_UNFETCHED: could not fetch origin/main: <cause>; the run builds on main as it is`, and the run goes on; `BASE_NOT_FAST_FORWARDED` says the same of git failing to compare the two or to fast-forward. None of them stops a run, and the [event stream](events.md)'s `warn` record gives the word in its `detail`. A branch with no upstream, as in a new repository, is left as it is. The run never pushes, and never rewrites a commit. `--no-fetch` (or `ORCHESTRA_NO_FETCH=1`) skips all of it, for working offline. An [overnight](#overnight) run does all of it as its pre-flight's first check instead, so that its checks read the branch the run builds on, and doesn't fetch again as it starts.
 
 Esc or Ctrl+C at the question, at any of its steps (Ctrl+D, the end of input, with `TERM=dumb`, where it asks with plain lines), exits with code 130, with nothing changed and no run recorded in `.orchestra/run/events.jsonl`. `--tickets` (or `ORCHESTRA_TICKETS=1`) skips the question and runs the current tickets; `--ticket`, `--feature`, `--spec`, [`--overnight`](#overnight) and `--plain` skip it too, and a run without a terminal, or with `DONE_SO_FAR` at `LIMIT`, never asks. Scripts and agents that start `orchestra` in a terminal, such as a Herdr pane or a tmux window, pass `--tickets`, or `--spec` or `--ticket`: the bare command would wait at the question, and `--feature` talks the feature through with you ([A feature from one request](#a-feature-from-one-request)).
 
@@ -284,6 +284,8 @@ The run report says what was finished, what was set aside and why, and what need
   ✓ <what the check found>
   ✗ LIMIT=10 is set: the run would stop after 10 tickets
 ```
+
+The checklist's first line is the base branch brought up to its upstream, as a run's start [does](#run) without a pre-flight, before the other checks read it: `fast-forwarded main to origin/main (3 commits)`, `main has every commit of origin/main`, or `main follows no upstream: nothing to fetch`. A fetch that fails, or a branch that has diverged, is a warning, the run building on the branch as it is; uncommitted changes in the main checkout, or the checkout off its branch, fail it, as they would stop the run before its first ticket. The run then doesn't fetch again; `--no-fetch` skips it (`main isn't fetched from its upstream (--no-fetch): the run builds on it as it is`).
 
 The checks that fail, each refusing to start the run until it is fixed, in the checklist's order:
 

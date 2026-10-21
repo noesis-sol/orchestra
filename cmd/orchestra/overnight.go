@@ -39,11 +39,12 @@ type preflightFix struct {
 	apply    func(s *session) error // makes it, in the run s and what it keeps; nil for nothing more to do
 }
 
-// preflightChecks are an overnight run's checks, in the order its checklist lists them: those that
-// refuse to start (overnight_checks.go) and the warnings (overnight_warnings.go) by what they are about,
-// the merge check on Base last, as it takes longest.
+// preflightChecks are an overnight run's checks, in the order its checklist lists them: the fetch of
+// Base's upstream first, as the others read Base, then those that refuse to start (overnight_checks.go)
+// and the warnings (overnight_warnings.go) by what they are about, the merge check on Base last, as it
+// takes longest.
 var preflightChecks = []preflightCheck{
-	limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"),
+	fetchCheck, limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"),
 	usageNowCheck("claude"), usageWaitCheck, ticketLimitCheck,
 	diskCheck(freeDisk), otherRunsCheck, loadCheck(load.ReadKernel, listNamed), vmCheck(listNamed),
 	batteryCheck(runtime.GOOS, onBattery), keepAwakeCheck(runtime.GOOS),
@@ -59,7 +60,8 @@ func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 	if !cfg.Overnight {
 		return dispatch.ExitOK, true
 	}
-	// A stop signal ends the pre-flight as Ctrl+C does; until its fixes are made, nothing has changed.
+	// A stop signal ends the pre-flight as Ctrl+C does; until its fixes are made, nothing has changed but
+	// Base, fast-forwarded to its upstream as the run's start would (fetchCheck).
 	ctx, stop := s.stops.context(ctx)
 	defer stop()
 	checks := preflightChecks

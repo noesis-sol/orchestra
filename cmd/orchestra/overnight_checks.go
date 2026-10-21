@@ -196,6 +196,37 @@ func existingDir(dir string) string {
 	}
 }
 
+// fetchCheck brings Base up to its upstream before the other checks read it, as the run would as it
+// starts (dispatch.FetchBase), so that they check the Base the run builds on; the run then doesn't
+// fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), and fails
+// where the main checkout would stop the run before its first ticket. Nothing with --no-fetch.
+func fetchCheck(ctx context.Context, s *session) preflightResult {
+	c := s.cfg.Config
+	if c.NoFetch {
+		return preflightResult{verdict: tui.CheckPassed,
+			text: c.Base + " isn't fetched from its upstream (--no-fetch): the run builds on it as it is"}
+	}
+	f, err := dispatch.FetchBase(ctx, c, git.Git{})
+	switch {
+	case ctx.Err() != nil:
+		return preflightResult{verdict: tui.CheckWarned, text: c.Base + " wasn't fetched: stopped"}
+	case err != nil:
+		return preflightResult{verdict: tui.CheckFailed, text: fmt.Sprintf("%s couldn't be brought up to its "+
+			"upstream: %s, and the run would stop before its first ticket", c.Base, oneLine(err.Error()))}
+	}
+	s.cfg.BaseFetched = true
+	s.log.Raw(f.Output, nil)
+	switch {
+	case f.Warning != "":
+		return preflightResult{verdict: tui.CheckWarned, text: f.Text}
+	case f.Behind > 0:
+		return preflightResult{verdict: tui.CheckPassed, text: f.Text}
+	case f.Upstream == "":
+		return preflightResult{verdict: tui.CheckPassed, text: c.Base + " follows no upstream: nothing to fetch"}
+	}
+	return preflightResult{verdict: tui.CheckPassed, text: c.Base + " has every commit of " + f.Upstream}
+}
+
 // baseCheck runs the project's merge check (check_fast) once on Base's head, as dispatch.CheckBase
 // does, and fails where it fails there: every ticket's merge would fail too, its branch rebased onto
 // Base.

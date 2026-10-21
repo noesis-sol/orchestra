@@ -70,6 +70,11 @@ All notable changes to orchestra are documented here. The format follows
   and what gave it (`machine workers: 5 (default: half of 10 cores)`), and
   says once when the run's own `concurrent` is above it. The overnight
   pre-flight's offer of a worker count keeps to the same default.
+- An overnight run brings its base branch up to its upstream as its
+  pre-flight's first check, rather than once the run starts, so that the
+  merge check on the base and the other checks read the commit the run
+  builds on; the run doesn't fetch again. Uncommitted changes in the main
+  checkout fail the check, as they would stop the run; `--no-fetch` skips it.
 
 ## [0.9.2] - 2026-10-21
 
