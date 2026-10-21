@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -233,17 +234,18 @@ const (
 // handoffNote gives ticket t's new worker the hand-offs of the closed tickets blocking t, as bd show
 // gives its dependencies: each one's ID, title and close reason, which the worker prompt asks a worker
 // to write for the tickets built on its own (the interfaces, files, commands or decisions it changed),
-// so that t's worker needn't rediscover them from the code. A blocker closed without a reason is left
-// out; each reason is cut to handoffChars, on one line, and at most handoffMax are given. "" when there
-// is none: a ticket blocked by nothing, or a worker resumed, which was given them as it started.
+// so that t's worker needn't rediscover them from the code. A blocker closed without a real one (see
+// placeholderReason) is left out, as is a question, whose answer t's design holds already; each reason
+// is cut to handoffChars, on one line, and at most handoffMax are given. "" when there is none: a ticket
+// blocked by nothing, or a worker resumed, which was given them as it started.
 func handoffNote(t Ticket) string {
 	var lines []string
 	for _, d := range t.Dependencies {
-		if d.DependencyType != "blocks" || d.Status != StatusClosed {
+		if d.DependencyType != "blocks" || d.Status != StatusClosed || HasLabel(d, HumanLabel) {
 			continue
 		}
 		reason := oneLine(d.CloseReason)
-		if reason == "" {
+		if placeholderReason(reason) {
 			continue
 		}
 		if r := []rune(reason); len(r) > handoffChars {
@@ -259,6 +261,16 @@ func handoffNote(t Ticket) string {
 	}
 	return "\n\nThe closed tickets yours builds on handed on, as they closed, what it needs to know of them:\n" +
 		strings.Join(lines, "\n") + "\n"
+}
+
+// placeholderReasons are the close reasons that hand nothing on, lower-cased and without the quotes or
+// full stop around them: bd's own, for a ticket closed without one (Closed) and a question answered with
+// bd human respond (Responded), and the worker prompt's for a ticket with nothing for the tickets built on it.
+var placeholderReasons = []string{"", "closed", "responded", "nothing for dependents"}
+
+// placeholderReason reports whether close reason r, on one line, is empty or one of placeholderReasons.
+func placeholderReason(r string) bool {
+	return slices.Contains(placeholderReasons, strings.ToLower(strings.Trim(r, "`'\". ")))
 }
 
 // oneLine is s on one line: its runs of spaces, tabs and line breaks one space each, and the control

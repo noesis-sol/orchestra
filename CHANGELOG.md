@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   fails the fetch at once. ssh asked from the fetch's process group of its
   own, was stopped, and the run waited a minute in silence before warning
   `BASE_UNFETCHED` "timed out".
+- A new worker is no longer handed on its blockers' close reasons that say
+  nothing: bd's own `Closed` and `Responded`, the worker prompt's `nothing
+  for dependents`, and questions, whose answer is in the ticket's design.
+  They took lines and places among the 5 hand-offs given, so a real one
+  after them was left out.
 - At a run's end, a stop signal during the full check or the run report
   closes the answer talk still open rather than wait for it, so that a kill
   ends orchestra; an answer talk that ends during them is said once they are
