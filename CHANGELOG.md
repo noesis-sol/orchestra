@@ -8,6 +8,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard's hint stops counting a question as soon as the answer talk
+  records its answer, while the talk goes on with the others. It counted it
+  until the talk was over, so that with nothing ready but questions and
+  every one answered it still read `2 questions for you · a to answer`,
+  never `answering in the pane on the right`.
 - The overnight pre-flight's merge check of the base branch says when it
   couldn't remove its worktree, as one whose setup left read-only files (Go's
   module cache), with the `git worktree remove --force` command that removes

@@ -17,7 +17,6 @@ import (
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/project"
-	"github.com/noesis-sol/orchestra/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -166,13 +165,9 @@ func TestDashboardTalkOpensAsideAndTakesQueuedQuestions(t *testing.T) {
 		if len(prompts) != 1 || !strings.HasSuffix(prompts[0], ": "+more) {
 			t.Errorf("claude was prompted %q, want %q", prompts, more)
 		}
-		if len(sent) != 1 {
-			t.Fatalf("the dashboard was sent %v, want the talk's end", sent)
-		}
-		over, ok := sent[0].(tui.AnswerOver)
-		if !ok || !slices.Equal(over.Asked, []string{"k-7", "k-8"}) || !slices.Equal(over.Answered, over.Asked) ||
-			over.Err != nil {
-			t.Errorf("the dashboard was sent %+v", sent[0])
+		if over := talkOver(t, sent); !slices.Equal(over.Asked, []string{"k-7", "k-8"}) ||
+			!slices.Equal(over.Answered, over.Asked) {
+			t.Errorf("the dashboard was sent %+v", over)
 		}
 	})
 	queued := read(t, filepath.Join(repo, project.RunPath("questions-2.md")))
@@ -208,11 +203,8 @@ func TestDashboardTalkDropsAQuestionClaudeCouldNotBeGiven(t *testing.T) {
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if len(sent) != 1 {
-			t.Fatalf("the dashboard was sent %v, want the talk's end", sent)
-		}
-		if over, ok := sent[0].(tui.AnswerOver); !ok || !slices.Equal(over.Asked, []string{"k-7"}) || over.Err != nil {
-			t.Errorf("the dashboard was sent %+v", sent[0])
+		if over := talkOver(t, sent); !slices.Equal(over.Asked, []string{"k-7"}) {
+			t.Errorf("the dashboard was sent %+v", over)
 		}
 	})
 	if q := readIssues(t, state)["k-8"]; q.Status != "open" {

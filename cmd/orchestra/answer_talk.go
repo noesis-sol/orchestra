@@ -503,7 +503,10 @@ func (s answerSubject) opened(ctx context.Context, pane string) {
 // answerLive is the answer talk open under the dashboard as the dashboard's callbacks reach it: the
 // pane it opened in, once it has, and the questions queued into it.
 type answerLive struct {
-	more  chan struct{} // a question has come to wait: the talk reads bd for those it doesn't ask yet
+	more chan struct{} // a question has come to wait: the talk reads bd for those it doesn't ask yet
+	// took tells the dashboard of the questions bd has closed as the talk records their answers, before
+	// it is over; nil for nothing to tell
+	took  func(ids []string)
 	mu    sync.Mutex
 	pane  string // "" until the talk has opened
 	focus bool   // the a key was pressed before it had
@@ -561,6 +564,7 @@ type answerShown struct {
 	message string             // the message that brings in the questions waiting (subject.asked.waiting)
 	given   <-chan answerGiven // claude given them; nil when not awaited
 	batches int                // the files of questions written, the first one's included
+	took    []string           // the questions closed that the dashboard was told of (see answerLive.took)
 }
 
 // answerCount is how many of the talk's first total questions bd has closed, as asked from began:
@@ -597,6 +601,7 @@ func (s *answerShown) show(ctx context.Context, _ string, st dispatch.AgentState
 			s.now.Questions, s.now.Answered = n.total, n.closed
 			asked.closed = n.closed == n.total && n.total == len(asked.questions)
 			s.last = n
+			s.tell(n)
 		}
 	default: // not counted yet
 	}
@@ -617,6 +622,25 @@ func (s *answerShown) show(ctx context.Context, _ string, st dispatch.AgentState
 	}
 	s.now.Elapsed = time.Since(s.began)
 	s.line.Show(s.now)
+}
+
+// tell tells the dashboard, under which the talk is open, of the questions bd's count n has closed that
+// it wasn't told of yet, so that they wait no longer while the talk goes on.
+func (s *answerShown) tell(n answerCount) {
+	live := s.subject.live
+	if live == nil || live.took == nil {
+		return
+	}
+	var fresh []string
+	for _, id := range n.ids {
+		if !slices.Contains(n.open, id) && !slices.Contains(s.took, id) {
+			fresh = append(fresh, id)
+		}
+	}
+	if len(fresh) > 0 {
+		s.took = append(s.took, fresh...)
+		live.took(fresh)
+	}
 }
 
 // queued takes in the questions queued into the talk: it reads from bd, once told, those in scope it

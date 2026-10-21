@@ -20,7 +20,7 @@ import (
 // AnswerTalk is the answer talk as the dashboard opens it: none of its callbacks may block.
 type AnswerTalk struct {
 	// Open opens it beside the dashboard, with the keyboard focus or without; the program is sent
-	// AnswerOver once it is over.
+	// AnswerTaken as it records answers, and AnswerOver once it is over.
 	Open func(focus bool)
 	// Queue has the open talk take in the questions that have come to wait since it opened.
 	Queue func()
@@ -33,6 +33,12 @@ type AnswerTalk struct {
 type AnswerOver struct {
 	Asked, Answered []string
 	Err             error
+}
+
+// AnswerTaken tells the dashboard the answer talk open has recorded the answers to the questions IDs,
+// which bd has closed: they wait no longer, though the talk goes on.
+type AnswerTaken struct {
+	IDs []string
 }
 
 // WithAnswer is the dashboard with the answer talk, which opens by itself, unfocused, as soon as a
@@ -84,7 +90,7 @@ func (m *Dashboard) takeQuestions() {
 func (m *Dashboard) answerOver(o AnswerOver) {
 	m.answering = false
 	m.endIdleTalk()
-	m.answered = append(m.answered, o.Answered...)
+	m.answerTaken(AnswerTaken{IDs: o.Answered})
 	if o.Err != nil {
 		m.answerFailed = "the answer talk: " + dispatch.FirstLine(o.Err.Error())
 	} else {
@@ -94,6 +100,15 @@ func (m *Dashboard) answerOver(o AnswerOver) {
 	}
 	m.queued = nil
 	m.takeQuestions()
+}
+
+// answerTaken takes in the answers the open talk has recorded: their questions no longer wait.
+func (m *Dashboard) answerTaken(a AnswerTaken) {
+	for _, q := range a.IDs {
+		if !slices.Contains(m.answered, q) {
+			m.answered = append(m.answered, q)
+		}
+	}
 }
 
 // waitingQuestions are the questions tickets wait on, each once, in the rows' order: those of the rows

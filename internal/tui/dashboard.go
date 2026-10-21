@@ -124,6 +124,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.takeQuestions()
 	case AnswerOver:
 		m.answerOver(msg)
+	case AnswerTaken:
+		m.answerTaken(msg)
 	case AskQuestions:
 		m.askQuestions(msg)
 	case Finished:

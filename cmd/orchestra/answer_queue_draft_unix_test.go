@@ -40,15 +40,12 @@ func queuedTalk(t *testing.T, repo string, panes *talkPanes, step func(talks *an
 	return sent
 }
 
-// talkOver is the talk's end the dashboard was sent, failing the test where it was sent anything else.
+// talkOver is the talk's end the dashboard was sent, as talkEnd has it, failing the test where it failed.
 func talkOver(t *testing.T, sent []tea.Msg) tui.AnswerOver {
 	t.Helper()
-	if len(sent) != 1 {
-		t.Fatalf("the dashboard was sent %v, want the talk's end", sent)
-	}
-	over, ok := sent[0].(tui.AnswerOver)
-	if !ok || over.Err != nil {
-		t.Fatalf("the dashboard was sent %+v", sent[0])
+	over := talkEnd(t, sent)
+	if over.Err != nil {
+		t.Fatalf("the dashboard was sent %+v", over)
 	}
 	return over
 }

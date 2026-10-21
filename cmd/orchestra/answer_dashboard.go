@@ -141,6 +141,7 @@ func (a *answerTalks) start(focus bool) {
 	}
 	a.log.Line(time.Now(), how)
 	live := newAnswerLive()
+	live.took = func(ids []string) { a.send(tui.AnswerTaken{IDs: ids}) }
 	talk := a.talk
 	talk.aside, talk.live = !focus, live
 	if !focus {

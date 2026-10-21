@@ -61,11 +61,8 @@ func TestDashboardOpensTheAnswerTalkInAPane(t *testing.T) {
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if len(sent) != 1 {
-			t.Fatalf("the dashboard was sent %v, want the talk's end", sent)
-		}
-		if over, ok := sent[0].(tui.AnswerOver); !ok || !slices.Equal(over.Answered, []string{"k-7"}) || over.Err != nil {
-			t.Errorf("the dashboard was sent %+v", sent[0])
+		if over := talkOver(t, sent); !slices.Equal(over.Answered, []string{"k-7"}) {
+			t.Errorf("the dashboard was sent %+v", over)
 		}
 		if want := []string{"split w1:p1 " + repo, "launch w1:p2 claude", "close w1:p2"}; !slices.Equal(panes.calls, want) {
 			t.Errorf("the terminal was asked to %q, want %q", panes.calls, want)
