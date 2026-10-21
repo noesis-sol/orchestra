@@ -20,13 +20,13 @@ import (
 
 // The dashboard opens the answer talk (answer_talk.go) in a pane split off orchestra's, as the
 // refinement opens beside it, while the run goes on: by itself, without the keyboard focus, as soon as
-// a question waits, or with "questions": "key" in settings.json on its a key, focused. While the talk
-// is open, a goes to its pane, and a question that comes to wait is queued into it: the talk reads bd
-// for those in the run's scope it doesn't ask yet and gives them to claude once its turn is over. The
-// talk records each answer with bd, which closes the question, and the loop takes the ticket that
-// waited on it back as it does whoever answered (ANSWERED). The dashboard holds orchestra's terminal,
-// so the talk can't fall back on it: where no pane can be opened, or orchestra runs in none, the
-// maintainer answers with orchestra answer in another terminal (answer_command.go).
+// a question waits, or with "questions": "key" in settings.json, or overnight (talksByItself), on its a
+// key, focused. While the talk is open, a goes to its pane, and a question that comes to wait is queued
+// into it: the talk reads bd for those in the run's scope it doesn't ask yet and gives them to claude
+// once its turn is over. The talk records each answer with bd, which closes the question, and the loop
+// takes the ticket that waited on it back as it does whoever answered (ANSWERED). The dashboard holds
+// orchestra's terminal, so the talk can't fall back on it: where no pane can be opened, or orchestra
+// runs in none, the maintainer answers with orchestra answer in another terminal (answer_command.go).
 
 // errAnswerNoPane is the answer talk's error under the dashboard when no pane could be opened beside
 // orchestra's.

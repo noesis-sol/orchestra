@@ -56,6 +56,13 @@ func talksWhenIdle(c options, plain bool) bool {
 	return !plain && c.where.pane != "" && !c.Overnight
 }
 
+// talksByItself reports whether the dashboard of the run c opens the answer talk by itself as soon as a
+// question waits: with "questions": "auto", and not overnight, where nobody is there to answer it and
+// the run's end would wait for its pane to close until the morning. The a key opens it all the same.
+func talksByItself(c options) bool {
+	return c.answerAuto && !c.Overnight
+}
+
 // ask has the dashboard open the talk on qs, unfocused, or queue them into the talk open, the talk it
 // opens told of the deferred tickets; the channel it returns is closed once that talk is over: the
 // loop's callback, with nothing ready but questions.

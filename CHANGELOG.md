@@ -12,6 +12,11 @@ All notable changes to orchestra are documented here. The format follows
   workers in auto permission mode?") starts the run's workers in auto, as its
   START line now says. It set a mode the run had already read, so workers
   still started in the old mode and each stopped on a permission prompt.
+- An overnight run no longer opens the answer talk by itself when a worker
+  asks a question, with `"questions": "auto"`: nobody is there to answer it,
+  and the run's end waited for its pane to close until the morning, holding
+  the run lock and keeping the machine awake. The question waits for
+  `orchestra answer`; the dashboard's **a** key still opens the talk.
 
 ## [0.9.3] - 2026-10-21
 

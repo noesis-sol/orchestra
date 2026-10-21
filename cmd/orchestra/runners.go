@@ -107,7 +107,7 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	if r.cfg.where.pane != "" {
 		answers = newAnswerTalks(ctx, dashboardAnswerTalk(r.cfg, r.log), r.cfg.Ticket, r.log,
 			func(msg tea.Msg) { p.Send(msg) })
-		d = d.WithAnswer(answers.callbacks(), r.cfg.answerAuto)
+		d = d.WithAnswer(answers.callbacks(), talksByItself(r.cfg))
 	}
 	idle := runAnswers{tracker: beads.Tracker{Repo: r.cfg.Repo}, scope: r.cfg.Ticket}
 	if talksWhenIdle(r.cfg, false) {
