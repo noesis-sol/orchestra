@@ -37,6 +37,14 @@ All notable changes to orchestra are documented here. The format follows
   worker prompt template's version 6, so a project whose prompt still asks
   for one is told under the `START` line and takes it with `orchestra init
   --update`.
+- Workers are told that what a ticket needs of the machine (a tool, a
+  service, a permission) goes in the project's `"requires"` list: a ticket
+  that needs one the list lacks adds an entry for it, commits it with the
+  ticket and installs it with that entry's own install command, never by
+  hand outside the list, and a manual step is asked of the maintainer as a
+  question. Their standing rules name the list with the entries it has. It
+  is the worker prompt template's version 7, which `orchestra init --update`
+  takes.
 
 ## [0.9.0] - 2026-10-21
 

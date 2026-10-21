@@ -124,7 +124,8 @@ rebase changes a lockfile; `--setup ""` for none.
 What the machine itself must have (a runtime, a CLI, Docker running, a permission) goes in `"requires"` in
 `settings.json`, an entry each with a `check` and an `install` (never `sudo`) or a `manual` step for the user;
 `init`, each run's start and `orchestra requires` check it, installing what they can, and `orchestra requires
---no-install` only checks. Installing software is the user's call: ask before running `orchestra requires` without `--no-install`.
+--no-install` only checks. Workers are told to add an entry for a tool their ticket needs, committed with it, rather than
+install it by hand. Installing software is the user's call: ask before running `orchestra requires` without `--no-install`.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Where a run's `START` lines or
 `init`'s summary say the worker prompt or the verifier is older than orchestra's templates (`templates: …`),

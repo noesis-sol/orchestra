@@ -21,15 +21,15 @@ import (
 // in, and what the run adds for the whole of the ticket (its scope, its setup, its time limit, the
 // usage limit).
 func (o *Loop) workerRules(id string) string {
-	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.checkNote() +
-		o.checkTimeNote() + o.budgetNote() + o.limitNote()
+	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + o.scopeNote(id) + o.setupNote() + o.requiresNote() +
+		o.checkNote() + o.checkTimeNote() + o.budgetNote() + o.limitNote()
 }
 
 // fullPrompt is ticket id's whole prompt as one first message, for a worker without its rules in
 // its system prompt: the worker prompt, then first (see firstNotes) and the run's notes.
 func (o *Loop) fullPrompt(id, first string) string {
 	return strings.ReplaceAll(o.prompt, "TICKET_ID", id) + first + o.scopeNote(id) + o.setupNote() +
-		o.checkNote() + o.checkTimeNote() + o.budgetNote() + o.limitNote()
+		o.requiresNote() + o.checkNote() + o.checkTimeNote() + o.budgetNote() + o.limitNote()
 }
 
 // setupNote tells a worker that its worktree's dependencies are installed with the project's setup
@@ -42,6 +42,33 @@ func (o *Loop) setupNote() string {
 	}
 	return fmt.Sprintf("\n\nThis worktree's dependencies are installed with '%s'. Run it again only after "+
 		"changing a file it reads, such as a manifest or a lockfile.\n", cmd)
+}
+
+// requiresNote tells a worker that what the project needs of the machine is its requires list (see
+// requires.go), which it names with the entries it has now: a ticket that needs a tool, service or
+// permission the list lacks adds an entry for it, commits it with the ticket, and installs it with that
+// entry's own install, so that the next machine has it too; workers installed what they found missing
+// by hand (Homebrew packages, Docker Desktop started), and nothing recorded it. A worker prompt that
+// says so already (project.RequiresRule), as orchestra's template does, is told only what the list has.
+func (o *Loop) requiresNote() string {
+	list := o.requiresNow()
+	has := "which has no entries yet"
+	if len(list) > 0 {
+		names := make([]string, len(list))
+		for i, r := range list {
+			names[i] = r.Name
+		}
+		has = "which has " + strings.Join(names, ", ") + " now"
+	}
+	where := fmt.Sprintf("\"requires\" in %s", project.SettingsFile)
+	if strings.Contains(o.prompt, project.RequiresRule) {
+		return fmt.Sprintf("\n\nThe project's requires list is %s, %s.\n", where, has)
+	}
+	return fmt.Sprintf("\n\nWhat this project needs of the machine (a tool, a service, a permission) is its requires "+
+		"list, %s, %s. A ticket that needs one the list doesn't have adds an entry for it (a name, a check, and an "+
+		"install command that runs without sudo, or a manual step for a person), commits it with the ticket, and "+
+		"installs it with that entry's own install command, %s: what isn't on the list isn't on the next "+
+		"machine. A manual step is asked of the maintainer as a question.\n", where, has, project.RequiresRule)
 }
 
 // workerCheckLog is the file in a worktree's .orchestra/run/ that checkNote has a worker save a check's

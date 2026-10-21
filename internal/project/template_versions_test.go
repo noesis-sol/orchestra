@@ -14,7 +14,7 @@ import (
 // The templates as their last recorded versions have them. A change to a template is a new version of
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
-	promptTemplateSum   = "e2ce8acb12a3a51646694ed28c3357689205a09a4bf62bff4c1b4771c5fdccbb"
+	promptTemplateSum   = "c9c0bec876d583a186382c84ccbc472e06d1d34bf21e7048ed36fdd390eac2e3"
 	verifierTemplateSum = "925b141110e3006a95942db7d5df3ab6f9106755d379957f99ab8e5674715b65"
 )
 
@@ -117,7 +117,8 @@ func TestAnOlderWorkerPromptIsNoticed(t *testing.T) {
 	}
 	for _, want := range []string{
 		".orchestra/worker-prompt.md is older than orchestra's worker prompt template",
-		"the opening (a worker checks its own change and leaves the whole suite to the merge check)",
+		"the opening (a worker checks its own change and leaves the whole suite to the merge check; a tool, " +
+			"service or permission a ticket needs of the machine goes in the requires list",
 		"Close (a ticket closes once the worker's own checks pass)",
 		"Working unattended (no to-do checklist is asked for",
 		"orchestra init --update",

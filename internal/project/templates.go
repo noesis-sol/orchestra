@@ -47,7 +47,13 @@ var promptChanges = []TemplateChange{
 		"goes to the maintainer rather than round again", "earlier rounds' findings"},
 	{6, "Working unattended", "no to-do checklist is asked for, which no worker kept and Beads' own guidance forbids",
 		"keep the ticket's notes current"},
+	{7, "", "a tool, service or permission a ticket needs of the machine goes in the requires list, and is " +
+		"installed with its entry's install, never by hand", RequiresRule},
 }
+
+// RequiresRule is words only the worker prompt's rule on the requires list has (see promptChanges): a
+// worker's rules don't say it again to a worker whose prompt has them.
+const RequiresRule = "never by hand outside the list"
 
 // verifierChanges are the changes to the verifier's template, verifier.md.
 var verifierChanges = []TemplateChange{
