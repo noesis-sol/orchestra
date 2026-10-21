@@ -14,7 +14,7 @@ import (
 // The templates as their last recorded versions have them. A change to a template is a new version of
 // it: TestTemplateChangesAreRecorded fails until templates.go records it.
 const (
-	promptTemplateSum   = "63e03669b4520d78025c0dce51a07e52875be64759dd78b5db0153e7af782bc5"
+	promptTemplateSum   = "ef6d38cceaa3ff64f657720c83e65d4bbaca6b56b57ddb1795bd3e7647d809fe"
 	verifierTemplateSum = "925b141110e3006a95942db7d5df3ab6f9106755d379957f99ab8e5674715b65"
 )
 
@@ -121,7 +121,8 @@ func TestAnOlderWorkerPromptIsNoticed(t *testing.T) {
 			"service or permission a ticket needs of the machine goes in the requires list",
 		"Close (a ticket closes once the worker's own checks pass; a decision about another ticket is a question " +
 			"blocking that ticket, never only in the final message, which nobody reads; every question gives 2 to 4 " +
-			"options, one recommended, in its metadata and its description)",
+			"options, one recommended, in its metadata and its description; a question about another ticket is also " +
+			"linked to the ticket that asked it, for the answer talk to show)",
 		"Working unattended (no to-do checklist is asked for",
 		"orchestra init --update",
 	} {

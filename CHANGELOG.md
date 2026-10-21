@@ -55,6 +55,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A question a worker files about another ticket is linked to the ticket
+  that asked it too (`--deps 'blocks:<that ticket>,discovered-from:<its
+  ticket>'`), so the answer talk shows where it was asked. Recorded as the
+  worker prompt template's version 9: `orchestra init --update` takes it.
 - The worker prompt has a worker file a decision only the maintainer can
   make about another ticket, a follow-up it files or one it names, as a
   question blocking that ticket, rather than leave it in its final message,

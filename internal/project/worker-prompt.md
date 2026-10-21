@@ -59,9 +59,10 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
   and `bd update TICKET_ID --status open --append-notes "Waiting on <the question's ID>: <the question>"`.
   The ticket comes back to a worker once the question is answered.
 - A decision only the maintainer can make about another ticket, a follow-up you file or one you
-  name, is a question too: file it the same way, blocking that ticket (`--deps blocks:<that ticket>`),
-  and go on with yours. Never leave it only in your final message: nobody reads that, and that
-  ticket's worker would decide it instead. Your final message carries nothing for the maintainer.
+  name, is a question too: file it the same way, blocking that ticket and asked from yours
+  (`--deps 'blocks:<that ticket>,discovered-from:TICKET_ID'`), and go on with yours.
+  Never leave it only in your final message: nobody reads that, and that ticket's worker would
+  decide it instead. Your final message carries nothing for the maintainer.
 - Every question gives 2 to 4 options, each a short label and a one-line trade-off, one of them
   recommended, in its description and in its metadata, in the same order:
   `--metadata '{"options": [{"label": "<label>", "description": "<its trade-off>"}, ...], "recommended": <the recommended option's index, from 0>}'`
