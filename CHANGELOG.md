@@ -16,6 +16,15 @@ All notable changes to orchestra are documented here. The format follows
   most 5 tickets; a resumed worker isn't given them again. The worker
   prompt's template has a new version: an older project is told so at a
   run's start, and `orchestra init --update` adds the rule.
+- A spec's breakdown, in every mode, files a spike for each fact the spec
+  marks unverified (`[VERIFY]`, "to verify", an open question about an
+  outside API, library or tool) that tickets rest on: a short ticket,
+  labelled `spike`, right after the environment ticket, that checks the fact
+  against the library's source, its documentation or a minimal program, says
+  what it found in its close reason, and blocks the tickets that rest on it.
+  One that finds the fact false files a question blocking them, rather than
+  change the spec, so that tickets built on a wrong fact don't fail late,
+  one after another.
 - The event stream's record that ends a ticket's part in the run (`closed`,
   `deferred`, or a `warn` with `aside: true`) gives the seconds it spent in
   each phase the dashboard shows, from when the run took it up: `phases`

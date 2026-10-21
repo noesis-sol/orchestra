@@ -361,6 +361,34 @@ A spec that adds a tool to a repository with code, such as Postgres to an existi
 ticket all the same, without the scaffold. A spec that needs no tool the repository doesn't have,
 in a repository with code, gets none.
 {{- end}}
+
+## Spikes for unverified facts
+
+Where the spec marks a fact unverified (`[VERIFY]`, "to verify", "check that", an open question
+about an outside API, library or tool) and tickets rest on it, file a **spike** for it, or one for a
+few related facts: a short ticket that checks the fact against the library's source, its
+documentation or a minimal program, and changes nothing in the repository. Its description names
+each fact, the spec's section that states it and the tickets that rest on it, and asks its worker:
+
+- to say what it found, and from where, in its close reason (`bd close <ID> --reason "…"`);
+- where it finds a fact false, to file a question, the way its instructions say, blocking the
+  tickets that rest on it, rather than change the spec or build on a guess: what the spec should
+  say then is the maintainer's to decide.
+
+A spike carries the label `spike` and priority 1, no files, and waits for the environment ticket
+where there is one.
+{{- if .TreeInAnswer}} Spikes come in your answer right after the environment ticket, before
+the tickets that rest on them, and each of those lists its spike's key in its `waits_for`.
+{{- else}} File spikes right after the environment ticket, before the tickets that rest
+on them, and give each of those a blocks link to its spike.
+{{- end}}
+
+Each ticket that rests on a fact names it in its description, so that its worker reads what the
+spike found before building on it. A fact nothing rests on gets no spike, nor does one the
+repository settles (its code, its docs, a dependency's version): look that up yourself.
+{{- if .Update}} In an update,
+file spikes only for the unverified facts the change adds, or that the tickets it files rest on.
+{{- end}}
 {{end}}
 ## Tickets that run side by side
 
