@@ -4,6 +4,15 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- The overnight pre-flight's fix for a permission mode that asks ("Start
+  workers in auto permission mode?") starts the run's workers in auto, as its
+  START line now says. It set a mode the run had already read, so workers
+  still started in the old mode and each stopped on a permission prompt.
+
 ## [0.9.3] - 2026-10-21
 
 ### Added

@@ -114,7 +114,9 @@ func permissionCheck(_ context.Context, s *session) preflightResult {
 		fix: &preflightFix{question: "Start workers in auto permission mode?",
 			done: "workers start in auto permission mode",
 			apply: func(s *session) error {
+				// settleWork filled in the mode workers start in at configuration: settle it again.
 				s.cfg.permissionModes.unplanned = project.PermissionAuto
+				s.cfg.settleWork()
 				return nil
 			}}}
 }

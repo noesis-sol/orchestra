@@ -145,7 +145,7 @@ func TestPermissionCheck(t *testing.T) {
 				return
 			}
 			fixWith(t, s, r, "Start workers in auto permission mode?")
-			if s.cfg.settleWork(); s.cfg.WorkerPermissionMode != project.PermissionAuto {
+			if s.cfg.WorkerPermissionMode != project.PermissionAuto {
 				t.Errorf("after the fix workers start in %q", s.cfg.WorkerPermissionMode)
 			}
 		})
