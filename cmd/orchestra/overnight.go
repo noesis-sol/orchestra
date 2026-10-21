@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/load"
 	"github.com/noesis-sol/orchestra/internal/tui"
 )
 
@@ -38,10 +39,15 @@ type preflightFix struct {
 	apply    func(s *session) error // makes it, in the run s and what it keeps; nil for nothing more to do
 }
 
-// preflightChecks are an overnight run's checks, in the order its checklist lists them.
+// preflightChecks are an overnight run's checks, in the order its checklist lists them: those that
+// refuse to start (overnight_checks.go) and the warnings (overnight_warnings.go) by what they are about,
+// the merge check on Base last, as it takes longest.
 var preflightChecks = []preflightCheck{
-	limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"), diskCheck(freeDisk), baseCheck,
-	keepAwakeCheck(runtime.GOOS),
+	limitCheck, concurrencyCheck, permissionCheck, claudeCheck("claude"),
+	usageNowCheck("claude"), usageWaitCheck, ticketLimitCheck,
+	diskCheck(freeDisk), otherRunsCheck, loadCheck(load.ReadKernel, listNamed), vmCheck(listNamed),
+	batteryCheck(runtime.GOOS, onBattery), keepAwakeCheck(runtime.GOOS),
+	templatesCheck, readyCheck(beadsTracker), baseCheck,
 }
 
 // preflight clears an overnight run to start: it runs its checks, prints their checklist and, in a

@@ -67,6 +67,14 @@ All notable changes to orchestra are documented here. The format follows
   (`"overnight_free_disk_gb"` in `settings.json`), and the merge check
   failing on the base branch's head, run once in a worktree of its own
   (its output in `.orchestra/run/check-base.log`).
+- The overnight pre-flight's warnings, each with its fix where orchestra can
+  make one: the account at its usage limit now, and when it resets (asked
+  with the smallest `claude` call), `"usage_limit_wait"` under 5h (fix: 6h),
+  no ticket limit (fix: 2h), another orchestra run on the machine, a busy
+  machine or a virtual machine (Docker's) holding over 4 GB, each named, the
+  machine on battery, a worker prompt or verifier older than orchestra's
+  templates (fix: `orchestra init --update`, committed), and how many
+  tickets are ready, and how many more wait only on questions.
 - An overnight run's pre-flight, once its checks clear the run to start,
   puts every open question in the run's scope to the maintainer in the
   answer talk, one by one with its options, before the run's first ticket.

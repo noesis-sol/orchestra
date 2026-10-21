@@ -213,6 +213,35 @@ func readRegistration(path string) (registration, bool) {
 	return reg, true
 }
 
+// OtherRun is another orchestra run going on the machine, as its registration in Config.Machine says.
+type OtherRun struct {
+	PID        int
+	Repo       string
+	Concurrent int
+	Started    time.Time
+	Running    int // its workers running, merges and checks included
+}
+
+// OtherRuns are the orchestra runs registered in dir, a machine's folder of runs (Config.Machine), that
+// are going, those that started first first, for a run about to start, before it registers itself, as
+// an overnight run's pre-flight reads them; those that have ended are removed, as a run's look removes
+// them. A folder that can't be read, or "", has none.
+func OtherRuns(dir string) []OtherRun {
+	m := &machine{dir: dir, seen: map[string]registration{}, process: runningProcess}
+	m.look()
+	runs := make([]OtherRun, 0, len(m.seen))
+	for _, reg := range m.seen {
+		runs = append(runs, OtherRun(reg))
+	}
+	slices.SortFunc(runs, func(a, b OtherRun) int {
+		if c := a.Started.Compare(b.Started); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Repo, b.Repo)
+	})
+	return runs
+}
+
 // workersCount is "1 worker" or "<n> workers".
 func workersCount(n int) string {
 	if n == 1 {
