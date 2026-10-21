@@ -105,7 +105,7 @@ func (o *Loop) fetchBase(ctx context.Context) {
 	o.log.Raw(f.Output, nil)
 	switch {
 	case f.Warning != "":
-		o.warnBase(f.Warning, f.Text)
+		o.emit(f.WarnEvent())
 	case f.Behind > 0:
 		o.info("BASE: %s", f.Text)
 		keep := context.WithoutCancel(ctx)
@@ -187,9 +187,10 @@ func fetchUpstream(
 	return f, nil
 }
 
-// warnBase warns of what fetchBase met, kind being the word its line starts with.
-func (o *Loop) warnBase(kind, text string) {
-	o.emit(Event{Kind: EvWarn, Detail: kind, Text: "  " + kind + ": " + text})
+// WarnEvent is the warning of f, which has one (Warning), as the run's start gives it: its Detail is
+// the word its line starts with. The overnight pre-flight records it before the event stream opens.
+func (f BaseFetched) WarnEvent() Event {
+	return Event{Kind: EvWarn, Detail: f.Warning, Text: "  " + f.Warning + ": " + f.Text}
 }
 
 // shortRef is how a person names ref: origin/main for refs/remotes/origin/main, main for refs/heads/main.

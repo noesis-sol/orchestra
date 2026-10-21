@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -200,19 +201,26 @@ func existingDir(dir string) string {
 
 // fetchCheck brings Base up to its upstream before the other checks read it, as the run would as it
 // starts (dispatch.FetchBase), so that they check the Base the run builds on; the run then doesn't
-// fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), and fails
-// where the main checkout would stop the run before its first ticket: a spec the run is to commit
-// may be uncommitted. Nothing with --no-fetch. The run then takes the setup and the requirements the
-// fast-forward brought in (takeFetchedSettings), as a run's start does, before the other checks read
-// them.
+// fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), the warning
+// recorded in the event stream once it opens, as the run's start would, and fails where the main
+// checkout would stop the run before its first ticket: a spec the run is to commit may be uncommitted.
+// Nothing with --no-fetch. The run then takes the setup and the requirements the fast-forward brought
+// in (takeFetchedSettings), as a run's start does, before the other checks read them.
 func fetchCheck(ctx context.Context, s *session) preflightResult {
+	return fetchCheckWith(ctx, s, git.Git{})
+}
+
+// fetchCheckWith is fetchCheck, asking g of git. A fast-forward done is said, whatever stopped the
+// pre-flight as it went on: Ctrl+C doesn't cut it short, and the stop then says Base moved.
+func fetchCheckWith(ctx context.Context, s *session, g dispatch.BaseFetchGit) preflightResult {
 	c := s.cfg.Config
 	if c.NoFetch {
 		return preflightResult{verdict: tui.CheckPassed,
 			text: c.Base + " isn't fetched from its upstream (--no-fetch): the run builds on it as it is"}
 	}
-	f, err := dispatch.FetchBase(ctx, c, git.Git{}, specBesides(c)...)
+	f, err := dispatch.FetchBase(ctx, c, g, specBesides(c)...)
 	switch {
+	case f.Behind > 0:
 	case ctx.Err() != nil:
 		return preflightResult{verdict: tui.CheckWarned, text: c.Base + " wasn't fetched: stopped"}
 	case err != nil:
@@ -223,6 +231,9 @@ func fetchCheck(ctx context.Context, s *session) preflightResult {
 	s.log.Raw(f.Output, nil)
 	switch {
 	case f.Warning != "":
+		ev := f.WarnEvent()
+		ev.Time = time.Now()
+		s.log.Record(ev) // written once the stream opens; the checklist gives the log its line
 		return preflightResult{verdict: tui.CheckWarned, text: f.Text}
 	case f.Behind > 0:
 		s.fetched = f.Text

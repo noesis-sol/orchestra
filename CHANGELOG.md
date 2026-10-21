@@ -13,6 +13,12 @@ All notable changes to orchestra are documented here. The format follows
   ends orchestra; an answer talk that ends during them is said once they are
   over; and a talk the dashboard opened as the one before ended is waited on,
   with Ctrl+C closing it, where orchestra hung, ignoring Ctrl+C.
+- An overnight run stopped with Ctrl+C while its pre-flight fast-forwarded
+  the base branch now says the branch moved, rather than "nothing was
+  changed". The pre-flight's warning about the base branch (`BASE_DIVERGED`,
+  `BASE_UNFETCHED`, `BASE_NOT_FAST_FORWARDED`), and a spec run's before it
+  commits its spec, is now a `warn` record in the event stream, written once
+  the stream opens, as a run's start writes it.
 - A question that comes to wait while the answer talk waits on the
   maintainer is no longer typed into claude's input, where it was pasted
   after the answer they were half-way through typing and sent with it. It is

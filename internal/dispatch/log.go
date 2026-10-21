@@ -24,11 +24,11 @@ type Log struct {
 	shown   sync.WaitGroup      // notifications still being shown
 	closed  bool                // Close has been called: no more notifications start
 
-	events     *os.File   // the event stream, from Begin to End; nil when it isn't open
-	run        time.Time  // the run's start, in each of its records
-	eventsSaid bool       // the event stream failed, and the log has said so
-	begun      bool       // Begin has been called, whether or not the stream opened
-	early      []CheckRun // the checks that ended before Begin, for it to record (see Check)
+	events     *os.File  // the event stream, from Begin to End; nil when it isn't open
+	run        time.Time // the run's start, in each of its records
+	eventsSaid bool      // the event stream failed, and the log has said so
+	begun      bool      // Begin has been called, whether or not the stream opened
+	early      []func()  // the records made before Begin, which it writes in order (see Check, Record)
 	// tokens and organs: what the run's tickets' records said their workers used, and what its organ calls
 	// cost, for its end record
 	tokens Tokens

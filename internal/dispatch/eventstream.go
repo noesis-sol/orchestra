@@ -203,8 +203,8 @@ type endRecord struct {
 // start record. Like the probe's file, it is reached through an os.Root at the checkout, which won't
 // follow a symlink out of it; one in its place inside the checkout is replaced by the file rather
 // than written through, as WriteRun does. A stream that can't be opened is logged, and the run goes
-// on without it. The check records of the checks that ended before it follow the start record (see
-// Check).
+// on without it. The records made before it, of checks that ended and events, follow the start
+// record, in the order they were made (see Check and Record).
 func (l *Log) Begin(repo string, s RunStart) {
 	f, err := openEvents(repo)
 	l.mu.Lock()
@@ -219,8 +219,8 @@ func (l *Log) Begin(repo string, s RunStart) {
 	l.write(startRecord{recordHead: recordHead{Time: time.Now(), Run: s.Started, Kind: "start"},
 		Version: s.Version, Repo: s.Repo, Branch: s.Branch, Scope: s.Scope, Feature: s.Feature, Spec: s.Spec,
 		Overnight: s.Overnight, Concurrency: s.Concurrency})
-	for _, c := range early {
-		l.writeCheck(c)
+	for _, write := range early {
+		write()
 	}
 }
 
@@ -244,8 +244,21 @@ func openEvents(repo string) (*os.File, error) {
 	return f, nil
 }
 
-// Record appends ev to the event stream, if it is open.
+// Record appends ev to the event stream, if it is open. One made before the stream opened, as the
+// overnight pre-flight's warning about Base is, is appended once it opens, after the run's start record:
+// a run that ends before then has no records.
 func (l *Log) Record(ev Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.begun {
+		l.early = append(l.early, func() { l.writeEvent(ev) })
+		return
+	}
+	l.writeEvent(ev)
+}
+
+// writeEvent appends ev's record, adding its tokens to the run's. The caller holds mu.
+func (l *Log) writeEvent(ev Event) {
 	r := eventRecord{recordHead: recordHead{Time: ev.Time, Kind: ev.Kind.String()},
 		Ticket: ev.Ticket, Title: ev.Title, Detail: ev.Detail, Text: ev.Text, Aside: ev.Aside, Blocked: ev.Blocked,
 		Suite: ev.Suite, Output: ev.Output}
@@ -283,8 +296,6 @@ func (l *Log) Record(ev Event) {
 		}
 		r.Machine = ev.MachineFull
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	r.Run = l.run
 	l.tokens = l.tokens.Add(ev.Tokens)
 	l.write(r)
@@ -297,7 +308,7 @@ func (l *Log) Check(c CheckRun) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.begun {
-		l.early = append(l.early, c)
+		l.early = append(l.early, func() { l.writeCheck(c) })
 		return
 	}
 	l.writeCheck(c)

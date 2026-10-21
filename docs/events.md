@@ -77,7 +77,7 @@ The `end` record gives the run's totals: `tokens`, its tickets' summed by model,
 
 A failing terminal, Herdr, tmux or cmux, stops the run as `TERMINAL_FAILED`; up to 0.6.0 it was `HERDR_FAILED`, so a script that matches the stop's word should look for both.
 
-The overnight pre-flight's `base` check ends before the run's `start` record: its `check` record follows `start`, written once the stream opens, and a run that ends in its pre-flight has none.
+The overnight pre-flight's `base` check ends before the run's `start` record: its `check` record follows `start`, written once the stream opens, and a run that ends in its pre-flight has none. So does the `warn` record of the pre-flight's warning about the base branch, or a spec run's before it commits its spec, its `detail` the word its line starts with, as a run's start gives it.
 
 A run with [nothing to run](running.md#nothing-to-run) writes three records: `start`, `done` and `end` with code 0. Its done text says why: `READY_EMPTY after 0 tickets: everything is done` when no ticket is left but epics and none is closed but not merged, or `READY_EMPTY after 0 tickets: nothing ready`; a scoped run adds its scope's `; SCOPE_DONE: …` or `; SCOPE_OPEN: …`.
 

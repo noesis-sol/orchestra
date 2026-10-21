@@ -18,8 +18,9 @@ import (
 
 // fetchForSpec brings Base up to its upstream before the spec run s commits anything, unless the
 // overnight pre-flight has (Config.BaseFetched), and says what it did: Base fast-forwarded, or left as
-// it is and why. After a fast-forward the run takes the setup and the requirements it brought in
-// (takeFetchedSettings), as the loop's own fetch would. A main checkout the fetch can't start on is
+// it is and why, the warning recorded in the event stream once it opens. After a fast-forward the run
+// takes the setup and the requirements it brought in (takeFetchedSettings), as the loop's own fetch
+// would. A main checkout the fetch can't start on is
 // left to the checks after it, which stop the run: uncommitted changes besides the spec before
 // anything is committed, a checkout not on Base before the first ticket.
 func (s *session) fetchForSpec(ctx context.Context) {
@@ -37,7 +38,10 @@ func (s *session) fetchForSpec(ctx context.Context) {
 	switch {
 	case f.Warning != "":
 		fmt.Fprintf(s.e.stderr, "warning: %s: %s\n", f.Warning, f.Text)
-		s.log.Line(time.Now(), f.Warning+": "+f.Text)
+		ev := f.WarnEvent()
+		ev.Time = time.Now()
+		s.log.Line(ev.Time, f.Warning+": "+f.Text)
+		s.log.Record(ev) // written once the stream opens, after the run's start record
 	case f.Behind > 0:
 		fmt.Fprintln(s.e.stdout, "BASE: "+f.Text)
 		s.log.Line(time.Now(), "BASE: "+f.Text)
