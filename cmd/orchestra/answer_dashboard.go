@@ -73,9 +73,16 @@ type answerTalks struct {
 	wg     sync.WaitGroup
 	open   atomic.Bool
 	live   atomic.Pointer[answerLive] // the talk last opened, as the dashboard's callbacks reach it
+	ended  atomic.Pointer[answerEnd]  // how the talk last over ended, for finish to say
 	// deferred is what the loop, with nothing ready but questions, gave the next talk to say of the
 	// deferred tickets (see ask)
 	deferred atomic.Pointer[string]
+}
+
+// answerEnd is how an answer talk ended: how it left its questions, and its error, if any.
+type answerEnd struct {
+	r   answerResult
+	err error
 }
 
 // newAnswerTalks opens talk for the dashboard, under ctx, about the questions in scope ("" for every
@@ -111,12 +118,13 @@ func (a *answerTalks) start(focus bool) {
 	a.wg.Go(func() {
 		defer a.open.Store(false)
 		r, err := talk.answer(a.ctx, a.scope, "")
-		switch {
-		case a.ctx.Err() != nil: // the run stopped: the dashboard is closing
+		if err == nil && len(r.Answered)+len(r.Open) == 0 {
+			err = errNothingToAnswer
+		}
+		a.ended.Store(&answerEnd{r: r, err: err})
+		if a.ctx.Err() != nil { // the run stopped: the dashboard is closing
 			a.log.Line(time.Now(), "the answer talk closed as the run stopped")
 			return
-		case err == nil && len(r.Answered)+len(r.Open) == 0:
-			err = errNothingToAnswer
 		}
 		if err != nil {
 			a.log.Raw("", fmt.Errorf("the answer talk: %w", err))
@@ -164,19 +172,40 @@ func answeredLine(r answerResult) string {
 	return line + "; still open: " + strings.Join(r.Open, ", ")
 }
 
-// finish waits for the talk still open, if any, once the run is over, having said so on out: orchestra
-// ends once it does. A stop signal meanwhile closes it. One the run's stop closed already is only
-// waited for, as it closes its pane.
+// finish waits for the talk still open, if any, once the run is over, having said so on out, and then
+// says there how it ended: orchestra ends once it does. A stop signal meanwhile closes it. One the run's
+// stop closed already is only waited for, as it closes its pane.
 func (a *answerTalks) finish(stops *stopWatch, out io.Writer) {
 	if a == nil {
 		return
 	}
 	defer a.cancel()
-	if a.open.Load() && a.ctx.Err() == nil {
+	waits := a.open.Load() && a.ctx.Err() == nil
+	if waits {
 		fmt.Fprintln(out, "The answer talk is still open in the pane on the right: orchestra ends once it is over "+
 			"(Ctrl+C closes it).")
 		stops.on(func(os.Signal) { a.cancel() })
 		defer stops.on(nil)
 	}
 	a.wg.Wait()
+	if waits {
+		a.sayEnded(out)
+	}
+}
+
+// sayEnded says on out how the talk the run waited on ended, as orchestra answer does: closed by a stop
+// signal or with its error, if so, then the questions it answered, whose tickets come back to the next
+// run, and those still open. The summary and the report above still have their tickets waiting.
+func (a *answerTalks) sayEnded(out io.Writer) {
+	end := a.ended.Load()
+	if end == nil {
+		return
+	}
+	switch {
+	case a.ctx.Err() != nil:
+		fmt.Fprintln(out, "The answer talk was closed.")
+	case end.err != nil:
+		fmt.Fprintln(out, "The answer talk:", end.err)
+	}
+	sayAnswered(out, end.r, "the next run")
 }

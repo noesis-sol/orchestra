@@ -65,6 +65,11 @@ All notable changes to orchestra are documented here. The format follows
   and `sed` in the call that recorded the answer, and Claude Code stopped
   on its approval prompt, with nothing recorded until the maintainer gave
   it.
+- A run that ends with the dashboard's answer talk open says, once the
+  talk is over, how it ended, below the summary and the report that still
+  have the ticket waiting: the questions answered, whose tickets come back
+  to the next run, those still open, or that a stop signal closed it. It
+  said so only in `.orchestra/orchestra.log`.
 - The worker prompt has a worker file a decision only the maintainer can
   make about another ticket, a follow-up it files or one it names, as a
   question blocking that ticket, rather than leave it in its final message,

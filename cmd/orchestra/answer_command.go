@@ -75,14 +75,15 @@ func runAnswer(ctx context.Context, args []string, e cmdEnv, _ stopCatch) int {
 		return answerOnTerminal(ctx, stops, a.claude, message, e.stdin, stdout, stderr)
 	}
 	r, err := a.answer(ctx, *scope, named)
+	const backTo = "the run going on, or to the next" // where the answered questions' tickets go
 	switch {
 	case ctx.Err() != nil:
 		fmt.Fprintln(stderr, "orchestra answer: stopped")
-		sayAnswered(stdout, r)
+		sayAnswered(stdout, r, backTo)
 		return dispatch.ExitInterrupted
 	case err != nil:
 		fmt.Fprintln(stderr, "orchestra answer:", err)
-		sayAnswered(stdout, r)
+		sayAnswered(stdout, r, backTo)
 		return dispatch.ExitSetup
 	case len(r.Answered)+len(r.Open) == 0:
 		where := ""
@@ -92,7 +93,7 @@ func runAnswer(ctx context.Context, args []string, e cmdEnv, _ stopCatch) int {
 		fmt.Fprintf(stdout, "No question is open%s.\n", where)
 		return dispatch.ExitOK
 	}
-	sayAnswered(stdout, r)
+	sayAnswered(stdout, r, backTo)
 	return dispatch.ExitOK
 }
 
@@ -111,12 +112,12 @@ func answerOptions(ctx context.Context, e cmdEnv) (options, []string) {
 	return c, resolveProject(ctx, &c, &runFlags{}, settings, e.getenv)
 }
 
-// sayAnswered says how the talk left its questions: those answered, whose tickets come back, and
-// those still open; nothing when it asked none.
-func sayAnswered(out io.Writer, r answerResult) {
+// sayAnswered says how the talk left its questions: those answered, whose tickets come back to
+// backTo, and those still open; nothing when it asked none.
+func sayAnswered(out io.Writer, r answerResult, backTo string) {
 	if len(r.Answered) > 0 {
-		fmt.Fprintf(out, "Answered %s: the tickets waiting on %s come back to the run going on, or to the next.\n",
-			strings.Join(r.Answered, ", "), itOrThem(len(r.Answered)))
+		fmt.Fprintf(out, "Answered %s: the tickets waiting on %s come back to %s.\n",
+			strings.Join(r.Answered, ", "), itOrThem(len(r.Answered)), backTo)
 	}
 	if len(r.Open) > 0 {
 		fmt.Fprintf(out, "Still open: %s. orchestra answer asks %s again.\n", strings.Join(r.Open, ", "),
