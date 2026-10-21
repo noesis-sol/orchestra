@@ -285,6 +285,8 @@ type stopReason struct {
 	ticket string // the ticket it stopped the run over, if any: its notification names it
 	// blocked: the finished ticket it keeps from merging, if any, says why in a few words (Event.Blocked).
 	blocked string
+	// aside: what an overnight run sets its ticket aside for rather than stop, if it does (see setsAside).
+	aside string
 }
 
 // stopKind is what stopped the run, as the first word of its line says.
@@ -344,6 +346,13 @@ func (s *stopReason) over(id string) *stopReason {
 // few words, for the dashboard's row.
 func (s *stopReason) blocks(why string) *stopReason {
 	s.blocked = why
+	return s
+}
+
+// setsAside marks s as a stop an overnight run doesn't make: it sets the ticket aside instead, and goes
+// on (see asideOvernight). why says what for, in a few words, of the ticket.
+func (s *stopReason) setsAside(why string) *stopReason {
+	s.aside = why
 	return s
 }
 

@@ -32,7 +32,8 @@ type adoption struct {
 // its session resumed, once in a run (see resumeSession), whatever taking: an adoption counts toward
 // no limit. Without a session to resume, it stops the run, as a paused ticket does: the reason is
 // returned with the tickets adopted before it was found, and said at once; with taking false it is
-// dropped instead (askedDropped), as the run would only stop for it again and again. taking is
+// dropped instead (askedDropped), as the run would only stop for it again and again, and in an
+// overnight run it is set aside (askedAside), as a paused ticket is there. taking is
 // runState.taking, and the tickets running are runState.inflight.
 func (r *runState) followAsked() ([]adoption, *stopReason) {
 	o, ctx, running, taking := r.o, r.ctx, r.inflight, r.taking()
@@ -70,6 +71,10 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 				}
 				if !taking {
 					o.askedDropped(ctx, id, w)
+					break
+				}
+				if o.cfg.Overnight {
+					o.askedAside(ctx, t, w)
 					break
 				}
 				return adopt, o.askedGone(ctx, id, w, len(running)+len(adopt))

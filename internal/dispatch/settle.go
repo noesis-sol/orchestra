@@ -153,13 +153,16 @@ func stuck(w worker, st AgentState, asks bool, blocked, unknown *streak) *stopRe
 	if blocked.track(st == StateBlocked || asks) > blockedLimit {
 		if asks {
 			return halt(ExitStuck, stopBlocked,
-				" >4min: tab %s (%s) needs attention: its worker waits on a permission prompt", w.tab, w.id)
+				" >4min: tab %s (%s) needs attention: its worker waits on a permission prompt", w.tab, w.id).
+				setsAside("its worker waited on a permission prompt for over 4min")
 		}
-		return halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", w.tab, w.id)
+		return halt(ExitStuck, stopBlocked, " >4min: tab %s (%s) needs attention", w.tab, w.id).
+			setsAside("its worker was blocked, waiting on a dialog, for over 4min")
 	}
 	if unknown.track(st == StateUnknown) > unknownLimit {
 		return halt(ExitStuck, stopUnknown,
-			" >5min: the terminal can't tell what the worker in tab %s (%s) is doing; it needs attention", w.tab, w.id)
+			" >5min: the terminal can't tell what the worker in tab %s (%s) is doing; it needs attention", w.tab, w.id).
+			setsAside("the terminal could not tell what its worker was doing for over 5min")
 	}
 	return nil
 }
@@ -177,7 +180,8 @@ func (o *Loop) overTime(ctx context.Context, w worker, st AgentState, limited ti
 			w.tab, st, command.ShortDuration(limit), w.wt))
 		return halt(ExitStuck, stopTicketLimit,
 			": %s still %s after %s in tab %s (worktree %s); stopping so it can be looked at",
-			w.id, st, command.ShortDuration(limit), w.tab, w.wt)
+			w.id, st, command.ShortDuration(limit), w.tab, w.wt).
+			setsAside(fmt.Sprintf("its worker was still %s after the %s ticket limit", st, command.ShortDuration(limit)))
 	}
 	if o.cfg.TicketLimit == 0 && !*warned && gone > longRunning {
 		*warned = true

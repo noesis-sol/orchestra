@@ -55,8 +55,9 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 		next = fmt.Sprintf("; its session %s was resumed once in this run already: the next run resumes it "+
 			"again, or tells it to carry on should it be back in its tab", s.ID)
 	}
-	return halt(ExitStuck, stopPaused, ": %s still in_progress, its worker gone from tab %s (worktree %s)%s; "+
-		"stopping so it can be looked at", id, w.tab, w.wt, next)
+	return r.asideOvernight(ctx, w, halt(ExitStuck, stopPaused,
+		": %s still in_progress, its worker gone from tab %s (worktree %s)%s; stopping so it can be looked at",
+		id, w.tab, w.wt, next).setsAside("its worker is gone from tab "+w.tab+" with the ticket still in_progress"))
 }
 
 // resumedInTab says asked ticket t, whose worker w is gone from its tab with the ticket in progress,
@@ -149,8 +150,11 @@ func (r *ticketRun) resumeSession(ctx context.Context, wt, tab, question string,
 		}
 		o.appendNotes(keep, id, fmt.Sprintf(
 			"Orchestra: the worker resumed in tab %s never took up carrying on (worktree %s).", launched.tab, wt))
-		return halt(ExitStuck, stopPaused, ": %s's worker, resumed in tab %s, never took up carrying on "+
-			"(worktree %s); stopping so it can be looked at", id, launched.tab, wt)
+		left := worker{id: id, br: r.br, wt: wt, tab: launched.tab, agent: agent, pane: launched.pane,
+			started: begun, hooks: launched.hooks, since: begun}
+		return r.asideOvernight(ctx, left, halt(ExitStuck, stopPaused, ": %s's worker, resumed in tab %s, "+
+			"never took up carrying on (worktree %s); stopping so it can be looked at", id, launched.tab, wt).
+			setsAside("its worker, resumed in tab "+launched.tab+", never took up carrying on"))
 	}
 	o.info("  %s's worker carries on in tab %s, its session resumed; adopting it", id, launched.tab)
 	w := workerSpot{tab: launched.tab, pane: launched.pane, wt: wt, hooks: launched.hooks}

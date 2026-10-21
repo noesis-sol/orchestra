@@ -541,6 +541,10 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   in tab …` (or `<id>, which the last run left running (PAUSED), is closed in tab …`) when it adopts
   a worker, and merges its ticket as usual. One still waiting on its question, or left running with
   its worker idle in its tab, is left for the user and saved again.
+- `<id>: <why> -> noted and deferred, the run being an overnight one (<KIND>); worktree … and tab …
+  left for review`: an overnight run (`--overnight`) set the ticket aside rather than stop for
+  `PAUSED`, `BLOCKED`, `UNKNOWN` or `TICKET_LIMIT`, and went on. Handle it in the morning as that
+  stop's row above says: its worker is still in its tab, and merges should it close the ticket.
 - `<id>, carried over from the last run, is dropped: …`: its worktree is gone, its branch was merged
   by hand, or bd can't show the ticket. Nothing to do unless the line surprises you.
 - `WORKER_GONE: <id> is in progress after …, but its worker is gone from tab <tab>`: a carried-over

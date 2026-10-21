@@ -574,8 +574,12 @@ func (o *Loop) budgetNote() string {
 	if limit <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("\n\nYou have about %s for this ticket: a worker still going after that stops the run, "+
-		"so pace yourself to it.\n", command.ShortDuration(limit))
+	after := "stops the run"
+	if o.cfg.Overnight {
+		after = "has its ticket set aside"
+	}
+	return fmt.Sprintf("\n\nYou have about %s for this ticket: a worker still going after that %s, "+
+		"so pace yourself to it.\n", command.ShortDuration(limit), after)
 }
 
 // permissionPending says whether the worker a ticket left in its tab, w, which the terminal shows in
@@ -632,15 +636,16 @@ type worker struct {
 
 // conclude waits for the ticket's worker, w, to settle, and then does what its ticket's status says:
 // merge it, set it aside, or stop the run. A ticket set aside with its worker left in its tab is
-// followed there, should the worker close it later (see leaveOpen). head is its branch's commit before
-// the worker began. It sets r.how to how the worker settled.
+// followed there, should the worker close it later (see leaveOpen). In an overnight run, a stop that
+// needs the maintainer for this ticket alone sets it aside instead (see asideOvernight). head is its
+// branch's commit before the worker began. It sets r.how to how the worker settled.
 func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 	report func(ctx context.Context, st AgentState, err error)) *stopReason {
 	o, t, keep := r.o, r.t, r.keep
 	id, br, wt, tab := w.id, w.br, w.wt, w.tab
 	idleAt, stop := o.waitSettled(ctx, w, time.Now(), report)
 	if stop != nil {
-		return stop
+		return r.asideOvernight(ctx, w, stop)
 	}
 
 	// Beads, not the worker's own report, decides what happened. A ticket blocked on an open
@@ -692,8 +697,9 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 		// Most likely waiting for an answer: stop rather than start the next ticket around it.
 		o.appendNotes(keep, id, fmt.Sprintf(
 			"Orchestra: worker in tab %s went idle with the ticket still in_progress (worktree %s).", tab, wt))
-		return halt(ExitStuck, stopPaused,
-			": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt)
+		return r.asideOvernight(ctx, w, halt(ExitStuck, stopPaused,
+			": %s still in_progress in tab %s (worktree %s); stopping so it can be answered", id, tab, wt).
+			setsAside("its worker went idle with the ticket still in_progress"))
 	case outcomeUnreadable:
 		return halt(ExitTool, stopStatusUnreadable,
 			" for %s%s; stopping rather than guessing (worktree %s and tab %s left open)",

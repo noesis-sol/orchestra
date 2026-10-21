@@ -8,6 +8,16 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- An overnight run (`--overnight`) sets aside a ticket it would otherwise
+  stop for, rather than stopping at 1am: a worker idle with its ticket in
+  progress, gone from its tab with no session to resume or gone a second
+  time (`PAUSED`), blocked on a dialog for 4 minutes (`BLOCKED`), unknown
+  for 5 (`UNKNOWN`) or past the ticket limit (`TICKET_LIMIT`) has its
+  ticket deferred with a note saying why, its worktree and tab left for
+  review and its worker followed there, and the run goes on; the run's
+  report lists it with the tickets set aside. A git failure in the main
+  checkout, the hold for the environment and the other stops still stop
+  it, as docs/running.md says.
 - The answer talk, where the maintainer answers the questions workers
   asked: a Claude Code session in the main checkout, in a pane beside
   orchestra's or on its terminal, given the open questions in the run's
