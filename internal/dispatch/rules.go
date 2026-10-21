@@ -214,13 +214,64 @@ func ticketPrompt(id, first string) string {
 }
 
 // firstNotes is what a new worker's first message says of its start alone, beside its ticket or its
-// whole prompt: the spec ticket t comes from (see specNote), then what an earlier attempt left,
-// earlier (see earlierNote).
+// whole prompt: the spec ticket t comes from (see specNote), what the closed tickets blocking it handed
+// on (see handoffNote), then what an earlier attempt left, earlier (see earlierNote).
 func firstNotes(t Ticket, earlier string) string {
+	notes := handoffNote(t) + earlier
 	if s := specNote(t, "start"); s != "" {
-		return "\n\n" + s + "\n" + earlier
+		return "\n\n" + s + "\n" + notes
 	}
-	return earlier
+	return notes
+}
+
+// Each hand-off a new worker is given is cut to handoffChars characters, from at most handoffMax tickets.
+const (
+	handoffChars = 600
+	handoffMax   = 5
+)
+
+// handoffNote gives ticket t's new worker the hand-offs of the closed tickets blocking t, as bd show
+// gives its dependencies: each one's ID, title and close reason, which the worker prompt asks a worker
+// to write for the tickets built on its own (the interfaces, files, commands or decisions it changed),
+// so that t's worker needn't rediscover them from the code. A blocker closed without a reason is left
+// out; each reason is cut to handoffChars, on one line, and at most handoffMax are given. "" when there
+// is none: a ticket blocked by nothing, or a worker resumed, which was given them as it started.
+func handoffNote(t Ticket) string {
+	var lines []string
+	for _, d := range t.Dependencies {
+		if d.DependencyType != "blocks" || d.Status != StatusClosed {
+			continue
+		}
+		reason := oneLine(d.CloseReason)
+		if reason == "" {
+			continue
+		}
+		if r := []rune(reason); len(r) > handoffChars {
+			reason = strings.TrimSpace(string(r[:handoffChars-1])) + "…"
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s): %s", d.ID, oneLine(d.Title), reason))
+		if len(lines) == handoffMax {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\n\nThe closed tickets yours builds on handed on, as they closed, what it needs to know of them:\n" +
+		strings.Join(lines, "\n") + "\n"
+}
+
+// oneLine is s on one line: its runs of spaces, tabs and line breaks one space each, and the control
+// characters left out, as a ticket's text is anyone's to write and a worker of another kind is given its
+// first message pasted.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // SpecKey is the metadata key naming the spec a ticket comes from: the committed spec's path in the

@@ -60,7 +60,7 @@ func TestRefusedAgentNameEndsTheStartWithoutRetries(t *testing.T) {
 		h := &refusingHerdr{}
 		o := f.orch
 		o.cfg.WTRoot, o.cfg.AgentKind, o.cfg.LaunchPrompt = t.TempDir(), "claude", launch
-		o.starter, o.namer, o.agents = h, h, h
+		o.starter, o.namer, o.agents, o.tickets = h, h, h, fakeTickets{}
 		s := o.newTicketRun(context.Background(), Ticket{ID: "Cal-bl0.1", Title: "t"}).work(context.Background())
 		if s == nil || s.code != ExitTool || s.kind != stopStartFailed || !errors.Is(s, errNameRefused) {
 			t.Fatalf("launch=%v: want START_FAILED, got %+v", launch, s)

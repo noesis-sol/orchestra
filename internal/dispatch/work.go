@@ -445,7 +445,7 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cu
 		if !cut {
 			earlier = o.earlierNote(ctx, branchOf(id), wt)
 		}
-		first := firstNotes(t, earlier)
+		first := firstNotes(o.withLinks(ctx, t), earlier)
 		ws.full = o.fullPrompt(id, first)
 		ws.prompt = ws.full
 		if ws.args.rules != nil {
@@ -477,6 +477,25 @@ func (o *Loop) workerFiles(ctx context.Context, t Ticket, wt string, resumed, cu
 		ws.args.report, err = optional(o.log, report, err, "cannot set up "+id+"'s worker to report what it does")
 	}
 	return ws, err
+}
+
+// withLinks is ticket t with the tickets it depends on as bd show gives them, with their close reasons,
+// for a new worker's first message (see handoffNote): bd ready, which t was picked from, gives none. A
+// show that fails is logged, and t's worker starts without its blockers' hand-offs.
+func (o *Loop) withLinks(ctx context.Context, t Ticket) Ticket {
+	if t.Dependencies != nil {
+		return t
+	}
+	shown, err := o.tickets.Show(ctx, t.ID)
+	if err != nil {
+		if ctx.Err() == nil { // else bd failed for the stop, which the run's INTERRUPTED line says
+			o.log.Raw("", fmt.Errorf("cannot read what the tickets %s builds on handed on, starting without it: %w",
+				t.ID, err))
+		}
+		return t
+	}
+	t.Dependencies = shown.Dependencies
+	return t
 }
 
 // optional is v, which a worker can start without, or, when err says it couldn't be had, its zero

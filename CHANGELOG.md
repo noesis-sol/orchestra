@@ -8,6 +8,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Added
 
+- A worker closes its ticket with a hand-off as its reason: what a ticket
+  built on it needs to know (the interfaces, files, commands or decisions it
+  changed), in one to three sentences, or `nothing for dependents`. A new
+  worker's first message gives the hand-offs of the closed tickets blocking
+  its ticket, each with its ID and title, cut to 600 characters, from at
+  most 5 tickets; a resumed worker isn't given them again. The worker
+  prompt's template has a new version: an older project is told so at a
+  run's start, and `orchestra init --update` adds the rule.
 - The event stream's record that ends a ticket's part in the run (`closed`,
   `deferred`, or a `warn` with `aside: true`) gives the seconds it spent in
   each phase the dashboard shows, from when the run took it up: `phases`

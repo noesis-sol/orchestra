@@ -44,6 +44,10 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - Close the ticket only when `scripts/check-own.sh` passes after your last change.
 - Before closing, read the tickets that depend on this one (`bd show TICKET_ID` lists them, then
   `bd show <id>` each) and make sure your change gives them what they expect.
+- Close it with a hand-off as its reason, `bd close TICKET_ID --reason "<the hand-off>"`: what a
+  ticket built on this one needs to know of it (the interfaces, files, commands or decisions it
+  changed), in one to three sentences, or `nothing for dependents`. orchestra gives it to the
+  workers of the tickets this one blocks as they start.
 - If a change can only be verified by CI (for example `.github/workflows/`, or a platform the
   local checks don't cover), close the ticket once `scripts/check-own.sh` passes, with a note naming the
   CI job that will verify it ("Awaits CI: <job>"). The batch's pull request runs every CI job
