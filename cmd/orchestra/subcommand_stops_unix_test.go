@@ -71,6 +71,11 @@ func TestEachSubcommandStopsWithItsReport(t *testing.T) {
 			e.dir, _ = gitRepo(t)
 			return nil, "orchestra plan: stopped before proposing any link; nothing changed.\n"
 		},
+		"requires": func(t *testing.T, e *cmdEnv) ([]string, string) { // stopped in a requirement's install
+			e.dir = requiresFixture(t, `{"requires": [{"name": "x", "check": "false", "install": "kill -INT `+
+				strconv.Itoa(os.Getpid())+`; sleep `+strconv.Itoa(int(patience/time.Second))+`"}]}`)
+			return nil, "orchestra requires: stopped.\n"
+		},
 		"update": func(t *testing.T, e *cmdEnv) ([]string, string) { // stopped asking for the latest release
 			e.releases = update.Updater{API: "http://127.0.0.1:1", Client: &http.Client{Transport: interruptOnRequest{}}}
 			return []string{"--check"}, "orchestra update: stopped.\n"

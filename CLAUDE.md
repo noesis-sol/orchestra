@@ -127,6 +127,8 @@ the orchestra skill's opening define both terms; use them consistently.
   how its screen is read (`ScreenReader`). `internal/claudescreen`: Claude Code's screen, its glyphs and dialogs in one
   package: its input box, latest action, usage limit, start-up and permission dialogs.
 - `internal/update`: `orchestra update`, replacing the binary with the latest GitHub Release's.
+- `internal/requires`: a project's requirements (`requires` in settings.json): their checks run side by side, the
+  installs of those missing one at a time, for a run's start, `orchestra init` and `orchestra requires`.
 - `internal/load`: the machine's load for the dashboard's load line: each worker's process-tree memory from one `ps`
   listing, the kernel's memory pressure, swapping and CPU load (macOS and Linux), and the thresholds that colour it.
 - `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`

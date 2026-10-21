@@ -6,6 +6,21 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A project can list what its machine must have in `"requires"` in
+  `.orchestra/settings.json`: each entry a name, a `check` command, and an
+  `install` command (never `sudo`, refused as the settings load) or a
+  `manual` step for a person, optionally limited to `darwin` or `linux`.
+  Each run checks the list before its first ticket, installing what it can
+  (the output in `.orchestra/run/requires-<name>.log`) and checking again,
+  and stops with one `REQUIREMENTS_MISSING` line naming what is still
+  missing and what to do, exit 2, rather than leave every ticket to fail on
+  it; a merge that changes the list has it checked again before the next
+  ticket starts. `orchestra init` lists the requirements among what the
+  machine needs, and `orchestra requires` (`--no-install` to only check)
+  prints each one's state.
+
 ### Changed
 
 - The worker prompt no longer asks a worker to keep a ticket's acceptance

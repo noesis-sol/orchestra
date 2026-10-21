@@ -18,6 +18,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/requires"
 )
 
 // Exit codes, unchanged from orchestrate.sh.
@@ -170,6 +171,10 @@ type ledger struct {
 	// setupSet: setup and setup_files as a merge in this run committed them to Base (see takeSettings);
 	// nil for Config's.
 	setupSet *setupConf
+	// requiresSet: the requirements as a merge in this run committed them to Base, and requiresDue
+	// whether they are to be checked before the next ticket starts (see takeRequires); nil for Config's.
+	requiresSet *[]project.Requirement
+	requiresDue bool
 	// blockers: each ready ticket's blockers and sources, kept for the run (see linksOf); picks, how
 	// many times pick has read bd ready; baseAt, the commit Base was on as a pick last read it (see
 	// pickHead).
@@ -292,6 +297,7 @@ const (
 	stopPanic            stopKind = "PANIC"
 	stopPaused           stopKind = "PAUSED"
 	stopReadyUnreadable  stopKind = "READY_UNREADABLE"
+	stopRequirements     stopKind = requires.MissingKind
 	stopStartFailed      stopKind = "START_FAILED"
 	stopStatusUnreadable stopKind = "STATUS_UNREADABLE"
 	stopTabFailed        stopKind = "TAB_FAILED"
@@ -538,6 +544,10 @@ type Config struct {
 	// settings.json replaces them from then on (see takeSettings).
 	Setup      string
 	SetupFiles []string
+	// Requires is what the machine must have (requires in .orchestra/settings.json), checked in Repo
+	// as the run starts, before its first ticket, and again before the next ticket starts once a merge
+	// changes it (see checkRequires); none for none.
+	Requires []project.Requirement
 	// EnvHoldCount tickets in a row whose workers failed at once, or that triage blamed on the
 	// environment with high confidence, hold the run; 0 turns it off.
 	EnvHoldCount int

@@ -610,6 +610,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	keep(&problems, &c.UsageLimitWait)(project.ResolveUsageLimitWait(settings))
 	keep(&problems, &c.ExcludeTypes)(project.ResolveExcludeTypes(settings))
 	keep(&problems, &c.SetupFiles)(project.ResolveSetupFiles(settings))
+	keep(&problems, &c.Requires)(project.ResolveRequires(settings))
 	return problems
 }
 

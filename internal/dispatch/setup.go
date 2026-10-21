@@ -294,21 +294,32 @@ func (o *Loop) retrySetups() { o.book.retrySetups() }
 // takeSettings has the run take setup and setup_files from settings.json as ticket id's merge
 // committed it to Base, when the merge, from before, changed it: a setup set during the run counts
 // from then on, as the environment ticket a spec's breakdown files first sets it for the tickets after
-// it. One git can't read, or that doesn't parse, is warned of, and the setup stays as it was. now is
-// Base's commit after the merge: the branch's it fast-forwarded to. The caller holds repoMu, so Base
-// stays where the merge left it.
+// it. Its requirements too, checked again before the next ticket starts (see takeRequires). One git
+// can't read, or that doesn't parse, is warned of, and the setup stays as it was, as do the
+// requirements. now is Base's commit after the merge: the branch's it fast-forwarded to. The caller
+// holds repoMu, so Base stays where the merge left it.
 func (o *Loop) takeSettings(ctx context.Context, id, before, now string) {
 	c := o.cfg
 	if before == "" || now == "" ||
 		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
 		return
 	}
-	was := o.setupNow()
 	text, err := o.checkout.FileAt(ctx, c.Repo, now, project.SettingsFile)
 	var s project.Settings
 	if err == nil {
 		s, err = project.ParseSettings([]byte(text))
 	}
+	if err == nil {
+		o.takeRequires(id, s)
+	}
+	o.takeSetup(id, s, err)
+}
+
+// takeSetup has the run take setup and setup_files from s, the settings.json ticket id's merge
+// committed to Base, unless err says why it couldn't be read (see takeSettings).
+func (o *Loop) takeSetup(id string, s project.Settings, err error) {
+	c := o.cfg
+	was := o.setupNow()
 	var files []string
 	if err == nil {
 		files, err = project.ResolveSetupFiles(s)

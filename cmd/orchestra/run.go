@@ -139,6 +139,7 @@ func (c subcommand) start(ctx context.Context, args []string, e cmdEnv) int {
 var subcommands = []subcommand{
 	{"init", initSynopsis, stopCancels, runInit},
 	{"plan", planSynopsis, stopCancels, runPlan},
+	{"requires", requiresSynopsis, stopCancels, runRequires},
 	{"update", updateSynopsis, stopCancels, runUpdateHere},
 }
 
@@ -176,8 +177,8 @@ func parseArgs(fs *flag.FlagSet, args []string, cmd string) (code int, ok bool) 
 	return dispatch.ExitOK, true
 }
 
-// run is orchestra: a subcommand ('orchestra init …', 'orchestra plan …', 'orchestra update …') or a
-// run. It returns nil or an exitStatus.
+// run is orchestra: a subcommand ('orchestra init …', 'orchestra plan …', 'orchestra requires …',
+// 'orchestra update …') or a run. It returns nil or an exitStatus.
 //
 // A run reads its configuration, opens its session (held until it ends: the lock, the stop
 // signals' watch, the log), settles what it works on (the question, and a feature typed there or

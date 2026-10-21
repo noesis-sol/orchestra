@@ -51,6 +51,9 @@ type Settings struct {
 	// name, or its path from the repository's top when the glob has a slash. Absent:
 	// DefaultSetupFiles.
 	SetupFiles *[]string `json:"setup_files,omitempty"`
+	// Requires is what the project's machine must have, checked at each run's start, before any ticket
+	// runs, and in orchestra init (see Requirement and ResolveRequires).
+	Requires []Requirement `json:"requires,omitempty"`
 	// ExcludeTypes are the issue types never taken from bd ready, such as epics, whose children
 	// are the work. Absent: DefaultExcludeTypes; [] takes every type.
 	ExcludeTypes *[]string `json:"exclude_types,omitempty"`

@@ -82,12 +82,9 @@ func WriteRun(root *os.Root, dir, rel string, b []byte, perm fs.FileMode) error 
 // WriteRunFrom writes what r reads to the file rel in root, as WriteRun writes b: for a file too long
 // to hold in memory first, such as a check's whole output.
 func WriteRunFrom(root *os.Root, dir, rel string, r io.Reader, perm fs.FileMode) error {
-	if err := RemoveRun(root, dir, rel); err != nil {
-		return err
-	}
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	f, err := CreateRun(root, dir, rel, perm)
 	if err != nil {
-		return RunError(dir, rel, err)
+		return err
 	}
 	_, err = io.Copy(f, r)
 	if cerr := f.Close(); err == nil {
@@ -97,6 +94,19 @@ func WriteRunFrom(root *os.Root, dir, rel string, r io.Reader, perm fs.FileMode)
 		return RunError(dir, rel, err)
 	}
 	return nil
+}
+
+// CreateRun creates the file rel in root, an os.Root at the checkout dir, with mode perm, for the caller
+// to write and close: an earlier file is removed first, as WriteRun removes it.
+func CreateRun(root *os.Root, dir, rel string, perm fs.FileMode) (*os.File, error) {
+	if err := RemoveRun(root, dir, rel); err != nil {
+		return nil, err
+	}
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return nil, RunError(dir, rel, err)
+	}
+	return f, nil
 }
 
 // RemoveRun removes the file rel from root, an os.Root at the checkout dir, if it is there. Removing a

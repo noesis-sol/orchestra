@@ -20,6 +20,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/requires"
 	"github.com/noesis-sol/orchestra/internal/tui"
 	"golang.org/x/term"
 )
@@ -82,8 +83,51 @@ func runInit(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	if steps = append(steps, did...); halt != nil {
 		return initHalted(ui, stderr, steps, halt)
 	}
-	signOff(ctx, ui, repo, steps, choice, existing.WorkerEffort, getenv)
+	needs := initRequires(stopCtx, repo, ui.Working)
+	if stop.stopped() {
+		ui.Steps(steps)
+		fmt.Fprintln(stderr, "orchestra init: stopped while checking the project's requirements")
+		return dispatch.ExitInterrupted
+	}
+	signOff(ctx, ui, repo, steps, needs, choice, existing.WorkerEffort, getenv)
 	return dispatch.ExitOK
+}
+
+// initRequires checks the requirements of the project at repo, as settings.json has them once init has
+// written it, as a run does as it starts (installing what it can), and returns a step for each, for
+// init's list of what the machine needs: one missing says its manual step, or why its install failed
+// and where its output is. A list a run would refuse is a missing step saying why. working says what
+// runs.
+func initRequires(ctx context.Context, repo string, working func(string)) []project.Step {
+	settings, _, err := project.LoadSettings(repo)
+	var list []project.Requirement
+	if err == nil {
+		list, err = project.ResolveRequires(settings)
+	}
+	var limit time.Duration
+	if err == nil {
+		limit, err = project.ResolveCheckTimeout(project.Given[time.Duration]{}, settings)
+	}
+	if err != nil {
+		return []project.Step{{Kind: project.StepMissing, Label: "requires", Detail: err.Error()}}
+	}
+	report := requires.Check(ctx, list, requires.Options{Dir: repo, InstallLimit: limit, Working: working})
+	steps := make([]project.Step, 0, len(report))
+	for _, res := range report {
+		s := project.Step{Kind: project.StepDone, Label: res.Name}
+		switch res.State {
+		case requires.Installed:
+			s.Detail = res.Says()
+		case requires.Missing:
+			s.Kind, s.Detail = project.StepMissing, res.Why()
+		case requires.OtherOS:
+			s.Kind, s.Detail = project.StepKept, res.Says()
+		case requires.Unchecked:
+			s.Kind, s.Detail = project.StepCaution, res.Says()
+		}
+		steps = append(steps, s)
+	}
+	return steps
 }
 
 // initSteps are the steps init takes to set up the repository at repo as the choice says, once it is
@@ -141,13 +185,14 @@ func openInitRepo(ctx context.Context, dir string) (repo string, existing projec
 	return repo, existing, err
 }
 
-// signOff prints init's summary of the repository at repo: its steps, what orchestra needs, and what
-// is left for the user, workerEffort being the project's worker_effort.
+// signOff prints init's summary of the repository at repo: its steps, what orchestra needs and the
+// project's requirements (needs, see initRequires), and what is left for the user, workerEffort being
+// the project's worker_effort.
 func signOff(
-	ctx context.Context, ui tui.InitScreen, repo string, steps []project.Step, c project.Choice, workerEffort string,
-	getenv func(string) string,
+	ctx context.Context, ui tui.InitScreen, repo string, steps, needs []project.Step, c project.Choice,
+	workerEffort string, getenv func(string) string,
 ) {
-	pre := project.Prerequisites(ctx, repo, getenv, onHost(ctx))
+	pre := append(project.Prerequisites(ctx, repo, getenv, onHost(ctx)), needs...)
 	ui.Steps(steps)
 	ui.Prerequisites(pre)
 	ui.Next(project.NextSteps(ctx, repo, steps, pre, c, workerEffort, onHost(ctx)))
@@ -180,7 +225,8 @@ const initAbout = "Set up Beads and .orchestra/ in this repository. Where bd is 
 	"at the end of a run; one that is there and differs is kept unless its flag is given),\n" +
 	"settings.json (the checks, their time limits, how many tickets run at the same time and\n" +
 	"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n" +
-	"files, and a check of what orchestra needs. Where the project keeps a CHANGELOG.md, it\n" +
+	"files, and a check of what orchestra needs and of the project's requirements (its 'requires'\n" +
+	"list, installing what it can, as each run does). Where the project keeps a CHANGELOG.md, it\n" +
 	"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n" +
 	"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n" +
 	"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n" +

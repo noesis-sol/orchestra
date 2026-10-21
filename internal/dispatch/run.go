@@ -178,6 +178,13 @@ type result struct {
 func (o *Loop) Run(ctx context.Context) int {
 	defer close(o.runDone) // triage counts its verdicts itself from here
 	o.begin(ctx)
+	// What the machine lacks would fail every ticket: the run stops before its first.
+	if s := o.checkRequires(ctx, o.cfg.Requires); s != nil {
+		return o.stop(s, s.Error())
+	}
+	if ctx.Err() != nil {
+		return o.interrupted(ctx)
+	}
 	// Ctrl+C as the last run's state loads ends the run at once: what Run read since may be cut short,
 	// and leaving behind what it carried would save .orchestra/run/state.json without the workers it
 	// could not check. Left as it was, the file carries them all over to the next run.
@@ -207,8 +214,9 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.takeDrainRequest()
 		r.heedEnvironment()
 		r.lookAround()
-		r.mergedByHand()   // before checking them again
-		r.recheckTickets() // before new tickets: each is done but for its merge, and others may wait on it
+		r.mergedByHand()    // before checking them again
+		r.recheckTickets()  // before new tickets: each is done but for its merge, and others may wait on it
+		r.recheckRequires() // a merge changed them: before the next ticket starts
 		r.startTickets()
 		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {

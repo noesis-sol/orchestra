@@ -21,7 +21,7 @@ import (
 // messages and the docs writing the older flags one way and the newer ones the other.
 
 // helpArgs are the commands whose -h lists flags: the run's and each subcommand's.
-var helpArgs = [][]string{{"-h"}, {"init", "-h"}, {"plan", "-h"}, {"update", "-h"}}
+var helpArgs = [][]string{{"-h"}, {"init", "-h"}, {"plan", "-h"}, {"requires", "-h"}, {"update", "-h"}}
 
 // listedFlag is a line of a help's flag listing: its dashes and the flag's name.
 var listedFlag = regexp.MustCompile(`(?m)^  (-+)([\w-]+)`)
@@ -30,10 +30,11 @@ var listedFlag = regexp.MustCompile(`(?m)^  (-+)([\w-]+)`)
 func TestHelpListsLongFlagsWithTwoDashes(t *testing.T) {
 	t.Parallel()
 	wants := map[string][]string{
-		"-h":     {"  --limit int\n", "  -c int\n    \tshorthand for --concurrent\n", "  -v\tshorthand for --version\n"},
-		"init":   {"  --check-fast string\n", "  -c int\n"},
-		"plan":   {"  --apply\n    \tadd the proposed links with bd dep add\n"},
-		"update": {"  --check\n", "  --force\n"},
+		"-h":       {"  --limit int\n", "  -c int\n    \tshorthand for --concurrent\n", "  -v\tshorthand for --version\n"},
+		"init":     {"  --check-fast string\n", "  -c int\n"},
+		"plan":     {"  --apply\n    \tadd the proposed links with bd dep add\n"},
+		"requires": {"  --no-install\n"},
+		"update":   {"  --check\n", "  --force\n"},
 	}
 	for _, args := range helpArgs {
 		_, help, err := runIn(t, t.TempDir(), nil, args...)

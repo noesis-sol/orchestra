@@ -121,6 +121,10 @@ Where the repository has a lockfile, pass `--setup "<command>"`, the command tha
 (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync`, `bundle install`, …; the summary names the one it found),
 which orchestra runs in each new worktree before its worker starts, and before the merge check when a
 rebase changes a lockfile; `--setup ""` for none.
+What the machine itself must have (a runtime, a CLI, Docker running, a permission) goes in `"requires"` in
+`settings.json`, an entry each with a `check` and an `install` (never `sudo`) or a `manual` step for the user;
+`init`, each run's start and `orchestra requires` check it, installing what they can, and `orchestra requires
+--no-install` only checks. Installing software is the user's call: ask before running `orchestra requires` without `--no-install`.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Where a run's `START` lines or
 `init`'s summary say the worker prompt or the verifier is older than orchestra's templates (`templates: …`),
@@ -456,6 +460,7 @@ ended with, say why it ended:
 | `START_FAILED`, `TAB_FAILED`, `TERMINAL_FAILED`, `WORKTREE_FAILED`, `AGENT_BUSY`, `AGENT_NAME_TAKEN`, `STATUS_UNREADABLE`, `READY_UNREADABLE`, `GIT_FAILED` | 4 | the terminal (Herdr, tmux or cmux), Beads or git failed | `STATUS_UNREADABLE` and `READY_UNREADABLE` end with bd's error, `GIT_FAILED` with git's (it could not read the main checkout, or answer what a finished ticket's merge turns on, three times running; that ticket is left unmerged and labelled, its worktree and tab for review); for the others the raw error is in the log, on lines without a timestamp just above. A worker may still be running: check its tab. |
 | `INTERRUPTED` | 130 | the user pressed Ctrl+C, or orchestra got SIGTERM or SIGHUP (its terminal or pane closed) | The worker keeps running, and its ticket is labelled `unmerged` (below). If it finishes, the next run merges it. If it leaves no work, reopen its ticket (`bd update <id> --status open`) and remove its empty worktree. |
 | `INTERRUPTED: quit at once …` | 130 | a second stop signal (a third with a merge under way) quit while the stopped run wound down | As for `INTERRUPTED`, but nothing was labelled or left for the next run: label each ticket the line leaves running (`bd label add <id> unmerged`), and merge one its worker closes by hand (below). With `abandoned <id>'s merge`, check `git status` in the main checkout and `git worktree list`, and tell the user what is half done before another run. |
+| `REQUIREMENTS_MISSING` | 2 | a requirement (`"requires"` in `settings.json`) still missing before the first ticket, or once a merge changed the list; each named with its manual step, or why its install failed and where its output is | Tell the user what is missing and the line's step for each; a manual one is theirs to do. Then run again: `orchestra requires` checks the list alone. |
 | (printed, not logged) | 2 | setup problem | The terminal lists each problem and its fix. `orchestra is already running in …` names the run going in this repository: follow it in its pane. |
 
 Lines about single tickets, which don't stop the run (in the events, `closed`, `deferred`, `asked`,

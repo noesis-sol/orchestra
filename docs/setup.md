@@ -104,6 +104,28 @@ A ticket's new worktree has nothing installed in it, and a ticket rebased over a
 }
 ```
 
+## The machine's requirements
+
+A project needs more of its machine than its dependencies: a language runtime, a package manager, a database or Docker running, a CLI the build calls, a permission granted. The setup installs a worktree's dependencies; `"requires"` in `settings.json` lists what the machine itself must have, each with a check, so that every new contributor's machine, and every run, finds out what is missing before a ticket fails on it:
+
+```json
+"requires": [
+  {"name": "bun", "check": "bun --version", "install": "curl -fsSL https://bun.sh/install | bash"},
+  {"name": "jq", "check": "command -v jq", "install": "brew install jq", "platforms": ["darwin"]},
+  {"name": "docker", "check": "docker info", "manual": "Install and start Docker Desktop"}
+]
+```
+
+Each entry has a `name` (letters, digits and `.` `_` `+` `-`), a `check`, a shell command run in the main checkout that exits 0 when the requirement is met, and either an `install`, a command that meets it, or `manual`, what a person must do instead: a GUI installer, a licence, a permission to grant, a service to start. `platforms` (`darwin`, `linux`) limits it to those systems; without it, it applies on both. An install runs without a terminal, its input empty, and never as root: one that runs `sudo` (or `su`, `doas`, `pkexec`) anywhere in it is refused as the settings load, a setup problem like any other, and goes in `manual` instead. So is an entry without a name, with the name of another, without a check, or with neither an install nor `manual` or both.
+
+orchestra checks the list at each run's start, before its first ticket ([Run](running.md#run)), in `orchestra init` and with `orchestra requires`. It runs every check side by side, each within a minute; for a check that fails and has an install, it runs the install, one at a time, within the merge check's time limit (`check_fast_timeout`), its whole output kept in the main checkout's `.orchestra/run/requires-<name>.log`, then checks again. What is still missing stops a run before its first ticket with one line naming each with its manual step, or why its install failed and where its output is, exit code 2:
+
+```
+REQUIREMENTS_MISSING: docker (Install and start Docker Desktop); jq ('brew install jq' failed: exit status 1; its output is in <repo>/.orchestra/run/requires-jq.log); meet them (each entry of 'requires' in .orchestra/settings.json says how), then run again
+```
+
+`orchestra init` lists each requirement among what the machine needs, after `bd`, Beads, the terminal and `claude`: met, installed with its install, missing with what to do, or not checked on another system; a missing one is in its next steps, and `init` goes on with the rest. `orchestra requires` checks the list alone, as a run would, and prints each entry's state, a line each (`jq: met`, `bun: installed with '…'`, `docker: missing: Install and start Docker Desktop`), then the `REQUIREMENTS_MISSING` line when something is still missing, exit code 2 (0 once everything is met); `--no-install` checks without installing anything. A ticket that adds a tool adds its entry, committed with the ticket: a merge that changes the list in the base's `settings.json` has the run check it again before the next ticket starts ([Run](running.md#run)).
+
 ## Choosing the checks
 
 Stage 2 of the form starts with the scout, the one organ that reads the repository itself (with Read, Glob and Grep only, confined to it): it looks where projects say how they test (package manifests and their scripts, Makefiles and task runners, CI workflows, test configs and the project's own scripts) and lists each suite with its command, how to run it on part of the project where its tool allows it (`go test ./<package>/...`, `pytest <paths>`), which `init` writes into the worker prompt, where it was found, whether it is fast (unit tests, lint, type checks, a smoke e2e suite) or full, whether it can run in two worktrees at once, and what it needs (a service, a browser, credentials). An existing `scripts/check.sh` comes first, as a fast suite. It starts only when stage 2 is reached, under a spinner with the time it has taken; it may take up to 5 minutes, and Esc skips it. The scout uses `--organ-model`'s and `--organ-effort`'s variables, `ORGAN_MODEL` and `ORGAN_EFFORT` (else the settings' `organ_effort`; medium by default).
