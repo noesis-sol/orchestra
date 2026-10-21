@@ -78,6 +78,10 @@ All notable changes to orchestra are documented here. The format follows
   merge check on the base and the other checks read the commit the run
   builds on; the run doesn't fetch again. Uncommitted changes in the main
   checkout fail the check, as they would stop the run; `--no-fetch` skips it.
+- An overnight run stopped during its pre-flight says when the pre-flight
+  fast-forwarded the base branch (`its pre-flight fast-forwarded main to
+  origin/main (3 commits), nothing else was changed`), rather than that
+  nothing was changed.
 
 ## [0.9.2] - 2026-10-21
 

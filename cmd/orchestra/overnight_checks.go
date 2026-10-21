@@ -220,6 +220,7 @@ func fetchCheck(ctx context.Context, s *session) preflightResult {
 	case f.Warning != "":
 		return preflightResult{verdict: tui.CheckWarned, text: f.Text}
 	case f.Behind > 0:
+		s.fetched = f.Text
 		return preflightResult{verdict: tui.CheckPassed, text: f.Text}
 	case f.Upstream == "":
 		return preflightResult{verdict: tui.CheckPassed, text: c.Base + " follows no upstream: nothing to fetch"}

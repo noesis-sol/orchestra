@@ -261,6 +261,9 @@ type session struct {
 	prompt  string
 	stops   *stopWatch
 	log     *dispatch.Log
+	// fetched is what the overnight pre-flight's fetch did to Base, "fast-forwarded main to
+	// origin/main (1 commit)" (fetchCheck); "" where it didn't move it
+	fetched string
 	undo    []func(err error) // what close does, the last added first, given the run's result
 	// filing is a spec's breakdown going on as the loop starts on its environment ticket
 	// (spec_early.go); nil for none

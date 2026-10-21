@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -61,7 +62,7 @@ func (s *session) preflight(ctx context.Context) (code int, ok bool) {
 		return dispatch.ExitOK, true
 	}
 	// A stop signal ends the pre-flight as Ctrl+C does; until its fixes are made, nothing has changed but
-	// Base, fast-forwarded to its upstream as the run's start would (fetchCheck).
+	// Base, fast-forwarded to its upstream as the run's start would (fetchCheck), which the stop says.
 	ctx, stop := s.stops.context(ctx)
 	defer stop()
 	checks := preflightChecks
@@ -143,9 +144,25 @@ func (s *session) makeFix(r preflightResult) error {
 	return nil
 }
 
-// preflightStopped ends a run stopped at its pre-flight, before anything changed.
-func (s *session) preflightStopped() (code int, ok bool) {
-	fmt.Fprintln(s.e.stderr, "orchestra: stopped before the run started; nothing was changed.")
+// preflightStopped ends a run stopped at its pre-flight, before anything changed but Base, which its
+// fetch may have fast-forwarded (fetchCheck).
+func (s *session) preflightStopped() (code int, ok bool) { return s.stoppedHaving("") }
+
+// stoppedHaving ends a run stopped at its pre-flight, saying what changed: Base, where its fetch
+// fast-forwarded it, then done, where it isn't "" ("the answers to 2 questions are recorded").
+func (s *session) stoppedHaving(done string) (code int, ok bool) {
+	var changed []string
+	if s.fetched != "" {
+		changed = append(changed, "its pre-flight "+s.fetched)
+	}
+	if done != "" {
+		changed = append(changed, done)
+	}
+	said := "nothing was changed"
+	if len(changed) > 0 {
+		said = strings.Join(changed, ", ") + ", nothing else was changed"
+	}
+	fmt.Fprintf(s.e.stderr, "orchestra: stopped before the run started; %s.\n", said)
 	return dispatch.ExitInterrupted, false
 }
 

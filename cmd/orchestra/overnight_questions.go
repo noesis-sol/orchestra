@@ -91,7 +91,5 @@ func (s *session) questionsStopped(answered int) (code int, ok bool) {
 	if answered == 0 {
 		return s.preflightStopped()
 	}
-	fmt.Fprintf(s.e.stderr, "orchestra: stopped before the run started; the answers to %s are recorded, "+
-		"nothing else was changed.\n", plural(answered, "question"))
-	return dispatch.ExitInterrupted, false
+	return s.stoppedHaving("the answers to " + plural(answered, "question") + " are recorded")
 }
