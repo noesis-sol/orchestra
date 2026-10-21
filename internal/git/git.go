@@ -84,9 +84,19 @@ var treePaths = []string{"--", ".", ":(exclude).claude", ":(exclude).beads", ":(
 // DirtyTreeAndBranch is DirtyTree and the branch checked out in dir, from one git status: "" on a
 // detached HEAD. The branch is named as git status names it, which unlike CurrentBranch never puts
 // heads/ before it where a tag has the same name. It returns git's error when git can't tell.
-func (Git) DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error) {
+func (g Git) DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error) {
+	return g.DirtyTreeAndBranchBesides(ctx, dir)
+}
+
+// DirtyTreeAndBranchBesides is DirtyTreeAndBranch leaving out these paths too, relative to dir and
+// taken literally, as DirtyTreeBesides does: a file orchestra is about to commit, such as a spec.
+func (Git) DirtyTreeAndBranchBesides(ctx context.Context, dir string, paths ...string) (dirty, branch string,
+	err error) {
 	// --no-ahead-behind: the branch line says nothing of its upstream that git has to count.
 	args := append([]string{"-C", dir, "status", "--porcelain", "--branch", "--no-ahead-behind"}, treePaths...)
+	for _, p := range paths {
+		args = append(args, ":(exclude,literal)"+p)
+	}
 	out, err := readGit(ctx, "", args...)
 	if err != nil {
 		return "", "", err

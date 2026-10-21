@@ -13,7 +13,9 @@ import (
 // fast-forwards Base to it, when Base has no commits of its own; it never pushes, and never rewrites
 // anything. Nothing it meets stops the run: a fetch that fails, or a Base that has diverged, is warned
 // of, and the run builds on Base as it is. An overnight run fetches before its pre-flight instead
-// (FetchBase), so that its checks read the Base the run builds on, and the run doesn't fetch again.
+// (FetchBase), so that its checks read the Base the run builds on, and the run doesn't fetch again; so
+// does a spec run before it commits its spec, or Base, a commit ahead, would read as diverged from an
+// upstream that moved.
 
 // Base's warnings as the run starts, the word each line starts with, which the event's Detail gives.
 const (
@@ -37,21 +39,23 @@ type BaseFetched struct {
 // BaseFetchGit is what FetchBase asks of git: the main checkout's state, and Base's upstream.
 type BaseFetchGit interface {
 	Upstream
-	DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch string, err error)
+	// Checkout's DirtyTreeAndBranch leaving out these paths, relative to dir and taken literally
+	DirtyTreeAndBranchBesides(ctx context.Context, dir string, paths ...string) (dirty, branch string, err error)
 }
 
 // FetchBase brings c.Base up to its upstream as a run does as it starts (see above), for the overnight
-// pre-flight, before the run's loop exists: the pre-flight's checks then read the Base the run builds on,
-// and the run, given Config.BaseFetched, doesn't fetch again. The error says why it fast-forwarded
-// nothing: the main checkout has uncommitted changes, isn't on Base, or git couldn't read it, as it
-// started or after the fetch, right before the fast-forward, each of which stops the run before its
-// first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
+// pre-flight and a spec run, before the run's loop exists: the pre-flight's checks then read the Base the
+// run builds on, a spec is committed onto it, and the run, given Config.BaseFetched, doesn't fetch again.
+// The error says why it fast-forwarded nothing: the main checkout has uncommitted changes, besides those
+// to the paths in besides (relative to c.Repo: a spec about to be committed), isn't on Base, or git
+// couldn't read it, as it started or after the fetch, right before the fast-forward, each of which stops
+// the run before its first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
 // starts.
-func FetchBase(ctx context.Context, c Config, g BaseFetchGit) (BaseFetched, error) {
+func FetchBase(ctx context.Context, c Config, g BaseFetchGit, besides ...string) (BaseFetched, error) {
 	if c.NoFetch {
 		return BaseFetched{}, nil
 	}
-	ready := func() error { return checkoutReady(ctx, c, g) }
+	ready := func() error { return checkoutReady(ctx, c, g, besides) }
 	if err := ready(); err != nil {
 		return BaseFetched{}, err
 	}
@@ -59,9 +63,10 @@ func FetchBase(ctx context.Context, c Config, g BaseFetchGit) (BaseFetched, erro
 }
 
 // checkoutReady says why the main checkout isn't ready for FetchBase's fast-forward: it has
-// uncommitted changes, isn't on Base, or git couldn't read it. It returns nil when it is ready.
-func checkoutReady(ctx context.Context, c Config, g BaseFetchGit) error {
-	dirty, branch, err := g.DirtyTreeAndBranch(ctx, c.Repo)
+// uncommitted changes, besides those to the paths in besides, isn't on Base, or git couldn't read it.
+// It returns nil when it is ready.
+func checkoutReady(ctx context.Context, c Config, g BaseFetchGit, besides []string) error {
+	dirty, branch, err := g.DirtyTreeAndBranchBesides(ctx, c.Repo, besides...)
 	switch {
 	case err != nil:
 		return fmt.Errorf("git could not read the state of %s: %w", c.Repo, err)
@@ -76,7 +81,7 @@ func checkoutReady(ctx context.Context, c Config, g BaseFetchGit) error {
 // fetchBase brings Base up to its upstream before the first ticket starts (see above), with the main
 // checkout clean and on Base: one that isn't stops the run before its first ticket, as it always has,
 // and nothing is fetched; one that changes during the fetch has nothing fast-forwarded, and stops the
-// run the same way. It does nothing with Config.NoFetch, after the pre-flight's fetch
+// run the same way. It does nothing with Config.NoFetch, after the pre-flight's fetch or a spec run's
 // (Config.BaseFetched), without the git to ask (Deps.Upstream), or for a Base that follows no
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
 // fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup

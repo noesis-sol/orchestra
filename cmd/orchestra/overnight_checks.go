@@ -201,16 +201,17 @@ func existingDir(dir string) string {
 // fetchCheck brings Base up to its upstream before the other checks read it, as the run would as it
 // starts (dispatch.FetchBase), so that they check the Base the run builds on; the run then doesn't
 // fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), and fails
-// where the main checkout would stop the run before its first ticket. Nothing with --no-fetch. The run
-// then takes the setup and the requirements the fast-forward brought in (takeFetchedSettings), as a
-// run's start does, before the other checks read them.
+// where the main checkout would stop the run before its first ticket: a spec the run is to commit
+// may be uncommitted. Nothing with --no-fetch. The run then takes the setup and the requirements the
+// fast-forward brought in (takeFetchedSettings), as a run's start does, before the other checks read
+// them.
 func fetchCheck(ctx context.Context, s *session) preflightResult {
 	c := s.cfg.Config
 	if c.NoFetch {
 		return preflightResult{verdict: tui.CheckPassed,
 			text: c.Base + " isn't fetched from its upstream (--no-fetch): the run builds on it as it is"}
 	}
-	f, err := dispatch.FetchBase(ctx, c, git.Git{})
+	f, err := dispatch.FetchBase(ctx, c, git.Git{}, specBesides(c)...)
 	switch {
 	case ctx.Err() != nil:
 		return preflightResult{verdict: tui.CheckWarned, text: c.Base + " wasn't fetched: stopped"}

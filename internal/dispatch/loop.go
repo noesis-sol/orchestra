@@ -541,7 +541,7 @@ type Config struct {
 	Version        string        // orchestra's version, for the log
 	NoFootprint    bool          // start tickets side by side even when their footprints overlap
 	NoFetch        bool          // start on Base as it is, without fetching its upstream (--no-fetch)
-	BaseFetched    bool          // the overnight pre-flight brought Base up to its upstream (FetchBase): no fetch
+	BaseFetched    bool          // the overnight pre-flight or a spec run fetched Base's upstream (FetchBase): no fetch
 	Predict        bool          // have the predictor organ guess the files of ready tickets naming none
 	Ticket         string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
 	Feature        string        // the feature request (--feature) Ticket, its epic, was talked through from; "" for none

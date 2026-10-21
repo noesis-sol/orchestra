@@ -36,6 +36,12 @@ All notable changes to orchestra are documented here. The format follows
   `git switch` during the fetch had the branch switched to fast-forwarded
   instead, before the run stopped with `DIRTY_TREE`, and an edit made
   meanwhile was carried through the fast-forward.
+- A spec run (`--spec`) brings its base branch up to its upstream before it
+  commits the spec, not after. With the upstream moved since the last pull
+  (a pull request merged on GitHub), the spec's commit left the branch
+  diverged, so the run warned `BASE_DIVERGED` and built the whole spec on the
+  stale branch. The overnight pre-flight's fetch no longer fails on a spec
+  in the repository that isn't committed yet.
 
 ## [0.9.3] - 2026-10-21
 

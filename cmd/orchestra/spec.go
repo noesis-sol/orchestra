@@ -158,11 +158,12 @@ type specRun struct {
 	cancel context.CancelFunc
 }
 
-// runSpec sets up the repository of the run s where orchestra init hasn't (spec_setup.go), commits
-// the spec and has it broken down, or carries on with the root epic an earlier run filed for it, and
-// returns the root epic's ID, which the run is then scoped to. When there is nothing to run it
-// returns "" and the exit code; what happened has been reported. Once the breakdown has filed the
-// spec's environment ticket it returns, the breakdown going on in s.filing (spec_early.go).
+// runSpec brings Base up to its upstream (spec_fetch.go), sets up the repository of the run s where
+// orchestra init hasn't (spec_setup.go), commits the spec and has it broken down, or carries on with
+// the root epic an earlier run filed for it, and returns the root epic's ID, which the run is then
+// scoped to. When there is nothing to run it returns "" and the exit code; what happened has been
+// reported. Once the breakdown has filed the spec's environment ticket it returns, the breakdown
+// going on in s.filing (spec_early.go).
 func (s *session) runSpec(ctx context.Context) (string, int) {
 	// Ctrl+C stops the breakdown as it does the loop; what it filed so far stays filed. A breakdown
 	// that goes on beside the loop is stopped by the loop's stop signal (see specFiling.stopBreakdown).
@@ -174,6 +175,7 @@ func (s *session) runSpec(ctx context.Context) (string, int) {
 			cancel()
 		}
 	}()
+	s.fetchForSpec(ctx) // before anything is committed to Base (spec_fetch.go)
 	if code := s.setUpForSpec(ctx); code != dispatch.ExitOK {
 		return "", code
 	}
