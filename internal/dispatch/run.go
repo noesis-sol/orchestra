@@ -186,6 +186,10 @@ func (o *Loop) Run(ctx context.Context) int {
 		return o.interrupted(ctx)
 	}
 	o.sayReadme()
+	// Base as its upstream has it, before the tickets not merged are read against it
+	if o.fetchBase(ctx); ctx.Err() != nil {
+		return o.interrupted(ctx)
+	}
 	// Ctrl+C as the last run's state loads ends the run at once: what Run read since may be cut short,
 	// and leaving behind what it carried would save .orchestra/run/state.json without the workers it
 	// could not check. Left as it was, the file carries them all over to the next run.

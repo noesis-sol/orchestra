@@ -30,6 +30,13 @@ All notable changes to orchestra are documented here. The format follows
   model, and `organs`, what its organ calls cost. A transcript that can't be
   read is left out and logged once. docs/events.md has a `jq` line that sums
   a run's tokens per model.
+- A run fetches its base branch's upstream before its first ticket and
+  fast-forwards the branch to it when the branch has no commits of its own
+  (`BASE: fast-forwarded main to origin/main (3 commits)`), so no ticket
+  builds on a branch a push from elsewhere has left behind. A branch that has
+  diverged is warned of (`BASE_DIVERGED`) and left as it is, and a fetch that
+  fails (`BASE_UNFETCHED`) never stops the run. `--no-fetch` (or
+  `ORCHESTRA_NO_FETCH=1`) skips it, for working offline.
 
 ## [0.9.2] - 2026-10-21
 

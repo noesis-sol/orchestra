@@ -465,6 +465,9 @@ func defineRunFlags(fs *flag.FlagSet, getenv func(string) string) *runFlags {
 		"have the triage organ note a recommendation on each deferred ticket [TRIAGE=0 turns off]")
 	bindEnv(e, fs.BoolVar, &c.Review, "review", "REVIEW", true, parseOnOff,
 		"have the reviewer organ write a run report when the loop stops [REVIEW=0 turns off]")
+	bindEnv(e, fs.BoolVar, &c.NoFetch, "no-fetch", "ORCHESTRA_NO_FETCH", false, parseOnOff,
+		"start on the base branch as it is, without first fetching its upstream and fast-forwarding to it, "+
+			"as for offline work [ORCHESTRA_NO_FETCH=1]")
 	bindEnv(e, fs.BoolVar, &c.Tickets, "tickets", "ORCHESTRA_TICKETS", false, parseOnOff,
 		"run the current tickets without first asking, in a terminal, whether to run a spec or talk a new feature "+
 			"through instead [ORCHESTRA_TICKETS=1]")

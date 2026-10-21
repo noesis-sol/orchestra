@@ -108,6 +108,8 @@ func TestPrecedence(t *testing.T) {
 			func(c options, _ project.Settings) any { return c.Review }, true, nil, false, true},
 		{"--tickets", []string{"--tickets=false"}, "ORCHESTRA_TICKETS", "true", "",
 			func(c options, _ project.Settings) any { return c.Tickets }, false, nil, true, false},
+		{"--no-fetch", []string{"--no-fetch=false"}, "ORCHESTRA_NO_FETCH", "1", "",
+			func(c options, _ project.Settings) any { return c.NoFetch }, false, nil, true, false},
 		{"--prompt-at-launch", []string{"--prompt-at-launch"}, "PROMPT_AT_LAUNCH", "FALSE", "",
 			func(c options, _ project.Settings) any { return c.LaunchPrompt }, true, nil, false, true},
 	} {

@@ -513,6 +513,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 		Checkout:  repo,
 		Worktrees: repo,
 		Merger:    repo,
+		Upstream:  repo,
 		History:   repo,
 		Advisor:   organ.Client{Bin: "claude", Model: cfg.OrganModel, Effort: cfg.OrganEffort},
 		AdviceCtx: organCtx,

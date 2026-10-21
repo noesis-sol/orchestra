@@ -69,7 +69,8 @@ type Event struct {
 	// Shared: for EvShared, how many other orchestra runs are going on the machine.
 	Shared int
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
-	// aside, why; for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
+	// aside, why; for an EvWarn about Base as the run starts (see fetchBase), the word its line starts
+	// with (BASE_DIVERGED, …); for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
 	// the tickets it waits for, as in "A, B"; for EvReopened, why it is back in the queue; for
 	// EvStop, what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
 	Detail string

@@ -134,6 +134,7 @@ type deps struct {
 	checkout  Checkout
 	worktrees Worktrees
 	merger    Merger
+	upstream  Upstream
 	history   History
 	organ     organ.Client
 	organCtx  context.Context // cancelled when the maintainer skips the organs
@@ -144,7 +145,7 @@ func depsFrom(d Deps) deps {
 	return deps{
 		tickets: d.Tickets, notes: d.Notes, tabs: d.Tabs, starter: d.Starter, namer: d.Namer, agents: d.Agents,
 		processes: d.Processes, reporter: d.Reporter, help: d.Help, checkout: d.Checkout, worktrees: d.Worktrees,
-		merger: d.Merger, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
+		merger: d.Merger, upstream: d.Upstream, history: d.History, organ: d.Advisor, organCtx: d.AdviceCtx,
 	}
 }
 
@@ -539,6 +540,7 @@ type Config struct {
 	CheckOwn       string        // a worker's check of its own change (check_own), which its rules name; "" for Check
 	Version        string        // orchestra's version, for the log
 	NoFootprint    bool          // start tickets side by side even when their footprints overlap
+	NoFetch        bool          // start on Base as it is, without fetching its upstream (--no-fetch)
 	Predict        bool          // have the predictor organ guess the files of ready tickets naming none
 	Ticket         string        // the run's scope: only this ticket and its descendants; "" for all of bd ready
 	Feature        string        // the feature request (--feature) Ticket, its epic, was talked through from; "" for none

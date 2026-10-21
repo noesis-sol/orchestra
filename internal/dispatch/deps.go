@@ -203,6 +203,18 @@ type Merger interface {
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }
 
+// Upstream is what a run asks of git as it starts, to bring Base up to the branch it follows (see
+// fetchBase). Each method that asks git a question returns git's error beside its answer when git
+// fails to answer, which is not the same as none.
+type Upstream interface {
+	// the upstream branch follows: its remote-tracking ref, the remote and the branch there; "" for none
+	UpstreamOf(ctx context.Context, repo, branch string) (ref, remote, remoteRef string, err error)
+	Fetch(ctx context.Context, repo, remote, remoteRef string) (string, error) // asks nobody for credentials
+	// the commits a has that b doesn't, and those b has that a doesn't
+	AheadBehind(ctx context.Context, repo, a, b string) (ahead, behind int, err error)
+	FastForward(ctx context.Context, repo, branch string) (string, error)
+}
+
 // History is what the organs read about the work, and people: a git call that fails reads as nothing.
 type History interface {
 	ShortStatus(ctx context.Context, worktree string) string
@@ -228,6 +240,7 @@ type Deps struct {
 	Checkout  Checkout
 	Worktrees Worktrees
 	Merger    Merger
+	Upstream  Upstream // nil: Base is never fetched
 	History   History
 	Advisor   organ.Client
 	AdviceCtx context.Context // cancelled when the maintainer skips triage and the report
