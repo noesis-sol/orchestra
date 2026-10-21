@@ -174,11 +174,11 @@ func (o *Loop) runTrain(ctx context.Context, w worker, t *trainRun) {
 		return
 	}
 	o.info("  checking %s ahead of its turn to merge, rebased onto %s as it is checked", w.br, t.behind)
-	r := rebaseStop{worker: w, onto: t.onto, head: t.orig}
+	r := rebaseStop{worker: w, onto: t.onto, head: t.orig, ahead: true}
 	output, err := o.setUp(ctx, r)
 	setup := err != nil
 	if !setup {
-		output, err = o.runCheck(ctx, r)
+		output, err = o.runCheck(ctx, r, head)
 	}
 	var failure string
 	switch {

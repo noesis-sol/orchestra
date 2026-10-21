@@ -24,9 +24,11 @@ type Log struct {
 	shown   sync.WaitGroup      // notifications still being shown
 	closed  bool                // Close has been called: no more notifications start
 
-	events     *os.File  // the event stream, from Begin to End; nil when it isn't open
-	run        time.Time // the run's start, in each of its records
-	eventsSaid bool      // the event stream failed, and the log has said so
+	events     *os.File   // the event stream, from Begin to End; nil when it isn't open
+	run        time.Time  // the run's start, in each of its records
+	eventsSaid bool       // the event stream failed, and the log has said so
+	begun      bool       // Begin has been called, whether or not the stream opened
+	early      []CheckRun // the checks that ended before Begin, for it to record (see Check)
 }
 
 // OpenLog opens the log file at path for appending. With notify, Notify shows macOS notifications

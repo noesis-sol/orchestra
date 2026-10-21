@@ -97,6 +97,8 @@ type Event struct {
 	// output starts with project.SuiteMarker, or else the check itself; "" when the setup before it
 	// failed) and where its whole output is.
 	Suite, Output string
+	// Ran: for an EvFullCheck that ran, how: its commit, how long it took and how it ended.
+	Ran *CheckRun
 }
 
 // QueueState is the queue as EvDispatch and EvQueue report it, for the dashboard.

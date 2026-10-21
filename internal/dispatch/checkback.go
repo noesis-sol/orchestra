@@ -84,7 +84,7 @@ func (o *Loop) checkRebased(ctx context.Context, repo *lockGuard, turn *mergeTur
 		output, err := o.setUp(ctx, r)
 		setup := err != nil
 		if !setup {
-			output, err = o.runCheck(ctx, r)
+			output, err = o.runCheck(ctx, r, at)
 		}
 		o.checkEnds(err == nil)
 		if err != nil && ctx.Err() != nil {

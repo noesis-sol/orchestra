@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/noesis-sol/orchestra/internal/project"
 )
@@ -77,7 +78,7 @@ func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
 		return "", nil
 	}
 	o.info("  %s: %s; running '%s' before the check", w.id, what, s.cmd)
-	if run, output := o.runIn(ctx, r, s.cmd); run.err != nil {
+	if run, output := o.runIn(ctx, r, now, s.cmd); run.err != nil {
 		return output, run.err
 	}
 	o.book.setUp(w.id, now)
@@ -168,10 +169,14 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 	}
 	o.info("  %s: %s before its worker starts", id, what)
 	o.markSetup(p.wt)
+	began := time.Now()
 	run, _ := runLimited(ctx, p.wt, o.checkTimeout(), s.cmd)
 	defer run.out.close()
+	ran := CheckRun{Suite: SuiteSetup, Ticket: id, Command: s.cmd, Commit: short(now), Took: time.Since(began),
+		Result: run.result(ctx)}
 	switch {
 	case run.err == nil:
+		o.log.Check(ran)
 		o.book.setUp(id, now)
 		if failedThere {
 			o.dropRunFile(p.wt, setupLogName, "the output of a setup that failed earlier")
@@ -180,9 +185,11 @@ func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool
 		return false, nil
 	case ctx.Err() != nil:
 		// Stopped by Ctrl+C, it says nothing of the setup; its mark stays, for the next run to set up again.
+		o.log.Check(ran)
 		return true, errInterrupted
 	}
-	r.leaveSetupFailed(s.cmd, p.wt, run)
+	ran.Output = r.leaveSetupFailed(s.cmd, p.wt, run)
+	o.log.Check(ran)
 	return true, nil
 }
 
@@ -243,8 +250,9 @@ type failedSetup struct {
 // merges, which may bring what the setup needs, or a probe ends a hold for the environment (see
 // retrySetups): taken again at once, it would fail again. It counts toward that hold as a worker
 // failing at once does (see countSettling), so that setups failing ticket after ticket hold the run
-// rather than leave the queue to them. One bd fails to reopen stays as it was, set aside if it was.
-func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
+// rather than leave the queue to them. One bd fails to reopen stays as it was, set aside if it was. It
+// returns where the whole output is.
+func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) string {
 	o, id, keep := r.o, r.id, r.keep
 	r.how = setupFailed
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, wt, run.err))
@@ -257,6 +265,7 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) {
 		"back in the queue (the whole output is in %s).", cmd, run.how(), wt, f.output))
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
 		"  SETUP_FAILED: '%s' %s in %s for %s; the whole output is in %s", cmd, run.how(), wt, id, f.output)})
+	return f.output
 }
 
 // failedSetupOf reports whether ticket id's worktree's setup failed, keeping it out of the run for now

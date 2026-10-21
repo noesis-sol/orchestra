@@ -15,6 +15,14 @@ All notable changes to orchestra are documented here. The format follows
   entered), `hand_backs` (`resolve` and `fix`), and `carried: true` for a
   ticket carried over from an earlier run. docs/events.md has a `jq` line
   that lists a run's tickets with their time per phase.
+- The event stream has a `check` record for each check or setup orchestra
+  runs, as it ends: its suite (`merge`, `recheck`, `full`, `base` or
+  `setup`), the ticket, the command, the commit, how many seconds it took,
+  how it ended (`passed`, `failed`, `timed_out` or `cut_short`), where its
+  output is, and `train` for the merge train's second check. The
+  `full_check` record gains the same `commit`, `seconds` and `result`.
+  `docs/events.md` has a `jq` line giving each suite's median and slowest
+  run. The log is as it was.
 
 ## [0.9.2] - 2026-10-21
 

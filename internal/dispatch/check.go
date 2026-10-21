@@ -29,37 +29,58 @@ func (o *Loop) checkTimeout() time.Duration {
 // in the log and the whole of it in the worktree's checkLogName (see keepOutput), and what it said
 // goes to the reviewer (see noteCheckFailed); runCheck returns where the output is. When it passes,
 // each FLAKY: line it printed is a warning (see reportFlaky).
-func (o *Loop) runCheck(ctx context.Context, r rebaseStop) (string, error) {
-	run, output := o.runIn(ctx, r, "")
+func (o *Loop) runCheck(ctx context.Context, r rebaseStop, at string) (string, error) {
+	run, output := o.runIn(ctx, r, at, "")
 	if run.err == nil {
 		o.reportFlaky(r.id, "", run.out)
 	}
 	return output, run.err
 }
 
-// runIn runs the check in the worktree of r's ticket, or the setup command setup when it is set, and returns how it
-// ran. It gives up after checkTimeout, stopping everything it started, and run.err wraps
-// errCheckTimedOut then. When it fails, the end of its output goes in the log, the whole of it in the worktree's
-// checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
+// runIn runs the check in the worktree of r's ticket, or the setup command setup when it is set, on its branch's
+// commit at, and returns how it ran. It gives up after checkTimeout, stopping everything it started, and run.err
+// wraps errCheckTimedOut then. When it fails, the end of its output goes in the log, the whole of it in the
+// worktree's checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
 // cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch as r has
-// it. Only what is said of the output is kept in memory (see checkOutput).
-func (o *Loop) runIn(ctx context.Context, r rebaseStop, setup string) (run commandRun, output string) {
+// it. Only what is said of the output is kept in memory (see checkOutput). Either way it ends with a check
+// record (see checkRunIn).
+func (o *Loop) runIn(ctx context.Context, r rebaseStop, at, setup string) (run commandRun, output string) {
 	w := r.worker
 	cmd, logName := o.cfg.Check, checkLogName
 	if setup != "" {
 		cmd, logName = setup, setupLogName
 	}
+	began := time.Now()
 	run, _ = runLimited(ctx, w.wt, o.checkTimeout(), cmd)
+	took := time.Since(began)
 	defer run.out.close()
 	if run.err == nil {
+		o.log.Check(o.checkRunIn(r, at, setup, took, run.result(ctx), ""))
 		return run, ""
 	}
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
 	output = o.keepOutput(w.wt, logName, "the check's", run.out)
+	o.log.Check(o.checkRunIn(r, at, setup, took, run.result(ctx), output))
 	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
 		o.noteCheckFailed(ctx, r, output, run, setup)
 	}
 	return run, output
+}
+
+// checkRunIn is the check record of the check, or the setup command setup when it is set, that ran in the worktree
+// of r's ticket on its branch's commit at, for took, and ended with result, its whole output kept in output: a
+// setup's, a merge check's or, for a ticket checked once more after its check failed, a recheck's.
+func (o *Loop) checkRunIn(r rebaseStop, at, setup string, took time.Duration, result CheckResult,
+	output string) CheckRun {
+	suite, cmd := SuiteMerge, o.cfg.Check
+	switch {
+	case setup != "":
+		suite, cmd = SuiteSetup, setup
+	case o.isRechecked(r.id):
+		suite = SuiteRecheck
+	}
+	return CheckRun{Suite: suite, Ticket: r.id, Command: cmd, Commit: short(at), Took: took, Result: result,
+		Output: output, Train: r.ahead}
 }
 
 // commandRun is how a command run within a time limit went (see runLimited): the check, its setup
@@ -88,6 +109,56 @@ func runLimited(ctx context.Context, dir string, limit time.Duration, cmds ...st
 		}
 	}
 	return run, -1
+}
+
+// CheckSuite is which of orchestra's checks a check record is of.
+type CheckSuite string
+
+// The suites of a check record.
+const (
+	SuiteMerge   CheckSuite = "merge"   // a ticket's merge check (check_fast), the merge train's included
+	SuiteRecheck CheckSuite = "recheck" // a ticket's merge check once more, after it failed (see recheck.go)
+	SuiteFull    CheckSuite = "full"    // the full check (check_full) at the end of the run
+	SuiteBase    CheckSuite = "base"    // the overnight pre-flight's merge check of Base's head
+	SuiteSetup   CheckSuite = "setup"   // the setup in a ticket's worktree, before its worker or its check
+)
+
+// CheckResult is how a check or a setup ended, as its check record says.
+type CheckResult string
+
+// The results of a check record.
+const (
+	CheckPassed   CheckResult = "passed"
+	CheckFailed   CheckResult = "failed"
+	CheckTimedOut CheckResult = "timed_out" // stopped at its time limit
+	CheckCutShort CheckResult = "cut_short" // a stop, or Ctrl+C, ended it
+)
+
+// CheckRun is a check or a setup orchestra ran, as its check record in the event stream gives it,
+// written as it ends (see Log.Check): which suite, for which ticket, what ran on which commit, how long
+// it took and how it ended.
+type CheckRun struct {
+	Suite   CheckSuite
+	Ticket  string // the ticket whose check or setup it was; "" for the full check and the base's
+	Command string
+	Commit  string // the commit checked, short
+	Took    time.Duration
+	Result  CheckResult
+	Output  string // where its whole output is, when it was kept: as it failed, or was cut short
+	Train   bool   // it ran ahead of its ticket's turn, as the second in the merge train (see train.go)
+}
+
+// result is how r ended, ctx being the one it ran in: passed, timed out, cut short or failed.
+func (r commandRun) result(ctx context.Context) CheckResult {
+	switch {
+	case r.err == nil:
+		return CheckPassed
+	case r.timedOut():
+		return CheckTimedOut
+	case ctx.Err() != nil:
+		return CheckCutShort
+	}
+	return CheckFailed
 }
 
 // timedOut reports whether r was stopped at its time limit.

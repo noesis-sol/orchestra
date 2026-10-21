@@ -208,6 +208,9 @@ func baseCheck(ctx context.Context, s *session) preflightResult {
 	busy := s.printer().Busy("", "Running the merge check on "+c.Base+"…", "(Ctrl+C stops)")
 	b, err := dispatch.CheckBase(ctx, c, git.Git{})
 	busy.Done("Ran the merge check on " + c.Base)
+	if b.Ran.Suite != "" {
+		s.log.Check(b.Ran) // recorded once the run starts, after its start record
+	}
 	if b.Kept != "" {
 		s.printer().Warn(fmt.Sprintf("overnight pre-flight: the merge check's worktree %s is left "+
 			"(git worktree remove --force %s removes it)", b.Kept, command.ShellWord(b.Kept)))

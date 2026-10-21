@@ -117,20 +117,24 @@ func (o *Loop) FullCheck(ctx context.Context) {
 	if setup != "" && failed == 0 {
 		f.setup = setup
 	}
-	f.took = time.Since(began).Round(time.Second)
+	ran := CheckRun{Suite: SuiteFull, Command: c.CheckFull, Commit: short(f.at), Took: time.Since(began),
+		Result: run.result(ctx)}
+	f.took = ran.Took.Round(time.Second)
 	switch {
 	case ctx.Err() != nil:
-		f.outcome = FullCheckSkipped
-		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Text: fmt.Sprintf(
+		f.outcome, ran.Result = FullCheckSkipped, CheckCutShort
+		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Ran: &ran, Text: fmt.Sprintf(
 			"  FULL_CHECK_SKIPPED: '%s' was stopped after %s, as asked", c.CheckFull, command.ShortDuration(f.took))})
 	case run.err == nil:
 		f.outcome = FullCheckPassed
-		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Ran: &ran, Text: fmt.Sprintf(
 			"  FULL_CHECK passed: '%s' on %s at %s (%s)", c.CheckFull, c.Base, short(f.at), command.ShortDuration(f.took))})
 		o.reportFlaky("", "the full check '"+c.CheckFull+"'", run.out)
 	default:
-		o.fullCheckFailed(keep, &f, run)
+		o.fullCheckFailed(keep, &f, run, &ran)
 	}
+	ran.Output = f.output
+	o.log.Check(ran)
 }
 
 // fullCheckWorktree makes a worktree with Base's commit at checked out, on no branch, in a new
@@ -177,8 +181,9 @@ func (o *Loop) removeFullCheckWorktree(ctx context.Context, wt string) {
 }
 
 // fullCheckFailed says that the full check failed, as run says: it keeps the output, files a ticket
-// for the suite it failed in, and records it all in f. A setup that failed (f.setup) files no ticket.
-func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, run commandRun) {
+// for the suite it failed in, and records it all in f. A setup that failed (f.setup) files no ticket. ran is
+// how it ran, which its EvFullCheck gives.
+func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, run commandRun, ran *CheckRun) {
 	c := o.cfg
 	how := run.how()
 	f.outcome = FullCheckFailed
@@ -190,7 +195,7 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, run commandRun
 		o.log.Raw(f.end, fmt.Errorf("the full check's setup '%s': %w", f.setup, run.err))
 		f.output = o.keepOutput(c.Repo, fullCheckLogName, "the full check's", run.out)
 		f.filed = "no ticket filed: it is not a suite's failure"
-		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Output: f.output, Text: fmt.Sprintf(
+		o.emit(Event{Kind: EvFullCheck, Detail: f.outcome, Output: f.output, Ran: ran, Text: fmt.Sprintf(
 			"  FULL_CHECK_FAILED: the setup '%s', run before '%s', %s on %s at %s; the whole output is in %s; %s",
 			f.setup, c.CheckFull, how, c.Base, short(f.at), f.output, f.filed)})
 		return
@@ -201,7 +206,7 @@ func (o *Loop) fullCheckFailed(ctx context.Context, f *fullCheck, run commandRun
 	}
 	f.output = o.keepOutput(c.Repo, fullCheckLogName, "the full check's", run.out)
 	f.ticket, f.filed = o.fileFullCheck(ctx, *f, how, run)
-	o.emit(Event{Kind: EvFullCheck, Ticket: f.ticket, Detail: f.outcome, Suite: f.suite, Output: f.output,
+	o.emit(Event{Kind: EvFullCheck, Ticket: f.ticket, Detail: f.outcome, Suite: f.suite, Output: f.output, Ran: ran,
 		Text: fmt.Sprintf("  FULL_CHECK_FAILED: '%s' %s on %s at %s, in the suite %s; the whole output is in %s; %s",
 			c.CheckFull, how, c.Base, short(f.at), f.suite, f.output, f.filed)})
 }

@@ -38,6 +38,8 @@ type BaseChecked struct {
 	Output string // where the whole output of a failure is, in Repo's .orchestra/run/; "" when it passed
 	// Kept is a worktree CheckBase couldn't remove, for the caller to say; "" when it removed it.
 	Kept string
+	// Ran is how it ran, for its check record (see Log.Check); its Suite is "" when it didn't run.
+	Ran CheckRun
 }
 
 // CheckBase runs c.Check, after c.Setup when the project has one, on c.Base's head in a new worktree
@@ -74,9 +76,12 @@ func CheckBase(ctx context.Context, c Config, g BaseGit) (BaseChecked, error) {
 	began := time.Now()
 	run, failed := runLimited(ctx, wt, orDefault(c.CheckTimeout, project.DefaultCheckTimeout), cmds...)
 	defer run.out.close()
-	b.Took = time.Since(began).Round(time.Second)
+	b.Ran = CheckRun{Suite: SuiteBase, Command: c.Check, Commit: short(at), Took: time.Since(began),
+		Result: run.result(ctx)}
+	b.Took = b.Ran.Took.Round(time.Second)
 	switch {
 	case ctx.Err() != nil:
+		b.Ran.Result = CheckCutShort
 		return b, ctx.Err()
 	case run.err == nil:
 		return b, nil
@@ -86,6 +91,7 @@ func CheckBase(ctx context.Context, c Config, g BaseGit) (BaseChecked, error) {
 	b.Failed = what + " " + run.how()
 	b.Said, _ = run.said()
 	b.Output = keepRunOutput(c.Repo, BaseCheckLogName, run.out)
+	b.Ran.Output = b.Output
 	return b, nil
 }
 

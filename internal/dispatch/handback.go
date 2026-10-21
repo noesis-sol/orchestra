@@ -24,6 +24,7 @@ type rebaseStop struct {
 	own        int
 	files      []string
 	onTop      bool
+	ahead      bool // checked ahead of its turn to merge, in the merge train (see train.go)
 }
 
 // branchOn names r's branch as it is checked, for a line about it: "wt/A rebased onto main", or

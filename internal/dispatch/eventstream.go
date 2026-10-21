@@ -17,8 +17,9 @@ import (
 // whose wording may change: .orchestra/run/events.jsonl in the main checkout, out of git with the
 // rest of .orchestra/run/, which keeps every run, as the log does. Each record is a JSON object on a
 // line of its own, appended in a single write, so a reader tailing the file never sees half of one:
-// a run's start record, one for each event it emits (an EvQueue too, which the log leaves out), and
-// its end record, with the exit code. Each gives the run's start time, which tells the runs in the
+// a run's start record, one for each event it emits (an EvQueue too, which the log leaves out), one
+// for each check or setup it runs (see Log.Check), which the log has no line for, and its end record,
+// with the exit code. Each gives the run's start time, which tells the runs in the
 // file apart. The README documents the records; keep it in step.
 
 // EventsName is the event stream's file in the main checkout's .orchestra/run/.
@@ -60,7 +61,8 @@ type startRecord struct {
 // eventRecord is an Event. Queued, Held, Unclosed and Solo are given for EvDispatch and EvQueue, N
 // and Limit for EvDispatch, as the Event sets them; a queue of 0 is given too, an unclosed count only
 // once read, the tickets held back only when there are some, the limit only when the run has one,
-// MachineFull only when set. Reset is given for EvLimited, when known, and Shared for EvShared.
+// MachineFull only when set. Reset is given for EvLimited, when known, and Shared for EvShared;
+// Commit, Seconds and Result for an EvFullCheck that ran.
 type eventRecord struct {
 	recordHead
 	Ticket   string      `json:"ticket,omitempty"`
@@ -71,6 +73,9 @@ type eventRecord struct {
 	Blocked  string      `json:"blocked,omitempty"`
 	Suite    string      `json:"suite,omitempty"`
 	Output   string      `json:"output,omitempty"`
+	Commit   string      `json:"commit,omitempty"`
+	Seconds  *seconds    `json:"seconds,omitempty"`
+	Result   CheckResult `json:"result,omitempty"`
 	Reset    *time.Time  `json:"reset,omitempty"`
 	N        *int        `json:"n,omitempty"`
 	Limit    *int        `json:"limit,omitempty"`
@@ -86,6 +91,19 @@ type eventRecord struct {
 	Phases    *phasesRecord    `json:"phases,omitempty"`
 	HandBacks *handBacksRecord `json:"hand_backs,omitempty"`
 	Carried   bool             `json:"carried,omitempty"`
+}
+
+// checkRecord is a CheckRun: a check or a setup that ran, as it ended.
+type checkRecord struct {
+	recordHead
+	Ticket  string      `json:"ticket,omitempty"`
+	Suite   CheckSuite  `json:"suite"`
+	Command string      `json:"command"`
+	Commit  string      `json:"commit,omitempty"`
+	Seconds seconds     `json:"seconds"`
+	Result  CheckResult `json:"result"`
+	Output  string      `json:"output,omitempty"`
+	Train   bool        `json:"train,omitempty"`
 }
 
 // heldRecord is a HeldBack: how many ready tickets each reason holds back.
@@ -152,11 +170,14 @@ type endRecord struct {
 // start record. Like the probe's file, it is reached through an os.Root at the checkout, which won't
 // follow a symlink out of it; one in its place inside the checkout is replaced by the file rather
 // than written through, as WriteRun does. A stream that can't be opened is logged, and the run goes
-// on without it.
+// on without it. The check records of the checks that ended before it follow the start record (see
+// Check).
 func (l *Log) Begin(repo string, s RunStart) {
 	f, err := openEvents(repo)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	early := l.early
+	l.begun, l.early = true, nil
 	if err != nil {
 		l.eventsFailed(err)
 		return
@@ -165,6 +186,9 @@ func (l *Log) Begin(repo string, s RunStart) {
 	l.write(startRecord{recordHead: recordHead{Time: time.Now(), Run: s.Started, Kind: "start"},
 		Version: s.Version, Repo: s.Repo, Branch: s.Branch, Scope: s.Scope, Feature: s.Feature, Spec: s.Spec,
 		Overnight: s.Overnight, Concurrency: s.Concurrency})
+	for _, c := range early {
+		l.writeCheck(c)
+	}
 }
 
 // openEvents opens the event stream in the main checkout repo for appending, making it if need be.
@@ -207,6 +231,10 @@ func (l *Log) Record(ev Event) {
 	if ev.Kind == EvShared {
 		r.Shared = &ev.Shared
 	}
+	if c := ev.Ran; c != nil {
+		s := seconds(c.Took)
+		r.Commit, r.Seconds, r.Result = c.Commit, &s, c.Result
+	}
 	if ev.Kind == EvDispatch || ev.Kind == EvQueue {
 		r.Queued = &ev.Queued
 		if h := ev.Held; h.Total() > 0 {
@@ -225,6 +253,26 @@ func (l *Log) Record(ev Event) {
 	defer l.mu.Unlock()
 	r.Run = l.run
 	l.write(r)
+}
+
+// Check appends c's check record to the event stream, as c ended. One that ended before the stream
+// opened, as the overnight pre-flight's check of Base does, is appended once it opens, after the run's
+// start record: a run that ends before then has no records.
+func (l *Log) Check(c CheckRun) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.begun {
+		l.early = append(l.early, c)
+		return
+	}
+	l.writeCheck(c)
+}
+
+// writeCheck appends c's check record, as written now. The caller holds mu.
+func (l *Log) writeCheck(c CheckRun) {
+	l.write(checkRecord{recordHead: recordHead{Time: time.Now(), Run: l.run, Kind: "check"},
+		Ticket: c.Ticket, Suite: c.Suite, Command: c.Command, Commit: c.Commit, Seconds: seconds(c.Took),
+		Result: c.Result, Output: c.Output, Train: c.Train})
 }
 
 // End appends the run's end record, with the exit code orchestra ends with, and closes the event

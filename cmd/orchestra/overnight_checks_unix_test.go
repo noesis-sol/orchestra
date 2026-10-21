@@ -28,7 +28,12 @@ func checkSession(t *testing.T, args []string, env map[string]string, settings s
 		t.Fatalf("problems: %q", problems)
 	}
 	var out strings.Builder
-	return &session{cfg: c, e: cmdEnv{getenv: func(k string) string { return env[k] },
+	log, err := dispatch.OpenLog(filepath.Join(t.TempDir(), "orchestra.log"), false, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.Close() })
+	return &session{cfg: c, log: log, e: cmdEnv{getenv: func(k string) string { return env[k] },
 		stdin: strings.NewReader(""), stdout: &out, stderr: &out}}
 }
 
