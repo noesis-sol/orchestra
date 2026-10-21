@@ -10,8 +10,8 @@ import (
 // hintLine says which keys do what, each key brighter than what it does: the workers' numbers go to
 // their tabs (not while the stop question is open, nor when the tabs are out of sight), s stops
 // after the running tickets, or once asked goes on taking them (a run stopping for another reason
-// has no s to offer), and a opens the answer talk while questions wait, the hint saying in its place
-// while the talk is open (answerKey). Ctrl+C needs no hint. A narrow pane gets a shorter form, and
+// has no s to offer), and a opens the answer talk while questions wait, or goes to it once it is
+// open (answerKey). Ctrl+C needs no hint. A narrow pane gets a shorter form, and
 // then one without the numbers; with no key to name, the line is empty.
 func (m Dashboard) hintLine(w int) string {
 	var keys []keyHint
@@ -30,7 +30,7 @@ func (m Dashboard) hintLine(w int) string {
 		keys = append(keys, keyHint{key: "s", does: "stop after the current tickets", short: "stop after current"})
 	}
 	if k, ok := m.answerKey(); ok {
-		keys = append(keys, k)
+		keys = append(keys, k...)
 	}
 	if len(keys) == 0 {
 		return ""

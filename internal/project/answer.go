@@ -48,6 +48,17 @@ func WriteAnswerQuestions(repo string, text []byte) (string, error) {
 	return filepath.ToSlash(RunPath(AnswerQuestionsName)), nil
 }
 
+// WriteAnswerMore writes text, questions queued into the answer talk while it is open, to
+// .orchestra/run/ in the main checkout repo, in the file of its batch n (from 2: questions-2.md), and
+// returns its path as WriteAnswerQuestions does.
+func WriteAnswerMore(repo string, n int, text []byte) (string, error) {
+	name := fmt.Sprintf("questions-%d.md", n)
+	if _, err := writeRunFile(repo, name, text); err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(RunPath(name)), nil
+}
+
 // writeRunFile writes b to the file name in .orchestra/run/ of the checkout repo, over any earlier one,
 // and returns its path.
 func writeRunFile(repo, name string, b []byte) (string, error) {

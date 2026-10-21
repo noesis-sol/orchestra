@@ -30,7 +30,7 @@ func dashboardTalks(t *testing.T, repo, logPath string, panes *fakePanes, sent *
 	c := options{Config: dispatch.Config{Repo: repo}}
 	c.where.pane = "w1:p1"
 	talk := dashboardAnswerTalk(c, log)
-	talk.panes, talk.claude = panes, claudeSession{repo: repo, tools: answerToolArgs()}
+	talk.panes, talk.claude = &talkPanes{fakePanes: panes}, claudeSession{repo: repo, tools: answerToolArgs()}
 	return newAnswerTalks(runCtx(t), talk, "", log, func(msg tea.Msg) { *sent = append(*sent, msg) }), log
 }
 
@@ -56,7 +56,7 @@ func TestDashboardOpensTheAnswerTalkInAPane(t *testing.T) {
 		}
 		var sent []tea.Msg
 		talks, log := dashboardTalks(t, repo, logPath, panes, &sent)
-		talks.start()
+		talks.start(true)
 		talks.wg.Wait()
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
@@ -95,7 +95,7 @@ func TestDashboardAnswerTalkWithoutAPane(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var sent []tea.Msg
 		talks, log := dashboardTalks(t, repo, logPath, &fakePanes{splitErr: errors.New("herdr: no such pane")}, &sent)
-		talks.start()
+		talks.start(true)
 		talks.wg.Wait()
 		if err := log.Close(); err != nil {
 			t.Fatal(err)
@@ -128,7 +128,7 @@ func TestDashboardAnswerTalkWithNothingOpen(t *testing.T) {
 		var sent []tea.Msg
 		panes := &fakePanes{}
 		talks, log := dashboardTalks(t, repo, logPath, panes, &sent)
-		talks.start()
+		talks.start(true)
 		talks.wg.Wait()
 		if err := log.Close(); err != nil {
 			t.Fatal(err)

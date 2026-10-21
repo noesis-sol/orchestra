@@ -53,11 +53,13 @@ type Dashboard struct {
 	drain       func(on bool)    // asks the loop to stop after the running tickets, or with false to go on
 	focus       func(tab string) // switches the terminal to a worker's tab; it must not block; nil for none
 	// The answer talk, where the maintainer answers the questions tickets wait on (WithAnswer):
-	answer       func()   // opens it beside the dashboard; it must not block; nil where it can't be opened
-	answerOnAsk  bool     // it opens by itself as a ticket comes to wait on a question
-	answering    bool     // it is open: AnswerOver says when it is over
-	answered     []string // the questions it answered, whose tickets the loop hasn't taken back yet
-	answerFailed string   // why it last failed, shown until it opens again
+	answer       *AnswerTalk // nil where it can't be opened
+	answerAuto   bool        // it opens by itself, unfocused, as soon as a question waits
+	answering    bool        // it is open: AnswerOver says when it is over
+	offered      []string    // the questions it has been opened or queued for
+	queued       []string    // those queued into it while open
+	answered     []string    // the questions it answered, whose tickets the loop hasn't taken back yet
+	answerFailed string      // why it last failed, shown until it opens again
 }
 
 // NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain;
@@ -97,7 +99,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case a.focusTab != "":
 			m.focus(a.focusTab) // the callback runs the terminal in the background
 		case a.answer:
-			m.answer() // the callback opens the talk in the background
+			m.answer.Open(true) // the callback opens the talk in the background
+		case a.focusAnswer:
+			m.answer.Focus() // the callback runs the terminal in the background
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -113,9 +117,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.apply(ev) {
 			return m, tea.Quit
 		}
-		if ev.Kind == dispatch.EvAsked && m.answerOnAsk && m.openAnswer() {
-			m.answer()
-		}
+		m.takeQuestions()
 	case AnswerOver:
 		m.answerOver(msg)
 	case Finished:

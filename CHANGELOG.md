@@ -41,6 +41,14 @@ All notable changes to orchestra are documented here. The format follows
   `recommended`). It is the worker prompt template's version 8, so a project
   whose prompt lacks it is told under the `START` line and takes it with
   `orchestra init --update`.
+- The dashboard opens the answer talk by itself as soon as a question
+  waits, in a pane beside it that doesn't take the keyboard focus: the
+  hint reads `a question for you · a to answer`, and `a` goes to the pane.
+  A question that comes to wait while the talk is open is queued into it,
+  given to claude once its turn is over: one pane, never one per question,
+  closed once nothing is left to answer. `"questions": "key"` in
+  `settings.json` opens it on `a` only, as before; `"auto"` is the default.
+  It replaces `"answer_on_ask"`.
 ### Added
 
 - `orchestra --overnight` (or `ORCHESTRA_OVERNIGHT=1`) runs the current

@@ -332,7 +332,7 @@ func checkCmux(ctx context.Context, c *options, getenv func(string) string) []st
 }
 
 // workerTerminal is the terminal as a run uses it: the run loop's tabs and agents and their processes, the dashboard's
-// number keys and the feature interview's pane.
+// number keys, the feature interview's pane and the answer talk's.
 type workerTerminal interface {
 	dispatch.Tabs
 	dispatch.Starter
@@ -341,6 +341,8 @@ type workerTerminal interface {
 	dispatch.PaneProcesses
 	interviewPanes
 	FocusTab(ctx context.Context, tab string) error
+	SplitPaneAside(ctx context.Context, pane, cwd string) (string, error) // the answer talk's, opened by itself
+	FocusPane(ctx context.Context, pane string) error                     // the dashboard's a key, to the answer talk
 }
 
 // terminalOf is c's terminal.

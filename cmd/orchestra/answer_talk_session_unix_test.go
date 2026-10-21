@@ -189,7 +189,7 @@ func readIssues(t *testing.T, state string) map[string]*answerIssue {
 
 // paneAnswerTalk is the answer talk in a pane split off orchestra's (w1:p1), on bd in repo.
 func paneAnswerTalk(t *testing.T, repo string, panes *fakePanes, out, errOut io.Writer) answerTalk {
-	a := answerTalk{claude: claudeSession{repo: repo, tools: answerToolArgs()}, pane: "w1:p1", panes: panes,
+	a := answerTalk{claude: claudeSession{repo: repo, tools: answerToolArgs()}, pane: "w1:p1", panes: &talkPanes{fakePanes: panes},
 		tracker: beads.Tracker{Repo: repo}, every: answerCountEvery, out: out, err: errOut}
 	a.terminal = func(context.Context, string) error {
 		t.Error("the talk took orchestra's terminal")

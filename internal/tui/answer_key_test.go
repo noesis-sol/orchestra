@@ -14,11 +14,11 @@ func asked(id, detail string) dispatch.Event {
 	return dispatch.Event{Kind: dispatch.EvAsked, Ticket: id, Title: "Ticket " + id, Detail: detail}
 }
 
-// answerRun is a run whose dashboard has the answer talk, opened by itself on a question with onAsk;
+// answerRun is a run whose dashboard has the answer talk, opened by itself on a question with auto;
 // *opened counts the times it was opened.
-func answerRun(t *testing.T, opened *int, onAsk bool) *fixture {
+func answerRun(t *testing.T, opened *int, auto bool) *fixture {
 	f := run(t)
-	f.m = f.m.WithAnswer(func() { *opened++ }, onAsk)
+	f.m = f.m.WithAnswer(AnswerTalk{Open: func(bool) { *opened++ }, Queue: func() {}, Focus: func() {}}, auto)
 	return f
 }
 
@@ -60,13 +60,13 @@ func TestAnswerKeyOpensTheTalk(t *testing.T) {
 	if opened != 1 {
 		t.Fatalf("a opened the talk %d times, want once", opened)
 	}
-	if got, want := hintOf(f.dash()), "  s to stop after the current tickets · answering in the pane on the right"; got != want {
+	if got, want := hintOf(f.dash()), "  s to stop after the current tickets · 2 questions for you · a to answer"; got != want {
 		t.Errorf("hint %q, want %q", got, want)
 	}
 	if f.keys("a"); opened != 1 {
 		t.Errorf("a opened the talk again while it was open")
 	}
-	f.send(AnswerOver{Answered: []string{"q-1"}})
+	f.send(AnswerOver{Asked: []string{"q-1", "q-2"}, Answered: []string{"q-1"}})
 	if got, want := hintOf(f.dash()), "  s to stop after the current tickets · a to answer 1 question"; got != want {
 		t.Errorf("after the talk, hint %q, want %q", got, want)
 	}
@@ -96,23 +96,6 @@ func TestAnswerTalkFailureShowsUntilItOpensAgain(t *testing.T) {
 	f.keys("esc", "a")
 	if got := ansi.Strip(f.dash().View()); opened != 2 || strings.Contains(got, failed) {
 		t.Errorf("opened %d times; the dashboard:\n%s", opened, got)
-	}
-}
-
-// With the setting on, the talk opens by itself as a ticket comes to wait on a question, unless it is
-// open already.
-func TestAnswerTalkOpensByItselfOnAQuestion(t *testing.T) {
-	var opened int
-	f := answerRun(t, &opened, true).picked("k-1", "One").picked("k-2", "Two")
-	if f.event(asked("k-1", "q-1: Which way?")); opened != 1 {
-		t.Fatalf("the talk opened %d times on a question, want once", opened)
-	}
-	if f.event(asked("k-2", "q-2: How many?")); opened != 1 {
-		t.Errorf("the talk opened again while it was open")
-	}
-	var off int
-	if answerRun(t, &off, false).picked("k-1", "One").event(asked("k-1", "q-1: Which way?")); off != 0 {
-		t.Errorf("with the setting off, the talk opened by itself")
 	}
 }
 

@@ -123,11 +123,34 @@ func (t Terminal) window(ctx context.Context, tab string) (name string, open boo
 // SplitPane splits the pane, opening a new one to its right that starts in cwd and has the keyboard
 // focus, and returns the new pane's ID.
 func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, error) {
+	return t.split(ctx, pane, cwd)
+}
+
+// SplitPaneAside splits the pane as SplitPane does, but leaves the keyboard focus where it is
+// (split-window -d).
+func (t Terminal) SplitPaneAside(ctx context.Context, pane, cwd string) (string, error) {
+	return t.split(ctx, pane, cwd, "-d")
+}
+
+// FocusPane makes the pane its window's active one, which has the keyboard focus while the window is
+// in view.
+func (t Terminal) FocusPane(ctx context.Context, pane string) error {
+	if !isID(pane, '%') {
+		return missing("select-pane", pane, "pane")
+	}
+	_, err := t.run(ctx, command.ReadLimit, "select-pane", pane, "-t", pane)
+	return err
+}
+
+// split splits the pane, opening a new one to its right that starts in cwd, with split-window's
+// further flags, and returns its ID.
+func (t Terminal) split(ctx context.Context, pane, cwd string, flags ...string) (string, error) {
 	if !isID(pane, '%') {
 		return "", missing("split-window", pane, "pane")
 	}
+	args := append([]string{"-h"}, flags...)
 	out, err := t.run(ctx, command.ReadLimit, "split-window", pane,
-		"-h", "-t", pane, "-c", literal(cwd), "-P", "-F", "#{pane_id}")
+		append(args, "-t", pane, "-c", literal(cwd), "-P", "-F", "#{pane_id}")...)
 	if err != nil {
 		return "", err
 	}

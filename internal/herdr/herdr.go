@@ -196,7 +196,25 @@ func (t Terminal) TabLabel(ctx context.Context, tab string) (label string, open 
 // SplitPane splits the pane, opening a new one to its right that starts in cwd and has the keyboard
 // focus, and returns the new pane's ID.
 func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, error) {
-	out, err := run(ctx, command.ReadLimit, "pane", "split", pane, "--direction", "right", "--cwd", cwd, "--focus")
+	return splitPane(ctx, pane, cwd, "--focus")
+}
+
+// SplitPaneAside splits the pane as SplitPane does, but leaves the keyboard focus where it is.
+func (t Terminal) SplitPaneAside(ctx context.Context, pane, cwd string) (string, error) {
+	return splitPane(ctx, pane, cwd, "--no-focus")
+}
+
+// FocusPane gives the keyboard focus to the pane, which holds an agent: Herdr's agent commands take a
+// pane's ID for the agent in it, as AdoptAgent's rename does.
+func (t Terminal) FocusPane(ctx context.Context, pane string) error {
+	_, err := run(ctx, command.ReadLimit, "agent", "focus", pane)
+	return err
+}
+
+// splitPane splits the pane, opening a new one to its right that starts in cwd, focused as focus says
+// (--focus or --no-focus), and returns the new pane's ID.
+func splitPane(ctx context.Context, pane, cwd, focus string) (string, error) {
+	out, err := run(ctx, command.ReadLimit, "pane", "split", pane, "--direction", "right", "--cwd", cwd, focus)
 	if err != nil {
 		return "", err
 	}

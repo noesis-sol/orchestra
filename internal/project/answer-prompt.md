@@ -64,4 +64,8 @@ orchestra. Ask nothing more.
 orchestra closes this session by itself once every question is answered and your turn is over. If
 any is left open, tell the user, last, that typing `/exit` hands back to orchestra and leaves it
 open. Ask nothing more.
+
+Questions that workers ask while this session is open come in a later message, which brings them in
+from a file of their own. Answer them the same way, one at a time, and sum up again once they are
+done.
 {{- end}}

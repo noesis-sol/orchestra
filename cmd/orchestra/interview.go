@@ -55,6 +55,14 @@ type paneSession struct {
 	// otherwise).
 	progress *tui.InterviewLine
 	about    paneSubject // what the session is about
+	// aside opens the session's pane in place of SplitPane, leaving the keyboard focus in orchestra's;
+	// nil to give the session the focus.
+	aside func(ctx context.Context, pane, cwd string) (string, error)
+}
+
+// paneOpener is a paneSubject told the pane its session opened in, once claude is there.
+type paneOpener interface {
+	opened(ctx context.Context, pane string)
 }
 
 // paneSubject is what a session in a pane beside orchestra's is about, and what that changes: its
@@ -122,6 +130,9 @@ func (p paneSession) talk(ctx context.Context, prompt string) error {
 		return p.fallback(ctx, prompt)
 	default:
 		fmt.Fprintln(p.out, p.about.inPane())
+		if o, ok := p.about.(paneOpener); ok {
+			o.opened(ctx, session)
+		}
 		p.wait(ctx, session, began)
 	}
 	p.close(ctx, session)
@@ -146,7 +157,11 @@ func (p paneSession) open(ctx context.Context, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pane, err := p.panes.SplitPane(ctx, p.pane, repo)
+	split := p.panes.SplitPane
+	if p.aside != nil {
+		split = p.aside
+	}
+	pane, err := split(ctx, p.pane, repo)
 	if err != nil {
 		return "", err
 	}

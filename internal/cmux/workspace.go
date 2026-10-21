@@ -351,6 +351,34 @@ func (t Terminal) TabLabel(ctx context.Context, tab string) (label string, open 
 // SplitPane splits the surface, opening a terminal to its right that has the keyboard focus, and
 // returns its UUID. What is launched there starts in cwd.
 func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, error) {
+	return t.split(ctx, pane, cwd, "true")
+}
+
+// SplitPaneAside splits the surface as SplitPane does, but leaves the keyboard focus where it is.
+func (t Terminal) SplitPaneAside(ctx context.Context, pane, cwd string) (string, error) {
+	return t.split(ctx, pane, cwd, "false")
+}
+
+// FocusPane gives the keyboard focus to the surface, in its workspace.
+func (t Terminal) FocusPane(ctx context.Context, pane string) error {
+	if !isUUID(pane) {
+		return missing("focus-panel", pane, "surface")
+	}
+	l, err := t.layout(ctx)
+	if err != nil {
+		return err
+	}
+	ws, ok := l.workspaces[key(pane)]
+	if !ok {
+		return missing("focus-panel", pane, "surface")
+	}
+	_, err = t.run(ctx, "focus-panel", pane, false, "--workspace", ws, "--panel", pane)
+	return err
+}
+
+// split splits the surface, opening a terminal to its right, focused as focus says ("true" or
+// "false"), and returns its UUID. What is launched there starts in cwd.
+func (t Terminal) split(ctx context.Context, pane, cwd, focus string) (string, error) {
 	if !isUUID(pane) {
 		return "", missing("new-split", pane, "surface")
 	}
@@ -362,7 +390,7 @@ func (t Terminal) SplitPane(ctx context.Context, pane, cwd string) (string, erro
 	if !ok {
 		return "", missing("new-split", pane, "surface")
 	}
-	out, err := t.run(ctx, "new-split", pane, true, "right", "--workspace", ws, "--surface", pane, "--focus", "true")
+	out, err := t.run(ctx, "new-split", pane, true, "right", "--workspace", ws, "--surface", pane, "--focus", focus)
 	if err != nil {
 		return "", err
 	}
