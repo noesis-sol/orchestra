@@ -216,7 +216,8 @@ func batteryCheck(goos string, power func(context.Context, string) (bool, error)
 // templatesCheck warns of a worker prompt or verifier older than orchestra's templates, which the
 // workers would follow all night (project.OutdatedTemplates), and offers to bring them up to date as
 // orchestra init --update does, committed on the branch the run works on: the run refuses to start on
-// uncommitted changes.
+// uncommitted changes. The fix then has the run read the worker prompt again, which it read as it
+// opened, so that its workers follow the one committed.
 func templatesCheck(ctx context.Context, s *session) preflightResult {
 	if s.cfg.ownPrompt {
 		return preflightResult{verdict: tui.CheckPassed, text: "the run's worker prompt is its own (--prompt), " +
@@ -235,7 +236,16 @@ func templatesCheck(ctx context.Context, s *session) preflightResult {
 		fix: &preflightFix{question: "Bring them up to date (orchestra init --update) and commit that?",
 			done: "the worker prompt and the verifier are up to date with orchestra's templates, committed " +
 				"(git show reads the change)",
-			apply: func(s *session) error { return updateTemplates(ctx, s.cfg.Repo) }}}
+			apply: func(s *session) error {
+				if err := updateTemplates(ctx, s.cfg.Repo); err != nil {
+					return err
+				}
+				if err := s.loadPrompt(); err != nil {
+					return fmt.Errorf("committed, but the worker prompt could not be read again, so the run "+
+						"gives its workers the one it read before: %w", err)
+				}
+				return nil
+			}}}
 }
 
 // updateTemplatesMessage is the message of the commit that brings the templates up to date.

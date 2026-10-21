@@ -304,6 +304,7 @@ func TestTemplatesCheck(t *testing.T) {
 	t.Parallel()
 	s := checkSession(t, nil, nil, "")
 	s.cfg.Repo = olderPromptRepo(t)
+	s.cfg.WorkerPrompt = filepath.Join(s.cfg.Repo, project.Dir, "worker-prompt.md")
 	r := templatesCheck(runCtx(t), s)
 	wantResult(t, r, tui.CheckWarned, ".orchestra/worker-prompt.md is older than orchestra's worker prompt template",
 		"orchestra init --update rewrites those sections")

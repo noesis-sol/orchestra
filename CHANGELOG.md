@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The overnight pre-flight's fix for an old worker prompt ("Bring them up to
+  date (orchestra init --update) and commit that?") gives the run's workers
+  the prompt it commits. The run had read the prompt before the fix, so every
+  worker that night still followed the old one, with nothing saying so.
 - The overnight pre-flight's fix for a permission mode that asks ("Start
   workers in auto permission mode?") starts the run's workers in auto, as its
   START line now says. It set a mode the run had already read, so workers

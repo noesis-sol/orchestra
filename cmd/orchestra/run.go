@@ -365,13 +365,22 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 // readPrompt reads the worker prompt, for the run's workers. It returns the exit code, having said
 // what went wrong.
 func (s *session) readPrompt() int {
-	prompt, err := os.ReadFile(s.cfg.WorkerPrompt)
-	if err != nil {
+	if err := s.loadPrompt(); err != nil {
 		fmt.Fprintln(s.e.stderr, "orchestra cannot read the worker prompt:", err)
 		return dispatch.ExitSetup
 	}
-	s.prompt = string(prompt)
 	return dispatch.ExitOK
+}
+
+// loadPrompt reads the worker prompt into the session, whose loop gives it to the workers (runLoop);
+// where it can't, the session keeps the one it had.
+func (s *session) loadPrompt() error {
+	prompt, err := os.ReadFile(s.cfg.WorkerPrompt)
+	if err != nil {
+		return err
+	}
+	s.prompt = string(prompt)
+	return nil
 }
 
 // chooseWork settles what the run works on: in a terminal it asks, and a feature typed there or
