@@ -293,11 +293,13 @@ committed where it is. Run again later, the same command carries on with what is
   nothing yet, no MCP servers for workers) and commits that with the spec. Outside a git repository
   it says to run `git init` first: ask the user before you do. It never installs `bd`.
 - **The environment setup ticket comes first**, P0 and `solo`, every other ticket waiting for it, when
-  the spec needs a tool the repository doesn't have or there is no code yet: its worker installs the
-  toolchain without `sudo`, scaffolds a project with no code, installs the dependencies and sets
-  `setup`, which the run then runs in each new worktree (`SETUP: <id>'s merge changed
-  .orchestra/settings.json …`). A tool it can't install without `sudo`, a GUI installer or a licence
-  is a question for the user (`bd human list`): the run waits on it. Relay it; don't install it yourself.
+  the spec needs a tool the repository doesn't have or there is no code yet: its worker lists the
+  toolchain in `"requires"` in `.orchestra/settings.json` (a check each, an install without `sudo` or
+  a manual step), installs it with `orchestra requires`, scaffolds a project with no code, installs
+  the dependencies and sets `setup`, which the run then runs in each new worktree (`SETUP: <id>'s
+  merge changed .orchestra/settings.json …`). A requirement only a person can meet (`sudo`, a GUI
+  installer, a licence) is a question for the user (`bd human list`): the run waits on it. Relay it;
+  don't install it yourself.
 - **Run again, the same command carries on**: with the spec unchanged, it runs what is left under the
   root epic (`the spec <path> is unchanged; carrying on with <root>`), or says `✓ <path> is built
   (<root>)` and exits 0; with the spec changed, it commits it and the breakdown files tickets for the

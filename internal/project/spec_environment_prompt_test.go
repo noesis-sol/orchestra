@@ -24,24 +24,30 @@ func environmentSection(t *testing.T, p string) (section string, ok bool) {
 
 // A spec's breakdown, headless or with the user, files one environment setup ticket first, for a
 // spec that needs a tool the repository doesn't have as for a repository with no code: solo,
-// priority 0, every other ticket blocked by it. Its worker installs the toolchain without sudo, pins
-// the versions in a committed file, asks about a tool it can't install, scaffolds a project with no
-// code, installs the dependencies, sets setup (and setup_files where needed), and says what to
-// install in the docs. A spec that adds a tool to a repository with code gets it without the
-// scaffold.
+// priority 0, every other ticket blocked by it. Its worker writes the requires list (a check each,
+// an install without sudo or a manual step), pins the versions in a committed file the checks read,
+// installs nothing outside the list but runs orchestra requires, asks about what only a person can
+// meet, scaffolds a project with no code, installs the dependencies, sets setup (and setup_files
+// where needed), and says what to install in the docs. A spec that adds a tool to a repository with
+// code gets it without the scaffold.
 func TestSpecBreakdownFilesTheEnvironmentFirst(t *testing.T) {
 	want := []string{
 		"When the spec needs a tool that the repository doesn't have yet",
 		"or the repository has no code yet",
 		"one ticket for all of its basic setup, the environment included",
 		"label `solo` and priority 0", "every other ticket waits for it",
-		"The toolchain: each tool that the tickets after it need, at the version they need",
-		"checked with its version command and installed where it is missing",
-		"with a user-level package manager or the tool's own installer", "never with `sudo`",
+		"The requires list: an entry in `\"requires\"` in `.orchestra/settings.json` for each tool, service " +
+			"and permission that the tickets after it need",
+		"Each has a `check`, a command that exits 0 when it is met at the version they need",
+		"an `install` that meets it with a user-level package manager or the tool's own installer",
+		"never with `sudo`", "a `manual` step instead",
 		"pinned in the ecosystem's own file where it has one, committed",
 		"`mise.toml`", "`rust-toolchain.toml`", "`.nvmrc`", "the `toolchain` line of `go.mod`",
-		"so that installing them again is one command",
-		"A tool that needs `sudo`, a GUI installer or a licence that the worker can't accept is not installed",
+		"and the entry's check checks them",
+		"orchestra checks the list at every run's start, on every machine, and installs what is missing " +
+			"with the entries' own commands, so the worker installs nothing outside the list",
+		"Then `orchestra requires`, which checks the list and installs what its entries can",
+		"A requirement still missing that only a person can meet is not worked around",
 		"the worker asks the maintainer about it with a question",
 		"so that the run waits for the answer rather than build on a guess",
 		"Where the repository has no code yet, the scaffold",
@@ -88,13 +94,18 @@ func TestSpecBreakdownFilesTheEnvironmentFirst(t *testing.T) {
 			if strings.Contains(readText(t, p), "## A project with no code yet") {
 				t.Error("the instructions still have the scaffold's own section")
 			}
+			for _, g := range []string{"The toolchain:", "installed where it is missing", "entries are added to those the list has"} {
+				if strings.Contains(section, g) {
+					t.Errorf("the environment section has %q", g)
+				}
+			}
 		})
 	}
 }
 
 // An update files the environment setup ticket first for a change that needs a new tool, or
-// updates the tree's own while it is open, with the same toolchain, pinning, question, setup and
-// docs; never the scaffold, which the tree it updates was filed with.
+// updates the tree's own while it is open, with the same requires list, added to the entries it has,
+// pinning, question, setup and docs; never the scaffold, which the tree it updates was filed with.
 func TestSpecUpdateFilesTheEnvironmentFirst(t *testing.T) {
 	want := []string{
 		"When the change needs a tool that the repository doesn't have yet",
@@ -102,15 +113,17 @@ func TestSpecUpdateFilesTheEnvironmentFirst(t *testing.T) {
 		"the update's other tickets wait for it",
 		"file it first, and give each ticket the update files, and each open one you update to use the tool, a blocks link to it",
 		"Where the tree's own environment setup ticket is still open, update that one for the tool instead",
-		"never with `sudo`", "pinned in the ecosystem's own file where it has one, committed",
-		"the worker asks the maintainer about it with a question",
+		"The requires list: an entry in `\"requires\"` in `.orchestra/settings.json`",
+		"The new tool's entries are added to those the list has already",
+		"never with `sudo`", "a `manual` step instead", "pinned in the ecosystem's own file where it has one, committed",
+		"Then `orchestra requires`", "the worker asks the maintainer about it with a question",
 		"`setup` in `.orchestra/settings.json`", "`setup_files`",
 		"orchestra runs `setup` in each new worktree before its worker starts",
 		"its README saying what to install and how, with the versions",
 		"A change that needs no new tool gets no such ticket",
 	}
 	gone := []string{"the scaffold", "generators", "`check_fast`", "or the repository has no code yet",
-		"When the spec needs a tool"}
+		"When the spec needs a tool", "installed where it is missing"}
 	for name, write := range map[string]func(repo string) (string, error){
 		"headless":                   func(repo string) (string, error) { return WriteSpecPrompt(repo, true) },
 		"refinement in a pane":       func(repo string) (string, error) { return WriteRefinePrompt(repo, RefineUpdate) },

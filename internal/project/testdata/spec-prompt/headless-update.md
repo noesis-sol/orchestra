@@ -143,15 +143,23 @@ each ticket the update files, and each open one you update to use the tool, a bl
 Where the tree's own environment setup ticket is still open, update that one for the tool instead
 of filing another. Its description asks its worker for:
 
-- The toolchain: each tool that the tickets after it need, at the version they need, checked with
-  its version command and installed where it is missing, with a user-level package manager or the
-  tool's own installer (Homebrew, mise, rustup, the Bun or uv installer), never with `sudo`. The
-  versions are pinned in the ecosystem's own file where it has one, committed (`mise.toml` or
-  `.tool-versions`, `rust-toolchain.toml`, `.nvmrc`, the `toolchain` line of `go.mod`,
-  `.python-version`), so that installing them again is one command.
-- A tool that needs `sudo`, a GUI installer or a licence that the worker can't accept is not
-  installed: the worker asks the maintainer about it with a question, the way its instructions say,
-  so that the run waits for the answer rather than build on a guess.
+- The requires list: an entry in `"requires"` in `.orchestra/settings.json` for each tool, service
+  and permission that the tickets after it need (a language runtime, a package manager, a database
+  running, a CLI the build calls). Each has a `check`, a command that exits 0 when it is met at the
+  version they need (its version command), and an `install` that meets it with a user-level package
+  manager or the tool's own installer (Homebrew, mise, rustup, the Bun or uv installer), never with
+  `sudo`, or, where only a person can meet it (`sudo`, a GUI installer, a licence, a permission to
+  grant, a service to start), a `manual` step instead. The versions are pinned in the ecosystem's
+  own file where it has one, committed (`mise.toml` or `.tool-versions`, `rust-toolchain.toml`,
+  `.nvmrc`, the `toolchain` line of `go.mod`, `.python-version`), and the entry's check checks them.
+  orchestra checks the list at every run's start, on every machine, and installs what is missing
+  with the entries' own commands, so the worker installs nothing outside the list. The new tool's
+  entries are added to those the list has already.
+- Then `orchestra requires`, which checks the list and installs what its entries can, so that the
+  tools are installed by the list's own commands (or, without orchestra on the worker's PATH, each
+  entry's check, and its install where the check fails). A requirement still missing that only a
+  person can meet is not worked around: the worker asks the maintainer about it with a question,
+  the way its instructions say, so that the run waits for the answer rather than build on a guess.
 - The project's dependencies installed, and `setup` in `.orchestra/settings.json` set to the command
   that installs them in a fresh worktree (`bun install --frozen-lockfile`, `npm ci`,
   `uv sync --frozen`, `go mod download`, …), with `setup_files` set where orchestra's default list

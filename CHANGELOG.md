@@ -23,6 +23,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- A spec's environment setup ticket now has its worker write the project's
+  `"requires"` list in `.orchestra/settings.json` (a check for each tool,
+  service and permission the later tickets need, an install without `sudo`
+  or a manual step, the versions pinned in the ecosystem's own file and
+  checked) and install with `orchestra requires`, rather than install the
+  toolchain on its own machine once; an update's adds the new tool's
+  entries to the list. Every run then checks the list on whatever machine
+  it runs on.
 - The worker prompt no longer asks a worker to keep a ticket's acceptance
   criteria as a to-do checklist (TodoWrite or TaskCreate): no worker did, and
   Beads' own guidance, which every worker also gets, forbids it. It is the
