@@ -47,9 +47,10 @@ type BaseChecked struct {
 // everything it started then or when ctx is cancelled, and removes the worktree. The error says why it
 // couldn't run: no head, no worktree, or ctx cancelled while it ran. Call it only where nothing else
 // works on the repository's worktrees, as before a run's loop starts.
-func CheckBase(ctx context.Context, c Config, g BaseGit) (BaseChecked, error) {
+//
+// Its results are named so that the deferred removal's Kept reaches the caller.
+func CheckBase(ctx context.Context, c Config, g BaseGit) (b BaseChecked, err error) {
 	keep := context.WithoutCancel(ctx) // the worktree is made and removed whole
-	var b BaseChecked
 	at, err := g.Head(keep, c.Repo, c.Base)
 	if err == nil && at == "" {
 		err = fmt.Errorf("git could not read %s's head", c.Base)
