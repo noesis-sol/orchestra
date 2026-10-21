@@ -451,8 +451,9 @@ func plainOutput(asked bool, getenv func(string) string, stdin io.Reader, stdout
 // dispatch.CheckNothingToRun), and reports whether it did: it says why on stdout, plain or in a box,
 // and gives the run's done line to the log and the event stream, as the loop's end would, without
 // a notification; run's deferred End records the end, with code 0. Nothing is cleared, opened or
-// asked of claude. A run whose limit is reached is left to the loop, which ends it LIMIT_REACHED.
-// A spec run whose root epic is all done says the spec is built.
+// asked of claude. A run whose limit is reached is left to the loop, which ends it LIMIT_REACHED, as
+// is one with nothing ready but questions that opens the answer talk on them (questions_only.go). A
+// spec run whose root epic is all done says the spec is built.
 func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.Writer, plain bool) bool {
 	if c.DoneSoFar >= c.Limit {
 		return false
@@ -461,6 +462,11 @@ func nothingToRun(ctx context.Context, c options, log *dispatch.Log, stdout io.W
 	n, err := dispatch.CheckNothingToRun(ctx, c.Config, tracker, repo, repo)
 	if err != nil || n == nil { // what the check couldn't read, the loop reads again and reports
 		return false
+	}
+	if !n.AllDone && talksWhenIdle(c, plain) {
+		if qs, err := readQuestions(ctx, tracker, c.Ticket, ""); err == nil && len(qs) > 0 {
+			return false
+		}
 	}
 	if c.Spec != "" && n.AllDone && n.Scope != "" {
 		n.Built = c.Spec

@@ -60,6 +60,10 @@ type Dashboard struct {
 	queued       []string    // those queued into it while open
 	answered     []string    // the questions it answered, whose tickets the loop hasn't taken back yet
 	answerFailed string      // why it last failed, shown until it opens again
+	// idleQuestions are those the loop, with nothing else ready, asked the talk for (AskQuestions), and
+	// talkOver what it waits on until the talk is over
+	idleQuestions []string
+	talkOver      []chan<- struct{}
 }
 
 // NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain;
@@ -120,6 +124,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.takeQuestions()
 	case AnswerOver:
 		m.answerOver(msg)
+	case AskQuestions:
+		m.askQuestions(msg)
 	case Finished:
 		m.quitting = true
 		return m, tea.Quit

@@ -73,6 +73,9 @@ type answerTalks struct {
 	wg     sync.WaitGroup
 	open   atomic.Bool
 	live   atomic.Pointer[answerLive] // the talk last opened, as the dashboard's callbacks reach it
+	// deferred is what the loop, with nothing ready but questions, gave the next talk to say of the
+	// deferred tickets (see ask)
+	deferred atomic.Pointer[string]
 }
 
 // newAnswerTalks opens talk for the dashboard, under ctx, about the questions in scope ("" for every
@@ -94,6 +97,9 @@ func (a *answerTalks) start(focus bool) {
 	live := newAnswerLive()
 	talk := a.talk
 	talk.aside, talk.live = !focus, live
+	if d := a.deferred.Swap(nil); d != nil {
+		talk.deferred = *d
+	}
 	a.live.Store(live)
 	a.open.Store(true)
 	a.wg.Go(func() {

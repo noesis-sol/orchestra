@@ -86,6 +86,11 @@ type Loop struct {
 	// the run winds down is the gate's, as Run last heard (see runState.drained).
 	drainReqs chan drainRequest
 
+	// answers puts the run's open questions to the maintainer once nothing else is ready (see
+	// SetAnswers), under answersMu; nil: the run ends then.
+	answersMu sync.Mutex
+	answers   Answers
+
 	// poll is how long between reads of a worker's status: statusPoll when zero. Tests on the real
 	// clock, with real git, shorten it; the others run on the real durations in a synctest bubble.
 	poll time.Duration

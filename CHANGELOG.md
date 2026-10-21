@@ -29,6 +29,16 @@ All notable changes to orchestra are documented here. The format follows
   in no pane or plainly, or after a run. `"answer_on_ask": true` in
   `settings.json` has the dashboard open the talk by itself as a ticket
   comes to wait on a question; it is off by default.
+- A run with nothing ready but tickets waiting on questions, at its start
+  or once its queue runs dry, opens the answer talk on them beside the
+  dashboard, unfocused, rather than end; it takes up each ticket an answer
+  frees as soon as bd lists it ready and carries on as a normal run. A talk
+  closed with questions left open ends the run, its last line naming them
+  and the tickets they hold (`QUESTIONS_OPEN: …`). The talk says how many
+  tickets are deferred, and under which parent, and releases them only when
+  asked. Plain output, a run in no pane and an overnight run open no talk:
+  they end as before, pointing at `orchestra answer`, which the "Nothing
+  ready to run" box now names for questions in place of `bd human list`.
 
 ### Changed
 

@@ -63,7 +63,7 @@ func nothingLines(n dispatch.NothingToRun, styled bool) (string, []string) {
 	}
 	if n.Questions > 0 {
 		rest = append(rest, plural(n.Questions, "question waits", "questions wait")+" for your answer: "+
-			command("bd human list"))
+			command("orchestra answer"))
 	}
 	if n.Waiting > 0 {
 		rest = append(rest, plural(n.Waiting, "ticket waits", "tickets wait")+" on other tickets: "+command("bd blocked"))

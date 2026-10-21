@@ -107,8 +107,9 @@ func questionOptions(t dispatch.Ticket) []questionOption {
 }
 
 // readQuestions reads the questions the answer talk asks: the one named, else every question not
-// closed, in scope only those blocking the scope's ticket or one under it, or under it themselves
-// ("" for every one). Each comes with its options, the tickets it blocks and those it was asked from.
+// closed (labelled HumanLabel), in scope only those blocking the scope's ticket or one under it, or
+// under it themselves ("" for every one). Each comes with its options, the tickets it blocks and those
+// it was asked from.
 func readQuestions(ctx context.Context, tr answerTracker, scope, named string) ([]question, error) {
 	var listed []dispatch.Ticket
 	if named != "" {
@@ -141,6 +142,9 @@ func readQuestions(ctx context.Context, tr answerTracker, scope, named string) (
 	}
 	var qs []question
 	for _, t := range listed {
+		if !dispatch.HasLabel(t, dispatch.HumanLabel) {
+			continue // not a question, whatever bd listed
+		}
 		q, err := readQuestion(ctx, tr, t, named != "")
 		if err != nil {
 			return nil, err
@@ -280,8 +284,11 @@ type answerTalk struct {
 	aside bool
 	// live is the talk as the dashboard reaches it while it is open, for its a key and the questions
 	// queued into it; nil where nothing does.
-	live  *answerLive
-	hooks bool // claude reports through hooks (see paneSession)
+	live *answerLive
+	// deferred is what it says of the deferred tickets, which aren't questions: how many, and where
+	// (see deferredText); "" for nothing, as only a run with nothing ready but questions gives it.
+	deferred string
+	hooks    bool // claude reports through hooks (see paneSession)
 	// Where orchestra's pane shows the session's progress; nil when its output is plain.
 	line    *tui.InterviewLine
 	tracker answerTracker
@@ -338,7 +345,7 @@ func (a answerTalk) answer(ctx context.Context, scope, named string) (answerResu
 		return answerResult{}, errors.New(why)
 	}
 	repo := a.claude.repo
-	file, err := project.WriteAnswerQuestions(repo, []byte(questionsText(qs)))
+	file, err := project.WriteAnswerQuestions(repo, []byte(questionsText(qs)+deferredText(a.deferred)))
 	if err != nil {
 		return answerResult{}, fmt.Errorf("cannot write the questions for the answer talk: %w", err)
 	}

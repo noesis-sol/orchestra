@@ -83,6 +83,7 @@ func (m *Dashboard) takeQuestions() {
 // counts as not offered, for the talk to take up again.
 func (m *Dashboard) answerOver(o AnswerOver) {
 	m.answering = false
+	m.endIdleTalk()
 	m.answered = append(m.answered, o.Answered...)
 	if o.Err != nil {
 		m.answerFailed = "the answer talk: " + dispatch.FirstLine(o.Err.Error())
@@ -96,8 +97,9 @@ func (m *Dashboard) answerOver(o AnswerOver) {
 }
 
 // waitingQuestions are the questions tickets wait on, each once, in the rows' order: those of the rows
-// waiting on one (each row whose event named no question counts as one of its own), less those the
-// answer talk has answered.
+// waiting on one (each row whose event named no question counts as one of its own), then those the
+// loop asked the talk for with nothing else ready (see askQuestions), less those the answer talk has
+// answered.
 func (m Dashboard) waitingQuestions() []string {
 	var qs []string
 	for _, r := range m.rows() {
@@ -106,6 +108,11 @@ func (m Dashboard) waitingQuestions() []string {
 			q = "for " + r.id
 		}
 		if r.state == rowAsked && !slices.Contains(qs, q) && !slices.Contains(m.answered, q) {
+			qs = append(qs, q)
+		}
+	}
+	for _, q := range m.idleQuestions {
+		if !slices.Contains(qs, q) && !slices.Contains(m.answered, q) {
 			qs = append(qs, q)
 		}
 	}

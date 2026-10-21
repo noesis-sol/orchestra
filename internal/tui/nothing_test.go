@@ -44,15 +44,15 @@ var nothingCases = []struct {
 		name: "nothing ready",
 		n:    dispatch.NothingToRun{Questions: 2, Waiting: 1, InProgress: 3, Other: 1, Unmerged: 1},
 		styled: "" +
-			"╭─────────────────────────────────────────────────────╮\n" +
-			"│ ○ Nothing ready to run                              │\n" +
-			"│   2 questions wait for your answer: bd human list   │\n" +
-			"│   1 ticket waits on other tickets: bd blocked       │\n" +
-			"│   3 in progress · 1 other                           │\n" +
-			"│   1 closed but not merged: bd list --label unmerged │\n" +
-			"╰─────────────────────────────────────────────────────╯\n",
+			"╭──────────────────────────────────────────────────────╮\n" +
+			"│ ○ Nothing ready to run                               │\n" +
+			"│   2 questions wait for your answer: orchestra answer │\n" +
+			"│   1 ticket waits on other tickets: bd blocked        │\n" +
+			"│   3 in progress · 1 other                            │\n" +
+			"│   1 closed but not merged: bd list --label unmerged  │\n" +
+			"╰──────────────────────────────────────────────────────╯\n",
 		plain: "○ Nothing ready to run\n" +
-			"  2 questions wait for your answer: bd human list\n" +
+			"  2 questions wait for your answer: orchestra answer\n" +
 			"  1 ticket waits on other tickets: bd blocked\n" +
 			"  3 in progress · 1 other\n" +
 			"  1 closed but not merged: bd list --label unmerged\n",
@@ -107,7 +107,7 @@ func TestNothingIsPlainLinesOffTheTerminal(t *testing.T) {
 // One of each count reads in the singular; deferred joins the in-progress line.
 func TestNothingReadyCountsInTheSingular(t *testing.T) {
 	head, rest := nothingLines(dispatch.NothingToRun{Questions: 1, Waiting: 2, Deferred: 4}, false)
-	want := []string{"1 question waits for your answer: bd human list", "2 tickets wait on other tickets: bd blocked",
+	want := []string{"1 question waits for your answer: orchestra answer", "2 tickets wait on other tickets: bd blocked",
 		"4 deferred"}
 	if head != "○ Nothing ready to run" || strings.Join(rest, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got %q %q, want %q", head, rest, want)

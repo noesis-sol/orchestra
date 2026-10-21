@@ -221,7 +221,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.startTickets()
 		r.machine.running(len(r.inflight)) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {
-			if r.awaitFiling() || r.goOnWhenEmpty() {
+			if r.awaitFiling() || r.goOnWhenEmpty() || r.awaitAnswers() {
 				continue
 			}
 			return r.end()
@@ -330,6 +330,10 @@ type runState struct {
 	// filing: closed once the scope is filed (Config.Filing), until when only its first ticket starts;
 	// nil when there is no filing, or once it is over
 	filing <-chan struct{}
+	// putTo: the questions put to the maintainer in an answer talk now over (see awaitAnswers), and
+	// left: those open as the run last waited on them with nothing ready, for its done line
+	putTo map[string]bool
+	left  []Question
 
 	solo soloQueue // the tickets labelled SoloLabel
 	// The queue last reported, its queued -1 before the first, and the solo ticket and the tickets
@@ -365,7 +369,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
 		warned: map[string]bool{}, unions: map[string]bool{}, branches: map[string][]string{},
-		machine: o.register(), filing: o.cfg.filingDone(),
+		machine: o.register(), filing: o.cfg.filingDone(), putTo: map[string]bool{},
 		baseSeen: o.startHead, // as loadUnmerged asked
 	}
 	r.setCount(o.cfg.DoneSoFar)
@@ -691,7 +695,7 @@ func (r *runState) end() int {
 	case r.count >= c.Limit:
 		end = fmt.Sprintf("LIMIT_REACHED at %d tickets", r.count)
 	default:
-		end = fmt.Sprintf("READY_EMPTY after %d tickets", r.count)
+		end = fmt.Sprintf("READY_EMPTY after %d tickets", r.count) + questionsEnd(r.left)
 	}
 	o.emit(Event{Kind: EvDone, N: r.count, Limit: c.Limit, Text: end + o.setupWaits() + o.endScope(r.keep)})
 	return ExitOK

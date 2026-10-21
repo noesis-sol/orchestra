@@ -227,6 +227,7 @@ const (
 	wokeResult              // a worker's result, on waits.results
 	wokeJoined              // a ticket went to merge, on waits.joined
 	wokeFiled               // the scope is filed, as waits.filing says
+	wokeTalk                // the answer talk is over, as waits.talk says
 	wokeTimer               // waits.timer fired
 	wokePoll                // waits.poll ticked
 )
@@ -237,6 +238,7 @@ type waits struct {
 	results <-chan result
 	joined  <-chan struct{}
 	filing  <-chan struct{}
+	talk    <-chan struct{}
 	timer   <-chan time.Time
 	poll    <-chan time.Time
 }
@@ -277,6 +279,8 @@ func (r *runState) wait(w waits) (woke, result) {
 		return wokeJoined, result{}
 	case <-w.filing:
 		return wokeFiled, result{}
+	case <-w.talk:
+		return wokeTalk, result{}
 	case <-w.timer:
 		return wokeTimer, result{}
 	case <-w.poll:

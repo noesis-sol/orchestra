@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/tui"
 
@@ -48,6 +49,7 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 	defer r.filing.bind(cancelRun)()
 	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
 	r.orch.SetSink(sink)
+	r.orch.SetAnswers(runAnswers{tracker: beads.Tracker{Repo: r.cfg.Repo}, scope: r.cfg.Ticket}) // no talk: plain
 	r.orch.ReportInterrupt = true
 	code := r.filing.result(r.orch.Run(ctx))
 	r.stops.on(nil)
@@ -107,6 +109,11 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 			func(msg tea.Msg) { p.Send(msg) })
 		d = d.WithAnswer(answers.callbacks(), r.cfg.answerAuto)
 	}
+	idle := runAnswers{tracker: beads.Tracker{Repo: r.cfg.Repo}, scope: r.cfg.Ticket}
+	if talksWhenIdle(r.cfg, false) {
+		idle.talks = answers
+	}
+	r.orch.SetAnswers(idle)
 	p = tea.NewProgram(d,
 		tui.WithTerminal(stdin, stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)

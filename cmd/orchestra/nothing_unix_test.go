@@ -22,6 +22,8 @@ type backlog struct {
 	ready, unclosed, unmerged string
 	readyFails                bool
 	children, show            map[string]string
+	questions                 string            // bd list --label human; "[]" when empty
+	dependents                map[string]string // bd dep list <id> --direction up, by ID
 }
 
 // nothingTools puts on PATH a bd answering b, a claude and an osascript that only record their
@@ -38,7 +40,11 @@ func nothingTools(t *testing.T, b backlog) string {
 			t.Fatal(err)
 		}
 	}
-	for name, body := range map[string]string{"ready": b.ready, "unclosed": b.unclosed, "unmerged": b.unmerged} {
+	for id, body := range b.dependents {
+		write("dependents."+id, body)
+	}
+	for name, body := range map[string]string{"ready": b.ready, "unclosed": b.unclosed, "unmerged": b.unmerged,
+		"questions": b.questions} {
 		if body != "" {
 			write(name, body)
 		}
@@ -61,9 +67,11 @@ for a in "$@"; do [ "$prev" = --parent ] && parent=$a; prev=$a; done
 case "$1" in
 ready) [ -f "$d/ready-fails" ] && { echo 'Error: database is locked' >&2; exit 1; }; answer ready ;;
 show) answer "show.$2" "[{\"id\":\"$2\",\"status\":\"open\",\"issue_type\":\"task\"}]" ;;
+dep) answer "dependents.$3" ;;
 list)
 	case "$*" in
 	*"--label unmerged"*) answer unmerged ;;
+	*"--label human"*) answer questions ;;
 	*--parent*) answer "children.$parent" ;;
 	*) answer unclosed ;;
 	esac ;;
@@ -185,7 +193,7 @@ func TestNothingReadyToRun(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s\nstdout:\n%s", code, stderr, stdout)
 	}
 	if want := "○ Nothing ready to run\n" +
-		"  1 question waits for your answer: bd human list\n" +
+		"  1 question waits for your answer: orchestra answer\n" +
 		"  2 tickets wait on other tickets: bd blocked\n" +
 		"  1 in progress · 1 deferred\n" +
 		"  1 closed but not merged: bd list --label unmerged\n"; unstamped(stdout) != want {

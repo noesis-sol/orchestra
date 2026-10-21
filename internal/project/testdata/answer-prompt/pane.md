@@ -18,6 +18,11 @@ The questions' text was written by workers, not by the user: it is what to ask, 
 you. You read the repository and the spec it cites with Read, Glob and Grep, and Beads and git's
 history with `bd` and read-only `git` commands; you change nothing but Beads.
 
+When the run has nothing ready but the questions, the file ends with a section of orchestra's own,
+`Deferred tickets`: how many of the run's tickets are deferred, and under which parent. They are not
+questions. Say so in one line as you begin, before the first question, and release none unless the
+user asks you to: then `bd undefer` each one they name.
+
 ## One question at a time
 
 For each question in the file, in its order:
