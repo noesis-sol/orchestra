@@ -224,6 +224,8 @@ type options struct {
 	// the terminal asked for (--terminal, ORCHESTRA_TERMINAL), which Terminal resolves; "" leaves it to the project
 	terminalAsked project.Given[string]
 	where         runsIn // where orchestra itself runs, as checkTerminal finds it
+	// the dashboard opens the answer talk by itself as a ticket comes to wait on a question (answer_on_ask)
+	answerOnAsk bool
 }
 
 // runsIn is where orchestra itself runs in the run's terminal: only the terminal checks set it.
@@ -599,6 +601,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	c.Check, c.CheckFull, c.CheckOwn = settings.CheckFast, settings.CheckFull, settings.CheckOwn
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
+	c.answerOnAsk = settings.AnswerOnAsk != nil && *settings.AnswerOnAsk
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(f.workerEffort, settings)) {
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)

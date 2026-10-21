@@ -21,6 +21,14 @@ All notable changes to orchestra are documented here. The format follows
   metadata gets options the session drafts and says are its own. It reads,
   runs `bd` and read-only `git`, and edits no file; its pane closes once
   every question is answered.
+- The dashboard's `a` key, offered while questions wait (`a to answer 2
+  questions`), opens the answer talk in a pane beside the dashboard while
+  the run goes on; the run takes an answered question's ticket back as it
+  does whoever answers it. `orchestra answer [--ticket <id>] [<question>]`
+  runs the same talk on the terminal it is typed in, where orchestra runs
+  in no pane or plainly, or after a run. `"answer_on_ask": true` in
+  `settings.json` has the dashboard open the talk by itself as a ticket
+  comes to wait on a question; it is off by default.
 
 ### Changed
 

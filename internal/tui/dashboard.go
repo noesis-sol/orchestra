@@ -52,6 +52,12 @@ type Dashboard struct {
 	cancel      func()
 	drain       func(on bool)    // asks the loop to stop after the running tickets, or with false to go on
 	focus       func(tab string) // switches the terminal to a worker's tab; it must not block; nil for none
+	// The answer talk, where the maintainer answers the questions tickets wait on (WithAnswer):
+	answer       func()   // opens it beside the dashboard; it must not block; nil where it can't be opened
+	answerOnAsk  bool     // it opens by itself as a ticket comes to wait on a question
+	answering    bool     // it is open: AnswerOver says when it is over
+	answered     []string // the questions it answered, whose tickets the loop hasn't taken back yet
+	answerFailed string   // why it last failed, shown until it opens again
 }
 
 // NewDashboard returns the run's dashboard. Ctrl+C calls cancel; s, once confirmed, calls drain;
@@ -90,6 +96,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.drain(*a.drain)
 		case a.focusTab != "":
 			m.focus(a.focusTab) // the callback runs the terminal in the background
+		case a.answer:
+			m.answer() // the callback opens the talk in the background
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -101,9 +109,15 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r := load.Reading(msg)
 		m.load = &r
 	case eventMsg:
-		if m.apply(dispatch.Event(msg)) {
+		ev := dispatch.Event(msg)
+		if m.apply(ev) {
 			return m, tea.Quit
 		}
+		if ev.Kind == dispatch.EvAsked && m.answerOnAsk && m.openAnswer() {
+			m.answer()
+		}
+	case AnswerOver:
+		m.answerOver(msg)
 	case Finished:
 		m.quitting = true
 		return m, tea.Quit
@@ -216,8 +230,9 @@ type footer struct {
 // and the hint.
 const footFixedLines = 2
 
-// footer is the foot at width w: the way to see the workers' tabs and the MCP warning, if any, the
-// winding-down line while the run winds down, and the hint, if it has a key to name.
+// footer is the foot at width w: the way to see the workers' tabs, the MCP warning and why the answer
+// talk failed, if any, the winding-down line while the run winds down, and the hint, if it has a key
+// to name.
 func (m Dashboard) footer(w int) footer {
 	var watch, warn, windDown string
 	room := footFixedLines
@@ -229,10 +244,14 @@ func (m Dashboard) footer(w int) footer {
 		warn = deferredStyle.Render(ansi.Truncate(" ! "+msg, w, "…"))
 		room++
 	}
+	failed := m.answerFailedLine(w) // until the talk opens again
+	if failed != "" {
+		room++
+	}
 	if m.draining {
 		windDown = m.windDownLine(w)
 	}
-	return footer{text: stack(watch, warn, windDown, m.hintLine(w)), room: room}
+	return footer{text: stack(watch, warn, failed, windDown, m.hintLine(w)), room: room}
 }
 
 // below is the foot below line, which the room kept for the foot doesn't count.

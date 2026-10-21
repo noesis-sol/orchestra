@@ -100,7 +100,14 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	if started != nil {
 		d = d.StartedAt(started.began)
 	}
-	p := tea.NewProgram(d,
+	var p *tea.Program
+	var answers *answerTalks // none where orchestra runs in no pane, which the talk opens beside (answer_dashboard.go)
+	if r.cfg.where.pane != "" {
+		answers = newAnswerTalks(ctx, dashboardAnswerTalk(r.cfg, r.log), r.cfg.Ticket, r.log,
+			func(msg tea.Msg) { p.Send(msg) })
+		d = d.WithAnswer(answers.start, r.cfg.answerOnAsk)
+	}
+	p = tea.NewProgram(d,
 		tui.WithTerminal(stdin, stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
@@ -179,10 +186,12 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 		// any not back within a second below the INTERRUPTED line.
 		<-codes
 		r.organs(dispatch.ExitInterrupted, msg, sink)
+		answers.finish(r.stops, stdout) // closed as the run stopped
 		return dispatch.ExitInterrupted
 	}
 	code := <-codes
 	r.organs(code, r.orch.Final(), sink)
+	answers.finish(r.stops, stdout)
 	return code
 }
 

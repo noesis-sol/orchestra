@@ -114,6 +114,9 @@ type Settings struct {
 	// or ORCHESTRA_TERMINAL says otherwise. Empty or TerminalAuto: Herdr in a Herdr pane, cmux in a
 	// cmux terminal, else tmux.
 	Terminal string `json:"terminal,omitempty"`
+	// AnswerOnAsk true has the dashboard open the answer talk beside it by itself as a ticket comes to
+	// wait on a question. Absent or false: it opens on the dashboard's a key.
+	AnswerOnAsk *bool `json:"answer_on_ask,omitempty"`
 }
 
 // CheckCommands are the project's check commands, the merge check's, the full check's and a worker's

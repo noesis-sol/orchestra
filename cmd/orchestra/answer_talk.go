@@ -274,17 +274,26 @@ type answerResult struct {
 // its progress shown there unless the run is plain.
 func newAnswerTalk(s *session) answerTalk {
 	c, e := s.cfg, s.e
-	a := answerTalk{claude: c.claudeSession(c.WorkerEffort), pane: s.holder.Pane, tracker: beads.Tracker{Repo: c.Repo},
-		every: answerCountEvery, out: e.stdout, err: e.stderr}
-	a.claude.tools = answerToolArgs()
-	if a.pane != "" {
-		a.panes, a.hooks = terminalOf(c), terminalNamed(c.Terminal).hookDriven
-	}
+	a := answerTalkIn(c, s.holder.Pane)
+	a.out, a.err = e.stdout, e.stderr
 	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
 		a.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
 	a.terminal = func(ctx context.Context, message string) error {
 		return answerOnTerminal(ctx, s.stops, a.claude, message, e.stdin, e.stdout, e.stderr)
+	}
+	return a
+}
+
+// answerTalkIn is the answer talk of the project c is about, on bd in its main checkout: in a pane
+// split off pane, orchestra's own, or on orchestra's terminal where pane is "". Its caller says where
+// it writes (out, err), how it shows its progress (line) and how it takes the terminal (terminal).
+func answerTalkIn(c options, pane string) answerTalk {
+	a := answerTalk{claude: c.claudeSession(c.WorkerEffort), pane: pane, tracker: beads.Tracker{Repo: c.Repo},
+		every: answerCountEvery}
+	a.claude.tools = answerToolArgs()
+	if pane != "" {
+		a.panes, a.hooks = terminalOf(c), terminalNamed(c.Terminal).hookDriven
 	}
 	return a
 }

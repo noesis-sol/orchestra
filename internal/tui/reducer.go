@@ -48,11 +48,12 @@ var rowEvents = map[dispatch.Kind]rowEvent{
 }
 
 // keyAction is what a key asks for beyond the dashboard's own state, which Update does: to quit the
-// run, to turn the wind-down on or off, or to switch to a worker's tab.
+// run, to turn the wind-down on or off, to switch to a worker's tab, or to open the answer talk.
 type keyAction struct {
 	quit     bool
 	drain    *bool  // the wind-down to ask the loop for: on, or off to go on; nil for neither
 	focusTab string // the tab to switch to; "" for none
+	answer   bool   // open the answer talk
 }
 
 // press takes in key and says what Update is to do for it.
@@ -70,6 +71,8 @@ func (m *Dashboard) press(key string) keyAction {
 		m.asking = false
 	case !m.asking && len(key) == 1 && key >= "1" && key <= "9":
 		return keyAction{focusTab: m.tab(int(key[0] - '0'))}
+	case !m.asking && key == "a":
+		return keyAction{answer: m.openAnswer()}
 	case key == "s" && (m.draining || !m.stopping): // a run already stopping has nothing to drain
 		m.asking = true
 	}
@@ -113,6 +116,9 @@ func (m *Dashboard) apply(ev dispatch.Event) (quit bool) {
 			m.closed++
 		}
 		m.setRow(ev.Ticket, re.state, re.note(ev.Detail))
+		if ev.Kind == dispatch.EvAsked {
+			m.records[m.find(ev.Ticket)].row.question = questionOf(ev.Detail)
+		}
 		return false
 	}
 	switch ev.Kind {

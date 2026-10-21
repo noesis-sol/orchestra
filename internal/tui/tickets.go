@@ -75,6 +75,7 @@ type ticketRow struct {
 	state     rowState
 	note      string // the merged commit, or why it was set aside
 	triage    string // the triage organ's verdict
+	question  string // the question it waits on, as its last EvAsked named it; "" if it named none
 }
 
 // record is all the dashboard knows of one ticket of the run: its row in the tickets table, once an
