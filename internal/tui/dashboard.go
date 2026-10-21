@@ -384,13 +384,24 @@ func shortVersion(v string) string {
 	return base + "-dev " + hash + dirty
 }
 
-// titleLine is the Orchestra pill, the version, whether the run is stopping, whether it holds for the
-// usage limit and when that resets, whether other runs share the machine and whether the run holds for
-// their cap on workers, the solo ticket running alone or next, the branch, the ticket a
-// scoped run works on and how long the run has gone. The states come first so a narrow pane cuts the
-// branch and time instead. A run winding down says so on its own line above the hint.
+// titleLine is the Orchestra pill, the version, an overnight run's badge, whether the run is stopping,
+// whether it holds for the usage limit and when that resets, whether other runs share the machine and
+// whether the run holds for their cap on workers, the solo ticket running alone or next, the branch, the
+// ticket a scoped run works on and how long the run has gone. The states come first so a narrow pane cuts
+// the branch and time instead; the badge, which says nothing that changes during the run, gives way
+// before them. A run winding down says so on its own line above the hint.
 func (m Dashboard) titleLine(w int) string {
-	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version))
+	if m.cfg.Overnight {
+		if line := m.titleLineWith(" " + overnightStyle.Render("overnight")); ansi.StringWidth(line) <= w {
+			return line
+		}
+	}
+	return ansi.Truncate(m.titleLineWith(""), w, "…")
+}
+
+// titleLineWith is the title line in full, with badge (an overnight run's, or "") after the version.
+func (m Dashboard) titleLineWith(badge string) string {
+	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + badge
 	if m.stopping {
 		line += stopStyle.Render("  · stopping")
 	}
@@ -415,7 +426,7 @@ func (m Dashboard) titleLine(w int) string {
 	}
 	line += "   " + dimStyle.Render(fmt.Sprintf("%s%s · %s",
 		m.cfg.Base, dispatch.ScopeLabel(m.cfg), runTime(m.since(m.began))))
-	return ansi.Truncate(line, w, "…")
+	return line
 }
 
 // sharedLabel is the title line's note that n other orchestra runs share the machine.

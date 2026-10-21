@@ -41,6 +41,10 @@ var (
 	testingStyle  = lipgloss.NewStyle().Foreground(yellow).Bold(true) // a worker running checks
 	toMergeStyle  = lipgloss.NewStyle().Foreground(blue)              // finished, waiting for its turn to merge
 	mergingStyle  = lipgloss.NewStyle().Foreground(pink).Bold(true)   // its merge under way
+	// An overnight run's badge in the title line: a small blue pill, darker text on the dark background's
+	// lighter blue.
+	overnightStyle = lipgloss.NewStyle().Padding(0, 1).Background(blue).
+			Foreground(lipgloss.AdaptiveColor{Light: "#FAFAFA", Dark: "#0F172A"})
 	// The Charm purple pill from the Bubble Tea and Lip Gloss examples.
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).
 			Background(charmPurple).Padding(0, 1).MarginTop(1)

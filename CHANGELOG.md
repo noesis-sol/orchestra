@@ -18,6 +18,9 @@ All notable changes to orchestra are documented here. The format follows
   report lists it with the tickets set aside. A git failure in the main
   checkout, the hold for the environment and the other stops still stop
   it, as docs/running.md says.
+- An overnight run's dashboard has a small blue `overnight` badge in its
+  title line, after the version, for the whole run; a pane too narrow for
+  the line drops it first.
 - The answer talk, where the maintainer answers the questions workers
   asked: a Claude Code session in the main checkout, in a pane beside
   orchestra's or on its terminal, given the open questions in the run's
