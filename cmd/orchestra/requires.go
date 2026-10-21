@@ -14,24 +14,30 @@ import (
 )
 
 // requiresSynopsis is orchestra requires' flags, as its usage line gives them (see subcommand).
-const requiresSynopsis = "[--no-install]"
+const requiresSynopsis = "[--no-install] [--markdown] [--readme]"
 
 // runRequires checks the requirements of the project around e's dir (requires in
 // .orchestra/settings.json) as a run does as it starts, installing what it can unless --no-install
 // says not to, and prints how each was found: for a new contributor's machine, or a worker that adds
 // one. It returns the exit code: 0 when every requirement is met, 2 when one is missing or the list is
-// refused. A stop signal, caught as its stopPolicy says, stops the check or install under way.
+// refused. A stop signal, caught as its stopPolicy says, stops the check or install under way. With
+// --markdown it checks nothing and prints the list as the README's section on what to install
+// (project.RequiresMarkdown); with --readme it writes that section into README.md.
 func runRequires(_ context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	stdout, stderr := e.stdout, e.stderr
 	fs := flag.NewFlagSet("requires", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	noInstall := fs.Bool("no-install", false, "only check: run no install, and list what is missing")
+	markdown := fs.Bool("markdown", false, "check nothing: print the list as the README's section on what to install")
+	readme := fs.Bool("readme", false, "check nothing: write that section into "+project.ReadmeName+
+		", replacing the one between its markers or adding one at its end")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), usageLines("Usage: ", "requires", requiresSynopsis)+"\n"+
 			"Check what this machine must have for the project, the 'requires' list in "+project.SettingsFile+",\n"+
 			"as each run does before its first ticket: run each entry's check, and for one that fails, its\n"+
 			"install, then check again. It prints each entry's state; what is still missing says its manual\n"+
-			"step, or why its install failed and where its output is.\n\n")
+			"step, or why its install failed and where its output is. --markdown and --readme give the\n"+
+			"list as the README's section on what to install instead, for people to read.\n\n")
 		printFlags(fs)
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 every requirement met, 2 one missing or the list refused, "+
 			"130 Ctrl+C.\n")
@@ -41,6 +47,10 @@ func runRequires(_ context.Context, args []string, e cmdEnv, stop stopCatch) int
 	}
 	fail := func(why any) int {
 		fmt.Fprintln(stderr, "orchestra requires:", why)
+		return dispatch.ExitSetup
+	}
+	if *noInstall && *markdown || *noInstall && *readme || *markdown && *readme {
+		fmt.Fprintln(stderr, "orchestra requires: give one of --no-install, --markdown and --readme")
 		return dispatch.ExitSetup
 	}
 	repo, err := git.Git{}.TopLevel(stop.ctx, e.dir)
@@ -54,6 +64,13 @@ func runRequires(_ context.Context, args []string, e cmdEnv, stop stopCatch) int
 	list, err := project.ResolveRequires(settings)
 	if err != nil {
 		return fail(err)
+	}
+	switch {
+	case *markdown:
+		fmt.Fprint(stdout, project.RequiresMarkdown(list))
+		return dispatch.ExitOK
+	case *readme:
+		return writeReadme(stdout, repo, list, fail)
 	}
 	limit, err := project.ResolveCheckTimeout(project.Given[time.Duration]{}, settings)
 	if err != nil {
@@ -72,6 +89,22 @@ func runRequires(_ context.Context, args []string, e cmdEnv, stop stopCatch) int
 	case report.MissingLine() != "":
 		fmt.Fprintln(stderr, report.MissingLine())
 		return dispatch.ExitSetup
+	}
+	return dispatch.ExitOK
+}
+
+// writeReadme writes the README's section on what to install for list into README.md at repo's top, and
+// says whether it changed; fail says why it couldn't.
+func writeReadme(stdout io.Writer, repo string, list []project.Requirement, fail func(any) int) int {
+	changed, err := project.WriteReadmeRequires(repo, list)
+	switch {
+	case err != nil:
+		return fail(err)
+	case changed:
+		fmt.Fprintf(stdout, "Wrote the requires list into %s, between %s and %s: commit it with the list.\n",
+			project.ReadmeName, project.RequiresStart, project.RequiresEnd)
+	default:
+		fmt.Fprintf(stdout, "%s's section is the requires list's already.\n", project.ReadmeName)
 	}
 	return dispatch.ExitOK
 }

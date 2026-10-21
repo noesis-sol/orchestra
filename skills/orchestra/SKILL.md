@@ -126,6 +126,8 @@ What the machine itself must have (a runtime, a CLI, Docker running, a permissio
 `init`, each run's start and `orchestra requires` check it, installing what they can, and `orchestra requires
 --no-install` only checks. Workers are told to add an entry for a tool their ticket needs, committed with it, rather than
 install it by hand. Installing software is the user's call: ask before running `orchestra requires` without `--no-install`.
+`orchestra requires --readme` writes the list into `README.md` as its section on what to install (between
+`<!-- orchestra:requires -->` and `<!-- /orchestra:requires -->`; `--markdown` prints it), which `init` keeps up to date.
 The prompt names `scripts/check-fast.sh` as the check. It never replaces an existing prompt
 unless given `--force`; don't pass `--force` without the user's say-so. Where a run's `START` lines or
 `init`'s summary say the worker prompt or the verifier is older than orchestra's templates (`templates: …`),
@@ -552,6 +554,8 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   error is on the line); the next run carries nothing over, so finish what it names by hand (below)
   once the workers are done.
 - `LABEL_FAILED`: bd couldn't add or remove the `unmerged` label; run the command on the line.
+- `README_STALE`: `README.md`'s section on what to install differs from the `"requires"` list, or is missing;
+  the run goes on. Offer to run `orchestra requires --readme` and commit the README.
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
   it does. Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.

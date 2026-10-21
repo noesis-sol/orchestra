@@ -17,9 +17,10 @@ import (
 type Applier func(ctx context.Context, repo string, c Choice) ([]Step, error)
 
 // Apply sets the repository at repo up as the choice says: the worker prompt, replacing one that is
-// there where force is set; the runners; the settings; the changelog's union; the create-check-suite
-// skill; and the verifier, which reads the worker prompt and the runners written before it. Last, the
-// settings record the versions of the templates it wrote the worker prompt and the verifier from. It
+// there where force is set; the runners; the settings; the README's section on what to install
+// (ApplyReadme); the changelog's union; the create-check-suite skill; and the verifier, which reads
+// the worker prompt and the runners written before it. Last, the settings record the versions of
+// the templates it wrote the worker prompt and the verifier from. It
 // returns each one's steps, stopping at the first error with the steps so far.
 //
 // Once it has started, it writes them all, though ctx ends meanwhile: a setup half written, the
@@ -32,8 +33,8 @@ func Apply(ctx context.Context, repo string, c Choice, force bool) ([]Step, erro
 	}
 	ctx = context.WithoutCancel(ctx)
 	var steps []Step
-	for _, apply := range []Applier{initPrompt(force), ApplyRunners, ApplySettings, ApplyUnion, ApplySkill,
-		ApplyVerifier} {
+	for _, apply := range []Applier{initPrompt(force), ApplyRunners, ApplySettings, ApplyReadme, ApplyUnion,
+		ApplySkill, ApplyVerifier} {
 		s, err := apply(ctx, repo, c)
 		steps = append(steps, s...)
 		if err != nil {

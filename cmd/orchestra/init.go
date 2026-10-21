@@ -226,7 +226,8 @@ const initAbout = "Set up Beads and .orchestra/ in this repository. Where bd is 
 	"settings.json (the checks, their time limits, how many tickets run at the same time and\n" +
 	"the MCP servers workers get, by name), a .gitignore for the log, reports and per-ticket\n" +
 	"files, and a check of what orchestra needs and of the project's requirements (its 'requires'\n" +
-	"list, installing what it can, as each run does). Where the project keeps a CHANGELOG.md, it\n" +
+	"list, installing what it can, as each run does), written into README.md, where there is one,\n" +
+	"as its section on what to install. Where the project keeps a CHANGELOG.md, it\n" +
 	"offers to merge it by union in .gitattributes; where it has a lockfile and no setup command,\n" +
 	"it offers one (npm ci for package-lock.json, …). It offers a verifier, a subagent that checks\n" +
 	"each ticket's change in a fresh context, which the worker prompt then has workers run, and the\n" +

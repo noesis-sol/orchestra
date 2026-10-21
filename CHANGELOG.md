@@ -20,6 +20,13 @@ All notable changes to orchestra are documented here. The format follows
   ticket starts. `orchestra init` lists the requirements among what the
   machine needs, and `orchestra requires` (`--no-install` to only check)
   prints each one's state.
+- The README's section on what to install is generated from the requires
+  list: `orchestra requires --markdown` prints it, and `orchestra requires
+  --readme` writes it into `README.md` between `<!-- orchestra:requires -->`
+  and `<!-- /orchestra:requires -->`. `orchestra init` writes it into a
+  README that has none and keeps it up to date; a run's start warns
+  `README_STALE` when it differs from the list; and a worker that changes
+  the list is told to regenerate it in the same commit.
 
 ### Changed
 

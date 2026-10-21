@@ -45,6 +45,15 @@ func (o *Loop) checkRequires(ctx context.Context, list []project.Requirement) *s
 	return nil
 }
 
+// sayReadme warns, as the run starts, when the README's section on what to install differs from the
+// requires list, or the README has none though the list has entries (see project.ReadmeStaleLine): the
+// run leaves the main checkout as it is, and 'orchestra requires --readme' brings it up to date.
+func (o *Loop) sayReadme() {
+	if line := project.ReadmeStaleLine(o.cfg.Repo, o.cfg.Requires); line != "" {
+		o.emit(Event{Kind: EvWarn, Text: "  README_STALE: " + line})
+	}
+}
+
 // requiresNow is the requirements as the run has them now: Config's, unless a merge in this run
 // committed others to Base's settings.json (see takeRequires).
 func (o *Loop) requiresNow() []project.Requirement {

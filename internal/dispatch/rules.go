@@ -3,6 +3,8 @@ package dispatch
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -62,13 +64,26 @@ func (o *Loop) requiresNote() string {
 	}
 	where := fmt.Sprintf("\"requires\" in %s", project.SettingsFile)
 	if strings.Contains(o.prompt, project.RequiresRule) {
-		return fmt.Sprintf("\n\nThe project's requires list is %s, %s.\n", where, has)
+		return fmt.Sprintf("\n\nThe project's requires list is %s, %s.%s\n", where, has, o.readmeNote())
 	}
 	return fmt.Sprintf("\n\nWhat this project needs of the machine (a tool, a service, a permission) is its requires "+
 		"list, %s, %s. A ticket that needs one the list doesn't have adds an entry for it (a name, a check, and an "+
 		"install command that runs without sudo, or a manual step for a person), commits it with the ticket, and "+
 		"installs it with that entry's own install command, %s: what isn't on the list isn't on the next "+
-		"machine. A manual step is asked of the maintainer as a question.\n", where, has, project.RequiresRule)
+		"machine. A manual step is asked of the maintainer as a question.%s\n", where, has, project.RequiresRule,
+		o.readmeNote())
+}
+
+// readmeNote asks a worker that changes the requires list to write the README's section on what to
+// install from it again, in the same commit, so that the people who read the README and the runs that
+// read the list find the same; "" for a project with no README.md in its main checkout, which orchestra
+// writes none for.
+func (o *Loop) readmeNote() string {
+	if _, err := os.Stat(filepath.Join(o.cfg.Repo, project.ReadmeName)); err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" A ticket that changes the list runs orchestra requires --readme, which writes %s's "+
+		"section on what to install from it, and commits that with the list.", project.ReadmeName)
 }
 
 // workerCheckLog is the file in a worktree's .orchestra/run/ that checkNote has a worker save a check's
