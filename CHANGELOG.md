@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The fetch of the base branch's upstream, at a run's start and as the
+  overnight pre-flight's first check, runs ssh in batch mode
+  (`-o BatchMode=yes` after `GIT_SSH_COMMAND`, `core.sshCommand` or `ssh`), so
+  that an ssh remote whose key isn't in the agent, or whose host key is unknown,
+  fails the fetch at once. ssh asked from the fetch's process group of its
+  own, was stopped, and the run waited a minute in silence before warning
+  `BASE_UNFETCHED` "timed out".
 - At a run's end, a stop signal during the full check or the run report
   closes the answer talk still open rather than wait for it, so that a kill
   ends orchestra; an answer talk that ends during them is said once they are
