@@ -99,11 +99,11 @@ func TestTicketsTableBesideCurrentCountsTheRowsItShows(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("rows beside Current: %v, want k-1 and k-2", rows)
 	}
-	short := ansi.Strip(m.rowsTable(90, 3, rows)) // one row: the count, k-2 giving way to it
+	short := ansi.Strip(m.rowsTable(90, 3, rows, emptyTableNote)) // one row: the count, k-2 giving way to it
 	if !strings.Contains(short, "+2 ") || !strings.Contains(short, "earlier tickets") {
 		t.Errorf("the count should be of the rows the table shows, 2:\n%s", short)
 	}
-	table := strings.Split(ansi.Strip(m.rowsTable(90, 6, rows)), "\n")
+	table := strings.Split(ansi.Strip(m.rowsTable(90, 6, rows, emptyTableNote)), "\n")
 	if len(table) != 6 || strings.TrimSpace(strings.ReplaceAll(table[3], "│", "")) != "" ||
 		strings.TrimSpace(strings.ReplaceAll(table[4], "│", "")) != "" {
 		t.Errorf("blank rows should fill what the two rows leave:\n%s", strings.Join(table, "\n"))

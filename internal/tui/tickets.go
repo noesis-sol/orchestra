@@ -243,7 +243,17 @@ func (m Dashboard) tickets(w, lines int) string {
 
 // ticketsBesideCurrent is tickets drawn with Current: without the rows of the tickets Current shows.
 func (m Dashboard) ticketsBesideCurrent(w, lines int) string {
-	return stack(sectionLabel("Tickets", ticketsStyle), m.rowsTable(w, lines-labelLines, m.rowsBesideCurrent()))
+	return stack(sectionLabel("Tickets", ticketsStyle), m.besideCurrentTable(w, lines-labelLines))
+}
+
+// emptyTableNote is the first row of the tickets table beside Current while it has no row of its own:
+// every ticket of the run so far is running, and Current shows it, so the table would be an empty frame.
+const emptyTableNote = "tickets come here as they leave Current"
+
+// besideCurrentTable is the tickets table drawn with Current, without its label, in lines lines: the
+// rows of the tickets Current doesn't show, or while there are none, a note saying where they are.
+func (m Dashboard) besideCurrentTable(w, lines int) string {
+	return m.rowsTable(w, lines, m.rowsBesideCurrent(), emptyTableNote)
 }
 
 // The tickets table's columns: the state column's width, the narrowest its ID column and the text in
@@ -264,10 +274,12 @@ func aboutWidth(w, idWidth int) int {
 
 // ticketsTable lists this run's tickets, newest last, in lines lines of screen: blank rows fill what
 // the tickets leave, and when there are more the oldest give way to a count of them.
-func (m Dashboard) ticketsTable(w, lines int) string { return m.rowsTable(w, lines, m.listedRecords()) }
+func (m Dashboard) ticketsTable(w, lines int) string {
+	return m.rowsTable(w, lines, m.listedRecords(), "")
+}
 
-// rowsTable is ticketsTable listing the rows of recs.
-func (m Dashboard) rowsTable(w, lines int, recs []record) string {
+// rowsTable is ticketsTable listing the rows of recs, or with none, note, faint, in its first row.
+func (m Dashboard) rowsTable(w, lines int, recs []record, note string) string {
 	idWidth := minIDWidth
 	for _, r := range recs {
 		idWidth = max(idWidth, ansi.StringWidth(oneLine(r.row.id)))
@@ -296,6 +308,9 @@ func (m Dashboard) rowsTable(w, lines int, recs []record) string {
 		r.id = ansi.Truncate(oneLine(r.id), idWidth, "…") // a worker files tickets, so an ID is untrusted
 		c := r.cells(about, worker)
 		data = append(data, c[:])
+	}
+	if len(data) == 0 && note != "" && about >= minAboutWidth { // a pane too narrow for a word of it leaves it out
+		data = append(data, []string{"", "", dimStyle.Render(ansi.Truncate(note, about, "…"))})
 	}
 	for len(data) < limit {
 		data = append(data, []string{"", "", ""})

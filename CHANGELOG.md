@@ -8,6 +8,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The dashboard's tickets table, while every ticket of the run is still
+  running or merging, says in its first row `tickets come here as they leave
+  Current`. It drew an empty frame, which looked like rows gone missing: the
+  table has no header, and leaves out the tickets Current shows.
 - The dashboard's hint stops counting a question as soon as the answer talk
   records its answer, while the talk goes on with the others. It counted it
   until the talk was over, so that with nothing ready but questions and

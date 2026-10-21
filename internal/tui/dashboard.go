@@ -341,7 +341,7 @@ func (m Dashboard) layout(w int, title string, f footer) string {
 	}
 	if tickets != "" {
 		// More workers than the run may have: the labels go, then the workers give way.
-		return m.cut(stack(title, stats, m.rowsTable(w, lines-labelLines, m.rowsBesideCurrent()), m.workerList(w)), foot)
+		return m.cut(stack(title, stats, m.besideCurrentTable(w, lines-labelLines), m.workerList(w)), foot)
 	}
 	top := stack(title, m.statsLine(w))
 	// A pane too short for a steady form: the workers get every line the foot leaves as it is now,
