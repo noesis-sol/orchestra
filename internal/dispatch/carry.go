@@ -64,6 +64,7 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			continue
 		}
 		o.book.carry(e.Ticket, w)
+		o.clocks.carry(e.Ticket)
 		carried = append(carried, e.Ticket+" ("+w.state()+")")
 	}
 	if len(carried) > 0 {

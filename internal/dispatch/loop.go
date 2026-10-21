@@ -72,6 +72,9 @@ type Loop struct {
 	merges mergeQueue // the merge queue (see mergeTurn)
 	train  mergeTrain // the tickets checked ahead of their turn in it (see train.go)
 	slots  mergeSlots // the tickets gone to merge, as Run counts its slots
+	// clocks: how long each running ticket has spent in each phase, for the record that ends its part
+	// (see endsPart).
+	clocks phaseClocks
 
 	organCost organCost // what the run's organ calls cost
 	hookTally hookTally // what the workers' hooks noted: permission prompts, compactions

@@ -545,6 +545,7 @@ func (r *runState) start(t Ticket, q queue) {
 func (r *runState) launch(id string, counted bool, how *settling, work func(ctx context.Context) *stopReason) {
 	r.inflight[id] = true
 	o, ctx, results := r.o, r.ctx, r.results
+	o.clocks.start(id, time.Now())
 	go func() {
 		res := result{id: id, counted: counted}
 		defer func() {

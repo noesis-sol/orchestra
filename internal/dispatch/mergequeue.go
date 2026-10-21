@@ -5,6 +5,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 )
 
 // MergeStage is where a finished ticket is in the merge queue, for the dashboard.
@@ -160,6 +161,7 @@ func (o *Loop) showMerge(id string, stage MergeStage, place int) {
 			return
 		}
 		st.enter(phase, place)
+		o.clocks.enter(id, phase, time.Now())
 		st.Agent, st.Doing, st.Permission, st.Unreadable = StateDone, "", false, false
 		// A ticket checked again says so (see recheck).
 		st.Activity = cmp.Or(train, st.mergeNote)

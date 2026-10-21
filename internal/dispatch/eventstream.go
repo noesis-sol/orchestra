@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +81,11 @@ type eventRecord struct {
 	Solo     *soloRecord `json:"solo,omitempty"`
 	Machine  bool        `json:"machine_full,omitempty"`
 	Shared   *int        `json:"shared,omitempty"`
+
+	// Phases, HandBacks and Carried: an event's Times, given only on a record that ends its ticket's part.
+	Phases    *phasesRecord    `json:"phases,omitempty"`
+	HandBacks *handBacksRecord `json:"hand_backs,omitempty"`
+	Carried   bool             `json:"carried,omitempty"`
 }
 
 // heldRecord is a HeldBack: how many ready tickets each reason holds back.
@@ -89,6 +95,45 @@ type heldRecord struct {
 	Merge   int `json:"merge,omitempty"`
 	Solo    int `json:"solo,omitempty"`
 	Setup   int `json:"setup,omitempty"`
+}
+
+// phasesRecord is PhaseTimes.Spent, in seconds, by the dashboard's name for each phase: a phase the ticket
+// never entered is left out.
+type phasesRecord struct {
+	Working   *seconds `json:"working,omitempty"`
+	Waiting   *seconds `json:"waiting,omitempty"`
+	Merging   *seconds `json:"merging,omitempty"`
+	Resolving *seconds `json:"resolving,omitempty"`
+	Fixing    *seconds `json:"fixing,omitempty"`
+}
+
+// handBacksRecord is a ticket's hand-backs: to resolve its rebase's conflicts, and to fix its check.
+type handBacksRecord struct {
+	Resolve int `json:"resolve"`
+	Fix     int `json:"fix"`
+}
+
+// seconds is a duration in seconds, written with one decimal.
+type seconds time.Duration
+
+// MarshalJSON writes s in seconds with one decimal, as in 812.4 or 41.0.
+func (s seconds) MarshalJSON() ([]byte, error) {
+	return strconv.AppendFloat(nil, time.Duration(s).Seconds(), 'f', 1, 64), nil
+}
+
+// setTimes fills r's phases, hand-backs and carried from t.
+func (r *eventRecord) setTimes(t PhaseTimes) {
+	spent := func(p Phase) *seconds {
+		if !t.Entered[p] {
+			return nil
+		}
+		s := seconds(t.Spent[p])
+		return &s
+	}
+	r.Phases = &phasesRecord{Working: spent(PhaseWorking), Waiting: spent(PhaseQueued), Merging: spent(PhaseMerging),
+		Resolving: spent(PhaseResolving), Fixing: spent(PhaseFixing)}
+	r.HandBacks = &handBacksRecord{Resolve: t.Resolves, Fix: t.Fixes}
+	r.Carried = t.Carried
 }
 
 // soloRecord is a SoloState.
@@ -152,6 +197,9 @@ func (l *Log) Record(ev Event) {
 		if ev.Limit != NoLimit {
 			r.Limit = &ev.Limit
 		}
+	}
+	if ev.Times != nil {
+		r.setTimes(*ev.Times)
 	}
 	if ev.Kind == EvLimited && !ev.Reset.IsZero() {
 		r.Reset = &ev.Reset

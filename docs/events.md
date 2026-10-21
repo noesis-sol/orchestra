@@ -23,14 +23,14 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `info` | progress: the `START` line, worktrees, how workers settled, a ticket closed in the tab its worker was left in after it was [set aside](running.md#tickets-set-aside) and merged now (`LATE_CLOSE`)… | `text`; `ticket` on some |
 | `dispatch` | a ticket was picked up | `ticket`, `title`; `n` and `limit`, as in `[n/limit]`, `limit` left out in a run with no ticket limit (a run's unless `--limit` or `LIMIT` gives one), whose lines read `[n]`; `queued`, how many ready tickets wait for a slot; `held` and `held_by`, the ready tickets held back (see below); `unclosed`, how many tickets aren't closed (open, in progress, blocked or deferred; in a run scoped to a ticket, the scope's); `solo` |
 | `queue` | the number of ready tickets waiting for a slot or held back, or of tickets not closed, changed: the dashboard's **In queue**, which the log doesn't have | `queued`, `held`, `held_by`, `unclosed`, `solo` |
-| `closed` | a ticket closed and was merged, or closed with no change of its own to merge | `ticket`, `title`; `detail`, as in `ffd6ce4 merged into main`, or `no change to merge` |
-| `deferred` | a ticket was set aside | `ticket`, `title`; `detail`, why: `by the worker`, `still in_progress, noted for review`, … |
+| `closed` | a ticket closed and was merged, or closed with no change of its own to merge | `ticket`, `title`; `detail`, as in `ffd6ce4 merged into main`, or `no change to merge`; `phases`, `hand_backs` and `carried` (see below) |
+| `deferred` | a ticket was set aside | `ticket`, `title`; `detail`, why: `by the worker`, `still in_progress, noted for review`, …; `phases`, `hand_backs` and `carried` |
 | `asked` | a ticket waits on a question for you | `ticket`, `title`; `detail`, the question's ID and title |
 | `answered` | its question was answered: it comes back, dispatched next | `ticket`, `title`, `detail` |
 | `waits` | a ticket's worker stopped with nothing done, having found it blocked by a ticket not merged yet: it is back in the queue until that ticket merges (`WAITS_FOR_MERGE`) | `ticket`, `title`; `detail`, the tickets it waits for, as in `kinieta-kco` or `kinieta-kco, kinieta-q1z` |
 | `reopened` | a ticket set aside for failing at once was put back in the queue by a hold for the environment: no longer set aside | `ticket`; `detail`, why: `the run held for the environment` |
 | `triage` | the triage organ's verdict on a deferred ticket | `ticket`; `title`, the verdict's summary; `detail`, as in `environment · high` |
-| `warn` | something to review, while the run goes on: `CHECKS_FAILED`, `MERGE_CONFLICT`, `LIKELY_CONFLICT`, `CLOSED_UNMERGED` (a closed ticket whose branch isn't on the base, holding the tickets it blocks), … | `ticket` when it is about one; `aside: true` when that ticket is left for review, out of this run, with `detail`, why: `checks failed`, `closed without a commit`, …; `blocked` on a `MERGE_CONFLICT`: the ticket's work is done, but it can't merge until you act, as in `merge conflict in a.go, b.go` |
+| `warn` | something to review, while the run goes on: `CHECKS_FAILED`, `MERGE_CONFLICT`, `LIKELY_CONFLICT`, `CLOSED_UNMERGED` (a closed ticket whose branch isn't on the base, holding the tickets it blocks), … | `ticket` when it is about one; `aside: true` when that ticket is left for review, out of this run, with `detail`, why: `checks failed`, `closed without a commit`, …, and `phases`, `hand_backs` and `carried`; `blocked` on a `MERGE_CONFLICT`: the ticket's work is done, but it can't merge until you act, as in `merge conflict in a.go, b.go` |
 | `hold` | something stopped the run: no new tickets while the running ones finish | `ticket` on some; `blocked` when that ticket's work is done but it can't merge until you act (`DIRTY_TREE`, `GIT_FAILED`, `MERGE_FAILED`): why, as the dashboard says it, as in `main checkout has uncommitted changes`, `does not fast-forward onto main` |
 | `drain`, `resume` | the run was asked to stop after the running tickets, or that was taken back | |
 | `probed` | a probe found the machine working after an environment hold: tickets start again | |
@@ -44,6 +44,20 @@ Every record has `time`, when it was written, and `run`, when the run started: R
 | `end` | the run's last record, as orchestra exits, after triage and the run report | `code`, the [exit code](running.md#exit-codes) |
 
 Every record but `start`, `queue` and `end` also has `text`, its line in the log as it is there, without the time. A `stop` or `done` record's text starts with the word that says how the loop ended (`PAUSED: …`, `READY_EMPTY after 12 tickets`), a `hold` record's with `HOLD: ` and that word. `solo` is there while a ticket labelled `solo` runs (`{"ticket":"<id>"}`) or is next (`{"ticket":"<id>","next":true}`). `held` is how many ready tickets wait for something besides a free slot, none of them among `queued`, and `held_by` how many each reason holds back, as in `{"overlap":3,"merge":1}`: `overlap`, a footprint overlapping a running ticket's; `parent`, subtickets not all closed and merged; `merge`, a ticket blocking it, or the one it was filed from, not merged yet; `solo`, a solo ticket running or next; `setup`, the setup failed in its worktree (`SETUP_FAILED`), until a ticket merges. Both are there only while a ticket is held back; the log says why each one waits. A field without a value is left out, except `queued`, `unclosed`, `shared` and `code`, which can be 0; `unclosed` is left out only before the run could read it. Kinds and fields may be added, but those here keep their names: read the ones you know and skip the rest.
+
+### Where a ticket's time went
+
+The record that ends a ticket's part in the run, `closed`, `deferred` or a `warn` with `aside: true`, says how long it spent in each phase from when the run took it up (dispatched it, adopted its worker, or took it up again to merge it or check it once more) to that record, in seconds with one decimal:
+
+```
+{"time":"2026-10-02T09:31:40.07+02:00","run":"2026-10-02T09:12:03.98+02:00","kind":"closed","ticket":"kinieta-kco","title":"Open the property model","detail":"ffd6ce4 merged into batch/2026-10-02","text":"…","phases":{"working":812.4,"waiting":41.0,"merging":133.2,"fixing":260.8},"hand_backs":{"resolve":0,"fix":1}}
+```
+
+- `phases` gives each phase the [dashboard](dashboard.md) shows for a running ticket, and leaves out those it never entered: `working`, its worker at it, from its dispatch until its worker is done, and again after a hand-back; `waiting`, in the merge queue for its turn (**to merge**); `merging`, its merge under way: the rebase, the worktree's setup and the merge check; `resolving`, handed back to its worker to resolve its rebase's conflicts; `fixing`, handed back to fix its failing check. Time the run held for the usage limit or for the machine counts in the phase the ticket was in, as the dashboard shows it.
+- `hand_backs` counts the ticket's hand-backs in this run: `resolve`, for conflicts, and `fix`, for a failing check; both are given, 0 included.
+- `carried: true` marks a ticket carried over from an earlier run: its phases count from when this run took it up.
+
+A record about a ticket the run didn't take up has none of the three, and no other record has them.
 
 A failing terminal, Herdr, tmux or cmux, stops the run as `TERMINAL_FAILED`; up to 0.6.0 it was `HERDR_FAILED`, so a script that matches the stop's word should look for both.
 
@@ -60,4 +74,5 @@ jq -c --arg run "$run" 'select(.run == $run and (.kind | IN("hold", "stop", "don
 jq -r --arg run "$run" 'select(.run == $run and .kind == "closed") | .ticket' $E               # what it closed
 tail -f $E | jq -c 'select(.kind != "info" and .kind != "queue") | {kind, ticket, text}'      # follow a run
 jq -r 'select(.kind == "start" and .spec) | .scope' $E | tail -n 1                             # the last spec run's root epic
+jq -r --arg run "$run" 'select(.run == $run and .phases) | [.ticket, .kind, (.phases | to_entries | map("\(.key) \(.value)s") | join(", "))] | @tsv' $E   # its tickets' time per phase
 ```

@@ -84,6 +84,9 @@ type Event struct {
 	// Aside: an EvWarn that leaves Ticket set aside for review, out of this run (CHECKS_FAILED,
 	// DEFER_FAILED, …), not one about a ticket still running or already deferred.
 	Aside bool
+	// Times: for an event that ends Ticket's part in the run (see endsPart), how long it spent in each
+	// phase since the run took it up; nil when the run didn't take it up.
+	Times *PhaseTimes
 	// Blocked: Ticket's work is done, but it can't merge until the maintainer acts; why, in a few
 	// words ("main checkout has uncommitted changes", "merge conflict in a.go"). Set on the EvHold or
 	// EvStop for a DIRTY_TREE, GIT_FAILED or MERGE_FAILED met as it merged, and on an EvWarn for its
@@ -179,6 +182,9 @@ func (o *Loop) emit(ev Event) {
 	o.emitMu.Lock()
 	defer o.emitMu.Unlock()
 	ev.Time = time.Now()
+	if endsPart(ev) {
+		ev.Times = o.clocks.end(ev.Ticket, ev.Time)
+	}
 	o.tally(&ev)
 	if ev.Kind != EvQueue {
 		o.log.Line(ev.Time, ev.Text)

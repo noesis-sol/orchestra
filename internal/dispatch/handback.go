@@ -575,6 +575,7 @@ func (o *Loop) setHandedBack(id string, mode handMode) Status {
 			s.Activity = "" // the merge queue's words: its worker's own come with its next read
 		}
 		s.enter(phase, 0) // out of the merge queue: it joins it again after
+		o.clocks.enter(id, phase, time.Now())
 		s.Agent, s.Doing, s.Permission, s.Unreadable = StateIdle, "", false, false
 		st = *s
 	})

@@ -4,6 +4,18 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The event stream's record that ends a ticket's part in the run (`closed`,
+  `deferred`, or a `warn` with `aside: true`) gives the seconds it spent in
+  each phase the dashboard shows, from when the run took it up: `phases`
+  (`working`, `waiting`, `merging`, `resolving`, `fixing`, the ones it
+  entered), `hand_backs` (`resolve` and `fix`), and `carried: true` for a
+  ticket carried over from an earlier run. docs/events.md has a `jq` line
+  that lists a run's tickets with their time per phase.
+
 ## [0.9.2] - 2026-10-21
 
 ### Added
