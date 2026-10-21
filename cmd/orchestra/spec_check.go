@@ -19,7 +19,7 @@ import (
 // epic, and the spec's: one carrying another spec's metadata is an error. It sets the root epic's
 // spec metadata (its path, SHA-256 and commit) where the breakdown left it out or got it wrong. The
 // warnings say what else is amiss: issues carrying the spec's metadata outside the root epic, issues
-// under it that don't carry it, open tickets under it without files metadata or acceptance criteria,
+// under it that don't carry it, open tickets under it without files metadata (but spikes) or acceptance criteria,
 // and blocks cycles among the spec's issues; and what couldn't be checked.
 func checkBreakdown(ctx context.Context, bd specTracker, spec project.Spec, root string) ([]string, error) {
 	t, err := bd.Show(ctx, root)
@@ -96,7 +96,7 @@ func treeWarnings(root string, issues, under []dispatch.Ticket) []string {
 		if t.IssueType == "epic" || t.Status == dispatch.StatusClosed {
 			continue
 		}
-		if len(dispatch.TicketFiles(t)) == 0 {
+		if needsFiles(t) {
 			noFiles = append(noFiles, t.ID)
 		}
 		if marked && strings.TrimSpace(f.AcceptanceCriteria) == "" { // the others' text isn't read
@@ -114,6 +114,15 @@ func treeWarnings(root string, issues, under []dispatch.Ticket) []string {
 	add(noFiles, noFilesUnder(root))
 	add(noAcceptance, noAcceptanceUnder(root))
 	return warnings
+}
+
+// spikeLabel marks a spike, a ticket a breakdown files to check an unverified fact, which changes
+// nothing in the repository and so carries no files metadata.
+const spikeLabel = "spike"
+
+// needsFiles reports whether the files warning lists t: a ticket without files metadata that isn't a spike.
+func needsFiles(t dispatch.Ticket) bool {
+	return len(dispatch.TicketFiles(t)) == 0 && !dispatch.HasLabel(t, spikeLabel)
 }
 
 // noFilesUnder and noAcceptanceUnder say what the tickets a warning lists lack, under root.
@@ -147,7 +156,7 @@ func (f featureFiled) counts() string {
 
 // checkFeature checks the tree a feature's session filed under epic, as bd has it, as checkBreakdown
 // checks a spec's but for what depends on the spec's metadata: epic must be an epic. The warnings say
-// what else is amiss: open tickets under it without files metadata or acceptance criteria, and blocks
+// what else is amiss: open tickets under it without files metadata (but spikes) or acceptance criteria, and blocks
 // cycles among them; and what couldn't be checked.
 func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (featureFiled, []string, error) {
 	t, err := bd.Show(ctx, epic)
@@ -171,7 +180,7 @@ func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (feat
 			continue
 		}
 		filed.tickets++
-		if len(dispatch.TicketFiles(u)) == 0 {
+		if needsFiles(u) {
 			noFiles = append(noFiles, u.ID)
 		}
 		if strings.TrimSpace(u.AcceptanceCriteria) == "" {

@@ -57,6 +57,9 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Changed
 
+- The checks after a spec's breakdown or a feature's session no longer list
+  spikes (tickets labelled `spike`) among the tickets without files
+  metadata: a spike changes nothing in the repository, so it has no files.
 - A worker defers its ticket once the same problem has resisted three
   different fixes, with a note on the ticket saying what it tried and what
   each attempt showed, rather than loop on it until the ticket's time
