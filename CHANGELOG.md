@@ -69,6 +69,8 @@ All notable changes to orchestra are documented here. The format follows
   `systemd-inhibit` on Linux, started once the pre-flight clears the run
   and stopped as it ends. The checklist says so, and warns where the
   command is missing.
+- `"keep_awake": true` in settings.json keeps the machine from sleeping
+  during every run, as an overnight run always does.
 
 ## [0.9.1] - 2026-10-21
 

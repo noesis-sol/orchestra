@@ -86,6 +86,9 @@ type Settings struct {
 	// worktrees go, each holding its own dependencies, before it starts. Absent: DefaultOvernightFreeDisk;
 	// 0 doesn't check.
 	OvernightFreeDisk *int `json:"overnight_free_disk_gb,omitempty"`
+	// KeepAwake true has every run keep the machine from sleeping while it goes, as an overnight run
+	// always does. Absent or false: only an overnight run does.
+	KeepAwake *bool `json:"keep_awake,omitempty"`
 	// MCPServers names the MCP servers workers get, defined in each machine's Claude Code config
 	// (never their definitions, which may hold secrets). Absent: not chosen, so workers get every
 	// server Claude Code finds; [] gives them none.

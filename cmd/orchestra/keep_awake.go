@@ -15,10 +15,11 @@ import (
 )
 
 // An overnight run keeps the machine from sleeping while it goes, so that no worker is cut off in
-// the night: the system's keep-awake command, given orchestra's PID, starts once the pre-flight has
-// cleared the run, and stops as the run's session closes, after the organ phase. Given the PID, the
-// command ends by itself should orchestra end some other way. The pre-flight's checklist says whether
-// the machine is kept awake, and warns where the command is missing.
+// the night, and so does every run with "keep_awake": true in settings.json: the system's keep-awake
+// command, given orchestra's PID, starts once the pre-flight has cleared the run, and stops as the
+// run's session closes, after the organ phase. Given the PID, the command ends by itself should
+// orchestra end some other way. The pre-flight's checklist says whether the machine is kept awake, and
+// warns where the command is missing.
 
 // awakeCommand is the command that keeps a system awake: its name, and its arguments given the PID of
 // the process it keeps the machine awake for, until that process exits or the command is stopped.
@@ -41,7 +42,7 @@ func keepAwakeOf(goos string) (awakeCommand, bool) {
 		}}, true
 	case "linux":
 		return awakeCommand{name: "systemd-inhibit", args: func(pid int) []string {
-			return []string{"--what=idle:sleep", "--who=orchestra", "--why=an overnight run", "--mode=block",
+			return []string{"--what=idle:sleep", "--who=orchestra", "--why=a run of workers", "--mode=block",
 				"tail", "--pid=" + strconv.Itoa(pid), "-f", "/dev/null"}
 		}}, true
 	}
@@ -69,11 +70,12 @@ func keepAwakeCheck(goos string) preflightCheck {
 // keepAwakeGrace is how long the keep-awake command has between SIGTERM and SIGKILL as it is stopped.
 const keepAwakeGrace = time.Second
 
-// keepAwake keeps the machine awake for an overnight run until its session closes: it starts this
-// system's keep-awake command with orchestra's PID, and close stops it. A command missing, which the
-// checklist warned of, or ending by itself while the run goes, is a line in the log.
+// keepAwake keeps the machine awake for an overnight run, or any run with keep_awake set, until its
+// session closes: it starts this system's keep-awake command with orchestra's PID, and close stops it.
+// A command missing, which an overnight run's checklist warned of, or ending by itself while the run
+// goes, is a line in the log.
 func (s *session) keepAwake(ctx context.Context) {
-	if !s.cfg.Overnight {
+	if !s.cfg.Overnight && !s.cfg.keepAwake {
 		return
 	}
 	c, ok := keepAwakeOf(runtime.GOOS)

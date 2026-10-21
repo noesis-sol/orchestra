@@ -213,6 +213,8 @@ type options struct {
 	forceOvernight bool
 	// the GB of free disk an overnight run's pre-flight wants where the worktrees go; 0 for no check
 	overnightFreeDisk int
+	// every run keeps the machine awake while it goes, not only an overnight one (keep_awake)
+	keepAwake bool
 	// the permission mode workers start in on a run that isn't planned and on one that is (see settleWork)
 	permissionModes struct{ unplanned, planned string }
 	showVersion     bool
@@ -602,6 +604,7 @@ func resolveSettings(c *options, f *runFlags, settings project.Settings) []strin
 	c.Setup = settings.Setup
 	c.NoFootprint = settings.Footprint != nil && !*settings.Footprint
 	c.answerOnAsk = settings.AnswerOnAsk != nil && *settings.AnswerOnAsk
+	c.keepAwake = settings.KeepAwake != nil && *settings.KeepAwake
 	c.WorkerArgs = mcp.ChromeArgs(settings.MCPServers)
 	if keep(&problems, &c.WorkerEffort)(project.ResolveWorkerEffort(f.workerEffort, settings)) {
 		c.WorkerArgs = append(c.WorkerArgs, "--effort", c.WorkerEffort)

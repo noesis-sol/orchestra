@@ -82,7 +82,8 @@ types never dispatched (default `["epic"]`; `[]` dispatches every type), and `en
 when workers failing the same way hold the run (default `{"count": 2, "window": "2m", "probe": "10m"}`;
 `"count": 0` turns it off), and how long after a hold a worker without a ticket probes the machine
 (`"probe": "0"` for no probe), `usage_limit_wait`, how long the run waits for the account's usage
-limit to reset before it stops (default `"6h"`; `"0"` doesn't wait), `worker_permission_mode`, the Claude
+limit to reset before it stops (default `"6h"`; `"0"` doesn't wait), `keep_awake`, `true` to keep the
+machine from sleeping during every run, as an overnight run always does, `worker_permission_mode`, the Claude
 Code permission mode workers start in (`default` or `manual`, `acceptEdits`, `auto`; unset, Claude Code's
 own, or `auto` in a spec run; `--worker-permission-mode` / `WORKER_PERMISSION_MODE` overrides it), and
 `spec_timeout` and `spec_effort`, how long a spec's breakdown may take and its effort (default `"60m"`

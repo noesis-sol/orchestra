@@ -298,6 +298,8 @@ The `START` line says the run is overnight after its scope, `… on main · over
 
 An overnight run keeps the machine from sleeping while it goes, so that no worker is cut off mid-commit in the night: once the pre-flight has cleared the run it starts `caffeinate -i -w <orchestra's PID>` on macOS, or on Linux `systemd-inhibit --what=idle:sleep … tail --pid=<orchestra's PID> -f /dev/null`, and stops it as the run ends, after the organ phase; given orchestra's PID, the command ends by itself however orchestra ends. The checklist says so (`the machine is kept awake while the run goes (caffeinate)`), and warns where the command isn't on the PATH, or the system has none: set the machine not to sleep then. The log says when it started, and when it ended before the run did. Closing a laptop's lid still puts it to sleep.
 
+`"keep_awake": true` in `settings.json` has every run keep the machine awake the same way, not only an overnight one: the command starts as the run starts and stops as it ends, the log saying so, or that nothing keeps the machine awake where the command is missing.
+
 ## Several tickets at once
 
 With `concurrent` above 1, up to that many workers run side by side, each in its own worktree and tab. What keeps it safe:
