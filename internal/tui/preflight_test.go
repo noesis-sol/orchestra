@@ -127,9 +127,11 @@ func TestThePreflightFormOnATerminal(t *testing.T) {
 		got, err = AskPreflight(t.Context(), in, out, ttyTerm, []PreflightCheck{limitSet}, false)
 		return err
 	})
+	// Each title beside the bar of the focused field: the 'n' shows the question below before huh
+	// moves the focus to it, and a 'y' typed then would reach the fix's question again.
 	term.typeSteps(t, []keysOn{
-		{"Run without a limit?", "n"},
-		{"Start the run anyway, with 1 check failed?", "y"},
+		{"┃ Run without a limit?", "n"},
+		{"┃ Start the run anyway, with 1 check failed?", "y"},
 	})
 	if err := term.end(t); err != nil {
 		t.Fatal(err)

@@ -49,7 +49,9 @@ func TestOvernightOnATerminalAsksWhetherToStartAnyway(t *testing.T) {
 			term, _, exit := runOnTerminal(t, "--overnight", "--limit", "10")
 			term.waitFor(t, "Run without a limit?")
 			term.typeKeys(t, "n", false)
-			term.waitFor(t, "Start the run anyway, with 1 check failed?")
+			// Beside the bar of the focused field: the 'n' shows the question before huh moves the
+			// focus to it, and a key typed then would reach the fix's question again.
+			term.waitFor(t, "┃ Start the run anyway, with 1 check failed?")
 			term.typeKeys(t, map[bool]string{true: "y", false: "n"}[anyway], false)
 			code, stderr := exit()
 			want := dispatch.ExitOK
