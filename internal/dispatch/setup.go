@@ -306,8 +306,9 @@ func (o *Loop) retrySetups() { o.book.retrySetups() }
 // it. Its requirements too, checked again before the next ticket starts (see takeRequires). One git
 // can't read, or that doesn't parse, is warned of, and the setup stays as it was, as do the
 // requirements. now is Base's commit after the merge: the branch's it fast-forwarded to. The caller
-// holds repoMu, so Base stays where the merge left it.
-func (o *Loop) takeSettings(ctx context.Context, id, before, now string) {
+// holds repoMu, so Base stays where the merge left it. by names what moved Base for the lines,
+// "<id>'s merge", or as the run starts "the fast-forward to origin/main" with id "" (see fetchBase).
+func (o *Loop) takeSettings(ctx context.Context, id, by, before, now string) {
 	c := o.cfg
 	if before == "" || now == "" ||
 		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
@@ -319,14 +320,14 @@ func (o *Loop) takeSettings(ctx context.Context, id, before, now string) {
 		s, err = project.ParseSettings([]byte(text))
 	}
 	if err == nil {
-		o.takeRequires(id, s)
+		o.takeRequires(id, by, s)
 	}
-	o.takeSetup(id, s, err)
+	o.takeSetup(id, by, s, err)
 }
 
-// takeSetup has the run take setup and setup_files from s, the settings.json ticket id's merge
+// takeSetup has the run take setup and setup_files from s, the settings.json by (ticket id's merge)
 // committed to Base, unless err says why it couldn't be read (see takeSettings).
-func (o *Loop) takeSetup(id string, s project.Settings, err error) {
+func (o *Loop) takeSetup(id, by string, s project.Settings, err error) {
 	c := o.cfg
 	was := o.setupNow()
 	var files []string
@@ -335,8 +336,8 @@ func (o *Loop) takeSetup(id string, s project.Settings, err error) {
 	}
 	if err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  SETTINGS_UNREAD: %s's merge changed %s on %s, but it could not be read%s; the setup stays %s",
-			id, project.SettingsFile, c.Base, because(err), setupSaid(was.cmd))})
+			"  SETTINGS_UNREAD: %s changed %s on %s, but it could not be read%s; the setup stays %s",
+			by, project.SettingsFile, c.Base, because(err), setupSaid(was.cmd))})
 		return
 	}
 	if s.Setup == was.cmd && slices.Equal(files, was.files) {
@@ -345,8 +346,8 @@ func (o *Loop) takeSetup(id string, s project.Settings, err error) {
 	o.mu.Lock()
 	o.setupSet = &setupConf{cmd: s.Setup, files: files}
 	o.mu.Unlock()
-	o.info("  SETUP: %s's merge changed %s on %s: the setup is %s from now on",
-		id, project.SettingsFile, c.Base, setupSaid(s.Setup))
+	o.info("  SETUP: %s changed %s on %s: the setup is %s from now on",
+		by, project.SettingsFile, c.Base, setupSaid(s.Setup))
 }
 
 // setupSaid names the setup command cmd for a line: quoted, or "none".

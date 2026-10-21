@@ -201,7 +201,9 @@ func existingDir(dir string) string {
 // fetchCheck brings Base up to its upstream before the other checks read it, as the run would as it
 // starts (dispatch.FetchBase), so that they check the Base the run builds on; the run then doesn't
 // fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), and fails
-// where the main checkout would stop the run before its first ticket. Nothing with --no-fetch.
+// where the main checkout would stop the run before its first ticket. Nothing with --no-fetch. The run
+// then takes the setup and the requirements the fast-forward brought in (takeFetchedSettings), as a
+// run's start does, before the other checks read them.
 func fetchCheck(ctx context.Context, s *session) preflightResult {
 	c := s.cfg.Config
 	if c.NoFetch {
@@ -223,11 +225,37 @@ func fetchCheck(ctx context.Context, s *session) preflightResult {
 		return preflightResult{verdict: tui.CheckWarned, text: f.Text}
 	case f.Behind > 0:
 		s.fetched = f.Text
+		if err := s.takeFetchedSettings(); err != nil {
+			return preflightResult{verdict: tui.CheckWarned, text: fmt.Sprintf("%s, but %s could not be read "+
+				"again: %s; the run keeps the setup and the requirements it read before", f.Text,
+				project.SettingsFile, oneLine(err.Error()))}
+		}
 		return preflightResult{verdict: tui.CheckPassed, text: f.Text}
 	case f.Upstream == "":
 		return preflightResult{verdict: tui.CheckPassed, text: c.Base + " follows no upstream: nothing to fetch"}
 	}
 	return preflightResult{verdict: tui.CheckPassed, text: c.Base + " has every commit of " + f.Upstream}
+}
+
+// takeFetchedSettings has the run take setup, setup_files and requires from settings.json as the
+// pre-flight's fast-forward left it, as a run's start takes those its own fast-forward brings in
+// (dispatch's takeSettings): the run read them before. Settings it can't read or resolve leave them
+// as they were, and the error says why.
+func (s *session) takeFetchedSettings() error {
+	settings, _, err := project.LoadSettings(s.cfg.Repo)
+	if err != nil {
+		return err
+	}
+	files, err := project.ResolveSetupFiles(settings)
+	if err != nil {
+		return err
+	}
+	list, err := project.ResolveRequires(settings)
+	if err != nil {
+		return err
+	}
+	s.cfg.Setup, s.cfg.SetupFiles, s.cfg.Requires = settings.Setup, files, list
+	return nil
 }
 
 // baseCheck runs the project's merge check (check_fast) once on Base's head, as dispatch.CheckBase

@@ -339,7 +339,7 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 	o.countMerge()
 	// What it brought may be what a setup that failed needed, or a new setup (see leaveSetupFailed).
 	o.retrySetups()
-	o.takeSettings(keep, id, before, at) // Base is where the branch was
+	o.takeSettings(keep, id, id+"'s merge", before, at) // Base is where the branch was
 	cleaned := o.removeWorktree(keep, id, wt, br)
 	m.repo.unlock()
 	hash, _, _ := strings.Cut(commit, " ")

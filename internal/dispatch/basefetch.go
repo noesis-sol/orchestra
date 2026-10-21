@@ -67,7 +67,9 @@ func FetchBase(ctx context.Context, c Config, g BaseFetchGit) (BaseFetched, erro
 // and nothing is fetched. It does nothing with Config.NoFetch, after the pre-flight's fetch
 // (Config.BaseFetched), without the git to ask (Deps.Upstream), or for a Base that follows no
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
-// fast-forwards Base to, so the run report reads the run's own commits.
+// fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup
+// and the requirements the commits it brought changed in settings.json, as a merge's do (see
+// takeSettings): the run read its settings before.
 func (o *Loop) fetchBase(ctx context.Context) {
 	c := o.cfg
 	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
@@ -80,11 +82,16 @@ func (o *Loop) fetchBase(ctx context.Context) {
 		o.warnBase(f.Warning, f.Text)
 	case f.Behind > 0:
 		o.info("BASE: %s", f.Text)
-		head, err := o.checkout.Head(context.WithoutCancel(ctx), c.Repo, c.Base)
+		keep := context.WithoutCancel(ctx)
+		head, err := o.checkout.Head(keep, c.Repo, c.Base)
 		o.log.Raw("", err)
-		if head != "" {
-			o.startHead = head
+		if head == "" {
+			return
 		}
+		o.repoMu.Lock()
+		o.takeSettings(keep, "", "the fast-forward to "+f.Upstream, o.startHead, head)
+		o.repoMu.Unlock()
+		o.startHead = head
 	}
 }
 

@@ -23,6 +23,13 @@ All notable changes to orchestra are documented here. The format follows
   default) held with `HOLD: MACHINE` whenever a ticket waited to merge,
   instead of starting the next one, and pausing its merge train and its
   hand-backs' clocks meanwhile.
+- A run whose start fast-forwards the base to its upstream takes the setup,
+  `setup_files` and requirements that fast-forward brings in to
+  `.orchestra/settings.json`, as a merge's does (`SETUP: the fast-forward to
+  origin/main changed …`), and checks the requirements after the fetch rather
+  than before. It kept the settings it read before, so worktrees went without
+  a new setup and a new requirement was never checked. The overnight
+  pre-flight reads them again after its fetch, for its checks and the run.
 
 ## [0.9.3] - 2026-10-21
 

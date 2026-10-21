@@ -49,7 +49,7 @@ func (o *Loop) checkRequires(ctx context.Context, list []project.Requirement) *s
 // requires list, or the README has none though the list has entries (see project.ReadmeStaleLine): the
 // run leaves the main checkout as it is, and 'orchestra requires --readme' brings it up to date.
 func (o *Loop) sayReadme() {
-	if line := project.ReadmeStaleLine(o.cfg.Repo, o.cfg.Requires); line != "" {
+	if line := project.ReadmeStaleLine(o.cfg.Repo, o.requiresNow()); line != "" {
 		o.emit(Event{Kind: EvWarn, Text: "  README_STALE: " + line})
 	}
 }
@@ -65,17 +65,27 @@ func (o *Loop) requiresNow() []project.Requirement {
 	return o.cfg.Requires
 }
 
-// takeRequires has the run take the requirements in s, the settings.json ticket id's merge committed
-// to Base, when they differ from the run's, and check them before the next ticket starts (see
+// startRequires is the requirements the run checks as it starts: Config's, or those the fast-forward
+// of Base as it started brought in (see fetchBase), which it then doesn't check again before its first
+// ticket (see recheckRequires).
+func (o *Loop) startRequires() []project.Requirement {
+	o.mu.Lock()
+	o.requiresDue = false
+	o.mu.Unlock()
+	return o.requiresNow()
+}
+
+// takeRequires has the run take the requirements in s, the settings.json by (ticket id's merge)
+// committed to Base, when they differ from the run's, and check them before the next ticket starts (see
 // recheckRequires). Ones a run would refuse (see project.ResolveRequires) are warned of, and the
 // run's stay as they were.
-func (o *Loop) takeRequires(id string, s project.Settings) {
+func (o *Loop) takeRequires(id, by string, s project.Settings) {
 	c := o.cfg
 	list, err := project.ResolveRequires(s)
 	if err != nil {
 		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
-			"  SETTINGS_UNREAD: %s's merge changed the requirements in %s on %s, but %v; they stay as they were",
-			id, project.SettingsFile, c.Base, err)})
+			"  SETTINGS_UNREAD: %s changed the requirements in %s on %s, but %v; they stay as they were",
+			by, project.SettingsFile, c.Base, err)})
 		return
 	}
 	if slices.EqualFunc(list, o.requiresNow(), project.Requirement.Equal) {
@@ -84,8 +94,8 @@ func (o *Loop) takeRequires(id string, s project.Settings) {
 	o.mu.Lock()
 	o.requiresSet, o.requiresDue = &list, true
 	o.mu.Unlock()
-	o.info("  REQUIRES: %s's merge changed the requirements in %s on %s: they are checked before the next "+
-		"ticket starts", id, project.SettingsFile, c.Base)
+	o.info("  REQUIRES: %s changed the requirements in %s on %s: they are checked before the next "+
+		"ticket starts", by, project.SettingsFile, c.Base)
 }
 
 // recheckRequires checks the requirements again before the next ticket starts, once a merge changed
