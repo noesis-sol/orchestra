@@ -17,6 +17,12 @@ All notable changes to orchestra are documented here. The format follows
   until the talk was over, so that with nothing ready but questions and
   every one answered it still read `2 questions for you · a to answer`,
   never `answering in the pane on the right`.
+- A run whose start fast-forwards the base to its upstream gives its workers
+  the worker prompt that fast-forward brings in (`PROMPT: the fast-forward to
+  origin/main changed .orchestra/worker-prompt.md on main: …`), and so does the
+  overnight pre-flight's. It kept the one it read as it opened, though every
+  worktree was made from the new commit. A prompt without its `TICKET_ID`
+  placeholder leaves the one it read, with a warning.
 - A run whose start fast-forwards the base to its upstream takes the check
   commands (`check_fast`, `check_full`, `check_own`) that fast-forward brings
   in to `.orchestra/settings.json` (`CHECKS: the fast-forward to origin/main

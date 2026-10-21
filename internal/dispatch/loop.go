@@ -533,6 +533,7 @@ type Config struct {
 	LogPath        string
 	ReportsDir     string
 	LaunchPrompt   bool          // give Claude workers their prompt at launch instead of pasting it
+	PromptFile     string        // the worker prompt's file, read again if the start's fast-forward changes it
 	Concurrency    int           // tickets worked on at the same time
 	TicketLimit    time.Duration // a worker still going this long after dispatch stops the run; 0 for none
 	Check          string        // the project's merge check (check_fast), from .orchestra/settings.json

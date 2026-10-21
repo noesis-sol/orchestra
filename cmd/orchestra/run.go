@@ -373,11 +373,14 @@ func (s *session) readPrompt() int {
 }
 
 // loadPrompt reads the worker prompt into the session, whose loop gives it to the workers (runLoop);
-// where it can't, the session keeps the one it had.
+// where it can't, or the prompt has no TICKET_ID placeholder, the session keeps the one it had.
 func (s *session) loadPrompt() error {
 	prompt, err := os.ReadFile(s.cfg.WorkerPrompt)
 	if err != nil {
 		return err
+	}
+	if !strings.Contains(string(prompt), "TICKET_ID") {
+		return fmt.Errorf("%s has no TICKET_ID placeholder", s.cfg.WorkerPrompt)
 	}
 	s.prompt = string(prompt)
 	return nil
@@ -512,6 +515,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 	organsOff := organ.Unavailable(organCtx, "claude")
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, terminalOf(*cfg), git.Git{}
+	cfg.PromptFile = cfg.WorkerPrompt // read again where the run's start fast-forwards Base over a change to it
 	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,

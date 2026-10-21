@@ -2,7 +2,10 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -86,8 +89,8 @@ func checkoutReady(ctx context.Context, c Config, g BaseFetchGit, besides []stri
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
 // fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup
 // and the requirements the commits it brought changed in settings.json, as a merge's do (see
-// takeSettings), and the check commands, as a merge's don't (see takeChecks): the run read its settings
-// before.
+// takeSettings), and the check commands and the worker prompt, as a merge's don't (see takeChecks and
+// takePrompt): the run read them before.
 func (o *Loop) fetchBase(ctx context.Context) {
 	c := o.cfg
 	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
@@ -120,9 +123,42 @@ func (o *Loop) fetchBase(ctx context.Context) {
 		if s, ok := o.takeSettings(keep, "", by, o.startHead, head); ok {
 			o.takeChecks(by, s)
 		}
+		o.takePrompt(keep, by, o.startHead, head)
 		o.repoMu.Unlock()
 		o.startHead = head
 	}
+}
+
+// takePrompt has the run give its workers the worker prompt (Config.PromptFile) as the fast-forward of
+// Base as the run starts (by), from before to now, changed it: no ticket has started yet, so every
+// one is told by the prompt of the Base it builds on, as its worktree is made from it. A prompt outside
+// the repository, or one the fast-forward left as it was, stays the one the run was given; one git
+// can't read at now, or without the TICKET_ID placeholder, too, with a warning. Run takes it before
+// any worker starts, so it takes no lock; the caller holds repoMu.
+func (o *Loop) takePrompt(ctx context.Context, by, before, now string) {
+	c := o.cfg
+	rel, err := filepath.Rel(c.Repo, c.PromptFile)
+	if c.PromptFile == "" || err != nil || !filepath.IsLocal(rel) {
+		return
+	}
+	rel = filepath.ToSlash(rel)
+	if !slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), rel) {
+		return
+	}
+	text, err := o.checkout.FileAt(ctx, c.Repo, now, rel)
+	if err == nil && !strings.Contains(text, "TICKET_ID") {
+		err = errors.New("it has no TICKET_ID placeholder")
+	}
+	if err != nil {
+		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  PROMPT_UNREAD: %s changed %s on %s, but it could not be "+
+			"read%s; the run's workers get the worker prompt it read before", by, rel, c.Base, because(err))})
+		return
+	}
+	if text == o.prompt {
+		return
+	}
+	o.prompt = text
+	o.info("  PROMPT: %s changed %s on %s: the run's workers get it as committed", by, rel, c.Base)
 }
 
 // fetchUpstream fetches the upstream of Base, checked out in the main checkout, and fast-forwards Base
