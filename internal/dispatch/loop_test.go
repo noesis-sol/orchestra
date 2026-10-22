@@ -205,8 +205,8 @@ func (quietHistory) ShortStatus(ctx context.Context, worktree string) string { r
 func (quietHistory) OneLineLog(ctx context.Context, dir, revs string) string { return "" }
 func (quietHistory) DiffStat(ctx context.Context, worktree string) string    { return "" }
 func (quietHistory) Subjects(ctx context.Context, repo, revs string) string  { return "" }
-func (quietHistory) ChangedFiles(ctx context.Context, repo, from, to string) []string {
-	return nil
+func (quietHistory) ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) {
+	return nil, nil
 }
 
 // promptAgents take their prompt (or refuse it, with promptErr) and are gone once they have.

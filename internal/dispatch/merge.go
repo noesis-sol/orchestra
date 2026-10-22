@@ -594,8 +594,10 @@ func (o *Loop) inTheWay(ctx context.Context, br string) []string {
 	if len(local) == 0 {
 		return nil
 	}
+	changed, err := o.history.ChangedFiles(ctx, c.Repo, c.Base, br)
+	o.log.Raw("", err)
 	var files []string
-	for _, f := range o.history.ChangedFiles(ctx, c.Repo, c.Base, br) {
+	for _, f := range changed {
 		if _, ok := local[f]; ok {
 			files = append(files, f)
 		}

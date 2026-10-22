@@ -1149,7 +1149,12 @@ func (r *runState) branchChanges(id string) []string {
 			return nil
 		}
 		if base != "" {
-			for _, f := range o.history.ChangedFiles(r.ctx, c.Repo, base, br) {
+			files, err := o.history.ChangedFiles(r.ctx, c.Repo, base, br)
+			if err != nil {
+				o.log.Raw("", err)
+				return nil
+			}
+			for _, f := range files {
 				changed = append(changed, r.files.file(f))
 			}
 		}

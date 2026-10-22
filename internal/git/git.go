@@ -21,7 +21,7 @@ import (
 // A method that asks git a question returns git's error beside its answer when git fails to answer,
 // which is not the same as no, none or "": the caller decides what to do without one. Only what is
 // for people and the organs reads a failed git call as nothing: the texts (ShortStatus, OneLineLog,
-// DiffStat, Subjects) "", ChangedFiles and LastCommit none.
+// DiffStat, Subjects) "".
 type Git struct{}
 
 // readGit runs a git command that changes nothing, in dir ("" for the working directory), within
@@ -572,10 +572,13 @@ func (Git) Ignored(ctx context.Context, repo, path string) (bool, error) {
 }
 
 // LastCommit returns the latest commit, as a full hash, that changed the file at path, relative
-// to repo, on the branch checked out; "" when none has, or git can't tell.
-func (Git) LastCommit(ctx context.Context, repo, path string) string {
-	out, _ := readGit(ctx, repo, "log", "-1", "--no-show-signature", "--format=%H", "--", ":(literal)"+path)
-	return strings.TrimSpace(out) // "" on failure, as documented
+// to repo, on the branch checked out; "" when none has. It returns git's error when git can't tell.
+func (Git) LastCommit(ctx context.Context, repo, path string) (string, error) {
+	out, err := readGit(ctx, repo, "log", "-1", "--no-show-signature", "--format=%H", "--", ":(literal)"+path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // PathDiff is the diff of the file at path, relative to repo, from commit from to commit to, as git
@@ -587,15 +590,19 @@ func (Git) PathDiff(ctx context.Context, repo, from, to, path string) (string, e
 }
 
 // ChangedFiles lists the files that differ between commits from and to in repo, or every file in
-// to when from is "" (to is the first commit). It lists none if git can't.
-func (Git) ChangedFiles(ctx context.Context, repo, from, to string) []string {
+// to when from is "" (to is the first commit). It returns git's error when git can't say, which is not
+// the same as none: a caller deciding something by them treats what changed as unknown.
+func (Git) ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) {
 	// --no-renames: a renamed file is listed under both its paths, so its old one is too.
 	args := []string{"diff", "--no-renames", "--name-only", "-z", from, to, "--"}
 	if from == "" {
 		args = []string{"ls-tree", "-r", "--name-only", "-z", to}
 	}
-	out, _ := readGit(ctx, repo, args...) // none on failure, as documented
-	return splitNUL(out)
+	out, err := readGit(ctx, repo, args...)
+	if err != nil {
+		return nil, err
+	}
+	return splitNUL(out), nil
 }
 
 // StagedFiles lists the files staged in repo: those whose index entry differs from HEAD's, or every

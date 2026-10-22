@@ -333,8 +333,13 @@ func (o *Loop) ownDirs(ctx context.Context, br, onto string) []string {
 	if onto == "" {
 		return nil
 	}
+	files, err := o.history.ChangedFiles(ctx, o.cfg.Repo, onto, br)
+	if err != nil {
+		o.log.Raw("", err)
+		return nil
+	}
 	var dirs []string
-	for _, f := range o.history.ChangedFiles(ctx, o.cfg.Repo, onto, br) {
+	for _, f := range files {
 		if d := path.Dir(f); !slices.Contains(dirs, d) {
 			dirs = append(dirs, d)
 		}

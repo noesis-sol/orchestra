@@ -191,7 +191,12 @@ func branchChanges(ctx context.Context, repo string, open []dispatch.Ticket) (ma
 			continue
 		}
 		if base != "" { // no common history: nothing done on top of HEAD
-			changes[t.ID] = git.Git{}.ChangedFiles(ctx, repo, base, br)
+			files, err := git.Git{}.ChangedFiles(ctx, repo, base, br)
+			if err != nil {
+				first = cmp.Or(first, err)
+				continue
+			}
+			changes[t.ID] = files
 		}
 	}
 	return changes, first

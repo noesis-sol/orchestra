@@ -20,7 +20,7 @@ import (
 // FastForwardGit is what TakeFastForward asks of git: the files the fast-forward changed, and what
 // they hold after it.
 type FastForwardGit interface {
-	ChangedFiles(ctx context.Context, repo, from, to string) []string // the files that differ; none if git can't say
+	ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) // the files that differ
 	// the content of the file at path, from the repository's top, in commit rev; git's error when it has none
 	FileAt(ctx context.Context, repo, rev, path string) (string, error)
 }
@@ -33,14 +33,19 @@ type FastForwardGit interface {
 // git can't read at now, or that doesn't parse, is warned of, and every setting stays as it was; one
 // the fast-forward left as it was, as in a repository that has none, is taken of nothing. Of the worker
 // prompt (c.PromptFile) it takes one the fast-forward changed, inside the repository, with its
-// TICKET_ID placeholder; one it can't read, or without the placeholder, is warned of. With before or
-// now "" it takes nothing.
+// TICKET_ID placeholder; one it can't read, or without the placeholder, is warned of. When git can't
+// say what the fast-forward changed, both are warned of and stay as they were. With before or now ""
+// it takes nothing.
 func TakeFastForward(ctx context.Context, g FastForwardGit, c *Config, prompt *string, by, before, now string) []Event {
 	if before == "" || now == "" {
 		return nil
 	}
 	t := fastForwardTake{c: c, by: by}
-	changed := g.ChangedFiles(ctx, c.Repo, before, now)
+	changed, err := g.ChangedFiles(ctx, c.Repo, before, now)
+	if err != nil {
+		t.unknown(err)
+		return t.lines
+	}
 	if slices.Contains(changed, project.SettingsFile) {
 		text, err := g.FileAt(ctx, c.Repo, now, project.SettingsFile)
 		var s project.Settings
@@ -73,6 +78,18 @@ func (t *fastForwardTake) info(format string, a ...any) {
 
 func (t *fastForwardTake) warn(format string, a ...any) {
 	t.lines = append(t.lines, Event{Kind: EvWarn, Text: fmt.Sprintf(format, a...)})
+}
+
+// unknown warns that git couldn't say what the fast-forward changed (err): the settings, and the worker
+// prompt if it is in the repository, stay as they were.
+func (t *fastForwardTake) unknown(err error) {
+	c := t.c
+	t.warn("  SETTINGS_UNREAD: git could not say whether %s changed %s on %s%s; the setup, the requirements and "+
+		"the check commands stay as they were", t.by, project.SettingsFile, c.Base, because(err))
+	if rel, ok := t.promptPath(); ok {
+		t.warn("  PROMPT_UNREAD: git could not say whether %s changed %s on %s%s; the run's workers get the "+
+			"worker prompt it read before", t.by, rel, c.Base, because(err))
+	}
 }
 
 // setup takes setup and setup_files from s where they differ from the run's.
@@ -139,18 +156,25 @@ func (t *fastForwardTake) checks(s project.Settings) {
 	}
 }
 
+// promptPath is the worker prompt's path (Config.PromptFile) from the repository's top, slashed; false
+// for none, or one outside the repository.
+func (t *fastForwardTake) promptPath() (string, bool) {
+	c := t.c
+	rel, err := filepath.Rel(c.Repo, c.PromptFile)
+	if c.PromptFile == "" || err != nil || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
 // prompt takes the worker prompt (Config.PromptFile) into prompt where the fast-forward to now changed
 // it (changed): every worktree is made from the new commit. A prompt outside the repository, or one
 // the fast-forward left as it was, stays the one the run was given; one git can't read at now, or
 // without the TICKET_ID placeholder, too, with a warning.
 func (t *fastForwardTake) prompt(ctx context.Context, g FastForwardGit, changed []string, prompt *string, now string) {
 	c := t.c
-	rel, err := filepath.Rel(c.Repo, c.PromptFile)
-	if c.PromptFile == "" || err != nil || !filepath.IsLocal(rel) {
-		return
-	}
-	rel = filepath.ToSlash(rel)
-	if !slices.Contains(changed, rel) {
+	rel, ok := t.promptPath()
+	if !ok || !slices.Contains(changed, rel) {
 		return
 	}
 	text, err := g.FileAt(ctx, c.Repo, now, rel)

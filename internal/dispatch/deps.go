@@ -215,13 +215,14 @@ type Upstream interface {
 	FastForward(ctx context.Context, repo, branch string) (string, error)
 }
 
-// History is what the organs read about the work, and people: a git call that fails reads as nothing.
+// History is what the organs read about the work, and people: a git call that fails reads as nothing,
+// but for ChangedFiles, which the loop decides by too, and which returns git's error when git can't say.
 type History interface {
 	ShortStatus(ctx context.Context, worktree string) string
 	OneLineLog(ctx context.Context, dir, revs string) string
 	DiffStat(ctx context.Context, worktree string) string
 	Subjects(ctx context.Context, repo, revs string) string
-	ChangedFiles(ctx context.Context, repo, from, to string) []string // the files that differ; none if git can't say
+	ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) // the files that differ
 }
 
 // Deps are the loop's connections to the tracker, the terminal, git and the organs. A method that

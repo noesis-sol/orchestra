@@ -64,7 +64,8 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	git("add", ".")
 	git("commit", "-q", "-m", "Start")
 	first := answered[string](t)(g.Head(ctx, repo, "HEAD"))
-	if got := g.ChangedFiles(ctx, repo, "", first); !slices.Equal(got, []string{"a.md", "sub dir/b.md"}) {
+	if got := answered[[]string](t)(g.ChangedFiles(ctx, repo, "", first)); !slices.Equal(got,
+		[]string{"a.md", "sub dir/b.md"}) {
 		t.Errorf("the first commit's files: %q", got)
 	}
 
@@ -83,7 +84,7 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	git("commit", "-q", "-m", "Change")
 	// A renamed file is named as it was too: a local change to a.md is in the way of the change.
 	want2 := []string{"a.md", "new/c.md", "renamed.md", "sub dir/b.md"}
-	if got := g.ChangedFiles(ctx, repo, first, "HEAD"); !slices.Equal(got, want2) {
+	if got := answered[[]string](t)(g.ChangedFiles(ctx, repo, first, "HEAD")); !slices.Equal(got, want2) {
 		t.Errorf("changed since the first commit: %q", got)
 	}
 
@@ -91,8 +92,8 @@ func TestChangesAndChangedFiles(t *testing.T) {
 	if got, err := g.Changes(ctx, gone); len(got) != 0 || err == nil {
 		t.Errorf("a missing folder: %q, %v; want git's error", got, err)
 	}
-	if got := g.ChangedFiles(ctx, gone, first, "HEAD"); len(got) != 0 {
-		t.Errorf("a missing folder: %q", got)
+	if got, err := g.ChangedFiles(ctx, gone, first, "HEAD"); len(got) != 0 || err == nil {
+		t.Errorf("a missing folder: %q, %v; want git's error", got, err)
 	}
 }
 

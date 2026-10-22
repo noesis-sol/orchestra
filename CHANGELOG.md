@@ -16,6 +16,14 @@ All notable changes to orchestra are documented here. The format follows
   now ends every such wait, for the breakdown or for the maintainer's answers
   as for the usage limit's reset. The run's waits with nothing running share
   one rule for what ends them.
+- When git can't say what a rebase, a merge or a fast-forward changed, as
+  when `git diff` passes its time limit on a loaded machine, orchestra no
+  longer takes it as nothing changed. The setup runs before the check, so the
+  check doesn't fail on dependencies set up before a lockfile changed; a
+  settings.json or worker prompt a merge or a fast-forward may have changed is
+  warned of (`SETTINGS_UNREAD`, `PROMPT_UNREAD`) rather than kept without a
+  word; and a ticket's footprint isn't kept as its branch changing nothing, so
+  tickets that overlap don't run side by side.
 - A worktree whose only uncommitted work is new files, never added, reads
   as dirty where git is set to hide them (`status.showUntrackedFiles=no`): a
   ticket closed with such a file left out of its commit is set aside with

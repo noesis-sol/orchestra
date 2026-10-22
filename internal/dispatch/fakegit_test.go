@@ -572,7 +572,7 @@ func (g *fakeGit) DiffStat(ctx context.Context, worktree string) string    { ret
 
 // ChangedFiles is the files the commits of to not in from's history add: what differs between them
 // when to is from with commits on top.
-func (g *fakeGit) ChangedFiles(ctx context.Context, repo, from, to string) []string {
+func (g *fakeGit) ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	var files []string
@@ -583,7 +583,7 @@ func (g *fakeGit) ChangedFiles(ctx context.Context, repo, from, to string) []str
 			}
 		}
 	}
-	return files
+	return files, nil
 }
 
 func (g *fakeGit) Subjects(ctx context.Context, repo, revs string) string {

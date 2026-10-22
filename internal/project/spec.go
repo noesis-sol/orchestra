@@ -272,7 +272,10 @@ func CommitSpec(ctx context.Context, repo, file string) (s Spec, committed bool,
 		return Spec{}, false, fmt.Errorf("cannot tell whether %s is committed: %w", rel, err)
 	}
 	if !changed {
-		if s.Commit = g.LastCommit(ctx, repo, rel); s.Commit == "" {
+		if s.Commit, err = g.LastCommit(ctx, repo, rel); err != nil {
+			return Spec{}, false, fmt.Errorf("cannot find the commit that added %s: %w", rel, err)
+		}
+		if s.Commit == "" {
 			return Spec{}, false, fmt.Errorf("cannot find the commit that added %s", rel)
 		}
 		return s, false, nil

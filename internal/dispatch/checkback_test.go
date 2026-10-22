@@ -310,8 +310,8 @@ func (l landedHistory) OneLineLog(ctx context.Context, dir, revs string) string 
 func (landedHistory) ShortStatus(ctx context.Context, worktree string) string   { return "" }
 func (landedHistory) DiffStat(ctx context.Context, worktree string) string      { return "" }
 func (landedHistory) Subjects(ctx context.Context, repo, revs string) string    { return "" }
-func (landedHistory) ChangedFiles(ctx context.Context, repo, from, to string) []string {
-	return nil
+func (landedHistory) ChangedFiles(ctx context.Context, repo, from, to string) ([]string, error) {
+	return nil, nil
 }
 
 // Ctrl+C during a check hand-back says what is left to do: the worker's fix is checked and merged

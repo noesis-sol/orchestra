@@ -213,8 +213,9 @@ func runBdInit(ctx context.Context, repo string, args []string) Step {
 	}
 	after := readWorktree(ctx, repo)
 	var committed []string
+	var unsaid error // git couldn't say what bd committed
 	if after.head != before.head {
-		committed = git.Git{}.ChangedFiles(ctx, repo, before.head, after.head)
+		committed, unsaid = git.Git{}.ChangedFiles(ctx, repo, before.head, after.head)
 	}
 	var added []string
 	for p, st := range after.status {
@@ -224,7 +225,10 @@ func runBdInit(ctx context.Context, repo string, args []string) Step {
 	}
 	committed, added = topLevel(committed), topLevel(added)
 	detail := "ran bd init (maintainer, not contributing to someone else's repo; auto-export off)"
-	if len(committed) > 0 {
+	switch {
+	case unsaid != nil:
+		detail += "; bd committed, but git could not say what (" + unsaid.Error() + ")"
+	case len(committed) > 0:
 		detail += "; bd committed " + joinAnd(committed)
 	}
 	if len(added) > 0 {

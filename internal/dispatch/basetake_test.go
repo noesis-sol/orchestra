@@ -19,12 +19,12 @@ import (
 // top, to these texts.
 type forwardFiles map[string]string
 
-func (f forwardFiles) ChangedFiles(context.Context, string, string, string) []string {
+func (f forwardFiles) ChangedFiles(context.Context, string, string, string) ([]string, error) {
 	var files []string
 	for name := range f {
 		files = append(files, name)
 	}
-	return files
+	return files, nil
 }
 
 func (f forwardFiles) FileAt(_ context.Context, _, _, path string) (string, error) {

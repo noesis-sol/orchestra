@@ -29,7 +29,7 @@ func TestCommitPathsMakesTheFirstCommit(t *testing.T) {
 	if head := answered[string](t)(g.Head(ctx, repo, "refs/heads/trunk")); head != commit || len(commit) != 40 {
 		t.Errorf("trunk is at %q, the commit %q", head, commit)
 	}
-	if got := g.ChangedFiles(ctx, repo, "", commit); !slices.Equal(got,
+	if got := answered[[]string](t)(g.ChangedFiles(ctx, repo, "", commit)); !slices.Equal(got,
 		[]string{".orchestra/settings.json", "scripts/check fast.sh", "spec[1].md"}) {
 		t.Errorf("the commit holds %q", got)
 	}

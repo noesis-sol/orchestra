@@ -107,7 +107,12 @@ func (o *Loop) setupChanged(ctx context.Context, id, before, now string, globs [
 	if from == "" || now == "" {
 		return nil, false
 	}
-	return setupFilesIn(o.history.ChangedFiles(ctx, o.cfg.Repo, from, now), globs), true
+	files, err := o.history.ChangedFiles(ctx, o.cfg.Repo, from, now)
+	if err != nil {
+		o.log.Raw("", err)
+		return nil, false
+	}
+	return setupFilesIn(files, globs), true
 }
 
 // setupToResolve is what the worker handed r's rebase back to resolve (see handBack) is told of the
@@ -305,14 +310,23 @@ func (o *Loop) retrySetups() { o.book.retrySetups() }
 // from then on, as the environment ticket a spec's breakdown files first sets it for the tickets after
 // it. Its requirements too, checked again before the next ticket starts (see takeRequires). One git
 // can't read, or that doesn't parse, is warned of, and the setup stays as it was, as do the
-// requirements. now is Base's commit after the merge: the branch's it fast-forwarded to. The caller
-// holds repoMu, so Base stays where the merge left it. by names the merge for the lines, "<id>'s
-// merge". Its check commands count from the next run; a fast-forward of Base before the first ticket
-// has the run take them too (see TakeFastForward).
+// requirements; so is a merge git can't say changed it or not. now is Base's commit after the merge:
+// the branch's it fast-forwarded to. The caller holds repoMu, so Base stays where the merge left it. by
+// names the merge for the lines, "<id>'s merge". Its check commands count from the next run; a
+// fast-forward of Base before the first ticket has the run take them too (see TakeFastForward).
 func (o *Loop) takeSettings(ctx context.Context, id, by, before, now string) {
 	c := o.cfg
-	if before == "" || now == "" ||
-		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
+	if before == "" || now == "" {
+		return
+	}
+	changed, err := o.history.ChangedFiles(ctx, c.Repo, before, now)
+	if err != nil {
+		o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(
+			"  SETTINGS_UNREAD: git could not say whether %s changed %s on %s%s; the setup stays %s, and the "+
+				"requirements as they were", by, project.SettingsFile, c.Base, because(err), setupSaid(o.setupNow().cmd))})
+		return
+	}
+	if !slices.Contains(changed, project.SettingsFile) {
 		return
 	}
 	text, err := o.checkout.FileAt(ctx, c.Repo, now, project.SettingsFile)
