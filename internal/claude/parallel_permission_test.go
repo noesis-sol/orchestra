@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/agentio"
@@ -66,12 +67,16 @@ func TestPermissionAskedBesideAnotherSubagent(t *testing.T) {
 func TestPermissionAskedByAnAgentNamedAsAPath(t *testing.T) {
 	t.Parallel()
 	wt := t.TempDir()
-	playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt,
-		stepAt("PermissionRequest", `{"hook_event_name":"PermissionRequest","agent_id":"../../x y","tool_name":"Bash"}`)})
+	const ask = `{"hook_event_name":"PermissionRequest","agent_id":"../../x y","tool_name":"Bash"}`
+	playHooks(t, wt, []hookStep{stepSessionStart("startup"), stepPrompt, stepAt("PermissionRequest", ask)})
 	if h := ReadHooks(Records(wt, ""), ""); h.State != agentio.StateBlocked || !h.Asked {
 		t.Errorf("ReadHooks = %s %v, want blocked, asked", h.State, h.Asked)
 	}
-	if _, err := os.Stat(filepath.Join(Records(wt, ""), askedPrefix+"xy")); err != nil {
+	name := askedName("../../x y", "Bash", []byte(ask))
+	if !strings.HasPrefix(name, askedPrefix+"xy@") {
+		t.Errorf("the agent's record is named %q", name)
+	}
+	if _, err := os.Stat(filepath.Join(Records(wt, ""), name)); err != nil {
 		t.Errorf("the agent's record: %v", err)
 	}
 }

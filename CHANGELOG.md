@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker waiting on a permission prompt reads as blocked when another of
+  its tool calls, run beside it and allowed, ends at the same moment. The
+  worker's hooks kept one prompt record per agent, which a tool's end read,
+  compared and removed, and the prompt of a call asked in between was removed
+  with it; the worker read as working. Each tool call asked now has a record
+  of its own, which only its own end removes.
 - A spec run keeps the spec's root epic open while the breakdown is still
   filing its tree. The environment ticket's merge closed the root ("its 1
   subticket is merged") when it came before the breakdown was over, the rest

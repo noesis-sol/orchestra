@@ -93,15 +93,19 @@ func TestHookRecordsAreTheShellHooks(t *testing.T) {
 	if got, want := read(activityName), `{"v":1,`+ask[1:]; got != want {
 		t.Errorf("activity at the prompt = %q, want %q", got, want)
 	}
-	if got, want := read(askedPrefix+"a1"), string(askedRecord("Bash", []byte(ask))); got != want {
-		t.Errorf("asked = %q, want %q", got, want)
+	asked := askedName("a/1", "Bash", []byte(ask))
+	if !strings.HasPrefix(asked, askedPrefix+"a1@") {
+		t.Errorf("asked's name = %q, want it to start %q", asked, askedPrefix+"a1@")
+	}
+	if got := read(asked); got != "Bash\n" {
+		t.Errorf("asked = %q, want the tool's name", got)
 	}
 	runHooks(t, settings, "PostToolUseFailure", `{"hook_event_name":"PostToolUseFailure","agent_id":"a/1","tool_name":"Bash",`+
 		`"tool_input":{ "command": "x" }}`)
 	if got := read(activityName); got != `{"v":1,"hook_event_name":"PostToolUse"}` {
 		t.Errorf("activity after the tool = %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(records, askedPrefix+"a1")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(records, asked)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the prompt answered is still asked: %v", err)
 	}
 	runHooks(t, settings, "UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","prompt":"go"}`)

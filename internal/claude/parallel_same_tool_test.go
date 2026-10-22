@@ -48,24 +48,25 @@ func TestPermissionAskedBesideTheSameTool(t *testing.T) {
 	}
 }
 
-// The prompt's record matches its call's input however Claude Code writes it: the keys in another order,
-// spaced, or none at all.
-func TestAskedRecordOfTheInput(t *testing.T) {
+// The prompt's record is named by its call's input however Claude Code writes it: the keys in another
+// order, spaced, or none at all.
+func TestAskedNameOfTheInput(t *testing.T) {
 	t.Parallel()
-	ask := askedRecord("Read", []byte(`{"tool_name":"Read","tool_input":{"file_path":"/x","limit":5}}`))
-	if got := askedRecord("Read", []byte(`{"tool_input": { "limit": 5, "file_path": "/x" }}`)); string(got) != string(ask) {
+	ask := askedName("", "Read", []byte(`{"tool_name":"Read","tool_input":{"file_path":"/x","limit":5}}`))
+	if got := askedName("", "Read", []byte(`{"tool_input": { "limit": 5, "file_path": "/x" }}`)); got != ask {
 		t.Errorf("the same input reordered: %q, want %q", got, ask)
 	}
-	for _, other := range [][]byte{
-		askedRecord("Read", []byte(`{"tool_input":{"file_path":"/y","limit":5}}`)),
-		askedRecord("Grep", []byte(`{"tool_input":{"file_path":"/x","limit":5}}`)),
-		askedRecord("Read", []byte(`{"tool_name":"Read"}`)),
+	for _, other := range []string{
+		askedName("", "Read", []byte(`{"tool_input":{"file_path":"/y","limit":5}}`)),
+		askedName("", "Grep", []byte(`{"tool_input":{"file_path":"/x","limit":5}}`)),
+		askedName("", "Read", []byte(`{"tool_name":"Read"}`)),
+		askedName("a1", "Read", []byte(`{"tool_input":{"file_path":"/x","limit":5}}`)),
 	} {
-		if string(other) == string(ask) {
+		if other == ask {
 			t.Errorf("another call's record %q is the prompt's", other)
 		}
 	}
-	if string(askedRecord("Read", []byte("not JSON"))) != string(askedRecord("Read", nil)) {
+	if askedName("", "Read", []byte("not JSON")) != askedName("", "Read", nil) {
 		t.Error("an unreadable input is not read as none")
 	}
 }

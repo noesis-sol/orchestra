@@ -149,17 +149,19 @@ func writeRecords(root *os.Root, event string, in []byte, process string) {
 		// Claude Code runs PostToolUse after a tool that succeeded only; PostToolUseFailure is the other
 		// case. The event alone: a finished tool's input carries its whole output.
 		replace(root, activityName, eventRecord("PostToolUse"))
-		name := askedName(h.Agent)
-		if b, err := root.ReadFile(name); err == nil && bytes.Equal(b, askedRecord(h.Tool, in)) {
-			_ = root.Remove(name) // one gone already is no prompt asked
-		}
+		_ = root.Remove(askedName(h.Agent, h.Tool, in)) // its own call's only; one gone already is no prompt asked
 	case "PermissionRequest":
 		replace(root, activityName, input)
 		note(root, event, h)
-		replace(root, askedName(h.Agent), askedRecord(h.Tool, in))
+		replace(root, askedName(h.Agent, h.Tool, in), []byte(h.Tool+"\n"))
 	case "SubagentStop":
 		note(root, event, h)
-		_ = root.Remove(askedName(h.Agent)) // none there is none asked
+		names, _ := askedRecords(root, ".") // none to read: none asked
+		for _, name := range names {
+			if strings.HasPrefix(name, askedOf(h.Agent)) {
+				_ = root.Remove(name) // one gone already is no prompt asked
+			}
+		}
 	case "PreCompact", "SubagentStart", "SessionEnd":
 		note(root, event, h)
 	case "Stop":
@@ -277,9 +279,19 @@ func note(root *os.Root, event string, h hookInput) {
 	appendTo(root, eventsName, append(b, '\n'))
 }
 
-// askedName is the record of the permission prompt the agent asked: askedPrefix and its ID kept to the
-// characters of a file's name, "main" for the session's own.
-func askedName(agent string) string {
+// askedName is the record of the permission prompt the agent asked for the call of tool whose hook's
+// input is in: the agent's records' prefix (askedOf), then a hash of the call (askedCall). A record a
+// call, so the end of one removes its own and no other, without reading it first: the PermissionRequest
+// of a call run beside it (Claude Code runs Read, Grep, WebFetch and read-only Bash in parallel), which
+// writes its own record, can't be lost between a read and the removal.
+func askedName(agent, tool string, in []byte) string {
+	return askedOf(agent) + askedCall(tool, in)
+}
+
+// askedOf is the prefix of the records of the permission prompts the agent asked: askedPrefix, its ID
+// kept to the characters of a file's name ("main" for the session's own) and "@", which no ID keeps, so
+// one agent's prefix is no other's.
+func askedOf(agent string) string {
 	id := strings.Map(func(r rune) rune {
 		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
 			return r
@@ -289,23 +301,22 @@ func askedName(agent string) string {
 	if id == "" {
 		id = "main"
 	}
-	return askedPrefix + id
+	return askedPrefix + id + "@"
 }
 
-// askedRecord is the record of the permission prompt asked for the call of tool whose hook's input is in:
-// the tool's name, then a hash of its input on a line of its own. PermissionRequest carries no tool_use_id,
-// so the input tells the call apart from another of the same tool the agent runs beside it (Claude Code
-// runs Read, Grep, WebFetch and read-only Bash in parallel), whose end leaves the prompt asked. The input
-// is hashed as decoded and encoded again, so key order and spacing don't count; one that reaches the
-// tool changed (a dialog's updatedInput) leaves the record to the turn's end or the agent's stop.
-func askedRecord(tool string, in []byte) []byte {
+// askedCall is the hash of the call of tool whose hook's input is in, its name and its input, in hex.
+// PermissionRequest carries no tool_use_id, so the input tells the call apart from another of the same
+// tool the agent runs beside it; two calls of the same input share a record. The input is hashed as
+// decoded and encoded again, so key order and spacing don't count; one that reaches the tool changed (a
+// dialog's updatedInput) leaves the record to the turn's end or the agent's stop.
+func askedCall(tool string, in []byte) string {
 	var h struct {
 		Input any `json:"tool_input"`
 	}
 	_ = json.Unmarshal(in, &h)    // unreadable: no input, as for every other unreadable one
 	b, _ := json.Marshal(h.Input) // what JSON decoded: it can't fail
-	sum := sha256.Sum256(b)
-	return []byte(tool + "\n" + hex.EncodeToString(sum[:]) + "\n")
+	sum := sha256.Sum256(append([]byte(tool+"\n"), b...))
+	return hex.EncodeToString(sum[:16])
 }
 
 // replace replaces the record name in root with b, written to a temporary file moved over it, so a

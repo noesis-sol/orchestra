@@ -45,7 +45,7 @@ func TestToolArgumentOfAnotherType(t *testing.T) {
 		t.Errorf("noted: %+v", rec.Permissions)
 	}
 
-	if _, err := os.Stat(filepath.Join(Records(wt, ""), askedName("a1"))); err != nil {
+	if _, err := os.Stat(filepath.Join(Records(wt, ""), askedName("a1", "mcp__k8s__run", []byte(ask)))); err != nil {
 		t.Errorf("the subagent's prompt: %v", err)
 	}
 

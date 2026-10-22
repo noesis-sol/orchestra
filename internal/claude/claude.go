@@ -68,12 +68,13 @@ const (
 	// waits on where no other hook says, as an interrupted turn has no Stop. Read by ReadHooks, and
 	// by LastToolUse for the session idle after its last report.
 	noticeName = "notice.json"
-	// askedPrefix, followed by an agent's ID ("main" for the session's own), is the tool call that agent
-	// asked to make (askedRecord), replaced by its PermissionRequest and removed by its tool's end
-	// (PostToolUse or PostToolUseFailure of the same agent, tool and input) or its stop (SubagentStop).
-	// Its other calls of the tool, run beside it, and other agents' tool uses, which replace activity,
-	// leave it, so a prompt one call waits on still shows while another works; a prompt refused ends the
-	// turn, which turn tells. Read by ReadHooks, which reads only when it was written.
+	// askedPrefix, followed by an agent's ID ("main" for the session's own) and a hash of the call
+	// (askedName), is a tool call that agent asked to make, its tool's name, written by its
+	// PermissionRequest and removed by its tool's end (PostToolUse or PostToolUseFailure of the same
+	// agent, tool and input) or the agent's stop (SubagentStop). Its other calls, run beside it, and
+	// other agents' tool uses, which replace activity, leave it, so a prompt one call waits on still
+	// shows while another works; a prompt refused ends the turn, which turn tells. Read by ReadHooks,
+	// which reads only when the latest was written.
 	askedPrefix = "asked-"
 )
 
