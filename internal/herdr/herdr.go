@@ -379,19 +379,25 @@ func AgentName(id string) string {
 // AgentName returns the Herdr agent name for ticket id; see the function AgentName.
 func (t Terminal) AgentName(id string) string { return AgentName(id) }
 
-// LaunchInPane types '<kind> <args…>' into the pane's shell, as 'herdr agent start' would, and
-// returns at once. Each argument must be one line. It refuses while a program other than the shell
-// runs in the pane (shellWaits).
+// LaunchInPane runs '<kind> <args…>' in the pane's shell, as 'herdr agent start' would, and returns
+// at once. It refuses while a program other than the shell runs in the pane (shellWaits). The pane's
+// shell may be any, quoting otherwise than /bin/sh (nushell, fish), so the command goes in a script
+// for /bin/sh, which replaces itself with it, and the shell is given a line that runs it, quoting
+// nothing (command.ScriptLine).
 func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	if err := shellWaits(ctx, pane); err != nil {
 		return err
 	}
-	var line strings.Builder
-	line.WriteString(kind)
+	var script strings.Builder
+	script.WriteString("exec " + command.ShellQuote(kind))
 	for _, a := range args {
-		line.WriteString(" " + command.ShellQuote(a))
+		script.WriteString(" " + command.ShellQuote(a))
 	}
-	_, err := run(ctx, command.ReadLimit, "pane", "run", pane, line.String())
+	line, err := command.ScriptLine("", script.String()+"\n")
+	if err != nil {
+		return fmt.Errorf("cannot write the command for Herdr pane %s: %w", pane, err)
+	}
+	_, err = run(ctx, command.ReadLimit, "pane", "run", pane, line)
 	return err
 }
 

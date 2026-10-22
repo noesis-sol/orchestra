@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- In Herdr and cmux, a worker is launched whatever shell its pane runs: the
+  command goes in a script for `/bin/sh`, and the pane's shell is typed a
+  line that quotes nothing, ` /bin/sh <script>`. Herdr typed the command
+  itself, quoted for a POSIX shell, and cmux the script's path, so under
+  nushell a repository whose path holds a quote (`~/Bob's app`) failed every
+  launch, and fish read a backslash in an argument otherwise. A script whose
+  path a shell would quote goes to the temporary folder, and removes itself.
 - `orchestra init` leaves out a suite the scout gives with a newline or
   another control character in its command, and says so beside what the
   scout found: its checklist showed such a command on one line, so

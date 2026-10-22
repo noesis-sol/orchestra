@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -251,4 +252,40 @@ func ShellWord(s string) string {
 		return s
 	}
 	return ShellQuote(s)
+}
+
+// neutralWord is a word every shell a pane may run reads as it is, POSIX or not (fish, nushell): it
+// holds no quote, backslash, space, glob, tilde, brace, variable or comment sign.
+var neutralWord = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+
+// ScriptLine writes script, for /bin/sh, to path and returns the line that runs it, for a terminal to
+// type into a pane's shell, whichever shell that is: " /bin/sh <path>", whose words every shell reads
+// alike, as the quoting a POSIX shell takes isn't nushell's nor quite fish's. Where path is "" or a
+// shell would read it otherwise than as it is (a repository at ~/Bob's app, say), the script goes to
+// a new file in the system's temporary folder, else /tmp, which it removes as it starts. A leading
+// space keeps the line out of the shell's history, where the shell is set to.
+func ScriptLine(path, script string) (string, error) {
+	if neutralWord.MatchString(path) {
+		if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+			return "", err
+		}
+		return " /bin/sh " + path, nil
+	}
+	dir := os.TempDir()
+	if !neutralWord.MatchString(dir) {
+		dir = "/tmp"
+	}
+	f, err := os.CreateTemp(dir, "orchestra-launch-*.sh")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.WriteString("rm -f \"$0\"\n" + script)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(f.Name()) // the launch fails either way
+		return "", err
+	}
+	return " /bin/sh " + f.Name(), nil
 }

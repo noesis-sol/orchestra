@@ -28,6 +28,7 @@ func processInfoJSON(group, shell int, name string) string {
 func TestLaunchInPaneTypesOnlyIntoAWaitingShell(t *testing.T) {
 	defer func(d time.Duration) { shellSettle = d }(shellSettle)
 	shellSettle = time.Second
+	t.Setenv("TMPDIR", t.TempDir()) // for the launch scripts, never run here
 	for _, c := range []struct {
 		name    string
 		answers []string // process-info's answers in turn, the last one repeated; "fail" fails the call
@@ -58,7 +59,7 @@ func TestLaunchInPaneTypesOnlyIntoAWaitingShell(t *testing.T) {
 					`echo "$a"`+"\n")
 				err := (Terminal{}).LaunchInPane(context.Background(), "w2E:p3T", "claude", []string{"--x", "a b"})
 				got, _ := os.ReadFile(calls)
-				typed := strings.Contains(string(got), "pane run w2E:p3T claude '--x' 'a b'\n")
+				typed := strings.Contains(string(got), "pane run w2E:p3T  /bin/sh ")
 				if typed != c.typed || (err == nil) != (c.err == "") || err != nil && !strings.Contains(err.Error(), c.err) {
 					t.Errorf("typed %v, err %v; want typed %v, err %q\ncalls:\n%s", typed, err, c.typed, c.err, got)
 				}

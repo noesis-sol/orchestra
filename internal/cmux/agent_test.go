@@ -26,7 +26,7 @@ func TestLaunchInPaneRunsTheAgentThroughAScript(t *testing.T) {
 	}
 	script := term.launchPath(workSF, ".sh")
 	want := [][]string{
-		{"send", "--workspace", workWS, "--surface", strings.ToLower(workSF), "--", " /bin/sh '" + script + "'"},
+		{"send", "--workspace", workWS, "--surface", strings.ToLower(workSF), "--", " /bin/sh " + script},
 		{"send-key", "--workspace", workWS, "--surface", strings.ToLower(workSF), "--", "enter"},
 	}
 	if got := f.writes(); !slices.EqualFunc(got, want, slices.Equal) {

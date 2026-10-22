@@ -27,8 +27,9 @@ func (t Terminal) launchPath(surface, ext string) string {
 
 // launch runs kind with args in the surface and returns at once, refusing while what the surface's
 // last launch started still runs there (stillRuns). cmux types into a surface's
-// shell, which takes no argument with line breaks, so the command goes in a script beside the book,
-// and the shell is given a line that runs it. The script goes to the folder the surface started in,
+// shell, which takes no argument with line breaks, and may be any shell, quoting otherwise than
+// /bin/sh, so the command goes in a script beside the book, and the shell is given a line that runs
+// it, quoting nothing (command.ScriptLine). The script goes to the folder the surface started in,
 // sets orchestra's PATH, as orchestra would run the command, writes its process ID, which the
 // command keeps, and replaces itself with the command. The shell stays, so the surface is still
 // there, with its screen, once the command exits. With a name, the agent is given it.
@@ -69,7 +70,8 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	if err := os.Remove(t.launchPath(surface, ".pid")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("cannot clear the last launch in cmux surface %s: %w", surface, err)
 	}
-	if err := os.WriteFile(path, []byte(script.String()), 0o600); err != nil {
+	line, err := command.ScriptLine(path, script.String())
+	if err != nil {
 		return fmt.Errorf("cannot write the command for cmux surface %s: %w", surface, err)
 	}
 	records, _ := hookterm.UI(kind).Records(args) // "" when launched without hooks
@@ -84,8 +86,7 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	}); err != nil {
 		return err
 	}
-	// A leading space keeps the line out of the shell's history, where the shell is set to.
-	return t.typeLine(ctx, entry.Workspace, surface, " /bin/sh "+typedQuote(path))
+	return t.typeLine(ctx, entry.Workspace, surface, line)
 }
 
 // stillRuns refuses a launch into the surface while what its last launch started still runs there:
@@ -167,11 +168,6 @@ func (t Terminal) paste(ctx context.Context, workspace, surface, text string) er
 // typeable reports whether cmux types text as it is: one line, without a backslash, which cmux would
 // read \n, \r and \t after.
 func typeable(text string) bool { return !strings.ContainsAny(text, "\\\n\r") }
-
-// typedQuote quotes s for the shell as typeable text: in single quotes, with each single quote in it
-// written as '"'"', since command.ShellQuote writes it with a backslash, which can't be typed. A
-// repository whose path holds a quote, ~/Bob's app say, needs it.
-func typedQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
 
 // pressKey presses one key, by cmux's name for it, in the surface of workspace.
 func (t Terminal) pressKey(ctx context.Context, workspace, surface, k string) error {
