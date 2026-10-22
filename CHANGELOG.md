@@ -54,6 +54,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The ticket `orchestra init` files to set up tests from scratch no longer
+  says both runners check nothing beside a `scripts/check-fast.sh` it kept:
+  it reads the runners as init left them and says which check nothing and
+  which run the checks the project had.
 - `orchestra plan` prints tickets' IDs, a link's reason (a files entry kept as
   written) and bd's error text without their escape sequences and control
   characters, so a ticket's author can't set the terminal's title or write

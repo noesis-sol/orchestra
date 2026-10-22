@@ -19,7 +19,11 @@ func fileTestWork(ctx context.Context, repo string, c project.Choice) []project.
 	if err != nil || base == "" {
 		base = "the branch orchestra runs on"
 	}
-	plan := project.TestWork(c, base)
+	empty, err := project.RunnersCheckingNothing(repo)
+	if err != nil {
+		empty = []string{project.FastRunner, project.FullRunner} // unread: as init writes them for no suite
+	}
+	plan := project.TestWork(c, base, empty)
 	if len(plan) == 0 {
 		return nil
 	}

@@ -1,8 +1,12 @@
 package project
 
 import (
+	"errors"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/noesis-sol/orchestra/skills"
 )
@@ -42,12 +46,31 @@ const (
 // PassRunnersTitle is the title of the ticket that gets the runners passing on base.
 func PassRunnersTitle(base string) string { return passRunnersPrefix + base }
 
+// RunnersCheckingNothing are the runners in repo that check nothing as written, FastRunner first: a
+// script that runs no command but exit 0, as init writes for no suite, or no script at all. A runner
+// init kept, the project's own, checks something, and so does a check-full.sh that runs it.
+func RunnersCheckingNothing(repo string) ([]string, error) {
+	var empty []string
+	for _, runner := range []string{FastRunner, FullRunner} {
+		script, err := os.ReadFile(filepath.Join(repo, runner))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		if commands := RunnerCommands(string(script)); len(commands) == 0 ||
+			len(commands) == 1 && commands[0] == "exit 0" {
+			empty = append(empty, runner)
+		}
+	}
+	return empty, nil
+}
+
 // TestWork is the work the choice files for the project's tests, in the order to file it, an epic
-// before its tickets: with tests from scratch, an epic and the solo P1 ticket that sets them up;
+// before its tickets: with tests from scratch, an epic and the solo P1 ticket that sets them up,
+// saying which runners check nothing (empty, as RunnersCheckingNothing reads them);
 // with the suites found, the solo P1 ticket that gets the runners passing on base, under an epic
 // with the ticket that maps the untested areas after it where FileUntested is set. A manual check
 // files nothing. Every ticket carries TestWorkLabel.
-func TestWork(c Choice, base string) []TestTicket {
+func TestWork(c Choice, base string, empty []string) []TestTicket {
 	skill := "the " + skills.CreateCheckSuiteName + " skill"
 	if dir := SkillsDir(c.Agent); dir != "" {
 		skill += " (" + path.Join(dir, skills.CreateCheckSuiteName, "SKILL.md") + ")"
@@ -61,8 +84,7 @@ func TestWork(c Choice, base string) []TestTicket {
 	case TestsScratch:
 		return []TestTicket{epic, {Title: SetUpTestsTitle, Type: "task", Priority: 1, Parent: 0,
 			Labels: []string{TestWorkLabel, soloLabel},
-			Description: "orchestra init wrote " + runners + " checking nothing (exit 0): until this ticket " +
-				"is done, nothing merged is checked. It runs first and alone (P1, solo), so nothing merges " +
+			Description: runnersAsWritten(empty) + " It runs first and alone (P1, solo), so nothing merges " +
 				"meanwhile.\n\nUse " + skill + ", every section:\n" +
 				"- set up a harness and smoke tests in the project's own frameworks, added to the runners;\n" +
 				"- get both runners passing on " + base + ";\n" +
@@ -95,4 +117,30 @@ func TestWork(c Choice, base string) []TestTicket {
 				"each untested area has a P3 ticket under the epic."}}
 	}
 	return nil
+}
+
+// runnersAsWritten says which runners check nothing, empty, and which run the project's own checks: a
+// check-fast.sh init kept, and a check-full.sh that runs it.
+func runnersAsWritten(empty []string) string {
+	var own []string
+	for _, runner := range []string{FastRunner, FullRunner} {
+		if !slices.Contains(empty, runner) {
+			own = append(own, runner)
+		}
+	}
+	var says []string
+	if len(empty) > 0 {
+		says = append(says, "orchestra init wrote "+strings.Join(empty, " and ")+" checking nothing (exit 0)")
+	}
+	switch len(own) {
+	case 1:
+		says = append(says, own[0]+" runs the checks the project had")
+	case 2:
+		says = append(says, strings.Join(own, " and ")+" run the checks the project had")
+	}
+	text := strings.Join(says, "; ")
+	if slices.Contains(empty, FastRunner) {
+		return text + ": until this ticket is done, nothing merged is checked."
+	}
+	return text + "."
 }
