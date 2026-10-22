@@ -60,6 +60,11 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A run, reading the flags its workers' claude takes, and the headless
+  breakdown ask claude for its `--help` in a private directory of their
+  own, as the scout does, rather than in the temporary directory itself: on
+  Linux with `TMPDIR` unset that is the world-writable `/tmp`, where another
+  user could leave `.claude` settings for claude to read.
 - The ticket `orchestra init` files to set up tests from scratch no longer
   says both runners check nothing beside a `scripts/check-fast.sh` it kept:
   it reads the runners as init left them and says which check nothing and

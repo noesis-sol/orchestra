@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/beads"
+	"github.com/noesis-sol/orchestra/internal/claude"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/organ"
@@ -176,9 +176,10 @@ func specArgs(prompt string, servers []string, effort, help, schema string) []st
 		"--effort", effort)
 }
 
-// claudeHelp is claude's --help, or "" when it can't be read.
+// claudeHelp is claude's --help, or "" when it can't be read: run in a private directory of its own, as
+// claude.CLI.Help says why.
 func claudeHelp(ctx context.Context) string {
-	help, err := command.Output(ctx, command.ReadLimit, os.TempDir(), "claude", "--help")
+	help, err := claude.CLI{Bin: "claude"}.Help(ctx)
 	if err != nil {
 		return ""
 	}
