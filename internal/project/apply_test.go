@@ -51,7 +51,7 @@ func TestApplySetsTheProjectUpInOrder(t *testing.T) {
 	}
 }
 
-// An applier's error stops Apply: the steps so far are kept, and nothing after it runs.
+// An applier's error stops Apply: nothing after it runs, and what it wrote before is put back.
 func TestApplyStopsAtTheFirstError(t *testing.T) {
 	repo, _ := gitRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, Dir), 0o755); err != nil {
@@ -68,11 +68,16 @@ func TestApplyStopsAtTheFirstError(t *testing.T) {
 	if err == nil {
 		t.Fatal("no error for settings that can't be read")
 	}
-	if n := len(steps); n == 0 || steps[n-1].Label != "check-full" {
-		t.Errorf("steps %+v, want those up to the runners", steps)
+	if steps != nil {
+		t.Errorf("steps %+v, want none", steps)
 	}
 	if fileExists(filepath.Join(repo, attributesName)) {
 		t.Error("the changelog's union was added after the error")
+	}
+	for _, p := range []string{Dir + "/" + promptName, FastRunner, FullRunner} {
+		if fileExists(filepath.Join(repo, p)) {
+			t.Errorf("%s is left from before the error", p)
+		}
 	}
 }
 

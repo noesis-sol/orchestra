@@ -6,8 +6,9 @@ import (
 	"testing"
 )
 
-// A repository is set up once .orchestra/ has the worker prompt or the settings, or .claude/ has
-// the prompt of a project set up before 'orchestra init'; an empty .orchestra/ or Beads alone isn't.
+// A repository is set up once .orchestra/ has the settings, or .claude/ has the prompt of a project
+// set up before 'orchestra init'; an empty .orchestra/, its worker prompt without the settings, or
+// Beads alone isn't.
 func TestIsSetUp(t *testing.T) {
 	for _, tc := range []struct {
 		files []string
@@ -15,8 +16,9 @@ func TestIsSetUp(t *testing.T) {
 	}{
 		{nil, false},
 		{[]string{".beads/config.yaml", ".orchestra/.gitignore"}, false},
-		{[]string{".orchestra/worker-prompt.md"}, true},
+		{[]string{".orchestra/worker-prompt.md"}, false},
 		{[]string{".orchestra/settings.json"}, true},
+		{[]string{".orchestra/worker-prompt.md", ".orchestra/settings.json"}, true},
 		{[]string{".claude/worker-prompt.md"}, true},
 	} {
 		repo := t.TempDir()

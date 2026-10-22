@@ -18,6 +18,15 @@ All notable changes to orchestra are documented here. The format follows
   beside a `scripts/check-fast.sh` it keeps: with tests created from scratch
   and the project's own check-fast.sh kept, check-full.sh runs it, so the
   end-of-run full check checks what the merge check does.
+- `orchestra init`, and a spec run setting its repository up, no longer
+  leave a worker prompt without the settings where a write fails partway (a
+  folder it can't write, a full disk): they put back what they had written
+  of `.orchestra/`, the runners, the README, `.gitattributes`, the skill and
+  the verifier, a worker prompt moved from `.claude/` back where it was, and
+  say `<why> (the setup is as it was before)`. Such a project counted as set
+  up, and its next run merged every ticket unchecked. A project counts as
+  set up now by its `.orchestra/settings.json` (or a `.claude/worker-prompt.md`
+  from before `init`), not by its worker prompt alone.
 - A worker Herdr loses sight of for a moment is no longer taken for gone by
   the paths that follow it outside its settle loop: an asked ticket's worker
   carrying on after its answer no longer has its session resumed beside it,
