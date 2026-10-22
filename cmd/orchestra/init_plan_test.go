@@ -83,7 +83,7 @@ func TestInitChoiceTakesTheFlagsOverTheProject(t *testing.T) {
 		flags    initFlags
 		check    func(project.Choice) bool
 	}{
-		{"the settings' check", project.Settings{CheckFast: "make check", Concurrency: 2}, false, initFlags{},
+		{"the settings' check", project.Settings{CheckFast: "make check", Concurrency: new(2)}, false, initFlags{},
 			func(c project.Choice) bool {
 				return c.FastCommand() == "make check" && c.CheckFrom == "settings" && !c.ReplaceFast &&
 					c.Concurrent == 2 && !c.Unasked.Concurrent

@@ -74,7 +74,7 @@ func TestSettingProblems(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"concurrent", second(ResolveConcurrency(Given[int]{}, Settings{Concurrency: -1})),
+		{"concurrent", second(ResolveConcurrency(Given[int]{}, Settings{Concurrency: new(-1)})),
 			".orchestra/settings.json: concurrent must be between 1 and 16 (got -1)"},
 		{"check_hand_backs", second(ResolveCheckHandBacks(Settings{CheckHandBacks: count(-1)})),
 			".orchestra/settings.json: check_hand_backs must be 0 (never) or more (got -1)"},

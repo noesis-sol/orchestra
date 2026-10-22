@@ -382,7 +382,8 @@ var ErrNotSetUp = errors.New("no " + Dir + "/" + promptName + " to update: run o
 
 // UpdateTemplates brings the project's worker prompt and verifier in repo up to date with orchestra's
 // templates: in each, the sections the templates changed since the project's copy was written are
-// rewritten from them (see updated), and settings.json records the templates' versions now. It returns
+// rewritten from them (see updated), and settings.json records the templates' versions now, never lower
+// than a version it records already (a newer orchestra's, on a team running several). It returns
 // init's steps and the files it rewrote, for their diff. It writes nothing where nothing is out of
 // date but the versions settings.json records.
 func UpdateTemplates(repo string) ([]Step, []TemplateUpdate, error) {
@@ -429,9 +430,11 @@ func UpdateTemplates(repo string) ([]Step, []TemplateUpdate, error) {
 		steps = append(steps, Step{Kind: StepDone, Label: label, Detail: "rewrote " + joinAnd(names) + " in " + f.path +
 			" from the template; the rest is as it was", Commit: []string{f.path}})
 	}
-	recorded.WorkerPrompt, recorded.Verifier = now.WorkerPrompt, 0
+	recorded.WorkerPrompt = max(recorded.WorkerPrompt, now.WorkerPrompt)
 	if fileExists(filepath.Join(repo, filepath.FromSlash(VerifierPath))) {
-		recorded.Verifier = now.Verifier
+		recorded.Verifier = max(recorded.Verifier, now.Verifier)
+	} else {
+		recorded.Verifier = 0
 	}
 	if s.Templates == nil || *s.Templates != recorded {
 		s.Templates = &recorded

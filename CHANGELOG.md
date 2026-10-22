@@ -40,6 +40,16 @@ All notable changes to orchestra are documented here. The format follows
 - The start question and the preflight form quit when orchestra stops, as
   init's form does, rather than being killed: a killed form returned before
   Bubble Tea stopped reading the terminal, a data race as it closed.
+- `orchestra init --update` never lowers a template version `settings.json`
+  records: an older orchestra recorded its own versions over a newer one's,
+  and the newer then flagged its changes again where the project had
+  reworded those sections.
+- A run names each key of `settings.json` it doesn't know under its `START`
+  line and goes on, so a typo such as `"concurency"` no longer takes the
+  default without a word; saving the file keeps such keys within
+  `environment_hold`, an entry of `requires` and `templates` too, where an
+  older `init` dropped a newer orchestra's. `"concurrent": 0` is out of
+  range, as `--concurrent 0` is, rather than one at a time.
 - `orchestra init` leaves out a suite the scout gives with a newline or
   another control character in its command, and says so beside what the
   scout found: its checklist showed such a command on one line, so

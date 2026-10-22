@@ -161,19 +161,21 @@ func TestLaunchPromptIsIgnoredInAWorktreeCutBeforeInit(t *testing.T) {
 
 func TestConcurrencyPrecedence(t *testing.T) {
 	cases := []struct {
-		flag          int
-		given         bool
-		setting, want int
-		fails         bool
+		flag    int
+		given   bool
+		setting *int
+		want    int
+		fails   bool
 	}{
-		{0, false, 0, 1, false}, {0, false, 3, 3, false}, {2, true, 3, 2, false},
-		{17, true, 0, 0, true}, {-1, true, 0, 0, true}, {0, false, 17, 0, true},
-		{0, true, 3, 0, true}, // --concurrent 0 is out of range, not unset
+		{0, false, nil, 1, false}, {0, false, new(3), 3, false}, {2, true, new(3), 2, false},
+		{17, true, nil, 0, true}, {-1, true, nil, 0, true}, {0, false, new(17), 0, true},
+		{0, true, new(3), 0, true},  // --concurrent 0 is out of range, not unset
+		{0, false, new(0), 0, true}, // and so is "concurrent": 0
 	}
 	for _, c := range cases {
 		got, err := ResolveConcurrency(Given[int]{Value: c.flag, Given: c.given}, Settings{Concurrency: c.setting})
 		if (err != nil) != c.fails || (!c.fails && got != c.want) {
-			t.Errorf("ResolveConcurrency(%d, %v, %d) = %d, %v", c.flag, c.given, c.setting, got, err)
+			t.Errorf("ResolveConcurrency(%d, %v, %v) = %d, %v", c.flag, c.given, c.setting, got, err)
 		}
 	}
 }
@@ -258,13 +260,13 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	if c.FastCommand() != "scripts/ci-local.sh" || c.CheckFrom != "found in the worker prompt" || c.Concurrent != 1 || !c.Unasked.Concurrent {
 		t.Errorf("from the prompt: %+v", c)
 	}
-	c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: 3}, kinieta)
+	c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: new(3)}, kinieta)
 	if c.FastCommand() != "make check" || c.Concurrent != 3 || c.Unasked.Concurrent {
 		t.Errorf("settings win: %+v", c)
 	}
 	// A concurrency every run would reject is replaced, and the summary says so.
 	for _, n := range []int{-1, MaxConcurrency + 4} {
-		c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: n}, "")
+		c = DefaultChoice(Settings{CheckFast: "make check", Concurrency: new(n)}, "")
 		if c.Concurrent != 1 || !c.Unasked.Concurrent || c.Replaced != n {
 			t.Errorf("concurrent %d: %+v", n, c)
 		}
@@ -280,11 +282,11 @@ func TestDetectCheckAndDefaultChoice(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, ".orchestra"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, _ := settingsStep(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: 20}, ""))
+	st, _ := settingsStep(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: new(20)}, ""))
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "settings had 20") {
 		t.Errorf("replaced concurrency: %+v", st)
 	}
-	st, _ = settingsStep(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: 1, CheckFastTimeout: "0"}, ""))
+	st, _ = settingsStep(repo, DefaultChoice(Settings{CheckFast: "make check", Concurrency: new(1), CheckFastTimeout: "0"}, ""))
 	if st.Kind != StepCaution || !strings.Contains(st.Detail, "check_fast_timeout '0'") || !strings.Contains(st.Detail, "stopped after 30m") {
 		t.Errorf("replaced check timeout: %+v", st)
 	}
@@ -328,13 +330,13 @@ func TestApplySettingsSavesAndExplains(t *testing.T) {
 	}
 	// Settings init doesn't ask about are kept.
 	none := []string{}
-	if err := SaveSettings(repo, Settings{CheckFast: "make check", Concurrency: 1, TicketLimit: "2h", ExcludeTypes: &none}); err != nil {
+	if err := SaveSettings(repo, Settings{CheckFast: "make check", Concurrency: new(1), TicketLimit: "2h", ExcludeTypes: &none}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := settingsStep(repo, Choice{Concurrent: 2}); err != nil {
 		t.Fatal(err)
 	}
-	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.CheckFast != FastRunner || s.Concurrency != 2 ||
+	if s, _, _ := LoadSettings(repo); s.TicketLimit != "2h" || s.CheckFast != FastRunner || s.Concurrency == nil || *s.Concurrency != 2 ||
 		s.ExcludeTypes == nil || len(*s.ExcludeTypes) != 0 {
 		t.Errorf("after init: %+v", s)
 	}
@@ -348,7 +350,7 @@ func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 	if err := os.WriteFile(SettingsPath(repo), []byte(`{"check": "make check", "ticket_limit": "2h", "future": {"a": [1, 2]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveSettings(repo, Settings{Concurrency: 2}); err != nil {
+	if err := SaveSettings(repo, Settings{Concurrency: new(2)}); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(SettingsPath(repo))
@@ -363,7 +365,7 @@ func TestSaveSettingsKeepsUnknownKeys(t *testing.T) {
 	if err := os.WriteFile(SettingsPath(repo), []byte(`{"concurrent": `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveSettings(repo, Settings{Concurrency: 2}); err == nil {
+	if err := SaveSettings(repo, Settings{Concurrency: new(2)}); err == nil {
 		t.Error("saved over a settings.json it could not read")
 	}
 }

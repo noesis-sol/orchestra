@@ -439,6 +439,7 @@ func (s *session) runLoop(ctx context.Context) int {
 	if !cfg.ownPrompt { // a prompt of the run's own, not the project's, came from no template
 		cfg.TemplateNotes = project.TemplateNotes(cfg.Repo)
 	}
+	cfg.SettingsNotes = project.SettingsNotes(cfg.Repo)
 	orch := newLoop(organCtx, &cfg, s.log, s.prompt)
 	if cfg.Triage {
 		orch.StartTriage()

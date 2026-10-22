@@ -201,7 +201,7 @@ func TestUpdateTemplatesKeepsTheProjectsOwnText(t *testing.T) {
 		}
 	}
 	s, _, err := LoadSettings(repo)
-	if err != nil || s.Templates == nil || *s.Templates != CurrentTemplates() || s.Concurrency != 2 {
+	if err != nil || s.Templates == nil || *s.Templates != CurrentTemplates() || s.Concurrency == nil || *s.Concurrency != 2 {
 		t.Errorf("settings %+v (templates %+v), %v; want the current versions recorded, the rest kept", s, s.Templates, err)
 	}
 	if notes := TemplateNotes(repo); len(notes) != 0 {

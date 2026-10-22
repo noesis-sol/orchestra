@@ -114,8 +114,9 @@ func TestSpecRunSetsUpAnEmptyRepository(t *testing.T) {
 			if !reflect.DeepEqual(settings, want) {
 				t.Errorf("settings %+v, the run read %+v", settings, want)
 			}
-			if settings.Concurrency != tc.concurrent || settings.MCPServers == nil || len(*settings.MCPServers) != 0 {
-				t.Errorf("settings: concurrent %d, MCP servers %v", settings.Concurrency, settings.MCPServers)
+			if settings.Concurrency == nil || *settings.Concurrency != tc.concurrent || settings.MCPServers == nil ||
+				len(*settings.MCPServers) != 0 {
+				t.Errorf("settings: concurrent %v, MCP servers %v", settings.Concurrency, settings.MCPServers)
 			}
 			if _, err := os.Stat(filepath.Join(repo, ".claude", "skills")); !os.IsNotExist(err) {
 				t.Errorf("a skill was installed (%v)", err)

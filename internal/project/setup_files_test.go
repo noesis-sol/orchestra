@@ -39,7 +39,7 @@ func TestInitKeepsTheSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	globs := []string{"package-lock.json"}
-	if err := SaveSettings(repo, Settings{CheckFast: "make check", Concurrency: 1, Setup: "npm ci",
+	if err := SaveSettings(repo, Settings{CheckFast: "make check", Concurrency: new(1), Setup: "npm ci",
 		SetupFiles: &globs}); err != nil {
 		t.Fatal(err)
 	}

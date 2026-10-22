@@ -247,7 +247,10 @@ const CheckScript = "scripts/check.sh"
 // by 1; a time limit every run would reject is dropped.
 func DefaultChoice(s Settings, prompt string) Choice {
 	c := Choice{CheckFastTimeout: s.CheckFastTimeout, CheckFullTimeout: s.CheckFullTimeout,
-		Concurrent: s.Concurrency, CheckFrom: "settings", Setup: s.Setup, SetupWas: s.Setup}
+		CheckFrom: "settings", Setup: s.Setup, SetupWas: s.Setup}
+	if s.Concurrency != nil {
+		c.Concurrent = *s.Concurrency
+	}
 	if s.MCPServers != nil {
 		names := append([]string{}, *s.MCPServers...)
 		c.MCP = &names
@@ -442,7 +445,7 @@ func settingsStep(repo string, c Choice) (Step, error) {
 // runners as check_fast and check_full, their time limits (the defaults where the choice has none),
 // the concurrency, the MCP servers, and the setup command where the choice changes it.
 func ChoiceSettings(s Settings, c Choice) Settings {
-	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, c.Concurrent, c.MCP
+	s.CheckFast, s.CheckFull, s.Concurrency, s.MCPServers = FastRunner, FullRunner, new(c.Concurrent), c.MCP
 	// The defaults where the choice has none: init asks no time limit, so they are there to edit.
 	s.CheckFastTimeout = orText(c.CheckFastTimeout, DefaultCheckTimeoutText)
 	s.CheckFullTimeout = orText(c.CheckFullTimeout, DefaultCheckFullTimeoutText)

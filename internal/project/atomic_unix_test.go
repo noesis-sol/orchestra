@@ -128,7 +128,7 @@ func TestFailedWritesKeepTheProjectsFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	readOnly(t, filepath.Dir(settings))
-	if err := SaveSettings(repo, Settings{Concurrency: 2}); err == nil {
+	if err := SaveSettings(repo, Settings{Concurrency: new(2)}); err == nil {
 		t.Error("SaveSettings: no error in a read-only folder")
 	}
 	if got := read(t, settings); got != mine {

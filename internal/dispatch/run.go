@@ -291,6 +291,9 @@ func (o *Loop) begin(ctx context.Context) {
 	for _, note := range c.TemplateNotes {
 		o.info("  templates: %s", note)
 	}
+	for _, note := range c.SettingsNotes {
+		o.info("  settings: %s", note)
+	}
 	help, err := o.claudeHelp(ctx)
 	o.permission = o.permissionArgs(ctx, help, err)
 	o.unusedTools = o.unusedToolArgs(help)

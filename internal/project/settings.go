@@ -1,9 +1,11 @@
 package project
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,8 +32,9 @@ type Settings struct {
 	// checks. LoadSettings reads them as those, and SaveSettings writes them under the new names.
 	Check        string `json:"check,omitempty"`
 	CheckTimeout string `json:"check_timeout,omitempty"`
-	// Concurrency is how many tickets run at the same time unless --concurrent says otherwise.
-	Concurrency int `json:"concurrent"`
+	// Concurrency is how many tickets run at the same time unless --concurrent says otherwise. Absent:
+	// DefaultConcurrency; 0, as --concurrent 0, is out of range.
+	Concurrency *int `json:"concurrent,omitempty"`
 	// TicketLimit is how long a ticket's worker may go on, from dispatch, before the run stops for
 	// it, as a duration such as "2h", unless --ticket-limit says otherwise. Empty or "0": no limit.
 	TicketLimit string `json:"ticket_limit,omitempty"`
@@ -242,8 +245,9 @@ func ParseSettings(settings []byte) (Settings, error) {
 	return s, nil
 }
 
-// SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know, and
-// writing the old check and check_timeout under their new names.
+// SaveSettings writes the project's settings.json, keeping any keys Settings doesn't know, at its top
+// or within one it does (a newer orchestra's, such as a key of environment_hold's or of an entry of
+// requires), and writing the old check and check_timeout under their new names.
 func SaveSettings(repo string, s Settings) error {
 	if s.CheckFast == "" {
 		s.CheckFast = s.Check
@@ -252,24 +256,22 @@ func SaveSettings(repo string, s Settings) error {
 		s.CheckFastTimeout = s.CheckTimeout
 	}
 	s.Check, s.CheckTimeout = "", ""
-	merged := map[string]json.RawMessage{}
-	b, err := os.ReadFile(SettingsPath(repo))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err == nil {
-		if err := json.Unmarshal(b, &merged); err != nil {
-			return fmt.Errorf("%s: %w", SettingsPath(repo), err)
-		}
-	}
-	for _, k := range settingsKeys() {
-		delete(merged, k) // an empty omitempty field clears the key
-	}
-	b, err = json.Marshal(s)
+	b, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(b, &merged); err != nil {
+	old, err := os.ReadFile(SettingsPath(repo))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		old = []byte("{}")
+	case err != nil:
+		return err
+	}
+	if err := json.Unmarshal(old, new(map[string]json.RawMessage)); err != nil {
+		return fmt.Errorf("%s: %w", SettingsPath(repo), err)
+	}
+	var merged map[string]json.RawMessage // written with its keys sorted, as the file always has been
+	if err := json.Unmarshal(keepUnknown(old, b, reflect.TypeFor[Settings]()), &merged); err != nil {
 		return err
 	}
 	if b, err = json.MarshalIndent(merged, "", "  "); err != nil {
@@ -278,15 +280,138 @@ func SaveSettings(repo string, s Settings) error {
 	return writeFile(SettingsPath(repo), append(b, '\n'), 0o644)
 }
 
-// settingsKeys are the JSON keys of Settings' fields.
-func settingsKeys() []string {
-	t := reflect.TypeFor[Settings]()
-	var keys []string
+// jsonFields are the fields of t, a struct, by their JSON keys.
+func jsonFields(t reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
 	for field := range t.Fields() {
 		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		keys = append(keys, name)
+		if name != "-" && field.IsExported() {
+			fields[name] = field.Type
+		}
 	}
-	return keys
+	return fields
+}
+
+// elem is t without its pointers.
+func elem(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
+}
+
+// keepUnknown is now, the JSON of a value of type t, with the keys of was, the JSON it replaces, that t
+// has no field for, within each object of now's that was has too: an entry of a list at the same place
+// in both. A known key now lacks (an empty omitempty field) stays out.
+func keepUnknown(was, now json.RawMessage, t reflect.Type) json.RawMessage {
+	t = elem(t)
+	switch t.Kind() {
+	case reflect.Struct:
+		var wasKeys, nowKeys map[string]json.RawMessage
+		if json.Unmarshal(was, &wasKeys) != nil || json.Unmarshal(now, &nowKeys) != nil || wasKeys == nil ||
+			nowKeys == nil {
+			return now
+		}
+		fields, changed := jsonFields(t), false
+		for k, v := range wasKeys {
+			field, known := fields[k]
+			switch _, has := nowKeys[k]; {
+			case !known:
+				nowKeys[k], changed = v, true
+			case has:
+				if kept := keepUnknown(v, nowKeys[k], field); !bytes.Equal(kept, nowKeys[k]) {
+					nowKeys[k], changed = kept, true
+				}
+			}
+		}
+		if !changed {
+			return now
+		}
+		b, err := json.Marshal(nowKeys)
+		if err != nil {
+			return now
+		}
+		return b
+	case reflect.Slice:
+		var wasItems, nowItems []json.RawMessage
+		if json.Unmarshal(was, &wasItems) != nil || json.Unmarshal(now, &nowItems) != nil {
+			return now
+		}
+		changed := false
+		for i := range min(len(wasItems), len(nowItems)) {
+			if kept := keepUnknown(wasItems[i], nowItems[i], t.Elem()); !bytes.Equal(kept, nowItems[i]) {
+				nowItems[i], changed = kept, true
+			}
+		}
+		if !changed {
+			return now
+		}
+		b, err := json.Marshal(nowItems)
+		if err != nil {
+			return now
+		}
+		return b
+	}
+	return now
+}
+
+// unknownKeys are the keys of settings, the JSON of a value of type t at the place at ("" for the top),
+// that t has no field for, each named by its place, as "environment_hold.cout" or "requires[1].instal",
+// in order.
+func unknownKeys(settings json.RawMessage, t reflect.Type, at string) []string {
+	t = elem(t)
+	var unknown []string
+	switch t.Kind() {
+	case reflect.Struct:
+		var keys map[string]json.RawMessage
+		if json.Unmarshal(settings, &keys) != nil {
+			return nil
+		}
+		fields := jsonFields(t)
+		for _, k := range slices.Sorted(maps.Keys(keys)) {
+			place := k
+			if at != "" {
+				place = at + "." + k
+			}
+			if field, known := fields[k]; known {
+				unknown = append(unknown, unknownKeys(keys[k], field, place)...)
+			} else {
+				unknown = append(unknown, place)
+			}
+		}
+	case reflect.Slice:
+		var items []json.RawMessage
+		if json.Unmarshal(settings, &items) != nil {
+			return nil
+		}
+		for i, item := range items {
+			unknown = append(unknown, unknownKeys(item, t.Elem(), fmt.Sprintf("%s[%d]", at, i))...)
+		}
+	}
+	return unknown
+}
+
+// UnknownSettings are the keys of settings, the content of a settings.json, that orchestra doesn't know,
+// at its top or within a key it does, each named by its place (see unknownKeys): a typo, which takes the
+// setting's default, or a newer orchestra's setting.
+func UnknownSettings(settings []byte) []string {
+	return unknownKeys(settings, reflect.TypeFor[Settings](), "")
+}
+
+// SettingsNotes are what a run says at its start of the keys of the project's settings.json that
+// orchestra doesn't know, a line each, naming the key as a problem with a setting does; none where
+// it can't read the file, which the run stops on.
+func SettingsNotes(repo string) []string {
+	b, err := os.ReadFile(SettingsPath(repo))
+	if err != nil {
+		return nil
+	}
+	var notes []string
+	for _, key := range UnknownSettings(b) {
+		notes = append(notes, settingErr(key, errors.New("is no setting this orchestra knows, and does nothing: "+
+			"a typo takes the setting's default")).Error())
+	}
+	return notes
 }
 
 // Given is a run setting as a flag or its environment variable gives it: Value, and whether either
@@ -417,17 +542,17 @@ func ConcurrencyRange(n int) error {
 }
 
 // ResolveConcurrency picks a run's concurrency: --concurrent (or ORCHESTRA_CONCURRENT) when given,
-// else the project's setting, else DefaultConcurrency. A given 0 is out of range, as any other value
-// outside 1 to MaxConcurrency.
+// else the project's setting, else DefaultConcurrency. A 0, given or in settings.json, is out of
+// range, as any other value outside 1 to MaxConcurrency.
 func ResolveConcurrency(flag Given[int], s Settings) (int, error) {
 	return resolve(flag, ConcurrencyRange, func() (int, bool, error) {
-		if s.Concurrency == 0 {
+		if s.Concurrency == nil {
 			return 0, false, nil
 		}
-		if err := ConcurrencyRange(s.Concurrency); err != nil {
+		if err := ConcurrencyRange(*s.Concurrency); err != nil {
 			return 0, false, settingErr("concurrent", err)
 		}
-		return s.Concurrency, true, nil
+		return *s.Concurrency, true, nil
 	}, DefaultConcurrency)
 }
 

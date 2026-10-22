@@ -552,6 +552,9 @@ type Config struct {
 	// TemplateNotes say, as the run starts, which of the project's files orchestra wrote from its templates
 	// lack changes made to them since, and how to take them (project.TemplateNotes); none for none.
 	TemplateNotes []string
+	// SettingsNotes say, as the run starts, which keys of the project's settings.json orchestra doesn't
+	// know (project.SettingsNotes); none for none.
+	SettingsNotes []string
 	// Filing is the scope still being filed as the run starts on it, as a spec's breakdown files the
 	// rest after its environment ticket; nil when it is filed already.
 	Filing       *Filing
