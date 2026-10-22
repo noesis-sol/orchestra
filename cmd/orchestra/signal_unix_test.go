@@ -91,8 +91,9 @@ func TestStopSignalsStayCaughtWhileTheLoopWindsDown(t *testing.T) {
 func TestDrainSignalIsCaught(t *testing.T) {
 	// Not parallel: it signals the test's own process, which the runs of tests beside it would catch too.
 	drained := make(chan struct{}, 2)
-	stop := watchDrain(func() { drained <- struct{}{} })
-	defer stop()
+	drains := catchDrains()
+	defer drains.release()
+	drains.to(func() { drained <- struct{}{} })
 	for i := range 2 {
 		kill(t, syscall.SIGUSR1)
 		select {

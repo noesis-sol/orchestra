@@ -46,11 +46,17 @@ var pipeSignals = []os.Signal{syscall.SIGPIPE}
 //	listening                                  → onStop gets it → winding
 //	winding, no quitter                        → it pends
 //	winding, quitter set, something finishing  → a warning, it pends → warned
-//	winding, quitter set, nothing finishing    → orchestra quits, exit code 130
-//	warned                                     → orchestra quits, exit code 130
+//	winding, quitter set, nothing finishing    → orchestra quits, exit code 130 → quitting
+//	warned                                     → orchestra quits, exit code 130 → quitting
+//	quitting                                   → orchestra exits at once, exit code 130
 //
 // on(f) starts the next phase: listening with an f, between without one (or winding at once, when
-// f takes a signal that pends). windDown goes to winding without a signal.
+// f takes a signal that pends). windDown goes to winding without a signal. Quitting is the last
+// phase: nothing leaves it.
+//
+// The watch decides under its lock and does the work a signal calls for (the warning, the quitting,
+// which saves the workers left with git) outside it, beside the goroutine that takes the signals: a
+// further signal while the quitting hangs is taken, and exits.
 type stopWatch struct {
 	stop func() // stops the relays: see release
 
@@ -72,6 +78,7 @@ const (
 	listening                  // the current phase's onStop takes the next signal
 	winding                    // the phase listening last has taken its signal and winds down
 	warned                     // a further signal has said what is under way: the next one quits
+	quitting                   // a further signal is ending orchestra: the next one exits at once
 )
 
 // quitter is what a further stop signal needs to end orchestra: the loop, to say which of its
@@ -89,11 +96,16 @@ type quitter struct {
 }
 
 // catchStops starts catching stopSignals, and pipeSignals, which it drops. Call release once the
-// run is over.
+// run is over. The work a signal calls for runs in a goroutine of its own, so that the next signal
+// is taken while it goes on.
 func catchStops() *stopWatch {
 	w := &stopWatch{}
 	stopPipes := relay(pipeSignals, func(os.Signal) {})
-	stopStops := relay(stopSignals, w.deliver)
+	stopStops := relay(stopSignals, func(s os.Signal) {
+		if act := w.take(s); act != nil {
+			go act()
+		}
+	})
 	w.stop = func() {
 		stopStops()
 		stopPipes()
@@ -101,11 +113,21 @@ func catchStops() *stopWatch {
 	return w
 }
 
+// deliver handles stop signal s, as a caught one is handled, and returns once the work it calls for
+// is done.
 func (w *stopWatch) deliver(s os.Signal) {
+	if act := w.take(s); act != nil {
+		act()
+	}
+}
+
+// take handles stop signal s under the watch's lock, and returns the work it calls for, to be done
+// outside it, if any.
+func (w *stopWatch) take(s os.Signal) (act func()) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if s == os.Interrupt && w.dropInt {
-		return
+		return nil
 	}
 	w.leave = w.leave || leaves(s)
 	switch w.phase {
@@ -115,13 +137,15 @@ func (w *stopWatch) deliver(s os.Signal) {
 		f(s)
 	case winding, warned:
 		if w.quit != nil {
-			w.further(s)
-			return
+			return w.further(s)
 		}
 		w.pend(s)
+	case quitting:
+		return w.quit.exitNow(s)
 	case between:
 		w.pend(s)
 	}
+	return nil
 }
 
 // pend keeps s for the next phase, unless a signal already waits. The caller holds w.mu.
@@ -138,6 +162,9 @@ func (w *stopWatch) pend(s os.Signal) {
 func (w *stopWatch) on(f func(os.Signal)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.phase == quitting { // orchestra is ending: a further signal exits at once
+		return
+	}
 	if f != nil && w.pending != nil {
 		s := w.pending
 		w.pending, w.onStop, w.phase = nil, nil, winding
@@ -147,6 +174,16 @@ func (w *stopWatch) on(f func(os.Signal)) {
 	w.onStop, w.phase = f, between
 	if f != nil {
 		w.phase = listening
+	}
+}
+
+// carry keeps s, a stop signal a phase took too late to stop, for the next phase, which it stops at
+// once, as one that came between phases does: a stop asked as the loop ended stops the organs.
+func (w *stopWatch) carry(s os.Signal) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.phase != quitting {
+		w.pend(s)
 	}
 }
 
@@ -179,16 +216,28 @@ func (w *stopWatch) quitWith(q quitter) {
 // dashboard, and winds down: it stops listening, and the signals from now until the next phase
 // listens are further ones. A signal waiting for the next phase counts as the first of them.
 func (w *stopWatch) windDown() {
+	if act := w.windingDown(); act != nil {
+		act()
+	}
+}
+
+// windingDown is windDown under the watch's lock: it returns the work a signal waiting calls for, to
+// be done outside it, if any.
+func (w *stopWatch) windingDown() (act func()) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.phase == quitting {
+		return nil
+	}
 	w.onStop = nil
 	if w.phase != warned {
 		w.phase = winding
 	}
 	if s := w.pending; s != nil && w.quit != nil {
 		w.pending = nil
-		w.further(s)
+		return w.further(s)
 	}
+	return nil
 }
 
 // further handles stop signal s, which came while a phase it stopped winds down. Nothing under
@@ -199,32 +248,57 @@ func (w *stopWatch) windDown() {
 // Otherwise the first says what is under way and how to abandon it, and waits for the next phase,
 // skipping the organs, as before; the one after it ends orchestra, naming what was abandoned.
 // Commands under way run in their own process groups, so they run on after orchestra has gone.
-// The caller holds w.mu.
-func (w *stopWatch) further(s os.Signal) {
+// The caller holds w.mu; further returns the work, which the caller does once it has let go of it.
+func (w *stopWatch) further(s os.Signal) (act func()) {
 	q := w.quit
 	under := q.loop.Finishing()
 	if len(under) > 0 && w.phase != warned {
 		w.phase = warned
 		w.pend(s)
-		again := "send " + signalName(s) + " again"
-		if s == os.Interrupt {
-			again = "press Ctrl+C again"
-		}
-		ev := dispatch.Event{Kind: dispatch.EvWarn, Text: dispatch.UnderWayLine(under, again), Time: time.Now()}
-		q.log.Line(ev.Time, ev.Text)
-		q.log.Record(ev)
-		q.out.Event(ev)
-		return
+		return func() { q.warn(s, under) }
 	}
-	q.loop.SaveLeft() // the loop's own saving, as it ends, never comes
+	w.phase = quitting
+	return func() { q.quitNow(s, under) }
+}
+
+// warn says that under is under way, which signal s, a further one, doesn't cut short, and how to
+// abandon it.
+func (q *quitter) warn(s os.Signal, under []dispatch.Finishing) {
+	again := "send " + signalName(s) + " again"
+	if s == os.Interrupt {
+		again = "press Ctrl+C again"
+	}
+	ev := dispatch.Event{Kind: dispatch.EvWarn, Text: dispatch.UnderWayLine(under, again), Time: time.Now()}
+	q.log.Line(ev.Time, ev.Text)
+	q.log.Record(ev)
+	q.out.Event(ev)
+}
+
+// quitNow ends orchestra, exit code 130, as further signal s asks, abandoning under. The line comes
+// first, so that it is there should saving the workers hang and a further signal exit at once.
+func (q *quitter) quitNow(s os.Signal, under []dispatch.Finishing) {
 	ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted,
 		Text: dispatch.QuitLine(stoppedHow(s), q.loop.Running(), under), Time: time.Now()}
 	q.log.Line(ev.Time, ev.Text) // not as a notification: orchestra doesn't wait for one now
 	q.log.Record(ev)
 	q.out.Event(ev)
+	q.loop.SaveLeft()                   // the loop's own saving, as it ends, never comes
 	q.log.End(dispatch.ExitInterrupted) // run's deferred End doesn't run: orchestra exits from here
 	_ = q.log.CloseNow()                // each line was written as it came: nothing is left to lose
 	q.exit(dispatch.ExitInterrupted)
+}
+
+// exitNow returns what signal s does while orchestra quits: it exits at once, exit code 130, without
+// waiting for the quitting, which hangs, to save the workers left running for the next run.
+func (q *quitter) exitNow(s os.Signal) (act func()) {
+	return func() {
+		now := time.Now()
+		q.log.Line(now, "INTERRUPTED: exited "+stoppedHow(s)+" before the workers left running were saved "+
+			"for the next run")
+		q.log.End(dispatch.ExitInterrupted)
+		_ = q.log.CloseNow() // as in quitNow
+		q.exit(dispatch.ExitInterrupted)
+	}
 }
 
 // context returns a copy of parent that the next stop signal cancels, as signal.NotifyContext does,
@@ -263,11 +337,49 @@ func stoppedHow(s os.Signal) string {
 // SIGHUP when nobody is left to read the report. The organ phase is skipped then.
 func leaves(sig os.Signal) bool { return sig == syscall.SIGTERM || sig == syscall.SIGHUP }
 
-// watchDrain calls onDrain, from another goroutine, each time orchestra receives one of
-// drainSignals. The function it returns stops watching.
-func watchDrain(onDrain func()) (stop func()) {
-	return relay(drainSignals, func(os.Signal) { onDrain() })
+// drainWatch catches drainSignals for the whole of a run, from its start, so that one that comes
+// before the loop listens (during the overnight pre-flight, the start question, or a spec's or a
+// feature's talk) isn't lost: Go ignores a SIGUSR1 nobody catches. One that comes while nothing
+// listens waits for the loop, which drains as soon as it begins (to).
+type drainWatch struct {
+	stop func() // stops the relay: see release
+
+	mu      sync.Mutex
+	onDrain func() // what a drain signal does now; nil while no loop listens
+	pending bool   // a drain signal came while none did
 }
+
+// catchDrains starts catching drainSignals. Call release once the run is over.
+func catchDrains() *drainWatch {
+	w := &drainWatch{}
+	w.stop = relay(drainSignals, func(os.Signal) { w.deliver() })
+	return w
+}
+
+func (w *drainWatch) deliver() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.onDrain == nil {
+		w.pending = true
+		return
+	}
+	w.onDrain()
+}
+
+// to makes f what each drain signal does, from another goroutine, and calls it at once for one that
+// came while nothing listened; with nil, the signals wait for the next f. f must not block.
+func (w *drainWatch) to(f func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onDrain = f
+	if f != nil && w.pending {
+		w.pending = false
+		f()
+	}
+}
+
+// release stops catching drainSignals: from then on Go ignores them again.
+func (w *drainWatch) release() { w.stop() }
 
 // relay catches sigs and calls fn with each, in turn, from another goroutine. The function it
 // returns stops catching them: from then on they have their default effect. With no sigs it

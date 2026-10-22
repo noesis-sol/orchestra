@@ -250,8 +250,8 @@ func configure(ctx context.Context, args []string, e cmdEnv) (cfg options, code 
 	return cfg, dispatch.ExitOK, true
 }
 
-// session is a run's setup, held until it ends: its lock, the worker prompt, the stop signals'
-// watch, its log and the check for a newer release, and what the run settles on as it goes.
+// session is a run's setup, held until it ends: its lock, the worker prompt, the stop and drain
+// signals' watches, its log and the check for a newer release, and what the run settles on as it goes.
 type session struct {
 	cfg     options
 	e       cmdEnv
@@ -260,6 +260,7 @@ type session struct {
 	lock    *project.RunLock
 	prompt  string
 	stops   *stopWatch
+	drains  *drainWatch
 	log     *dispatch.Log
 	// fetched is what the overnight pre-flight's fetch did to Base, "fast-forwarded main to
 	// origin/main (1 commit)" (fetchCheck); "" where it didn't move it
@@ -339,6 +340,8 @@ func openSession(ctx context.Context, cfg options, e cmdEnv) (s *session, code i
 	// From here to the end, closing the log included, a stop signal doesn't end orchestra outright.
 	s.stops = catchStops()
 	s.onClose(func(error) { s.stops.release() })
+	s.drains = catchDrains() // one before the loop drains it as it begins
+	s.onClose(func(error) { s.drains.release() })
 	var err error
 	if s.log, err = dispatch.OpenLogContext(ctx, cfg.LogPath, cfg.Notify, filepath.Base(cfg.Repo)); err != nil {
 		fmt.Fprintln(e.stderr, "orchestra cannot open its log:", err)
@@ -444,8 +447,8 @@ func (s *session) runLoop(ctx context.Context) int {
 	if cfg.Triage {
 		orch.StartTriage()
 	}
-	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, log: s.log, base: base, cancelOrgans: cancelOrgans,
-		filing: s.filing}
+	r := loopRun{orch: orch, cfg: cfg, stops: s.stops, drains: s.drains, log: s.log, base: base,
+		cancelOrgans: cancelOrgans, filing: s.filing}
 	switch {
 	case plain:
 		return runPlain(ctx, r, e.stdout)

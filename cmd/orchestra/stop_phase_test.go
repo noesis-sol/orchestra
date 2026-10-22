@@ -30,8 +30,9 @@ func TestStopPhaseTable(t *testing.T) {
 		{name: "winding, no quitter", phase: winding, finishing: merge, want: winding, pends: true},
 		{name: "winding, something finishing", phase: winding, quit: true, finishing: merge, want: warned,
 			pends: true},
-		{name: "winding, nothing finishing", phase: winding, quit: true, want: winding, quits: true},
-		{name: "warned", phase: warned, quit: true, finishing: merge, want: warned, quits: true},
+		{name: "winding, nothing finishing", phase: winding, quit: true, want: quitting, quits: true},
+		{name: "warned", phase: warned, quit: true, finishing: merge, want: quitting, quits: true},
+		{name: "quitting", phase: quitting, quit: true, finishing: merge, want: quitting, quits: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := quitRigFor(t, &windingLoop{finishing: tc.finishing})

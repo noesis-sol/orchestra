@@ -324,6 +324,10 @@ var errInterrupted = &stopReason{code: ExitInterrupted, kind: stopInterrupted}
 // Interrupted is an EvStop's Detail when Ctrl+C or a signal stopped the run.
 const Interrupted = string(stopInterrupted)
 
+// TerminalFailed is an EvStop's Detail when a terminal failed: the workers', or orchestra's own,
+// under its dashboard.
+const TerminalFailed = string(stopTerminalFailed)
+
 // halt is a reason to stop of the given kind, ending the run with code. Its line is the kind
 // followed by format, which begins with what separates them (": ", " for ").
 func halt(code int, kind stopKind, format string, a ...any) *stopReason {

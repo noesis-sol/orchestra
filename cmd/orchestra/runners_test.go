@@ -38,29 +38,30 @@ func TestAnyEarlyEndOfTheDashboardStopsTheLoop(t *testing.T) {
 	t.Parallel()
 	cancelled := false
 	m, _ := tui.NewDashboard(dispatch.Config{}, func() { cancelled = true }, func(bool) {}, func(string) {}).Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil); why != "with Ctrl+C" || !cancelled {
+	if why := stoppedBy(m.(tui.Dashboard), nil, false, nil).why; why != "with Ctrl+C" || !cancelled {
 		t.Errorf("Ctrl+C: stopped %q, cancelled %v", why, cancelled)
 	}
 
 	ended, err := closedDashboard(t, func(_ *tea.Program, s *tui.ProgramSink) {
 		s.Event(dispatch.Event{Kind: dispatch.EvDone, Text: "READY_EMPTY after 1 tickets"})
 	})
-	if why := stoppedBy(ended, err, false, syscall.SIGTERM); why != "" {
+	if why := stoppedBy(ended, err, loopEnded(ended, false, 0), syscall.SIGTERM).why; why != "" {
 		t.Errorf("the loop's last event: stopped %q, want the loop's own end", why)
 	}
 
 	// A stop signal quits the dashboard the way Quit does.
 	quit, err := closedDashboard(t, func(p *tea.Program, _ *tui.ProgramSink) { p.Quit() })
 	for sig, want := range map[os.Signal]string{syscall.SIGTERM: "by SIGTERM", syscall.SIGHUP: "by SIGHUP", os.Interrupt: "by SIGINT"} {
-		if why := stoppedBy(quit, err, false, sig); why != want {
+		if why := stoppedBy(quit, err, false, sig).why; why != want {
 			t.Errorf("%v while the loop runs: stopped %q, want %q", sig, why, want)
 		}
 	}
-	if why := stoppedBy(quit, err, true, syscall.SIGHUP); why != "" {
+	if why := stoppedBy(quit, err, loopEnded(quit, true, dispatch.ExitOK), syscall.SIGHUP).why; why != "" {
 		t.Errorf("quit after the loop ended: stopped %q", why)
 	}
 
-	if why := stoppedBy(tui.Dashboard{}, errors.New("could not open a new TTY"), false, nil); why != "because the dashboard failed" {
-		t.Errorf("failed dashboard: stopped %q", why)
+	failed := stoppedBy(tui.Dashboard{}, errors.New("could not open a new TTY"), false, nil)
+	if failed.why != "because the dashboard failed (could not open a new TTY)" || failed.code != dispatch.ExitTool {
+		t.Errorf("failed dashboard: stopped %q, exit %d", failed.why, failed.code)
 	}
 }

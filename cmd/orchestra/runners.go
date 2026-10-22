@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -17,12 +18,13 @@ import (
 )
 
 // loopRun is what the two ways of running the loop, plain and under the dashboard, share: the loop
-// and its configuration, the stop signals' watch, the log, the context of the organ phase, and how to
-// cancel the organs' context.
+// and its configuration, the stop and drain signals' watches, the log, the context of the organ
+// phase, and how to cancel the organs' context.
 type loopRun struct {
 	orch         *dispatch.Loop
 	cfg          options
 	stops        *stopWatch
+	drains       *drainWatch
 	log          *dispatch.Log
 	base         context.Context // the run's, without its cancellation
 	cancelOrgans func()
@@ -35,6 +37,13 @@ func (r loopRun) organs(code int, final string, out tui.Printer) bool {
 	return organPhase(r.base, r.orch, r.cfg, r.stops, r.log, code, final, out, r.cancelOrgans)
 }
 
+// drainLoop has each drain signal, and one that came before the loop, ask the loop to wind down. The
+// function it returns stops that, keeping later ones from a loop that has ended.
+func (r loopRun) drainLoop() (stop func()) {
+	r.drains.to(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
+	return func() { r.drains.to(nil) }
+}
+
 // runPlain runs the loop printing plain log lines (with --plain, or when stdout isn't a terminal),
 // then the organ phase. It returns the loop's exit code.
 func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
@@ -43,26 +52,37 @@ func runPlain(ctx context.Context, r loopRun, stdout io.Writer) int {
 	sink := tui.Printer{Out: stdout}
 	// The signal that stops the loop is the first; one while it winds down ends orchestra.
 	r.stops.quitWith(quitter{loop: r.orch, log: r.log, out: sink, exit: os.Exit})
+	took := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
+		took <- s
 		cancelRun(dispatch.InterruptedError(stoppedHow(s)))
 		r.filing.stopBreakdown()
 	})
 	defer r.filing.bind(cancelRun)()
-	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
+	stopDrain := r.drainLoop()
 	r.orch.SetSink(sink)
 	r.orch.SetAnswers(runAnswers{tracker: beads.Tracker{Repo: r.cfg.Repo}, scope: r.cfg.Ticket}) // no talk: plain
 	r.orch.ReportInterrupt = true
-	code := r.filing.result(r.orch.Run(ctx))
+	ran := r.orch.Run(ctx)
+	code := r.filing.result(ran)
 	r.stops.on(nil)
 	stopDrain()
+	// A signal the loop took as it ended by itself, too late to stop it, stops the organ phase instead.
+	select {
+	case s := <-took:
+		if ran != dispatch.ExitInterrupted {
+			r.stops.carry(s)
+		}
+	default:
+	}
 	r.organs(code, r.orch.Final(), sink)
 	return code
 }
 
 // runDashboard runs the loop under the interactive dashboard, then, with the terminal restored,
 // prints the run's summary and the loop's events from where the dashboard left off, and runs the
-// organ phase. It returns the loop's exit code, or ExitInterrupted when the dashboard closed before
-// the loop ended.
+// organ phase. It returns the loop's exit code, or, when the dashboard closed before the loop ended,
+// that of what closed it (see stoppedBy).
 func runDashboard(ctx context.Context, r loopRun, stdin io.Reader, stdout *os.File, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -114,16 +134,14 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	if talksWhenIdle(r.cfg, false) {
 		idle.talks = answers
 	}
-	r.orch.SetAnswers(idle)
-	p = tea.NewProgram(d,
+	openProgram(&p, d, func() { r.orch.SetAnswers(idle) },
 		tui.WithTerminal(stdin, stdout), tea.WithAltScreen(), tea.WithoutSignalHandler())
 	quitBy := make(chan os.Signal, 1)
 	r.stops.on(func(s os.Signal) {
 		quitBy <- s // before the quit, so stoppedBy finds it
 		go p.Quit() // Quit waits for the dashboard to have started; a stop mustn't wait
 	})
-	// the dashboard hears it from the loop
-	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
+	stopDrain := r.drainLoop() // the dashboard hears it from the loop
 	progSink := tui.NewProgramSink(p)
 	codes := make(chan int, 1)
 	ran := make(chan struct{}) // closed once the dashboard has exited and the terminal is restored
@@ -168,6 +186,12 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	default:
 	}
 	stopDrain()
+	code, loopDone := 0, false
+	select {
+	case code = <-codes:
+		loopDone = true
+	default:
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "orchestra:", err)
 	}
@@ -180,12 +204,12 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 	progSink.Handoff(sink, m.Received())
 	// With the terminal restored, a stop signal while the stopped loop winds down can end orchestra.
 	r.stops.quitWith(quitter{loop: r.orch, log: r.log, out: sink, exit: os.Exit})
-	if why := stoppedBy(m, err, len(codes) > 0, sig); why != "" {
+	ended := loopEnded(m, loopDone, code)
+	if stop := stoppedBy(m, err, ended, sig); stop.why != "" {
 		// The loop may be in the middle of a command; log the stop and leave the workers to the user.
 		cancel()
-		msg := dispatch.InterruptLine(why, r.orch.Running())
-		ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted, Text: msg, Time: time.Now()}
-		r.log.Line(ev.Time, msg)
+		ev := stop.event(r.orch.Running())
+		r.log.Line(ev.Time, ev.Text)
 		r.log.Notify(dispatch.Notice(ev))
 		r.log.Record(ev)
 		sink.Event(ev)
@@ -193,12 +217,19 @@ func dashboard(ctx context.Context, cancel func(), r loopRun, started *startedLo
 		// Let the loop and its workers stop before triage closes and the reviewer reads its state.
 		// Run waits for its workers, whose commands stop with it or at their time limits, and names
 		// any not back within a second below the INTERRUPTED line.
-		<-codes
-		stopped := r.organs(dispatch.ExitInterrupted, msg, sink)
+		if !loopDone {
+			<-codes
+		}
+		stopped := r.organs(stop.code, ev.Text, sink)
 		answers.finish(r.stops, stopped, stdout) // closed as the run stopped
-		return dispatch.ExitInterrupted
+		return stop.code
 	}
-	code := <-codes
+	if !loopDone {
+		code = <-codes
+	}
+	if sig != nil || m.Interrupted() { // a stop asked as the loop ended, too late to stop it, stops the organs
+		r.stops.carry(signalOr(sig, os.Interrupt))
+	}
 	stopped := r.organs(code, r.orch.Final(), sink)
 	answers.finish(r.stops, stopped, stdout)
 	return code
@@ -219,22 +250,66 @@ func focusTab(ctx context.Context, log *dispatch.Log, terminal interface {
 	}
 }
 
+// openProgram makes the dashboard's program for m in *p, and only then calls publish, which hands
+// the loop what reaches the program through *p (the answer talks): the loop may be running already
+// (runFiling), and reach it at once.
+func openProgram(p **tea.Program, m tea.Model, publish func(), opts ...tea.ProgramOption) {
+	*p = tea.NewProgram(m, opts...)
+	publish()
+}
+
+// loopEnded reports whether the loop ended the run by itself as the dashboard m closed: m shows its
+// last event, or it returned (loopDone) with code other than the one a stop gives it, or without
+// Ctrl+C in the dashboard having stopped it.
+func loopEnded(m tui.Dashboard, loopDone bool, code int) bool {
+	return m.Final() != nil || loopDone && (code != dispatch.ExitInterrupted || !m.Interrupted())
+}
+
+// earlyStop is what stopped the run as the dashboard closed before the loop ended: why, in the words
+// of its line ("with Ctrl+C"), and the exit code.
+type earlyStop struct {
+	why  string
+	code int
+	err  error // the dashboard's failure, for its line; nil for a stop asked
+}
+
+// event is the line that says the run stopped, naming the workers left running.
+func (s earlyStop) event(running []dispatch.Status) dispatch.Event {
+	ev := dispatch.Event{Kind: dispatch.EvStop, Detail: dispatch.Interrupted,
+		Text: dispatch.InterruptLine(s.why, running), Time: time.Now()}
+	if s.err != nil {
+		ev.Detail = dispatch.TerminalFailed
+		ev.Text = dispatch.TerminalFailed + ": " + strings.TrimPrefix(ev.Text, dispatch.Interrupted+": ")
+	}
+	return ev
+}
+
 // stoppedBy says what stopped the run when the dashboard m has closed before the loop ended by
 // itself: Ctrl+C in the dashboard, a signal (sig, nil if none came) that closed it, or the
-// dashboard failing (err is what its program returned) while the loop was still running. It is ""
-// when the loop ended the run.
-func stoppedBy(m tui.Dashboard, err error, loopDone bool, sig os.Signal) string {
+// dashboard failing (err is what its program returned) while the loop was still running. Its why
+// is "" when the loop ended the run (ended), whatever came as it did. A failed dashboard ends the run
+// as a terminal failure, exit code 4, not 130, which is a stop asked for.
+func stoppedBy(m tui.Dashboard, err error, ended bool, sig os.Signal) earlyStop {
 	switch {
+	case ended:
+		return earlyStop{code: dispatch.ExitOK}
 	case m.Interrupted():
-		return "with Ctrl+C"
-	case m.Final() != nil || loopDone:
-		return ""
+		return earlyStop{why: "with Ctrl+C", code: dispatch.ExitInterrupted}
 	case sig != nil:
-		return "by " + signalName(sig)
+		return earlyStop{why: "by " + signalName(sig), code: dispatch.ExitInterrupted}
 	case err != nil:
-		return "because the dashboard failed"
+		return earlyStop{why: "because the dashboard failed (" + dispatch.FirstLine(err.Error()) + ")",
+			code: dispatch.ExitTool, err: err}
 	default:
 		// The dashboard quits by itself only on the loop's last event, so this shouldn't happen.
-		return "because the dashboard closed"
+		return earlyStop{why: "because the dashboard closed", code: dispatch.ExitInterrupted}
 	}
+}
+
+// signalOr is s, or or where s is nil.
+func signalOr(s, or os.Signal) os.Signal {
+	if s != nil {
+		return s
+	}
+	return or
 }

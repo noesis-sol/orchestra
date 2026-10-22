@@ -62,6 +62,22 @@ All notable changes to orchestra are documented here. The format follows
   `environment_hold`, an entry of `requires` and `templates` too, where an
   older `init` dropped a newer orchestra's. `"concurrent": 0` is out of
   range, as `--concurrent 0` is, rather than one at a time.
+- SIGUSR1 sent before the loop starts, during an overnight run's
+  pre-flight, the start question or a feature's or spec's talk, winds the
+  run down as soon as the loop starts: it was ignored, and the run then
+  worked through the backlog.
+- A dashboard that fails while the loop runs ends the run with exit code 4
+  and `TERMINAL_FAILED: stopped because the dashboard failed (<why>)`, not
+  130, which is kept for Ctrl+C, SIGTERM and SIGHUP.
+- Ctrl+C pressed, or a stop signal sent, as the loop ends by itself no
+  longer adds an `INTERRUPTED` line after the loop's end nor turns its exit
+  code into 130: the loop's end decides, and the stop skips triage and the
+  run report, which ran in full before.
+- A data race between the dashboard opening and the answer talk of a loop
+  already running (a spec's breakdown going on as the loop starts) is gone.
+- A stop signal while quitting at once hangs saving the workers left (git,
+  30 seconds a worker) exits at once: quitting held the stop signals' lock
+  meanwhile, so further Ctrl+C presses waited on it.
 - `orchestra init` leaves out a suite the scout gives with a newline or
   another control character in its command, and says so beside what the
   scout found: its checklist showed such a command on one line, so

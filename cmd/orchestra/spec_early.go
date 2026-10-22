@@ -339,7 +339,7 @@ func runFiling(ctx context.Context, r loopRun, say tui.Printer, stdin io.Reader,
 		cancel(dispatch.InterruptedError(stoppedHow(s)))
 		f.stopBreakdown()
 	})
-	stopDrain := watchDrain(func() { r.orch.Drain("by " + signalName(drainSignals[0])) })
+	stopDrain := r.drainLoop()
 	codes := make(chan int, 1)
 	started := &startedLoop{codes: codes, held: held, began: time.Now()}
 	go func() {
