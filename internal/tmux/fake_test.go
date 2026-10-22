@@ -32,6 +32,7 @@ func newFakeTmux(t *testing.T) *fakeTmux {
 	dir := t.TempDir()
 	faketool.Write(t, dir, "tmux", `d='`+dir+`'
 { for a; do printf '%s\0' "$a"; done; printf '\036\0'; } >> "$d/calls"
+[ "$1" = -u ] && shift
 [ "$1" = -L ] && shift 2
 [ "$1" = load-buffer ] && cat > "$d/buffer"
 [ -f "$d/before-$1" ] && . "$d/before-$1"
@@ -84,8 +85,21 @@ func (f *fakeTmux) serve() {
 	f.t.Cleanup(func() { _ = l.Close() })
 }
 
-// calls are the calls tmux got, each its arguments.
+// calls are the calls tmux got, each its arguments after the -u every call starts with (argv).
 func (f *fakeTmux) calls() [][]string {
+	f.t.Helper()
+	var calls [][]string
+	for _, c := range f.argv() {
+		if len(c) > 0 && c[0] == "-u" {
+			c = c[1:]
+		}
+		calls = append(calls, c)
+	}
+	return calls
+}
+
+// argv are the calls tmux got, each all its arguments.
+func (f *fakeTmux) argv() [][]string {
 	f.t.Helper()
 	b, err := os.ReadFile(filepath.Join(f.dir, "calls"))
 	if errors.Is(err, os.ErrNotExist) {

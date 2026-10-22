@@ -90,6 +90,10 @@ func (t Terminal) runWithInput(ctx context.Context, limit time.Duration, op, tar
 	if t.Socket != "" {
 		argv = append([]string{"-L", t.Socket}, argv...)
 	}
+	// -u: outside tmux, a client counts as UTF-8 only where $LC_ALL, $LC_CTYPE or $LANG says so, and the
+	// server writes every other character of what it lists as '_', a repository's path among them. Under
+	// cron or launchd none may be set.
+	argv = append([]string{"-u"}, argv...)
 	out, err := command.OutputWithInput(ctx, limit, "", nil, input, "tmux", argv...)
 	if err == nil {
 		return out, nil

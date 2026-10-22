@@ -16,6 +16,7 @@ func TestConfigTmuxWorkspaceWithColonIsRenamed(t *testing.T) {
 		dir := t.TempDir()
 		faketool.Write(t, dir, "tmux", `#!/bin/sh
 [ "$1" = -V ] && { echo '`+version+`'; exit 0; }
+[ "$1" = -u ] && shift
 [ "$1" = display-message ] && { echo 'foo:bar'; exit 0; }
 exit 1
 `)

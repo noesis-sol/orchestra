@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- With tmux, a repository at a non-ASCII path, such as `~/Código/shop`, works
+  where no locale says UTF-8, as under the cron or launchd recipe. tmux then
+  answered every non-ASCII character as `_`, so no worker's pane or hook
+  records were found and each worker read as gone as it started, and the next
+  run failed to start its session, which tmux had already. orchestra now runs
+  tmux in UTF-8 mode (`tmux -u`) whatever the locale.
 - A worker waiting on a permission prompt reads as blocked when another of
   its tool calls, run beside it and allowed, ends at the same moment. The
   worker's hooks kept one prompt record per agent, which a tool's end read,

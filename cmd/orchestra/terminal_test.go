@@ -54,7 +54,7 @@ func TestPickTerminal(t *testing.T) {
 func fakeTmux(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	faketool.Write(t, dir, "tmux", "#!/bin/sh\n"+
+	faketool.Write(t, dir, "tmux", "#!/bin/sh\n[ \"$1\" = -u ] && shift\n"+
 		`[ "$1" = display-message ] && { echo work; exit 0; }`+"\necho 'tmux: not in this test' >&2\nexit 1\n")
 	onPath(t, dir)
 }
