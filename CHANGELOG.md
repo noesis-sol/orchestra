@@ -77,6 +77,14 @@ All notable changes to orchestra are documented here. The format follows
   day, the reviewer is given both ends with their dates and UTC offsets, and
   the log stamps its lines with their offset, so the hour a clock change
   repeats reads in order.
+- Closing a worker's tab stops the commands its Claude Code left running
+  there too. Claude Code runs each Bash command in a process group of its
+  own, with no terminal, which closing the tab doesn't reach: should its
+  shutdown not finish, a worker's check or dev server lived on, using cores
+  and writing into a worktree orchestra reuses or removes. orchestra notes
+  the process groups below the tab's processes before it closes the tab,
+  gives Claude Code five seconds to stop them itself, then sends SIGTERM to
+  those still running, and SIGKILL three seconds later.
 - The scout asks claude for its `--help` in a private directory of its own,
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where

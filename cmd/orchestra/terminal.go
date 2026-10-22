@@ -13,6 +13,7 @@ import (
 	"github.com/noesis-sol/orchestra/internal/herdr"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 	"github.com/noesis-sol/orchestra/internal/project"
+	"github.com/noesis-sol/orchestra/internal/reap"
 	"github.com/noesis-sol/orchestra/internal/tmux"
 )
 
@@ -339,6 +340,7 @@ type workerTerminal interface {
 	dispatch.Namer
 	dispatch.Agents
 	dispatch.PaneProcesses
+	TabProcesses(ctx context.Context, tab string) ([]int, error) // closing a tab stops what they leave (reapingTabs)
 	interviewPanes
 	FocusTab(ctx context.Context, tab string) error
 	SplitPaneAside(ctx context.Context, pane, cwd string) (string, error) // the answer talk's, opened by itself
@@ -348,6 +350,18 @@ type workerTerminal interface {
 // terminalOf is c's terminal.
 func terminalOf(c options) workerTerminal {
 	return terminalNamed(c.Terminal).open(c)
+}
+
+// reapingTabs are the terminal's tabs as the run loop opens and closes them: closing a worker's tab
+// stops the commands its agent left running there too (reap.Close), as Claude Code runs each in a
+// process group of its own, which closing the tab doesn't reach.
+type reapingTabs struct {
+	workerTerminal
+}
+
+// CloseTab closes the tab, then stops what its processes left running.
+func (t reapingTabs) CloseTab(ctx context.Context, tab string) error {
+	return reap.Close(ctx, t.workerTerminal, tab)
 }
 
 // tmuxSession is tmux for a run's workers: the session their windows open in is started, detached,

@@ -131,6 +131,9 @@ the orchestra skill's opening define both terms; use them consistently.
   installs of those missing one at a time, for a run's start, `orchestra init` and `orchestra requires`.
 - `internal/load`: the machine's load for the dashboard's load line: each worker's process-tree memory from one `ps`
   listing, the kernel's memory pressure, swapping and CPU load (macOS and Linux), and the thresholds that colour it.
+- `internal/reap`: closing a worker's tab (`reap.Close`, through `reapingTabs` in `cmd/orchestra`): the process groups
+  below its processes (each terminal's `TabProcesses`) are noted first, and those Claude Code's shutdown leaves are
+  stopped.
 - `internal/organ`: the organs, one file each, with its prompt in `prompts/`. `internal/project`: `.orchestra/`
   (settings, worker prompt, init, per-ticket files). `internal/tui`: the Bubble Tea dashboard and init's screen.
 

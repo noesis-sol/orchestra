@@ -716,3 +716,49 @@ func shellWaits(ctx context.Context, pane string) error {
 		}
 	}
 }
+
+// TabProcesses returns the processes at the root of what each of the tab's panes runs (see
+// PaneProcesses).
+func (t Terminal) TabProcesses(ctx context.Context, tab string) ([]int, error) {
+	out, err := run(ctx, command.ReadLimit, "tab", "get", tab)
+	if err != nil {
+		return nil, err
+	}
+	var got struct {
+		Result struct {
+			Tab struct {
+				Workspace string `json:"workspace_id"`
+			} `json:"tab"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &got) != nil || got.Result.Tab.Workspace == "" {
+		return nil, fmt.Errorf("unexpected 'herdr tab get' output: %s", out)
+	}
+	out, err = run(ctx, command.ReadLimit, "pane", "list", "--workspace", got.Result.Tab.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	var l struct {
+		Result struct {
+			Panes []struct {
+				Pane string `json:"pane_id"`
+				Tab  string `json:"tab_id"`
+			} `json:"panes"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(out), &l) != nil {
+		return nil, fmt.Errorf("unexpected 'herdr pane list' output: %s", out)
+	}
+	var pids []int
+	for _, p := range l.Result.Panes {
+		if p.Tab != tab {
+			continue
+		}
+		ps, err := t.PaneProcesses(ctx, p.Pane)
+		if err != nil {
+			return nil, err
+		}
+		pids = append(pids, ps...)
+	}
+	return pids, nil
+}

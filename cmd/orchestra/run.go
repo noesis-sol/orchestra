@@ -529,7 +529,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
-		Tabs:      terminal,
+		Tabs:      reapingTabs{terminal},
 		Starter:   terminal,
 		Namer:     terminal,
 		Agents:    terminal,
