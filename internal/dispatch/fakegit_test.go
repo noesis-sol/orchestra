@@ -180,10 +180,14 @@ func (g *fakeGit) Changes(ctx context.Context, repo string, paths ...string) (ma
 	return nil, nil
 }
 
-// CurrentBranch is the branch the worktree is on, "" when detached; the main checkout is on the base.
+// CurrentBranch is the branch the worktree is on, "" when detached, as it is while a rebase is stopped
+// in it; the main checkout is on the base.
 func (g *fakeGit) CurrentBranch(ctx context.Context, repo string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.rebasing[repo] {
+		return "", nil
+	}
 	if br, ok := g.worktrees[repo]; ok {
 		return br, nil
 	}

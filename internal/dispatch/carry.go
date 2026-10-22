@@ -179,6 +179,7 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 			o.dropMerged(context.WithoutCancel(ctx), id, commit, *w)
 			return carryDrop
 		}
+		o.abortLeftRebase(context.WithoutCancel(ctx), id, w.wt)
 	}
 	if q := OpenQuestion(t); q != nil {
 		w.question, w.title, w.left, w.gone = q.ID, q.Title, "", false
@@ -245,6 +246,29 @@ func (o *Loop) dropMerged(ctx context.Context, id, commit string, w workerSpot) 
 		return
 	}
 	o.info("%s; %s", dropped, o.closeWorkerTab(ctx, id, w.tab))
+}
+
+// abortLeftRebase aborts a rebase in progress in wt, the worktree of closed ticket id carried over from
+// the last run: a run stopped while it merged id with no time to undo it (SIGKILL, a power cut) leaves
+// it so, on a detached HEAD, and the merge would set id aside as off its branch (see offBranch). With the
+// rebase aborted, the branch is as its worker left it, and id merges again as any closed in its tab. A
+// rebase git can't abort is left as it is, saying so; where git can't tell, nothing is done.
+func (o *Loop) abortLeftRebase(ctx context.Context, id, wt string) {
+	if rebasing, err := o.merger.RebaseInProgress(ctx, wt); err != nil || !rebasing {
+		o.log.Raw("", err)
+		return
+	}
+	left := fmt.Sprintf("  %s, carried over from the last run, had a rebase in progress in %s, "+
+		"left by a run stopped while it merged %s", id, wt, id)
+	o.repoMu.Lock()
+	err := o.abortRebase(ctx, wt)
+	o.repoMu.Unlock()
+	if err != nil {
+		o.info("%s, which git could not abort (git output is in %s): resolve and continue it there, "+
+			"or run git rebase --abort", left, o.cfg.LogPath)
+		return
+	}
+	o.info("%s: aborted, so %s merges again", left, id)
 }
 
 // unknownRereads is how many more times earlierKnownState reads an earlier worker Herdr shows as

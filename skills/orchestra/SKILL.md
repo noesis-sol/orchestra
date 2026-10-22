@@ -578,6 +578,9 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   stop's row above says: its worker is still in its tab, and merges should it close the ticket.
 - `<id>, carried over from the last run, is dropped: …`: its worktree is gone, its branch was merged
   by hand, or bd can't show the ticket. Nothing to do unless the line surprises you.
+- `<id>, carried over from the last run, had a rebase in progress in <worktree>, left by a run stopped
+  while it merged <id>`: a run killed mid-merge (SIGKILL, a power cut) left the rebase; `aborted, so <id>
+  merges again` needs nothing. If git could not abort it, finish or abort it there (`git rebase --abort`).
 - `WORKER_GONE: <id> is in progress after …, but its worker is gone from tab <tab>`: a carried-over
   ticket's worker has gone (its tab closed, Herdr, tmux or cmux restarted) with no session to resume; said once,
   with a note on the ticket. Look at its worktree with the user: reopen the ticket

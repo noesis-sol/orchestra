@@ -97,6 +97,10 @@ All notable changes to orchestra are documented here. The format follows
   the process groups below the tab's processes before it closes the tab,
   gives Claude Code five seconds to stop them itself, then sends SIGTERM to
   those still running, and SIGKILL three seconds later.
+- A ticket carried over from the last run, closed, whose worktree a run
+  killed while it merged the ticket (SIGKILL, a power cut) left mid-rebase,
+  has the rebase aborted at the start of the next run and merges again,
+  rather than being set aside with `OFF_BRANCH` on a detached HEAD.
 - The scout asks claude for its `--help` in a private directory of its own,
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where
