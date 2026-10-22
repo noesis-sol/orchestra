@@ -9,9 +9,9 @@ import (
 	"github.com/noesis-sol/orchestra/internal/project"
 )
 
-// A run in the repository doesn't hold orchestra update off: nothing runs the binary during a run, and the
-// new one is renamed into place, so the run keeps the build it started with. Run from the repository, as
-// orchestra would be, it installs the release.
+// A run in the repository doesn't hold orchestra update off: the new binary is renamed into place, and
+// the run's workers' hooks run the run's own copy of its build, so the run keeps the build it started
+// with. Run from the repository, as orchestra would be, it installs the release.
 func TestUpdateGoesOnDuringARun(t *testing.T) {
 	t.Parallel()
 	repo, _ := gitRepo(t)

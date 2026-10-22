@@ -21,6 +21,12 @@ All notable changes to orchestra are documented here. The format follows
   a rerun, which files only what is missing, left the issue waiting for nothing
   and it could run before its prerequisite. An answer whose parents and blocks
   links together make a cycle is refused before anything is filed.
+- `orchestra update` during a run leaves the run's workers' hooks on the
+  build the run started with: each run's start puts its own copy of
+  orchestra in `.orchestra/run/orchestra-hooks` (a hard link, or a copy on
+  another file system), and the workers' hooks run that. They ran orchestra
+  from its own path, which the update replaces, so from then on they wrote
+  records for the old run in the new release's format.
 
 ## [0.9.4] - 2026-10-22
 

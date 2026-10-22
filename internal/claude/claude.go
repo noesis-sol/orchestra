@@ -120,6 +120,7 @@ func newerFormat(b []byte) int {
 type Reporter struct {
 	newer *newerLog
 	env   map[string]string // what the worker's settings give its environment beside workerEnv (see WithEnv)
+	bin   string            // the binary the workers' hooks run (see WithBinary); "" for the one running
 }
 
 // WithEnv is r with the workers' settings giving their environment env too, as their share of the
@@ -172,14 +173,14 @@ func (r Reporter) sayNewer(worktree, name string, b []byte) {
 // ReportArgs writes the reporting hooks to .orchestra/run/hooks.json in worktree and returns the
 // arguments that load them. An earlier worker's records are removed, so nothing stale is read.
 func (r Reporter) ReportArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, "", r.env, allRecords...)
+	return reportArgs(worktree, "", r.bin, r.env, allRecords...)
 }
 
 // ReportArgsIn is ReportArgs for a Claude session with no worktree of its own, such as the
 // environment probe's worker (project.ProbeRun) or the feature interview (project.InterviewRun): its
 // hooks write to the folder of that name in dir's .orchestra/run/, apart from a ticket's records.
 func (r Reporter) ReportArgsIn(dir, folder string) ([]string, error) {
-	return reportArgs(dir, folder, r.env, allRecords...)
+	return reportArgs(dir, folder, r.bin, r.env, allRecords...)
 }
 
 // allRecords are the files the hooks write, all of them an earlier session's for a new one.
@@ -192,15 +193,15 @@ var allRecords = []string{activityName, turnName, editsName, sessionName, proces
 // Its other records are removed: the subagents its process ran ended with it, and the resumed session
 // runs in a process of its own.
 func (r Reporter) ResumeArgs(worktree string) ([]string, error) {
-	return reportArgs(worktree, "", r.env, activityName, turnName, processName, eventsName, noticeName)
+	return reportArgs(worktree, "", r.bin, r.env, activityName, turnName, processName, eventsName, noticeName)
 }
 
-// reportArgs is ReportArgsIn, its settings giving the worker env too, removing the earlier session's
-// records named stale; folder "" is
+// reportArgs is ReportArgsIn, its hooks running bin ("" for the binary running) and its settings
+// giving the worker env too, removing the earlier session's records named stale; folder "" is
 // dir's .orchestra/run/ itself. A file or a symlink in place of the folder, wherever it points, is
 // replaced by it, as WriteRun replaces a symlink in place of a file: the records are written through
 // no link.
-func reportArgs(dir, folder string, env map[string]string, stale ...string) ([]string, error) {
+func reportArgs(dir, folder, bin string, env map[string]string, stale ...string) ([]string, error) {
 	root, err := project.OpenRun(dir)
 	if err != nil {
 		return nil, err
@@ -226,9 +227,10 @@ func reportArgs(dir, folder string, env map[string]string, stale ...string) ([]s
 			return nil, err
 		}
 	}
-	bin, err := os.Executable()
-	if err != nil {
-		return nil, fmt.Errorf("finding orchestra's binary for the worker's hooks: %w", err)
+	if bin == "" {
+		if bin, err = os.Executable(); err != nil {
+			return nil, fmt.Errorf("finding orchestra's binary for the worker's hooks: %w", err)
+		}
 	}
 	at := func(name string) string { return filepath.Join(dir, rel(name)) }
 	b, err := json.MarshalIndent(hookSettings(bin, at(""), env), "", "  ")
@@ -261,9 +263,9 @@ func askedRecords(root *os.Root, folder string) ([]string, error) {
 
 // hookSettings is the settings that have the worker's hooks write their records to the folder records
 // (activityName and the other names say what each holds), each JSON one in recordFormat, and that
-// carry workerEnv and env. Each event's hook is bin, orchestra's binary that launches the worker, run as 'bin
-// hook <event> <records> <process>' (Hook), process being the shell's $PPID, the Claude Code that runs
-// the hook, and keeps to these rules:
+// carry workerEnv and env. Each event's hook is bin, the binary of the orchestra that launches the
+// worker (a run's own, RunBinary), run as 'bin hook <event> <records> <process>' (Hook), process being
+// the shell's $PPID, the Claude Code that runs the hook, and keeps to these rules:
 //   - A record replaced is written to a temporary file and moved over it, so a reader never sees
 //     half of one.
 //   - It exits 0, ignoring its errors: a reporting hook must never change what the worker does, and

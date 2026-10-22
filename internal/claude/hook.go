@@ -15,7 +15,8 @@ import (
 	"github.com/noesis-sol/orchestra/internal/agentio"
 )
 
-// The worker's hooks are orchestra's own binary, the one that launched the worker, run as 'orchestra hook
+// The worker's hooks are orchestra's own binary, the one that launched the worker (a run's copy of it,
+// RunBinary, which an update leaves as it is), run as 'orchestra hook
 // <event> <folder>' (hookSettings): it reads the hook's input and writes the records of the folder
 // (activityName and the other names say what each holds) from hookInput, the type their readers read.
 // Like hashicorp/go-plugin's plugins, it serves as the hook only with hookCookie set to 1, which the

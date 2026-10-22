@@ -516,6 +516,12 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 	cfg.Predict = organsOff == "" // the predictor goes with footprints, which the loop checks
 	tracker, terminal, repo := beads.Tracker{Repo: cfg.Repo, ExcludeTypes: cfg.ExcludeTypes}, terminalOf(*cfg), git.Git{}
 	cfg.PromptFile = cfg.WorkerPrompt // read again where the run's start fast-forwards Base over a change to it
+	reporter := claude.NewReporter(func(text string) { log.Line(time.Now(), text) })
+	if bin, err := claude.RunBinary(cfg.Repo); err != nil {
+		log.Line(time.Now(), "workers' hooks run orchestra from its own path, which an update replaces: "+err.Error())
+	} else {
+		reporter = reporter.WithBinary(bin)
+	}
 	orch := dispatch.New(cfg.Config, log, prompt, dispatch.Deps{
 		Tickets:   tracker,
 		Notes:     tracker,
@@ -524,7 +530,7 @@ func newLoop(organCtx context.Context, cfg *options, log *dispatch.Log, prompt s
 		Namer:     terminal,
 		Agents:    terminal,
 		Processes: terminal,
-		Reporter:  claude.NewReporter(func(text string) { log.Line(time.Now(), text) }),
+		Reporter:  reporter,
 		Help:      claude.CLI{Bin: "claude"},
 		Checkout:  repo,
 		Worktrees: repo,

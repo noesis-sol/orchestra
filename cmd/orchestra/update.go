@@ -37,9 +37,10 @@ func runUpdateHere(_ context.Context, args []string, e cmdEnv, stop stopCatch) i
 // --version, so that Install removes its temporary file as it fails, rather than the signal ending
 // orchestra with the file left beside exe.
 //
-// A run going doesn't hold it off: nothing runs the binary during a run (workers' hooks are shell, the
-// organs are claude), and Install renames the new one over exe, so a run keeps the build it started
-// with and the next starts the new one.
+// A run going doesn't hold it off: Install renames the new binary over exe, which leaves the run's
+// process on the build it started with, and its workers' hooks run the run's own copy of that build
+// (claude.RunBinary, in .orchestra/run/), not exe, so they keep writing records for the run's readers.
+// The organs are claude. The next run starts the new build, and its workers' hooks run it.
 func runUpdate(stop stopCatch, args []string, current, exe string, u update.Updater,
 	stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
@@ -50,7 +51,7 @@ func runUpdate(stop stopCatch, args []string, current, exe string, u update.Upda
 		fmt.Fprint(fs.Output(), usageLines("Usage: ", "update", updateSynopsis)+"\n"+
 			"Replace this orchestra with the latest GitHub Release's binary, its SHA-256 checked against the\n"+
 			"release's checksums.txt. A build from a clone is replaced only with --force. A run going\n"+
-			"keeps the build it started with; the next run starts the new one.\n\n")
+			"keeps the build it started with, its workers' hooks too; the next run starts the new one.\n\n")
 		printFlags(fs)
 		fmt.Fprintf(fs.Output(), "\nExit codes: 0 updated or nothing to do (--check: none newer), "+
 			"1 --check: a newer release is out,\n2 refused (flags, a build from a clone, "+

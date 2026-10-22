@@ -34,7 +34,7 @@ sudo install -m 755 /tmp/orchestra "$(command -v orchestra)"
 
 ## Updating
 
-`orchestra update` installs the latest release for your platform after verifying its signed checksums; without a valid signature it installs nothing. `--check` only says whether one is out (exit 1 if so, 0 if not). Where the folder is root's, run `sudo orchestra update`: orchestra never calls `sudo`. A build from a clone is replaced only with `--force`. A run going keeps its build; the next starts the new one.
+`orchestra update` installs the latest release for your platform after verifying its signed checksums; without a valid signature it installs nothing. `--check` only says whether one is out (exit 1 if so, 0 if not). Where the folder is root's, run `sudo orchestra update`: orchestra never calls `sudo`. A build from a clone is replaced only with `--force`. A run going keeps the build it started with, and so do its workers' hooks, which run the run's own copy of it in `.orchestra/run/orchestra-hooks`; the next run starts the new one.
 
 To check a release archive's build provenance with the [GitHub CLI](https://cli.github.com/):
 
