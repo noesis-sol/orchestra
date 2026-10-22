@@ -128,6 +128,18 @@ func FullScript(suites []Suite, fastEmpty bool) string {
 	return runnerScript(FullRunner, fullPurpose, suites)
 }
 
+// FastChecksNothing reports whether FastRunner checks nothing once init is done, for FullScript's
+// fastEmpty: init writes it from fast, and fast has no suite it lists. A runner kept, the one there
+// where fast is nil or where init keeps one that differs from fast's, is the project's and counts
+// as checking something, so that check-full.sh runs it rather than exit 0.
+func FastChecksNothing(fast *[]Suite, kept bool) bool {
+	if fast == nil || kept {
+		return false
+	}
+	listed, _ := WithoutRunners(*fast)
+	return len(listed) == 0
+}
+
 // RunsRunner reports whether a suite's command runs FastRunner or FullRunner anywhere in it: as a
 // word ("bash scripts/check-fast.sh", "make lint && ./scripts/check-full.sh") or at the end of a path
 // ("$PWD/scripts/check-fast.sh", "/home/me/repo/scripts/check-fast.sh"). A runner with such a suite
@@ -305,10 +317,6 @@ type Runner struct {
 // that checks nothing where there is none, and nothing where there is one.
 func PlanRunners(repo string, c Choice) ([]Runner, error) {
 	fastEmpty := false
-	if c.Fast != nil {
-		kept, _ := WithoutRunners(*c.Fast)
-		fastEmpty = len(kept) == 0
-	}
 	plans := []struct {
 		path    string
 		suites  *[]Suite
@@ -336,6 +344,9 @@ func PlanRunners(repo string, c Choice) ([]Runner, error) {
 			_, r.Left = WithoutRunners(suites)
 		}
 		r.Differs = r.Exists && !bytes.Equal(old, []byte(r.Script))
+		if p.path == FastRunner {
+			fastEmpty = FastChecksNothing(c.Fast, r.Differs && !r.Replace)
+		}
 		runners = append(runners, r)
 	}
 	return runners, nil

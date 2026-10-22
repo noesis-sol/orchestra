@@ -14,6 +14,10 @@ All notable changes to orchestra are documented here. The format follows
   `npm test # see CONTRIBUTING` could hide a second line the runner it
   wrote ran on every merge. A targeted command holding one is dropped from
   the worker prompt.
+- `orchestra init` no longer writes `scripts/check-full.sh` as `exit 0`
+  beside a `scripts/check-fast.sh` it keeps: with tests created from scratch
+  and the project's own check-fast.sh kept, check-full.sh runs it, so the
+  end-of-run full check checks what the merge check does.
 - A worker Herdr loses sight of for a moment is no longer taken for gone by
   the paths that follow it outside its settle loop: an asked ticket's worker
   carrying on after its answer no longer has its session resumed beside it,
