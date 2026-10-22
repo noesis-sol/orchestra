@@ -8,6 +8,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worktree whose only uncommitted work is new files, never added, reads
+  as dirty where git is set to hide them (`status.showUntrackedFiles=no`): a
+  ticket closed with such a file left out of its commit is set aside with
+  uncommitted changes rather than merged or cleaned up without it, and its
+  worktree isn't removed with the file in it, as `git worktree remove`'s own
+  check did. orchestra reads every git status one way, each new file listed
+  with its path as it is, and runs git without the `GIT_DIR`, `GIT_WORK_TREE`
+  and `GIT_INDEX_FILE` it would inherit when run from a git hook, and with
+  `GIT_TERMINAL_PROMPT=0` for the hooks a rebase, merge or worktree add runs.
 - With tmux, a repository at a non-ASCII path, such as `~/Código/shop`, works
   where no locale says UTF-8, as under the cron or launchd recipe. tmux then
   answered every non-ASCII character as `_`, so no worker's pane or hook

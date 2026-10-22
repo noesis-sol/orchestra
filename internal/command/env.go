@@ -72,8 +72,24 @@ func LookPath(ctx context.Context, name string) (string, error) {
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
+// unset returns env without its entries that are a name alone, and without each variable such an
+// entry names that an entry before it sets: so NAME leaves out NAME, and NAME=value after it sets it
+// again.
+func unset(env []string) []string {
+	kept := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.Contains(kv, "=") {
+			kept = append(kept, kv)
+			continue
+		}
+		kept = slices.DeleteFunc(kept, func(e string) bool { k, _, _ := strings.Cut(e, "="); return k == kv })
+	}
+	return kept
+}
+
 // newCmd is exec.CommandContext with the environment of the commands run with ctx (Environ), env
-// added to it, and name looked up in its PATH (LookPath).
+// added to it, and name looked up in its PATH (LookPath). An entry of env that is a name alone, with
+// no =, leaves that variable out of the environment (see unset).
 func newCmd(ctx context.Context, env []string, name string, args []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if _, ok := lookupAdded(ctx, "PATH"); ok {
@@ -84,7 +100,7 @@ func newCmd(ctx context.Context, env []string, name string, args []string) *exec
 		}
 	}
 	if len(added(ctx)) > 0 || env != nil {
-		cmd.Env = append(Environ(ctx), env...)
+		cmd.Env = unset(append(Environ(ctx), env...))
 	} // else nil: exec gives the command orchestra's environment, with PWD set to its Dir
 	return cmd
 }

@@ -23,7 +23,11 @@ func TestParseStatusRenames(t *testing.T) {
 		{"modified after a rename", "RM new.go\x00old.go\x00",
 			map[string]string{"new.go": "RM"}},
 	} {
-		if got := parseStatus(tc.out); !maps.Equal(got, tc.want) {
+		got := map[string]string{}
+		for _, c := range parseStatus(tc.out) {
+			got[c.path] = c.code
+		}
+		if !maps.Equal(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
 	}

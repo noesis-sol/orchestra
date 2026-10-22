@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,13 +25,22 @@ import (
 type Git struct{}
 
 // readGit runs a git command that changes nothing, in dir ("" for the working directory), within
-// command.ReadLimit, and returns its output. It takes no optional locks (GIT_OPTIONAL_LOCKS=0): git
-// would otherwise refresh a stale index under .git/index.lock, and anything writing to the repository
-// meanwhile, such as the maintainer's own git or a worker committing on the base, fails on that lock.
-// git diff refreshes the index regardless, so a diff against the work tree also passes noIndexRefresh.
+// command.ReadLimit, and returns its output, in gitEnv. It takes no optional locks
+// (GIT_OPTIONAL_LOCKS=0): git would otherwise refresh a stale index under .git/index.lock, and anything
+// writing to the repository meanwhile, such as the maintainer's own git or a worker committing on the
+// base, fails on that lock. git diff refreshes the index regardless, so a diff against the work tree
+// also passes noIndexRefresh.
 func readGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return command.OutputWithEnv(ctx, command.ReadLimit, dir, []string{"GIT_OPTIONAL_LOCKS=0"}, "git", args...)
+	return command.OutputWithEnv(ctx, command.ReadLimit, dir, slices.Concat(gitEnv, []string{"GIT_OPTIONAL_LOCKS=0"}),
+		"git", args...)
 }
+
+// gitEnv is what every git orchestra runs has in its environment, whatever orchestra's own holds: no
+// prompt for credentials (GIT_TERMINAL_PROMPT=0), which a rebase's, merge's or worktree add's hooks,
+// such as git-lfs's, could otherwise ask for; and none of GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE,
+// which orchestra run from a git hook, or from a shell that set them, would otherwise pass on, and
+// with them point git at another repository, work tree or index than the folder it is run in.
+var gitEnv = []string{"GIT_TERMINAL_PROMPT=0", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}
 
 // answer is what a git command that answers yes or no by its exit status says, given its error:
 // yes on exit 0, no on exit 1, and otherwise the error, git having failed to answer (a time limit, a
@@ -51,35 +61,68 @@ func answer(err error) (bool, error) {
 const noIndexRefresh = "diff.autoRefreshIndex=false"
 
 // writeGit runs a git command that changes the repository, in dir ("" for the working directory),
-// within command.WriteLimit, and returns its output.
+// within command.WriteLimit, and returns its output, in gitEnv.
 func writeGit(ctx context.Context, dir string, args ...string) (string, error) {
-	return command.Output(ctx, command.WriteLimit, dir, "git", args...)
+	return command.OutputWithEnv(ctx, command.WriteLimit, dir, gitEnv, "git", args...)
+}
+
+// change is a file git status lists: its path, from the repository's top, and its two-letter code
+// ("M ", "??", …).
+type change struct {
+	code, path string
+}
+
+// status is git status in dir ("" for the working directory), under pathspecs (relative to dir) when
+// any are given, ignored files included when ignored is: the branch checked out, named as
+// branchOfStatus reads it ("" on a detached HEAD), and each file changed, staged or untracked. Every
+// status orchestra reads is this one. It lists each untracked file rather than its folder, whatever
+// status.showUntrackedFiles says: with no, git leaves new files out, and a worktree holding only those
+// would read as clean. -z leaves the paths as they are, whatever core.quotePath says. It returns
+// git's error when git can't tell.
+func status(ctx context.Context, dir string, ignored bool, pathspecs ...string) (string, []change, error) {
+	// --no-ahead-behind: the branch line says nothing of its upstream that git has to count.
+	args := []string{"-C", dir, "status", "--porcelain", "-z", "--untracked-files=all", "--branch", "--no-ahead-behind"}
+	if ignored {
+		args = append(args, "--ignored")
+	}
+	out, err := readGit(ctx, "", slices.Concat(args, []string{"--"}, pathspecs)...)
+	if err != nil {
+		return "", nil, err
+	}
+	line, rest, _ := strings.Cut(out, "\x00")
+	branch, ok := branchOfStatus(line)
+	if !ok {
+		return "", nil, errors.New("git status printed no branch line, but " + strconv.Quote(line))
+	}
+	return branch, parseStatus(rest), nil
+}
+
+// listed is changes as text, a line each: its code, a space and its path. It is "" for none.
+func listed(changes []change) string {
+	lines := make([]string, len(changes))
+	for i, c := range changes {
+		lines[i] = c.code + " " + c.path
+	}
+	return strings.Join(lines, "\n")
 }
 
 // DirtyTree lists uncommitted work in checkout dir outside .claude/, .beads/ and .orchestra/
-// (agent settings, tracker data, and orchestra's own files). It returns git's error when git can't
-// tell, which is not the same as dirty.
+// (agent settings, tracker data, and orchestra's own files), a file a line ("" for none; see status).
+// It returns git's error when git can't tell, which is not the same as dirty.
 func (g Git) DirtyTree(ctx context.Context, dir string) (string, error) {
 	return g.DirtyTreeBesides(ctx, dir)
 }
 
 // DirtyTreeBesides is DirtyTree leaving out these paths too, relative to dir and taken literally:
 // a file orchestra is about to commit, such as a spec.
-func (Git) DirtyTreeBesides(ctx context.Context, dir string, paths ...string) (string, error) {
-	args := append([]string{"-C", dir, "status", "--porcelain"}, treePaths...)
-	for _, p := range paths {
-		args = append(args, ":(exclude,literal)"+p)
-	}
-	out, err := readGit(ctx, "", args...)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
+func (g Git) DirtyTreeBesides(ctx context.Context, dir string, paths ...string) (string, error) {
+	dirty, _, err := g.DirtyTreeAndBranchBesides(ctx, dir, paths...)
+	return dirty, err
 }
 
 // treePaths are the paths DirtyTree looks at, for git status: all but .claude/, .beads/ and
 // .orchestra/.
-var treePaths = []string{"--", ".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra"}
+var treePaths = []string{".", ":(exclude).claude", ":(exclude).beads", ":(exclude).orchestra"}
 
 // DirtyTreeAndBranch is DirtyTree and the branch checked out in dir, from one git status: "" on a
 // detached HEAD. The branch is named as git status names it, which unlike CurrentBranch never puts
@@ -92,21 +135,15 @@ func (g Git) DirtyTreeAndBranch(ctx context.Context, dir string) (dirty, branch 
 // taken literally, as DirtyTreeBesides does: a file orchestra is about to commit, such as a spec.
 func (Git) DirtyTreeAndBranchBesides(ctx context.Context, dir string, paths ...string) (dirty, branch string,
 	err error) {
-	// --no-ahead-behind: the branch line says nothing of its upstream that git has to count.
-	args := append([]string{"-C", dir, "status", "--porcelain", "--branch", "--no-ahead-behind"}, treePaths...)
+	specs := slices.Clone(treePaths)
 	for _, p := range paths {
-		args = append(args, ":(exclude,literal)"+p)
+		specs = append(specs, ":(exclude,literal)"+p)
 	}
-	out, err := readGit(ctx, "", args...)
+	branch, changes, err := status(ctx, dir, false, specs...)
 	if err != nil {
 		return "", "", err
 	}
-	line, rest, _ := strings.Cut(out, "\n")
-	branch, ok := branchOfStatus(line)
-	if !ok {
-		return "", "", errors.New("git status printed no branch line, but " + strconv.Quote(line))
-	}
-	return strings.TrimSpace(rest), branch, nil
+	return listed(changes), branch, nil
 }
 
 // branchOfStatus reads the branch line of 'git status --porcelain --branch': "## main", "## main...origin/main
@@ -131,47 +168,51 @@ func branchOfStatus(line string) (string, bool) {
 }
 
 // DirtyWorktree lists uncommitted work in a ticket's worktree dir outside .orchestra/run/ (the
-// ticket's scratch). Unlike DirtyTree it counts .claude/, .beads/ and the rest of .orchestra/: a
-// change a worker left there is its ticket's work. It returns git's error when git can't tell, which
-// is not the same as clean.
+// ticket's scratch), a file a line ("" for none; see status). Unlike DirtyTree it counts .claude/,
+// .beads/ and the rest of .orchestra/: a change a worker left there is its ticket's work. It returns
+// git's error when git can't tell, which is not the same as clean.
 func (Git) DirtyWorktree(ctx context.Context, dir string) (string, error) {
-	out, err := readGit(ctx, "", "-C", dir, "status", "--porcelain",
-		"--", ".", ":(exclude).orchestra/run")
+	_, changes, err := status(ctx, dir, false, ".", ":(exclude).orchestra/run")
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out), nil
+	return listed(changes), nil
 }
 
 // Changes maps each changed or untracked file in repo, under paths when any are given, to its
 // two-letter code from 'git status --porcelain' ("M ", "??", …), listing each untracked file rather
-// than its folder. It returns git's error when git can't tell, which is not the same as no changes.
+// than its folder (see status). It returns git's error when git can't tell, which is not the same as
+// no changes.
 func (Git) Changes(ctx context.Context, repo string, paths ...string) (map[string]string, error) {
-	args := append([]string{"status", "--porcelain", "-z", "--untracked-files=all", "--"}, paths...)
-	out, err := readGit(ctx, repo, args...)
+	_, changes, err := status(ctx, repo, false, paths...)
 	if err != nil {
 		return nil, err
 	}
-	return parseStatus(out), nil
+	codes := make(map[string]string, len(changes))
+	for _, c := range changes {
+		codes[c.path] = c.code
+	}
+	return codes, nil
 }
 
-// parseStatus reads 'git status --porcelain -z': a two-letter code, a space and the path, with a
-// renamed or copied file's former path in the next field, whether it was renamed or copied in the
-// index (R or C first) or in the work tree (R or C second, as after 'git add -N' of a moved file).
-func parseStatus(out string) map[string]string {
-	status := map[string]string{}
+// parseStatus reads the files of 'git status --porcelain -z', after its branch line: a two-letter
+// code, a space and the path, with a renamed or copied file's former path in the next field, whether
+// it was renamed or copied in the index (R or C first) or in the work tree (R or C second, as after
+// 'git add -N' of a moved file).
+func parseStatus(out string) []change {
+	var changes []change
 	entries := strings.Split(out, "\x00")
 	for i := 0; i < len(entries); i++ {
 		e := entries[i]
 		if len(e) < 4 {
 			continue
 		}
-		status[e[3:]] = e[:2]
+		changes = append(changes, change{code: e[:2], path: e[3:]})
 		if strings.ContainsAny(e[:2], "RC") {
 			i++ // the path it was renamed or copied from
 		}
 	}
-	return status
+	return changes
 }
 
 // CurrentBranch returns the branch checked out in repo, or "" on a detached HEAD. It returns git's
@@ -515,12 +556,11 @@ func (Git) Tracks(ctx context.Context, repo, path string) (bool, error) {
 // PathChanged reports whether the file at path, relative to repo, differs from what HEAD holds:
 // changed, staged, untracked, or ignored by git. It returns git's error when git can't tell.
 func (Git) PathChanged(ctx context.Context, repo, path string) (bool, error) {
-	out, err := readGit(ctx, repo, "status", "--porcelain", "-z", "--untracked-files=all", "--ignored",
-		"--", ":(literal)"+path)
+	_, changes, err := status(ctx, repo, true, ":(literal)"+path)
 	if err != nil {
 		return false, err
 	}
-	return out != "", nil
+	return len(changes) > 0, nil
 }
 
 // Ignored reports whether git ignores the file at path, relative to repo, which need not exist:
@@ -650,9 +690,11 @@ func (Git) DetachedWorktree(ctx context.Context, repo, path, rev string) (string
 	return writeGit(ctx, repo, "worktree", "add", "--quiet", "--detach", path, rev)
 }
 
-// RemoveWorktree removes the worktree at path.
+// RemoveWorktree removes the worktree at path, unless it has uncommitted work, new files included:
+// git's own check of it honours status.showUntrackedFiles, and with no would remove the folder with
+// the new files in it.
 func (Git) RemoveWorktree(ctx context.Context, repo, path string) (string, error) {
-	return writeGit(ctx, repo, "worktree", "remove", path)
+	return writeGit(ctx, repo, "-c", "status.showUntrackedFiles=normal", "worktree", "remove", path)
 }
 
 // DeleteBranch deletes a branch that has been merged. Deleting a ref takes the repository's
@@ -753,10 +795,11 @@ func (Git) FastForward(ctx context.Context, repo, branch string) (string, error)
 	return writeGit(ctx, repo, "merge", "--ff-only", "--quiet", branch)
 }
 
-// ShortStatus is 'git status --short' in worktree.
+// ShortStatus is 'git status --short' in worktree, new files named whatever status.showUntrackedFiles
+// says: each untracked folder, as git lists them by default.
 func (Git) ShortStatus(ctx context.Context, worktree string) string {
 	// For people and the organs: "" on failure.
-	out, _ := readGit(ctx, "", "-C", worktree, "status", "--short")
+	out, _ := readGit(ctx, "", "-C", worktree, "status", "--short", "--untracked-files=normal")
 	return out
 }
 

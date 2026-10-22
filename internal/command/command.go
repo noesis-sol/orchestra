@@ -42,7 +42,8 @@ func Output(ctx context.Context, limit time.Duration, dir, name string, args ...
 }
 
 // OutputWithEnv runs a command as Output does, with env (NAME=value each) added to its
-// environment, where it overrides a variable of the same name.
+// environment, where it overrides a variable of the same name; a NAME alone, with no =, leaves that
+// variable out of it.
 func OutputWithEnv(ctx context.Context, limit time.Duration, dir string, env []string, name string,
 	args ...string) (string, error) {
 	return run(ctx, limit, dir, env, nil, name, args)

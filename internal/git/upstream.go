@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -47,13 +48,13 @@ func (Git) Fetch(ctx context.Context, repo, remote, remoteRef string) (string, e
 	return command.OutputWithEnv(ctx, FetchLimit, repo, env, "git", "fetch", "--quiet", "--no-tags", remote, remoteRef)
 }
 
-// fetchEnv is the environment Fetch adds to git's: no prompt for credentials, and the ssh command git
-// would run in repo, in the order git picks it (GIT_SSH_COMMAND, core.sshCommand, GIT_SSH, ssh), with
-// -o BatchMode=yes after it, so that ssh fails rather than asks. A command git runs as PuTTY's plink,
-// or as a simple ssh, is left as it is, as it may take no -o. It returns git's error when git can't
-// read core.sshCommand.
+// fetchEnv is the environment Fetch adds to git's: gitEnv, with its GIT_TERMINAL_PROMPT=0, and the
+// ssh command git would run in repo, in the order git picks it (GIT_SSH_COMMAND, core.sshCommand,
+// GIT_SSH, ssh), with -o BatchMode=yes after it, so that ssh fails rather than asks. A command git runs
+// as PuTTY's plink, or as a simple ssh, is left as it is, as it may take no -o. It returns git's error
+// when git can't read core.sshCommand.
 func fetchEnv(ctx context.Context, repo string) ([]string, error) {
-	env := []string{"GIT_TERMINAL_PROMPT=0"}
+	env := slices.Clone(gitEnv)
 	ssh := os.Getenv("GIT_SSH_COMMAND")
 	if ssh == "" {
 		out, err := readGit(ctx, repo, "config", "--get", "core.sshCommand")
