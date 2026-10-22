@@ -37,7 +37,7 @@ func playOrchestra(t *testing.T) bool {
 	if os.Getenv(orchestraIgnores) != "" {
 		signal.Ignore(syscall.SIGTSTP)
 	}
-	err := Interactive(context.Background(), dir, nil, io.Discard, io.Discard, "sh", "-c",
+	err := Interactive(context.Background(), dir, nil, nil, io.Discard, io.Discard, "sh", "-c",
 		"echo $$ > pid; kill -"+os.Getenv(orchestraStopsBy)+" $$; echo resumed > resumed")
 	if err != nil {
 		t.Fatal(err)

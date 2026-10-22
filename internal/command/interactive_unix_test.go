@@ -22,7 +22,7 @@ func TestInteractiveRunsInOrchestrasGroup(t *testing.T) {
 	var out, errOut strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- Interactive(context.Background(), dir, in, &out, &errOut, "sh", "-c",
+		done <- Interactive(context.Background(), dir, nil, in, &out, &errOut, "sh", "-c",
 			`echo $$ > pid.tmp; mv pid.tmp pid; read line; echo "got $line"; echo "in $(pwd)" >&2`)
 	}()
 	awaitFile(t, filepath.Join(dir, "pid"))
@@ -53,7 +53,7 @@ func TestInteractiveStopsWithSIGTERM(t *testing.T) {
 	var out strings.Builder
 	done := make(chan error, 1)
 	go func() {
-		done <- Interactive(ctx, dir, nil, &out, io.Discard, "sh", "-c",
+		done <- Interactive(ctx, dir, nil, nil, &out, io.Discard, "sh", "-c",
 			`trap 'echo terminal restored; exit 3' TERM; echo $$ > pid.tmp; mv pid.tmp pid; while :; do sleep 0.05; done`)
 	}()
 	awaitFile(t, filepath.Join(dir, "pid"))
@@ -71,7 +71,7 @@ func TestInteractiveStopsWithSIGTERM(t *testing.T) {
 		t.Errorf("stdout %q, want the command's own way out", out.String())
 	}
 
-	err := Interactive(context.Background(), dir, nil, io.Discard, io.Discard, "sh", "-c", "exit 3")
+	err := Interactive(context.Background(), dir, nil, nil, io.Discard, io.Discard, "sh", "-c", "exit 3")
 	var exit *exec.ExitError
 	if !errors.As(err, &cmdErr) || cmdErr.Stopped || !errors.As(err, &exit) || exit.ExitCode() != 3 {
 		t.Errorf("error %v, want exit status 3", err)

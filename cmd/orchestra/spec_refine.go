@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/beads"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/dispatch"
@@ -193,7 +194,8 @@ func refineOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, me
 // claudeOnTerminal runs one of orchestra's interactive sessions on its own terminal, started as s has
 // it with the instructions in prompt, message its first message, until the user exits it; intro is
 // what orchestra says as it hands claude the terminal. Ctrl+C is Claude Code's meanwhile, which
-// interrupts and clears with it.
+// interrupts and clears with it. Like a worker, claude runs without the markers of a Claude Code session
+// orchestra was started from (agentkind.Claude.Unset), as a session of its own rather than its child.
 func claudeOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, prompt, message, intro string,
 	stdin io.Reader, stdout, stderr io.Writer) error {
 	// -- ends claude's options: the message after it is none of them.
@@ -204,7 +206,7 @@ func claudeOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, pr
 	fmt.Fprintln(stdout, intro)
 	defer stops.dropInterrupts()()
 	defer keepTerminal(stdin)()
-	err = command.Interactive(ctx, s.repo, stdin, stdout, stderr, "claude", args...)
+	err = command.Interactive(ctx, s.repo, agentkind.Claude.Unset, stdin, stdout, stderr, "claude", args...)
 	if e, ok := errors.AsType[*command.Error](err); ok && !errors.As(err, new(*exec.ExitError)) {
 		e.Args = nil // the instructions' path and the message would bury why it failed
 		return fmt.Errorf("couldn't start %w", e)

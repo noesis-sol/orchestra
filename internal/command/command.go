@@ -201,11 +201,11 @@ const interactiveGrace = 5 * time.Second
 // command. Ctrl+Z, which a program in raw mode such as Claude Code takes to stop itself alone,
 // suspends orchestra with it, so that the shell gets the terminal back, and fg brings both back
 // (runOnTerminal). When ctx is done the command gets SIGTERM, and SIGKILL if it is still running
-// interactiveGrace later. The error is an *Error, without Stderr: the command wrote that to the
-// terminal.
-func Interactive(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string,
-	args ...string) error {
-	cmd := newCmd(ctx, nil, name, args)
+// interactiveGrace later. env is added to its environment as newCmd has it: a name alone leaves that
+// variable out. The error is an *Error, without Stderr: the command wrote that to the terminal.
+func Interactive(ctx context.Context, dir string, env []string, stdin io.Reader, stdout, stderr io.Writer,
+	name string, args ...string) error {
+	cmd := newCmd(ctx, env, name, args)
 	cmd.Dir = dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.Cancel = func() error { return terminate(cmd.Process) }

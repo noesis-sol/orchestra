@@ -62,6 +62,10 @@ All notable changes to orchestra are documented here. The format follows
   where that setup's `keep_awake` is on, and says so where its `terminal` isn't
   the one the run chose as it started, which the next run takes. The run had
   started without keeping the machine awake, and stayed silent of the terminal.
+- A spec's refinement, a feature's interview or an answer talk on orchestra's
+  own terminal no longer runs claude with the markers of a Claude Code session
+  orchestra was started from (`CLAUDECODE` and the others), as that session's
+  child: it leaves them out, as workers and organs do.
 - `orchestra plan` prints tickets' IDs, a link's reason (a files entry kept as
   written) and bd's error text without their escape sequences and control
   characters, so a ticket's author can't set the terminal's title or write
