@@ -95,8 +95,9 @@ func (l *Log) CloseNow() error {
 	return l.f.Close()
 }
 
-// logTime is how the log dates its lines.
-const logTime = "2006-01-02 15:04:05"
+// logTime is how the log dates its lines: with the UTC offset, so the hour a clock change repeats
+// reads in order. Its stamps are all as long.
+const logTime = "2006-01-02 15:04:05 -0700"
 
 // Line logs text.
 func (l *Log) Line(t time.Time, text string) {

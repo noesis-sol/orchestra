@@ -218,7 +218,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 	// summary written from a ticket. orchestra's own line on the run comes last, after the evidence,
 	// as Claude reads long inputs best with the request at the end.
 	return organ.Section(tag, "The run's final line", final) +
-		organ.Section(tag, "Orchestrator log for this run", strings.Join(o.log.RunLines(), "\n")) +
+		organ.Section(tag, "Orchestrator log for this run", reviewLog(o.log.RunLines())) +
 		organ.Section(tag, "Commits merged into "+c.Base+" in this run", commits) +
 		organ.Section(tag, "Tickets closed in this run, merged or with no change to merge (ID, title, close reason)",
 			closed.String()) +
@@ -231,7 +231,7 @@ func (o *Loop) reviewInput(ctx context.Context, code int, final string) string {
 		organ.Section(tag, "What the run's organs (triage, the predictor and the like) cost", o.organCostEvidence()) +
 		outside + feature +
 		fmt.Sprintf("%s, on branch %s of %s, from %s to %s. Exit code %d (%s). Write its report.\n",
-			scope, c.Base, c.Repo, o.started.Format("15:04"), time.Now().Format("15:04"), code, meaning)
+			scope, c.Base, c.Repo, o.started.Format(reviewTime), time.Now().Format(reviewTime), code, meaning)
 }
 
 // failedChecksSection is the reviewer's section, tagged tag, on what the check said of each ticket
@@ -331,9 +331,8 @@ func (o *Loop) Review(ctx context.Context, code int, final string) (string, erro
 	if f, ok := o.fullCheckOf(); ok {
 		full = f.report(o.cfg.CheckFull)
 	}
-	return fmt.Sprintf("# Orchestra run · %s %s–%s · %s%s\n\n%s\n%s%s", o.started.Format("2006-01-02"),
-		o.started.Format("15:04"), time.Now().Format("15:04"), o.cfg.Base, ScopeLabel(o.cfg),
-		strings.TrimSpace(result), full, o.organCostLine()), nil
+	return fmt.Sprintf("# Orchestra run · %s · %s%s\n\n%s\n%s%s", reportSpan(o.started, time.Now()),
+		o.cfg.Base, ScopeLabel(o.cfg), strings.TrimSpace(result), full, o.organCostLine()), nil
 }
 
 // SaveReport writes the run report to the reports folder and returns its path.
@@ -349,26 +348,26 @@ func (o *Loop) SaveReport(report string) (string, error) {
 	return path, nil
 }
 
+// exitMeanings is what each code a run exits with means, as the reviewer is told: a row a code.
+var exitMeanings = map[int]string{
+	ExitOK: "the queue was empty or the limit was reached; " +
+		"a run of one ticket says in its final line whether all of it is merged",
+	ExitSetup: "a setup problem stopped the run before its tickets started, such as a requirement in the " +
+		"requires list whose check failed and whose install didn't bring it",
+	ExitStuck:       "a worker was blocked, paused or ran past its time limit and needs attention",
+	ExitTool:        "a terminal (Herdr, tmux or cmux), Beads or git command failed, or a worker panicked",
+	ExitDirty:       "the main checkout had uncommitted changes or left its branch",
+	ExitMerge:       "a finished ticket's branch did not fast-forward",
+	ExitEnvironment: "workers kept failing at once, whichever ticket they had: the environment, not the tickets",
+	ExitUsageLimit: "workers reached the account's usage limit, and it held longer than the run waits for it to " +
+		"reset (usage_limit_wait); they are left in their tabs, and the next run carries them on",
+	ExitInterrupted: "stopped with Ctrl+C",
+}
+
+// exitMeaning is what code means, from exitMeanings: "unknown" for a code it lacks.
 func exitMeaning(code int) string {
-	switch code {
-	case ExitOK:
-		return "the queue was empty or the limit was reached; " +
-			"a run of one ticket says in its final line whether all of it is merged"
-	case ExitStuck:
-		return "a worker was blocked, paused or ran past its time limit and needs attention"
-	case ExitTool:
-		return "a terminal (Herdr, tmux or cmux), Beads or git command failed"
-	case ExitDirty:
-		return "the main checkout had uncommitted changes or left its branch"
-	case ExitMerge:
-		return "a finished ticket's branch did not fast-forward"
-	case ExitEnvironment:
-		return "workers kept failing at once, whichever ticket they had: the environment, not the tickets"
-	case ExitUsageLimit:
-		return "workers reached the account's usage limit, and it held longer than the run waits for it to reset " +
-			"(usage_limit_wait); they are left in their tabs, and the next run carries them on"
-	case ExitInterrupted:
-		return "stopped with Ctrl+C"
+	if m, ok := exitMeanings[code]; ok {
+		return m
 	}
 	return "unknown"
 }

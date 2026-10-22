@@ -54,6 +54,14 @@ All notable changes to orchestra are documented here. The format follows
   which then ran as that session's child. Workers in Herdr now run with
   orchestra's `PATH`, as those in tmux and cmux do, rather than their shell's.
   Each agent kind's row says what its launch sets and leaves out.
+- The run report's reviewer is given the log's START block and its last 400
+  lines, with a line saying how many were cut, rather than the whole log, which
+  on a long overnight run could exceed the model's context and leave no
+  report. Every exit code has a meaning for it, the setup code's included, from
+  one table. The report's heading dates the run's end when it ends on another
+  day, the reviewer is given both ends with their dates and UTC offsets, and
+  the log stamps its lines with their offset, so the hour a clock change
+  repeats reads in order.
 - The scout asks claude for its `--help` in a private directory of its own,
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where

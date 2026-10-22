@@ -15,3 +15,14 @@ func TestExitToolMeaningNamesEachTerminal(t *testing.T) {
 		}
 	}
 }
+
+// Every code a run exits with has a meaning for the reviewer, ExitSetup's included.
+func TestEveryExitCodeHasAMeaning(t *testing.T) {
+	t.Parallel()
+	for _, code := range []int{ExitOK, ExitSetup, ExitStuck, ExitTool, ExitDirty, ExitMerge, ExitEnvironment,
+		ExitUsageLimit, ExitInterrupted} {
+		if got := exitMeaning(code); got == "unknown" || got == "" {
+			t.Errorf("exitMeaning(%d) = %q", code, got)
+		}
+	}
+}
