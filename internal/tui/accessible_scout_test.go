@@ -15,7 +15,7 @@ import (
 func TestAccessibleScoutThatEndsAtOnceSaysWhatItFound(t *testing.T) {
 	failed := &organ.ScoutError{Failure: organ.ScoutNoClaude, Err: errors.New("claude not found")}
 	stage := &initStage{}
-	s := addChecks(stage, &project.Choice{}, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)}, true)
+	s := addChecks(t.Context(), stage, &project.Choice{}, Ask{Questions: project.Questions{Check: true}, Scout: finds(organ.Scouting{}, failed)}, true)
 	field := stage.fields[0]
 	_ = field.Focus()
 	if s.scout.started {

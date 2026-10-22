@@ -433,10 +433,8 @@ func askOrDefault(
 	if ask.Check {
 		// By the scout's goroutine, which AskInit waits for before it returns.
 		scout.Spent = func(s organ.Spend) { spent = append(spent, s) }
-		// The form runs the scout under a context of its own, which lacks the environment ctx gives commands.
-		ask.Scout = func(scoutCtx context.Context) (organ.Scouting, error) {
-			return scout.Scout(command.WithEnvOf(scoutCtx, ctx), repo)
-		}
+		// The form runs the scout under a context made from ctx, with the environment ctx gives commands.
+		ask.Scout = func(scoutCtx context.Context) (organ.Scouting, error) { return scout.Scout(scoutCtx, repo) }
 	}
 	err = tui.AskInit(ctx, in, out, termName, c, ask)
 	return spent, err

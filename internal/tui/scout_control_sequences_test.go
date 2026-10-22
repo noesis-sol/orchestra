@@ -34,7 +34,7 @@ func TestAccessibleScoutDropsControlSequences(t *testing.T) {
 		{"error", organ.Scouting{}, &organ.ScoutError{Failure: organ.ScoutFailed, Err: errors.New("Fix " + hostile + "it")}},
 	} {
 		stage := &initStage{}
-		addChecks(stage, &project.Choice{}, Ask{Questions: project.Questions{Check: true}, Scout: finds(tc.found, tc.err)}, true)
+		addChecks(t.Context(), stage, &project.Choice{}, Ask{Questions: project.Questions{Check: true}, Scout: finds(tc.found, tc.err)}, true)
 		var out strings.Builder
 		if err := stage.fields[0].RunAccessible(&out, strings.NewReader("")); err != nil {
 			t.Fatal(err)

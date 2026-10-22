@@ -20,6 +20,17 @@ All notable changes to orchestra are documented here. The format follows
   the process's: in a container pinned to 4 of 64 cores, the host-wide
   `/proc/loadavg` divided by 4 read red, pressing the dispatch and
   stretching hand-back time limits as on a loaded machine.
+- Ctrl+C during `orchestra init`'s scout with `TERM=dumb` ends init at
+  once, as it does on a terminal, rather than once the scout's 5 minutes are
+  up: the scout now runs under init's context, so a stop stops it too.
+- The dashboard's title line takes the pane's full width: the blank line
+  above it was counted as part of it, so the overnight badge, the branch
+  and the run's time gave way 11 columns early.
+- A long requirement's name no longer breaks `orchestra init`'s step label
+  over two lines: a label wider than its column is cut with an ellipsis.
+- The start question and the preflight form quit when orchestra stops, as
+  init's form does, rather than being killed: a killed form returned before
+  Bubble Tea stopped reading the terminal, a data race as it closed.
 - `orchestra init` leaves out a suite the scout gives with a newline or
   another control character in its command, and says so beside what the
   scout found: its checklist showed such a command on one line, so

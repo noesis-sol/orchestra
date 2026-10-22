@@ -390,19 +390,23 @@ func shortVersion(v string) string {
 // whether the run holds for their cap on workers, the solo ticket running alone or next, the branch, the
 // ticket a scoped run works on and how long the run has gone. The states come first so a narrow pane cuts
 // the branch and time instead; the badge, which says nothing that changes during the run, gives way
-// before them. A run winding down says so on its own line above the hint.
+// before them. A run winding down says so on its own line above the hint. Above it is a blank line,
+// titleStyle's top margin, added once the line is measured and cut: a margin rendered with the pill is
+// a line of spaces as wide as the pill, which ansi's width and Truncate would count as the line's own.
 func (m Dashboard) titleLine(w int) string {
+	line := ansi.Truncate(m.titleLineWith(""), w, "…")
 	if m.cfg.Overnight {
-		if line := m.titleLineWith(" " + overnightStyle.Render("overnight")); ansi.StringWidth(line) <= w {
-			return line
+		if badged := m.titleLineWith(" " + overnightStyle.Render("overnight")); ansi.StringWidth(badged) <= w {
+			line = badged
 		}
 	}
-	return ansi.Truncate(m.titleLineWith(""), w, "…")
+	return "\n" + line
 }
 
-// titleLineWith is the title line in full, with badge (an overnight run's, or "") after the version.
+// titleLineWith is the title line in full, without the margin above it, with badge (an overnight run's,
+// or "") after the version.
 func (m Dashboard) titleLineWith(badge string) string {
-	line := titleStyle.Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + badge
+	line := titleStyle.UnsetMarginTop().Render("Orchestra") + " " + dimStyle.Render(shortVersion(m.cfg.Version)) + badge
 	if m.stopping {
 		line += stopStyle.Render("  · stopping")
 	}

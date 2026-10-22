@@ -32,6 +32,7 @@ var errNoScout = errors.New("there is no scout to look for them")
 
 // scoutRun is the scout's one search for the project's suites.
 type scoutRun struct {
+	ctx  context.Context // init's: its end, a stop, stops the scout too
 	find func(context.Context) (organ.Scouting, error)
 	done chan struct{} // closed once find has returned
 	// Set by the scout's goroutine before done is closed.
@@ -46,8 +47,8 @@ type scoutRun struct {
 	outcome  string                      // what it found, or why nothing, as onSettle says it
 }
 
-func newScoutRun(find func(context.Context) (organ.Scouting, error)) *scoutRun {
-	return &scoutRun{find: find, done: make(chan struct{})}
+func newScoutRun(ctx context.Context, find func(context.Context) (organ.Scouting, error)) *scoutRun {
+	return &scoutRun{ctx: ctx, find: find, done: make(chan struct{})}
 }
 
 // start starts the scout, once.
@@ -56,7 +57,7 @@ func (s *scoutRun) start() {
 		return
 	}
 	s.started, s.began = true, time.Now()
-	ctx, cancel := context.WithCancelCause(context.Background())
+	ctx, cancel := context.WithCancelCause(s.ctx)
 	s.cancel = cancel
 	go func() {
 		defer close(s.done)
@@ -300,11 +301,11 @@ func (k checksChoice) tests() project.Tests {
 	return project.TestsManual
 }
 
-// addChecks adds stage 2's questions to the stage: the scout, the choice and what each choice asks,
-// and whether to keep or replace what differs from what init would write. accessible is whether
-// huh's accessible form asks them.
-func addChecks(stage *initStage, c *project.Choice, ask Ask, accessible bool) *checksStage {
-	s := &checksStage{c: c, scout: newScoutRun(ask.Scout), runners: ask.Runners, skill: ask.Skill,
+// addChecks adds stage 2's questions to the stage: the scout, run under ctx, the choice and what each
+// choice asks, and whether to keep or replace what differs from what init would write. accessible is
+// whether huh's accessible form asks them.
+func addChecks(ctx context.Context, stage *initStage, c *project.Choice, ask Ask, accessible bool) *checksStage {
+	s := &checksStage{c: c, scout: newScoutRun(ctx, ask.Scout), runners: ask.Runners, skill: ask.Skill,
 		checkScript: ask.CheckScript}
 	s.scout.onSettle = s.settle
 	s.check = c.FastCommand()
@@ -646,11 +647,7 @@ func unwrapField(f huh.Field) huh.Field {
 // tea.WithContext, which closes the input in the same way.
 func runForm(ctx context.Context, form *huh.Form, scout *scoutRun, in io.Reader, out io.Writer) error {
 	form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
-	p := tea.NewProgram(initModel{form: form, scout: scout}, WithTerminal(in, out),
-		tea.WithReportFocus(), tea.WithoutSignalHandler())
-	stop := context.AfterFunc(ctx, p.Quit) // Quit returns once Run has, if it is still sending
-	_, err := p.Run()
-	stop()
+	err := runProgram(ctx, initModel{form: form, scout: scout}, in, out, tea.WithReportFocus())
 	switch {
 	case ctx.Err() != nil:
 		return ctx.Err()
@@ -662,4 +659,16 @@ func runForm(ctx context.Context, form *huh.Form, scout *scoutRun, in io.Reader,
 		return huh.ErrUserAborted
 	}
 	return nil
+}
+
+// runProgram runs model on in and out with opts, without Bubble Tea's signal handler, and quits it
+// when ctx ends rather than having tea.WithContext kill it: a killed program returns without waiting
+// for its goroutine reading in, which then reads the terminal's file as it closes, a data race.
+func runProgram(ctx context.Context, model tea.Model, in io.Reader, out io.Writer, opts ...tea.ProgramOption) error {
+	opts = append([]tea.ProgramOption{WithTerminal(in, out), tea.WithoutSignalHandler()}, opts...)
+	p := tea.NewProgram(model, opts...)
+	stop := context.AfterFunc(ctx, p.Quit) // Quit returns once Run has, if it is still sending
+	_, err := p.Run()
+	stop()
+	return err
 }

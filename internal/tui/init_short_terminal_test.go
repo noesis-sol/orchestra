@@ -19,7 +19,7 @@ func shortTerminalForm(t *testing.T, c *project.Choice, ask Ask) (initModel, *ch
 	t.Helper()
 	workers, _ := workersStage(c, ask)
 	checks := &initStage{name: "Checks"}
-	stage2 := addChecks(checks, c, ask, false)
+	stage2 := addChecks(t.Context(), checks, c, ask, false)
 	t.Cleanup(stage2.scout.wait)
 	checksStageFields(checks, c, ask, stage2, stage2.scout.poll)
 	form, _ := buildForm([]*initStage{workers, checks}, strings.NewReader(""), io.Discard)

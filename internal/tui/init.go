@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -63,6 +64,12 @@ var (
 	nextBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
 			BorderForeground(charmPurple).Padding(0, 1)
 )
+
+// stepLabel is a step's label in its column, on one line: a label as wide as the column, or wider, such
+// as a requirement's long name, is cut with an ellipsis, leaving a space before the detail.
+func stepLabel(label string) string {
+	return initLabel.Render(ansi.Truncate(label, stepLabelWidth-1, "…"))
+}
 
 // Header prints the title and the repository being set up: on a terminal, on a cleared screen from
 // its first line, which gives the form below it the terminal's full height; otherwise below what is
@@ -114,7 +121,7 @@ func (u InitScreen) Steps(steps []project.Step) {
 		if len(lines) > 0 {
 			first = lines[0]
 		}
-		fmt.Fprintf(u.out, "  %s %s%s\n", mark, initLabel.Render(s.Label), first)
+		fmt.Fprintf(u.out, "  %s %s%s\n", mark, stepLabel(s.Label), first)
 		for _, l := range lines[min(1, len(lines)):] {
 			fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", stepIndent), l)
 		}
@@ -135,7 +142,7 @@ func (u InitScreen) Prerequisites(pre []project.Step) {
 			marks = append(marks, closedStyle.Render("✓ ")+p.Label)
 		}
 	}
-	fmt.Fprintf(u.out, "  %s %s%s\n", lead, initLabel.Render("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
+	fmt.Fprintf(u.out, "  %s %s%s\n", lead, stepLabel("needs"), strings.Join(marks, dimStyle.Render("  ·  ")))
 	for _, p := range missing {
 		fmt.Fprintf(u.out, "%s%s\n", strings.Repeat(" ", stepIndent), stopStyle.Render(p.Label+": "+p.Detail))
 	}
@@ -532,7 +539,7 @@ func AskInit(ctx context.Context, in io.Reader, out io.Writer, termName string, 
 	accessible := termName == "dumb" // huh's accessible form, which asks with plain lines
 	var stage2 *checksStage
 	if ask.Check {
-		stage2 = addChecks(checks, c, ask, accessible)
+		stage2 = addChecks(ctx, checks, c, ask, accessible)
 		defer stage2.scout.wait()
 	}
 	settled := func() bool { return stage2 == nil || stage2.scout.poll() }

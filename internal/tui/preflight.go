@@ -189,10 +189,9 @@ func AskPreflight(
 	if termName == "dumb" { // huh's test for its accessible form, which asks with plain lines
 		err = runAccessible(ctx, fields, in, out)
 	} else {
-		// As AskWork runs its form: on tea.Quit, and without Bubble Tea's signal handler.
+		// As AskWork runs its form: on tea.Quit, without Bubble Tea's signal handler, quit on the end of ctx.
 		form.SubmitCmd, form.CancelCmd = tea.Quit, tea.Quit
-		_, err = tea.NewProgram(form, tea.WithContext(ctx), WithTerminal(in, out),
-			tea.WithoutSignalHandler()).Run()
+		err = runProgram(ctx, form, in, out)
 	}
 	switch {
 	case ctx.Err() != nil:
