@@ -201,8 +201,10 @@ const (
 // code is on Base. A ticket whose worker runs or waits on a question has not (pendingBusy), closed
 // or not, nor has one set aside with its worker left in its tab, whose reason is s's; nor has one not
 // closed (pendingOpen), or one closed but merging, left unmerged or with its work only on its branch,
-// whose reason is s's. The holds, a worker stopped with nothing done (unmergedBlockers) and the
-// deferred tickets freed (freeing) all ask it, so that they agree on what has merged.
+// whose reason is s's. The holds, the parents waiting for their subtickets (parentsOpen, which the
+// ready rule and epicDone read), the scope's end (scopeView), a worker stopped with nothing done
+// (unmergedBlockers) and the deferred tickets freed (freeing) all ask it, so that they agree on what
+// has merged.
 func pendingWhy(ctx context.Context, s mergeState, id string, closed bool) string {
 	switch {
 	case s.busy(id):

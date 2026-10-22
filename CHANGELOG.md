@@ -17,6 +17,14 @@ All notable changes to orchestra are documented here. The format follows
   with its path as it is, and runs git without the `GIT_DIR`, `GIT_WORK_TREE`
   and `GIT_INDEX_FILE` it would inherit when run from a git hook, and with
   `GIT_TERMINAL_PROMPT=0` for the hooks a rebase, merge or worktree add runs.
+- A subticket set aside with its worker left in its tab, which the worker then
+  closes there, holds its parent until it merges. bd no longer listed it, so
+  its epic closed as "all its subtickets are merged", a parent task could
+  start, and a scoped run ended with SCOPE_DONE while its branch was not on
+  the base branch. A parent's subtickets and a scope's end now ask the same
+  rule as the holds do of whether a ticket has merged, so a subticket closed
+  while its worker runs or waits on a question, or with its work only on its
+  branch, holds them too.
 - With tmux, a repository at a non-ASCII path, such as `~/Código/shop`, works
   where no locale says UTF-8, as under the cron or launchd recipe. tmux then
   answered every non-ASCII character as `_`, so no worker's pane or hook

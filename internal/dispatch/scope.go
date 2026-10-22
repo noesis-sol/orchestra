@@ -20,22 +20,32 @@ func (e listUnreadableError) Error() string { return e.err.Error() }
 func (e listUnreadableError) Unwrap() error { return e.err }
 
 // openParents returns the tickets with a subticket not yet closed and merged: one bd lists as not
-// closed, one running or asked (its worker closes it before it merges) or one left unmerged.
+// closed, or one closed that has not merged, as the holds find it (see parentsOpen).
 func (o *Loop) openParents(ctx context.Context, running map[string]bool) (map[string]bool, error) {
 	open, err := o.tickets.Unclosed(ctx)
 	if err != nil {
 		return nil, listUnreadableError{err}
 	}
-	return o.parentsOpen(open, running), nil
+	return o.parentsOpen(ctx, open, running), nil
 }
 
-// parentsOpen is openParents from open, the tickets bd lists as not closed.
-func (o *Loop) parentsOpen(open []Ticket, running map[string]bool) map[string]bool {
+// parentsOpen is openParents from open, the tickets bd lists as not closed. A subticket bd no longer
+// lists, which the run dispatched or left unmerged (see ticketRecord.parent), holds its parent while
+// pendingWhy says it has not merged, as the holds know the run with running running: its worker runs
+// or waits on a question, it was set aside with its worker left in its tab, or it is closed but
+// merging, left unmerged or with its work only on its branch. The ready rule, epicDone and the
+// scope's end so agree on what has merged.
+func (o *Loop) parentsOpen(ctx context.Context, open []Ticket, running map[string]bool) map[string]bool {
+	listed := make(map[string]bool, len(open))
+	for _, t := range open {
+		listed[t.ID] = true
+	}
 	ids, recs := o.book.matching(func(r *ticketRecord) bool { return r.parent != "" })
+	h := o.holds(running, nil)
 	pending := map[string]string{}
 	for i, id := range ids {
-		if r := recs[i]; running[id] || r.disp == dispAsked || r.unmerged != "" {
-			pending[id] = r.parent
+		if !listed[id] && pendingWhy(ctx, h, id, true) != "" {
+			pending[id] = recs[i].parent
 		}
 	}
 	return parentsOf(open, pending)
@@ -209,23 +219,23 @@ func (o *Loop) scopeEnd(ctx context.Context, subs []Ticket, err error) string {
 	return o.scopeView().end(ctx, subs, err)
 }
 
-// scopeView is what is read to say where a scope stands: the tracker, the run's settings, and why
-// a ticket is closed but not merged, whether it was set aside in the run, whether the run closed it
-// and whether the setup failed in its worktree. A Loop has them from its run (scopeView); the
-// nothing-to-run check, before any Loop, has the tickets labelled UnmergedLabel and none set aside,
-// closed or failing its setup.
+// scopeView is what is read to say where a scope stands: the tracker, the run's settings, what the
+// run knows of the tickets not merged yet (state, which pendingWhy asks), whether a ticket was set
+// aside in the run, whether the run closed it and whether the setup failed in its worktree. A Loop
+// has them from its run (scopeView); the nothing-to-run check, before any Loop, has its holds, and
+// none set aside, closed or failing its setup.
 type scopeView struct {
-	tickets  Tickets
-	cfg      Config
-	unmerged func(id string) string // why the ticket is closed but not merged, or ""
-	aside    func(id string) bool   // whether the ticket was set aside in this run; nil for none
-	closed   func(id string) bool   // whether the run closed the epic, its subtickets merged; nil for none
-	setup    func(id string) string // the output of the setup that failed in its worktree (see leaveSetupFailed)
+	tickets Tickets
+	cfg     Config
+	state   mergeState
+	aside   func(id string) bool   // whether the ticket was set aside in this run; nil for none
+	closed  func(id string) bool   // whether the run closed the epic, its subtickets merged; nil for none
+	setup   func(id string) string // the output of the setup that failed in its worktree (see leaveSetupFailed)
 }
 
 // scopeView is where the run's scope stands, as the run knows it.
 func (o *Loop) scopeView() scopeView {
-	return scopeView{tickets: o.tickets, cfg: o.cfg, unmerged: o.unmergedWhy,
+	return scopeView{tickets: o.tickets, cfg: o.cfg, state: o,
 		aside:  o.book.countsAside,
 		closed: func(id string) bool { return o.doneSaid.last(id) == epicClosed },
 		setup:  func(id string) string { output, _ := o.failedSetupOf(id); return output }}
@@ -276,7 +286,7 @@ func (v scopeView) left(ctx context.Context, subs []Ticket) (scopeLeft, error) {
 	}
 	in := scopeIDs(root, subs)
 	// A ticket is done once closed and merged; a parent waits for its children to be.
-	done := func(t Ticket) bool { return t.Status == StatusClosed && v.unmerged(t.ID) == "" }
+	done := func(t Ticket) bool { return v.pending(ctx, t) == "" }
 	openKids := map[string]bool{}
 	for _, t := range subs {
 		if !done(t) {
@@ -329,11 +339,19 @@ func scopeIDs(root string, subs []Ticket) map[string]bool {
 	return in
 }
 
+// pending is why ticket t, as bd lists it, has not merged (see pendingWhy), or "" once it has.
+func (v scopeView) pending(ctx context.Context, t Ticket) string {
+	return pendingWhy(ctx, v.state, t.ID, t.Status == StatusClosed)
+}
+
 // notDoneWhy says why ticket t of the scope (in) is not closed and merged; openKids says it has
 // subtickets that aren't.
 func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool, openKids bool) string {
-	if why := v.unmerged(t.ID); why != "" {
+	switch why := v.pending(ctx, t); {
+	case t.Status == StatusClosed:
 		return "closed but not merged: " + why
+	case why != pendingBusy && why != pendingOpen: // its worker left in its tab
+		return why
 	}
 	info, err := v.tickets.Show(ctx, t.ID)
 	if err == nil {
@@ -367,12 +385,12 @@ func (v scopeView) notDoneWhy(ctx context.Context, t Ticket, in map[string]bool,
 		if d.Status != StatusClosed {
 			return "blocked by " + d.ID + where
 		}
-		if why := v.unmerged(d.ID); why != "" {
+		if v.pending(ctx, d) != "" {
 			return fmt.Sprintf("blocked by %s%s, closed but not merged", d.ID, where)
 		}
 	}
 	for _, d := range t.Dependencies {
-		if d.DependencyType == "discovered-from" && d.Status == StatusClosed && v.unmerged(d.ID) != "" {
+		if d.DependencyType == "discovered-from" && d.Status == StatusClosed && v.pending(ctx, d) != "" {
 			return fmt.Sprintf("filed by %s's worker; %s is closed but not merged", d.ID, d.ID)
 		}
 	}

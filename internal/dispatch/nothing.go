@@ -140,7 +140,7 @@ func CheckNothingToRun(
 	}
 	var n *NothingToRun
 	if c.Ticket != "" {
-		if n, err = scopeNothing(ctx, c, tickets, subs, h.unmerged); err != nil {
+		if n, err = scopeNothing(ctx, c, tickets, subs, h); err != nil {
 			return nil, err
 		}
 	} else {
@@ -287,12 +287,12 @@ func allNothing(c Config, unclosed []Ticket, unmerged int, held map[string]holdK
 }
 
 // scopeNothing says why a scoped run has nothing to run, as scopeEnd would at its end: its
-// subtickets (subs) all merged, or each ticket not done and why, given why a ticket is closed but not
-// merged. No ticket has been set aside: no run has started.
+// subtickets (subs) all merged, or each ticket not done and why, given what the run starts from of
+// the tickets not merged yet (state). No ticket has been set aside: no run has started.
 func scopeNothing(
-	ctx context.Context, c Config, tickets Tickets, subs []Ticket, unmerged func(id string) string,
+	ctx context.Context, c Config, tickets Tickets, subs []Ticket, state mergeState,
 ) (*NothingToRun, error) {
-	v := scopeView{tickets: tickets, cfg: c, unmerged: unmerged}
+	v := scopeView{tickets: tickets, cfg: c, state: state}
 	l, err := v.left(ctx, subs)
 	if err != nil {
 		return nil, err

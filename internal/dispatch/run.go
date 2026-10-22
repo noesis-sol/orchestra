@@ -864,7 +864,11 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 		return nil, queue{}, listUnreadableError{err}
 	}
 	r.countUnclosed(ctx, open)
-	parents := o.parentsOpen(open, running)
+	// A new pick from here: the parents and the holds read Base where it is now (see pickHead).
+	o.mu.Lock()
+	o.picks++
+	o.mu.Unlock()
+	parents := o.parentsOpen(ctx, open, running)
 	// A ticket set aside in this run stays out of it, even if bd still lists it as ready (a defer
 	// that failed, say); otherwise it would be dispatched again at once, in a new tab each time. A
 	// ticket waiting on a question is the exception: bd keeps it out of ready until the question is
@@ -910,9 +914,6 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 		}
 		return notHeld
 	}
-	o.mu.Lock()
-	o.picks++
-	o.mu.Unlock()
 	t, q, next := pickNext(ready, skip, held, len(running), solo.running)
 	// The ticket to start is held on its links as they are now: one kept from an earlier pick may
 	// lack a discovered-from link added since. Read again, the links hold it or the pick stands.

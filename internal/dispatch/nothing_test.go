@@ -268,7 +268,8 @@ func TestNothingToRunScopedSaysWhyEachIsNotDone(t *testing.T) {
 	}
 
 	// A run that had left E.6 unmerged ends with the same SCOPE_OPEN.
-	o := New(c, nil, "", Deps{Tickets: b})
+	g := newFakeGit(c.Base)
+	o := New(c, nil, "", Deps{Tickets: b, Checkout: g, Worktrees: g, Merger: g})
 	o.book.noteUnmerged("E.6", earlierRun)
 	subs, err := b.Descendants(context.Background(), "E")
 	if got := o.scopeEnd(context.Background(), subs, err); got != scopeOpen {

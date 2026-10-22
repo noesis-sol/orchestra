@@ -263,7 +263,8 @@ func TestScopeOfOneAndTheLimit(t *testing.T) {
 // longer lists it as open.
 func TestParentWaitsForAClosedSubticketToMerge(t *testing.T) {
 	t.Parallel()
-	o := New(Config{}, nil, "", Deps{Tickets: fakeTickets{}})
+	g := newFakeGit("main") // no branches: a closed subticket's work is on main, as far as git says
+	o := New(Config{Base: "main"}, nil, "", Deps{Tickets: fakeTickets{}, Checkout: g, Worktrees: g, Merger: g})
 	o.book.setParent("C", "P")
 	o.book.setParent("D", "Q")
 	if parents, err := o.openParents(context.Background(), map[string]bool{"C": true}); err != nil || !parents["P"] || parents["Q"] {
