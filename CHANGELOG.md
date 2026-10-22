@@ -22,6 +22,12 @@ All notable changes to orchestra are documented here. The format follows
   nothing of their shape, so features came out as chains that kept one
   worker busy while the rest waited. The skill's paragraphs on `solo`,
   footprints and `orchestra plan` moved into it.
+- A spec's or a feature's breakdown, and the skill, name the section of a
+  Markdown doc a ticket changes (`docs/guide.md#install`) rather than the
+  whole doc, so that tickets on different sections of it run side by side.
+  The docs and the skill say when a `solo` ticket starts, what `orchestra
+  plan`'s shape lines and the breakdown's narrow-tree warning mean, and how
+  footprints keep tickets on one doc apart by section.
 ### Added
 
 - `orchestra plan` says how each epic's blocks links let its open tickets

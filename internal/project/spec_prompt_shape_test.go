@@ -27,8 +27,8 @@ func TestBreakdownShapesATreeThatRunsSideBySide(t *testing.T) {
 			"registration points the others fill in",
 		"with a test that it is wired",
 		"It then merges in minutes, and the substance goes to the dependents",
-		"Tickets meant to run side by side get a file each: tickets that share a file run one after " +
-			"another, whatever their links say",
+		"Tickets meant to run side by side get a file each, or a section each of a Markdown doc: tickets " +
+			"that share a file run one after another, whatever their links say",
 		"Tests are part of the ticket whose code they test, never a ticket after it",
 		"A closing docs ticket only where the tickets beside each other would otherwise all edit the same " +
 			"doc, and nothing waits on it",

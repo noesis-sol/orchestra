@@ -156,12 +156,17 @@ shape them to run side by side:
   the dependents, rather than holding all of them for a whole session.
 - **A file each for tickets meant to run side by side**: tickets that change the same file run one
   after another whatever their links say, so split the work where each ticket can have files of its
-  own (a new file per handler, a test file named after the feature).
+  own (a new file per handler, a test file named after the feature). A Markdown doc is the exception:
+  tickets that each name a different section of it (`docs/guide.md § "Install"` or
+  `docs/guide.md#install`, in the text or the `files` metadata) run side by side, so where a ticket
+  changes part of a doc, name the section rather than the whole doc.
 - **Tests with their code**: tests are part of the ticket whose code they test, never a ticket after
   it, which would wait for the code's merge and add a step to the chain. A closing docs ticket only
   where the tickets beside each other would otherwise all edit the same doc, and nothing waits on it.
 - **`solo` rarely**: a ticket labelled `solo` runs with no other beside it, and the other slots sit
-  idle while it waits for the running tickets to finish and while it runs. Give the label
+  idle while it runs. It starts first when no ticket runs, and while tickets run lets the others take
+  the free slots, becoming next only once none can start; then the slots drain for it. One at P0, or
+  one other tickets wait on, drains them as soon as it is first in line. Give the label
   (`bd label add <id> solo`) only to a change most tickets would conflict with, such as splitting a
   shared file: run next to other work, it guarantees merge conflicts. Otherwise list what the ticket
   changes in its `files` metadata, and footprints keep it apart from only the tickets it would
@@ -172,7 +177,10 @@ function (or, when one of the two names no functions, the same file) as a runnin
 `area:<name>` label with it, or names a file its worker has edited, waits for a later slot while the
 next ticket takes this one. A file counts only when one of the two is to change it: one its `files` metadata lists, or, for a
 ticket without, one its text names, but a document only in a sentence asking to change it (`Update
-docs/guide.md`), not citing it (`per CLAUDE.md`). Its notes don't count. A ticket with
+docs/guide.md`), not citing it (`per CLAUDE.md`). A Markdown doc counts by section where the ticket
+names one (`docs/guide.md § "Install"`, `docs/guide.md#install`): two tickets on one doc are kept apart
+only when their sections meet (one is, or is under, the other) or one names the doc without a section,
+and a worker's edits to a doc hold back only the tickets on the sections it changed. Its notes don't count. A ticket with
 commits on its branch, reopened or carried over, goes by the files its branch changes and its `files`
 metadata instead of its text. Naming files and functions in a ticket's description
 helps; so does `bd update <id> --set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
@@ -186,6 +194,12 @@ commits on its branch, the files its branch changes), the higher-priority ticket
 nothing. Footprints keep such tickets apart without a link, so by the first rule above a proposed
 link is worth adding only where one ticket needs the other's code merged first. Show the user the
 proposal; run `orchestra plan --apply` (which adds them with `bd dep add`) only when they approve.
+Before the proposal, a line for each epic says how its open tickets' existing blocks links let them
+run: `orchestra-aq0o: 7 tickets, longest chain 2 (aq0o.1 > aq0o.3), at most 3.5 at a time;
+orchestra-aq0o.1 holds 6`, its tickets, its longest chain, the tickets over the chain (the most workers
+it keeps busy on average) and its hubs, the tickets three or more wait on. A chain over three, or fewer
+at a time than the run's concurrency, means the tree is narrow: tell the user, and suggest the links
+to drop (those not for code the ticket needs merged first) or the hub to cut to the seam.
 
 ## Launching a run
 
@@ -347,7 +361,8 @@ committed where it is. Run again later, the same command carries on with what is
 - **Exit 2 after the breakdown** (`orchestra couldn't break the spec down: …`, or `won't run what the
   spec's breakdown filed`) lists what was filed and ends `Run it again to carry on: orchestra --spec
   <file>`: tell the user why, and rerun it once they agree. `warning: …` lines after a breakdown
-  (tickets without files metadata or acceptance criteria, blocks cycles) don't stop the run: relay them.
+  (tickets without files metadata or acceptance criteria, blocks cycles, a narrow ticket tree) don't
+  stop the run: relay them.
 - **The root epic**: `jq -r 'select(.kind == "start" and .spec) | .scope' .orchestra/run/events.jsonl
   | tail -n 1`, or the `START` block's `  spec: epic <root>, broken down from: <path>` line. `bd show
   <root>` has the Assumptions; `bd list --metadata-field spec=<path> --all` lists the spec's issues.
@@ -607,14 +622,17 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   the run goes on. Offer to run `orchestra requires --readme` and commit the README.
 - `solo ticket <id> is next: no new tickets start…` and `waiting for solo ticket <id> to finish`: a
   ticket labelled `solo` runs alone, so free slots wait until the running tickets finish, or until
-  it does. Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.
+  it does. It is next only once no other ready ticket can start (at once for one at P0 or one others
+  wait on). Normal; the dashboard's title line shows `solo <id> next` or `solo <id> running`.
 - `<id> footprint predicted: …` and `<id> footprint not predicted: …`: the predictor organ guessed the
   files of a ticket naming none, or couldn't. Normal; a ticket never waits for its prediction.
-- `<id> footprint: …` (at dispatch, `(predicted)` for a guess) and `skipping <id>: touches <file or function>, like running
-  <other>`: the ticket overlaps a running one, so a later ticket took the slot. Normal; it starts once
-  nothing running overlaps it.
-- `LIKELY_CONFLICT: <a> and <b> both edit <file>`: two running workers changed the same file, so the
-  second to merge may end in `MERGE_CONFLICT`. Nothing to do yet; watch for it at merge.
+- `<id> footprint: …` (at dispatch, `(predicted)` for a guess, a doc's section as
+  `docs/guide.md#install`) and `skipping <id>: touches <file or function>, like running <other>`: the
+  ticket overlaps a running one, so a later ticket took the slot. Normal; it starts once nothing running
+  overlaps it.
+- `LIKELY_CONFLICT: <a> and <b> both edit <file>`: two running workers changed the same file (of a
+  Markdown doc, the same section), so the second to merge may end in `MERGE_CONFLICT`. Nothing to do
+  yet; watch for it at merge.
 - `CLEANUP_FAILED`: merged, but its worktree or branch couldn't be removed.
 - `LONG_RUNNING`: a worker is still going after 2 hours and no ticket limit is set; the run keeps
   waiting. Look at its tab for a hung command.
@@ -672,8 +690,10 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   `--permission-mode`. Tell the user; `claude update` may bring the mode.
 - `SPEC: warning: …`, before a spec run's loop: what orchestra's check found amiss in the tree the
   breakdown filed (issues outside the root epic or without the spec's metadata, tickets without files
-  metadata or acceptance criteria, a blocks cycle, which keeps its tickets from ever starting). The run
-  goes on; relay it, and for a cycle suggest the `bd dep remove` that breaks it.
+  metadata or acceptance criteria, a blocks cycle, which keeps its tickets from ever starting, `a
+  narrow ticket tree, …`, whose blocks links let fewer tickets run at a time than the run has workers).
+  The run goes on; relay it, for a cycle suggest the `bd dep remove` that breaks it, and for a narrow
+  tree the links its chain could do without. `FEATURE warning: …` is the same for a feature's epic.
 
 ## Where to look
 

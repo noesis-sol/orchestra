@@ -277,7 +277,8 @@ and much of it may be built and merged by now. Update it for the change alone:
   - a type: task, feature, bug or chore;
   - a priority from 0 (critical) to 4 (backlog): what other work builds on comes first;
   - its files, in the metadata: the repository paths it changes, the new ones included; a new
-    folder whose files you can't name yet may be listed as the folder, ending in `/`;
+    folder whose files you can't name yet may be listed as the folder, ending in `/`, and a
+    Markdown doc of which it changes a part as the doc and its section's anchor, `docs/guide.md#install`;
   - a blocks link to each ticket whose code it builds on, so it starts only once that one is
     merged, and to no other (see Tickets that run side by side);
   - the label `solo` if it restructures code most tickets touch (splitting or moving a shared file),
@@ -400,7 +401,10 @@ file spikes only for the unverified facts the change adds, or that the tickets i
 - orchestra reads every file name in a ticket's text as a file the ticket changes, and never runs
   two tickets that share one side by side. So never put a file name in text that many tickets
   share, such as a common acceptance line ("the checks pass" rather than the check script's name),
-  unless each of them edits that file.
+  unless each of them edits that file. Where a ticket changes part of a Markdown doc, cite the
+  section it changes rather than the whole doc (docs/guide.md § "Install", or docs/guide.md#install
+  in its files): orchestra keeps two tickets on one doc apart only when they name the same section,
+  or one names the doc without a section.
   {{- if not .Feature}} The spec's own path belongs in the metadata, not the text:
   cite its sections by heading.
   {{- end}}
@@ -418,8 +422,8 @@ Keep the tree wide, so that the run keeps its workers busy:
 - A ticket three or more others build on is cut to the seam: the flag, types, signatures and empty
   registration points the others fill in, each dependent's in a file of its own, with a test that
   it is wired. It then merges in minutes, and the substance goes to the dependents.
-- Tickets meant to run side by side get a file each: tickets that share a file run one after
-  another, whatever their links say.
+- Tickets meant to run side by side get a file each, or a section each of a Markdown doc: tickets
+  that share a file run one after another, whatever their links say.
 - Tests are part of the ticket whose code they test, never a ticket after it: its worker checks
   the change with them before it closes. A closing docs ticket only where the tickets beside each
   other would otherwise all edit the same doc, and nothing waits on it: it is the end of the run,
