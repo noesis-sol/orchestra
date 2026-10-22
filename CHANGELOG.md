@@ -4,30 +4,8 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.5] - 2026-10-22
 
-### Changed
-
-- A spec's or a feature's breakdown files a wide ticket tree, so that a run
-  keeps its workers busy: blocks links only where a ticket needs the other's
-  code, chains three links deep at most, a ticket many others build on cut to
-  the seam, a file for each ticket meant to run beside the others, tests in
-  the ticket whose code they test rather than after it, and `solo` only where
-  most tickets would conflict. Each rule comes with its reason.
-- The orchestra skill has a section on filing tickets for a run, each rule
-  with its reason: a blocks link only for code a ticket needs merged first,
-  chains three deep at most, a hub ticket cut to the seam, a file each for
-  tickets meant to run side by side, tests with their code, and `solo`
-  rarely. An agent filing tickets by hand went by the skill, which said
-  nothing of their shape, so features came out as chains that kept one
-  worker busy while the rest waited. The skill's paragraphs on `solo`,
-  footprints and `orchestra plan` moved into it.
-- A spec's or a feature's breakdown, and the skill, name the section of a
-  Markdown doc a ticket changes (`docs/guide.md#install`) rather than the
-  whole doc, so that tickets on different sections of it run side by side.
-  The docs and the skill say when a `solo` ticket starts, what `orchestra
-  plan`'s shape lines and the breakdown's narrow-tree warning mean, and how
-  footprints keep tickets on one doc apart by section.
 ### Added
 
 - `orchestra plan` says how each epic's blocks links let its open tickets
@@ -57,6 +35,29 @@ All notable changes to orchestra are documented here. The format follows
   Markdown renders their anchors. git merges different sections of a
   document cleanly, and docs/running.md, named by one ticket in twelve, was
   the file tickets were most often kept apart over.
+
+### Changed
+
+- A spec's or a feature's breakdown files a wide ticket tree, so that a run
+  keeps its workers busy: blocks links only where a ticket needs the other's
+  code, chains three links deep at most, a ticket many others build on cut to
+  the seam, a file for each ticket meant to run beside the others, tests in
+  the ticket whose code they test rather than after it, and `solo` only where
+  most tickets would conflict. Each rule comes with its reason.
+- The orchestra skill has a section on filing tickets for a run, each rule
+  with its reason: a blocks link only for code a ticket needs merged first,
+  chains three deep at most, a hub ticket cut to the seam, a file each for
+  tickets meant to run side by side, tests with their code, and `solo`
+  rarely. An agent filing tickets by hand went by the skill, which said
+  nothing of their shape, so features came out as chains that kept one
+  worker busy while the rest waited. The skill's paragraphs on `solo`,
+  footprints and `orchestra plan` moved into it.
+- A spec's or a feature's breakdown, and the skill, name the section of a
+  Markdown doc a ticket changes (`docs/guide.md#install`) rather than the
+  whole doc, so that tickets on different sections of it run side by side.
+  The docs and the skill say when a `solo` ticket starts, what `orchestra
+  plan`'s shape lines and the breakdown's narrow-tree warning mean, and how
+  footprints keep tickets on one doc apart by section.
 
 ### Fixed
 
@@ -3908,6 +3909,7 @@ backlog one ticket at a time, one coding agent per Herdr tab and git worktree.
   can't capture a working agent's scrollback.
 - `python3` is no longer needed.
 
+[0.9.5]: https://github.com/noesis-sol/orchestra/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/noesis-sol/orchestra/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/noesis-sol/orchestra/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/noesis-sol/orchestra/compare/v0.9.1...v0.9.2
