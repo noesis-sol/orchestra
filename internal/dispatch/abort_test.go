@@ -22,7 +22,7 @@ func TestMergeConflictWhoseAbortFailsSaysSo(t *testing.T) {
 	f.orch.merger = noAbort{}
 	wt := f.ticket(t, "k-1", "shared.txt", "line 1 from the ticket\n")
 	f.onMain(t, "shared.txt", "line 1 from main\n")
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	if !f.sink.warnedWith("MERGE_CONFLICT", "k-1", "its rebase could not be aborted, so "+wt+" is left mid-rebase") {
@@ -46,7 +46,7 @@ func TestUndoResolutionWhoseAbortFailsSaysSo(t *testing.T) {
 	if _, err := (git.Git{}).Rebase(context.Background(), wt, "main"); err == nil {
 		t.Fatal("the rebase should stop on the conflict")
 	}
-	got := f.orch.undoResolution(context.Background(), rebaseStop{worker: worker{id: "k-1", br: "wt/k-1", wt: wt}})
+	got := f.orch.undoResolution(context.Background(), rebaseStop{worker: worker{workerRef: workerRef{wt: wt}, id: "k-1", br: "wt/k-1"}})
 	if want := "the rebase could not be aborted, so " + wt + " is left mid-rebase"; got != want {
 		t.Errorf("undoResolution = %q, want %q", got, want)
 	}

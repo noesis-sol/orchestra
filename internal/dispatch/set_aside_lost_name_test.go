@@ -39,7 +39,7 @@ func TestLeftOpenWorkerThatLosesItsNameIsStillFollowed(t *testing.T) {
 		tab := tabOf(h, "A")
 		ev := h.sink.text()
 		for _, want := range []string{
-			"  A's worker lost its name in tab " + tab + "; named it A again\n",
+			"  A's worker was without its name in tab " + tab + "; named it A again\n",
 			"  LATE_CLOSE: A was closed in tab " + tab + " after it was set aside; merging it now",
 		} {
 			if strings.Count(ev, want) != 1 {
@@ -113,7 +113,7 @@ func TestWorkerThatLosesItsNameBeforeAHandBackGetsIt(t *testing.T) {
 		}
 		ev := h.sink.text()
 		for _, want := range []string{
-			"  A's worker lost its name in tab tab1; named it A again\n",
+			"  A's worker was without its name in tab tab1; named it A again\n",
 			"RESOLVING: wt/A conflicts with main in shared.txt; handed back to its worker in tab tab1",
 		} {
 			if !strings.Contains(ev, want) {

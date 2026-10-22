@@ -54,7 +54,7 @@ func TestAskedWorkerThatLosesItsNameAfterItsAnswerIsFoundInItsPane(t *testing.T)
 		}
 		tab := tabOf(h, "A")
 		ev := h.sink.text()
-		if want := "  A's worker in tab " + tab + " came up without its name; named it A\n"; !strings.Contains(ev, want) {
+		if want := "  A's worker was without its name in tab " + tab + "; named it A again\n"; !strings.Contains(ev, want) {
 			t.Errorf("no %q in events:\n%s", want, ev)
 		}
 		if starts := h.herdr.argsFor("A"); len(starts) != 1 {
@@ -111,7 +111,7 @@ func TestLeftOpenWorkerThatLosesItsNameIsFoundInItsPaneWhenTakenUpAgain(t *testi
 			}
 		}
 		h.herdr.mu.Unlock()
-		if want := "  A's worker in tab " + earlier + " came up without its name; named it A\n"; !strings.Contains(
+		if want := "  A's worker was without its name in tab " + earlier + "; named it A again\n"; !strings.Contains(
 			h.sink.text(), want) {
 			t.Errorf("no %q in events:\n%s", want, h.sink.text())
 		}

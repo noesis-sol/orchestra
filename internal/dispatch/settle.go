@@ -10,125 +10,91 @@ import (
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
-// waitSettled waits until the worker w settles, and returns when it went idle for good. Never answer
-// its prompts; stop if it stays blocked for 4 minutes, or in a status the terminal can't tell (unknown)
-// for 5 (see stuck). An idle worker has settled only once idleSettled says so: the terminal takes a
-// worker for idle while it starts up, and while it waits on its own background command. begun is when
-// it was confirmed started on its prompt. A worker the terminal has no agent under its name for is
-// looked for in its pane, and named again should it have lost the name there (see workerState); one
-// not there either has settled, gone. A status the terminal fails to read says nothing about the
-// worker, so the wait goes on through maxFailedReads of them in a row before the run stops; so does one
-// of its ticket's that bd fails to read while the worker is idle, which neither settles it nor tells it
-// to continue. One the terminal shows nowhere is read again until it has been so for goneGrace, and has
-// settled, gone, only then. A worker going on too long stops the run, or is reported (see overTime).
-// Each status read goes to report (nil: none), for the dashboard; what its hooks reported is read once a poll
-// (hooksOf), for every decision the poll makes. A worker whose turn ends with its ticket still in
-// progress is told to continue, up to maxNudges times, before its idle grace runs (see nudge); one
-// whose turn ends with its ticket in progress but waiting on a question it asked has settled at that
-// turn's end (see endOfTurn): its Stop hook, its StopFailure for an API error other than the usage
-// limit, or Claude Code noting it idle after a permission prompt refused.
+// waitSettled waits until the worker w settles, and returns when it went idle for good, and whether it
+// settled gone from its tab. Never answer its prompts; stop if it stays blocked for 4 minutes, or in a
+// status the terminal can't tell (unknown) for 5 (see stuck). An idle worker has settled only once
+// idleSettled says so: the terminal takes a worker for idle while it starts up, and while it waits on
+// its own background command. begun is when it was confirmed started on its prompt. A worker the
+// terminal has no agent under its name for is looked for in its pane, and named again should it have
+// lost the name there (see presence); one not there either has settled, gone. A status the terminal
+// fails to read says nothing about the worker, so the wait goes on through maxFailedReads of them in a
+// row before the run stops; so does one of its ticket's that bd fails to read while the worker is idle,
+// which neither settles it nor tells it to continue. One the terminal shows nowhere is read again until
+// it has been so for goneGrace, and has settled, gone, only then. A worker going on too long stops the
+// run, or is reported (see overTime). Each status read goes to report (nil: none), for the dashboard;
+// what its hooks reported is read once a poll (hooksOf), for every decision the poll makes. A worker
+// whose turn ends with its ticket still in progress is told to continue, up to maxNudges times, before
+// its idle grace runs (see nudge); one whose turn ends with its ticket in progress but waiting on a
+// question it asked has settled at that turn's end (see endOfTurn): its Stop hook, its StopFailure for
+// an API error other than the usage limit, or Claude Code noting it idle after a permission prompt
+// refused.
 // A worker whose turn ended on the account's usage limit (limited) is none of these: the run holds for
 // the limit, and the worker waits until it is told to carry on, or stops the run, as the hold says (see
 // limitPoll); the time it waits doesn't count toward its ticket limit. One that closed its ticket first
 // settles as usual, and a ticket it deferred as it stopped is brought back (see limitTicket).
 func (o *Loop) waitSettled(
 	ctx context.Context, w worker, begun time.Time, report func(ctx context.Context, st AgentState, err error),
-) (idleAt time.Time, stop *stopReason) {
+) (idleAt time.Time, gone bool, stop *stopReason) {
 	var idle idleWait
-	var blocked, unknown, gone streak
+	var blocked, unknown, away streak
 	var limit limitWait
 	defer func() { o.usage.done(w.id, &limit, idleAt, stop) }()
 	failed := 0
 	warned := false
 	for polled := false; ; polled = true {
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
-			return time.Time{}, errInterrupted
+			return time.Time{}, false, errInterrupted
 		}
-		st, err := o.workerState(ctx, w)
+		st, lost, err := o.presence(ctx, w.id, w.workerRef, &away, goneGrace)
 		if report != nil {
 			report(ctx, st, err)
 		}
 		if err != nil {
 			failed++
 			if stop := o.unreadStatus(w, failed, err); stop != nil {
-				return time.Time{}, stop
+				return time.Time{}, false, stop
 			}
 			continue
 		}
 		failed = 0
-		if goneFor := gone.track(st == StateGone); st == StateGone && goneFor <= goneGrace {
+		if lost {
 			continue // read again: it may be back under its name, or unnamed in its pane (see goneGrace)
 		}
 		if st == StateGone {
 			limit.leave(time.Now(), st)
 			o.info("  %s settled: its worker is gone", w.id)
 			if idle.since.IsZero() {
-				return time.Now(), nil
+				return time.Now(), true, nil
 			}
-			return idle.since, nil
+			return idle.since, true, nil
 		}
 		h := o.hooksOf(w)
 		st, h = o.limitTicket(ctx, w, st, h, &limit)
 		if stop, told := o.limitPoll(ctx, w, st, h, &limit, carryOnAfterLimit(w.id)); stop != nil {
-			return time.Time{}, stop
+			return time.Time{}, false, stop
 		} else if told {
 			continue // the checks below wait for its next poll
 		}
 		// A permission prompt the terminal shows as idle waits for the maintainer as a blocked worker does.
 		asks := asksPermission(h, st)
 		if stop := stuck(w, st, asks, &blocked, &unknown); stop != nil {
-			return time.Time{}, stop
+			return time.Time{}, false, stop
 		}
 		isIdle := (st == StateIdle || st == StateDone) && !asks
 		idle.track(isIdle)
 		if isIdle {
 			idleAt, stop, nudged := o.idlePoll(ctx, w, h, begun, &idle)
 			if stop != nil || !idleAt.IsZero() {
-				return idleAt, stop
+				return idleAt, false, stop
 			}
 			if nudged {
 				continue // the checks below wait for its next poll
 			}
 		}
 		if stop := o.overTime(ctx, w, st, limit.limited(time.Now()), &warned); stop != nil {
-			return time.Time{}, stop
+			return time.Time{}, false, stop
 		}
 	}
-}
-
-// workerState reads the status of the worker w by its name, looking for it in its pane should the
-// terminal have no agent under the name (see nameLost).
-func (o *Loop) workerState(ctx context.Context, w worker) (AgentState, error) {
-	st, err := o.agents.Status(ctx, w.agent)
-	if err != nil || st != StateGone {
-		return st, err
-	}
-	return o.nameLost(ctx, w)
-}
-
-// nameLost looks in its pane for the worker w, which the terminal has no agent under its name for: a
-// program the worker runs can take the name from it while it works, as a Claude Code started there with
-// the pane's Herdr variables does, Herdr's hook taking that one for the pane's agent. Found there
-// unnamed (see unnamedInPane), it is named again and its state returned; StateGone otherwise, and when
-// the terminal refuses the name, which is logged. The error is the terminal not saying what is there.
-func (o *Loop) nameLost(ctx context.Context, w worker) (AgentState, error) {
-	if w.pane == "" || o.namer == nil {
-		return StateGone, nil
-	}
-	st, err := o.unnamedInPane(ctx, w.id, w.tab, w.pane)
-	if err != nil || st == StateGone {
-		return st, err
-	}
-	if err := o.namer.RenameAgent(ctx, w.pane, w.agent); err != nil {
-		if ctx.Err() != nil {
-			return "", err // cut short, not refused
-		}
-		o.log.Raw("", fmt.Errorf("%s's worker lost its name in tab %s and can't be named %s again, so it is taken "+
-			"for gone: %w", w.id, w.tab, w.agent, err))
-		return StateGone, nil
-	}
-	o.info("  %s's worker lost its name in tab %s; named it %s again", w.id, w.tab, w.agent)
-	return st, nil
 }
 
 // unreadStatus is waitSettled's turn on the worker w's status that the terminal failed to read, the
@@ -329,11 +295,13 @@ const blockedLimit = 4 * time.Minute
 const unknownLimit = 5 * time.Minute
 
 // goneGrace is how long a worker the terminal shows neither under its name nor in its pane is read
-// again before it settles, gone. Herdr can lose sight of a worker that is still at work for a moment:
-// a Claude Code the worker runs in its pane, with the pane's Herdr variables, reports itself as the
-// pane's agent through Herdr's hook, and as it ends the pane may show no agent until the worker's own
-// next hook. A worker taken for gone has its session resumed in a new tab, beside the one still at
-// work, and one resumed already stops the run (PAUSED) (tutti's run of 2026-10-18).
+// again before it is gone (see presence): before it settles, and before a path that follows it takes it
+// for gone (followAsked, followLeft, carriedStands, takeUpEarlier). Herdr can lose sight of a worker
+// that is still at work for a moment: a Claude Code the worker runs in its pane, with the pane's Herdr
+// variables, reports itself as the pane's agent through Herdr's hook, and as it ends the pane may show
+// no agent until the worker's own next hook. A worker taken for gone has its session resumed in a new
+// tab, beside the one still at work, and one resumed already stops the run (PAUSED) (tutti's run of
+// 2026-10-18).
 const goneGrace = 30 * time.Second
 
 // longRunning is how long a worker may go on, without a ticket limit, before the run reports it.

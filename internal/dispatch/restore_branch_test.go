@@ -104,7 +104,7 @@ const (
 	attemptHead = "2222222222bbbb" // where the worker left it
 )
 
-var stubStop = rebaseStop{worker: worker{id: "k-1", br: "wt/k-1", wt: "/wt/k-1"}, onto: "main1", head: beforeHead,
+var stubStop = rebaseStop{worker: worker{workerRef: workerRef{wt: "/wt/k-1"}, id: "k-1", br: "wt/k-1"}, onto: "main1", head: beforeHead,
 	own: 2}
 
 func TestRestoreBranch(t *testing.T) {

@@ -62,7 +62,7 @@ func (o *Loop) adoptLate(ctx context.Context, pane, agent string) (held string, 
 // nameLeft names agent the worker in pane, in ticket id's tab, whose start Ctrl+C cut short before it
 // was named: the next run looks for it by that name. Herdr may not have recognised it yet; it then
 // stays unnamed, and the next run, finding no agent by that name, looks for it in its pane (see
-// earlierState).
+// presence).
 func (o *Loop) nameLeft(ctx context.Context, id, tab, pane, agent string) {
 	name, kind, st, err := o.namer.PaneAgent(ctx, pane)
 	switch {
@@ -166,12 +166,10 @@ const startRetry = 3 * time.Second
 
 // startedWorker is the worker startWorker started for a ticket.
 type startedWorker struct {
-	tab      string    // the Herdr tab it runs in
-	pane     string    // the pane in it
-	started  time.Time // when its tab was opened
-	atLaunch bool      // its prompt was given at launch, from its prompt file
-	hooks    bool      // it reports what it does through hooks
-	rules    bool      // its standing rules are in its system prompt
+	workerRef           // where it is: the tab opened for it, the pane in it, its worktree and name, and its hooks
+	started   time.Time // when its tab was opened
+	atLaunch  bool      // its prompt was given at launch, from its prompt file
+	rules     bool      // its standing rules are in its system prompt
 }
 
 // workerArgs are the arguments a worker is started with besides the run's: they give it its MCP
@@ -232,8 +230,7 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 		return startedWorker{}, stop
 	}
 	up = true
-	return startedWorker{tab: tab, pane: pane, started: started, atLaunch: s.launch != "", hooks: s.report != nil,
-		rules: s.rules != nil}, nil
+	return startedWorker{workerRef: s.ref(), started: started, atLaunch: s.launch != "", rules: s.rules != nil}, nil
 }
 
 // workerStart is one start of ticket id's worker, named agent, in pane of tab, which startWorker
@@ -251,7 +248,12 @@ type workerStart struct {
 
 // place places the worker where it is being started, with or without its hooks.
 func (s *workerStart) place() {
-	s.o.place(s.id, workerSpot{tab: s.tab, pane: s.pane, wt: s.wt, hooks: s.report != nil})
+	s.o.book.place(s.id, workerSpot{workerRef: s.ref()})
+}
+
+// ref is where the worker is being started, with or without its hooks.
+func (s *workerStart) ref() workerRef {
+	return workerRef{tab: s.tab, pane: s.pane, wt: s.wt, agent: s.agent, hooks: s.report != nil}
 }
 
 // args are the worker's arguments: its MCP servers, the run's arguments for every Claude worker

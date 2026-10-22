@@ -56,9 +56,9 @@ func (o *Loop) whyNotHandBack(ctx context.Context, r rebaseStop, handedBack int)
 // workerAway says why the worker w can't be handed its finished ticket back, or "" when it is idle in
 // its tab, or at the account's usage limit there: it is handed it back once the run's hold says it
 // carries on (see waitResolved). One the terminal has no agent under its name for is looked for in its
-// pane (see workerState).
+// pane (see presence).
 func (o *Loop) workerAway(ctx context.Context, w worker) string {
-	switch st, err := o.workerState(ctx, w); {
+	switch st, _, err := o.presence(ctx, w.id, w.workerRef, nil, 0); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
 	case st == StateGone:
@@ -291,7 +291,8 @@ func handBackOver(r rebaseStop, mode handMode, limit, to, attempt string) string
 // has its answer. It returns the reason the run stops meanwhile: errInterrupted after Ctrl+C, or the
 // hold's once it has lasted Config.UsageLimitWait. The time the machine is loaded meanwhile, the worker
 // not limited, doesn't count toward limit either, up to limit (see loadWait). Each status read goes to
-// report; one the terminal has no agent under its name for is looked for in its pane (see workerState).
+// report; one the terminal has no agent under its name for is looked for in its pane, and one it shows
+// nowhere is gone only once it has been so for goneGrace (see presence).
 func (o *Loop) waitResolved(ctx context.Context, w worker, prompt, carryOn string, deadline time.Time,
 	limit time.Duration, answered func() bool, report func(context.Context, AgentState, error)) (
 	why string, late bool, stop *stopReason) {
@@ -308,22 +309,25 @@ func (o *Loop) waitResolved(ctx context.Context, w worker, prompt, carryOn strin
 		given = true
 		return ""
 	}
-	if st, err := o.workerState(ctx, w); err == nil && st == StateLimited {
+	if st, _, err := o.presence(ctx, w.id, w.workerRef, nil, 0); err == nil && st == StateLimited {
 		o.info("  %s's worker is at the usage limit: it is handed back once the limit lifts, the wait not counting "+
 			"toward the %s", w.id, command.ShortDuration(limit))
 	} else if why := give(); why != "" {
 		return why, false, nil
 	}
+	var gone streak
 	for polled := false; ; polled = true {
 		if polled && !sleep(ctx, o.pollEvery()) || ctx.Err() != nil {
 			return "", false, errInterrupted
 		}
-		st, err := o.workerState(ctx, w)
+		st, lost, err := o.presence(ctx, w.id, w.workerRef, &gone, goneGrace)
 		report(ctx, st, err)
 		ld.note(time.Now(), (err != nil || st != StateLimited) && o.loaded())
 		switch {
 		case err != nil:
 			o.log.Raw("", err)
+		case lost:
+			continue // read again: it may be back (see goneGrace)
 		case st == StateGone:
 			lw.leave(time.Now(), st)
 			if !given {

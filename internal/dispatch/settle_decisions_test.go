@@ -36,8 +36,8 @@ func TestSettleReadsTheHooksOnceAPoll(t *testing.T) {
 		hooks.note("wt", func(r *HookRecord) { r.Subagents = 1 })
 		o.reporter = hooks
 		start := time.Now()
-		w := worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start, hooks: true}
-		if _, stop := o.waitSettled(t.Context(), w, start, nil); stop != nil {
+		w := worker{workerRef: workerRef{agent: "A", tab: "tab", wt: "wt", hooks: true}, id: "A", started: start}
+		if _, _, stop := o.waitSettled(t.Context(), w, start, nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		if polls := a.reads - goneReads; hooks.uses != polls || hooks.records != polls { // none once it is gone
@@ -60,17 +60,17 @@ func TestHooksOf(t *testing.T) {
 		nilRep bool
 		want   hooksSeen
 	}{
-		{"no hooks", worker{wt: "wt"}, &ToolUse{Event: "Stop", At: adopted}, false, hooksSeen{}},
-		{"no reporter", worker{wt: "wt", hooks: true}, &ToolUse{Event: "Stop", At: adopted}, true, hooksSeen{}},
-		{"nothing reported", worker{wt: "wt", hooks: true}, nil, false, hooksSeen{rec: rec}},
-		{"started", worker{wt: "wt", hooks: true}, &ToolUse{Event: "Stop"}, false,
+		{"no hooks", worker{workerRef: workerRef{wt: "wt"}}, &ToolUse{Event: "Stop", At: adopted}, false, hooksSeen{}},
+		{"no reporter", worker{workerRef: workerRef{wt: "wt", hooks: true}}, &ToolUse{Event: "Stop", At: adopted}, true, hooksSeen{}},
+		{"nothing reported", worker{workerRef: workerRef{wt: "wt", hooks: true}}, nil, false, hooksSeen{rec: rec}},
+		{"started", worker{workerRef: workerRef{wt: "wt", hooks: true}}, &ToolUse{Event: "Stop"}, false,
 			hooksSeen{use: ToolUse{Event: "Stop"}, ok: true, rec: rec}},
-		{"since the adoption", worker{wt: "wt", hooks: true, since: adopted}, &ToolUse{Event: "Stop", At: adopted},
+		{"since the adoption", worker{workerRef: workerRef{wt: "wt", hooks: true}, since: adopted}, &ToolUse{Event: "Stop", At: adopted},
 			false, hooksSeen{use: ToolUse{Event: "Stop", At: adopted}, ok: true, rec: rec}},
-		{"before the adoption", worker{wt: "wt", hooks: true, since: adopted},
+		{"before the adoption", worker{workerRef: workerRef{wt: "wt", hooks: true}, since: adopted},
 			&ToolUse{Event: "Stop", At: adopted.Add(-time.Second)}, false,
 			hooksSeen{use: ToolUse{Event: "Stop", At: adopted.Add(-time.Second)}, rec: rec}},
-		{"of unknown time, adopted", worker{wt: "wt", hooks: true, since: adopted}, &ToolUse{Event: "Stop"}, false,
+		{"of unknown time, adopted", worker{workerRef: workerRef{wt: "wt", hooks: true}, since: adopted}, &ToolUse{Event: "Stop"}, false,
 			hooksSeen{use: ToolUse{Event: "Stop"}, rec: rec}},
 	}
 	for _, c := range cases {
@@ -249,7 +249,7 @@ func TestIdleSettledDecisions(t *testing.T) {
 // through it doesn't.
 func TestStuck(t *testing.T) {
 	t.Parallel()
-	w := worker{id: "A", tab: "tab"}
+	w := worker{workerRef: workerRef{tab: "tab"}, id: "A"}
 	long := func(d time.Duration) streak { return streak{since: time.Now().Add(-d - time.Second)} }
 	cases := []struct {
 		name             string

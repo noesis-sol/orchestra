@@ -124,7 +124,7 @@ func TestDependentWaitsWhileItsBlockerIsUnmerged(t *testing.T) {
 			f := newMergeFixture(t, c.check)
 			f.orch.tickets = aBlocksB()
 			wt := c.setup(f)
-			if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil {
+			if s := f.orch.finish(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-a", br: "wt/k-a"}); s != nil {
 				t.Fatal(s)
 			}
 			if got := f.next(t, nil); got != "" {
@@ -148,14 +148,14 @@ func TestDependentStartsOnceItsBlockerMerges(t *testing.T) {
 	f.orch.tickets = aBlocksB()
 	wt := f.ticket(t, "k-a", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil { // CHECKS_FAILED
+	if s := f.orch.finish(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-a", br: "wt/k-a"}); s != nil { // CHECKS_FAILED
 		t.Fatal(s)
 	}
 	if got := f.next(t, nil); got != "" {
 		t.Fatalf("next = %q, want k-b held", got)
 	}
 	f.orch.cfg.Check = "true" // fixed by hand, and merged
-	if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.finish(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-a", br: "wt/k-a"}); s != nil {
 		t.Fatal(s)
 	}
 	if !strings.Contains(f.sink.text(), "k-a closed") {
@@ -329,7 +329,7 @@ func TestLabelFailureIsWarned(t *testing.T) {
 	wt := f.ticket(t, "k-a", "a.txt", "a\n")
 	// A commit not naming k-a.
 	f.git(wt, "commit", "-q", "--amend", "-m", "change a.txt")
-	if s := f.orch.finish(context.Background(), worker{id: "k-a", br: "wt/k-a", wt: wt, tab: "tab"}); s != nil { // CLOSED_WITHOUT_COMMIT
+	if s := f.orch.finish(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-a", br: "wt/k-a"}); s != nil { // CLOSED_WITHOUT_COMMIT
 		t.Fatal(s)
 	}
 	if !f.sink.warnedWith("LABEL_FAILED", "k-a", "bd could not label k-a 'unmerged': bd defer A") {

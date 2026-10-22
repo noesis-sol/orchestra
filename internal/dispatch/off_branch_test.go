@@ -90,7 +90,7 @@ func TestMergeOfAWorktreeOffItsBranchRebasesNothing(t *testing.T) {
 	h.mem.switchTo(wt, "fix")
 	fix, before := h.mem.log("fix"), h.mem.log("main")
 	o := h.loop()
-	if s := o.merge(ctx, worker{id: "A", br: "wt/A", wt: wt, tab: "tab"}); s != nil {
+	if s := o.merge(ctx, worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "A", br: "wt/A"}); s != nil {
 		t.Fatal(s)
 	}
 	ev := h.sink.text()

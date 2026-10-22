@@ -46,7 +46,7 @@ func loadLoop(panes *fakePanes, listing *string) *Loop {
 	}
 	for id, pane := range map[string]string{"A": "pa", "B": "pb", "C": ""} {
 		o.active[id] = Status{Ticket: id}
-		o.placed[id] = workerSpot{pane: pane}
+		o.book.place(id, workerSpot{workerRef: workerRef{tab: "tab-" + id, pane: pane, wt: "wt-" + id, agent: id}})
 	}
 	return o
 }

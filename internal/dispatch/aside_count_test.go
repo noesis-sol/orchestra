@@ -12,8 +12,8 @@ func TestSetAsideCountReadsTheBook(t *testing.T) {
 		do   func(b *ticketBook)
 		want int
 	}
-	spot := workerSpot{tab: "tab-A", question: "Q-1"}
-	lo := leftOpen{w: worker{id: "A", tab: "tab-A"}}
+	spot := workerSpot{workerRef: refOf("A"), question: "Q-1"}
+	lo := leftOpen{w: worker{workerRef: refOf("A"), id: "A"}}
 	for _, path := range []struct {
 		name  string
 		steps []step

@@ -55,7 +55,7 @@ func TestQuietForCountsFromTheHooksLastNote(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	since := now.Add(-2 * idleGrace)
-	w := worker{wt: "wt", hooks: true}
+	w := worker{workerRef: workerRef{wt: "wt", hooks: true}}
 	hooks := &recordReporter{records: map[string]HookRecord{"wt": {Noted: now.Add(-time.Minute)}}}
 	o := New(Config{}, nil, "", Deps{Reporter: hooks})
 	if got := quietFor(o.hooksOf(w), since, time.Now()); got > 2*time.Minute {

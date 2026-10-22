@@ -55,7 +55,7 @@ func TestResumedWorkerOutOfSightForAMomentIsFollowed(t *testing.T) {
 		if n := strings.Count(ev, "  A settled: its worker is gone\n"); n != 1 {
 			t.Errorf("A settled gone %d times; want once, its first worker:\n%s", n, ev)
 		}
-		if !strings.Contains(ev, "  A's worker lost its name in tab tab2; named it A again\n") {
+		if !strings.Contains(ev, "  A's worker was without its name in tab tab2; named it A again\n") {
 			t.Errorf("A's resumed worker wasn't named again:\n%s", ev)
 		}
 		if got := h.sink.of(EvHold); len(got) != 0 {

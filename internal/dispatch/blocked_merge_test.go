@@ -177,7 +177,7 @@ func TestAFailingCheckIsNotABlockedMerge(t *testing.T) {
 	f := newMergeFixture(t, "exit 3")
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	f.sink.mu.Lock()
@@ -193,7 +193,7 @@ func TestAFailingCheckIsNotABlockedMerge(t *testing.T) {
 	f.git(f.repo, "branch", "other")
 	wt = f.ticket(t, "k-2", "c.txt", "c\n")
 	f.git(f.repo, "switch", "-q", "other")
-	s := f.orch.merge(context.Background(), worker{id: "k-2", br: "wt/k-2", wt: wt, tab: "tab"})
+	s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-2", br: "wt/k-2"})
 	if s == nil || s.kind != stopDirtyTree || s.blocked != "main checkout is not on main" {
 		t.Errorf("stop %+v, want DIRTY_TREE blocking k-2: main checkout is not on main", s)
 	}

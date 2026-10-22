@@ -23,7 +23,7 @@ func TestMergeOfADirtyWorktreeSaysItIsDirty(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := f.git(f.repo, "rev-parse", "main")
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	ev := f.sink.text()
@@ -59,7 +59,7 @@ func TestMergeRebasesAWorktreeWithAnUntrackedFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, "coverage.out"), []byte("mode: set\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	if log := f.git(f.repo, "log", "--oneline", "main"); !strings.Contains(log, "k-1: change a.txt") {
@@ -82,7 +82,7 @@ func TestMergeWhoseRebaseDoesNotStartSaysSo(t *testing.T) {
 	f.orch.merger = noStart{}
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	ev := f.sink.text()

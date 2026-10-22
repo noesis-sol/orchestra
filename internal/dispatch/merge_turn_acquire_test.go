@@ -31,7 +31,7 @@ func TestAStopEndsAMergeAtAcquire(t *testing.T) {
 		var got *stopReason
 		done := make(chan struct{})
 		go func() {
-			got = o.merge(ctx, worker{id: "B", br: "wt/B", wt: h.worktree("B"), tab: "tab-B"})
+			got = o.merge(ctx, worker{workerRef: workerRef{wt: h.worktree("B"), tab: "tab-B"}, id: "B", br: "wt/B"})
 			close(done)
 		}()
 		synctest.Wait()

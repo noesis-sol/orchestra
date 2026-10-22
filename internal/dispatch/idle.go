@@ -2,16 +2,18 @@ package dispatch
 
 // Once nothing runs, Run ends, unless something would give it work again: the rest of a scope being
 // filed, the usage limit's reset, the probe of the machine once the run holds for the environment, the
-// maintainer's answers. Its idle step (runState.idle) takes the first of these that applies
-// (idleWaits) and waits for it alone, on its own channels, under the exit rule all of them share
-// (idleWake): Ctrl+C, a request to wind down or to take tickets again, a new reason to stop or a new
-// hold, or triage holding the run for the environment ends the wait, and Run goes round to take that
-// up, starting what it may, or taking the next wait that applies, or ending.
+// maintainer's answers, a worker it follows in its tab out of the terminal's sight for a moment. Its
+// idle step (runState.idle) takes the first of these that applies (idleWaits) and waits for it alone,
+// on its own channels, under the exit rule all of them share (idleWake): Ctrl+C, a request to wind
+// down or to take tickets again, a new reason to stop or a new hold, or triage holding the run for the
+// environment ends the wait, and Run goes round to take that up, starting what it may, or taking the
+// next wait that applies, or ending.
 
 // idleWaits are what Run waits for once nothing runs, in the order it looks at them (see
 // runState.idle). Each reports whether it applies and, if it does, waits as long as it should, the
 // gate standing as from when the step began (see idleWake), and reports whether Run goes round.
 var idleWaits = [...]func(r *runState, from gateMark) (applies, goOn bool){
+	(*runState).awaitSighting,
 	(*runState).awaitFiling,
 	(*runState).waitOutLimit,
 	(*runState).awaitProbe,

@@ -81,7 +81,7 @@ func TestFailedStatusReadDoesNotEndTheWait(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o, a, logPath := newSettleLoop(t, "working", "unreadable", "working")
-		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
+		if _, _, stop := o.waitSettled(t.Context(), worker{workerRef: workerRef{agent: "A", tab: "tab", wt: "wt"}, id: "A", started: time.Now()}, time.Now(), nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		if want := 3 + goneReads; a.reads != want {
@@ -101,7 +101,7 @@ func TestBusyWorkerCostsTwoHerdrCallsAPoll(t *testing.T) {
 		o, a, _ := newSettleLoop(t, "working", "blocked", "working")
 		w := o.newWatcher("wt", Status{Ticket: "A"})
 		start := time.Now()
-		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, w.report); stop != nil {
+		if _, _, stop := o.waitSettled(t.Context(), worker{workerRef: workerRef{agent: "A", tab: "tab", wt: "wt"}, id: "A", started: start}, start, w.report); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		want := 3 + goneReads
@@ -124,7 +124,7 @@ func TestStatusUnreadableForLongStopsTheRun(t *testing.T) {
 		}
 		o, a, _ := newSettleLoop(t, script...)
 		start := time.Now()
-		_, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: start}, start, nil)
+		_, _, stop := o.waitSettled(t.Context(), worker{workerRef: workerRef{agent: "A", tab: "tab", wt: "wt"}, id: "A", started: start}, start, nil)
 		if stop == nil || stop.code != ExitTool || stop.kind != stopTerminalFailed {
 			t.Fatalf("stop = %+v, want TERMINAL_FAILED", stop)
 		}
@@ -145,7 +145,7 @@ func TestLongRunningWorkerIsReportedOnce(t *testing.T) {
 		}
 		o, _, logPath := newSettleLoop(t, script...)
 		shown := recordAlerts(o.log)
-		if _, stop := o.waitSettled(t.Context(), worker{id: "A", agent: "A", tab: "tab", wt: "wt", started: time.Now()}, time.Now(), nil); stop != nil {
+		if _, _, stop := o.waitSettled(t.Context(), worker{workerRef: workerRef{agent: "A", tab: "tab", wt: "wt"}, id: "A", started: time.Now()}, time.Now(), nil); stop != nil {
 			t.Fatalf("stopped: %s", stop)
 		}
 		var warned []string

@@ -184,7 +184,7 @@ func (o *Loop) whyNotRecheck(ctx context.Context, rc recheck) string {
 	case head != rc.head:
 		return w.br + " has moved since its check failed"
 	}
-	switch st, err := o.agents.Status(ctx, o.agentName(w.id)); {
+	switch st, err := o.presenceFor(ctx, w.id, w.workerRef, 0); {
 	case err != nil:
 		return "its worker's status could not be read" + because(err)
 	case st == StateWorking || st == StateBlocked:

@@ -51,11 +51,9 @@ func (o *Loop) ticketSessions(id string) []Session {
 	}
 	t.mu.Unlock()
 	if h == nil { // a worker the run took over rather than started: its hooks were never read
-		o.mu.Lock()
-		if w, ok := o.placed[id]; ok && w.hooks {
+		if w, ok := o.book.placedAt(id); ok && w.hooks {
 			wt = w.wt
 		}
-		o.mu.Unlock()
 	}
 	if wt != "" {
 		o.readHooks(id, wt, false)

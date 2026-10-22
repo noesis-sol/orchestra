@@ -72,12 +72,16 @@ type ticketRecord struct {
 	// resumed: its worker, gone from its tab, had its session resumed in this run (see resumeSession),
 	// which happens once.
 	resumed bool
+	// placed: where its worker started (from when its tab is open) or adopted in this run is, and, once
+	// it stopped the run, why: the next run carries on with those left running (see saveCarried). It is
+	// kept whatever the disposition, until the run ends.
+	placed workerSpot
 }
 
 // empty reports whether r holds nothing: a ticket in the run that nothing in it has marked.
 func (r *ticketRecord) empty() bool {
 	return r.disp == dispIn && r.aside == 0 && r.unmerged == "" && r.failedCheck == nil && r.setUpFor == "" &&
-		!r.setupBroken && r.parent == "" && !r.resumed
+		!r.setupBroken && r.parent == "" && !r.resumed && r.placed == (workerSpot{})
 }
 
 // ticketBook is each ticket's record, under its own lock. Its zero value is ready to use.
@@ -372,6 +376,42 @@ func (b *ticketBook) resumeOnce(id string) bool {
 	return first
 }
 
+// place records where ticket id's worker is, w, as it was adopted in this run, or from when its tab
+// was opened (see startWorker).
+func (b *ticketBook) place(id string, w workerSpot) {
+	b.change(id, func(r *ticketRecord) { r.placed = w })
+}
+
+// placedAt is where ticket id's worker was placed in this run (see place), and whether it was.
+func (b *ticketBook) placedAt(id string) (workerSpot, bool) {
+	r, _ := b.get(id)
+	return r.placed, r.placed != (workerSpot{})
+}
+
+// stoppedBy records why ticket id's worker, as it returned, stopped the run (s; nil for nothing):
+// should the run leave it running, the next run is told.
+func (b *ticketBook) stoppedBy(id string, s *stopReason) {
+	if s == nil {
+		return
+	}
+	b.change(id, func(r *ticketRecord) {
+		if r.placed != (workerSpot{}) {
+			r.placed.left = s.kind
+		}
+	})
+}
+
+// placedGone records that ticket id's worker stops the run as it is gone from its tab (see
+// pausedGone): should it be back there, idle, when the next run carries it over, it is told to carry
+// on rather than left waiting on the maintainer.
+func (b *ticketBook) placedGone(id string) {
+	b.change(id, func(r *ticketRecord) {
+		if r.placed != (workerSpot{}) {
+			r.placed.gone = true
+		}
+	})
+}
+
 // idsWhere is the tickets whose records match, by ID. The caller holds mu.
 func (b *ticketBook) idsWhere(match func(r *ticketRecord) bool) []string {
 	var ids []string
@@ -483,8 +523,9 @@ func (b *ticketBook) snapshot() bookSnapshot {
 	return s
 }
 
-// check returns what is wrong with the records, or nil: each disposition keeps what it should, and
-// the tickets set aside each have a place of their own.
+// check returns what is wrong with the records, or nil: each disposition keeps what it should, every
+// worker kept says where it is (see workerRef.located), and the tickets set aside each have a place of
+// their own.
 func (b *ticketBook) check() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -527,6 +568,14 @@ func (r ticketRecord) check(id string, asides int) error {
 		return fmt.Errorf("%s is %s, yet keeps a worker left open", id, r.disp)
 	case r.disp == dispLeftOpen && r.left.w.id != id:
 		return fmt.Errorf("%s is left open with %q's worker", id, r.left.w.id)
+	case r.disp == dispAsked && !r.spot.located():
+		return fmt.Errorf("%s is asked, with no tab, worktree or name to find its worker by: %+v", id, r.spot.workerRef)
+	case r.disp == dispLeftOpen && !r.left.w.located():
+		return fmt.Errorf("%s is left open, with no tab, worktree or name to find its worker by: %+v", id,
+			r.left.w.workerRef)
+	case r.placed != (workerSpot{}) && !r.placed.located():
+		return fmt.Errorf("%s's worker is placed with no tab, worktree or name to find it by: %+v", id,
+			r.placed.workerRef)
 	case r.disp != dispSetupFailed && r.setup != (failedSetup{}):
 		return fmt.Errorf("%s is %s, yet keeps a failed setup", id, r.disp)
 	}

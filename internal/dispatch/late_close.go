@@ -44,8 +44,7 @@ func (o *Loop) leaveOpen(ctx context.Context, w worker) {
 // whether it was.
 func (o *Loop) leftOpenSpot(id string) (workerSpot, bool) {
 	r, _ := o.book.get(id)
-	w := r.left.w
-	return workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks}, r.disp == dispLeftOpen
+	return workerSpot{workerRef: r.left.w.workerRef}, r.disp == dispLeftOpen
 }
 
 // leftOpenList is the workers left in their tabs as their tickets were set aside, by ticket.
@@ -81,8 +80,9 @@ type lateClose struct {
 // closed there since whose workers have settled: idle or done, or gone. A worker at work, or one the
 // terminal can't tell about, is read again at the next poll, as is one bd or the terminal fails to
 // say anything of; one gone with its ticket not closed is no longer followed. A worker the terminal
-// has no agent under its name for is looked for in its pane first (see workerState). bd lists the tickets
-// not closed in one call, and only one missing from the list is shown.
+// has no agent under its name for is looked for in its pane first, and one it shows nowhere is gone
+// only once it has been so for goneGrace (see presence). bd lists the tickets not closed in one call,
+// and only one missing from the list is shown.
 func (r *runState) followLeft() []lateClose {
 	o, ctx := r.o, r.ctx
 	left := o.leftOpenList()
@@ -121,12 +121,14 @@ func (r *runState) followLeft() []lateClose {
 				continue
 			}
 		}
-		st, err := o.workerState(ctx, lo.w)
+		st, lost, err := o.presence(ctx, id, lo.w.workerRef, r.goneStreak(id), goneGrace)
 		switch {
 		case ctx.Err() != nil:
 			return late
 		case err != nil:
 			o.log.Raw("", err)
+		case lost:
+			// read again at the next poll: Herdr can lose sight of a worker at work for a moment
 		case t.Status != StatusClosed && st == StateGone:
 			o.book.unfollow(id)
 			o.info("  %s's worker, left in tab %s as %s was set aside, is gone with it %s; it is no longer followed",
@@ -164,7 +166,7 @@ func (r *ticketRun) lateClose(ctx context.Context, lo leftOpen) *stopReason {
 	o, id := r.o, r.id
 	w := lo.w
 	w.started = time.Now()
-	o.place(id, workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
+	o.book.place(id, workerSpot{workerRef: w.workerRef})
 	st := Status{Ticket: id, Title: r.t.Title, Tab: w.tab, Started: w.started}
 	o.showActive(st)
 	defer o.status(Status{Ticket: id, Gone: true})

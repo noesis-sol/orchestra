@@ -192,9 +192,6 @@ type ledger struct {
 	blockers map[string]blockLinks
 	picks    int
 	baseAt   pickedHead
-	// placed: where each worker started (from when its tab is open) or adopted in this run is, and,
-	// once it stopped the run, why: the next run carries on with those left running (see saveCarried).
-	placed map[string]workerSpot
 	// footprints: the running tickets' footprints (see startFootprint).
 	footprints map[string]*runFootprint
 	// mergedN: the tickets merged into Base in this run (see countMerge); fullChecked: how the full
@@ -208,7 +205,7 @@ func newLedger() ledger {
 	return ledger{
 		active: map[string]Status{}, finishing: map[string]string{},
 		labelled: map[string]bool{}, rechecked: map[string]bool{}, blockers: map[string]blockLinks{},
-		placed: map[string]workerSpot{}, footprints: map[string]*runFootprint{}, forks: map[string]string{},
+		footprints: map[string]*runFootprint{}, forks: map[string]string{},
 	}
 }
 

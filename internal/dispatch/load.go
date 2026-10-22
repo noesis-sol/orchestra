@@ -153,11 +153,11 @@ func (o *Loop) readLoad(ctx context.Context, roots map[string][]int) load.Readin
 
 // runningPanes are the panes of the tickets being worked on, by ticket: "" for one not known.
 func (o *Loop) runningPanes() map[string]string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	panes := make(map[string]string, len(o.active))
-	for id := range o.active {
-		panes[id] = o.placed[id].pane
+	active := o.activeList()
+	panes := make(map[string]string, len(active))
+	for _, st := range active {
+		w, _ := o.book.placedAt(st.Ticket)
+		panes[st.Ticket] = w.pane
 	}
 	return panes
 }

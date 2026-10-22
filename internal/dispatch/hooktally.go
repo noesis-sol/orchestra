@@ -87,13 +87,12 @@ func (o *Loop) hookEvidence() string {
 		return "Not recorded: the workers don't report through Claude Code hooks."
 	}
 	left := map[string]string{} // ticket: worktree
-	o.mu.Lock()
-	for id, w := range o.placed { // workers taken over from the last run as well as those started in this one
-		if _, ok := o.active[id]; ok && w.wt != "" {
-			left[id] = w.wt
+	for _, st := range o.activeList() {
+		// workers taken over from the last run as well as those started in this one
+		if w, ok := o.book.placedAt(st.Ticket); ok && w.wt != "" {
+			left[st.Ticket] = w.wt
 		}
 	}
-	o.mu.Unlock()
 	t := &o.hookTally
 	t.mu.Lock()
 	for id, h := range t.tickets {

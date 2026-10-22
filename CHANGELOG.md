@@ -8,6 +8,18 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A worker Herdr loses sight of for a moment is no longer taken for gone by
+  the paths that follow it outside its settle loop: an asked ticket's worker
+  carrying on after its answer no longer has its session resumed beside it,
+  a worker left in its tab as its ticket was set aside is still followed (and
+  its ticket merged should it close it there), and one the last run left
+  running isn't dropped with `WORKER_GONE` as the next run carries it over.
+  Each now takes a worker for gone only once the terminal has shown it
+  nowhere for 30 seconds, as the settle loop does, through one check that
+  looks for it by name, then in its pane; so does the outcome of a ticket
+  left in progress, which takes the settle loop's word rather than reading
+  once more. Naming a worker found without its name logs `<id>'s worker was
+  without its name in tab <tab>; named it <name> again`.
 - A setup that fails or is cut short before a check, as when the merge
   train stops a check ahead of its turn mid `npm ci`, is no longer taken for
   dependencies set up: the next setup due in that worktree, before a check or

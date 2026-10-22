@@ -342,6 +342,9 @@ type runState struct {
 	filingSaid bool
 	// left: the questions open as the run last waited on them with nothing ready, for its done line
 	left []Question
+	// gone: how long the terminal has shown each followed worker nowhere, by ticket, as followAsked and
+	// followLeft read them poll after poll (see goneStreak)
+	gone map[string]*streak
 
 	solo soloQueue // the tickets labelled SoloLabel
 	// The queue last reported, its queued -1 before the first, and the solo ticket and the tickets
@@ -376,7 +379,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		o: o, ctx: ctx, keep: context.WithoutCancel(ctx),
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
-		warned: map[string]bool{}, unions: map[string]bool{}, branches: map[string][]string{},
+		warned: map[string]bool{}, unions: map[string]bool{}, branches: map[string][]string{}, gone: map[string]*streak{},
 		machine: o.register(), filing: o.cfg.filingDone(),
 		baseSeen: o.startHead, // as loadUnmerged asked
 	}
@@ -583,6 +586,7 @@ func (r *runState) follow() bool {
 	}
 	late := r.mergeLate()
 	adopt, s := r.followAsked()
+	r.forgetUnfollowed()
 	for _, a := range adopt {
 		if HasLabel(a.t, SoloLabel) {
 			r.solo.running = a.t.ID // it runs alone from now on, as one dispatched does
@@ -604,7 +608,7 @@ func (r *runState) returned(res result) {
 	o := r.o
 	delete(r.inflight, res.id)
 	o.slots.doneMerging(res.id)
-	o.stoppedBy(res.id, res.stop)
+	o.book.stoppedBy(res.id, res.stop)
 	r.endFootprint(res.id)
 	o.countSettling(r.keep, res.id, res.how)
 	if res.counted && (res.how == requeued || res.how == setupFailed) {
@@ -705,7 +709,7 @@ func (o *Loop) awaitInflight(ctx context.Context, results <-chan result, infligh
 		case r := <-results:
 			delete(inflight, r.id)
 			o.slots.doneMerging(r.id)
-			o.stoppedBy(r.id, r.stop)
+			o.book.stoppedBy(r.id, r.stop)
 			o.countSettling(ctx, r.id, r.how)
 		case <-slow.C:
 			o.sayWaiting(inflight)

@@ -153,7 +153,7 @@ func TestMergeShowsTheTicketMergingWhileItsCheckRuns(t *testing.T) {
 	f.orch.setActive(Status{Ticket: "k-1", Title: "Change a", Tab: "tab", Started: time.Now()})
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	f.onMain(t, "b.txt", "b\n")
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	if got := sink.shown(); !slices.Equal(got, []string{"k-1 merging"}) {

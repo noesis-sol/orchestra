@@ -33,13 +33,6 @@ func (o *Loop) sessionOf(wt string, hooks bool) (Session, bool) {
 	return o.reporter.Session(wt)
 }
 
-// workerGone reports whether the terminal has no worker w, under its name or in its pane (see
-// workerState); a status it can't read says nothing.
-func (o *Loop) workerGone(ctx context.Context, w worker) bool {
-	st, err := o.workerState(ctx, w)
-	return err == nil && st == StateGone
-}
-
 // pausedGone is conclude's outcome for the ticket, in progress with its worker w gone from its tab:
 // its session resumed in a new tab, the first time in this run, or else the run stopped (PAUSED).
 func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
@@ -49,7 +42,7 @@ func (r *ticketRun) pausedGone(ctx context.Context, w worker) *stopReason {
 		return r.resumeSession(ctx, w.wt, w.tab, "", goneMidTicket, s)
 	}
 	o.noteWorkerGone(ctx, id, w.tab, w.wt, "")
-	o.placedGone(id)
+	o.book.placedGone(id)
 	next := ""
 	if ok {
 		next = fmt.Sprintf("; its session %s was resumed once in this run already: the next run resumes it "+
@@ -150,13 +143,12 @@ func (r *ticketRun) resumeSession(ctx context.Context, wt, tab, question string,
 		}
 		o.appendNotes(keep, id, fmt.Sprintf(
 			"Orchestra: the worker resumed in tab %s never took up carrying on (worktree %s).", launched.tab, wt))
-		left := worker{id: id, br: r.br, wt: wt, tab: launched.tab, agent: agent, pane: launched.pane,
-			started: begun, hooks: launched.hooks, since: begun}
+		left := worker{workerRef: launched.workerRef, id: id, br: r.br, started: begun, since: begun}
 		return r.asideOvernight(ctx, left, halt(ExitStuck, stopPaused, ": %s's worker, resumed in tab %s, "+
 			"never took up carrying on (worktree %s); stopping so it can be looked at", id, launched.tab, wt).
 			setsAside("its worker, resumed in tab "+launched.tab+", never took up carrying on"))
 	}
 	o.info("  %s's worker carries on in tab %s, its session resumed; adopting it", id, launched.tab)
-	w := workerSpot{tab: launched.tab, pane: launched.pane, wt: wt, hooks: launched.hooks}
+	w := workerSpot{workerRef: launched.workerRef}
 	return r.adopt(ctx, w, StateWorking, begun)
 }

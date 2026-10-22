@@ -44,8 +44,9 @@ func (o *Loop) loadCarried(ctx context.Context) {
 			o.log.Raw("", fmt.Errorf("not carrying over %q from the last run: %s", e.Ticket, why))
 			continue
 		}
-		w := workerSpot{tab: e.Tab, wt: e.Worktree, pane: e.Pane, fork: e.Fork, question: e.Question,
-			title: e.QuestionTitle, hooks: e.Hooks, left: stopKind(e.Left), gone: e.Gone}
+		ref := workerRef{tab: e.Tab, pane: e.Pane, wt: e.Worktree, agent: o.agentName(e.Ticket), hooks: e.Hooks}
+		w := workerSpot{workerRef: ref, fork: e.Fork, question: e.Question, title: e.QuestionTitle,
+			left: stopKind(e.Left), gone: e.Gone}
 		if !project.SameTerminal(e.Terminal, o.cfg.Terminal) {
 			o.keptOut = append(o.keptOut, e)
 			elsewhere[e.Terminal] = append(elsewhere[e.Terminal], e.Ticket+" ("+w.state()+")")
@@ -136,9 +137,10 @@ const (
 // trusts it: the ticket must still be there, and its worktree (WorktreeOf wt/<id>); a ticket closed
 // with its branch's own commits already on Base, since its ForkKey or else w's fork, was merged by
 // hand (see branchMerged), and its worktree, branch and tab are removed as after a merge (see
-// dropMerged). A worker left unnamed in its pane is named (see earlierState). A ticket in progress
-// whose worker is gone is carried over if its session can be resumed (see resumeSession); without
-// one, it has nothing to carry on with: it is warned about and noted, once, and the run goes on.
+// dropMerged). A worker left unnamed in its pane is named (see presence). A ticket in progress
+// whose worker is gone, the terminal having shown it nowhere for goneGrace, is carried over if its
+// session can be resumed (see resumeSession); without one, it has nothing to carry on with: it is
+// warned about and noted, once, and the run goes on.
 // Each of those drops the worker. One it can't check, as bd can't show its ticket or git can't list
 // the worktrees, isn't gone for that: it is kept, saying why, as is one whose check Ctrl+C cut
 // short, without a word; one whose ticket bd has no trace of (ErrNoTicket), as one deleted, is gone,
@@ -182,13 +184,18 @@ func (o *Loop) carriedStands(ctx context.Context, id string, w *workerSpot) carr
 		w.question, w.title, w.left, w.gone = q.ID, q.Title, "", false
 	}
 	// Read whatever the ticket's status, so that a worker left unnamed is named before anything looks
-	// for it by its name.
-	st, err := o.earlierState(ctx, id, *w, 1)
+	// for it by its name. Where its being gone drops it, it is so only once the terminal has shown it
+	// nowhere for goneGrace, not on a moment's blip.
+	_, resumable := o.sessionOf(w.wt, w.hooks)
+	grace := time.Duration(0)
+	if t.Status == StatusInProgress && !resumable {
+		grace = goneGrace
+	}
+	st, err := o.presenceFor(ctx, id, w.workerRef, grace)
 	if err != nil && ctx.Err() == nil { // one the stop cut short says nothing
 		o.log.Raw("", err) // read again as the ticket is followed (followAsked) or comes back (work)
 	}
-	_, resumable := o.sessionOf(w.wt, w.hooks)
-	if t.Status == StatusInProgress && err == nil && st == StateGone && !resumable {
+	if t.Status == StatusInProgress && err == nil && ctx.Err() == nil && st == StateGone && !resumable {
 		o.warnWorkerGone(ctx, id, *w, "so it isn't carried over")
 		return carryDrop
 	}
@@ -240,64 +247,26 @@ func (o *Loop) dropMerged(ctx context.Context, id, commit string, w workerSpot) 
 	o.info("%s; %s", dropped, o.closeWorkerTab(ctx, id, w.tab))
 }
 
-// earlierState reads the state of ticket id's earlier worker by its Herdr name, as readStatus does
-// with tries; w says where it was left (zero if it wasn't). One whose start a run cut short before
-// Herdr saw it came up without that name (see nameLeft): with no agent under the name, an unnamed
-// agent of the configured kind in w's pane (see unnamedInPane) is named, and its state returned. The
-// error is Herdr not saying what is there, or not taking the name.
-func (o *Loop) earlierState(ctx context.Context, id string, w workerSpot, tries int) (AgentState, error) {
-	agent := o.agentName(id)
-	st, err := o.readStatus(ctx, agent, tries)
-	if err != nil || st != StateGone || w.pane == "" {
-		return st, err
-	}
-	if st, err = o.unnamedInPane(ctx, id, w.tab, w.pane); err != nil || st == StateGone {
-		return st, err
-	}
-	if err := o.namer.RenameAgent(ctx, w.pane, agent); err != nil {
-		return "", fmt.Errorf("cannot give %s's worker, unnamed in tab %s, the name %s: %w", id, w.tab, agent, err)
-	}
-	o.info("  %s's worker in tab %s came up without its name; named it %s", id, w.tab, agent)
-	return st, nil
-}
-
-// unnamedInPane returns the state of the agent of the configured kind without a name in pane, which
-// is ticket id's worker gone from under its name, or StateGone when there is none: nothing there, or
-// another's. Herdr numbers tabs and panes afresh when it restarts, so the pane is looked in only while
-// the terminal has its tab open and labelled with the ticket's ID, as merging checks before closing
-// it. The error is the terminal not saying what is there.
-func (o *Loop) unnamedInPane(ctx context.Context, id, tab, pane string) (AgentState, error) {
-	label, open, err := o.tabs.TabLabel(ctx, tab)
-	if err != nil {
-		return "", fmt.Errorf("cannot tell whether tab %s is still %s's, to look for its worker there: %w", tab, id, err)
-	}
-	if !open || label != id {
-		return StateGone, nil
-	}
-	name, kind, st, err := o.namer.PaneAgent(ctx, pane)
-	switch {
-	case err != nil:
-		return "", err
-	case st == StateGone || kind != o.cfg.Agent().Name || name != "":
-		return StateGone, nil // nothing there, or another's
-	}
-	return st, nil
-}
-
 // unknownRereads is how many more times earlierKnownState reads an earlier worker Herdr shows as
 // unknown, a poll apart, before taking it as it is.
 const unknownRereads = 5
 
-// earlierKnownState reads the state of ticket id's earlier worker as earlierState does, reading it
-// again while Herdr can't tell what it is doing, as for a moment while it redraws: StateUnknown is
-// one that stays so.
-func (o *Loop) earlierKnownState(ctx context.Context, id string, w workerSpot) (AgentState, error) {
-	st, err := o.earlierState(ctx, id, w, 5)
+// earlierKnownState reads the state of ticket id's earlier worker, earlier, as presenceFor does, reading
+// it again while Herdr can't tell what it is doing, as for a moment while it redraws: StateUnknown is
+// one that stays so. One the run has a record of (its worktree known) is gone only once the terminal
+// has shown it nowhere for goneGrace; one it has none of, as a new ticket's, at once: nothing says it
+// was ever there.
+func (o *Loop) earlierKnownState(ctx context.Context, id string, earlier workerRef) (AgentState, error) {
+	grace := time.Duration(0)
+	if earlier.wt != "" {
+		grace = goneGrace
+	}
+	st, err := o.presenceFor(ctx, id, earlier, grace)
 	for range unknownRereads {
 		if err != nil || st != StateUnknown || !sleep(ctx, o.pollEvery()) {
 			break
 		}
-		st, err = o.earlierState(ctx, id, w, 5)
+		st, err = o.presenceFor(ctx, id, earlier, grace)
 	}
 	return st, err
 }
@@ -382,9 +351,7 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 	}
 	for _, st := range o.activeList() {
 		id := st.Ticket
-		o.mu.Lock()
-		w, ok := o.placed[id]
-		o.mu.Unlock()
+		w, ok := o.book.placedAt(id)
 		why := o.unmergedWhy(id)
 		if ok && !st.handedBack() && (why == "" || why == earlierRun) {
 			w.left = cmp.Or(w.left, running)
@@ -416,38 +383,4 @@ func ticketsOf(left []project.LeftWorker) []string {
 		ids[i] = e.Ticket
 	}
 	return ids
-}
-
-// place records where ticket id's worker is, as it was adopted in this run, or from when its tab was
-// opened (see startWorker).
-func (o *Loop) place(id string, w workerSpot) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.placed[id] = w
-}
-
-// stoppedBy records why ticket id's worker, as it returned, stopped the run (s; nil for nothing):
-// should the run leave it running, the next run is told.
-func (o *Loop) stoppedBy(id string, s *stopReason) {
-	if s == nil {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if w, ok := o.placed[id]; ok {
-		w.left = s.kind
-		o.placed[id] = w
-	}
-}
-
-// placedGone records that ticket id's worker stops the run as it is gone from its tab (see
-// pausedGone): should it be back there, idle, when the next run carries it over, it is told to carry
-// on rather than left waiting on the maintainer.
-func (o *Loop) placedGone(id string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if w, ok := o.placed[id]; ok {
-		w.gone = true
-		o.placed[id] = w
-	}
 }

@@ -24,7 +24,8 @@ type adoption struct {
 // and the caller counts it running from then on, whatever the free slots. With taking false (the
 // run takes no more tickets) only a closed one is, to be merged, and one whose worker is gone (see
 // below); one in progress is left to leaveAsked. One still in progress whose worker is idle with
-// the question open waits on, as does one Herdr can't tell about, and one the last run left running
+// the question open waits on, as does one Herdr can't tell about, or has shown nowhere for no longer
+// than goneGrace (see presence), and one the last run left running
 // whose worker is idle: it waits for the maintainer, as it did when that run stopped, unless that run
 // stopped as its worker was gone from its tab (workerSpot.gone): back there, it waits on no one, and
 // is adopted to be told to carry on (see adoptAsked). One its
@@ -57,13 +58,15 @@ func (r *runState) followAsked() ([]adoption, *stopReason) {
 		case StatusClosed:
 			adopt = append(adopt, r.answeredInTab(t, w, ""))
 		case StatusInProgress:
-			st, err := o.earlierState(ctx, id, w, 1)
+			st, lost, err := o.presence(ctx, id, w.workerRef, r.goneStreak(id), goneGrace)
 			if ctx.Err() != nil {
 				return adopt, nil
 			}
 			switch {
 			case err != nil:
 				o.log.Raw("", err)
+			case lost:
+				// read again at the next poll: Herdr can lose sight of a worker at work for a moment
 			case st == StateGone:
 				if s, ok := o.sessionOf(w.wt, w.hooks); ok && o.book.resumeOnce(id) {
 					adopt = append(adopt, r.resumedInTab(t, w, s))
@@ -126,8 +129,7 @@ func (o *Loop) askedDeferred(ctx context.Context, t Ticket, w workerSpot) {
 	o.book.setAside(id)
 	o.emit(Event{Kind: EvDeferred, Ticket: id, Title: t.Title, Detail: "by the worker", Text: fmt.Sprintf(
 		"  %s deferred by worker after %s; worktree %s and tab %s left open", id, w.after(), w.wt, w.tab)})
-	o.leaveOpen(context.WithoutCancel(ctx), worker{id: id, br: branchOf(id), wt: w.wt, tab: w.tab,
-		agent: o.agentName(id), pane: w.pane, hooks: w.hooks})
+	o.leaveOpen(context.WithoutCancel(ctx), worker{workerRef: w.workerRef, id: id, br: branchOf(id)})
 	if o.triageTaking(ctx) {
 		o.offerTriage(ctx, o.gatherDeferral(ctx, id, "the worker deferred it", w.wt))
 	}
@@ -240,12 +242,10 @@ func (o *Loop) askedList() []string {
 // on once the question is answered, and the question. Carried over from the last run (see
 // loadCarried), it may instead be a worker that run left running when it stopped, with no question.
 type workerSpot struct {
-	tab, wt  string
-	pane     string // the pane it was started in, where it is looked for unnamed (see earlierState); "" if not known
-	fork     string // the commit on Base its branch was cut from, as a run that left it behind found it; "" if not known
-	question string // its ID
-	title    string
-	hooks    bool     // it reports through hooks
+	workerRef
+	fork     string   // the commit on Base its branch was cut from, as a run that left it behind found it; "" if not known
+	question string   // its ID
+	title    string   // its title
 	left     stopKind // why the last run left it running; "" for a question
 	// gone: it stopped the run with its worker gone from its tab (see pausedGone), so it waits on no
 	// one: found back there and idle, it is told to carry on (see followAsked).

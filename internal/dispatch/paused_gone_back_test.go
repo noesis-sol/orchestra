@@ -56,7 +56,7 @@ func TestWorkerGoneAgainAndBackInItsTabIsToldToCarryOnByTheNextRun(t *testing.T)
 		}
 		ev := h.sink.text()
 		for _, line := range []string{
-			"  A's worker in tab tab2 came up without its name; named it A\n",
+			"  A's worker was without its name in tab tab2; named it A again\n",
 			"  A, which the last run left running (PAUSED), is back and idle in tab tab2, so its worker is adopted\n",
 			"  A's worker in tab tab2 was told to carry on and carries on; adopting it\n",
 		} {

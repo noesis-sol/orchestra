@@ -17,7 +17,7 @@ import (
 // either (orchestra-4n6j.4): bd no longer lists it, but its branch is not on Base.
 func TestEachDispositionAgainstTheMergeRule(t *testing.T) {
 	t.Parallel()
-	lo := leftOpen{w: worker{id: "B", tab: "tab7"}}
+	lo := leftOpen{w: worker{workerRef: workerRef{tab: "tab7"}, id: "B"}}
 	for _, tc := range []struct {
 		name    string
 		status  TicketStatus
@@ -29,7 +29,7 @@ func TestEachDispositionAgainstTheMergeRule(t *testing.T) {
 			"closed but not merged: " + pendingBusy},
 		{"running, not closed yet", StatusInProgress, true, func(*Loop, *fakeGit) {}, "in progress"},
 		{"asked, closed in its tab", StatusClosed, false,
-			func(o *Loop, _ *fakeGit) { o.book.ask("B", workerSpot{tab: "tab7"}) },
+			func(o *Loop, _ *fakeGit) { o.book.ask("B", workerSpot{workerRef: workerRef{tab: "tab7"}}) },
 			"closed but not merged: " + pendingBusy},
 		{"unmerged", StatusClosed, false,
 			func(o *Loop, _ *fakeGit) { o.book.leaveUnmerged("B", string(asideChecksFailed)) },

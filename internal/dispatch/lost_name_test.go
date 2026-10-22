@@ -65,7 +65,7 @@ func TestWorkerThatLosesItsNameIsNamedAgainAndFollowed(t *testing.T) {
 			t.Errorf("started %d workers on A; want its one: %q", len(starts), starts)
 		}
 		ev := h.sink.text()
-		const named = "  A's worker lost its name in tab tab1; named it A again\n"
+		const named = "  A's worker was without its name in tab tab1; named it A again\n"
 		if n := strings.Count(ev, named); n != 2 {
 			t.Errorf("events say %d times %q; want twice:\n%s", n, named, ev)
 		}
@@ -108,7 +108,7 @@ func TestWorkerThatLosesItsNameWhileTheTerminalCannotSayIsNotTakenForGone(t *tes
 		if log := h.logged(); !strings.Contains(log, unread) {
 			t.Errorf("log lacks %q:\n%s", unread, log)
 		}
-		if ev := h.sink.text(); !strings.Contains(ev, "  A's worker lost its name in tab tab1; named it A again\n") {
+		if ev := h.sink.text(); !strings.Contains(ev, "  A's worker was without its name in tab tab1; named it A again\n") {
 			t.Errorf("A's worker wasn't named again:\n%s", ev)
 		}
 	})
@@ -178,7 +178,7 @@ func TestWorkerThatLosesItsNameAndCannotBeNamedAgainIsResumed(t *testing.T) {
 		if starts := h.herdr.argsFor("A"); len(starts) != 2 || !resumedWith(starts[1], testSession) {
 			t.Errorf("starts %q; want a new worker, then one resuming %s", starts, testSession)
 		}
-		const refused = "A's worker lost its name in tab tab1 and can't be named A again, so it is taken for gone: " +
+		const refused = "A's worker is without its name in tab tab1 and can't be named A again, so it is taken for gone: " +
 			"herdr agent start: exit status 1"
 		if log := h.logged(); !strings.Contains(log, refused) {
 			t.Errorf("log lacks %q:\n%s", refused, log)

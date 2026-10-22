@@ -83,7 +83,7 @@ func TestUnnamedWorkerIsNamedFromItsPaneAndMergedByTheNextRun(t *testing.T) {
 		}
 		ev := h.sink.text()
 		for _, want := range []string{
-			"  A's worker in tab tab1 came up without its name; named it A",
+			"  A's worker was without its name in tab tab1; named it A again",
 			"  carried over from the last run: A (left running: INTERRUPTED)",
 			"  A, which the last run left running (INTERRUPTED), is at work again in tab tab1, so its worker is adopted",
 		} {
@@ -120,7 +120,7 @@ func TestUnnamedWorkerIsNamedFromItsPaneAsItsTicketComesBack(t *testing.T) {
 		}
 		ev := h.sink.text()
 		for _, want := range []string{
-			"  A's worker in tab tab1 came up without its name; named it A",
+			"  A's worker was without its name in tab tab1; named it A again",
 			"  A's earlier worker is still working in tab tab1; adopting it rather than starting another",
 		} {
 			if !strings.Contains(ev, want) {
@@ -154,7 +154,7 @@ func TestUnnamedWorkerIsNamedFromItsPaneAsItClaimsItsTicket(t *testing.T) {
 		}
 		ev := h.sink.text()
 		for _, want := range []string{
-			"  A's worker in tab tab1 came up without its name; named it A",
+			"  A's worker was without its name in tab tab1; named it A again",
 			"  A, which the last run left running (INTERRUPTED), is at work again in tab tab1, so its worker is adopted",
 		} {
 			if !strings.Contains(ev, want) {

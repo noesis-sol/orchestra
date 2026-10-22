@@ -42,7 +42,7 @@ func said(b *ticketBook) bookAfter {
 func TestTicketBookTransitions(t *testing.T) {
 	t.Parallel()
 	var b ticketBook
-	lo := leftOpen{w: worker{id: "L", tab: "tab-L"}}
+	lo := leftOpen{w: worker{workerRef: refOf("L"), id: "L"}}
 	for _, step := range []struct {
 		name string
 		do   func()
@@ -50,9 +50,9 @@ func TestTicketBookTransitions(t *testing.T) {
 	}{
 		{"set aside twice, in order without repeats", func() { b.setAside("A"); b.setAside("B"); b.setAside("A") },
 			bookAfter{aside: []string{"A", "B"}, keptOut: []string{"A", "B"}}},
-		{"asked: set aside, yet back once answered", func() { b.ask("Q", workerSpot{question: "Q-1"}) },
+		{"asked: set aside, yet back once answered", func() { b.ask("Q", workerSpot{workerRef: refOf("Q"), question: "Q-1"}) },
 			bookAfter{aside: []string{"A", "B", "Q"}, keptOut: []string{"A", "B"}, asked: []string{"Q"}}},
-		{"carried over: asked, not set aside", func() { b.carry("C", workerSpot{question: "C-1"}) },
+		{"carried over: asked, not set aside", func() { b.carry("C", workerSpot{workerRef: refOf("C"), question: "C-1"}) },
 			bookAfter{aside: []string{"A", "B", "Q"}, keptOut: []string{"A", "B"}, asked: []string{"C", "Q"}}},
 		{"answered: running, still set aside", func() { b.answer("Q") },
 			bookAfter{aside: []string{"A", "B", "Q"}, keptOut: []string{"A", "B", "Q"}, asked: []string{"C"}}},
@@ -64,7 +64,7 @@ func TestTicketBookTransitions(t *testing.T) {
 			bookAfter{aside: []string{"A", "B", "Q", "L"}, keptOut: []string{"A", "B", "L", "Q"}}},
 		{"left open, back in the queue: followed still", func() {
 			b.setAside("R")
-			b.leaveOpen("R", leftOpen{w: worker{id: "R"}})
+			b.leaveOpen("R", leftOpen{w: worker{workerRef: refOf("R"), id: "R"}})
 			b.requeue("R")
 		}, bookAfter{aside: []string{"A", "B", "Q", "L"}, keptOut: []string{"A", "B", "L", "Q"}, left: []string{"R"}}},
 		{"dispatched again: no longer followed", func() { b.unfollow("R"); b.answer("R") },
@@ -79,7 +79,7 @@ func TestTicketBookTransitions(t *testing.T) {
 		{"left unmerged by an earlier run: not set aside", func() { b.noteUnmerged("E", earlierRun) },
 			bookAfter{aside: []string{"A", "L"}, keptOut: []string{"A", "L"}, unmerged: map[string]string{"E": earlierRun}}},
 		{"asked, closed as the run ends: still asked", func() {
-			b.carry("D", workerSpot{question: "D-1"})
+			b.carry("D", workerSpot{workerRef: refOf("D"), question: "D-1"})
 			b.leaveUnmerged("D", string(asideAskedUnmerged))
 		}, bookAfter{aside: []string{"A", "L", "D"}, keptOut: []string{"A", "L"}, asked: []string{"D"},
 			unmerged: map[string]string{"D": string(asideAskedUnmerged), "E": earlierRun}}},
@@ -129,6 +129,11 @@ func TestTicketBookCheckFindsBrokenRecords(t *testing.T) {
 		"left open with another worker": {disp: dispLeftOpen, aside: 1, left: leftOpen{w: worker{id: "other"}}},
 		"failed setup kept when in":     {disp: dispIn, unmerged: earlierRun, setup: failedSetup{output: "x"}},
 		"set aside past the count":      {disp: dispAside, aside: 2},
+		"asked with no tab": {disp: dispAsked, aside: 1,
+			spot: workerSpot{workerRef: workerRef{wt: "/wt/T", agent: "T"}, question: "Q"}},
+		"left open with no worktree": {disp: dispLeftOpen, aside: 1,
+			left: leftOpen{w: worker{workerRef: workerRef{tab: "tab-T", agent: "T"}, id: "T"}}},
+		"placed with no name": {disp: dispIn, placed: workerSpot{workerRef: workerRef{tab: "tab-T", wt: "/wt/T"}}},
 	} {
 		b := ticketBook{recs: map[string]*ticketRecord{"T": &r}, asides: 1}
 		if err := b.check(); err == nil {

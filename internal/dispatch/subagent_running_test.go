@@ -54,7 +54,7 @@ func TestStopWithASubagentRunningIsMidTurn(t *testing.T) {
 	t.Parallel()
 	stop := time.Now()
 	u := ToolUse{Event: "Stop", At: stop, Stopped: stop}
-	w := worker{wt: "wt", hooks: true}
+	w := worker{workerRef: workerRef{wt: "wt", hooks: true}}
 	o := New(Config{}, nil, "", Deps{Reporter: &subagentsRunning{hookReporter{last: map[string]ToolUse{"wt": u}}}})
 	if _, ended, _ := turnEnded(o.hooksOf(w), time.Now()); ended {
 		t.Error("turn ended at a Stop with a subagent running")

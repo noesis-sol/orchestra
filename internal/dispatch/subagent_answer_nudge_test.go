@@ -58,7 +58,7 @@ func TestSubagentStoppedAfterTheStopIsMidTurn(t *testing.T) {
 	t.Parallel()
 	stop := time.Now().Add(-time.Minute)
 	hooks := &recordReporter{records: map[string]HookRecord{"wt": {SubagentStopped: stop.Add(time.Second)}}}
-	w := worker{wt: "wt", hooks: true}
+	w := worker{workerRef: workerRef{wt: "wt", hooks: true}}
 	o := New(Config{}, nil, "", Deps{Reporter: hooks})
 	for _, u := range []ToolUse{
 		{Event: "Stop", At: stop, Stopped: stop},

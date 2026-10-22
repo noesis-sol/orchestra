@@ -558,9 +558,10 @@ Lines about single tickets, which don't stop the run (in the events, `closed`, `
   once per ticket in a run. Nothing to do; the old tab is left open, and can be closed.
   `RESUMED: <id> is back, and its worker is gone from tab <tab>; …` is the same for a ticket back from
   its answered question; one back from a deferral gets a new worker instead.
-- `<id>'s worker lost its name in tab <tab>; named it <name> again`: something the worker ran (in Herdr,
-  a Claude Code started in its pane) took its agent name, and orchestra found it unnamed in its pane and
-  named it again. Nothing to do; it is followed as before.
+- `<id>'s worker was without its name in tab <tab>; named it <name> again`: something the worker ran (in
+  Herdr, a Claude Code started in its pane) took its agent name, or a run cut short as it started it left
+  it unnamed, and orchestra found it unnamed in its pane and named it again. Nothing to do; it is
+  followed as before.
 - `kept for a later run, outside this run's scope: …`: a `--ticket` run leaves the workers on other
   tickets saved for a run that takes them.
 - `ASKED_UNMERGED`, `LEFT_UNMERGED`: a ticket asked (or carried over as left running) was closed in

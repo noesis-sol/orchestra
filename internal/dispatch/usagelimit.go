@@ -487,7 +487,7 @@ func carryOnAfterLimit(id string) string {
 // waits, which this message takes the place of. One that has gone on since its status was read, its
 // own continue having fired, is not interrupted: it isn't told.
 func (o *Loop) tellAfterLimit(ctx context.Context, w worker, lw *limitWait, msg string) bool {
-	if st, err := o.agents.Status(ctx, w.agent); err == nil && st != StateLimited {
+	if st, _, err := o.presence(ctx, w.id, w.workerRef, nil, 0); err == nil && st != StateLimited {
 		return false // gone on by itself: the polls that follow see it
 	}
 	lw.told = time.Now()

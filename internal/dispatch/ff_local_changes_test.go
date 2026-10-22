@@ -53,7 +53,7 @@ func TestMergeStopsOnLocalChangesUnderExcludedPaths(t *testing.T) {
 			f.git(wt, "commit", "-q", "-m", "k-1: change "+tc.file)
 			writeFile(t, f.repo, tc.file, "{\"by hand\": true}\n")
 			before := f.git(f.repo, "rev-parse", "main")
-			s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"})
+			s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"})
 			if s == nil || s.code != ExitDirty || s.kind != stopDirtyTree {
 				t.Fatalf("stop = %v, want DIRTY_TREE", s)
 			}
@@ -97,7 +97,7 @@ func TestMergeFailedSaysWhatGitSaid(t *testing.T) {
 	f.orch.merger = refusingMerger{}
 	wt := f.ticket(t, "k-1", "a.txt", "a\n")
 	writeFile(t, f.repo, ".orchestra/settings.json", "{\"by hand\": true}\n") // a.txt is not in the way
-	s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"})
+	s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"})
 	if s == nil || s.code != ExitMerge || s.kind != stopMergeFailed {
 		t.Fatalf("stop = %v, want MERGE_FAILED", s)
 	}

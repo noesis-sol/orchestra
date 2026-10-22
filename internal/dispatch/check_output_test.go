@@ -110,7 +110,7 @@ func TestAFailingChecksOutputIsNotWrittenThroughASymlink(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(wt, project.Dir)); err != nil {
 		t.Fatal(err)
 	}
-	if s := f.orch.merge(context.Background(), worker{id: "k-1", br: "wt/k-1", wt: wt, tab: "tab"}); s != nil {
+	if s := f.orch.merge(context.Background(), worker{workerRef: workerRef{wt: wt, tab: "tab"}, id: "k-1", br: "wt/k-1"}); s != nil {
 		t.Fatal(s)
 	}
 	if !f.sink.warnedWith("CHECKS_FAILED", "k-1", "(output is in log)") {
