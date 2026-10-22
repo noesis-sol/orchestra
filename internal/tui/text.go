@@ -102,9 +102,10 @@ func wordWrap(s string, width int) []string {
 	return lines
 }
 
-// oneLine collapses the whitespace in s, line breaks included, to single spaces: text from a
-// ticket, a worker or an organ that the dashboard shows on one line, made printable first.
-func oneLine(s string) string { return strings.Join(strings.Fields(Printable(s)), " ") }
+// oneLine collapses the whitespace in s, line breaks included, to single spaces: text the dashboard
+// shows on one line. It only lays text out: text from a ticket, a worker or an organ is made
+// printable where it is received (see printable.go), or with Printable before it is laid out.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // Printable is s, text from a ticket, a worker or an organ, without what a terminal would act on
 // rather than show: escape sequences (one that writes the clipboard, clears the screen or sets the

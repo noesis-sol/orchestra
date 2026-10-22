@@ -35,6 +35,15 @@ All notable changes to orchestra are documented here. The format follows
   beside it, and a ticket taken up again started a new worker beside the one
   left open. The pane is also saved in `.orchestra/run/state.json` for the
   next run.
+- The `Nothing ready to run` message and the interview's progress line drop
+  the escape sequences in the ticket IDs they show (an epic `Still open`, a
+  scope's ticket not done, a ticket `Deferred` free to run, its blockers and
+  the commands that reopen it, the epic the interview filed). A worker files
+  tickets and Beads checks only an ID's prefix, so an ID carrying a clipboard
+  write or a window title reached the terminal as is. What the dashboard and
+  the printer take in (events, workers' statuses, that message, the
+  interview's progress, the scout's answer) is now made printable once as it
+  is received, every string of it, rather than at each place it is shown.
 
 ## [0.9.4] - 2026-10-22
 

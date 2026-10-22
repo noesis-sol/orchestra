@@ -32,7 +32,7 @@ type InterviewProgress struct {
 // Line is the progress as one line, styled as the dashboard's are and at most width columns wide
 // (20 at the least): the epic once it is filed, else claude's state in words and the time.
 func (p InterviewProgress) Line(width int) string {
-	width = max(width, 20)
+	width, p = max(width, 20), p.printable()
 	if p.Epic != "" {
 		head, tail := "Filed "+p.Epic, ""
 		if p.Title != "" {

@@ -73,7 +73,7 @@ func (p Printer) checklist(head string, checks []PreflightCheck) {
 	if !p.Styled {
 		p.sayPlain(head)
 		for _, c := range checks {
-			p.sayPlain("  " + c.Verdict.String() + ": " + oneLine(c.Text))
+			p.sayPlain("  " + c.Verdict.String() + ": " + oneLine(Printable(c.Text)))
 		}
 		return
 	}
@@ -81,7 +81,7 @@ func (p Printer) checklist(head string, checks []PreflightCheck) {
 	lines.WriteString(organStyle.Render("◆ ") + sayStyle.Render(head) + "\n")
 	for _, c := range checks {
 		l := checkLooks[c.Verdict]
-		lines.WriteString("  " + l.style.Render(l.glyph) + " " + oneLine(c.Text) + "\n")
+		lines.WriteString("  " + l.style.Render(l.glyph) + " " + oneLine(Printable(c.Text)) + "\n")
 	}
 	p.print(lines.String())
 }
@@ -150,8 +150,8 @@ func AskPreflight(
 		}
 		a.Fix[i] = true
 		fields = append(fields, &formField{Field: huh.NewConfirm().
-			Title(oneLine(c.Fix)).
-			Description(oneLine(c.Text)).
+			Title(oneLine(Printable(c.Fix))).
+			Description(oneLine(Printable(c.Text))).
 			Affirmative("Yes").
 			Negative("No").
 			Value(&a.Fix[i])})

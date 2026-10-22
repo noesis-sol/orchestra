@@ -88,20 +88,12 @@ func (p Printer) Event(ev dispatch.Event) {
 	if ev.Kind == dispatch.EvQueue {
 		return // the dashboard's count, not a line
 	}
-	ev = printableEvent(ev)
+	ev = printableEvent(ev) // received
 	if p.Styled {
 		p.wrapped(renderEvent(ev))
 		return
 	}
 	p.print(fmt.Sprintf("%s %s\n", ev.Time.Format("2006-01-02 15:04:05"), ev.Text))
-}
-
-// printableEvent is ev with its text, which can quote a ticket's title or an organ's words, made
-// printable.
-func printableEvent(ev dispatch.Event) dispatch.Event {
-	ev.Ticket, ev.Title, ev.Detail, ev.Text = Printable(ev.Ticket), Printable(ev.Title), Printable(ev.Detail),
-		Printable(ev.Text)
-	return ev
 }
 
 // Summary prints the run's summary from the final dashboard d, which the alternate screen took with
@@ -124,7 +116,7 @@ func (p Printer) End(d Dashboard) {
 		if !d.began.IsZero() && ev.Time.After(d.began) {
 			took = ev.Time.Sub(d.began)
 		}
-		p.wrapped(closing(printableEvent(*ev), took))
+		p.wrapped(closing(*ev, took)) // made printable as the dashboard received it
 	default:
 		p.Event(*ev)
 	}

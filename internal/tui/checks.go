@@ -83,7 +83,7 @@ func (s *scoutRun) poll() bool {
 func (s *scoutRun) settle(found organ.Scouting, err error) {
 	s.settled = true
 	if s.onSettle != nil {
-		s.onSettle(found, err)
+		s.onSettle(printableScouting(found), err)
 	}
 }
 
@@ -416,7 +416,7 @@ func (s *checksStage) settle(found organ.Scouting, err error) {
 		s.suites = found.Suites
 	}
 	if err == nil && found.Note != "" {
-		why += " " + Printable(found.Note) // the scout's words, from files the repository holds
+		why += " " + found.Note
 	}
 	s.scout.outcome = why
 	if err == nil {

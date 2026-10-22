@@ -16,6 +16,7 @@ import (
 // a rounded box, as the dashboard draws its panels, fitting the terminal's width; otherwise the
 // same lines, plain, after the time, as Say prints them.
 func (p Printer) Nothing(n dispatch.NothingToRun) {
+	n = printableNothing(n)
 	if p.Styled {
 		fmt.Fprintln(p.Out, nothingBox(n, p.Width))
 		return

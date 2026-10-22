@@ -92,7 +92,8 @@ func (m *Dashboard) answerOver(o AnswerOver) {
 	m.endIdleTalk()
 	m.answerTaken(AnswerTaken{IDs: o.Answered})
 	if o.Err != nil {
-		m.answerFailed = "the answer talk: " + dispatch.FirstLine(o.Err.Error())
+		// The error can quote bd's words.
+		m.answerFailed = "the answer talk: " + oneLine(Printable(dispatch.FirstLine(o.Err.Error())))
 	} else {
 		m.offered = slices.DeleteFunc(m.offered, func(q string) bool {
 			return slices.Contains(m.queued, q) && !slices.Contains(o.Asked, q)

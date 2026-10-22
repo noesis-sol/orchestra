@@ -112,13 +112,12 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case statusMsg:
-		m.applyStatus(dispatch.Status(msg))
+		m.applyStatus(printableStatus(dispatch.Status(msg)))
 	case loadMsg:
 		r := load.Reading(msg)
 		m.load = &r
 	case eventMsg:
-		ev := dispatch.Event(msg)
-		if m.apply(ev) {
+		if m.apply(printableEvent(dispatch.Event(msg))) {
 			return m, tea.Quit
 		}
 		m.takeQuestions()

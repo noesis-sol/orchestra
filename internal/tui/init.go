@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/noesis-sol/orchestra/internal/mcp"
 	"github.com/noesis-sol/orchestra/internal/organ"
 	"github.com/noesis-sol/orchestra/internal/project"
@@ -101,9 +100,9 @@ func (u InitScreen) Steps(steps []project.Step) {
 			project.StepMissing: stopStyle.Render("✗"),
 			project.StepCaution: deferredStyle.Render("!"),
 		}[s.Kind]
-		// Wrap the detail under itself, past the mark and label, then colour each line. Stripped, as
+		// Wrap the detail under itself, past the mark and label, then colour each line. Made printable, as
 		// it may quote a command's output.
-		lines := wrapLines(ansi.Strip(s.Detail), max(u.width-stepIndent, 20), 6)
+		lines := wrapLines(Printable(s.Detail), max(u.width-stepIndent, 20), 6)
 		for i, l := range lines {
 			if s.Kind == project.StepCaution {
 				lines[i] = deferredStyle.Render(l)
@@ -325,7 +324,7 @@ func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string)
 			opts = append(opts, huh.NewOption(label, s.Name))
 		case s.Available():
 			// The name and type as a config file has them, .mcp.json a teammate's: shown printable.
-			label := fmt.Sprintf("%s  · %s scope, %s", oneLine(s.Name), s.Scope, oneLine(s.Type))
+			label := fmt.Sprintf("%s  · %s scope, %s", oneLine(Printable(s.Name)), s.Scope, oneLine(Printable(s.Type)))
 			opts = append(opts, huh.NewOption(label, s.Name))
 		}
 	}
@@ -335,7 +334,7 @@ func mcpOptions(c project.Choice) (opts []huh.Option[string], selected []string)
 			if name == mcp.Chrome {
 				missing = "  · Claude in Chrome isn't set up on this machine"
 			}
-			opts = append(opts, huh.NewOption(oneLine(name)+missing, name)) // settings.json's, committed
+			opts = append(opts, huh.NewOption(oneLine(Printable(name))+missing, name)) // settings.json's, committed
 		}
 		if s, ok := mcp.Find(c.Servers, name); !ok || s.Available() {
 			selected = append(selected, name)
@@ -349,7 +348,7 @@ func mcpDescription(c project.Choice) string {
 	d := "Workers get only the servers chosen here. settings.json keeps " +
 		"their names; each machine's Claude Code config defines them."
 	if connectors := project.Connectors(c.Servers); len(connectors) > 0 {
-		d += "\nNot available to workers (claude.ai connector): " + oneLine(strings.Join(connectors, ", ")) + "."
+		d += "\nNot available to workers (claude.ai connector): " + oneLine(Printable(strings.Join(connectors, ", "))) + "."
 	}
 	return d
 }
