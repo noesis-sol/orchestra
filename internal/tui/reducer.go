@@ -31,7 +31,7 @@ func same(detail string) string { return detail }
 // waitsNote is an EvWaits ticket's note: the tickets it waits for (Detail, "A, B") to merge.
 func waitsNote(detail string) string { return "for " + detail + " to merge" }
 
-// reopenedNote is an EvReopened ticket's note: why it is back in the queue (Detail).
+// reopenedNote is an EvReopened or EvRequeued ticket's note: why it is back in the queue (Detail).
 func reopenedNote(detail string) string { return "back in the queue: " + detail }
 
 // rowEvents are the events that only set their ticket's row, by kind. The dashboard counts each
@@ -45,6 +45,8 @@ var rowEvents = map[dispatch.Kind]rowEvent{
 	dispatch.EvWaits: {state: rowWaiting, says: "waits", note: waitsNote},
 	// Set aside, now back in the queue: no longer counted set aside.
 	dispatch.EvReopened: {state: rowWaiting, says: "reopened", note: reopenedNote},
+	// Back in the queue, whatever put it there (its setup failed, say): no longer working.
+	dispatch.EvRequeued: {state: rowWaiting, says: "requeued", note: reopenedNote},
 }
 
 // keyAction is what a key asks for beyond the dashboard's own state, which Update does: to quit the

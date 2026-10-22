@@ -83,10 +83,11 @@ type Printer struct {
 	live   *liveLine // the busy line, on a Terminal printer
 }
 
-// Event prints ev as a line; the queue count, which only the dashboard shows, is skipped.
+// Event prints ev as a line; one with no line in the log (the queue count, a requeue), which only the
+// dashboard shows, is skipped.
 func (p Printer) Event(ev dispatch.Event) {
-	if ev.Kind == dispatch.EvQueue {
-		return // the dashboard's count, not a line
+	if !ev.Kind.HasLine() {
+		return // the dashboard's, not a line
 	}
 	ev = printableEvent(ev) // received
 	if p.Styled {

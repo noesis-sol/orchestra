@@ -23,6 +23,7 @@ const (
 	EvAsked                 // a ticket waits on the maintainer's answer to a question
 	EvWaits                 // a ticket started before a ticket blocking it merged: back in the queue until it does
 	EvReopened              // a ticket set aside was put back in the queue: no longer set aside
+	EvRequeued              // a ticket was put back in the queue, whatever put it there (Detail: why); not logged
 	EvHold                  // something stopped the run; no new tickets while the running ones finish
 	EvDrain                 // the maintainer asked to stop after the running tickets
 	EvResume                // the maintainer took that back
@@ -40,7 +41,7 @@ const (
 var kindNames = [...]string{
 	EvInfo: "info", EvDispatch: "dispatch", EvClosed: "closed", EvDeferred: "deferred", EvWarn: "warn",
 	EvStop: "stop", EvDone: "done", EvTriage: "triage", EvAsked: "asked", EvWaits: "waits",
-	EvReopened: "reopened", EvHold: "hold",
+	EvReopened: "reopened", EvRequeued: "requeued", EvHold: "hold",
 	EvDrain: "drain", EvResume: "resume", EvQueue: "queue", EvProbed: "probed",
 	EvLimited: "usage_limit", EvLimitLift: "usage_limit_lifted", EvShared: "shared_machine",
 	EvMachine: "machine_hold", EvAnswered: "answered",
@@ -54,6 +55,10 @@ func (k Kind) String() string {
 	}
 	return "Kind(" + strconv.Itoa(int(k)) + ")"
 }
+
+// HasLine reports whether an event of kind k has a line in the log: EvQueue and EvRequeued, for the
+// dashboard and the event stream, have none.
+func (k Kind) HasLine() bool { return k != EvQueue && k != EvRequeued }
 
 // Event is one thing that happened in the run, for the log, the event stream and the sink.
 type Event struct {
@@ -71,7 +76,7 @@ type Event struct {
 	// Detail: a short suffix for EvClosed and EvDeferred, and for an EvWarn that sets its ticket
 	// aside, why; for an EvWarn about Base as the run starts (see fetchBase), the word its line starts
 	// with (BASE_DIVERGED, …); for EvAsked and EvAnswered, the question's ID and title ("Q: title"); for EvWaits,
-	// the tickets it waits for, as in "A, B"; for EvReopened, why it is back in the queue; for
+	// the tickets it waits for, as in "A, B"; for EvReopened and EvRequeued, why it is back in the queue; for
 	// EvStop, what stopped the run, the word its line starts with (PAUSED, INTERRUPTED, …).
 	Detail string
 	Text   string // the full line written to the log file
@@ -199,7 +204,7 @@ func (o *Loop) emit(ev Event) {
 		}
 	}
 	o.tally(&ev)
-	if ev.Kind != EvQueue {
+	if ev.Kind.HasLine() {
 		o.log.Line(ev.Time, ev.Text)
 	}
 	o.log.Notify(Notice(ev))

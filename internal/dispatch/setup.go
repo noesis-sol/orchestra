@@ -260,7 +260,7 @@ func (r *ticketRun) leaveSetupFailed(cmd, wt string, run commandRun) string {
 	f.notReopened = !o.reopen(keep, id, r.t.Status, "be back in the queue after its setup failed")
 	// Back in the queue, it is no longer set aside: retrySetups brings it back, and the run's end names
 	// it as waiting on its setup.
-	o.book.setupFailed(id, f)
+	o.setupFailed(id, f)
 	o.appendNotes(keep, id, fmt.Sprintf("Orchestra: the setup '%s' %s in worktree %s, so no worker was started; "+
 		"back in the queue (the whole output is in %s).", cmd, run.how(), wt, f.output))
 	o.emit(Event{Kind: EvWarn, Ticket: id, Text: fmt.Sprintf(

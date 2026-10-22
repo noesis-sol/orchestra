@@ -817,7 +817,7 @@ func (o *Loop) waitForMerge(ctx context.Context, t Ticket, w worker, status Tick
 	}
 	o.reopen(ctx, id, status, "be back in the queue as it waits for "+blockers)
 	// Back in the queue, it is no longer set aside: not as a ticket that asked earlier in the run.
-	o.book.requeue(id)
+	o.requeue(id, "it waits for "+blockers+" to merge")
 	o.appendNotes(ctx, id, fmt.Sprintf("Orchestra: started before %s merged; back in the queue until %s.", blockers, does))
 	o.repoMu.Lock()
 	cleaned := o.removeWorktree(ctx, id, wt, br)

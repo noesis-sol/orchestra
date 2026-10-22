@@ -177,7 +177,7 @@ func (o *Loop) reopenFailed(ctx context.Context, id string) {
 	if !o.reopen(ctx, id, "", "be back in the queue after failing at once like the tickets before it") {
 		return
 	}
-	o.book.requeue(id)
+	o.requeue(id, "the run held for the environment")
 	o.appendNotes(ctx, id, "Orchestra: reopened; its worker failed at once, like the tickets before it, "+
 		"so the run held for the environment rather than for this ticket.")
 	// No longer set aside: the dashboard's total and the run's closing count leave it out.

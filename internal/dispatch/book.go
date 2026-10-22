@@ -236,6 +236,7 @@ func (b *ticketBook) merged(id string) {
 
 // requeue puts ticket id back in the queue, set aside no longer (see waitForMerge, reopenFailed). A
 // worker left in its tab is followed still, until the ticket is dispatched again: it may close it there.
+// The run calls it through Loop.requeue, which says so.
 func (b *ticketBook) requeue(id string) {
 	b.change(id, func(r *ticketRecord) {
 		if r.disp != dispLeftOpen {
@@ -246,7 +247,8 @@ func (b *ticketBook) requeue(id string) {
 }
 
 // setupFailed keeps ticket id out of the run as its worktree's setup failed, as f; back in the
-// queue, it is set aside no longer, while one bd failed to reopen stays set aside if it was.
+// queue, it is set aside no longer, while one bd failed to reopen stays set aside if it was. The run
+// calls it through Loop.setupFailed, which says so.
 func (b *ticketBook) setupFailed(id string, f failedSetup) {
 	b.change(id, func(r *ticketRecord) {
 		r.become(dispSetupFailed)
@@ -255,6 +257,24 @@ func (b *ticketBook) setupFailed(id string, f failedSetup) {
 			r.aside = 0
 		}
 	})
+}
+
+// requeue puts ticket id back in the queue (see ticketBook.requeue) and says so, why, with
+// EvRequeued: whatever put it there, the dashboard shows it waiting, not working (orchestra-4n6j.6).
+func (o *Loop) requeue(id, why string) {
+	o.book.requeue(id)
+	o.emit(Event{Kind: EvRequeued, Ticket: id, Detail: why})
+}
+
+// setupFailed keeps ticket id out of the run as its worktree's setup failed, as f (see
+// ticketBook.setupFailed), and says so with EvRequeued, as requeue does.
+func (o *Loop) setupFailed(id string, f failedSetup) {
+	o.book.setupFailed(id, f)
+	why := "its setup failed"
+	if f.notReopened {
+		why += ", and bd could not reopen it"
+	}
+	o.emit(Event{Kind: EvRequeued, Ticket: id, Detail: why})
 }
 
 // retrySetups lets the tickets whose worktree's setup failed be taken again.

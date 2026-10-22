@@ -30,6 +30,12 @@ All notable changes to orchestra are documented here. The format follows
   fetched, then wrote init's defaults (concurrent 1, no MCP servers, its check
   timeouts) over the upstream's settings, committed them and ran with them. It
   now decides once its fetch is done, and runs with the upstream's settings.
+- A ticket whose worktree's setup failed shows as waiting on the dashboard,
+  "back in the queue: its setup failed"; it stayed "▶ working" for the rest of
+  the run, and the summary listed it as working above `SETUP_WAITS`. Every
+  requeue now emits a `requeued` record (docs/events.md), with why, which the
+  dashboard shows: a failed setup, a ticket waiting for a merge, one reopened
+  by a hold for the environment.
 - With tmux, a repository at a non-ASCII path, such as `~/Código/shop`, works
   where no locale says UTF-8, as under the cron or launchd recipe. tmux then
   answered every non-ASCII character as `_`, so no worker's pane or hook
