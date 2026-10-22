@@ -283,12 +283,22 @@ func askAs[T any](ctx context.Context, g Client, s spec, input string, parse fun
 // answered with an error result or a refusal; one stopped at its time limit says "timed out after" the
 // limit. Spent hears of each call claude answered.
 func (g Client) ask(ctx context.Context, s spec, input string) (Result, error) {
-	dir, err := os.MkdirTemp("", "orchestra-organ-") // mode 0700, under a name nobody had
+	dir, done, err := privateDir()
 	if err != nil {
 		return Result{}, fmt.Errorf("making a directory for the %s organ: %w", s.name, err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }() // best effort: an empty directory left in TMPDIR harms nothing
+	defer done()
 	return g.askIn(ctx, s, dir, nil, input)
+}
+
+// privateDir makes an empty directory for one run of claude outside any project, as ask's comment says
+// why, and returns it with done, which removes it.
+func privateDir() (dir string, done func(), err error) {
+	dir, err = os.MkdirTemp("", "orchestra-organ-") // mode 0700, under a name nobody had
+	if err != nil {
+		return "", nil, err
+	}
+	return dir, func() { _ = os.RemoveAll(dir) }, nil // best effort: an empty directory left in TMPDIR harms nothing
 }
 
 // askIn runs claude -p for the organ s on input, as ask does, but in dir and with flags added after the

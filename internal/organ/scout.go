@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -172,9 +171,15 @@ func (g Client) scout(ctx context.Context, limit time.Duration, root string) (Sc
 
 // scoutFlags is the scout's flags beyond the other organs', those of them claude lists in its --help: an
 // older claude rejects a flag it doesn't know. When --help fails, the scout runs without them, and its
-// call says what is wrong.
+// call says what is wrong. --help runs in a private directory of its own, as the organs' calls do, never in
+// the temporary directory itself, where another user could leave settings.
 func (g Client) scoutFlags(ctx context.Context) []string {
-	help, err := command.Output(ctx, command.ReadLimit, os.TempDir(), g.Bin, "--help")
+	dir, done, err := privateDir()
+	if err != nil {
+		return nil
+	}
+	defer done()
+	help, err := command.Output(ctx, command.ReadLimit, dir, g.Bin, "--help")
 	if err != nil {
 		return nil
 	}

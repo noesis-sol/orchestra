@@ -25,6 +25,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- The scout asks claude for its `--help` in a private directory of its own,
+  as the organs' calls run, rather than in the temporary directory itself:
+  on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where
+  another user could leave `.claude` settings for claude to read.
 - In Herdr and cmux, a worker is launched whatever shell its pane runs: the
   command goes in a script for `/bin/sh`, and the pane's shell is typed a
   line that quotes nothing, ` /bin/sh <script>`. Herdr typed the command
