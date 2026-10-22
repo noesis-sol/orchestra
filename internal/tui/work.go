@@ -52,7 +52,7 @@ func AskWork(
 	ctx context.Context, in io.Reader, out io.Writer, termName, repo string, ready int, nothing *dispatch.NothingToRun,
 ) (Work, error) {
 	choice, description, spec, refine := WorkTickets, "", "", false
-	theme := huh.ThemeCharm()
+	theme := formTheme()
 	gap := theme.FieldSeparator.Render()
 	describe := &formField{
 		Field: huh.NewText().

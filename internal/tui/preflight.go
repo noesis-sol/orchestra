@@ -140,7 +140,7 @@ func AskPreflight(
 	if !PreflightAsks(checks, forced) {
 		return a, nil
 	}
-	theme := huh.ThemeCharm()
+	theme := formTheme()
 	gap := theme.FieldSeparator.Render()
 	theme.FieldSeparator = lipgloss.NewStyle() // each field below the first draws its own
 	var fields []huh.Field

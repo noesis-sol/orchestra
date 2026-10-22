@@ -671,7 +671,7 @@ func untilSettled(f *formField, settled func() bool) {
 // drawing their own gaps and headers in a theme of their own; and its fields, in order, for huh's
 // accessible form.
 func buildForm(stages []*initStage, in io.Reader, out io.Writer) (*huh.Form, []huh.Field) {
-	theme := huh.ThemeCharm()
+	theme := formTheme()
 	gap := theme.FieldSeparator.Render()
 	theme.FieldSeparator = lipgloss.NewStyle()              // each formField draws its own
 	theme.Group.Title = lipgloss.NewStyle().MarginBottom(1) // the stepper styles itself

@@ -43,6 +43,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A yes-or-no question in `orchestra init`, the overnight pre-flight or the
+  work form puts its answer in brackets, `[Yes]  No`: the buttons differed
+  only in colour, which `NO_COLOR` strips, so you couldn't tell which one
+  Enter would pick.
 - The scout asks claude for its `--help` in a private directory of its own,
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where
