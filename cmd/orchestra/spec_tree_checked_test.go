@@ -48,8 +48,8 @@ func TestFileAnswerTreeShowsEachFiledIssueOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.issues != 5 || got.links != 1 {
-		t.Errorf("got %+v; want 5 issues and 1 later link", got)
+	if got.issues != 5 {
+		t.Errorf("got %+v; want 5 issues", got)
 	}
 	if want := []string{"s-1", "s-1.1"}; !reflect.DeepEqual(bd.shown, want) {
 		t.Errorf("bd showed %v; want %v", bd.shown, want)

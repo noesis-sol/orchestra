@@ -54,26 +54,26 @@ type specIssue struct {
 type treeFiler interface {
 	Show(ctx context.Context, id string) (dispatch.Ticket, error)
 	Create(ctx context.Context, t beads.NewTicket) (string, error)
-	AddCheckedBlock(ctx context.Context, blocker, blocked string) error
 	AppendNotes(ctx context.Context, id, note string) error
 	SetMetadata(ctx context.Context, id, key, value string) error
 }
 
-// treeFiled is what fileAnswerTree filed: the issues, the blocks links added once both ends were
-// filed, and the warnings about what it couldn't note or set on the root epic.
+// treeFiled is what fileAnswerTree filed: the issues, and the warnings about what it couldn't note or
+// set on the root epic.
 type treeFiled struct {
-	issues, links int
-	warnings      []string
+	issues   int
+	warnings []string
 }
 
 // fileAnswerTree files the issues of the answer a, a breakdown's of spec, under its root epic,
-// telling filed of each as it is filed, each carrying the spec's metadata. Parents are filed before
-// their children, each issue with its links to those it waits for that are filed already; the other
-// links are added after. Then the root epic gets the answer's assumptions in its notes, under
+// telling filed of each as it is filed, each carrying the spec's metadata. Each issue is filed after
+// its parent and the issues it waits for, with its links to them, so that bd failing part-way leaves
+// every issue filed with all its links: a rerun's breakdown files only what is missing, and can't say
+// that an issue filed already waits for a new one. Then the root epic gets the answer's assumptions in its notes, under
 // Assumptions, and last of all its spec_sha256 and spec_commit; bd failing at either is a warning
 // (checkBreakdown sets the metadata again). An answer that can't be filed as given (an issue without
 // a key, a key given twice, a name that is neither a key of the answer nor an issue bd has, a parent
-// or blocks cycle) is an error before anything is filed; bd failing to file is one, saying how far
+// or blocks cycle, or one of both) is an error before anything is filed; bd failing to file is one, saying how far
 // it got. Every ID it links an issue to is one bd gave it as it filed the issue, or one planTree
 // found bd has, so bd isn't asked again whether it has it (a bd show each, some 120 for a tree of 40
 // issues with 40 links).
@@ -108,19 +108,13 @@ func fileAnswerTree(ctx context.Context, bd treeFiler, spec project.Spec, a spec
 		}
 		return r
 	}
-	type link struct{ blocker, blocked string } // keys of the answer's
-	var later []link
 	for _, i := range order {
 		is := issues[i]
 		t := beads.NewTicket{Title: is.Title, Description: is.Description, Acceptance: is.Acceptance, Type: is.Type,
 			Priority: is.Priority, Parent: cmp.Or(ref(is.Parent), a.Root), Files: is.Files, Labels: is.Labels,
 			Metadata: map[string]string{dispatch.SpecKey: spec.Path}, Checked: true}
 		for _, w := range is.WaitsFor {
-			if id := ref(w); id != "" {
-				t.BlockedBy = append(t.BlockedBy, id)
-			} else {
-				later = append(later, link{blocker: w, blocked: is.Key})
-			}
+			t.BlockedBy = append(t.BlockedBy, ref(w))
 		}
 		id, err := bd.Create(ctx, t)
 		if err != nil {
@@ -132,13 +126,6 @@ func fileAnswerTree(ctx context.Context, bd treeFiler, spec project.Spec, a spec
 		if filed != nil {
 			filed(filedIssue{Epic: is.Type == "epic", Title: is.Title}, id)
 		}
-	}
-	for _, l := range later {
-		if err := bd.AddCheckedBlock(ctx, ids[l.blocker], ids[l.blocked]); err != nil {
-			return done, fmt.Errorf("orchestra filed its answer's %d issues and %d of its %d later blocks links, then "+
-				"couldn't have %s wait for %s: %w", done.issues, done.links, len(later), ids[l.blocked], ids[l.blocker], err)
-		}
-		done.links++
 	}
 	if note := assumptionsNote(a.Assumptions); note != "" {
 		if err := bd.AppendNotes(ctx, a.Root, note); err != nil {
@@ -180,7 +167,8 @@ func trimmedIssues(issues []specIssue) []specIssue {
 }
 
 // planTree checks the issues of an answer whose root epic, which bd has, is root before any is filed,
-// and returns the order to file them in: each after its parent, in the answer's order otherwise.
+// and returns the order to file them in: each after its parent and the issues it waits for, in the
+// answer's order otherwise.
 func planTree(ctx context.Context, bd treeFiler, root string, issues []specIssue) ([]int, error) {
 	index := map[string]int{}
 	for i, is := range issues {
@@ -243,6 +231,10 @@ func planTree(ctx context.Context, bd treeFiler, root string, issues []specIssue
 	if c := cycleAmong(len(issues), func(i int) []int { return among(issues[i].WaitsFor...) }); c != nil {
 		return nil, fmt.Errorf("its blocks links make a cycle: %s", keysOf(c))
 	}
+	before := func(i int) []int { return among(append([]string{issues[i].Parent}, issues[i].WaitsFor...)...) }
+	if c := cycleAmong(len(issues), before); c != nil {
+		return nil, fmt.Errorf("its parents and blocks links make a cycle: %s", keysOf(c))
+	}
 	var order []int
 	placed := make([]bool, len(issues))
 	var place func(i int)
@@ -251,7 +243,7 @@ func planTree(ctx context.Context, bd treeFiler, root string, issues []specIssue
 			return
 		}
 		placed[i] = true
-		for _, p := range among(issues[i].Parent) {
+		for _, p := range before(i) {
 			place(p)
 		}
 		order = append(order, i)

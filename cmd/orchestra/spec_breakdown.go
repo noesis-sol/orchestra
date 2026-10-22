@@ -150,8 +150,8 @@ func (h headlessBreakdown) fileAnswer(ctx context.Context, spec project.Spec, a 
 		return nil, err
 	}
 	if done.issues > 0 {
-		h.logLine(fmt.Sprintf("SPEC: filed %s and %s from the breakdown's answer (%s)", plural(done.issues, "issue"),
-			plural(done.links, "later blocks link"), command.ShortDuration(time.Since(began).Round(time.Second))))
+		h.logLine(fmt.Sprintf("SPEC: filed %s from the breakdown's answer (%s)", plural(done.issues, "issue"),
+			command.ShortDuration(time.Since(began).Round(time.Second))))
 	}
 	return done.warnings, nil
 }

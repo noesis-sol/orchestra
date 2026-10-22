@@ -245,13 +245,12 @@ func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 	for _, want := range []string{
 		"create|--json|--title=Listing|--description=Lists things.|--type=epic|--priority=1|--parent=s-1|" +
 			`--metadata={"spec":".orchestra/specs/app.md"}|`,
-		"create|--json|--title=Sort the things|--description=Sorts.|--type=task|--priority=2|--acceptance=Sorts them|" +
-			"--parent=s-1" + fmt.Sprintf(meta, "sort.go"),
 		"create|--json|--title=List the things|--description=Lists.|--type=task|--priority=1|--acceptance=Lists them|" +
 			"--parent=s-1.1|--labels=solo" + fmt.Sprintf(meta, "list.go"),
+		"create|--json|--title=Sort the things|--description=Sorts.|--type=task|--priority=2|--acceptance=Sorts them|" +
+			"--parent=s-1|--deps=blocked-by:s-1.1.1" + fmt.Sprintf(meta, "sort.go"),
 		"create|--json|--title=Name the things|--description=Names.|--type=task|--priority=2|--acceptance=Names them|" +
 			"--parent=s-1.1|--deps=blocked-by:s-1.1.1" + fmt.Sprintf(meta, "names.go"),
-		"dep|add|s-1.2|s-1.1.1|",
 		"update|s-1|--append-notes|Assumptions\n\n- Things are sorted by name, A to Z (Sort the things).|",
 		"update|s-1|--set-metadata|spec_sha256=",
 		"update|s-1|--set-metadata|spec_commit=",
@@ -271,7 +270,7 @@ func TestSpecBreakdownRunsTheRootEpicItFiles(t *testing.T) {
 		"SPEC: filed epic s-1: An app\n", "SPEC: filed epic s-1.1: Listing\n",
 		"SPEC: breakdown $1.2500 in 30 turns, ", ", session sess-1\n",
 		"SPEC: filing the 4 issues of the breakdown's answer under s-1\n",
-		"SPEC: filed 4 issues and 1 later blocks link from the breakdown's answer (",
+		"SPEC: filed 4 issues from the breakdown's answer (",
 		"SPEC: broken down into s-1 (2 epics, 3 tickets)\n",
 		"SPEC: assumed: Things are sorted by name, A to Z (Sort the things).\n"} {
 		if !strings.Contains(log, want) {

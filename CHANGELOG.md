@@ -14,6 +14,13 @@ All notable changes to orchestra are documented here. The format follows
   of the tree was then filed under a closed epic, and the next night's
   carry-over took it as built. The root now closes once the filing is over
   and everything filed under it has merged.
+- A spec's breakdown that bd fails part-way through filing leaves every issue
+  it filed with all its blocks links: orchestra files each issue of the answer
+  after its parent and the issues it waits for, with its links to them. It
+  added a link to an issue later in the answer only after filing them all, so
+  a rerun, which files only what is missing, left the issue waiting for nothing
+  and it could run before its prerequisite. An answer whose parents and blocks
+  links together make a cycle is refused before anything is filed.
 
 ## [0.9.4] - 2026-10-22
 
