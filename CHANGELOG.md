@@ -6,6 +6,15 @@ All notable changes to orchestra are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A spec's or a feature's breakdown files a wide ticket tree, so that a run
+  keeps its workers busy: blocks links only where a ticket needs the other's
+  code, chains three links deep at most, a ticket many others build on cut to
+  the seam, a file for each ticket meant to run beside the others, tests in
+  the ticket whose code they test rather than after it, and `solo` only where
+  most tickets would conflict. Each rule comes with its reason.
+
 ### Fixed
 
 - In Herdr and cmux, a worker is launched whatever shell its pane runs: the

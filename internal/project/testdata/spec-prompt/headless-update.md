@@ -127,7 +127,8 @@ and much of it may be built and merged by now. Update it for the change alone:
   - a priority from 0 (critical) to 4 (backlog): what other work builds on comes first;
   - its files, in the metadata: the repository paths it changes, the new ones included; a new
     folder whose files you can't name yet may be listed as the folder, ending in `/`;
-  - a blocks link to each ticket it builds on, so it starts only once that one is merged;
+  - a blocks link to each ticket whose code it builds on, so it starts only once that one is
+    merged, and to no other (see Tickets that run side by side);
   - the label `solo` if it restructures code most tickets touch (splitting or moving a shared file),
     so that it runs with no other ticket beside it.
 - **Every issue** you file, epics and tickets, carries the metadata `spec` with the spec's path:
@@ -203,6 +204,29 @@ file spikes only for the unverified facts the change adds, or that the tickets i
   share, such as a common acceptance line ("the checks pass" rather than the check script's name),
   unless each of them edits that file. The spec's own path belongs in the metadata, not the text:
   cite its sections by heading.
+
+Keep the tree wide, so that the run keeps its workers busy:
+
+- A blocks link only where a ticket can't be written until the other's code is on the base: it
+  calls, extends or edits code the other adds. Not for an order of preference, docs after code,
+  tests after the feature, or two tickets in one area: orchestra keeps tickets that change the same
+  code apart without a link, and a link costs the waiting ticket the other's whole session and its
+  merge.
+- Wide and shallow: the longest chain of blocks links as short as the work allows,
+  three at most, the environment ticket and spikes aside.
+  Four workers stay busy only with about four tickets for each step of the chain.
+- A ticket three or more others build on is cut to the seam: the flag, types, signatures and empty
+  registration points the others fill in, each dependent's in a file of its own, with a test that
+  it is wired. It then merges in minutes, and the substance goes to the dependents.
+- Tickets meant to run side by side get a file each: tickets that share a file run one after
+  another, whatever their links say.
+- Tests are part of the ticket whose code they test, never a ticket after it: its worker checks
+  the change with them before it closes. A closing docs ticket only where the tickets beside each
+  other would otherwise all edit the same doc, and nothing waits on it: it is the end of the run,
+  not a step in a chain.
+- The label `solo` only for a change most tickets would conflict with, since nothing runs beside
+  it; otherwise its files metadata lists what it changes, and orchestra keeps apart only the
+  tickets that share those files.
 
 ## Choices the spec leaves open
 
