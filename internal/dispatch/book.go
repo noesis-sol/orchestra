@@ -59,9 +59,13 @@ type ticketRecord struct {
 	// failedCheck: what its last check in this run said, if it failed (see noteCheckFailed); nil once a
 	// later check passes, as the reviewer is told of a failed check only when it is set aside for one.
 	failedCheck *checkFail
-	// setUpFor: the commit its worktree's dependencies were set up for in this run (see setUp,
-	// setUpWorktree); "" when they weren't, or its worktree is new.
+	// setUpFor: the commit its worktree's dependencies were set up for in this run (see worktreeDeps);
+	// "" when they weren't, or its worktree is new.
 	setUpFor string
+	// setupBroken: the last setup in its worktree in this run failed or was cut short, which may have left
+	// its dependencies missing or half installed: the next setup due runs whatever changed (see
+	// worktreeDeps.due).
+	setupBroken bool
 	// parent: its parent, once it is dispatched or left unmerged: until it merges, its parent waits
 	// (see parentsOpen).
 	parent string
@@ -73,7 +77,7 @@ type ticketRecord struct {
 // empty reports whether r holds nothing: a ticket in the run that nothing in it has marked.
 func (r *ticketRecord) empty() bool {
 	return r.disp == dispIn && r.aside == 0 && r.unmerged == "" && r.failedCheck == nil && r.setUpFor == "" &&
-		r.parent == "" && !r.resumed
+		!r.setupBroken && r.parent == "" && !r.resumed
 }
 
 // ticketBook is each ticket's record, under its own lock. Its zero value is ready to use.
@@ -304,8 +308,9 @@ func (b *ticketBook) forgetCheck(id string) {
 }
 
 // setUpSince is the commit ticket id's dependencies were last set up for in this run; before, its
-// branch's commit before its rebase, if they weren't, which it keeps as that commit: a setup that
-// fails leaves them as they were.
+// branch's commit before its rebase, if they weren't, which it keeps as that commit. A setup that fails,
+// or is cut short, doesn't leave them as they were (npm ci removes node_modules first): it marks them
+// broken instead (see setupBroke), and the next setup runs whatever changed since.
 func (b *ticketBook) setUpSince(id, before string) string {
 	var from string
 	b.change(id, func(r *ticketRecord) {
@@ -317,18 +322,35 @@ func (b *ticketBook) setUpSince(id, before string) string {
 	return from
 }
 
-// setUp records that ticket id's dependencies are set up for commit at; "" (git couldn't say)
-// records nothing.
+// setUp records that ticket id's dependencies are set up for commit at, a setup having worked; "" (git
+// couldn't say) keeps the commit they were set up for before.
 func (b *ticketBook) setUp(id, at string) {
-	if at == "" {
-		return
-	}
-	b.change(id, func(r *ticketRecord) { r.setUpFor = at })
+	b.change(id, func(r *ticketRecord) {
+		r.setupBroken = false
+		if at != "" {
+			r.setUpFor = at
+		}
+	})
+}
+
+// setupBroke records that a setup in ticket id's worktree failed or was cut short: its dependencies
+// may be missing or half installed, until a setup works there.
+func (b *ticketBook) setupBroke(id string) {
+	b.change(id, func(r *ticketRecord) { r.setupBroken = true })
+}
+
+// brokenSetup reports whether the last setup in ticket id's worktree in this run failed or was cut
+// short (see setupBroke).
+func (b *ticketBook) brokenSetup(id string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	r := b.recs[id]
+	return r != nil && r.setupBroken
 }
 
 // freshWorktree forgets what ticket id's dependencies were set up for: its worktree is new.
 func (b *ticketBook) freshWorktree(id string) {
-	b.change(id, func(r *ticketRecord) { r.setUpFor = "" })
+	b.change(id, func(r *ticketRecord) { r.setUpFor, r.setupBroken = "", false })
 }
 
 // setParent records the parent of ticket id, dispatched or left unmerged: until it merges, its parent

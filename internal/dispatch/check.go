@@ -30,41 +30,48 @@ func (o *Loop) checkTimeout() time.Duration {
 // goes to the reviewer (see noteCheckFailed); runCheck returns where the output is. When it passes,
 // each FLAKY: line it printed is a warning (see reportFlaky).
 func (o *Loop) runCheck(ctx context.Context, r rebaseStop, at string) (string, error) {
-	run, output := o.runIn(ctx, r, at, "")
+	run, output := o.runIn(ctx, r, at)
 	if run.err == nil {
 		o.reportFlaky(r.id, "", run.out)
 	}
 	return output, run.err
 }
 
-// runIn runs the check in the worktree of r's ticket, or the setup command setup when it is set, on its branch's
-// commit at, and returns how it ran. It gives up after checkTimeout, stopping everything it started, and run.err
-// wraps errCheckTimedOut then. When it fails, the end of its output goes in the log, the whole of it in the
-// worktree's checkLogName or setupLogName (see keepOutput), whose path it returns as output, and, unless ctx was
-// cancelled, what it said goes to the reviewer (see noteCheckFailed), as said of its branch as r has
-// it. Only what is said of the output is kept in memory (see checkOutput). Either way it ends with a check
-// record (see checkRunIn).
-func (o *Loop) runIn(ctx context.Context, r rebaseStop, at, setup string) (run commandRun, output string) {
+// runIn runs the check in the worktree of r's ticket on its branch's commit at, and returns how it ran. It gives up
+// after checkTimeout, stopping everything it started, and run.err wraps errCheckTimedOut then. When it fails, the
+// end of its output goes in the log, the whole of it in the worktree's checkLogName (see keepOutput), whose path it
+// returns as output, and, unless ctx was cancelled, what it said goes to the reviewer (see noteCheckFailed), as
+// said of its branch as r has it. Only what is said of the output is kept in memory (see checkOutput). Either way
+// it ends with a check record (see checkRunIn). The setup before the check runs through worktreeDeps.run and
+// ranIn.
+func (o *Loop) runIn(ctx context.Context, r rebaseStop, at string) (run commandRun, output string) {
+	began := time.Now()
+	run, _ = runLimited(ctx, r.wt, o.checkTimeout(), o.cfg.Check)
+	defer run.out.close()
+	return run, o.ranIn(ctx, r, at, "", time.Since(began), run)
+}
+
+// ranIn is what runIn does once the check, or the setup command setup when it is set, has run in the worktree
+// of r's ticket on its branch's commit at, for took, as run says: it logs it, keeps the whole output of one that
+// failed (setupLogName for the setup) and tells the reviewer what it said, and returns where that output is; ""
+// when it passed. The caller closes run.out.
+func (o *Loop) ranIn(ctx context.Context, r rebaseStop, at, setup string, took time.Duration, run commandRun) string {
 	w := r.worker
 	cmd, logName := o.cfg.Check, checkLogName
 	if setup != "" {
 		cmd, logName = setup, setupLogName
 	}
-	began := time.Now()
-	run, _ = runLimited(ctx, w.wt, o.checkTimeout(), cmd)
-	took := time.Since(began)
-	defer run.out.close()
 	if run.err == nil {
 		o.log.Check(o.checkRunIn(r, at, setup, took, run.result(ctx), ""))
-		return run, ""
+		return ""
 	}
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
-	output = o.keepOutput(w.wt, logName, "the check's", run.out)
+	output := o.keepOutput(w.wt, logName, "the check's", run.out)
 	o.log.Check(o.checkRunIn(r, at, setup, took, run.result(ctx), output))
 	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
 		o.noteCheckFailed(ctx, r, output, run, setup)
 	}
-	return run, output
+	return output
 }
 
 // checkRunIn is the check record of the check, or the setup command setup when it is set, that ran in the worktree

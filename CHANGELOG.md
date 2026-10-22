@@ -8,6 +8,13 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A setup that fails or is cut short before a check, as when the merge
+  train stops a check ahead of its turn mid `npm ci`, is no longer taken for
+  dependencies set up: the next setup due in that worktree, before a check or
+  a worker, in this run or the next, runs whatever changed since, so a ticket
+  rebased back onto the base isn't checked on half-installed dependencies and
+  set aside with `CHECKS_FAILED`. Every setup now leaves
+  `.orchestra/run/setup.started` until one works there.
 - A spec run waiting, with nothing running, for its breakdown to file the
   rest of the tree now hears the maintainer and its stops: pressing s ends it
   at once, as its DRAIN line says, rather than once the breakdown is over, and

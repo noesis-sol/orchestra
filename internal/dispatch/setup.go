@@ -25,20 +25,22 @@ import (
 // on a rebased branch (merge, RECHECK and a hand-back's verification), or one on top of Base already
 // whose worker changed one, the setup runs in the worktree
 // when the commits since its dependencies were last set up change a file setup_files names. A setup
-// that fails fails the check, its output kept in the worktree's setupLogName.
+// that fails fails the check, its output kept in the worktree's setupLogName. One that fails, or is cut
+// short, may leave the dependencies missing or half installed, so the next setup due there runs it
+// again whatever changed, in this run or the next (see worktreeDeps, which owns all of this).
 //
 // A merge that changes settings.json on Base has the run take setup and setup_files from it from
 // then on (see takeSettings): the environment ticket a spec's breakdown files first sets them.
 
 // setupLogName is the file in a worktree's .orchestra/run/ that holds the whole output of the last
-// setup that failed there; a setup before a worker that works there removes it (see setupFailedIn).
+// setup that failed there; a setup that works there removes it (see setupFailedIn).
 const setupLogName = "setup.log"
 
 // setupMarkName is the file in a worktree's .orchestra/run/ that says a setup began there and hasn't
-// worked since: made before the setup runs before a worker (see setUpWorktree), it is removed once
-// one works there. One that Ctrl+C, or the end of orchestra's process, cut short leaves it, its
-// dependencies half installed or missing (npm ci removes node_modules first), and the next run that
-// takes the worktree up runs the setup again (see setupCutShortIn).
+// worked since: made before every setup (see worktreeDeps.run), it is removed once one works there.
+// One that Ctrl+C, the merge train or the end of orchestra's process cut short leaves it, its
+// dependencies half installed or missing (npm ci removes node_modules first), and the next setup due
+// there runs whatever changed (see setupCutShortIn).
 const setupMarkName = "setup.started"
 
 // setupConf is the project's setup command and the globs of the files it reads: setup and
@@ -59,44 +61,135 @@ func (o *Loop) setupNow() setupConf {
 	return setupConf{cmd: o.cfg.Setup, files: o.cfg.SetupFiles}
 }
 
+// worktreeDeps is the one owner of whether a ticket's worktree has its dependencies set up: what they
+// were last set up for in this run (see ticketBook.setUpSince), whether the last setup there failed or
+// was cut short, in this run (see ticketBook.setupBroke) or an earlier one (see setupFailedIn,
+// setupCutShortIn), and so whether the setup is due (see due) and what running it leaves (see run).
+// Every setup orchestra runs or asks for in a worktree goes through it: before a worker starts there,
+// before a check, in the merge train, and for a worker handed its rebase to resolve.
+type worktreeDeps struct {
+	o      *Loop
+	id, wt string
+	s      setupConf
+}
+
+// depsOf is the owner of ticket id's worktree wt's dependencies, with the setup as the run has it now.
+func (o *Loop) depsOf(id, wt string) worktreeDeps {
+	return worktreeDeps{o: o, id: id, wt: wt, s: o.setupNow()}
+}
+
+// setupCause is why a worktree's setup is due (see worktreeDeps.due).
+type setupCause int
+
+// The causes of a setup due; dueNone for none.
+const (
+	dueNone     setupCause = iota
+	dueFailed              // the last setup there failed: its output is there (see setupFailedIn)
+	dueCutShort            // the last setup there began and didn't finish: its mark is there (see setupCutShortIn)
+	dueBroken              // a setup in this run failed or was cut short there, and left neither file
+	dueUnknown             // git can't say what changed since its dependencies were last set up
+	dueChanged             // a file the setup's globs match changed since they were last set up
+)
+
+// setupDue is why a worktree's setup is due: its cause, and for dueChanged the files that changed.
+type setupDue struct {
+	cause   setupCause
+	changed []string
+}
+
+// due reports whether the setup runs in the worktree for its branch at commit now: always after a setup
+// there that failed or was cut short, which may have left the dependencies missing or half installed
+// (npm ci removes node_modules first), and otherwise when the commits since they were last set up in
+// this run, or since before (its branch's commit before its rebase) if they weren't, change a file the
+// setup's globs match, or git can't say what they change. A worktree with no setup has none due.
+func (d worktreeDeps) due(ctx context.Context, before, now string) setupDue {
+	switch {
+	case d.s.cmd == "":
+		return setupDue{}
+	case setupFailedIn(d.wt):
+		return setupDue{cause: dueFailed}
+	case setupCutShortIn(d.wt):
+		return setupDue{cause: dueCutShort}
+	case d.o.book.brokenSetup(d.id):
+		return setupDue{cause: dueBroken}
+	}
+	changed, known := d.o.setupChanged(ctx, d.id, before, now, d.s.files)
+	switch {
+	case !known:
+		return setupDue{cause: dueUnknown}
+	case len(changed) == 0:
+		return setupDue{}
+	}
+	return setupDue{cause: dueChanged, changed: changed}
+}
+
+// why says why the setup runs, for a line; "" when it doesn't.
+func (u setupDue) why() string {
+	switch u.cause {
+	case dueFailed:
+		return "the last setup in its worktree failed"
+	case dueCutShort:
+		return "the last setup in its worktree didn't finish"
+	case dueBroken:
+		return "the last setup in its worktree failed or didn't finish"
+	case dueUnknown:
+		return "git could not say what changed since its dependencies were last set up"
+	case dueChanged:
+		return fileList(u.changed) + " changed since its dependencies were last set up"
+	}
+	return ""
+}
+
+// again reports whether the setup runs as the last one there didn't work.
+func (u setupDue) again() bool {
+	return u.cause == dueFailed || u.cause == dueCutShort || u.cause == dueBroken
+}
+
+// run runs the setup in the worktree, its branch at commit now ("" when git couldn't say), within the
+// check's time limit, and returns how it ran, for the caller to log and close, and how long it took. It
+// marks the setup under way first (see setupMarkName); one that works records what the dependencies are
+// set up for and removes the mark and the output of one that failed earlier; one that fails, or is cut
+// short, leaves the mark and has the next due run it again, whatever changed meanwhile.
+func (d worktreeDeps) run(ctx context.Context, now string) (commandRun, time.Duration) {
+	o := d.o
+	o.markSetup(d.wt)
+	began := time.Now()
+	run, _ := runLimited(ctx, d.wt, o.checkTimeout(), d.s.cmd)
+	took := time.Since(began)
+	if run.err != nil {
+		o.book.setupBroke(d.id)
+		return run, took
+	}
+	o.book.setUp(d.id, now)
+	o.dropRunFile(d.wt, setupLogName, "the output of a setup that failed earlier")
+	o.dropRunFile(d.wt, setupMarkName, "the mark of a setup under way")
+	return run, took
+}
+
 // setUp runs the setup command in the worktree of r's ticket, its branch rebased onto the commit r.onto
-// from r.head (or on top of it already), when the commits since its dependencies were last set up in
-// this run, or since r.head if they weren't, change a file the setup's globs match (see setupDue);
-// when git can't say what they change, it runs it anyway. It returns as runCheck does: where the
-// output of a setup that failed is, and errCheckTimedOut for one stopped at the check's time limit.
+// from r.head (or on top of it already), when it is due (see worktreeDeps.due): the commits since its
+// dependencies were last set up in this run, or since r.head if they weren't, change a file the setup's
+// globs match, git can't say what they change, or the last setup there failed or was cut short. It
+// returns as runCheck does: where the output of a setup that failed is, and errCheckTimedOut for one
+// stopped at the check's time limit.
 func (o *Loop) setUp(ctx context.Context, r rebaseStop) (string, error) {
 	w := r.worker
-	s := o.setupNow()
-	if s.cmd == "" {
+	d := o.depsOf(w.id, w.wt)
+	if d.s.cmd == "" {
 		return "", nil
 	}
 	keep := context.WithoutCancel(ctx)                  // a read cut short would look like no change
 	now, err := o.checkout.Head(keep, o.cfg.Repo, w.br) // "" on failure: the setup runs
 	o.log.Raw("", err)
-	what := o.setupDue(keep, w.id, r.head, now, s.files)
-	if what == "" {
+	due := d.due(keep, r.head, now)
+	if due.cause == dueNone {
 		return "", nil
 	}
-	o.info("  %s: %s; running '%s' before the check", w.id, what, s.cmd)
-	if run, output := o.runIn(ctx, r, now, s.cmd); run.err != nil {
-		return output, run.err
-	}
-	o.book.setUp(w.id, now)
-	return "", nil
-}
-
-// setupDue says why the setup runs for ticket id's branch at commit now: the files globs match that the
-// commits since its dependencies were last set up change (see ticketBook.setUpSince), its worker's own included, or
-// that git can't say what they change; "" when they change none.
-func (o *Loop) setupDue(ctx context.Context, id, before, now string, globs []string) string {
-	changed, known := o.setupChanged(ctx, id, before, now, globs)
-	switch {
-	case !known:
-		return "git could not say what changed since its dependencies were last set up"
-	case len(changed) == 0:
-		return ""
-	}
-	return fileList(changed) + " changed since its dependencies were last set up"
+	o.info("  %s: %s; running '%s' before the check", w.id, due.why(), d.s.cmd)
+	run, took := d.run(ctx, now)
+	defer run.out.close()
+	output := o.ranIn(ctx, r, now, d.s.cmd, took, run)
+	return output, run.err
 }
 
 // setupChanged lists the files globs match that the commits since ticket id's dependencies were last
@@ -117,96 +210,89 @@ func (o *Loop) setupChanged(ctx context.Context, id, before, now string, globs [
 
 // setupToResolve is what the worker handed r's rebase back to resolve (see handBack) is told of the
 // setup, and what the line saying so adds: to run it once the rebase has finished, before the tests,
-// when the commits since its dependencies were last set up, up to r.onto, which the rebase brings in,
-// change a file the setup's globs match, or git can't say what they change; "" for both when they
-// change none, or there is no setup. Its tests would otherwise run on dependencies set up for the code
-// before the rebase, as tutti-nrg.62's did ("Cannot find module"). orchestra runs the setup itself
-// before it checks the resolution (see setUp).
+// when it is due for r.onto, which the rebase brings in (see worktreeDeps.due): the commits since its
+// dependencies were last set up change a file the setup's globs match, git can't say what they change,
+// or the last setup in its worktree failed or was cut short; "" for both when it isn't, or there is no
+// setup. Its tests would otherwise run on dependencies set up for the code before the rebase, as
+// tutti-nrg.62's did ("Cannot find module"). orchestra runs the setup itself before it checks the
+// resolution (see setUp).
 func (o *Loop) setupToResolve(ctx context.Context, r rebaseStop) (prompt, line string) {
-	s := o.setupNow()
-	if s.cmd == "" {
+	d := o.depsOf(r.id, r.wt)
+	due := d.due(ctx, r.head, r.onto)
+	var why string
+	switch due.cause {
+	case dueNone:
 		return "", ""
-	}
-	changed, known := o.setupChanged(ctx, r.id, r.head, r.onto, s.files)
-	if known && len(changed) == 0 {
-		return "", ""
-	}
-	why := "git could not say whether the rebase brings in a change to the files the project's setup reads"
-	if known {
-		why = "the rebase brings in a change to " + fileList(changed) + ", which the project's setup reads"
+	case dueUnknown:
+		why = "git could not say whether the rebase brings in a change to the files the project's setup reads"
+	case dueChanged:
+		why = "the rebase brings in a change to " + fileList(due.changed) + ", which the project's setup reads"
+	default:
+		why = due.why()
 	}
 	return fmt.Sprintf("As %s, once the rebase has finished run the setup, '%s', in the foreground before the "+
-			"tests, so that they run on dependencies set up for the rebased code. ", why, s.cmd),
-		fmt.Sprintf("; told to run '%s' once the rebase has finished, as %s", s.cmd, why)
+			"tests, so that they run on dependencies set up for the rebased code. ", why, d.s.cmd),
+		fmt.Sprintf("; told to run '%s' once the rebase has finished, as %s", d.s.cmd, why)
 }
 
 // setUpWorktree runs the setup command in the ticket's worktree p before its worker starts there,
 // within the check's time limit: always in a new one, where nothing is installed, and in one reused
-// when the last setup there failed (see setupFailedIn) or was cut short (see setupCutShortIn), or the
-// commits since its dependencies were last set up change a file the setup's globs match, as before the
-// check (see setUp). It records the
-// commit it set up for, so that the check after the ticket sets them up again only for what changes
-// since. A worker adopted, or handed its ticket back, is in its worktree already: this runs only for
-// one about to start. It reports whether the ticket's run is over, as its setup failed (see
-// leaveSetupFailed), or Ctrl+C came, the reason the run stops for then.
+// when it is due there, as before the check (see worktreeDeps.due): the last setup there failed or was
+// cut short, or the commits since its dependencies were last set up change a file the setup's globs
+// match. It records the commit it set up for, so that the check after the ticket sets them up again
+// only for what changes since. A worker adopted, or handed its ticket back, is in its worktree already:
+// this runs only for one about to start. It reports whether the ticket's run is over, as its setup
+// failed (see leaveSetupFailed), or Ctrl+C came, the reason the run stops for then.
 func (r *ticketRun) setUpWorktree(ctx context.Context, p preparedWorktree) (bool, *stopReason) {
 	o, id := r.o, r.id
-	s := o.setupNow()
-	if s.cmd == "" {
+	d := o.depsOf(id, p.wt)
+	if d.s.cmd == "" {
 		return false, nil
 	}
 	now, err := o.checkout.Head(r.keep, o.cfg.Repo, r.br) // "" on failure: the setup runs
 	o.log.Raw("", err)
-	what, failedThere := "running '"+s.cmd+"' in its new worktree", setupFailedIn(p.wt)
-	switch {
-	case p.fresh:
+	what := "running '" + d.s.cmd + "' in its new worktree"
+	if p.fresh {
 		o.book.freshWorktree(id) // a worktree it had before, since removed, was set up for itself
-	case failedThere:
-		what = "the last setup in its worktree failed; running '" + s.cmd + "' there again"
-	case setupCutShortIn(p.wt):
-		what = "the last setup in its worktree didn't finish; running '" + s.cmd + "' there again"
-	default:
-		why := o.setupDue(r.keep, id, p.before, now, s.files)
-		if why == "" {
+	} else {
+		due := d.due(r.keep, p.before, now)
+		switch {
+		case due.cause == dueNone:
 			return false, nil
+		case due.again():
+			what = due.why() + "; running '" + d.s.cmd + "' there again"
+		default:
+			what = due.why() + "; running '" + d.s.cmd + "' in its worktree"
 		}
-		what = why + "; running '" + s.cmd + "' in its worktree"
 	}
 	o.info("  %s: %s before its worker starts", id, what)
-	o.markSetup(p.wt)
-	began := time.Now()
-	run, _ := runLimited(ctx, p.wt, o.checkTimeout(), s.cmd)
+	run, took := d.run(ctx, now)
 	defer run.out.close()
-	ran := CheckRun{Suite: SuiteSetup, Ticket: id, Command: s.cmd, Commit: short(now), Took: time.Since(began),
+	ran := CheckRun{Suite: SuiteSetup, Ticket: id, Command: d.s.cmd, Commit: short(now), Took: took,
 		Result: run.result(ctx)}
 	switch {
 	case run.err == nil:
 		o.log.Check(ran)
-		o.book.setUp(id, now)
-		if failedThere {
-			o.dropRunFile(p.wt, setupLogName, "the output of a setup that failed earlier")
-		}
-		o.dropRunFile(p.wt, setupMarkName, "the mark of a setup under way")
 		return false, nil
 	case ctx.Err() != nil:
 		// Stopped by Ctrl+C, it says nothing of the setup; its mark stays, for the next run to set up again.
 		o.log.Check(ran)
 		return true, errInterrupted
 	}
-	ran.Output = r.leaveSetupFailed(s.cmd, p.wt, run)
+	ran.Output = r.leaveSetupFailed(d.s.cmd, p.wt, run)
 	o.log.Check(ran)
 	return true, nil
 }
 
 // setupFailedIn reports whether the last setup in worktree wt failed, in this run or an earlier one:
-// the whole output it kept is there (see keepOutput), until a setup before a worker works there (see
-// dropRunFile). Its dependencies may then be missing, or half installed.
+// the whole output it kept is there (see keepOutput), until a setup works there (see worktreeDeps.run).
+// Its dependencies may then be missing, or half installed.
 func setupFailedIn(wt string) bool {
 	_, err := os.Lstat(filepath.Join(wt, project.RunPath(setupLogName)))
 	return err == nil
 }
 
-// setupCutShortIn reports whether a setup began in worktree wt, in an earlier run, and neither worked
+// setupCutShortIn reports whether a setup began in worktree wt, in this run or an earlier one, and neither worked
 // nor failed there: its mark is there (see setupMarkName). A failure keeps the mark too, but
 // setupFailedIn says so first.
 func setupCutShortIn(wt string) bool {
