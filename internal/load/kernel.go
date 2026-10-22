@@ -70,8 +70,9 @@ func ReadKernel(ctx context.Context) (Kernel, error) {
 			b, _ := os.ReadFile(name) // a file the kernel lacks (no pressure stall information) says nothing
 			return string(b)
 		}
+		cores := HostCores(read("/sys/devices/system/cpu/online"), read("/proc/cpuinfo"), runtime.NumCPU())
 		return ParseLinux(read("/proc/loadavg"), read("/proc/pressure/memory"), read("/proc/meminfo"),
-			read("/proc/vmstat"), runtime.NumCPU())
+			read("/proc/vmstat"), cores)
 	}
 	return Kernel{}, errors.ErrUnsupported
 }
@@ -152,6 +153,44 @@ func ParseLinux(loadavg, pressure, meminfo, vmstat string, cores int) (Kernel, e
 		return k, errors.New("nothing readable in /proc")
 	}
 	return k, nil
+}
+
+// HostCores is the count of the host's online CPUs, which /proc/loadavg's load is spread over: from
+// /sys/devices/system/cpu/online ("0-3,8-11"), else from /proc/cpuinfo's processor lines, each "" where
+// unreadable. affinity, the CPUs this process may run on (runtime.NumCPU), is the answer where neither says
+// more: in a container pinned to 4 of a host's 64 cores, the host's load against 4 would read as overload.
+func HostCores(online, cpuinfo string, affinity int) int {
+	n := cpuList(online)
+	if n == 0 {
+		for line := range strings.Lines(cpuinfo) {
+			if name, _, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(name) == "processor" {
+				n++
+			}
+		}
+	}
+	return max(n, affinity)
+}
+
+// cpuList is the count of CPUs in a kernel CPU list, "0-3,8-11" or "0"; 0 when it isn't one.
+func cpuList(list string) int {
+	list = strings.TrimSpace(list)
+	if list == "" {
+		return 0
+	}
+	n := 0
+	for part := range strings.SplitSeq(list, ",") {
+		lo, hi, isRange := strings.Cut(part, "-")
+		if !isRange {
+			hi = lo
+		}
+		first, err1 := strconv.Atoi(lo)
+		last, err2 := strconv.Atoi(hi)
+		if err1 != nil || err2 != nil || first < 0 || last < first {
+			return 0
+		}
+		n += last - first + 1
+	}
+	return n
 }
 
 // counter is the number on text's line that starts with name, as vm_stat ("Swapins:  8873329."),

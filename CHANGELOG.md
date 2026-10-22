@@ -15,6 +15,11 @@ All notable changes to orchestra are documented here. The format follows
   nushell a repository whose path holds a quote (`~/Bob's app`) failed every
   launch, and fish read a backslash in an argument otherwise. A script whose
   path a shell would quote goes to the temporary folder, and removes itself.
+- On Linux the load line reads the host's load against the host's cores
+  (from `/sys/devices/system/cpu/online`, else `/proc/cpuinfo`) rather than
+  the process's: in a container pinned to 4 of 64 cores, the host-wide
+  `/proc/loadavg` divided by 4 read red, pressing the dispatch and
+  stretching hand-back time limits as on a loaded machine.
 - `orchestra init` leaves out a suite the scout gives with a newline or
   another control character in its command, and says so beside what the
   scout found: its checklist showed such a command on one line, so
