@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/noesis-sol/orchestra/internal/command"
 )
@@ -98,7 +100,9 @@ type Suite struct {
 type Scouting struct {
 	Suites []Suite  `json:"suites"` // empty when none was found
 	Stack  []string `json:"stack"`  // the languages, frameworks and tools, such as "Go 1.26"; may be empty
-	Note   string   `json:"note"`   // with no suites, what the scout looked at
+	// Note is, with no suites, what the scout looked at, else what the maintainer should know; it
+	// ends with the suites left out for a command init can't show as a runner would run it.
+	Note string `json:"note"`
 }
 
 // ScoutFailure is why the scout gave no answer.
@@ -250,6 +254,7 @@ func parseScouting(r Result) (Scouting, error) {
 		return Scouting{}, err
 	}
 	suites := []Suite{}
+	var refused []string
 	for _, su := range s.Suites {
 		su.Name, su.Command, su.Targeted, su.FoundIn = strings.TrimSpace(su.Name), strings.TrimSpace(su.Command),
 			strings.TrimSpace(su.Targeted), strings.TrimSpace(su.FoundIn)
@@ -261,8 +266,13 @@ func parseScouting(r Result) (Scouting, error) {
 		case !slices.Contains(tiers, su.Tier):
 			return Scouting{}, fmt.Errorf("suite %q has an unknown tier %q", su.Name, su.Tier)
 		}
-		if !hasPlaceholder(su.Targeted) { // it would run the whole suite, or nothing the worker can fill in
-			su.Targeted = ""
+		if !plain(su.Command) { // shown on one line, it would hide what the runner runs
+			refused = append(refused, fmt.Sprintf("Left out suite %q: its command holds a control character, "+
+				"such as a newline, so the checklist can't show all it runs.", su.Name))
+			continue
+		}
+		if !hasPlaceholder(su.Targeted) || !plain(su.Targeted) { // it would run the whole suite, or
+			su.Targeted = "" // nothing the worker can fill in, or more than the worker prompt shows
 		}
 		needs := []string{}
 		for _, n := range su.Needs {
@@ -279,7 +289,15 @@ func parseScouting(r Result) (Scouting, error) {
 			stack = append(stack, item)
 		}
 	}
-	return Scouting{Suites: suites, Stack: stack, Note: strings.TrimSpace(s.Note)}, nil
+	note := strings.Join(append([]string{strings.TrimSpace(s.Note)}, refused...), " ")
+	return Scouting{Suites: suites, Stack: stack, Note: strings.TrimSpace(note)}, nil
+}
+
+// plain reports whether command is valid UTF-8 without control characters: a newline in it starts
+// another command, which a checklist showing it on one line would hide, and the others the
+// checklist leaves out.
+func plain(command string) bool {
+	return utf8.ValidString(command) && !strings.ContainsFunc(command, unicode.IsControl)
 }
 
 // hasPlaceholder reports whether a targeted command has a placeholder for the part it runs on, such

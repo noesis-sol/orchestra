@@ -8,6 +8,12 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra init` leaves out a suite the scout gives with a newline or
+  another control character in its command, and says so beside what the
+  scout found: its checklist showed such a command on one line, so
+  `npm test # see CONTRIBUTING` could hide a second line the runner it
+  wrote ran on every merge. A targeted command holding one is dropped from
+  the worker prompt.
 - A worker Herdr loses sight of for a moment is no longer taken for gone by
   the paths that follow it outside its settle loop: an asked ticket's worker
   carrying on after its answer no longer has its session resumed beside it,
