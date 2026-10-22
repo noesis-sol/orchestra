@@ -306,6 +306,9 @@ All notable changes to orchestra are documented here. The format follows
   the other talk's questions too, outside its run's scope, and lost its note on
   the deferred tickets. Each talk now has its files in a folder of its own,
   `.orchestra/run/answer-<n>/`.
+- A long-lived checkout no longer gathers a folder in `.orchestra/run/` for
+  every answer talk it ever opened: a new talk removes the folders of talks
+  last written over a day ago.
 - A merge acts on what was looked at and checked. A ticket whose commits change
   nothing had its worktree reset to Base without a second look, losing edits
   begun during the merge queue's wait, or moving a branch switched to meanwhile;
