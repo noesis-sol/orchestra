@@ -306,15 +306,14 @@ func (o *Loop) retrySetups() { o.book.retrySetups() }
 // it. Its requirements too, checked again before the next ticket starts (see takeRequires). One git
 // can't read, or that doesn't parse, is warned of, and the setup stays as it was, as do the
 // requirements. now is Base's commit after the merge: the branch's it fast-forwarded to. The caller
-// holds repoMu, so Base stays where the merge left it. by names what moved Base for the lines,
-// "<id>'s merge", or as the run starts "the fast-forward to origin/main" with id "" (see fetchBase).
-// It returns the settings it read, and whether it read them: the run's start takes their checks too
-// (see takeChecks), a merge's count from the next run.
-func (o *Loop) takeSettings(ctx context.Context, id, by, before, now string) (project.Settings, bool) {
+// holds repoMu, so Base stays where the merge left it. by names the merge for the lines, "<id>'s
+// merge". Its check commands count from the next run; a fast-forward of Base before the first ticket
+// has the run take them too (see TakeFastForward).
+func (o *Loop) takeSettings(ctx context.Context, id, by, before, now string) {
 	c := o.cfg
 	if before == "" || now == "" ||
 		!slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), project.SettingsFile) {
-		return project.Settings{}, false
+		return
 	}
 	text, err := o.checkout.FileAt(ctx, c.Repo, now, project.SettingsFile)
 	var s project.Settings
@@ -325,40 +324,6 @@ func (o *Loop) takeSettings(ctx context.Context, id, by, before, now string) (pr
 		o.takeRequires(id, by, s)
 	}
 	o.takeSetup(id, by, s, err)
-	return s, err == nil
-}
-
-// takeChecks has the run take check_fast, check_full and check_own from s, the settings.json the
-// fast-forward of Base as the run starts brought in (by), where they differ from the run's: no ticket
-// has started yet, so every one is checked by the commands of the Base it builds on. A merge's count
-// from the next run, as its other settings do (see takeSettings). Run sets them before anything else
-// reads Config (the workers, the predictor, triage's deferrals), so they take no lock.
-func (o *Loop) takeChecks(by string, s project.Settings) {
-	c := &o.cfg
-	var said []string
-	for _, k := range []struct {
-		name, none string
-		now        *string
-		to         string
-	}{
-		{"the merge check (check_fast)", "none", &c.Check, s.CheckFast},
-		{"the full check (check_full)", "none", &c.CheckFull, s.CheckFull},
-		{"a worker's own check (check_own)", "the merge check", &c.CheckOwn, s.CheckOwn},
-	} {
-		if *k.now == k.to {
-			continue
-		}
-		*k.now = k.to
-		cmd := k.none
-		if k.to != "" {
-			cmd = "'" + k.to + "'"
-		}
-		said = append(said, k.name+" is "+cmd)
-	}
-	if len(said) > 0 {
-		o.info("  CHECKS: %s changed %s on %s: %s from now on", by, project.SettingsFile, c.Base,
-			strings.Join(said, ", "))
-	}
 }
 
 // takeSetup has the run take setup and setup_files from s, the settings.json by (ticket id's merge)

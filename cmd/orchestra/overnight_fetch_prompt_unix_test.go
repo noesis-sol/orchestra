@@ -44,9 +44,9 @@ func TestFetchCheckKeepsAWorkerPromptWithoutItsPlaceholder(t *testing.T) {
 	s, other, git := fetchSession(t)
 	s.cfg.WorkerPrompt, s.prompt = filepath.Join(s.cfg.Repo, ".orchestra", "worker-prompt.md"), "Work on TICKET_ID."
 	pushPrompt(t, git, other, "Work on the ticket.")
-	wantResult(t, fetchCheck(runCtx(t), s), tui.CheckWarned, "fast-forwarded main to origin/main (1 commit), "+
-		"but the worker prompt could not be read again: ", "has no TICKET_ID placeholder; the run gives its "+
-		"workers the one it read before")
+	wantResult(t, fetchCheck(runCtx(t), s), tui.CheckWarned, "fast-forwarded main to origin/main (1 commit); "+
+		"PROMPT_UNREAD: the fast-forward to origin/main changed .orchestra/worker-prompt.md on main, but it could "+
+		"not be read: it has no TICKET_ID placeholder; the run's workers get the worker prompt it read before")
 	if s.prompt != "Work on TICKET_ID." {
 		t.Errorf("the run's prompt is %q, want the one it read before", s.prompt)
 	}

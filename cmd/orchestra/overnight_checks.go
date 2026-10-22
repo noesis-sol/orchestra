@@ -204,9 +204,9 @@ func existingDir(dir string) string {
 // fetch again. It warns where Base stays as it is (the fetch failed, Base has diverged), the warning
 // recorded in the event stream once it opens, as the run's start would, and fails where the main
 // checkout would stop the run before its first ticket: a spec the run is to commit may be uncommitted.
-// Nothing with --no-fetch. The run then takes the setup, the requirements and the check commands the
-// fast-forward brought in (takeFetchedSettings), and the worker prompt (takeFetchedPrompt), as a run's
-// start does, before the other checks read them.
+// Nothing with --no-fetch. The run then takes the settings and the worker prompt the fast-forward
+// brought in (takeFetched), as a run's start does, before the other checks read them; one it can't
+// take is warned of.
 func fetchCheck(ctx context.Context, s *session) preflightResult {
 	return fetchCheckWith(ctx, s, git.Git{})
 }
@@ -238,55 +238,20 @@ func fetchCheckWith(ctx context.Context, s *session, g dispatch.BaseFetchGit) pr
 		return preflightResult{verdict: tui.CheckWarned, text: f.Text}
 	case f.Behind > 0:
 		s.fetched = f.Text
-		if err := s.takeFetchedSettings(); err != nil {
-			return preflightResult{verdict: tui.CheckWarned, text: fmt.Sprintf("%s, but %s could not be read "+
-				"again: %s; the run keeps the setup, the requirements and the checks it read before", f.Text,
-				project.SettingsFile, oneLine(err.Error()))}
+		var warned []string
+		for _, ev := range s.takeFetched(ctx, g, f) {
+			if ev.Kind == dispatch.EvWarn {
+				warned = append(warned, strings.TrimSpace(ev.Text))
+			}
 		}
-		if err := s.takeFetchedPrompt(); err != nil {
-			return preflightResult{verdict: tui.CheckWarned, text: fmt.Sprintf("%s, but the worker prompt could "+
-				"not be read again: %s; the run gives its workers the one it read before", f.Text,
-				oneLine(err.Error()))}
+		if len(warned) > 0 {
+			return preflightResult{verdict: tui.CheckWarned, text: f.Text + "; " + strings.Join(warned, "; ")}
 		}
 		return preflightResult{verdict: tui.CheckPassed, text: f.Text}
 	case f.Upstream == "":
 		return preflightResult{verdict: tui.CheckPassed, text: c.Base + " follows no upstream: nothing to fetch"}
 	}
 	return preflightResult{verdict: tui.CheckPassed, text: c.Base + " has every commit of " + f.Upstream}
-}
-
-// takeFetchedPrompt has the run give its workers the worker prompt as the pre-flight's fast-forward left
-// it, as a run's start does (dispatch's takePrompt): the run read it as it opened, and every worktree is
-// made from the new commit. A prompt outside the repository, as --prompt may give, is left as it was
-// read; one it can't read again, or without its TICKET_ID placeholder, too, and the error says why.
-func (s *session) takeFetchedPrompt() error {
-	if rel, err := filepath.Rel(s.cfg.Repo, s.cfg.WorkerPrompt); err != nil || !filepath.IsLocal(rel) {
-		return nil
-	}
-	return s.loadPrompt()
-}
-
-// takeFetchedSettings has the run take setup, setup_files, requires and the check commands from
-// settings.json as the pre-flight's fast-forward left it, as a run's start takes those its own
-// fast-forward brings in (dispatch's takeSettings and takeChecks): the run read them before, and the
-// base check runs the merge check after it. Settings it can't read or resolve leave them
-// as they were, and the error says why.
-func (s *session) takeFetchedSettings() error {
-	settings, _, err := project.LoadSettings(s.cfg.Repo)
-	if err != nil {
-		return err
-	}
-	files, err := project.ResolveSetupFiles(settings)
-	if err != nil {
-		return err
-	}
-	list, err := project.ResolveRequires(settings)
-	if err != nil {
-		return err
-	}
-	s.cfg.Setup, s.cfg.SetupFiles, s.cfg.Requires = settings.Setup, files, list
-	s.cfg.Check, s.cfg.CheckFull, s.cfg.CheckOwn = settings.CheckFast, settings.CheckFull, settings.CheckOwn
-	return nil
 }
 
 // baseCheck runs the project's merge check (check_fast) once on Base's head, as dispatch.CheckBase

@@ -14,6 +14,16 @@ All notable changes to orchestra are documented here. The format follows
   records were found and each worker read as gone as it started, and the next
   run failed to start its session, which tmux had already. orchestra now runs
   tmux in UTF-8 mode (`tmux -u`) whatever the locale.
+- A spec run whose fetch fast-forwards Base over a change to the worker
+  prompt gives its workers the new prompt; it gave them the one it read
+  before, and the loop, the fetch done, didn't fetch again to take it. A
+  fast-forward before an overnight run or a spec run in a repository with no
+  settings.json yet keeps the run's check commands and setup; it blanked them,
+  and the night merged with no merge check. The run's start, the overnight
+  pre-flight and a spec run's fetch now take what their fast-forward brings in
+  through one function: each setting on its own (a refused requirement no
+  longer keeps a stale merge check and setup), with the same SETUP, REQUIRES,
+  CHECKS and PROMPT lines in the log.
 - A worker waiting on a permission prompt reads as blocked when another of
   its tool calls, run beside it and allowed, ends at the same moment. The
   worker's hooks kept one prompt record per agent, which a tool's end read,

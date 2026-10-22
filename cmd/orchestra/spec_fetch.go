@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
 	"github.com/noesis-sol/orchestra/internal/git"
-	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // A spec run commits to Base before its loop starts: the setup of a repository orchestra init hasn't
@@ -19,10 +19,10 @@ import (
 // fetchForSpec brings Base up to its upstream before the spec run s commits anything, unless the
 // overnight pre-flight has (Config.BaseFetched), and says what it did: Base fast-forwarded, or left as
 // it is and why, the warning recorded in the event stream once it opens. After a fast-forward the run
-// takes the setup and the requirements it brought in (takeFetchedSettings), as the loop's own fetch
-// would. A main checkout the fetch can't start on is
-// left to the checks after it, which stop the run: uncommitted changes besides the spec before
-// anything is committed, a checkout not on Base before the first ticket.
+// takes the settings and the worker prompt it brought in (takeFetched), as the loop's own fetch
+// would, and says so. A main checkout the fetch can't start on is left to the checks after it, which
+// stop the run: uncommitted changes besides the spec before anything is committed, a checkout not on
+// Base before the first ticket.
 func (s *session) fetchForSpec(ctx context.Context) {
 	c := &s.cfg
 	if c.NoFetch || c.BaseFetched {
@@ -45,11 +45,12 @@ func (s *session) fetchForSpec(ctx context.Context) {
 	case f.Behind > 0:
 		fmt.Fprintln(s.e.stdout, "BASE: "+f.Text)
 		s.log.Line(time.Now(), "BASE: "+f.Text)
-		if err := s.takeFetchedSettings(); err != nil {
-			w := fmt.Sprintf("%s could not be read again: %s; the run keeps the setup and the requirements "+
-				"it read before", project.SettingsFile, oneLine(err.Error()))
-			fmt.Fprintln(s.e.stderr, "warning: "+w)
-			s.log.Line(time.Now(), "SETUP: "+w)
+		for _, ev := range s.takeFetched(ctx, git.Git{}, f) {
+			if ev.Kind == dispatch.EvWarn {
+				fmt.Fprintln(s.e.stderr, "warning: "+strings.TrimSpace(ev.Text))
+			} else {
+				fmt.Fprintln(s.e.stdout, ev.Text)
+			}
 		}
 	}
 }

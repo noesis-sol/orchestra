@@ -50,9 +50,9 @@ func TestFetchCheckKeepsTheSettingsItCannotRead(t *testing.T) {
 	s, other, git := fetchSession(t)
 	s.cfg.Setup = "make old"
 	pushSettings(t, git, other, `{"setup": `)
-	wantResult(t, fetchCheck(runCtx(t), s), tui.CheckWarned, "fast-forwarded main to origin/main (1 commit), "+
-		"but .orchestra/settings.json could not be read again: ",
-		"; the run keeps the setup, the requirements and the checks it read before")
+	wantResult(t, fetchCheck(runCtx(t), s), tui.CheckWarned, "fast-forwarded main to origin/main (1 commit); "+
+		"SETTINGS_UNREAD: the fast-forward to origin/main changed .orchestra/settings.json on main, but it could "+
+		"not be read: ", "; the setup, the requirements and the check commands stay as they were")
 	if s.cfg.Setup != "make old" {
 		t.Errorf("the setup is %q, want the one the run read before", s.cfg.Setup)
 	}

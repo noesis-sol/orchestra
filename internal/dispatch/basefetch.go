@@ -2,10 +2,7 @@ package dispatch
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 )
@@ -37,11 +34,17 @@ type BaseFetched struct {
 	// Text is what the warning says, or for a fast-forward what it did; "" for neither.
 	Text   string
 	Output string // git's output of a fetch or a fast-forward that failed, for the log
+	// From and To are the commits FetchBase fast-forwarded Base from and to, for what it brought in (see
+	// TakeFastForward); "" where it didn't, or git couldn't say.
+	From, To string
 }
 
-// BaseFetchGit is what FetchBase asks of git: the main checkout's state, and Base's upstream.
+// BaseFetchGit is what FetchBase asks of git: the main checkout's state, Base's upstream and its head,
+// and, for what a fast-forward brought in, what it changed (see TakeFastForward).
 type BaseFetchGit interface {
 	Upstream
+	FastForwardGit
+	Head(ctx context.Context, repo, rev string) (string, error) // "" when rev names no commit
 	// Checkout's DirtyTreeAndBranch leaving out these paths, relative to dir and taken literally
 	DirtyTreeAndBranchBesides(ctx context.Context, dir string, paths ...string) (dirty, branch string, err error)
 }
@@ -53,16 +56,29 @@ type BaseFetchGit interface {
 // to the paths in besides (relative to c.Repo: a spec about to be committed), isn't on Base, or git
 // couldn't read it, as it started or after the fetch, right before the fast-forward, each of which stops
 // the run before its first ticket. With c.NoFetch it does nothing. Call it only before a run's loop
-// starts.
+// starts. Where it fast-forwarded Base, From and To say from and to which commits, for the caller to
+// take what that brought in (TakeFastForward), as the run's start does.
 func FetchBase(ctx context.Context, c Config, g BaseFetchGit, besides ...string) (BaseFetched, error) {
 	if c.NoFetch {
 		return BaseFetched{}, nil
 	}
-	ready := func() error { return checkoutReady(ctx, c, g, besides) }
-	if err := ready(); err != nil {
+	if err := checkoutReady(ctx, c, g, besides); err != nil {
 		return BaseFetched{}, err
 	}
-	return fetchUpstream(ctx, c, g, new(sync.Mutex), ready)
+	var from string
+	ready := func() error {
+		if err := checkoutReady(ctx, c, g, besides); err != nil {
+			return err
+		}
+		from, _ = g.Head(ctx, c.Repo, c.Base) // "" when git can't say: nothing is taken of what it brought in
+		return nil
+	}
+	f, err := fetchUpstream(ctx, c, g, new(sync.Mutex), ready)
+	if err == nil && f.Behind > 0 {
+		f.From = from
+		f.To, _ = g.Head(context.WithoutCancel(ctx), c.Repo, c.Base) // the same
+	}
+	return f, err
 }
 
 // checkoutReady says why the main checkout isn't ready for FetchBase's fast-forward: it has
@@ -87,10 +103,10 @@ func checkoutReady(ctx context.Context, c Config, g BaseFetchGit, besides []stri
 // run the same way. It does nothing with Config.NoFetch, after the pre-flight's fetch or a spec run's
 // (Config.BaseFetched), without the git to ask (Deps.Upstream), or for a Base that follows no
 // upstream, as in a new repository. It moves the run's start (startHead) to the commit it
-// fast-forwards Base to, so the run report reads the run's own commits, and has the run take the setup
-// and the requirements the commits it brought changed in settings.json, as a merge's do (see
-// takeSettings), and the check commands and the worker prompt, as a merge's don't (see takeChecks and
-// takePrompt): the run read them before.
+// fast-forwards Base to, so the run report reads the run's own commits, and has the run take the
+// settings and the worker prompt the commits it brought changed (see TakeFastForward): the run read
+// them before. Run takes them before any worker starts, or anything else reads Config, so it takes no
+// lock for them.
 func (o *Loop) fetchBase(ctx context.Context) {
 	c := o.cfg
 	if c.NoFetch || c.BaseFetched || o.upstream == nil || o.checkoutUnready(ctx, "", &o.repoMu) != nil {
@@ -119,47 +135,22 @@ func (o *Loop) fetchBase(ctx context.Context) {
 			return
 		}
 		o.repoMu.Lock()
-		by := "the fast-forward to " + f.Upstream
-		if s, ok := o.takeSettings(keep, "", by, o.startHead, head); ok {
-			o.takeChecks(by, s)
-		}
-		o.takePrompt(keep, by, o.startHead, head)
+		g := struct {
+			History
+			Checkout
+		}{o.history, o.checkout}
+		lines := TakeFastForward(keep, g, &o.cfg, &o.prompt, f.TakeBy(), o.startHead, head)
 		o.repoMu.Unlock()
+		for _, ev := range lines {
+			o.emit(ev)
+		}
 		o.startHead = head
 	}
 }
 
-// takePrompt has the run give its workers the worker prompt (Config.PromptFile) as the fast-forward of
-// Base as the run starts (by), from before to now, changed it: no ticket has started yet, so every
-// one is told by the prompt of the Base it builds on, as its worktree is made from it. A prompt outside
-// the repository, or one the fast-forward left as it was, stays the one the run was given; one git
-// can't read at now, or without the TICKET_ID placeholder, too, with a warning. Run takes it before
-// any worker starts, so it takes no lock; the caller holds repoMu.
-func (o *Loop) takePrompt(ctx context.Context, by, before, now string) {
-	c := o.cfg
-	rel, err := filepath.Rel(c.Repo, c.PromptFile)
-	if c.PromptFile == "" || err != nil || !filepath.IsLocal(rel) {
-		return
-	}
-	rel = filepath.ToSlash(rel)
-	if !slices.Contains(o.history.ChangedFiles(ctx, c.Repo, before, now), rel) {
-		return
-	}
-	text, err := o.checkout.FileAt(ctx, c.Repo, now, rel)
-	if err == nil && !strings.Contains(text, "TICKET_ID") {
-		err = errors.New("it has no TICKET_ID placeholder")
-	}
-	if err != nil {
-		o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf("  PROMPT_UNREAD: %s changed %s on %s, but it could not be "+
-			"read%s; the run's workers get the worker prompt it read before", by, rel, c.Base, because(err))})
-		return
-	}
-	if text == o.prompt {
-		return
-	}
-	o.prompt = text
-	o.info("  PROMPT: %s changed %s on %s: the run's workers get it as committed", by, rel, c.Base)
-}
+// TakeBy names the fast-forward f did for the lines of what it brought in (see TakeFastForward):
+// "the fast-forward to origin/main".
+func (f BaseFetched) TakeBy() string { return "the fast-forward to " + f.Upstream }
 
 // fetchUpstream fetches the upstream of Base, checked out in the main checkout, and fast-forwards Base
 // to it when Base is behind it only, holding lock while it does. git fast-forwards whichever branch is

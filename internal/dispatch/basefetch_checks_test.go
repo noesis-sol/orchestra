@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -64,17 +65,21 @@ func TestTheStartsFastForwardBringsInTheChecks(t *testing.T) {
 // is the merge check's.
 func TestTheStartsFastForwardSaysOnlyTheChecksItChanges(t *testing.T) {
 	t.Parallel()
-	h := harnessIn(t, t.TempDir())
-	o := h.loop()
-	o.cfg.Check, o.cfg.CheckFull, o.cfg.CheckOwn = "make fast", "make full", "make own"
-	o.takeChecks("the fast-forward to origin/main", project.Settings{CheckFast: "make fast", CheckFull: "make full"})
-	o.takeChecks("the fast-forward to origin/main", project.Settings{CheckFast: "make fast", CheckFull: "make full"})
-	want := "  CHECKS: the fast-forward to origin/main changed .orchestra/settings.json on main: a worker's own " +
-		"check (check_own) is the merge check from now on\n"
-	if got := h.sink.text(); got != want {
-		t.Errorf("events %q, want %q", got, want)
+	c := Config{Repo: t.TempDir(), Base: "main", Check: "make fast", CheckFull: "make full", CheckOwn: "make own",
+		SetupFiles: project.DefaultSetupFiles}
+	g := forwardFiles{project.SettingsFile: `{"check_fast": "make fast", "check_full": "make full"}`}
+	var prompt string
+	var got []string
+	for range 2 {
+		got = append(got, eventTexts(TakeFastForward(t.Context(), g, &c, &prompt, "the fast-forward to origin/main",
+			"before", "now"))...)
 	}
-	if o.cfg.CheckOwn != "" {
-		t.Errorf("check_own is %q, want none", o.cfg.CheckOwn)
+	want := []string{"  CHECKS: the fast-forward to origin/main changed .orchestra/settings.json on main: a " +
+		"worker's own check (check_own) is the merge check from now on"}
+	if !slices.Equal(got, want) {
+		t.Errorf("lines %q, want %q", got, want)
+	}
+	if c.CheckOwn != "" {
+		t.Errorf("check_own is %q, want none", c.CheckOwn)
 	}
 }
