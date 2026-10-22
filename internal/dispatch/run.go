@@ -576,6 +576,7 @@ func (r *runState) launch(id string, counted bool, how *settling, work func(ctx 
 				res.stop = o.panicStop(id, p)
 			} else if res.stop == nil {
 				o.clearActive(id)
+				o.saveSoFar(ctx) // no longer left running should the run be killed, but asked, say
 			}
 			results <- res
 		}()

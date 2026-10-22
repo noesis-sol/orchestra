@@ -16,10 +16,11 @@ import (
 
 // A run leaves workers behind in their tabs: on tickets waiting on a question (askedList), and on
 // tickets it leaves running when it stops (active). What it knows of them would end with it, so as
-// it ends, on every path, it saves them to .orchestra/run/state.json in the main checkout, and the
-// next run puts each back where its own asked workers go, for the same paths to take up: followAsked
-// adopts a worker that closed its ticket or works on it again, and work resumes an idle one whose
-// ticket comes back through bd ready. Both happen while the run holds its lock, so only one run
+// it ends, on every path, it saves them to .orchestra/run/state.json in the main checkout, as it does
+// along the way too, should it be killed with no time to (see saveSoFar), and the next run puts each
+// back where its own asked workers go, for the same paths to take up: followAsked adopts a worker
+// that closed its ticket or works on it again, and work resumes an idle one whose ticket comes back
+// through bd ready. Both happen while the run holds its lock, so only one run
 // reads or writes the file. If the file is lost, the unmerged labels (leaveRunning, leaveAsked)
 // still hold the tickets they block.
 
@@ -344,20 +345,57 @@ func (o *Loop) SaveLeft() {
 	}
 }
 
-// saveCarried writes the workers this run leaves behind for the next one, as it ends: those on
+// saveCarried writes the workers this run leaves behind for the next one, as it ends (see
+// leftWorkers). It says which, and warns when they can't be saved: the next run then carries none of
+// them over. It reports whether it left any of this run's workers in their tabs. The caller holds
+// leftMu.
+func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
+	left, said := o.leftWorkers(ctx, running)
+	if err := project.SaveState(o.cfg.Repo, project.RunState{Saved: time.Now(), Workers: left}); err != nil {
+		o.log.Raw("", err)
+		if len(left) > 0 {
+			o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
+				"  STATE_UNSAVED: could not write %s%s; the next run won't carry over %s",
+				project.RunPath(project.StateName), because(err), strings.Join(ticketsOf(left), ", "))})
+		}
+		return len(said) > 0
+	}
+	if len(said) > 0 {
+		slices.Sort(said)
+		o.info("  left for the next run: %s", strings.Join(said, ", "))
+	}
+	return len(said) > 0
+}
+
+// saveSoFar writes the workers the run would leave behind were it to stop now, as SaveLeft does, a
+// worker at work as left running, INTERRUPTED: the run calls it as it places a worker, as a ticket
+// goes to merge and as a ticket's work ends, so that a run killed with no time to save them
+// (SIGKILL, a power cut) still leaves them to the next, which merges a ticket it was merging rather
+// than leave it closed and unmerged, its worktree perhaps mid-rebase (see abortLeftRebase). It says
+// nothing but in the log, which has why it couldn't write them; the run's own saving, as it ends,
+// warns. Like SaveLeft, it does nothing before the run has carried over the last run's workers, nor
+// once it has saved its own.
+func (o *Loop) saveSoFar(ctx context.Context) {
+	o.leftMu.Lock()
+	defer o.leftMu.Unlock()
+	if !o.carriedIn || o.leftSaved {
+		return
+	}
+	left, _ := o.leftWorkers(context.WithoutCancel(ctx), stopInterrupted)
+	o.log.Raw("", project.SaveState(o.cfg.Repo, project.RunState{Saved: time.Now(), Workers: left}))
+}
+
+// leftWorkers is the workers this run leaves behind for the next one, and a line on each: those on
 // tickets asked (still waiting on a question, or closed or claimed again in their tabs too late for
 // this run to merge or adopt them: see leaveAsked), those it leaves running, and those it kept for
-// a later run. A worker left running that hasn't stopped the run is saved as left so, running: ""
-// when Run's workers have all returned. The caller holds leftMu.
+// a later run. A worker left running that hasn't stopped the run is left so, running: "" when Run's
+// workers have all returned. The caller holds leftMu.
 // A ticket it left for review (unmerged) isn't among them, nor one whose rebase it left in progress
 // for the maintainer to finish (see workerNames). It notes where each one's branch was cut from Base,
 // unless that is known already, so that the next run takes only the branch's own commits for its
-// merge: a worker waiting on a question has no ForkKey (see carriedStands). It says which, and warns
-// when they can't be saved: the next run then carries none of them over. It reports whether it left
-// any of this run's workers in their tabs.
-func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
-	var left []project.LeftWorker
-	var said []string
+// merge: a worker waiting on a question has no ForkKey (see carriedStands). The lines are on this
+// run's workers alone.
+func (o *Loop) leftWorkers(ctx context.Context, running stopKind) (left []project.LeftWorker, said []string) {
 	add := func(id string, w workerSpot) {
 		if w.fork == "" {
 			var err error // "" on failure: the next run takes the branch's tip alone for its own
@@ -384,20 +422,7 @@ func (o *Loop) saveCarried(ctx context.Context, running stopKind) bool {
 	}
 	left = append(left, o.keptOut...)
 	slices.SortFunc(left, func(a, b project.LeftWorker) int { return strings.Compare(a.Ticket, b.Ticket) })
-	if err := project.SaveState(o.cfg.Repo, project.RunState{Saved: time.Now(), Workers: left}); err != nil {
-		o.log.Raw("", err)
-		if len(left) > 0 {
-			o.emit(Event{Kind: EvWarn, Text: fmt.Sprintf(
-				"  STATE_UNSAVED: could not write %s%s; the next run won't carry over %s",
-				project.RunPath(project.StateName), because(err), strings.Join(ticketsOf(left), ", "))})
-		}
-		return len(said) > 0
-	}
-	if len(said) > 0 {
-		slices.Sort(said)
-		o.info("  left for the next run: %s", strings.Join(said, ", "))
-	}
-	return len(said) > 0
+	return left, said
 }
 
 // ticketsOf is the tickets of the workers left.

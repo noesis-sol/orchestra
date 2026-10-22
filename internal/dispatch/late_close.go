@@ -169,6 +169,7 @@ func (r *ticketRun) lateClose(ctx context.Context, lo leftOpen) *stopReason {
 	o.book.place(id, workerSpot{workerRef: w.workerRef})
 	st := Status{Ticket: id, Title: r.t.Title, Tab: w.tab, Started: w.started}
 	o.showActive(st)
+	o.saveSoFar(ctx)
 	defer o.status(Status{Ticket: id, Gone: true})
 	return r.conclude(ctx, w, lo.head, o.newWatcher(w.wt, st).report) // merged, it is no longer set aside
 }

@@ -220,8 +220,10 @@ func (o *Loop) startWorker(ctx context.Context, t Ticket, agent, wt string, a wo
 		s.fixed = append(s.fixed, "--resume", session)
 	}
 	// From here on a worker may be running in the tab, at work on its prompt, even if Ctrl+C or a
-	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried).
+	// failure ends the start: placed at once, it is carried over to the next run (see saveCarried), even
+	// one this run is killed before it saves (see saveSoFar).
 	s.place()
+	o.saveSoFar(ctx)
 	launched, stop := s.fromPromptFile(ctx)
 	if !launched && stop == nil {
 		stop = s.startPlainly(ctx)

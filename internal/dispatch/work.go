@@ -199,7 +199,7 @@ func (r *ticketRun) tellEarlier(ctx context.Context, earlier workerSpot, st Agen
 	}
 	// Told to carry on, it may take that up however resume ends, Ctrl+C included: it carries the
 	// ticket from now on, as one adopted does.
-	o.takeOn(r.t, earlier)
+	o.takeOn(ctx, r.t, earlier)
 	if o.tellToCarryOn(ctx, id, r.agent, earlier) {
 		o.info("  %s's earlier worker in tab %s was told %s and carries on; adopting it",
 			id, earlier.tab, earlier.told())
@@ -519,7 +519,7 @@ func optional[T any](log *Log, v T, err error, what string) (T, error) {
 // merges or sets aside its work as usual. st is its status, as just read, at adopted.
 func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adopted time.Time) *stopReason {
 	o, id := r.o, r.id
-	base := o.takeOn(r.t, w)
+	base := o.takeOn(ctx, r.t, w)
 	o.footprintWorktree(id, w.wt)
 	head, err := o.checkout.Head(ctx, o.cfg.Repo, r.br) // "" on failure: its work is not taken for none
 	o.log.Raw("", err)
@@ -536,12 +536,13 @@ func (r *ticketRun) adopt(ctx context.Context, w workerSpot, st AgentState, adop
 // then on leaves the ticket running, labelled (see leaveRunning) and carried over to the next run
 // (see saveCarried), as its worker may close it once orchestra has gone. It returns the ticket's
 // Status.
-func (o *Loop) takeOn(t Ticket, w workerSpot) Status {
+func (o *Loop) takeOn(ctx context.Context, t Ticket, w workerSpot) Status {
 	id := t.ID
 	o.book.place(id, workerSpot{workerRef: w.workerRef, fork: w.fork})
 	st := Status{Ticket: id, Title: t.Title, Tab: w.tab, Started: time.Now()}
 	o.setActive(st)
 	o.book.answer(id) // back from a question: set aside again once it settles, it stays out
+	o.saveSoFar(ctx)
 	return st
 }
 
@@ -554,7 +555,7 @@ func (r *ticketRun) adoptAsked(ctx context.Context, w workerSpot, resume *Sessio
 	o, t, id := r.o, r.t, r.id
 	// Its worker's from now on, so a stop or Ctrl+C before it settles leaves it labelled and carried
 	// over: it is no longer asked.
-	o.takeOn(t, w)
+	o.takeOn(ctx, t, w)
 	if HasLabel(t, UnmergedLabel) {
 		o.setLabelled(id, true) // reopened after an earlier run left it unmerged: merging removes the label
 	}

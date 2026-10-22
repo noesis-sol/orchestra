@@ -53,7 +53,8 @@ object per line, every run appended (see [Reading a run's events](#reading-a-run
 rather than grepping the log, whose wording is for people and may change.
 
 `.orchestra/run/state.json`, there too, is what the last run left in worker tabs, written as it
-ended (it is absent when it left nothing): each worker's `ticket`, `agent`, `tab`, `worktree` and
+ended, and along the way, so that a run killed with no time to save still leaves its workers there
+(it is absent when it left nothing): each worker's `ticket`, `agent`, `tab`, `worktree` and
 `hooks`, with the `question` (and `question_title`) its ticket waits on, or why the run `left` it
 running (`PAUSED`, `INTERRUPTED`, …). The next run carries them over: it merges a ticket closed
 meanwhile, adopts a worker at work again, and tells an idle one whose question is answered to carry

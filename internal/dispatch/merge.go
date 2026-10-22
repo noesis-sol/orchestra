@@ -114,6 +114,7 @@ func (o *Loop) merge(ctx context.Context, w worker) *stopReason {
 func (o *Loop) mergeNamed(ctx context.Context, w worker, named string) *stopReason {
 	c := o.cfg
 	o.slots.goToMerge(w.id) // its slot is free for the next ticket while it waits for its turn and merges
+	o.saveSoFar(ctx)        // a run killed as it merges leaves it to the next to merge
 	defer o.markFinishing(w.id, finishMerge)()
 	m := &mergeRun{
 		o: o, w: w, named: named,

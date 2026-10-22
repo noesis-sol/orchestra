@@ -11,7 +11,8 @@ import (
 
 // A run leaves workers behind in their tabs: on tickets waiting on a question, and on tickets it
 // left running when it stopped. It writes them to .orchestra/run/state.json in the main checkout as
-// it ends, while it holds the run lock, and the next run, holding the lock in turn, reads them and
+// it ends, and as it goes, as it would leave them were it killed then, while it holds the run lock,
+// and the next run, holding the lock in turn, reads them and
 // carries on with them: it merges a ticket closed meanwhile, adopts a worker at work again, and
 // tells an idle one its question is answered. So only one run ever reads or writes the file.
 

@@ -108,6 +108,11 @@ All notable changes to orchestra are documented here. The format follows
   the process groups below the tab's processes before it closes the tab,
   gives Claude Code five seconds to stop them itself, then sends SIGTERM to
   those still running, and SIGKILL three seconds later.
+- A run writes the workers it would leave behind to `.orchestra/run/state.json`
+  along the way too (as it starts or takes on a worker, as a ticket goes to
+  merge and as a ticket's work ends), not only as it ends: a run killed with no
+  time to save them (SIGKILL, a power cut) left a ticket it was merging closed,
+  unmerged and unknown to the next run, which now carries it over and merges it.
 - A ticket carried over from the last run, closed, whose worktree a run
   killed while it merged the ticket (SIGKILL, a power cut) left mid-rebase,
   has the rebase aborted at the start of the next run and merges again,
