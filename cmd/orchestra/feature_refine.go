@@ -81,6 +81,7 @@ type featureTalk struct {
 	repo      string // the main checkout
 	breakdown refineBreakdown
 	tracker   featureEpicTracker
+	workers   int           // the run's concurrency, which checkFeature checks the shape of the tree filed against
 	log       *dispatch.Log // nil in tests
 	out, err  io.Writer
 }
@@ -97,7 +98,7 @@ func (s *session) talkFeature(ctx context.Context) (string, int) {
 	c := s.cfg
 	return featureTalk{
 		request: c.work().feature, runID: featureRun(s.started), repo: c.Repo, breakdown: newRefineBreakdown(s),
-		tracker: beads.Tracker{Repo: c.Repo}, log: s.log, out: s.e.stdout, err: s.e.stderr,
+		tracker: beads.Tracker{Repo: c.Repo}, workers: c.Concurrency, log: s.log, out: s.e.stdout, err: s.e.stderr,
 	}.run(ctx)
 }
 
@@ -134,7 +135,7 @@ func (f featureTalk) run(ctx context.Context) (string, int) {
 		return "", dispatch.ExitTool
 	}
 
-	filed, warnings, err := checkFeature(ctx, f.tracker, epic)
+	filed, warnings, err := checkFeature(ctx, f.tracker, epic, f.workers)
 	for _, w := range warnings {
 		w = planLine(w)
 		fmt.Fprintln(f.err, "warning: "+w)

@@ -25,7 +25,7 @@ func TestCheckLeavesSpikesOutOfTheFilesWarning(t *testing.T) {
 		spike(issue("s-1.1", "task", "s-1", spec, "Says whether the API pages.")),
 		issue("s-1.2", "task", "s-1", spec, "Does b."),
 	}}
-	warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1")
+	warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestCheckLeavesSpikesOutOfTheFilesWarning(t *testing.T) {
 	f := newFeatureTree()
 	f.children["f-1"] = append(f.children["f-1"], "f-1.4")
 	f.issues["f-1.4"] = spike(ticketOf("f-1.4", "task", "Check the API pages", "Says whether it pages."))
-	_, warnings, err = checkFeature(runCtx(t), f, "f-1")
+	_, warnings, err = checkFeature(runCtx(t), f, "f-1", 4)
 	if err != nil {
 		t.Fatal(err)
 	}

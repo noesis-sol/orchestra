@@ -676,9 +676,11 @@ func TestBdCreates(t *testing.T) {
 }
 
 // specTree is a specTracker over a tree in memory: show answers from issues, as do Descendants (by
-// parent) and WithMetadata (by the spec's path); Cycles answers cycles; SetMetadata keeps what it set.
+// parent), Children (by parent, those not closed, with the links they wait by) and WithMetadata (by the
+// spec's path); Cycles answers cycles; SetMetadata keeps what it set.
 type specTree struct {
 	issues []dispatch.Ticket
+	links  []dispatch.Link
 	cycles [][]string
 	set    []string
 	fail   string // a method that fails
@@ -707,6 +709,26 @@ func (s *specTree) Descendants(_ context.Context, id string) ([]dispatch.Ticket,
 		}
 	}
 	return under, nil
+}
+
+func (s *specTree) Children(_ context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	if s.fail == "Children" {
+		return nil, nil, errors.New("bd list: database is locked")
+	}
+	var children []dispatch.Ticket
+	var links []dispatch.Link
+	for _, t := range s.issues {
+		if t.Parent != id || t.Status == dispatch.StatusClosed {
+			continue
+		}
+		children = append(children, t)
+		for _, l := range s.links {
+			if l.Blocked == t.ID {
+				links = append(links, l)
+			}
+		}
+	}
+	return children, links, nil
 }
 
 func (s *specTree) WithMetadata(_ context.Context, key, value string) ([]dispatch.Ticket, error) {
@@ -759,7 +781,7 @@ func TestCheckBreakdownWarns(t *testing.T) {
 		closed,
 		issue("s-9", "task", "", "{"+spec+"}", "Strays."),
 	}, cycles: [][]string{{"s-1.1.1", "s-1.2"}, {"x-1", "x-2"}}}
-	warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1")
+	warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,17 +801,17 @@ func TestCheckBreakdownWarns(t *testing.T) {
 	}
 
 	tree.fail = "Cycles"
-	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1"); err != nil ||
+	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4); err != nil ||
 		warnings[len(warnings)-1] != "can't look for blocks cycles: bd dep cycles: no database" {
 		t.Errorf("cycles unread: %q, %v", warnings, err)
 	}
 	tree.fail = "SetMetadata"
-	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1"); err != nil ||
+	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4); err != nil ||
 		warnings[0] != "can't set s-1's spec_sha256 metadata: bd update: database is locked" {
 		t.Errorf("metadata unset: %q, %v", warnings, err)
 	}
 	tree.fail = "Descendants"
-	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1"); err != nil ||
+	if warnings, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4); err != nil ||
 		warnings[len(warnings)-1] != "can't list the issues under s-1: bd list: database is locked" {
 		t.Errorf("tree unread: %q, %v", warnings, err)
 	}
@@ -816,7 +838,7 @@ func TestCheckBreakdownRefusesARootThatIsNotTheSpecs(t *testing.T) {
 			"s-1, which it named as the root epic, is the epic of another spec, docs/other.md"},
 	} {
 		tree := &specTree{issues: []dispatch.Ticket{tc.root}}
-		if _, err := checkBreakdown(context.Background(), tree, testSpec, "s-1"); err == nil || err.Error() != tc.err {
+		if _, err := checkBreakdown(context.Background(), tree, testSpec, "s-1", 4); err == nil || err.Error() != tc.err {
 			t.Errorf("error %v, want %q", err, tc.err)
 		}
 		if len(tree.set) > 0 {
@@ -925,7 +947,7 @@ func TestLiveSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("broken down in %s into %s; assumed: %q", time.Since(start).Round(time.Second), res.Root, res.Assumptions)
-	warnings, err := checkBreakdown(ctx, beads.Tracker{Repo: repo}, spec, res.Root)
+	warnings, err := checkBreakdown(ctx, beads.Tracker{Repo: repo}, spec, res.Root, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

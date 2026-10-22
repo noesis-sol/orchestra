@@ -34,7 +34,10 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 			"Propose blocks links between the open tickets that touch the same code, so they run one after\n"+
 			"the other: the higher-priority ticket first. Tickets are linked when they name the same\n"+
 			"function, or work on the same file of at most %d lines, unless both name functions it\n"+
-			"mentions and none is the same. Without --apply it only prints the proposal.\n\n", dispatch.SmallFileLines)
+			"mentions and none is the same. Without --apply it only prints the proposal.\n\n"+
+			"Before it, a line for each epic with open tickets says how its blocks links let them run:\n"+
+			"its tickets, its longest chain, how many at a time on average, and the tickets %d or more wait on.\n\n",
+			dispatch.SmallFileLines, dispatch.HubHolds)
 		printFlags(fs)
 	}
 	if code, ok := parseArgs(fs, args, "plan"); !ok {
@@ -90,6 +93,7 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	if stop.stopped() {
 		return stoppedReading(stderr)
 	}
+	printShapes(stdout, dispatch.EpicShapes(open, existing))
 	if len(links) == 0 {
 		fmt.Fprintf(stdout, "No links to add: no two of the %s touch the same code without being ordered already.\n",
 			plural(len(open), "open ticket"))
@@ -142,6 +146,18 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 		fmt.Fprintf(stdout, "Added %s.\n", plural(len(links), "link"))
 	}
 	return dispatch.ExitOK
+}
+
+// printShapes says how the blocks links bd has let each epic's open tickets run (dispatch.Shape), a
+// line an epic; nothing when no open ticket is under an epic.
+func printShapes(stdout io.Writer, shapes []dispatch.Shape) {
+	if len(shapes) == 0 {
+		return
+	}
+	fmt.Fprintln(stdout, "The epics' open tickets, as their blocks links let them run:")
+	for _, s := range shapes {
+		fmt.Fprintln(stdout, "  "+s.String())
+	}
 }
 
 // waits names link l as stoppedPlan lists it: "k-2 waits for k-1".

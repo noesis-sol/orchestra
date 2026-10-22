@@ -71,6 +71,12 @@ func (f *filedTree) Descendants(ctx context.Context, id string) ([]dispatch.Tick
 	return f.tree.Descendants(ctx, id)
 }
 
+func (f *filedTree) Children(ctx context.Context, id string) ([]dispatch.Ticket, []dispatch.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.tree.Children(ctx, id)
+}
+
 func (f *filedTree) WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

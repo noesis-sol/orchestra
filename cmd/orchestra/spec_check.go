@@ -20,8 +20,10 @@ import (
 // spec metadata (its path, SHA-256 and commit) where the breakdown left it out or got it wrong. The
 // warnings say what else is amiss: issues carrying the spec's metadata outside the root epic, issues
 // under it that don't carry it, open tickets under it without files metadata (but spikes) or acceptance criteria,
-// and blocks cycles among the spec's issues; and what couldn't be checked.
-func checkBreakdown(ctx context.Context, bd specTracker, spec project.Spec, root string) ([]string, error) {
+// blocks cycles among the spec's issues, and a tree whose blocks links keep the run narrow (shapeWarnings) for
+// workers, the run's concurrency; and what couldn't be checked.
+func checkBreakdown(ctx context.Context, bd specTracker, spec project.Spec, root string,
+	workers int) ([]string, error) {
 	t, err := bd.Show(ctx, root)
 	switch {
 	case err != nil:
@@ -45,9 +47,15 @@ func checkBreakdown(ctx context.Context, bd specTracker, spec project.Spec, root
 	warnings = append(warnings, treeWarnings(root, issues, under)...)
 	cycles, err := bd.Cycles(ctx)
 	if err != nil {
-		return append(warnings, "can't look for blocks cycles: "+dispatch.FirstLine(err.Error())), nil
+		warnings = append(warnings, "can't look for blocks cycles: "+dispatch.FirstLine(err.Error()))
+	} else {
+		warnings = append(warnings, cycleWarnings(root, issues, under, cycles)...)
 	}
-	return append(warnings, cycleWarnings(root, issues, under, cycles)...), nil
+	open, links, err := openUnder(ctx, bd, root)
+	if err != nil {
+		return append(warnings, "can't read the blocks links under "+root+": "+dispatch.FirstLine(err.Error())), nil
+	}
+	return append(warnings, shapeWarnings(dispatch.ShapeOf(root, open, links), workers)...), nil
 }
 
 // setSpecMetadata gives the root epic t the spec's metadata where it lacks it or has it wrong, and
@@ -156,9 +164,11 @@ func (f featureFiled) counts() string {
 
 // checkFeature checks the tree a feature's session filed under epic, as bd has it, as checkBreakdown
 // checks a spec's but for what depends on the spec's metadata: epic must be an epic. The warnings say
-// what else is amiss: open tickets under it without files metadata (but spikes) or acceptance criteria, and blocks
-// cycles among them; and what couldn't be checked.
-func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (featureFiled, []string, error) {
+// what else is amiss: open tickets under it without files metadata (but spikes) or acceptance criteria, blocks
+// cycles among them, and a tree whose blocks links keep the run narrow (shapeWarnings) for workers, the
+// run's concurrency; and what couldn't be checked.
+func checkFeature(ctx context.Context, bd featureEpicTracker, epic string,
+	workers int) (featureFiled, []string, error) {
 	t, err := bd.Show(ctx, epic)
 	switch {
 	case err != nil:
@@ -168,7 +178,7 @@ func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (feat
 			t.IssueType)
 	}
 	filed := featureFiled{title: t.Title}
-	under, err := openUnder(ctx, bd, epic)
+	under, links, err := openUnder(ctx, bd, epic)
 	if err != nil {
 		return filed, []string{"can't list the tickets under " + epic + ": " + dispatch.FirstLine(err.Error())}, nil
 	}
@@ -198,21 +208,25 @@ func checkFeature(ctx context.Context, bd featureEpicTracker, epic string) (feat
 	}
 	cycles, err := bd.Cycles(ctx)
 	if err != nil {
-		return filed, append(warnings, "can't look for blocks cycles: "+dispatch.FirstLine(err.Error())), nil
+		warnings = append(warnings, "can't look for blocks cycles: "+dispatch.FirstLine(err.Error()))
+	} else {
+		warnings = append(warnings, cycleWarnings(epic, nil, under, cycles)...)
 	}
-	return filed, append(warnings, cycleWarnings(epic, nil, under, cycles)...), nil
+	return filed, append(warnings, shapeWarnings(dispatch.ShapeOf(epic, under, links), workers)...), nil
 }
 
-// openUnder is what isn't closed under the epic, at every level, with its text, as bd lists it: bd
-// lists one level at a time.
-func openUnder(ctx context.Context, bd epicTracker, epic string) ([]dispatch.Ticket, error) {
+// openUnder is what isn't closed under the epic, at every level, with its text, and the blocks links bd
+// has for it, as bd lists them: bd lists one level at a time.
+func openUnder(ctx context.Context, bd epicTracker, epic string) ([]dispatch.Ticket, []dispatch.Link, error) {
 	var all []dispatch.Ticket
+	var links []dispatch.Link
 	seen := map[string]bool{epic: true}
 	for queue := []string{epic}; len(queue) > 0; queue = queue[1:] {
-		children, _, err := bd.Children(ctx, queue[0])
+		children, childLinks, err := bd.Children(ctx, queue[0])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		links = append(links, childLinks...)
 		for _, c := range children {
 			if seen[c.ID] {
 				continue
@@ -224,7 +238,7 @@ func openUnder(ctx context.Context, bd epicTracker, epic string) ([]dispatch.Tic
 			}
 		}
 	}
-	return all, nil
+	return all, links, nil
 }
 
 // cycleWarnings are the warnings about the blocks cycles bd found (cycles) that hold an issue of the
@@ -242,6 +256,25 @@ func cycleWarnings(root string, issues, under []dispatch.Ticket, cycles [][]stri
 		}
 	}
 	return warnings
+}
+
+// shapeWarnings is the warning about a tree whose blocks links keep a run narrow, by its shape s: its
+// longest chain is over dispatch.LongChain tickets, or its links let fewer tickets run at a time on
+// average than workers, the run's concurrency, or than its tickets where they are fewer. It names the
+// chain and the hubs; the run goes ahead all the same.
+func shapeWarnings(s dispatch.Shape, workers int) []string {
+	var why []string
+	if len(s.Chain) > dispatch.LongChain {
+		why = append(why, fmt.Sprintf("its longest chain over %d", dispatch.LongChain))
+	}
+	if s.Width() < float64(min(workers, s.Tickets)) {
+		why = append(why, fmt.Sprintf("fewer than the run's %d tickets at a time", workers))
+	}
+	if len(why) == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf("a narrow ticket tree, %s: %s. A ticket needs a blocks link only to one whose code "+
+		"it builds on, so that the rest run side by side", strings.Join(why, " and "), s)}
 }
 
 // idListShown is how many IDs a warning lists.

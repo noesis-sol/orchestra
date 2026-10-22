@@ -18,11 +18,12 @@ import (
 )
 
 // featureTree is bd as a feature's session filed into it: each issue by its ID, the issues under
-// each epic, and the blocks cycles. A read of an ID in fail fails, and a list by a metadata key
-// there.
+// each epic, the blocks links, and the blocks cycles. A read of an ID in fail fails, and a list by a
+// metadata key there.
 type featureTree struct {
 	issues   map[string]dispatch.Ticket
 	children map[string][]string
+	links    []dispatch.Link
 	cycles   [][]string
 	fail     map[string]bool
 	reads    []string // the epics whose children were listed
@@ -42,10 +43,16 @@ func (f *featureTree) Children(_ context.Context, id string) ([]dispatch.Ticket,
 		return nil, nil, errors.New("bd list --json: exit status 1")
 	}
 	var under []dispatch.Ticket
+	var links []dispatch.Link
 	for _, c := range f.children[id] {
 		under = append(under, f.issues[c])
+		for _, l := range f.links {
+			if l.Blocked == c {
+				links = append(links, l)
+			}
+		}
 	}
-	return under, nil, nil
+	return under, links, nil
 }
 
 func (f *featureTree) WithMetadata(_ context.Context, key, value string) ([]dispatch.Ticket, error) {
@@ -140,7 +147,7 @@ func TestCheckFeatureWarnsOfWhatIsAmiss(t *testing.T) {
 			if tc.change != nil {
 				tc.change(tree)
 			}
-			filed, warnings, err := checkFeature(runCtx(t), tree, tc.epic)
+			filed, warnings, err := checkFeature(runCtx(t), tree, tc.epic, 4)
 			if tc.err != "" {
 				if err == nil || err.Error() != tc.err {
 					t.Fatalf("got %v, want the error %q", err, tc.err)

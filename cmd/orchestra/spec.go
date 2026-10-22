@@ -138,10 +138,10 @@ func checkSpecPath(ctx context.Context, c *options, from string) []string {
 }
 
 // specTracker is Beads as a spec run reads it: the root epic its breakdown filed and what is under it,
-// to check and count it; what carries the spec's metadata; the blocks cycles. It sets the root
-// epic's spec metadata where the breakdown left it out.
+// to check and count it, and the open tickets under it with their blocks links; what carries the spec's
+// metadata; the blocks cycles. It sets the root epic's spec metadata where the breakdown left it out.
 type specTracker interface {
-	Show(ctx context.Context, id string) (dispatch.Ticket, error)
+	epicTracker
 	Descendants(ctx context.Context, id string) ([]dispatch.Ticket, error)
 	WithMetadata(ctx context.Context, key, value string) ([]dispatch.Ticket, error)
 	Cycles(ctx context.Context) ([][]string, error)
@@ -156,6 +156,7 @@ type specRun struct {
 	refine    bool   // --refine
 	breakdown specBreakdown
 	tracker   specTracker
+	workers   int           // the run's concurrency, which checkBreakdown checks the shape of the tree filed against
 	log       *dispatch.Log // nil in tests
 	out, err  io.Writer
 	update    *specUpdate // the breakdown's update, once run finds the spec changed since its tree was filed
@@ -194,7 +195,7 @@ func (s *session) runSpec(ctx context.Context) (string, int) {
 		s.e.stdout, s.e.stderr = lineLocked(s.e.stdout, s.e.stderr)
 	}
 	root, code, f := specRun{
-		file: w.spec, repo: c.Repo, refine: w.refine,
+		file: w.spec, repo: c.Repo, refine: w.refine, workers: c.Concurrency,
 		breakdown: breakdownOf(s), tracker: beads.Tracker{Repo: c.Repo},
 		log: s.log, out: s.e.stdout, err: s.e.stderr, early: true, say: s.printer(), cancel: cancel,
 	}.start(ctx)
@@ -326,7 +327,7 @@ func (r specRun) check(ctx context.Context, spec project.Spec, root string) int 
 	if r.update != nil && root != r.update.Root {
 		err = fmt.Errorf("it named %s as the root epic, not %s, whose tree it was to update", root, r.update.Root)
 	} else {
-		warnings, err = checkBreakdown(ctx, r.tracker, spec, root)
+		warnings, err = checkBreakdown(ctx, r.tracker, spec, root, r.workers)
 	}
 	for _, w := range warnings {
 		r.warn(w)

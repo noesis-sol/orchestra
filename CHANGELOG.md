@@ -22,6 +22,16 @@ All notable changes to orchestra are documented here. The format follows
   nothing of their shape, so features came out as chains that kept one
   worker busy while the rest waited. The skill's paragraphs on `solo`,
   footprints and `orchestra plan` moved into it.
+### Added
+
+- `orchestra plan` says how each epic's blocks links let its open tickets
+  run: its tickets, its longest chain, how many at a time on average (the
+  tickets over the chain), and its hubs, the tickets three or more wait on:
+  `orchestra-aq0o: 7 tickets, longest chain 2 (aq0o.1 > aq0o.3), at most
+  3.5 at a time; orchestra-aq0o.1 holds 6`. After a breakdown, a spec's or
+  a feature's, a tree whose longest chain is over three, or that runs fewer
+  tickets at a time than the run's concurrency, is a warning naming its
+  chain and hubs; the run goes ahead.
 
 ### Fixed
 
