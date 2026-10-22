@@ -31,7 +31,7 @@ func TestAnswerCommandTakesTheTerminal(t *testing.T) {
 		stdout != "Still open: k-7. orchestra answer asks it again.\n" {
 		t.Errorf("exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
-	questions, err := os.ReadFile(filepath.Join(repo, project.RunPath(project.AnswerQuestionsName)))
+	questions, err := os.ReadFile(filepath.Join(repo, project.RunPath("answer-1/questions.md")))
 	if err != nil || !strings.Contains(string(questions), "## 1. k-7: Which encoding?") {
 		t.Errorf("the questions (%v):\n%s", err, questions)
 	}

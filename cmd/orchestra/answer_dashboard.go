@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/project"
 	"github.com/noesis-sol/orchestra/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,7 +45,7 @@ var errNothingToAnswer = errors.New("bd has no question open in the run's scope:
 func dashboardAnswerTalk(c options, log *dispatch.Log) answerTalk {
 	a := answerTalkIn(c, c.where.pane)
 	a.out, a.err = logLines{log}, logLines{log}
-	a.terminal = func(context.Context, string) error { return errAnswerNoPane }
+	a.terminal = func(context.Context, project.AnswerFiles, string) error { return errAnswerNoPane }
 	return a
 }
 

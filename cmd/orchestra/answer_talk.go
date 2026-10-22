@@ -26,14 +26,15 @@ import (
 // human, each blocking the ticket that waits on its answer): an interactive Claude Code session in the
 // main checkout, in a pane split off orchestra's (a paneSession about the questions) or on orchestra's
 // own terminal, with the instructions of internal/project's answer-prompt.md. orchestra reads the open
-// questions in the run's scope, or the one named, and writes them to .orchestra/run/questions.md for
-// the session's first message to bring in: each with its options, the recommended one first (from
-// its metadata, as the worker prompt has workers give them; drafted by the session where it has
-// none), the tickets it blocks and those it was asked from, with their design and notes. The session
-// asks each with Claude Code's options prompt (AskUserQuestion), talks it through when asked, writes
-// the decision into each blocked ticket's design and records the answer with bd human respond, which
-// closes the question. It reads, and changes nothing but Beads. orchestra closes its pane once every
-// question is closed and claude's turn is over; /exit leaves the rest open.
+// questions in the run's scope, or the one named, and writes them to questions.md in the talk's own
+// folder, .orchestra/run/answer-<n>/, for the session's first message to bring in: each with its
+// options, the recommended one first (from its metadata, as the worker prompt has workers give them;
+// drafted by the session where it has none), the tickets it blocks and those it was asked from, with
+// their design and notes. The session asks each with Claude Code's options prompt (AskUserQuestion),
+// talks it through when asked, writes the decision into each blocked ticket's design and records the
+// answer with bd human respond, which closes the question. It reads, and changes nothing but Beads.
+// orchestra closes its pane once every question is closed and claude's turn is over; /exit leaves the
+// rest open.
 
 // answerTracker is bd as the answer talk reads the questions: those not closed, one by its ID, what
 // each blocks, the tickets under a run's scope, and a question's status once the talk is over.
@@ -297,9 +298,10 @@ type answerTalk struct {
 	line    *tui.InterviewLine
 	tracker answerTracker
 	every   time.Duration // how often bd is asked how many questions are closed
-	// terminal runs the session on orchestra's own terminal, message its first message: where
-	// orchestra runs in no pane, or the pane can't be opened.
-	terminal func(ctx context.Context, message string) error
+	// terminal runs the session on orchestra's own terminal, with the instructions it writes to the
+	// talk's files, message its first message: where orchestra runs in no pane, or the pane can't be
+	// opened.
+	terminal func(ctx context.Context, files project.AnswerFiles, message string) error
 	out, err io.Writer
 }
 
@@ -318,8 +320,8 @@ func newAnswerTalk(s *session) answerTalk {
 	if out, ok := e.stdout.(*os.File); ok && !plainOutput(c.Plain, e.getenv, e.stdin, e.stdout) {
 		a.line = &tui.InterviewLine{Out: out, Width: func() int { return termWidth(out) }}
 	}
-	a.terminal = func(ctx context.Context, message string) error {
-		return answerOnTerminal(ctx, s.stops, a.claude, message, e.stdin, e.stdout, e.stderr)
+	a.terminal = func(ctx context.Context, files project.AnswerFiles, message string) error {
+		return answerOnTerminal(ctx, s.stops, a.claude, files, message, e.stdin, e.stdout, e.stderr)
 	}
 	return a
 }
@@ -364,11 +366,15 @@ func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question
 		return answerResult{}, errors.New(why)
 	}
 	repo := a.claude.repo
-	file, err := project.WriteAnswerQuestions(repo, []byte(questionsText(qs)+deferredText(a.deferred)))
+	files, err := project.NewAnswerFiles(repo)
+	if err != nil {
+		return answerResult{}, fmt.Errorf("cannot make the answer talk's folder: %w", err)
+	}
+	file, err := files.WriteQuestions([]byte(questionsText(qs) + deferredText(a.deferred)))
 	if err != nil {
 		return answerResult{}, fmt.Errorf("cannot write the questions for the answer talk: %w", err)
 	}
-	prompt, err := project.WriteAnswerPrompt(repo, false)
+	prompt, err := files.WritePrompt(false)
 	if err != nil {
 		return answerResult{}, fmt.Errorf("cannot write the answer talk's instructions: %w", err)
 	}
@@ -377,11 +383,11 @@ func (a answerTalk) talkThrough(ctx context.Context, scope string, qs []question
 		asked.questions = append(asked.questions, q.ID)
 	}
 	message := answerMessage(file, len(qs))
-	terminal := func(ctx context.Context, _ string) error { return a.terminal(ctx, message) }
+	terminal := func(ctx context.Context, _ string) error { return a.terminal(ctx, files, message) }
 	session := terminal
 	if a.pane != "" {
 		about := answerSubject{first: message, asked: asked, tracker: a.tracker, every: a.every, live: a.live,
-			scope: scope, skip: a.skip, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), repo: repo,
+			scope: scope, skip: a.skip, panes: a.panes, agent: herdr.AgentName("answer-" + a.pane), files: files,
 			deferred: a.deferred, err: a.err}
 		ps := paneSession{panes: a.panes, pane: a.pane, hooks: a.hooks, claude: a.claude, fallback: terminal,
 			out: a.out, err: a.err, progress: a.line, about: about}
@@ -426,13 +432,13 @@ func (a answerTalk) left(ctx context.Context, asked *answerAsked) answerResult {
 
 // answerOnTerminal runs the answer talk on orchestra's own terminal, started as s has it, message its
 // first message, until the user exits it: orchestra can't end it there, so its instructions, rewritten
-// for the terminal, have claude say how to.
-func answerOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, message string, stdin io.Reader,
-	stdout, stderr io.Writer) error {
+// for the terminal in the talk's files, have claude say how to.
+func answerOnTerminal(ctx context.Context, stops *stopWatch, s claudeSession, files project.AnswerFiles,
+	message string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if !isTerminal(stdin) || !isTerminal(stdout) {
 		return errAnswerNeedsTerminal
 	}
-	prompt, err := project.WriteAnswerPrompt(s.repo, true)
+	prompt, err := files.WritePrompt(true)
 	if err != nil {
 		return fmt.Errorf("cannot write the answer talk's instructions: %w", err)
 	}
@@ -456,8 +462,8 @@ type answerSubject struct {
 	scope   string
 	skip    func(id string) bool // the questions in scope it doesn't take in (see answerTalk.skip); nil for none
 	panes   answerPanes
-	agent   string // claude's name in the pane, once given the questions queued
-	repo    string
+	agent   string              // claude's name in the pane, once given the questions queued
+	files   project.AnswerFiles // the talk's own files, where the questions queued are written
 	// deferred is what the questions file says of the deferred tickets, as the talk's deferred, for
 	// the file rewritten with the questions queued.
 	deferred string
@@ -747,11 +753,11 @@ func (s *answerShown) readMore(ctx context.Context) <-chan answerMore {
 			return
 		}
 		text := questionsText(slices.Concat(all, fresh)) + deferredText(s.subject.deferred)
-		if _, err := project.WriteAnswerQuestions(s.subject.repo, []byte(text)); err != nil {
+		if _, err := s.subject.files.WriteQuestions([]byte(text)); err != nil {
 			read <- answerMore{err: err}
 			return
 		}
-		file, err := project.WriteAnswerMore(s.subject.repo, batch, []byte(questionsText(give)))
+		file, err := s.subject.files.WriteMore(batch, []byte(questionsText(give)))
 		if err != nil {
 			read <- answerMore{err: err}
 			return

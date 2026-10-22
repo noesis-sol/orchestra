@@ -50,6 +50,13 @@ All notable changes to orchestra are documented here. The format follows
   the printer take in (events, workers' statuses, that message, the
   interview's progress, the scout's answer) is now made printable once as it
   is received, every string of it, rather than at each place it is shown.
+- Two answer talks open at once each ask only their own questions. Every talk
+  wrote its questions and instructions to the same files in `.orchestra/run/`,
+  so `orchestra answer` in another terminal rewrote the dashboard's talk's
+  questions file, which that talk reads again after each question: it asked
+  the other talk's questions too, outside its run's scope, and lost its note on
+  the deferred tickets. Each talk now has its files in a folder of its own,
+  `.orchestra/run/answer-<n>/`.
 
 ## [0.9.4] - 2026-10-22
 

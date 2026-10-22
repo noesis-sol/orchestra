@@ -43,7 +43,7 @@ func lastAsked(t *testing.T, sent []tea.Msg) []string {
 func TestLaterTalkLeavesOutTheQuestionsAnEarlierLeftOpen(t *testing.T) {
 	t.Parallel()
 	repo, _, state := answerSetup(t, answerBacklog())
-	questionsFile := filepath.Join(repo, project.RunPath("questions.md"))
+	questionsFile := filepath.Join(repo, project.RunPath("answer-2/questions.md")) // the second talk's
 	synctest.Test(t, func(t *testing.T) {
 		panes := &fakePanes{}
 		var sent []tea.Msg

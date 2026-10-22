@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // askedTickets is bd as the answer talk reads it, from the tickets it holds: a question's links are
@@ -243,7 +244,7 @@ func TestAnswerToolArgsAllowAskUserQuestion(t *testing.T) {
 // With no question to ask, the talk doesn't start: claude isn't needed, nor a terminal.
 func TestAnswerTalkWithNoQuestionsStartsNothing(t *testing.T) {
 	a := answerTalk{claude: claudeSession{repo: t.TempDir()}, tracker: askedTickets{},
-		terminal: func(context.Context, string) error {
+		terminal: func(context.Context, project.AnswerFiles, string) error {
 			t.Error("the talk started")
 			return nil
 		}}

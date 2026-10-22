@@ -68,7 +68,7 @@ func TestDashboardTalkTypesNothingWhileItWaitsOnTheMaintainer(t *testing.T) {
 				fileQuestion(t, state)
 				talks.queue()
 			case n == 30:
-				if file := read(t, filepath.Join(repo, project.RunPath(project.AnswerQuestionsName))); !strings.Contains(
+				if file := read(t, filepath.Join(repo, project.RunPath("answer-1/questions.md"))); !strings.Contains(
 					file, "## 1. k-7: Which encoding?") || !strings.Contains(file, "## 2. k-8: Which flag name?") {
 					t.Errorf("the questions file, with k-7 still open:\n%s", file)
 				}
@@ -83,7 +83,7 @@ func TestDashboardTalkTypesNothingWhileItWaitsOnTheMaintainer(t *testing.T) {
 			t.Errorf("claude was given the question queued at reading %d, the first answered at %d", given, answered)
 		}
 		_, _, prompts := panes.seen()
-		const more = "1 more open question has come in: let's answer it in @.orchestra/run/questions-2.md too, the same way."
+		const more = "1 more open question has come in: let's answer it in @.orchestra/run/answer-1/questions-2.md too, the same way."
 		if len(prompts) != 1 || !strings.HasSuffix(prompts[0], ": "+more) {
 			t.Errorf("claude was prompted %q, want %q", prompts, more)
 		}

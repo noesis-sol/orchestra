@@ -22,7 +22,7 @@ func TestOvernightOnATerminalAsksEveryQuestionBeforeTheRunStarts(t *testing.T) {
 	if code != dispatch.ExitOK || stderr != "" {
 		t.Fatalf("exit %d, stderr:\n%s\nthe terminal:\n%s", code, stderr, screenOf(term))
 	}
-	if want := []string{"Let's answer the 2 open questions in @.orchestra/run/questions.md, one at a time."}; !slices.Equal(
+	if want := []string{"Let's answer the 2 open questions in @.orchestra/run/answer-1/questions.md, one at a time."}; !slices.Equal(
 		f.talks, want) {
 		t.Errorf("the talks: %q, want %q", f.talks, want)
 	}

@@ -161,7 +161,7 @@ func TestDashboardTalkOpensAsideAndTakesQueuedQuestions(t *testing.T) {
 		if len(adopted) != 1 || !strings.HasPrefix(adopted[0], "w1:p2 claude answer-w1_p1") {
 			t.Errorf("claude was named %q", adopted)
 		}
-		const more = "1 more open question has come in: let's answer it in @.orchestra/run/questions-2.md too, the same way."
+		const more = "1 more open question has come in: let's answer it in @.orchestra/run/answer-1/questions-2.md too, the same way."
 		if len(prompts) != 1 || !strings.HasSuffix(prompts[0], ": "+more) {
 			t.Errorf("claude was prompted %q, want %q", prompts, more)
 		}
@@ -170,7 +170,7 @@ func TestDashboardTalkOpensAsideAndTakesQueuedQuestions(t *testing.T) {
 			t.Errorf("the dashboard was sent %+v", over)
 		}
 	})
-	queued := read(t, filepath.Join(repo, project.RunPath("questions-2.md")))
+	queued := read(t, filepath.Join(repo, project.RunPath("answer-1/questions-2.md")))
 	if !strings.Contains(queued, "## 1. k-8: Which flag name?") || strings.Contains(queued, "k-7:") {
 		t.Errorf("the queued question's file:\n%s", queued)
 	}

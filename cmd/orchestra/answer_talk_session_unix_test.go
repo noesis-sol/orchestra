@@ -191,7 +191,7 @@ func readIssues(t *testing.T, state string) map[string]*answerIssue {
 func paneAnswerTalk(t *testing.T, repo string, panes *fakePanes, out, errOut io.Writer) answerTalk {
 	a := answerTalk{claude: claudeSession{repo: repo, tools: answerToolArgs()}, pane: "w1:p1", panes: &talkPanes{fakePanes: panes},
 		tracker: beads.Tracker{Repo: repo}, every: answerCountEvery, out: out, err: errOut}
-	a.terminal = func(context.Context, string) error {
+	a.terminal = func(context.Context, project.AnswerFiles, string) error {
 		t.Error("the talk took orchestra's terminal")
 		return nil
 	}
@@ -233,9 +233,9 @@ func TestAnswerTalkRecordsTheAnswerThroughBd(t *testing.T) {
 		if want := []string{"split w1:p1 " + repo, "launch w1:p2 claude", "close w1:p2"}; !slices.Equal(panes.calls, want) {
 			t.Errorf("the terminal was asked to %q, want %q", panes.calls, want)
 		}
-		prompt := filepath.Join(repo, project.RunPath("answer-prompt.md"))
+		prompt := filepath.Join(repo, project.RunPath("answer-1/answer-prompt.md"))
 		want := slices.Concat([]string{"--append-system-prompt-file", prompt}, answerToolArgs(),
-			[]string{"--strict-mcp-config", "--", "Let's answer the 1 open question in @.orchestra/run/questions.md, " +
+			[]string{"--strict-mcp-config", "--", "Let's answer the 1 open question in @.orchestra/run/answer-1/questions.md, " +
 				"one at a time."})
 		if !slices.Equal(panes.launched, want) {
 			t.Errorf("claude started with %q, want %q", panes.launched, want)
@@ -243,7 +243,7 @@ func TestAnswerTalkRecordsTheAnswerThroughBd(t *testing.T) {
 		if b, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(b), "AskUserQuestion") {
 			t.Errorf("the instructions at %s aren't the answer talk's (%v):\n%s", prompt, err, b)
 		}
-		questions, err := os.ReadFile(filepath.Join(repo, project.RunPath(project.AnswerQuestionsName)))
+		questions, err := os.ReadFile(filepath.Join(repo, project.RunPath("answer-1/questions.md")))
 		if err != nil || !strings.Contains(string(questions), "1. JSON (Recommended): Fast, every tool reads it\n"+
 			"2. YAML: Readable, slower\n") || !strings.Contains(string(questions), "- k-1 (open): Encode the output") ||
 			!strings.Contains(string(questions), "Asked from:\n\n- k-3 (closed): Audit the formats") {
@@ -295,7 +295,7 @@ func TestAnswerTalkHasOptionsDraftedForAQuestionWithout(t *testing.T) {
 		if _, err := paneAnswerTalk(t, repo, panes, &out, &errOut).answer(runCtx(t), "", "k-7"); err != nil {
 			t.Fatal(err)
 		}
-		questions, err := os.ReadFile(filepath.Join(repo, project.RunPath(project.AnswerQuestionsName)))
+		questions, err := os.ReadFile(filepath.Join(repo, project.RunPath("answer-1/questions.md")))
 		if err != nil || !strings.Contains(string(questions), "Options: none recorded. Draft 2 to 4 from the "+
 			"description, the one you recommend first, and say that you drafted them.") ||
 			strings.Contains(string(questions), "(Recommended)") {
@@ -310,8 +310,8 @@ func TestAnswerTalkNeedsATerminal(t *testing.T) {
 	repo, _, _ := answerSetup(t, answerBacklog())
 	var out strings.Builder
 	a := answerTalk{claude: claudeSession{repo: repo}, tracker: beads.Tracker{Repo: repo}, out: &out, err: &out}
-	a.terminal = func(ctx context.Context, message string) error {
-		return answerOnTerminal(ctx, nil, a.claude, message, strings.NewReader(""), &out, &out)
+	a.terminal = func(ctx context.Context, files project.AnswerFiles, message string) error {
+		return answerOnTerminal(ctx, nil, a.claude, files, message, strings.NewReader(""), &out, &out)
 	}
 	r, err := a.answer(runCtx(t), "", "")
 	if err == nil || !strings.Contains(err.Error(), "bd human respond <question>") || !slices.Equal(r.Open, []string{"k-7"}) {

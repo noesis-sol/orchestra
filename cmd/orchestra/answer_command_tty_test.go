@@ -48,7 +48,7 @@ echo 'fake claude: bye'
 	}
 	args := read(t, filepath.Join(dir, "claude-args"))
 	for _, want := range []string{"[--tools]\n[" + answerTools + "]\n", "[--permission-mode]\n[default]\n",
-		"[Let's answer the 1 open question in @.orchestra/run/questions.md, one at a time.]\n"} {
+		"[Let's answer the 1 open question in @.orchestra/run/answer-1/questions.md, one at a time.]\n"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("claude's arguments lack %q:\n%s", want, args)
 		}

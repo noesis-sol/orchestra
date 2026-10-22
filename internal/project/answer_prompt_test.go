@@ -19,12 +19,12 @@ func TestAnswerPromptRendersAsItsGoldenFiles(t *testing.T) {
 	} {
 		t.Run(tc.golden, func(t *testing.T) {
 			repo := runFolder(t)
-			p, err := WriteAnswerPrompt(repo, tc.onTerminal)
+			p, err := newAnswerFiles(t, repo).WritePrompt(tc.onTerminal)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := filepath.Join(repo, RunPath("answer-prompt.md")); p != want {
-				t.Errorf("WriteAnswerPrompt = %q, want %q", p, want)
+			if want := filepath.Join(repo, RunPath("answer-1/answer-prompt.md")); p != want {
+				t.Errorf("WritePrompt = %q, want %q", p, want)
 			}
 			got, err := os.ReadFile(p)
 			if err != nil {
@@ -56,8 +56,8 @@ func TestAnswerPromptRendersAsItsGoldenFiles(t *testing.T) {
 // the ones that record it, so that no filter brings up Claude Code's approval prompt. In a pane orchestra
 // closes the session; on its terminal the user types /exit.
 func TestAnswerPromptAsksEachQuestionWithItsOptions(t *testing.T) {
-	repo := runFolder(t)
-	p, err := WriteAnswerPrompt(repo, false)
+	files := newAnswerFiles(t, runFolder(t))
+	p, err := files.WritePrompt(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestAnswerPromptAsksEachQuestionWithItsOptions(t *testing.T) {
 	if strings.Index(text, "--design-file") > strings.Index(text, "bd human respond <question>") {
 		t.Error("the instructions record the answer on the question before the blocked ticket's design")
 	}
-	p, err = WriteAnswerPrompt(repo, true)
+	p, err = files.WritePrompt(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,20 +96,30 @@ func TestAnswerPromptAsksEachQuestionWithItsOptions(t *testing.T) {
 	}
 }
 
-// The questions are written to .orchestra/run/questions.md, over an earlier talk's, and named by their
-// path in the checkout, as the first message brings them in.
+// The questions are written to questions.md in the talk's folder, over those it wrote before, and
+// named by their path in the checkout, as the first message brings them in.
 func TestWriteAnswerQuestions(t *testing.T) {
-	repo := runFolder(t)
-	for _, text := range []string{"an earlier talk's\n", "# Questions\n"} {
-		rel, err := WriteAnswerQuestions(repo, []byte(text))
+	files := newAnswerFiles(t, runFolder(t))
+	for _, text := range []string{"an earlier batch\n", "# Questions\n"} {
+		rel, err := files.WriteQuestions([]byte(text))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rel != ".orchestra/run/questions.md" {
-			t.Errorf("WriteAnswerQuestions = %q, want .orchestra/run/questions.md", rel)
+		if rel != ".orchestra/run/answer-1/questions.md" {
+			t.Errorf("WriteQuestions = %q, want .orchestra/run/answer-1/questions.md", rel)
 		}
-		if b, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(rel))); err != nil || string(b) != text {
+		if b, err := os.ReadFile(filepath.Join(files.repo, filepath.FromSlash(rel))); err != nil || string(b) != text {
 			t.Errorf("the file holds %q, %v; want %q", b, err, text)
 		}
 	}
+}
+
+// newAnswerFiles is a new answer talk's files in repo, failing the test where they can't be made.
+func newAnswerFiles(t *testing.T, repo string) AnswerFiles {
+	t.Helper()
+	f, err := NewAnswerFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
 }

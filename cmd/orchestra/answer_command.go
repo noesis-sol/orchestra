@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/noesis-sol/orchestra/internal/dispatch"
+	"github.com/noesis-sol/orchestra/internal/project"
 )
 
 // answerSynopsis is orchestra answer's flags and argument, as its usage line gives them (see
@@ -71,8 +72,8 @@ func runAnswer(ctx context.Context, args []string, e cmdEnv, _ stopCatch) int {
 	defer stop()
 	a := answerTalkIn(c, "") // on this terminal
 	a.out, a.err = stdout, stderr
-	a.terminal = func(ctx context.Context, message string) error {
-		return answerOnTerminal(ctx, stops, a.claude, message, e.stdin, stdout, stderr)
+	a.terminal = func(ctx context.Context, files project.AnswerFiles, message string) error {
+		return answerOnTerminal(ctx, stops, a.claude, files, message, e.stdin, stdout, stderr)
 	}
 	r, err := a.answer(ctx, *scope, named)
 	const backTo = "the run going on, or to the next" // where the answered questions' tickets go

@@ -32,7 +32,7 @@ type fakeAnswers struct {
 
 func (f *fakeAnswers) talk(s *session) answerTalk {
 	return answerTalk{claude: claudeSession{repo: s.cfg.Repo}, tracker: f.tickets, out: s.e.stdout, err: s.e.stderr,
-		terminal: func(_ context.Context, message string) error {
+		terminal: func(_ context.Context, _ project.AnswerFiles, message string) error {
 			f.talks = append(f.talks, message)
 			_, err := os.Stat(filepath.Join(s.cfg.Repo, project.RunPath(dispatch.EventsName)))
 			calls, _ := os.ReadFile(f.calls) // none yet when bd hasn't been called
