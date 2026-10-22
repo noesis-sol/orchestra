@@ -29,6 +29,11 @@ All notable changes to orchestra are documented here. The format follows
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where
   another user could leave `.claude` settings for claude to read.
+- A glob of several `**` in a ticket's files metadata matches the
+  repository's files in time linear in them: each `**` tried every way of
+  splitting a path after it, so `**/**/**/**/**/*.ts` took a third of a
+  second on 200 files 13 folders deep, and each more `**` some three times
+  as long, on every pick.
 - In Herdr and cmux, a worker is launched whatever shell its pane runs: the
   command goes in a script for `/bin/sh`, and the pane's shell is typed a
   line that quotes nothing, ` /bin/sh <script>`. Herdr typed the command

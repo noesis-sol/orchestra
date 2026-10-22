@@ -422,12 +422,9 @@ func (r *repoFiles) glob(pattern string) (files, anchored []string) {
 		}
 		matched := false
 		for start := range starts {
-			for end := start + 1; end <= len(parts); end++ {
-				if globMatch(pat, parts[start:end]) {
-					at[path.Join(append(slices.Clone(parts[:start]), pattern)...)] = true
-					matched = true
-					break
-				}
+			if slices.Contains(globPrefixes(pat, parts[start:])[1:], true) {
+				at[path.Join(append(slices.Clone(parts[:start]), pattern)...)] = true
+				matched = true
 			}
 		}
 		if matched {
@@ -439,22 +436,27 @@ func (r *repoFiles) glob(pattern string) (files, anchored []string) {
 
 // globMatch reports whether the parts of a path match the pattern's: ** any number of them, each other
 // part one name (nameMatch).
-func globMatch(pat, parts []string) bool {
-	if len(pat) == 0 {
-		return len(parts) == 0
-	}
-	if pat[0] == "**" {
-		for i := range len(parts) + 1 {
-			if globMatch(pat[1:], parts[i:]) {
-				return true
+func globMatch(pat, parts []string) bool { return globPrefixes(pat, parts)[len(parts)] }
+
+// globPrefixes reports, for each n from 0 to len(parts), whether parts[:n] match the pattern's parts
+// (globMatch). It takes each part of the pattern once over the path's parts, in time their product: a
+// glob of several ** (**/**/**/*.ts) doesn't try every way of splitting the path between them.
+func globPrefixes(pat, parts []string) []bool {
+	met := make([]bool, len(parts)+1) // met[n]: the pattern's parts so far match parts[:n]
+	met[0] = true
+	for _, p := range pat {
+		if p == "**" {
+			for n := 1; n <= len(parts); n++ {
+				met[n] = met[n] || met[n-1]
 			}
+			continue
 		}
-		return false
+		for n := len(parts); n > 0; n-- {
+			met[n] = met[n-1] && nameMatch(p, parts[n-1])
+		}
+		met[0] = false
 	}
-	if len(parts) == 0 {
-		return false
-	}
-	return nameMatch(pat[0], parts[0]) && globMatch(pat[1:], parts[1:])
+	return met
 }
 
 // nameMatch reports whether pattern, a part of a glob, matches name, a part of a path: the names
