@@ -27,6 +27,14 @@ All notable changes to orchestra are documented here. The format follows
   another file system), and the workers' hooks run that. They ran orchestra
   from its own path, which the update replaces, so from then on they wrote
   records for the old run in the new release's format.
+- A worker whose terminal drops its name after its ticket waited on a
+  question, or after its ticket was set aside with it left in its tab, is
+  looked for in its pane and named again, as one at work is. The run kept no
+  pane for such a worker, so it took it for gone: an asked ticket's worker,
+  answered in its tab and at work again, had its session resumed in a new tab
+  beside it, and a ticket taken up again started a new worker beside the one
+  left open. The pane is also saved in `.orchestra/run/state.json` for the
+  next run.
 
 ## [0.9.4] - 2026-10-22
 

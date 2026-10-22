@@ -67,8 +67,8 @@ func TestAskedTicketClosedBetweenRunsIsMergedByTheNext(t *testing.T) {
 		if o, code := h.run(); code != ExitOK || o.Final() != "READY_EMPTY after 1 tickets" {
 			t.Fatalf("run 1: exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Hooks: true,
-			Question: "Q", QuestionTitle: "which way?"}}
+		want := []project.LeftWorker{{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"),
+			Hooks: true, Question: "Q", QuestionTitle: "which way?"}}
 		if got := saved(t, h); !reflect.DeepEqual(got, want) {
 			t.Fatalf("saved %+v\nwant %+v", got, want)
 		}

@@ -675,7 +675,7 @@ func (r *ticketRun) conclude(ctx context.Context, w worker, head string,
 	info, showErr := o.showTries(keep, id)
 	r.how = settledSlow
 	if q := OpenQuestion(info); q != nil && info.Status != StatusClosed {
-		o.book.ask(id, workerSpot{tab: tab, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
+		o.book.ask(id, workerSpot{tab: tab, pane: w.pane, wt: wt, question: q.ID, title: q.Title, hooks: w.hooks})
 		o.reopen(keep, id, info.Status, "come back once "+q.ID+" is answered") // back in the queue once answered
 		o.emit(Event{Kind: EvAsked, Ticket: id, Title: t.Title, Detail: q.ID + ": " + q.Title, Text: fmt.Sprintf(
 			"  ASKED: %s waits on your answer to %s (%s); answer with: the dashboard's a key, orchestra answer %s "+

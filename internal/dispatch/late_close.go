@@ -44,7 +44,8 @@ func (o *Loop) leaveOpen(ctx context.Context, w worker) {
 // whether it was.
 func (o *Loop) leftOpenSpot(id string) (workerSpot, bool) {
 	r, _ := o.book.get(id)
-	return workerSpot{tab: r.left.w.tab, wt: r.left.w.wt, hooks: r.left.w.hooks}, r.disp == dispLeftOpen
+	w := r.left.w
+	return workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks}, r.disp == dispLeftOpen
 }
 
 // leftOpenList is the workers left in their tabs as their tickets were set aside, by ticket.
@@ -163,7 +164,7 @@ func (r *ticketRun) lateClose(ctx context.Context, lo leftOpen) *stopReason {
 	o, id := r.o, r.id
 	w := lo.w
 	w.started = time.Now()
-	o.place(id, workerSpot{tab: w.tab, wt: w.wt, hooks: w.hooks})
+	o.place(id, workerSpot{tab: w.tab, pane: w.pane, wt: w.wt, hooks: w.hooks})
 	st := Status{Ticket: id, Title: r.t.Title, Tab: w.tab, Started: w.started}
 	o.showActive(st)
 	defer o.status(Status{Ticket: id, Gone: true})

@@ -105,7 +105,7 @@ func TestCtrlCAsAnAskedTicketsWorkerIsToldLeavesItRunning(t *testing.T) {
 			t.Errorf("A should be labelled %q: %v", UnmergedLabel, a.Labels)
 		}
 		want := []project.LeftWorker{
-			{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
+			{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
 		if got := saved(t, h); !reflect.DeepEqual(got, want) {
 			t.Errorf("saved %+v\nwant %+v", got, want)
 		}
@@ -179,7 +179,8 @@ func TestCtrlCBeforeAnAskedTicketsWorkerIsToldLeavesItAsked(t *testing.T) {
 					t.Fatal("Ctrl+C was never pressed")
 				}
 				want := []project.LeftWorker{
-					{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Question: "Q", QuestionTitle: "which way?"}}
+					{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"), Question: "Q",
+						QuestionTitle: "which way?"}}
 				if got := saved(t, h); !reflect.DeepEqual(got, want) {
 					t.Errorf("saved %+v\nwant %+v\n%s", got, want, h.sink.text())
 				}
@@ -244,7 +245,7 @@ func TestCtrlCAsACarriedOverWorkerIsToldLeavesItRunning(t *testing.T) {
 			t.Errorf("final %q", o.Final())
 		}
 		want := []project.LeftWorker{
-			{Ticket: "A", Agent: "A", Tab: "tab1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
+			{Ticket: "A", Agent: "A", Tab: "tab1", Pane: "pane1", Worktree: h.worktree("A"), Left: "INTERRUPTED"}}
 		if got := saved(t, h); !reflect.DeepEqual(got, want) {
 			t.Errorf("saved %+v\nwant %+v", got, want)
 		}
