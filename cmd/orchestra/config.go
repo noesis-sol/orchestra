@@ -218,8 +218,9 @@ type options struct {
 	// the permission mode workers start in on a run that isn't planned and on one that is (see settleWork)
 	permissionModes struct{ unplanned, planned string }
 	showVersion     bool
-	// what the spec run sets up its repository with, which orchestra init hasn't (spec_setup.go); nil elsewhere
-	specSetup *project.Choice
+	// what the spec run plans to set up its repository with, which orchestra init hasn't (spec_setup.go);
+	// nil elsewhere
+	specSetup *specPlan
 	// how long the spec's breakdown may take, and the effort it runs at (--spec-timeout, --spec-effort)
 	SpecTimeout time.Duration
 	SpecEffort  string
@@ -249,7 +250,8 @@ var errUnexpectedArgs = errors.New("unexpected arguments")
 //
 // Its phases, in the order their problems are reported: the flags, and the spec file --spec gives;
 // the repository; the terminal, under the project's settings, read once here for it and the project
-// (for a spec run that sets the repository up, those its setup writes: see planSpecSetup);
+// (for a spec run that sets the repository up, those its setup writes: see planSpecSetup, and
+// setUpForSpec for a fetch that brings in a setup of the upstream's);
 // the commands a run calls; then, in a repository, the project's settings and layout, its checkout,
 // and where the spec is kept there.
 func loadConfig(
@@ -264,7 +266,7 @@ func loadConfig(
 	problems = append(problems, specProblems...)
 	problems = append(problems, findRepo(ctx, &c, dir)...)
 	settings, unreadable := loadSettings(c.Repo)
-	settings = planSpecSetup(&c, f.concurrency, settings)
+	settings = planSpecSetup(&c, f, settings)
 	problems = append(problems, checkTerminal(ctx, &c, settings, getenv)...)
 	problems = append(problems, checkTools(ctx)...)
 	if c.Repo != "" {
@@ -591,7 +593,13 @@ func resolveProject(
 		c.WorkerPrompt = filepath.Join(c.Repo, c.WorkerPrompt)
 	}
 	c.LogPath, c.ReportsDir = lay.Log, lay.Reports
-	problems := resolveSettings(c, f, settings)
+	return append(resolveSettings(c, f, settings), resolveMCP(ctx, c, settings, getenv)...)
+}
+
+// resolveMCP resolves the MCP servers the project's settings choose for its workers into c.MCP.
+func resolveMCP(ctx context.Context, c *options, settings project.Settings, getenv func(string) string) []string {
+	var problems []string
+	c.MCP = nil
 	// Claude workers get the MCP servers the project chose, defined in this machine's Claude Code
 	// config; one this machine can't give them is for the maintainer to fix before they start.
 	switch {

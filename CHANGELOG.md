@@ -25,6 +25,11 @@ All notable changes to orchestra are documented here. The format follows
   rule as the holds do of whether a ticket has merged, so a subticket closed
   while its worker runs or waits on a question, or with its work only on its
   branch, holds them too.
+- A spec run in a clone made before `orchestra init` was pushed keeps the
+  setup its fetch brings in. It decided to set the repository up before it
+  fetched, then wrote init's defaults (concurrent 1, no MCP servers, its check
+  timeouts) over the upstream's settings, committed them and ran with them. It
+  now decides once its fetch is done, and runs with the upstream's settings.
 - With tmux, a repository at a non-ASCII path, such as `~/Código/shop`, works
   where no locale says UTF-8, as under the cron or launchd recipe. tmux then
   answered every non-ASCII character as `_`, so no worker's pane or hook

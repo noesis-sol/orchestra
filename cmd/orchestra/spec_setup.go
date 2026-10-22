@@ -26,7 +26,8 @@ import (
 // no skill: the breakdown's first ticket, the environment setup, scaffolds the project and its
 // checks. It then commits what it wrote, with the spec, as a ticket's worktree has only what is
 // committed; in a repository with no commit yet, that is the first. Nothing is installed unattended:
-// bd missing is a setup problem, as is a folder that isn't a git repository.
+// bd missing is a setup problem, as is a folder that isn't a git repository. Where the run's fetch
+// brings in a setup first, an upstream's pushed after the clone was made, the run keeps that one.
 
 // noRepoForSpec is a spec run's setup problem outside a git repository.
 const noRepoForSpec = "Not inside a git repository: cd into the project first, or for a new one, " +
@@ -44,29 +45,73 @@ func specSetupChoice(repo string, concurrency project.Given[int], agent string) 
 	return initChoice(repo, f, project.Settings{})
 }
 
-// planSpecSetup has the spec run c set up its repository where orchestra init hasn't (c.specSetup),
-// and returns the settings the run reads: those it will have once set up, so that the run's
-// problems are all found before anything is written. Elsewhere it returns settings, the project's.
-func planSpecSetup(c *options, concurrency project.Given[int], settings project.Settings) project.Settings {
+// specPlan is a spec run's plan, made at configuration, to set up its repository where orchestra init
+// hasn't (planSpecSetup): the setup, and the run's flags, which resolve the settings of a setup its
+// fetch brings in instead (keepFetchedSetup).
+type specPlan struct {
+	choice project.Choice
+	flags  *runFlags
+}
+
+// planSpecSetup has the spec run c, of flags f, plan to set up its repository where orchestra init
+// hasn't (c.specSetup), and returns the settings the run reads: those it will have once set up, so
+// that the run's problems are all found before anything is written. Elsewhere it returns settings,
+// the project's.
+func planSpecSetup(c *options, f *runFlags, settings project.Settings) project.Settings {
 	if c.work().kind != workSpec || c.Repo == "" || project.IsSetUp(c.Repo) {
 		return settings
 	}
-	choice := specSetupChoice(c.Repo, concurrency, c.AgentKind)
-	c.specSetup = &choice
+	choice := specSetupChoice(c.Repo, f.concurrency, c.AgentKind)
+	c.specSetup = &specPlan{choice: choice, flags: f}
 	return project.ChoiceSettings(project.Settings{}, choice)
 }
 
-// setUpForSpec sets up the repository of the spec run s where it needs it (see planSpecSetup), and
-// then reads the worker prompt it wrote. It returns the exit code; what went wrong has been said.
+// setUpForSpec sets up the repository of the spec run s where it planned to (see planSpecSetup), and
+// then reads the worker prompt it wrote. Where the run's fetch (spec_fetch.go) has brought in a setup
+// meanwhile, an upstream's set up after this clone was made, it sets nothing up and takes that one
+// (keepFetchedSetup). It returns the exit code; what went wrong has been said.
 func (s *session) setUpForSpec(ctx context.Context) int {
 	c := s.cfg
-	if c.specSetup == nil {
+	switch {
+	case c.specSetup == nil:
 		return dispatch.ExitOK
+	case project.IsSetUp(c.Repo):
+		return s.keepFetchedSetup(ctx)
 	}
-	code := specSetup{choice: *c.specSetup, repo: c.Repo, file: c.work().spec, getenv: s.e.getenv,
+	code := specSetup{choice: c.specSetup.choice, repo: c.Repo, file: c.work().spec, getenv: s.e.getenv,
 		log: s.log, out: s.e.stdout, err: s.e.stderr}.run(ctx)
 	if code != dispatch.ExitOK {
 		return code
+	}
+	return s.readPrompt()
+}
+
+// keepFetchedSetup has the spec run s, which planned to set its repository up, keep the setup its
+// fetch brought in: it drops its plan, resolves the settings it read with the plan's from that setup's
+// settings.json, as configuration does for a repository set up (the terminal it runs in aside, chosen
+// already), checks for the Beads database, and reads the worker prompt. It returns the exit code,
+// having said what stops the run.
+func (s *session) keepFetchedSetup(ctx context.Context) int {
+	c := &s.cfg
+	plan := c.specSetup
+	c.specSetup = nil
+	const why = "SPEC: the fetch brought in orchestra's setup: the repository is set up already"
+	fmt.Fprintln(s.e.stdout, why)
+	s.log.Line(time.Now(), why)
+	settings, problems := loadSettings(c.Repo)
+	if len(problems) == 0 {
+		problems = append(resolveSettings(c, plan.flags, settings), resolveMCP(ctx, c, settings, s.e.getenv)...)
+	}
+	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
+		problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
+	}
+	if len(problems) > 0 {
+		fmt.Fprintln(s.e.stderr, "orchestra cannot start:")
+		for _, p := range problems {
+			fmt.Fprintln(s.e.stderr, "  - "+p)
+			s.log.Line(time.Now(), "SPEC: cannot start: "+p)
+		}
+		return dispatch.ExitSetup
 	}
 	return s.readPrompt()
 }

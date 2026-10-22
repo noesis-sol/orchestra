@@ -45,7 +45,7 @@ A [spec run](running.md#a-whole-app-from-a-spec), `orchestra --spec <file>`, bui
 mkdir shop && cd shop && git init && orchestra --spec ~/specs/shop.md
 ```
 
-In a repository `init` hasn't set up (no `.orchestra/worker-prompt.md` or `.orchestra/settings.json`, nor a `.claude/worker-prompt.md` from before `init`), even one with no commit yet, the run sets it up itself, once it holds the run lock and before it commits the spec, rather than stop with `orchestra isn't set up in this repository yet`. It does what `init` does without a terminal, taking its defaults and declining what it offers:
+In a repository `init` hasn't set up (no `.orchestra/worker-prompt.md` or `.orchestra/settings.json`, nor a `.claude/worker-prompt.md` from before `init`), even one with no commit yet, the run sets it up itself, once it holds the run lock and before it commits the spec, rather than stop with `orchestra isn't set up in this repository yet`. It does what `init` does without a terminal, taking its defaults and declining what it offers. It first brings the base branch up to its upstream, as it does before it commits the spec: where that fast-forward brings in a setup, in a clone made before `orchestra init` was pushed, the run sets nothing up and runs with that setup's settings, saying `SPEC: the fetch brought in orchestra's setup: the repository is set up already`. Otherwise it sets up:
 
 - **Beads**: `bd init` where the repository has no `.beads/`, as [above](#set-up-a-project). It never installs `bd`: without it the run doesn't start, `Required command not found: bd` (exit code 2).
 - **The worker prompt** from the template, and `.orchestra/.gitignore`.
