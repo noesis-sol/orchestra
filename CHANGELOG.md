@@ -27,6 +27,13 @@ All notable changes to orchestra are documented here. The format follows
   up, and its next run merged every ticket unchecked. A project counts as
   set up now by its `.orchestra/settings.json` (or a `.claude/worker-prompt.md`
   from before `init`), not by its worker prompt alone.
+- Two specs from outside the repository with the same file name, such as
+  `~/a/PRD.md` and `~/b/PRD.md`, no longer share one copy in
+  `.orchestra/specs/`: the second used to be committed over the first's and
+  update the first's tickets for the whole of itself. The commit of a copy now
+  records where it came from (`Spec-Source: <path>`), and a spec from
+  elsewhere that would take its name doesn't start, saying to give it another
+  file name.
 - A worker Herdr loses sight of for a moment is no longer taken for gone by
   the paths that follow it outside its settle loop: an asked ticket's worker
   carrying on after its answer no longer has its session resumed beside it,

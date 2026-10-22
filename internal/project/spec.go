@@ -245,8 +245,9 @@ func InGitDir(rel string) bool {
 // CommitSpec keeps the spec file in the repository whose main checkout is repo, at SpecPath, and
 // commits that path alone on the branch checked out when it is new, untracked or differs from what
 // is committed; committed says whether it made that commit. A file outside the repository is copied
-// there first, over the copy an earlier run made. The spec is read again (see ReadSpec), and its
-// SHA-256 is that content's.
+// there first, over the copy an earlier run made of it, and the commit records where from; one that
+// would take the copy of a spec from elsewhere is *SpecTakenError (see CheckSpecSource). The spec is
+// read again (see ReadSpec), and its SHA-256 is that content's.
 //
 // It is called before a run's loop starts, with the run lock held: nothing else of orchestra's
 // writes to the repository meanwhile.
@@ -261,10 +262,12 @@ func CommitSpec(ctx context.Context, repo, file string) (s Spec, committed bool,
 	}
 	sum := sha256.Sum256(text)
 	s = Spec{Path: rel, SHA256: hex.EncodeToString(sum[:])}
+	source := ""
 	if !inside {
-		if err := copySpec(repo, rel, text); err != nil {
+		if err := copyOutside(ctx, repo, file, rel, text); err != nil {
 			return Spec{}, false, err
 		}
+		source = sourceTrailer(file)
 	}
 	g := git.Git{}
 	changed, err := g.PathChanged(ctx, repo, rel)
@@ -285,11 +288,20 @@ func CommitSpec(ctx context.Context, repo, file string) (s Spec, committed bool,
 		verb = "update"
 	}
 	msg := fmt.Sprintf("orchestra: %s spec %s\n\nThe spec orchestra --spec builds, at %s, kept where the workers on "+
-		"its tickets can read it.\n\nsha256 %s\n", verb, s.Name(), rel, s.SHA256)
+		"its tickets can read it.\n\nsha256 %s\n%s", verb, s.Name(), rel, s.SHA256, source)
 	if s.Commit, err = g.CommitPath(ctx, repo, rel, msg); err != nil {
 		return Spec{}, false, fmt.Errorf("cannot commit %s: %w", rel, err)
 	}
 	return s, true, nil
+}
+
+// copyOutside copies text, the spec file from outside the repository repo, to rel there, once
+// CheckSpecSource has found that no other spec's copy is kept at rel.
+func copyOutside(ctx context.Context, repo, file, rel string, text []byte) error {
+	if err := CheckSpecSource(ctx, repo, file); err != nil {
+		return err
+	}
+	return copySpec(repo, rel, text)
 }
 
 // copySpec writes text, a spec from outside the repository repo, to rel there, in SpecsDir. It is

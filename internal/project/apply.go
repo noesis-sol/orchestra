@@ -96,10 +96,12 @@ func CommitSetUp(ctx context.Context, repo string, before map[string]string, fil
 	if inside && InGitDir(rel) {
 		return "", nil, ErrSpecInGitDir
 	}
+	source := ""
 	if !inside {
-		if err := copySpec(repo, rel, text); err != nil {
+		if err := copyOutside(ctx, repo, file, rel, text); err != nil {
 			return "", nil, err
 		}
+		source = sourceTrailer(file)
 	}
 	g := git.Git{}
 	paths := []string{rel}
@@ -116,7 +118,7 @@ func CommitSetUp(ctx context.Context, repo string, before map[string]string, fil
 	sum := sha256.Sum256(text)
 	msg := fmt.Sprintf("orchestra: set up for spec %s\n\norchestra --spec set up this repository, which orchestra init "+
 		"hadn't, as init does without a terminal, and added the spec it builds, at %s, where the workers on its "+
-		"tickets can read it.\n\nsha256 %s\n", path.Base(rel), rel, hex.EncodeToString(sum[:]))
+		"tickets can read it.\n\nsha256 %s\n%s", path.Base(rel), rel, hex.EncodeToString(sum[:]), source)
 	commit, err := g.CommitPaths(ctx, repo, msg, paths...)
 	if err != nil {
 		return "", nil, fmt.Errorf("cannot commit the setup: %w", err)

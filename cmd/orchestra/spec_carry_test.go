@@ -549,11 +549,13 @@ func TestSpecRunUpdatesTheTreeForTheChange(t *testing.T) {
 	repo, spec, tools := breakdownFixture(t, helpWithPrompts, filing(t, "toolu_1", "bd create --parent s-1 --type task "+
 		"--title 'Sort the things' --acceptance 'Sorts them' --metadata "+ticketMeta("sort.go")+" --silent")+
 		answering(t, specAnswer{Root: "s-1"}))
-	old := writeSpec(t, filepath.Join(t.TempDir(), "app.md"), carryText) // as an earlier night committed it
-	was, _, err := project.CommitSpec(context.Background(), repo, old)
+	changed := read(t, spec)
+	writeSpec(t, spec, carryText) // as an earlier night committed it
+	was, _, err := project.CommitSpec(context.Background(), repo, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
+	writeSpec(t, spec, changed)
 	fileForBd(t, tools, keptRoot(dispatch.StatusOpen, was.SHA256, was.Commit),
 		keptTicket("s-1.1", "s-1", "List the things", dispatch.StatusClosed))
 	stdout, stderr, code := runSpecIn(t, repo, func(string) {}, "--spec", spec, "--plain")

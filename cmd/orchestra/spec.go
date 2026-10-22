@@ -104,7 +104,8 @@ func checkSpecFile(c *options, dir, from string) []string {
 }
 
 // checkSpecPath settles where the spec is kept in the repository, c.Spec (see project.SpecPath), and
-// checks that git can commit it there: not in the .git folder, nor where git ignores it.
+// checks that git can commit it there: not in the .git folder, nor where git ignores it, nor, for a
+// spec from outside the repository, over the copy of another of its name (project.CheckSpecSource).
 func checkSpecPath(ctx context.Context, c *options, from string) []string {
 	w := c.work()
 	if w.kind != workSpec {
@@ -124,6 +125,14 @@ func checkSpecPath(ctx context.Context, c *options, from string) []string {
 		return []string{fmt.Sprintf("git ignores %s, where the spec (%s) is kept, and workers only see "+
 			"committed files: move the spec, or stop ignoring that path (git check-ignore -v %s says where).",
 			c.Spec, from, command.ShellWord(c.Spec))}
+	}
+	err = project.CheckSpecSource(ctx, c.Repo, w.spec)
+	_, taken := errors.AsType[*project.SpecTakenError](err)
+	switch {
+	case taken:
+		return []string{fmt.Sprintf("The spec %s (%s) has the name of another: %v.", w.spec, from, err)}
+	case err != nil:
+		return []string{fmt.Sprintf("Cannot keep the spec (%s): %v.", from, err)}
 	}
 	return nil
 }

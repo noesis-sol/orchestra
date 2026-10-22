@@ -581,6 +581,29 @@ func (Git) LastCommit(ctx context.Context, repo, path string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// LastTrailer returns the value of the trailer key ("<key>: <value>", a line of its own) in the
+// latest commit, on the branch checked out, that changed the file at path, relative to repo, and has
+// that line in its message; "" when none has, or the branch has no commit yet. It returns git's error
+// when git can't tell.
+func (g Git) LastTrailer(ctx context.Context, repo, path, key string) (string, error) {
+	if head, err := g.Head(ctx, repo, "HEAD"); head == "" { // git log fails on a branch with no commit
+		return "", err
+	}
+	prefix := key + ": "
+	out, err := readGit(ctx, repo, "log", "-1", "--no-show-signature", "--format=%B", "--fixed-strings",
+		"--grep="+prefix, "--", ":(literal)"+path)
+	if err != nil {
+		return "", err
+	}
+	value := ""
+	for line := range strings.Lines(out) {
+		if v, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), prefix); ok {
+			value = v
+		}
+	}
+	return value, nil
+}
+
 // PathDiff is the diff of the file at path, relative to repo, from commit from to commit to, as git
 // diff prints it without colour or an external diff tool; "" when it is the same in both. It returns
 // git's error when git can't say, as when it has no commit from.
