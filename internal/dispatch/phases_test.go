@@ -38,7 +38,7 @@ func ending(t *testing.T, recs []map[string]any, id string) map[string]any {
 	var end map[string]any
 	for _, r := range recs {
 		ends := r["ticket"] != "" && (r["kind"] == "closed" || r["kind"] == "deferred" ||
-			r["kind"] == "warn" && r["aside"] == true)
+			r["kind"] == "warn" && r["aside"] == true || (r["kind"] == "hold" || r["kind"] == "stop") && r["blocked"] != nil)
 		if !ends {
 			has(t, r, nil, "phases", "hand_backs", "carried")
 			continue

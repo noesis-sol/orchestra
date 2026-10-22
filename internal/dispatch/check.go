@@ -40,10 +40,10 @@ func (o *Loop) runCheck(ctx context.Context, r rebaseStop, at string) (string, e
 // runIn runs the check in the worktree of r's ticket on its branch's commit at, and returns how it ran. It gives up
 // after checkTimeout, stopping everything it started, and run.err wraps errCheckTimedOut then. When it fails, the
 // end of its output goes in the log, the whole of it in the worktree's checkLogName (see keepOutput), whose path it
-// returns as output, and, unless ctx was cancelled, what it said goes to the reviewer (see noteCheckFailed), as
-// said of its branch as r has it. Only what is said of the output is kept in memory (see checkOutput). Either way
-// it ends with a check record (see checkRunIn). The setup before the check runs through worktreeDeps.run and
-// ranIn.
+// returns as output, and, unless ctx was cancelled or it ran ahead of its turn (see train.go), what it said goes to
+// the reviewer (see noteCheckFailed), as said of its branch as r has it. Only what is said of the output is kept
+// in memory (see checkOutput). Either way it ends with a check record (see checkRunIn). The setup before the check
+// runs through worktreeDeps.run and ranIn.
 func (o *Loop) runIn(ctx context.Context, r rebaseStop, at string) (run commandRun, output string) {
 	began := time.Now()
 	run, _ = runLimited(ctx, r.wt, o.checkTimeout(), o.cfg.Check)
@@ -68,7 +68,9 @@ func (o *Loop) ranIn(ctx context.Context, r rebaseStop, at, setup string, took t
 	o.log.Raw(run.out.lastLines(keptLines), fmt.Errorf("'%s' in %s: %w", cmd, w.wt, run.err))
 	output := o.keepOutput(w.wt, logName, "the check's", run.out)
 	o.log.Check(o.checkRunIn(r, at, setup, took, run.result(ctx), output))
-	if ctx.Err() == nil { // stopped by Ctrl+C, it says nothing of the ticket
+	// Stopped by Ctrl+C, it says nothing of the ticket; nor, checked ahead of its turn, on top of a branch
+	// not yet merged: the evidence of a check before, as of a ticket checked once more, stays.
+	if ctx.Err() == nil && !r.ahead {
 		o.noteCheckFailed(ctx, r, output, run, setup)
 	}
 	return output

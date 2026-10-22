@@ -130,7 +130,9 @@ func (r *runState) recheckTickets() {
 func (o *Loop) recheck(ctx context.Context, rc recheck) (stop *stopReason) {
 	c := o.cfg
 	id := rc.w.id
-	if why := o.whyNotRecheck(ctx, rc); why != "" {
+	// A read that fails, as bd's on a lock another run holds a moment, is asked again after a poll, as git's
+	// are (see askGit): the ticket is checked again once in the run, and one failure would lose that.
+	if why, _ := askGit(ctx, o, nil, func() (string, error) { return o.whyNotRecheck(ctx, rc) }); why != "" {
 		if ctx.Err() != nil {
 			return errInterrupted // a read cut short says nothing of the ticket
 		}
@@ -162,33 +164,34 @@ func (o *Loop) handedBack(id string) bool {
 	return o.active[id].handedBack()
 }
 
-// whyNotRecheck says why rc's ticket is left as it is rather than checked again, or "".
-func (o *Loop) whyNotRecheck(ctx context.Context, rc recheck) string {
+// whyNotRecheck says why rc's ticket is left as it is rather than checked again, or "", and the error of
+// the read that failed, if one did: bd's, git's or the terminal's, which the reason names.
+func (o *Loop) whyNotRecheck(ctx context.Context, rc recheck) (string, error) {
 	c := o.cfg
 	w := rc.w
 	switch st, err := o.tickets.Status(ctx, w.id); {
 	case err != nil:
-		return "bd could not say whether it is still closed" + because(err)
+		return "bd could not say whether it is still closed" + because(err), err
 	case st != StatusClosed:
-		return "it is " + string(st) + " now"
+		return "it is " + string(st) + " now", nil
 	}
 	switch dirty, err := o.checkout.DirtyWorktree(ctx, w.wt); {
 	case err != nil:
-		return gitCantTell("whether "+w.wt+" has uncommitted changes", err)
+		return gitCantTell("whether "+w.wt+" has uncommitted changes", err), err
 	case dirty != "":
-		return w.wt + " has uncommitted changes"
+		return w.wt + " has uncommitted changes", nil
 	}
 	switch head, err := o.checkout.Head(ctx, c.Repo, w.br); {
 	case err != nil:
-		return gitCantTell("where "+w.br+" is", err)
+		return gitCantTell("where "+w.br+" is", err), err
 	case head != rc.head:
-		return w.br + " has moved since its check failed"
+		return w.br + " has moved since its check failed", nil
 	}
 	switch st, err := o.presenceFor(ctx, w.id, w.workerRef, 0); {
 	case err != nil:
-		return "its worker's status could not be read" + because(err)
+		return "its worker's status could not be read" + because(err), err
 	case st == StateWorking || st == StateBlocked:
-		return fmt.Sprintf("its worker is %s in tab %s", st, w.tab)
+		return fmt.Sprintf("its worker is %s in tab %s", st, w.tab), nil
 	}
-	return ""
+	return "", nil
 }

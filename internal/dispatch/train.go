@@ -185,7 +185,6 @@ func (o *Loop) runTrain(ctx context.Context, w worker, t *trainRun) {
 	case err == nil:
 		o.info("  '%s' passes on %s ahead of its turn, on top of %s", c.Check, w.br, t.behind)
 	case ctx.Err() == nil:
-		o.book.forgetCheck(w.id) // its turn checks it again, on the Base it merges onto
 		failure = fmt.Sprintf("%s on %s on top of it (output is in %s)", o.failedHow(setup, err), w.br, output)
 		o.info("  %s on %s ahead of its turn, on top of %s (output is in %s); it is checked again in its turn",
 			o.failedHow(setup, err), w.br, t.behind, output)

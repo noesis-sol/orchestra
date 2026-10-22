@@ -144,8 +144,10 @@ func (c *phaseClocks) end(id string, now time.Time) *PhaseTimes {
 	return &cl.PhaseTimes
 }
 
-// endsPart reports whether ev ends its ticket's part in the run: it closed, was deferred, or was set
-// aside with a warning.
+// endsPart reports whether ev ends its ticket's part in the run: it closed, was deferred, was set
+// aside with a warning, or was stopped at its merge, left unmerged (DIRTY_TREE, GIT_FAILED,
+// MERGE_FAILED), which only a hold or stop with Blocked says.
 func endsPart(ev Event) bool {
-	return ev.Ticket != "" && (ev.Kind == EvClosed || ev.Kind == EvDeferred || ev.Kind == EvWarn && ev.Aside)
+	return ev.Ticket != "" && (ev.Kind == EvClosed || ev.Kind == EvDeferred || ev.Kind == EvWarn && ev.Aside ||
+		(ev.Kind == EvHold || ev.Kind == EvStop) && ev.Blocked != "")
 }

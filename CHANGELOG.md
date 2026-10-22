@@ -46,6 +46,18 @@ All notable changes to orchestra are documented here. The format follows
   records where it came from (`Spec-Source: <path>`), and a spec from
   elsewhere that would take its name doesn't start, saying to give it another
   file name.
+- A ticket set aside with `CHECKS_FAILED` keeps its one check once more in
+  the run when a read fails as it is taken up (bd's on a database another bd
+  holds, git's, or the terminal's): the read is asked again after a poll, as
+  the merge's git reads are, rather than the ticket staying set aside.
+- A check ahead of a ticket's turn in the merge train that fails no longer
+  erases what the ticket's earlier check said: a ticket set aside with
+  `CHECKS_FAILED`, checked once more and failing ahead of its turn, stays in
+  the run report's evidence of each ticket set aside.
+- A ticket stopped at its merge (`DIRTY_TREE`, `GIT_FAILED`,
+  `MERGE_FAILED`) now has its phases and its workers' tokens in a record, the
+  first `hold` or `stop` with `blocked` over it, and in the end record's
+  totals.
 - A worker Herdr loses sight of for a moment is no longer taken for gone by
   the paths that follow it outside its settle loop: an asked ticket's worker
   carrying on after its answer no longer has its session resumed beside it,

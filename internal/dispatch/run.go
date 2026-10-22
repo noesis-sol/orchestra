@@ -625,6 +625,11 @@ func (r *runState) returned(res result) {
 	if res.stop == nil || res.stop == errInterrupted {
 		return
 	}
+	if res.stop.blocked != "" {
+		// Stopped at its merge, its part in the run is over; the record that says so, a hold or the run's
+		// stop, may come only as the run ends (see endsPart).
+		o.clocks.pause(res.id, time.Now())
+	}
 	// Every reason is shown as it arrives. The first decides the exit code; the final line gives it
 	// and then the others.
 	if first := r.addStop(res.stop.over(res.id)); len(r.inflight) > 0 || !first {
