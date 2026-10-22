@@ -8,6 +8,14 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- A spec run waiting, with nothing running, for its breakdown to file the
+  rest of the tree now hears the maintainer and its stops: pressing s ends it
+  at once, as its DRAIN line says, rather than once the breakdown is over, and
+  an environment ticket left in progress ends it with PAUSED rather than
+  leaving it silent until then. Triage holding the run for the environment
+  now ends every such wait, for the breakdown or for the maintainer's answers
+  as for the usage limit's reset. The run's waits with nothing running share
+  one rule for what ends them.
 - A worktree whose only uncommitted work is new files, never added, reads
   as dirty where git is set to hide them (`status.showUntrackedFiles=no`): a
   ticket closed with such a file left out of its commit is set aside with

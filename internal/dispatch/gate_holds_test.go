@@ -116,7 +116,7 @@ func TestTheEnvironmentHoldLiftsAtItsEnd(t *testing.T) {
 			t.Fatalf("held for the environment: held %v, taking %v", o.gate.held(gateEnv), r.taking())
 		}
 		start := time.Now()
-		if !r.goOnWhenEmpty() {
+		if !r.idle() {
 			t.Fatalf("the run does not go on after the probe:\n%s", h.sink.text())
 		}
 		if o.gate.held(gateEnv) || !r.taking() {

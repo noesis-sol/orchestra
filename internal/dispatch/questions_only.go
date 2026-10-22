@@ -56,56 +56,51 @@ func (o *Loop) answerer() Answers {
 // the talk records each answer as it is given, and the ticket can start before the talk is over.
 const answerPoll = 5 * time.Second
 
-// awaitAnswers is Run's step once nothing runs and nothing is ready, after goOnWhenEmpty: with open
+// awaitAnswers is Run's wait once nothing runs and nothing is ready, the last of idleWaits: with open
 // questions in the run's scope that no talk now over has put to the maintainer (Question.Put), it has
-// the answer talk open on them and waits, reading bd every answerPoll, and reports whether the run goes
-// on: a ticket an answer freed is there to take (see freed). Once the talk is over with none, it looks
+// the answer talk open on them and waits, reading bd every answerPoll, and reports whether it applies,
+// and whether Run goes round: it does once a ticket an answer freed is there to take (see freed), as
+// when the idle step's exit rule ends the wait (see idleWake). Once the talk is over with none, it looks
 // again for questions asked since, and the run ends, naming those still open (left, see questionsEnd).
 // Where no talk can open, it says to answer them with orchestra answer.
-func (r *runState) awaitAnswers() bool {
+func (r *runState) awaitAnswers(from gateMark) (applies, goOn bool) {
 	o := r.o
 	a := o.answerer()
 	r.left = nil
-	if a == nil || !r.taking() || r.count >= o.cfg.Limit || r.ctx.Err() != nil {
-		return false
+	if a == nil || !r.taking() || r.count >= o.cfg.Limit {
+		return false, false
 	}
 	qs, err := a.Questions(r.ctx)
 	if err != nil {
 		o.log.Raw("", err) // the run ends as it would have
-		return false
+		return false, false
 	}
 	r.left = qs
 	if !slices.ContainsFunc(qs, func(q Question) bool { return !q.Put }) {
-		return false // none, or each put to the maintainer in a talk now over
+		return false, false // none, or each put to the maintainer in a talk now over
 	}
-	over := a.Talk(qs, r.deferredLine())
-	if over == nil {
+	talk := a.Talk(qs, r.deferredLine())
+	if talk == nil {
 		o.info("  nothing ready but %s: answer with orchestra answer, then run again", questionsLine(qs))
-		return false
+		return false, false
 	}
 	o.info("  nothing ready but %s: the answer talk is open beside the dashboard, and the run takes up "+
 		"each ticket an answer frees", questionsLine(qs))
 	poll := time.NewTicker(answerPoll)
 	defer poll.Stop()
 	for {
-		switch why, _ := r.wait(waits{talk: over, poll: poll.C}); why {
-		case wokeDone:
-			return false
-		case wokeTalk:
+		switch why, over := r.idleWake(waits{talk: talk, poll: poll.C}, from); {
+		case why == wokeTalk:
 			if r.freed() {
 				r.left = nil
-				return true
+				return true, true
 			}
-			return r.awaitAnswers() // questions asked since are put to the maintainer in a talk of their own
-		case wokePoll:
-			if r.freed() {
-				r.left = nil
-				return true // the talk stays open: the queue running dry again waits on it
-			}
-		default:
-			if !r.taking() {
-				return false // wound down or held: the run ends as it would have
-			}
+			return r.awaitAnswers(from) // questions asked since are put to the maintainer in a talk of their own
+		case why == wokePoll && r.freed():
+			r.left = nil
+			return true, true // the talk stays open: the queue running dry again waits on it
+		case over:
+			return true, true // the talk stays open, as Run takes up what ended the wait
 		}
 	}
 }

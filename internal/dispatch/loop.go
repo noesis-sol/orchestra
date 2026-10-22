@@ -241,7 +241,7 @@ type triageQueue struct {
 // triage's: the tickets whose workers failed at once, or whose setup failed, in a row, the tickets
 // triage blamed on the environment in a row, the reason once the run holds, with why, and whether the
 // machine was probed in this run. Run puts the hold on the gate (gateEnv) as it takes it up, with the
-// probe's time as its end (see probeEnvironment). Workers say how they settled on their result;
+// probe's time as its end (see awaitProbe). Workers say how they settled on their result;
 // triage hands its verdicts over on verdicts until Run has returned, then counts them itself, as
 // nothing else does by then. envGen counts the holds a probe has ended: each deferral is stamped with
 // it as it is queued for triage, and its verdict counts toward the hold only while envGen is

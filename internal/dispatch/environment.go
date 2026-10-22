@@ -191,43 +191,44 @@ const probeID = "orchestra-probe"
 // probeLimit is how long the probe worker may take, from its tab opening, to run its command.
 const probeLimit = 5 * time.Minute
 
-// probeEnvironment is Run's next step when nothing runs and stop is the only reason to stop: with
-// the run held for the environment, and not probed yet, it waits Config.EnvProbe, the hold's end on the
-// gate, and then probes the machine. It returns nil when the probe ran its command and the hold has
-// lifted, or else the reason to end the run with, as it does once the maintainer asks to wind down.
-func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
+// awaitProbe is Run's wait once nothing runs and the hold for the environment is the run's only
+// reason to stop, not probed yet in this run, or waiting for its probe (see idleWaits): it waits
+// Config.EnvProbe, the hold's end on the gate, and then probes the machine. It reports whether it
+// applies, and whether Run goes round: it does once the probe ran its command and the hold has lifted,
+// as when the idle step's exit rule ends the wait before the probe (see idleWake), which the next
+// idle step takes up again. A probe that fails replaces the hold with the reason to end the run with.
+// Once the maintainer asks to wind down, it doesn't apply: the run ends.
+func (r *runState) awaitProbe(from gateMark) (applies, goOn bool) {
 	o, ctx := r.o, r.ctx
-	after := o.cfg.EnvProbe
-	if after <= 0 || o.envProbed || stop == nil || stop != o.envStop || r.takeDrainRequest() || ctx.Err() != nil {
-		return stop
+	after, stop := o.cfg.EnvProbe, o.gate.onlyStop()
+	waiting := !o.envProbed || !o.gate.until(gateEnv).IsZero()
+	if after <= 0 || stop == nil || stop != o.envStop || r.drained() || !waiting {
+		return false, false
 	}
-	o.envProbed = true
-	o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
-		"PROBE: the run holds for the environment; "+
-			"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
-		command.ShortDuration(after))})
-	// The probe is the hold's end on the gate, which wakes Run then (see gate.lapse). Held already, a
-	// verdict changes nothing but the row.
-	o.gate.set(gateEnv, gateHold{on: true, until: time.Now().Add(after)})
+	if !o.envProbed {
+		o.envProbed = true
+		o.emit(Event{Kind: EvHold, Text: fmt.Sprintf(
+			"PROBE: the run holds for the environment; "+
+				"in %s one worker without a ticket runs a command, and if it does the run takes tickets again",
+			command.ShortDuration(after))})
+		// The probe is the hold's end on the gate, which wakes Run then (see gate.lapse). Held already, a
+		// verdict changes nothing but the row.
+		o.gate.set(gateEnv, gateHold{on: true, until: time.Now().Add(after)})
+	}
 	for !o.gate.until(gateEnv).IsZero() {
-		switch why, _ := r.wait(waits{}); why {
-		case wokeDone:
-			return stop
-		case wokeDrain:
-			if r.drained() {
-				return stop
-			}
-		default:
+		if _, over := r.idleWake(waits{}, from); over && !o.gate.until(gateEnv).IsZero() {
+			return true, true
 		}
 	}
 	tab, err := o.probe(ctx)
 	if ctx.Err() != nil {
-		return stop
+		return true, false
 	}
 	if err != nil {
-		return halt(ExitEnvironment, stopEnvironment,
+		o.gate.replaceStop(halt(ExitEnvironment, stopEnvironment,
 			": %s; a worker probing the machine %s later failed too: %v; check the machine, then restart",
-			o.envWhy, command.ShortDuration(after), err).causedBy(err)
+			o.envWhy, command.ShortDuration(after), err).causedBy(err))
+		return true, false
 	}
 	o.closeTab(ctx, tab)
 	// Triage's verdicts still to come on the tickets queued so far are forgotten with the row, and the
@@ -239,7 +240,8 @@ func (r *runState) probeEnvironment(stop *stopReason) *stopReason {
 	o.emit(Event{Kind: EvProbed, Text: fmt.Sprintf(
 		"PROBE_OK: a worker without a ticket ran a command %s after the hold; taking tickets again",
 		command.ShortDuration(after))})
-	return nil
+	o.gate.replaceStop(nil)
+	return true, true
 }
 
 // probe starts a worker without a ticket in the main checkout and asks it to run one command,

@@ -201,6 +201,25 @@ func (g *gate) onlyStop() *stopReason {
 	return g.stops.first
 }
 
+// gateMark is how the gate stands, as an idle wait of Run's compares it with how it stood as the wait
+// began (see runState.idleWake): the reasons the run stops for, and which holds hold.
+type gateMark struct {
+	first  *stopReason
+	others int
+	holds  [gateKinds]bool
+}
+
+// mark is how the gate stands now.
+func (g *gate) mark() gateMark {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	m := gateMark{first: g.stops.first, others: len(g.stops.others)}
+	for k, h := range g.holds {
+		m.holds[k] = h.on
+	}
+	return m
+}
+
 // replaceStop replaces the run's one reason to stop (see onlyStop) with s; nil lifts it.
 func (g *gate) replaceStop(s *stopReason) {
 	g.mu.Lock()

@@ -225,7 +225,7 @@ func (o *Loop) Run(ctx context.Context) int {
 		r.startTickets()
 		r.machine.running(r.slotsTaken()) // for the other runs to count before this one next looks around
 		if len(r.inflight) == 0 {
-			if r.awaitFiling() || r.goOnWhenEmpty() || r.awaitAnswers() {
+			if r.idle() {
 				continue
 			}
 			return r.end()
@@ -338,6 +338,8 @@ type runState struct {
 	// filing: closed once the scope is filed (Config.Filing), until when only its first ticket starts;
 	// nil when there is no filing, or once it is over
 	filing <-chan struct{}
+	// filingSaid: the run said it waits for the filing (see awaitFiling)
+	filingSaid bool
 	// left: the questions open as the run last waited on them with nothing ready, for its done line
 	left []Question
 
@@ -594,27 +596,6 @@ func (r *runState) follow() bool {
 		r.addStop(s)
 	}
 	return late || len(adopt) > 0
-}
-
-// goOnWhenEmpty is Run's step once nothing runs, and reports whether the run goes on: asked tickets were
-// adopted, the usage limit the run held for lifted (see waitOutLimit), or the run held for the
-// environment and a probe found that commands run again.
-func (r *runState) goOnWhenEmpty() bool {
-	// Before the run ends, the asked tickets are read once more.
-	if r.follow() {
-		return true
-	}
-	if r.wouldTake() && r.o.usage.holds() {
-		return r.waitOutLimit()
-	}
-	// Held for the environment, the run may probe the machine and take tickets again.
-	s := r.o.gate.onlyStop()
-	if s == nil {
-		return false
-	}
-	s = r.probeEnvironment(s)
-	r.o.gate.replaceStop(s)
-	return s == nil
 }
 
 // returned takes a worker's result: its ticket no longer runs, and the reason it stopped the run

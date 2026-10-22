@@ -529,47 +529,33 @@ func (o *Loop) limitStop(ctx context.Context, w worker, lw *limitWait) *stopReas
 		left)
 }
 
-// waitOutLimit is Run's step once nothing runs while the run holds for the usage limit and would take
-// tickets but for it, as when the limited workers have left their tabs. It waits until the hold is due
-// (see usageHold.idle), then lifts it, to take tickets again: the next to start tries the limit when its
-// reset isn't known. It reports whether the run goes on: not once the hold has lasted
-// Config.UsageLimitWait, which stops it (USAGE_LIMIT), nor after Ctrl+C or a request to wind down; and it
-// goes on at once when triage holds the run for the environment meanwhile, for Run to take that up.
-func (r *runState) waitOutLimit() bool {
+// waitOutLimit is Run's wait once nothing runs while the run holds for the usage limit and would take
+// tickets but for it, as when the limited workers have left their tabs (see idleWaits). It waits until
+// the hold is due (see usageHold.idle), then lifts it, to take tickets again: the next to start tries
+// the limit when its reset isn't known. It reports whether it applies, and whether Run goes round: not
+// once the hold has lasted Config.UsageLimitWait, which stops the run (USAGE_LIMIT); it does once the
+// hold lifts, as when the idle step's exit rule ends the wait (see idleWake).
+func (r *runState) waitOutLimit(from gateMark) (applies, goOn bool) {
 	o := r.o
+	if !r.wouldTake() || !o.usage.holds() {
+		return false, false
+	}
 	for {
 		now := time.Now()
 		on, since, reset, next := o.usage.idle(now)
 		switch {
 		case !on:
-			return true
+			return true, true
 		case !now.Before(since.Add(o.cfg.UsageLimitWait)):
 			r.addStop(halt(ExitUsageLimit, stopUsageLimit, ": the run held for the usage limit for %s (%s), "+
 				"with nothing running; stopping", command.ShortDuration(now.Sub(since)), resetsSaid(reset, now)))
-			return false
+			return true, false
 		}
 		timer := time.NewTimer(next.Sub(now))
-		goOn, done := r.awaitLimit(timer.C)
+		_, over := r.idleWake(waits{timer: timer.C}, from) // timed out, or the gate woke it: the hold is read again
 		timer.Stop()
-		if done {
-			return goOn
+		if over {
+			return true, true
 		}
-	}
-}
-
-// awaitLimit is waitOutLimit's wait until timeout, or until something ends it (done): Ctrl+C or a
-// request to wind down, which end the run, or triage holding the run for the environment, after which
-// it goes on (goOn) for Run to take that up. A verdict that doesn't, and a request that changes
-// nothing, leave it waiting.
-func (r *runState) awaitLimit(timeout <-chan time.Time) (goOn, done bool) {
-	switch why, _ := r.wait(waits{timer: timeout}); why {
-	case wokeDone:
-		return false, true
-	case wokeDrain:
-		return false, r.drained()
-	case wokeVerdict:
-		return true, r.o.envStop != nil
-	default: // timed out, or the gate woke it: the hold is read again
-		return false, false
 	}
 }

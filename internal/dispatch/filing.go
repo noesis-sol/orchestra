@@ -55,23 +55,26 @@ func (r *runState) filed() {
 	}
 }
 
-// awaitFiling is Run's step once nothing runs while the scope is still being filed: it waits for the
-// filing to be over, still hearing the maintainer's drain requests and triage's verdicts, and
-// reports whether the run goes on. It doesn't when the run's context ends first.
-func (r *runState) awaitFiling() bool {
+// awaitFiling is Run's wait once nothing runs while the scope is still being filed and the run would
+// take its tickets but for the usage limit (see idleWaits): it waits for the filing to be over, as the
+// idle step's exit rule allows (see idleWake), and reports whether it applies, and whether Run goes
+// round: it does once the rest is filed, as when the wait ends otherwise.
+func (r *runState) awaitFiling(from gateMark) (applies, goOn bool) {
 	o := r.o
-	if r.filing == nil {
-		return false
+	if r.filing == nil || !r.wouldTake() {
+		return false, false
 	}
-	o.info("  waiting for the rest of %s to be filed", o.cfg.Ticket)
+	if !r.filingSaid {
+		r.filingSaid = true
+		o.info("  waiting for the rest of %s to be filed", o.cfg.Ticket)
+	}
 	for {
-		switch why, _ := r.wait(waits{filing: r.filing}); why {
-		case wokeFiled:
+		switch why, over := r.idleWake(waits{filing: r.filing}, from); {
+		case why == wokeFiled:
 			r.filed()
-			return true
-		case wokeDone:
-			return false
-		default:
+			return true, true
+		case over:
+			return true, true
 		}
 	}
 }
