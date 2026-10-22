@@ -58,6 +58,10 @@ All notable changes to orchestra are documented here. The format follows
   says both runners check nothing beside a `scripts/check-fast.sh` it kept:
   it reads the runners as init left them and says which check nothing and
   which run the checks the project had.
+- A spec run whose fetch brings in an upstream's setup keeps the machine awake
+  where that setup's `keep_awake` is on, and says so where its `terminal` isn't
+  the one the run chose as it started, which the next run takes. The run had
+  started without keeping the machine awake, and stayed silent of the terminal.
 - `orchestra plan` prints tickets' IDs, a link's reason (a files entry kept as
   written) and bd's error text without their escape sequences and control
   characters, so a ticket's author can't set the terminal's title or write

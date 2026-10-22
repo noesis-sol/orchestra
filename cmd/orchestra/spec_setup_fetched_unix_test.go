@@ -19,26 +19,8 @@ func TestSpecRunKeepsTheSetupItsFetchBringsIn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipped by -short: runs orchestra on real git with fake tools")
 	}
-	repo, spec, tools := emptyRepoFixture(t)
-	useBreakdown(t, &fakeBreakdown{repo: repo, root: "s-1"})
-	ident := []string{"-c", "user.name=t", "-c", "user.email=t@t"}
-	gitIn(t, repo, append(ident, "commit", "-q", "--allow-empty", "-m", "Start")...)
-	bare := filepath.Join(t.TempDir(), "remote.git")
-	gitIn(t, repo, "init", "-q", "--bare", "-b", "main", bare)
-	gitIn(t, repo, "remote", "add", "origin", bare)
-	gitIn(t, repo, "push", "-q", "-u", "origin", "main")
-
-	// Meanwhile, orchestra init is run and pushed from another clone.
-	other := filepath.Join(t.TempDir(), "other")
-	gitIn(t, repo, "clone", "-q", bare, other)
-	const settings, prompt = `{"concurrent": 3}`, "Upstream: work on TICKET_ID.\n"
-	writeSpec(t, project.SettingsPath(other), settings)
-	writeSpec(t, filepath.Join(other, project.Dir, "worker-prompt.md"), prompt)
-	writeSpec(t, filepath.Join(other, ".beads", "config.yaml"), "issue-prefix: app\n")
-	gitIn(t, other, "add", "-A")
-	gitIn(t, other, append(ident, "commit", "-q", "-m", "orchestra init")...)
-	gitIn(t, other, "push", "-q", "origin", "main")
-	pushed := gitIn(t, other, "rev-parse", "HEAD")
+	const settings = `{"concurrent": 3}`
+	repo, spec, tools, pushed := fetchedSetupFixture(t, settings)
 
 	stdout, stderr, code := runSpecIn(t, repo, leaveWorker(t, "s-1.2"), "--spec", spec, "--plain")
 	if code != 0 {
@@ -57,8 +39,8 @@ func TestSpecRunKeepsTheSetupItsFetchBringsIn(t *testing.T) {
 	if got := read(t, project.SettingsPath(repo)); got != settings {
 		t.Errorf("settings: %s, want the upstream's %s", got, settings)
 	}
-	if got := read(t, filepath.Join(repo, project.Dir, "worker-prompt.md")); got != prompt {
-		t.Errorf("worker prompt: %q, want the upstream's %q", got, prompt)
+	if got := read(t, filepath.Join(repo, project.Dir, "worker-prompt.md")); got != fetchedPrompt {
+		t.Errorf("worker prompt: %q, want the upstream's %q", got, fetchedPrompt)
 	}
 	const why = "SPEC: the fetch brought in orchestra's setup: the repository is set up already\n"
 	if !strings.Contains(stdout, why) || !strings.Contains(stdout, "concurrent: 3,") {
@@ -67,4 +49,33 @@ func TestSpecRunKeepsTheSetupItsFetchBringsIn(t *testing.T) {
 	if log := unstamped(read(t, filepath.Join(repo, project.Dir, "orchestra.log"))); !strings.Contains(log, why) {
 		t.Errorf("the log lacks %q:\n%s", why, log)
 	}
+}
+
+// fetchedPrompt is the worker prompt of fetchedSetupFixture's upstream.
+const fetchedPrompt = "Upstream: work on TICKET_ID.\n"
+
+// fetchedSetupFixture is emptyRepoFixture with a commit, pushed to an upstream, and then, from another
+// clone, orchestra init's setup pushed there, with these settings and fetchedPrompt: what a spec run's
+// fetch brings in. pushed is the upstream's commit of the setup.
+func fetchedSetupFixture(t *testing.T, settings string) (repo, spec, tools, pushed string) {
+	t.Helper()
+	repo, spec, tools = emptyRepoFixture(t)
+	useBreakdown(t, &fakeBreakdown{repo: repo, root: "s-1"})
+	ident := []string{"-c", "user.name=t", "-c", "user.email=t@t"}
+	gitIn(t, repo, append(ident, "commit", "-q", "--allow-empty", "-m", "Start")...)
+	bare := filepath.Join(t.TempDir(), "remote.git")
+	gitIn(t, repo, "init", "-q", "--bare", "-b", "main", bare)
+	gitIn(t, repo, "remote", "add", "origin", bare)
+	gitIn(t, repo, "push", "-q", "-u", "origin", "main")
+
+	// Meanwhile, orchestra init is run and pushed from another clone.
+	other := filepath.Join(t.TempDir(), "other")
+	gitIn(t, repo, "clone", "-q", bare, other)
+	writeSpec(t, project.SettingsPath(other), settings)
+	writeSpec(t, filepath.Join(other, project.Dir, "worker-prompt.md"), fetchedPrompt)
+	writeSpec(t, filepath.Join(other, ".beads", "config.yaml"), "issue-prefix: app\n")
+	gitIn(t, other, "add", "-A")
+	gitIn(t, other, append(ident, "commit", "-q", "-m", "orchestra init")...)
+	gitIn(t, other, "push", "-q", "origin", "main")
+	return repo, spec, tools, gitIn(t, other, "rev-parse", "HEAD")
 }

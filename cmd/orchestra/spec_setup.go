@@ -88,19 +88,26 @@ func (s *session) setUpForSpec(ctx context.Context) int {
 
 // keepFetchedSetup has the spec run s, which planned to set its repository up, keep the setup its
 // fetch brought in: it drops its plan, resolves the settings it read with the plan's from that setup's
-// settings.json, as configuration does for a repository set up (the terminal it runs in aside, chosen
-// already), checks for the Beads database, and reads the worker prompt. It returns the exit code,
-// having said what stops the run.
+// settings.json, as configuration does for a repository set up, checks for the Beads database, and
+// reads the worker prompt. Where that setup turns keep_awake on, the machine is kept awake from then
+// on; its terminal is for the next run (fetchedTerminal), this one's being chosen already. It returns
+// the exit code, having said what stops the run.
 func (s *session) keepFetchedSetup(ctx context.Context) int {
 	c := &s.cfg
 	plan := c.specSetup
 	c.specSetup = nil
+	awake := c.Overnight || c.keepAwake // kept awake already, as the session opened (run.go)
 	const why = "SPEC: the fetch brought in orchestra's setup: the repository is set up already"
 	fmt.Fprintln(s.e.stdout, why)
 	s.log.Line(time.Now(), why)
 	settings, problems := loadSettings(c.Repo)
+	var terminal string
 	if len(problems) == 0 {
 		problems = append(resolveSettings(c, plan.flags, settings), resolveMCP(ctx, c, settings, s.e.getenv)...)
+		var problem string
+		if terminal, problem = fetchedTerminal(*c, settings); problem != "" {
+			problems = append(problems, problem)
+		}
 	}
 	if st, err := os.Stat(filepath.Join(c.Repo, ".beads")); err != nil || !st.IsDir() {
 		problems = append(problems, "No Beads database in "+c.Repo+". Run: bd init")
@@ -113,7 +120,31 @@ func (s *session) keepFetchedSetup(ctx context.Context) int {
 		}
 		return dispatch.ExitSetup
 	}
+	if terminal != "" {
+		line := "SPEC: the fetched settings choose the terminal " + terminal + ": this run stays in " +
+			c.Terminal + ", chosen as it started; the next run takes " + terminal
+		fmt.Fprintln(s.e.stdout, line)
+		s.log.Line(time.Now(), line)
+	}
+	if !awake {
+		s.keepAwake(ctx) // where the fetched settings turn keep_awake on (keep_awake.go)
+	}
 	return s.readPrompt()
+}
+
+// fetchedTerminal is the terminal the settings a spec run c's fetch brought in choose, where the run,
+// whose terminal was chosen as it started, runs in another: "" where they choose the same, or leave
+// it to where orchestra runs, as the run did (--terminal, which overrides them, included). problem
+// is the settings' terminal that isn't one, as configuration would say.
+func fetchedTerminal(c options, settings project.Settings) (terminal, problem string) {
+	choice, err := project.ResolveTerminal(c.terminalAsked, settings, terminalChoices())
+	switch {
+	case err != nil:
+		return "", err.Error() + "."
+	case choice == project.TerminalAuto || choice == c.Terminal:
+		return "", ""
+	}
+	return choice, ""
 }
 
 // specSetup is a spec run's setup of a repository orchestra init hasn't set up.
