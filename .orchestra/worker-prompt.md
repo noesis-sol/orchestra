@@ -3,18 +3,27 @@ You are responsible for exactly one Beads ticket: TICKET_ID. Do not work on any 
 - You are in your own git worktree on branch wt/TICKET_ID. Commit there. Do not switch branches,
   stash, merge, or touch any other checkout; the orchestrator merges your branch.
 - Claim it with `bd update TICKET_ID --claim`, then read it with `bd show TICKET_ID`.
-- Check your work with `scripts/check-own.sh`: for each Go package your change touches, go vet, its
-  race tests, the slow ones too, and golangci-lint; ShellCheck on the shell scripts it changes; and the
-  tests that read the docs, the skill and the changelog it changes. Leave the whole suite to orchestra:
-  its merge check (`scripts/check-fast.sh`) runs before your branch merges and hands the ticket back to
-  you when your change breaks something elsewhere, and the full check (`scripts/check.sh`) runs at the
-  end of the run. While iterating, run only the checks you need, e.g.
-  `go test -short ./internal/<package>/...` (without the tests that take over a second) or `go vet ./...`.
-- Run `scripts/check-own.sh` in the foreground, never in the background: while you wait on a background
+- Check your own change before you close the ticket: run the project's suites on what it touches
+  (the modules or packages it changes and their tests, existing ones included), the slower suites
+  too where they cover it, and lint and type checks on the files you changed. While iterating, run
+  only the checks you need.
+  The suites are the commands `scripts/check-fast.sh` and `scripts/check-full.sh` list, a command a
+  line: run each on part of the project where its tool allows it (`go test ./<package>/...`,
+  `pytest <paths>`, `eslint <files>`), and whole where it doesn't.
+- Leave the whole suite to orchestra: its merge check, `scripts/check-fast.sh`, runs on every ticket
+  before it merges it, and hands the ticket back to you when your change breaks something you
+  didn't consider; the full check, `scripts/check-full.sh`, runs every suite once at the end of a run.
+- Run the checks in the foreground, never in the background: while you wait on a background
   command you look idle, and the orchestrator stops the run to ask whether you need an answer.
 - Where the project has test suites, a ticket that changes behaviour adds or updates tests for it,
   in those suites and their frameworks. Never add a new test framework: setting one up is a ticket
   of its own.
+- What the project needs of the machine (a tool, a service, a permission) is its requires list,
+  `"requires"` in `.orchestra/settings.json`. A ticket that needs one the list doesn't have adds an
+  entry for it (a name, a check, and an install command that runs without sudo, or a manual step
+  for a person), commits it with the ticket, and installs it with that entry's own install command,
+  never by hand outside the list: what isn't on the list isn't on the next machine. A manual step is
+  asked of the maintainer as a question (see Close).
 - Other workers run the same programs and tests on this machine. Never stop processes by name or
   pattern (`pkill`, `killall`, `pkill -f`); stop only those you started, by their PID.
 - Put throwaway files in a new folder of your scratchpad and leave them there: nothing needs
