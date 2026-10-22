@@ -43,6 +43,10 @@ All notable changes to orchestra are documented here. The format follows
 
 ### Fixed
 
+- `orchestra plan` prints tickets' IDs, a link's reason (a files entry kept as
+  written) and bd's error text without their escape sequences and control
+  characters, so a ticket's author can't set the terminal's title or write
+  its clipboard.
 - A yes-or-no question in `orchestra init`, the overnight pre-flight or the
   work form puts its answer in brackets, `[Yes]  No`: the buttons differed
   only in colour, which `NO_COLOR` strips, so you couldn't tell which one

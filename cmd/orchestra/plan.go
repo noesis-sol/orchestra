@@ -68,7 +68,7 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	case stop.stopped():
 		return stoppedReading(stderr)
 	case err != nil:
-		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", err)
+		fmt.Fprintln(stderr, "orchestra plan: cannot read the open tickets:", planLine(err.Error()))
 		return dispatch.ExitTool
 	}
 	tracked, err := git.Git{}.TrackedFiles(stop.ctx, repo)
@@ -76,7 +76,7 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	case stop.stopped():
 		return stoppedReading(stderr)
 	case err != nil: // the footprints go by the names alone
-		fmt.Fprintln(stderr, "orchestra plan: cannot list the files git tracks:", err)
+		fmt.Fprintln(stderr, "orchestra plan: cannot list the files git tracks:", planLine(err.Error()))
 		tracked = nil
 	}
 	branches, err := branchChanges(stop.ctx, repo, open)
@@ -84,7 +84,7 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 	case stop.stopped():
 		return stoppedReading(stderr)
 	case err != nil: // every footprint goes by its ticket's text
-		fmt.Fprintln(stderr, "orchestra plan: cannot read the tickets' branches:", err)
+		fmt.Fprintln(stderr, "orchestra plan: cannot read the tickets' branches:", planLine(err.Error()))
 	}
 	// a footprint leaves out the files any of the checks names
 	links := dispatch.PlanLinks(open, existing, tracked, settings.CheckCommands(),
@@ -123,14 +123,16 @@ func runPlan(ctx context.Context, args []string, e cmdEnv, stop stopCatch) int {
 			}
 			return stoppedPlan(stderr, added, notAdded)
 		}
+		// IDs and the reason are the tickets' text (a files entry is kept as written): printable, on one line
 		fmt.Fprintf(stdout, "  %s (%s) waits for %s (%s): both touch %s\n",
-			l.Blocked, prios[l.Blocked], l.Blocker, prios[l.Blocker], l.Why)
+			planLine(l.Blocked), prios[l.Blocked], planLine(l.Blocker), prios[l.Blocker], planLine(l.Why))
 		if !*apply {
 			continue
 		}
 		if err := tracker.AddBlock(ctx, l.Blocker, l.Blocked); err != nil {
 			notAdded = append(notAdded, waits(l))
-			fmt.Fprintf(stderr, "orchestra plan: bd dep add %s %s: %v\n", l.Blocked, l.Blocker, err)
+			fmt.Fprintf(stderr, "orchestra plan: bd dep add %s %s: %s\n", planLine(l.Blocked), planLine(l.Blocker),
+				planLine(err.Error()))
 			continue
 		}
 		added = append(added, waits(l))
@@ -156,12 +158,12 @@ func printShapes(stdout io.Writer, shapes []dispatch.Shape) {
 	}
 	fmt.Fprintln(stdout, "The epics' open tickets, as their blocks links let them run:")
 	for _, s := range shapes {
-		fmt.Fprintln(stdout, "  "+s.String())
+		fmt.Fprintln(stdout, "  "+planLine(s.String()))
 	}
 }
 
-// waits names link l as stoppedPlan lists it: "k-2 waits for k-1".
-func waits(l dispatch.Link) string { return l.Blocked + " waits for " + l.Blocker }
+// waits names link l as stoppedPlan lists it, printable: "k-2 waits for k-1".
+func waits(l dispatch.Link) string { return planLine(l.Blocked) + " waits for " + planLine(l.Blocker) }
 
 // stoppedReading says that a stop signal stopped plan as it read the tickets and the code, before it
 // proposed a link, and returns exit code 130.
