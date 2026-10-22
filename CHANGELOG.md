@@ -32,6 +32,14 @@ All notable changes to orchestra are documented here. The format follows
   a feature's, a tree whose longest chain is over three, or that runs fewer
   tickets at a time than the run's concurrency, is a warning naming its
   chain and hubs; the run goes ahead.
+- A solo ticket starts where running alone costs nothing: first, when no
+  ticket runs, whatever the priority of the others; and with tickets
+  running, behind every other ticket that can start, being next only once
+  none can (from then on, as before, nothing new starts until it has run).
+  One that became ready mid-run used to drain the slots at once: on 10-22 a
+  run sat 2.6 of its 5.6 slot-hours idle behind one. A solo ticket at P0,
+  one other tickets wait on, and every one in a run of one worker keep
+  their place in priority order and drain the slots as before.
 
 ### Fixed
 

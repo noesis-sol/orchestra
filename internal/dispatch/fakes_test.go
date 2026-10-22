@@ -81,6 +81,20 @@ func (b *fakeBeads) link(id, on, typ string) {
 	b.links[id] = append(b.links[id], fakeLink{on, typ})
 }
 
+// dependentsLocked is how many tickets id blocks, closed or not, as bd ready counts them. The caller
+// holds mu.
+func (b *fakeBeads) dependentsLocked(id string) int {
+	n := 0
+	for _, links := range b.links {
+		for _, l := range links {
+			if l.on == id && l.typ == "blocks" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 func (b *fakeBeads) set(id string, status TicketStatus) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -112,6 +126,8 @@ func (b *fakeBeads) Ready(ctx context.Context, scope string) ([]Ticket, error) {
 		if !blocked {
 			r := *t
 			r.DependencyCount = &blockers
+			dependents := b.dependentsLocked(id)
+			r.DependentCount = &dependents
 			ready = append(ready, r)
 		}
 	}

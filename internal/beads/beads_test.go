@@ -32,12 +32,16 @@ func TestParseReadySortsOpenTicketsByPriority(t *testing.T) {
 }
 
 func TestParseReadyAcceptsTheEnvelopeAndEmptyResults(t *testing.T) {
-	got, err := parseReady([]byte(`{"schema_version":2,"data":[{"id":"x","status":"open","priority":2,"dependency_count":1}]}`), nil)
+	got, err := parseReady([]byte(`{"schema_version":2,"data":[{"id":"x","status":"open","priority":2,"dependency_count":1,"dependent_count":2}]}`),
+		nil)
 	if err != nil || len(got) != 1 || got[0].ID != "x" {
 		t.Errorf("envelope: %v %v", got, err)
 	}
 	if n := got[0].DependencyCount; n == nil || *n != 1 {
 		t.Errorf("dependency count = %v, want 1", n)
+	}
+	if n := got[0].DependentCount; n == nil || *n != 2 {
+		t.Errorf("dependent count = %v, want 2", n)
 	}
 	if got, err := parseReady([]byte(`[]`), nil); err != nil || len(got) != 0 {
 		t.Errorf("empty: %v %v", got, err)

@@ -18,10 +18,11 @@ func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
 	t.Parallel()
 	ready := []Ticket{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}
 	none := func(Ticket) holdKind { return notHeld }
-	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, none, 1, ""); tk == nil || tk.ID != "b" || q.queued != 2 {
+	var sp soloPick // no solo ticket
+	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, none, 1, sp); tk == nil || tk.ID != "b" || q.queued != 2 {
 		t.Errorf("got %v, %+v", tk, q)
 	}
-	if tk, _, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true, "d": true}, none, 4, ""); tk != nil {
+	if tk, _, _ := pickNext(ready, map[string]bool{"a": true, "b": true, "c": true, "d": true}, none, 4, sp); tk != nil {
 		t.Errorf("everything is running, got %v", tk)
 	}
 	heldB := func(t Ticket) holdKind {
@@ -30,7 +31,7 @@ func TestPickNextSkipsRunningAndHeldTickets(t *testing.T) {
 		}
 		return notHeld
 	}
-	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, heldB, 1, ""); tk == nil || tk.ID != "c" || q.queued != 1 {
+	if tk, q, _ := pickNext(ready, map[string]bool{"a": true}, heldB, 1, sp); tk == nil || tk.ID != "c" || q.queued != 1 {
 		t.Errorf("b is held, got %v, %+v", tk, q)
 	}
 }
@@ -41,19 +42,21 @@ func TestPickNextRunsASoloTicketAlone(t *testing.T) {
 	t.Parallel()
 	solo := []string{SoloLabel}
 	none := func(Ticket) holdKind { return notHeld }
+	var sp soloPick // every solo ticket drains, as with one slot
 	ready := []Ticket{{ID: "a"}, {ID: "b"}}
-	if tk, q, next := pickNext(ready, map[string]bool{"s": true}, none, 1, "s"); tk != nil || q.queued != 2 || next != "" {
+	running := soloPick{running: "s"}
+	if tk, q, next := pickNext(ready, map[string]bool{"s": true}, none, 1, running); tk != nil || q.queued != 2 || next != "" {
 		t.Errorf("s runs solo, got %v, %+v, %q", tk, q, next)
 	}
 	ready = []Ticket{{ID: "s", Labels: solo}, {ID: "a"}, {ID: "b"}}
-	if tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, ""); tk != nil || q.queued != 3 || next != "s" {
+	if tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, sp); tk != nil || q.queued != 3 || next != "s" {
 		t.Errorf("s is next and r runs, got %v, %+v, %q", tk, q, next)
 	}
-	if tk, q, next := pickNext(ready, nil, none, 0, ""); tk == nil || tk.ID != "s" || q.queued != 2 || next != "" {
+	if tk, q, next := pickNext(ready, nil, none, 0, sp); tk == nil || tk.ID != "s" || q.queued != 2 || next != "" {
 		t.Errorf("nothing runs, got %v, %+v, %q", tk, q, next)
 	}
 	ready = []Ticket{{ID: "a"}, {ID: "s", Labels: solo}}
-	tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, "")
+	tk, q, next := pickNext(ready, map[string]bool{"r": true}, none, 1, sp)
 	if tk == nil || tk.ID != "a" || q.queued != 1 || next != "" {
 		t.Errorf("a comes before s, got %v, %+v, %q", tk, q, next)
 	}
@@ -64,7 +67,7 @@ func TestPickNextRunsASoloTicketAlone(t *testing.T) {
 		return notHeld
 	}
 	ready = []Ticket{{ID: "s", Labels: solo}, {ID: "a"}}
-	if tk, _, next := pickNext(ready, map[string]bool{"r": true}, heldS, 1, ""); tk == nil || tk.ID != "a" || next != "" {
+	if tk, _, next := pickNext(ready, map[string]bool{"r": true}, heldS, 1, sp); tk == nil || tk.ID != "a" || next != "" {
 		t.Errorf("a held s holds nothing back, got %v, %q", tk, next)
 	}
 }
@@ -330,8 +333,8 @@ func TestSoloTicketNeverRunsAlongsideAnother(t *testing.T) {
 	})
 }
 
-// A solo ticket next in priority while others run holds back the tickets behind it, and starts
-// once the running ones finish.
+// A solo ticket next in priority while others run, one another ticket waits on, holds back the
+// tickets behind it, and starts once the running ones finish.
 func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -340,6 +343,8 @@ func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 		h.beads.add("A", "first", 1)
 		h.beads.add("S", "split the loop", 2, SoloLabel)
 		h.beads.add("B", "second", 3)
+		h.beads.add("D", "after the split", 4)
+		h.beads.link("D", "S", "blocks")
 		var v overlap
 		h.worker("A", v.runs("A", func(w *fakeWorker) AgentState {
 			time.Sleep(3 * readyPoll) // a few polls with S next
@@ -347,16 +352,17 @@ func TestSoloTicketNextInLineHoldsBackNewStarts(t *testing.T) {
 		}))
 		h.worker("S", v.runs("S", finishes("s.txt")))
 		h.worker("B", v.runs("B", finishes("b.txt")))
+		h.worker("D", finishes("d.txt"))
 		o, code := h.run()
-		if code != ExitOK || o.Final() != "READY_EMPTY after 3 tickets" {
+		if code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		for _, id := range []string{"A", "S", "B"} {
+		for _, id := range []string{"A", "S"} {
 			if got := v.of(id); len(got) != 0 {
 				t.Errorf("%s ran beside %v", id, got)
 			}
 		}
-		if got := h.sink.dispatched(); !equal(got, []string{"A", "S", "B"}) {
+		if got := h.sink.dispatched(); !equal(got, []string{"A", "S", "B", "D"}) {
 			t.Errorf("dispatched %v", got)
 		}
 		if n := strings.Count(h.logged(), "solo ticket S is next: no new tickets start until the running ones finish"); n != 1 {

@@ -30,6 +30,9 @@ type Ticket struct {
 	// (bd show counts every link); nil when bd doesn't say. It changes when a blocks link is added
 	// or removed.
 	DependencyCount *int `json:"dependency_count"`
+	// DependentCount is how many tickets this one blocks, closed or not, as bd ready counts them; nil
+	// when bd doesn't say.
+	DependentCount *int `json:"dependent_count"`
 	// Parent is the ticket this one is a subticket of (a parent-child link), or "".
 	Parent string `json:"parent"`
 	// DeferUntil is when a ticket deferred until a date (bd defer --until) is due again, RFC 3339;

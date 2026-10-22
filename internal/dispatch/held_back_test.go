@@ -16,7 +16,7 @@ func TestPickNextCountsHeldBackTicketsByReason(t *testing.T) {
 	kinds := map[string]holdKind{"o": heldOverlap, "p": heldParent, "b": heldBlocked, "f": heldFollowUp, "o2": heldOverlap}
 	held := func(t Ticket) holdKind { return kinds[t.ID] }
 	ready := []Ticket{{ID: "o"}, {ID: "a"}, {ID: "p"}, {ID: "b"}, {ID: "f"}, {ID: "o2"}, {ID: "c"}, {ID: "r"}}
-	tk, q, _ := pickNext(ready, map[string]bool{"r": true, "o2": true}, held, 1, "")
+	tk, q, _ := pickNext(ready, map[string]bool{"r": true, "o2": true}, held, 1, soloPick{})
 	want := queue{queued: 1, held: HeldBack{Overlap: 1, Parent: 1, Merge: 2}}
 	if tk == nil || tk.ID != "a" || q != want {
 		t.Errorf("got %v, %+v, want a, %+v", tk, q, want)
@@ -24,7 +24,7 @@ func TestPickNextCountsHeldBackTicketsByReason(t *testing.T) {
 	if n := q.held.Total(); n != 4 {
 		t.Errorf("total %d, want 4", n)
 	}
-	if _, q, _ := pickNext([]Ticket{{ID: "a"}, {ID: "c"}}, nil, held, 0, ""); q != (queue{queued: 1}) {
+	if _, q, _ := pickNext([]Ticket{{ID: "a"}, {ID: "c"}}, nil, held, 0, soloPick{}); q != (queue{queued: 1}) {
 		t.Errorf("none held: got %+v", q)
 	}
 }

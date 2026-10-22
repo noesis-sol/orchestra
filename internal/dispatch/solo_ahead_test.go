@@ -12,8 +12,9 @@ import (
 
 // orchestra-74b2.9: with every slot taken, a poll read the queue and forgot that solo ticket S was
 // next in line, so the recheck that fell due as a slot freed took it ahead of S. Here A's check
-// fails until B lands the fix; B merges while C still runs, with S first in line. S starts once C
-// is done, alone, and A is checked again only after S.
+// fails until B lands the fix; B merges while C still runs, with S first in line (E waits on it, so
+// it keeps its place in priority order). S starts once C is done, alone, and A is checked again
+// only after S.
 func TestASoloTicketNextInLineGoesAheadOfARecheck(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -25,6 +26,8 @@ func TestASoloTicketNextInLineGoesAheadOfARecheck(t *testing.T) {
 		h.beads.add("B", "the fix", 2)
 		h.beads.add("C", "slow", 3)
 		h.beads.add("S", "split the loop", 4, SoloLabel)
+		h.beads.add("E", "after the split", 5)
+		h.beads.link("E", "S", "blocks")
 		h.worker("A", landsMeanwhile("a.txt"))
 		h.worker("B", func(w *fakeWorker) AgentState {
 			time.Sleep(2 * readyPoll) // polls with every slot taken and S first in line
@@ -33,11 +36,12 @@ func TestASoloTicketNextInLineGoesAheadOfARecheck(t *testing.T) {
 		})
 		h.worker("C", busyFor(4*readyPoll, "c.txt"))
 		h.worker("S", finishes("s.txt"))
+		h.worker("E", finishes("e.txt"))
 		o, code := h.run()
-		if code != ExitOK || o.Final() != "READY_EMPTY after 4 tickets" {
+		if code != ExitOK || o.Final() != "READY_EMPTY after 5 tickets" {
 			t.Fatalf("exit %d, final %q\n%s", code, o.Final(), h.sink.text())
 		}
-		if got := closedIDs(h); !equal(got, []string{"B", "C", "S", "A"}) {
+		if got := closedIDs(h); !equal(got, []string{"B", "C", "S", "A", "E"}) {
 			t.Errorf("merged %v, want B, C, then S, and A checked again after S\n%s", got, h.sink.text())
 		}
 		ev := h.sink.text()

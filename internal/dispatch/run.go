@@ -816,13 +816,13 @@ func (q *soloQueue) state() SoloState {
 // update takes a pick's outcome: next, the solo ticket first in line that holds back the others
 // (see pickNext), whether a slot was free, the ticket to start, if any, and how many others are
 // ready. It returns why tickets wait for a solo ticket when that has changed since it was last
-// said, or "". A solo ticket holds something back only when a slot is free; with every slot taken
-// (with one worker, whenever a worker is at work) the tickets wait for a slot as they would anyway.
-// It still goes ahead of a recheck when a slot frees, which recheckTickets decides before the next
-// pick.
+// said, or "". A solo ticket becomes next only when a slot is free; with every slot taken (with
+// one worker, whenever a worker is at work) the tickets wait for a slot as they would anyway. It
+// still goes ahead of a recheck when a slot frees, which recheckTickets decides before the next
+// pick. Once next, it stays next (pickNext holds the others back for it) until it starts or can't.
 func (q *soloQueue) update(next string, slot bool, t *Ticket, queued int) (why string) {
 	q.first = next
-	if !slot {
+	if !slot && next != q.next {
 		next = ""
 	}
 	q.next = next
@@ -907,11 +907,12 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 		}
 		return notHeld
 	}
-	t, q, next := pickNext(ready, skip, held, len(running), solo.running)
+	sp := soloPick{running: solo.running, next: solo.next, drains: o.soloDrains}
+	t, q, next := pickNext(ready, skip, held, len(running), sp)
 	// The ticket to start is held on its links as they are now: one kept from an earlier pick may
 	// lack a discovered-from link added since. Read again, the links hold it or the pick stands.
 	for slot && t != nil && o.staleLinks(t.ID) {
-		t, q, next = pickNext(ready, skip, held, len(running), solo.running)
+		t, q, next = pickNext(ready, skip, held, len(running), sp)
 	}
 	if why := solo.update(next, slot, t, q.queued); why != "" {
 		o.info("  %s", why)
@@ -920,6 +921,15 @@ func (r *runState) pick(slot bool) (*Ticket, queue, error) {
 		q.held.Solo, q.queued = q.queued, 0 // with a slot free, only a solo ticket keeps them waiting
 	}
 	return t, q, nil
+}
+
+// soloDrains reports whether solo ticket t keeps its place in priority order and drains the slots
+// (see pickNext), as every one did before: one at P0, as a spec run's environment ticket is, one
+// other tickets wait on, and every one in a run of one slot, where draining costs nothing. Any other
+// lets the tickets behind it go first while tickets run.
+func (o *Loop) soloDrains(t Ticket) bool {
+	return o.cfg.Concurrency <= 1 || t.Priority != nil && *t.Priority == 0 ||
+		t.DependentCount != nil && *t.DependentCount > 0
 }
 
 // checkoutUnready returns a reason to stop when the main checkout has uncommitted changes or is
@@ -988,14 +998,28 @@ type alreadyLocked struct{}
 func (alreadyLocked) Lock()   {}
 func (alreadyLocked) Unlock() {}
 
+// soloPick is what pickNext knows of the run's tickets labelled SoloLabel: the one running, the one
+// next in line that holds back the others until it has run, and which ones drain the slots (see
+// pickNext); a nil drains is every one.
+type soloPick struct {
+	running, next string
+	drains        func(Ticket) bool
+}
+
+// draining reports whether solo ticket t keeps its place in priority order and drains the slots.
+func (s soloPick) draining(t Ticket) bool { return s.drains == nil || s.drains(t) }
+
 // pickNext returns the first ticket (ready is in priority order) that isn't skipped or held, and
 // in q how many other ready tickets aren't either (queued), and how many not skipped are held, by
-// what holds them (held returns it). A ticket labelled SoloLabel runs alone: while solo (the one
-// running, or "") runs nothing starts, and one first in line starts only once none of the running
-// tickets are left, holding back the tickets behind it until then so it isn't starved; next names
-// it. With no ticket to start, queued is how many wait.
+// what holds them (held returns it). A ticket labelled SoloLabel runs alone: while solo.running
+// runs nothing starts. One that drains (solo.drains) keeps its place in priority order: first in
+// line while tickets run, it holds back the tickets behind it until none are left, so it isn't
+// starved; next names it. One that doesn't drain starts ahead of the others when no ticket runs,
+// and while tickets run holds nothing back: the others start ahead of it, and it is next only
+// once none of them can. Once next, a solo ticket (solo.next) holds back the others until it has
+// run. With no ticket to start, queued is how many wait.
 func pickNext(
-	ready []Ticket, skip map[string]bool, held func(Ticket) holdKind, running int, solo string,
+	ready []Ticket, skip map[string]bool, held func(Ticket) holdKind, running int, solo soloPick,
 ) (t *Ticket, q queue, next string) {
 	var free []Ticket
 	for _, t := range ready {
@@ -1008,16 +1032,44 @@ func pickNext(
 		}
 		free = append(free, t)
 	}
-	switch {
-	case len(free) == 0:
+	if len(free) == 0 {
 		return nil, q, ""
-	case solo != "":
-		q.queued = len(free)
-		return nil, q, ""
-	case HasLabel(free[0], SoloLabel) && running > 0:
-		q.queued = len(free)
-		return nil, q, free[0].ID
 	}
-	q.queued = len(free) - 1
-	return &free[0], q, ""
+	if solo.running != "" {
+		q.queued = len(free)
+		return nil, q, ""
+	}
+	start := func(i int) (*Ticket, queue, string) {
+		q.queued = len(free) - 1
+		return &free[i], q, ""
+	}
+	wait := func(i int) (*Ticket, queue, string) {
+		if running == 0 {
+			return start(i)
+		}
+		q.queued = len(free)
+		return nil, q, free[i].ID
+	}
+	if i := slices.IndexFunc(free, func(t Ticket) bool { return t.ID == solo.next }); i >= 0 {
+		return wait(i)
+	}
+	if running == 0 {
+		early := func(t Ticket) bool { return HasLabel(t, SoloLabel) && !solo.draining(t) }
+		if i := slices.IndexFunc(free, early); i >= 0 {
+			return start(i)
+		}
+		return start(0)
+	}
+	waiting := -1
+	for i, t := range free {
+		switch {
+		case !HasLabel(t, SoloLabel):
+			return start(i)
+		case solo.draining(t):
+			return wait(i)
+		case waiting < 0:
+			waiting = i
+		}
+	}
+	return wait(waiting)
 }
