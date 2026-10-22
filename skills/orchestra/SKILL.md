@@ -1,6 +1,6 @@
 ---
 name: orchestra
-description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own tab (in Herdr, tmux or cmux) and git worktree. Use when the user asks to set a project up for orchestra, launch or restart a run, build what a spec describes (orchestra --spec, also nightly), follow a run, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
+description: Run and look after orchestra, which works through a Beads backlog with several workers (coding agents) side by side, as many tickets at once as the project allows, each in its own tab (in Herdr, tmux or cmux) and git worktree. Use when the user asks to set a project up for orchestra, file tickets for a run, launch or restart a run, build what a spec describes (orchestra --spec, also nightly), follow a run, or find out why a run stopped, why a ticket was deferred or where a worker's work went.
 ---
 
 # orchestra
@@ -135,6 +135,58 @@ unless given `--force`; don't pass `--force` without the user's say-so. Where a 
 `orchestra init --update` rewrites only the sections the templates changed, keeping the rest, and prints the diff:
 show the user the diff (a rewritten section loses the project's own edits in it), and commit if they agree. Afterwards, show the user the prompt and the runners and commit `.orchestra/` and `scripts/` (and `.gitattributes`, if it changed, and what `bd init` left uncommitted: the Next box names it) if they agree.
 
+## Filing tickets for a run
+
+A run keeps its workers busy only as far as the tickets' shape lets it: a ticket waits for its
+blockers to close and merge, for a running ticket that changes the same code, and for a `solo` one.
+When you file tickets for a run (by hand, from a talk with the user, or breaking an epic down),
+shape them to run side by side:
+
+- **A blocks link only for code the ticket needs merged first**: it calls, extends or edits code the
+  other adds, and can't be written until that is on the branch. Not for an order of preference, docs
+  after code, tests after the feature, or two tickets in one area: orchestra keeps tickets that change
+  the same code apart without a link (footprints, below), and a link costs the blocker's whole session
+  and its merge before the ticket can start.
+- **Wide and shallow**: the longest chain of blocks links as short as the work allows, three at most.
+  Four workers stay busy only with about four tickets for each step of the chain; a six-deep chain
+  lets about one run at a time.
+- **A hub cut to the seam**: a ticket three or more others build on carries only the seam (the flag,
+  types, signatures and empty registration points the others fill in, each in a file of the
+  dependent's own, with a test that it is wired), so it merges in minutes and the substance goes to
+  the dependents, rather than holding all of them for a whole session.
+- **A file each for tickets meant to run side by side**: tickets that change the same file run one
+  after another whatever their links say, so split the work where each ticket can have files of its
+  own (a new file per handler, a test file named after the feature).
+- **Tests with their code**: tests are part of the ticket whose code they test, never a ticket after
+  it, which would wait for the code's merge and add a step to the chain. A closing docs ticket only
+  where the tickets beside each other would otherwise all edit the same doc, and nothing waits on it.
+- **`solo` rarely**: a ticket labelled `solo` runs with no other beside it, and the other slots sit
+  idle while it waits for the running tickets to finish and while it runs. Give the label
+  (`bd label add <id> solo`) only to a change most tickets would conflict with, such as splitting a
+  shared file: run next to other work, it guarantees merge conflicts. Otherwise list what the ticket
+  changes in its `files` metadata, and footprints keep it apart from only the tickets it would
+  conflict with.
+
+Tickets that change the same code are kept apart by footprint: a ready ticket that names the same
+function (or, when one of the two names no functions, the same file) as a running ticket, shares an
+`area:<name>` label with it, or names a file its worker has edited, waits for a later slot while the
+next ticket takes this one. A file counts only when one of the two is to change it: one its `files` metadata lists, or, for a
+ticket without, one its text names, but a document only in a sentence asking to change it (`Update
+docs/guide.md`), not citing it (`per CLAUDE.md`). Its notes don't count. A ticket with
+commits on its branch, reopened or carried over, goes by the files its branch changes and its `files`
+metadata instead of its text. Naming files and functions in a ticket's description
+helps; so does `bd update <id> --set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
+predictor organ guesses its files in the background and caches them as `predicted_files` metadata.
+`"footprint": false` in `settings.json` turns it off.
+
+After a batch of tickets is filed, `orchestra plan` proposes blocks links between open tickets that
+name the same function or work on the same small file (one a ticket names, or that mentions a
+function it names, unless both name different functions the file mentions; for a ticket with
+commits on its branch, the files its branch changes), the higher-priority ticket first, and changes
+nothing. Footprints keep such tickets apart without a link, so by the first rule above a proposed
+link is worth adding only where one ticket needs the other's code merged first. Show the user the
+proposal; run `orchestra plan --apply` (which adds them with `bd dep add`) only when they approve.
+
 ## Launching a run
 
 Requirements, checked by `orchestra` at startup (it lists every problem, exit code 2):
@@ -234,29 +286,6 @@ join only when filed as its children (`bd create --parent <id>`). An epic is nev
 orchestra closes it once a run merges its last subticket (`closed epic <id>` in the log). In every run, a ticket
 with subtickets not yet closed and merged waits for them (`<id> waits: its subtickets are not all
 closed and merged`).
-
-With several at once, a ticket labelled `solo` runs with no other beside it. Suggest the label
-(`bd label add <id> solo`) for a ticket that restructures code most tickets touch, such as splitting
-a shared file: run next to other work, it guarantees merge conflicts.
-
-Tickets are also kept apart by footprint: a ready ticket that names the same function (or, when one
-of the two names no functions, the same file) as a running ticket, shares an `area:<name>` label with
-it, or names a file its worker has edited, waits for a later slot while the next ticket takes this
-one. A file counts only when one of the two is to change it: one its `files` metadata lists, or, for a
-ticket without, one its text names, but a document only in a sentence asking to change it (`Update
-docs/guide.md`), not citing it (`per CLAUDE.md`). Its notes don't count. A ticket with
-commits on its branch, reopened or carried over, goes by the files its branch changes and its `files`
-metadata instead of its text. Naming files and functions in a ticket's description
-helps; so does `bd update <id> --set-metadata files=a.go,b.go` or an `area:<name>` label. For a ticket naming none of these, the
-predictor organ guesses its files in the background and caches them as `predicted_files` metadata.
-`"footprint": false` in `settings.json` turns it off.
-
-After a batch of tickets is filed, `orchestra plan` proposes blocks links between open tickets that
-name the same function or work on the same small file (one a ticket names, or that mentions a
-function it names, unless both name different functions the file mentions; for a ticket with
-commits on its branch, the files its branch changes), the higher-priority ticket first, and changes
-nothing. Show the user the proposal; run `orchestra plan --apply` (which adds them with `bd dep add`)
-only when they approve.
 
 ## A spec run
 

@@ -14,6 +14,14 @@ All notable changes to orchestra are documented here. The format follows
   the seam, a file for each ticket meant to run beside the others, tests in
   the ticket whose code they test rather than after it, and `solo` only where
   most tickets would conflict. Each rule comes with its reason.
+- The orchestra skill has a section on filing tickets for a run, each rule
+  with its reason: a blocks link only for code a ticket needs merged first,
+  chains three deep at most, a hub ticket cut to the seam, a file each for
+  tickets meant to run side by side, tests with their code, and `solo`
+  rarely. An agent filing tickets by hand went by the skill, which said
+  nothing of their shape, so features came out as chains that kept one
+  worker busy while the rest waited. The skill's paragraphs on `solo`,
+  footprints and `orchestra plan` moved into it.
 
 ### Fixed
 
