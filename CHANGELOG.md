@@ -40,6 +40,17 @@ All notable changes to orchestra are documented here. The format follows
   run sat 2.6 of its 5.6 slot-hours idle behind one. A solo ticket at P0,
   one other tickets wait on, and every one in a run of one worker keep
   their place in priority order and drain the slots as before.
+- Tickets on one Markdown document are kept apart by section rather than by
+  the whole file: a ticket that names a section (`docs/running.md § "Solo
+  tickets"` or `docs/running.md#solo-tickets`, in its text or its files
+  metadata) works on that section and the ones under it, and overlaps another
+  ticket on the document only when their sections meet, or one names the
+  document without a section. A running worker's edits to a document hold
+  back only the tickets on the sections it changed, and two workers editing
+  different sections of one are no likely conflict. Headings match as
+  Markdown renders their anchors. git merges different sections of a
+  document cleanly, and docs/running.md, named by one ticket in twelve, was
+  the file tickets were most often kept apart over.
 
 ### Fixed
 

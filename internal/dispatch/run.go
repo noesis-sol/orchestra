@@ -371,6 +371,11 @@ type runState struct {
 	// The files each ticket's branch changes on top of Base, as git said while it waited (branchChanges).
 	branchMu sync.Mutex
 	branches map[string][]string
+	// The merge base of each running ticket's branch with Base, and the documents' text at such commits,
+	// for the sections its worker edited (editedSections).
+	docMu    sync.Mutex
+	docBases map[string]string
+	baseDocs map[string]string
 
 	machine *machine // the run's registration among the machine's orchestra runs
 
@@ -383,6 +388,7 @@ func newRunState(ctx context.Context, o *Loop) *runState {
 		results: make(chan result, 2*o.cfg.Concurrency), inflight: map[string]bool{},
 		queued: queue{queued: -1}, unclosedSaid: -1, unclosed: -1,
 		warned: map[string]bool{}, unions: map[string]bool{}, branches: map[string][]string{}, gone: map[string]*streak{},
+		docBases: map[string]string{}, baseDocs: map[string]string{},
 		machine: o.register(), filing: o.cfg.filingDone(),
 		baseSeen: o.startHead, // as loadUnmerged asked
 	}

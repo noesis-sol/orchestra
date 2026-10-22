@@ -61,6 +61,13 @@ type Footprint struct {
 	// metadata lists (branchFootprint): a ticket with commits on its branch, reopened or carried over,
 	// has done its work there, and its text names what it read and was told as well.
 	Branch bool
+	// Sections are the sections of the Markdown documents among Files that the ticket names, by
+	// document, each as its path (footprint_sections.go): the ticket works on those alone. A document
+	// without an entry it works on whole: one it names without a section, or in a folder or a glob.
+	Sections map[string][]string
+	// edits are the sections of the Markdown documents a running ticket's worker has edited, by
+	// document, as changedSections gives them; one edited without an entry counts whole.
+	edits map[string][]string
 }
 
 // AreaPrefix starts a label naming the part of the project a ticket works on: tickets carrying
@@ -86,7 +93,20 @@ func (f Footprint) String() string {
 	if f.Empty() {
 		return "nothing named"
 	}
-	s := strings.Join(slices.Concat(f.Funcs, f.Files, f.Globs, f.Areas), ", ")
+	var files []string
+	for _, p := range f.Files {
+		if len(f.Sections[p]) == 0 {
+			files = append(files, p)
+			continue
+		}
+		var anchors []string
+		for _, sec := range f.Sections[p] {
+			anchors = append(anchors, p+"#"+sec[strings.LastIndex(sec, "/")+1:])
+		}
+		slices.Sort(anchors)
+		files = append(files, slices.Compact(anchors)...)
+	}
+	s := strings.Join(slices.Concat(f.Funcs, files, f.Globs, f.Areas), ", ")
 	if f.Predicted {
 		s += " (predicted)"
 	}
@@ -195,7 +215,8 @@ type repoFiles struct {
 	// union reports whether git merges a repository file by union; nil when it isn't asked.
 	union func(file string) bool
 	mu    sync.Mutex
-	words map[string]map[string]bool // the identifiers in each file read, nil for one that can't be
+	words map[string]map[string]bool     // the identifiers in each file read, nil for one that can't be
+	heads map[string]map[string][]string // the sections of each document read, by anchor (headings)
 }
 
 // newRepoFiles indexes the files git tracks (nil when git couldn't list them) and finds the files
@@ -700,7 +721,7 @@ func takePath(word string, take func(tok string) bool) {
 func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 	text := strings.Join([]string{t.Title, t.Description, t.Design, t.AcceptanceCriteria}, "\n")
 	spec := specFile(t)
-	files, funcs := pathsIn(text, repo, spec)
+	files, funcs, refs := pathsIn(text, repo, spec)
 	maps.Copy(funcs, callsIn(text))
 	maps.Copy(funcs, codeSpansIn(text))
 	globs := map[string]bool{}
@@ -712,10 +733,15 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 		}
 	}
 	fp.Listed = len(listed) > 0
+	listedRefs := docRefs{}
 	for _, f := range listed {
-		found, gs := repo.listed(f)
+		name, sec := splitSection(f)
+		found, gs := repo.listed(name)
 		for _, p := range found {
 			files[p] = true
+			if markdown(p) {
+				listedRefs[p] = append(listedRefs[p], sec)
+			}
 		}
 		for _, g := range gs {
 			globs[g] = true
@@ -734,6 +760,11 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 		}
 	}
 	fp.Globs = slices.Sorted(maps.Keys(globs))
+	// The sections of a document the files metadata lists are those it lists; of one only its text
+	// names, those the text does.
+	maps.Copy(refs, listedRefs)
+	maps.DeleteFunc(refs, func(f string, _ []*sectionName) bool { _, ok := files[f]; return !ok })
+	fp.Sections = repo.sectionsOf(refs)
 	sort.Strings(fp.Areas)
 	if fp.Empty() {
 		return predictedFootprint(metadataList(t, PredictedKey), repo, spec)
@@ -744,14 +775,16 @@ func ticketFootprint(t Ticket, repo *repoFiles) Footprint {
 // branchFootprint is the footprint of ticket t whose branch changes files changed on top of the base:
 // those files and the files and globs its files metadata lists, all to be changed (Listed), and its
 // area labels; not what its text names. The files git merges by union never count, those the check
-// commands name and specs do: the branch changes them.
+// commands name and specs do: the branch changes them. A document counts whole, whichever section the
+// files metadata names.
 func branchFootprint(t Ticket, changed []string, repo *repoFiles) Footprint {
 	files, globs := map[string]bool{}, map[string]bool{}
 	for _, f := range changed {
 		files[f] = true
 	}
 	for _, f := range metadataList(t, FilesKey) {
-		found, gs := repo.listed(f)
+		name, _ := splitSection(f)
+		found, gs := repo.listed(name)
 		for _, p := range found {
 			files[p] = true
 		}
@@ -772,19 +805,29 @@ func branchFootprint(t Ticket, changed []string, repo *repoFiles) Footprint {
 }
 
 // pathsIn returns the repository files the words of text that may be paths name, but those named in
-// passing (inPassing) by a ticket from spec, each with whether text asks to change it (asksChange), and
-// the Type.method words among them that name no file.
-func pathsIn(text string, repo *repoFiles, spec string) (files, funcs map[string]bool) {
-	files, funcs = map[string]bool{}, map[string]bool{}
+// passing (inPassing) by a ticket from spec, each with whether text asks to change it (asksChange), the
+// Type.method words among them that name no file, and the Markdown documents among the files with the
+// section each mention names (sectionAfter).
+func pathsIn(text string, repo *repoFiles, spec string) (files, funcs map[string]bool, refs docRefs) {
+	files, funcs, refs = map[string]bool{}, map[string]bool{}, docRefs{}
 	for _, s := range sentences(text) {
 		// A path token holds no space, so each is in one word, and starts it as it would the text.
 		words := strings.Fields(s)
 		for i, w := range words {
 			eachPathToken(w, func(tok string) bool {
 				if found := repo.resolve(tok, false); len(found) > 0 {
+					var sec *sectionName
+					if _, rest, ok := strings.Cut(w, tok); ok {
+						if n, ok := sectionAfter(rest + " " + strings.Join(words[i+1:], " ")); ok {
+							sec = &n
+						}
+					}
 					for _, f := range found {
 						if !repo.inPassing(f, spec) { // "scripts/check.sh passes" says nothing about where a ticket works
 							files[f] = files[f] || !document(f) || asksChange(words, i)
+							if markdown(f) {
+								refs[f] = append(refs[f], sec)
+							}
 						}
 					}
 					return true
@@ -797,7 +840,7 @@ func pathsIn(text string, repo *repoFiles, spec string) (files, funcs map[string
 			})
 		}
 	}
-	return files, funcs
+	return files, funcs, refs
 }
 
 // Around a document a sentence names, the words a changeWord asking to change it is looked for in.
@@ -1007,7 +1050,8 @@ func holdsNamed(p string, files []string) bool {
 // works on the files it holds (globHolds), and is compared itself, as a new folder is, only when it
 // holds no file either names: its files are compared one by one too. A file both work on is shared only
 // when one of them is to change it (changes), or r's worker edited it: two tickets that only cite a
-// document, or name files their files metadata doesn't list, don't conflict over it.
+// document, or name files their files metadata doesn't list, don't conflict over it. A Markdown document
+// both work on is shared only when they work on a section of it in common (sectionShared).
 func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, keep func(string) bool) string {
 	namesIn := func(fp Footprint, p string) bool {
 		folder := strings.HasSuffix(p, "/")
@@ -1023,7 +1067,8 @@ func sharedFile(f, r Footprint, edited []string, in func(file, fn string) bool, 
 		fAt := fIn || takesIn(f, p)
 		rAt := rIn || takesIn(r, p) || slices.Contains(edited, p)
 		change := changes(f, p, fIn) || changes(r, p, rIn) || slices.Contains(edited, p)
-		if fAt && rAt && !(fIn && rIn) && change && (keep == nil || keep(p)) {
+		if fAt && rAt && !(fIn && rIn) && change && sectionShared(f, r, p, fIn, rIn, slices.Contains(edited, p)) &&
+			(keep == nil || keep(p)) {
 			return p
 		}
 	}
@@ -1043,6 +1088,9 @@ type runFootprint struct {
 	fp     Footprint
 	wt     string   // the ticket's worktree, once made
 	edited []string // repository files its worker reported editing
+	// the sections of the Markdown documents among edited that its worker changed, by document
+	// (editedSections)
+	sections map[string][]string
 }
 
 // footprintOn says whether tickets are scheduled by footprint: with more than one worker, unless
@@ -1203,6 +1251,9 @@ func (r *runState) endFootprint(id string) {
 	r.branchMu.Lock()
 	delete(r.branches, id) // its worker may have committed: read its branch again
 	r.branchMu.Unlock()
+	r.docMu.Lock()
+	delete(r.docBases, id)
+	r.docMu.Unlock()
 	r.skipSaid.forget(id)
 }
 
@@ -1222,7 +1273,7 @@ func (r *runState) readEdits() {
 		}
 	}
 	o.mu.Unlock()
-	edited := map[string][]string{}
+	edited, sections := map[string][]string{}, map[string]map[string][]string{}
 	for id, wt := range wts {
 		var files []string
 		for _, f := range o.reporter.EditedFiles(wt) {
@@ -1230,19 +1281,19 @@ func (r *runState) readEdits() {
 				files = append(files, f)
 			}
 		}
-		edited[id] = files
+		edited[id], sections[id] = files, r.editedSections(id, wt, files)
 	}
 	o.mu.Lock()
 	for id, files := range edited {
 		if f := o.footprints[id]; f != nil {
-			f.edited = files
+			f.edited, f.sections = files, sections[id]
 		}
 	}
 	o.mu.Unlock()
 
 	for _, e := range sharedEdits(edited) {
 		key := e.a + " " + e.b + " " + e.file
-		if r.warned[key] {
+		if r.warned[key] || editsApart(sections[e.a], sections[e.b], e.file) {
 			continue
 		}
 		r.warned[key] = true
@@ -1285,7 +1336,9 @@ func (r *runState) overlapsRunning(t Ticket, runningIDs map[string]bool) bool {
 		o.mu.Lock()
 		for _, id := range slices.Sorted(maps.Keys(runningIDs)) {
 			if f := o.footprints[id]; f != nil {
-				if what := shared(fp, f.fp, f.edited, r.files.mentions); what != "" {
+				run := f.fp
+				run.edits = f.sections
+				if what := shared(fp, run, f.edited, r.files.mentions); what != "" {
 					why = fmt.Sprintf("touches %s, like running %s", what, id)
 					break
 				}
