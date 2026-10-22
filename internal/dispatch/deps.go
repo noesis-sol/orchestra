@@ -200,7 +200,7 @@ type Merger interface {
 	// they conflict
 	Holds(ctx context.Context, repo, base, branch string) (bool, error)
 	ResetBranch(ctx context.Context, worktree, rev string) (string, error)
-	FastForward(ctx context.Context, repo, branch string) (string, error)
+	FastForward(ctx context.Context, repo, rev string) (string, error) // to rev, a branch or a commit
 }
 
 // Upstream is what a run asks of git as it starts, to bring Base up to the branch it follows (see

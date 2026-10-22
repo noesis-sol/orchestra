@@ -253,9 +253,10 @@ func (m *mergeRun) gitFailed(what string, err error) (mergeStep, *stopReason) {
 }
 
 // dropUnchanged closes the ticket as unchanged, for why (see closedUnchanged), when the commits on its
-// branch beyond onto, taken together, change nothing, and says whether the merge is over: it did, or
-// git could not tell, the run stopping then. It is called with repo held, and lets go of it only when
-// the merge is over.
+// branch beyond onto, taken together, change nothing, and says whether the merge is over: it did, it
+// set the ticket aside, its worktree being off its branch or having uncommitted changes, which the
+// branch's reset would lose, or git could not tell, the run stopping then. It is called with repo held,
+// and lets go of it only when the merge is over.
 func (m *mergeRun) dropUnchanged(onto, why string) (bool, *stopReason) {
 	unchanged, err := askGit(m.keep, m.o, m.repo, func() (bool, error) {
 		return m.o.merger.Unchanged(m.keep, m.o.cfg.Repo, onto, m.w.br)
@@ -267,10 +268,41 @@ func (m *mergeRun) dropUnchanged(onto, why string) (bool, *stopReason) {
 	case !unchanged:
 		return false, nil
 	}
+	// The reset resets what the worktree has checked out, files and all, and finish looked at it before
+	// the merge queue's wait: its worker may have switched branch or begun new edits since.
+	if on := m.o.offBranch(m.keep, m.w); on != "" {
+		m.repo.unlock()
+		m.o.leaveOffBranch(m.keep, m.w, on)
+		return true, nil
+	}
+	dirty, err := askGit(m.keep, m.o, m.repo, func() (string, error) {
+		return m.o.checkout.DirtyWorktree(m.keep, m.w.wt)
+	})
+	switch {
+	case err != nil:
+		_, stop := m.gitFailed("whether "+m.w.wt+" has uncommitted changes", err)
+		return true, stop
+	case dirty != "":
+		m.repo.unlock()
+		m.o.leaveUnchangedDirty(m.keep, m.w, why)
+		return true, nil
+	}
 	m.o.dropBranch(m.keep, m.w.wt)
 	m.repo.unlock()
 	m.o.closedUnchanged(m.keep, m.w, why, m.repo)
 	return true, nil
+}
+
+// leaveUnchangedDirty sets aside w's closed ticket, whose commits change nothing for why, as its
+// worktree has uncommitted changes: the reset that drops its branch would lose them.
+func (o *Loop) leaveUnchangedDirty(ctx context.Context, w worker, why string) {
+	what := "has uncommitted changes"
+	if files := o.uncommittedList(ctx, w.wt); files != "" {
+		what += " (" + files + ")"
+	}
+	o.leaveFor(ctx, w.id, asideUncommitted, "uncommitted changes in its worktree", "", fmt.Sprintf(
+		"%s closed with no change to merge (%s), but %s %s; worktree and tab %s left for review "+
+			"(commit them and merge %s into %s, or remove them)", w.id, why, w.wt, what, w.tab, w.br, o.cfg.Base))
 }
 
 // checkOnTop checks the ticket's branch, on top of Base already as its worker left it at head, before
@@ -327,7 +359,9 @@ func (m *mergeRun) fastForward(at string) *stopReason {
 		m.repo.unlock()
 		return o.gitFailedMerging(keep, m.w, "where "+c.Base+" is", err)
 	}
-	out, err := o.merger.FastForward(keep, c.Repo, br)
+	// To at, not br: its worker may have committed since it was checked, and git branch -d then keeps
+	// the branch, and that commit on it.
+	out, err := o.merger.FastForward(keep, c.Repo, at)
 	o.log.Raw(out, err)
 	if err != nil {
 		s := o.notFastForwarded(keep, m.w, err)

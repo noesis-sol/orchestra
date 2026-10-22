@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -25,10 +24,8 @@ func TestDeletingAClosedBlockersBranchFreesItsDependents(t *testing.T) {
 		h.beads.link("B", "A", "blocks")
 		h.worker("C", func(w *fakeWorker) AgentState {
 			time.Sleep(2 * time.Minute) // B is held meanwhile, poll after poll
-			if out, err := w.git.DeleteBranch(context.Background(), "", "wt/A"); err != nil {
-				t.Errorf("deleting wt/A: %v: %s", err, out)
-			}
-			time.Sleep(time.Hour) // B starts, finishes and merges meanwhile
+			w.git.forceDelete("wt/A")   // git branch -D, as CLOSED_UNMERGED says
+			time.Sleep(time.Hour)       // B starts, finishes and merges meanwhile
 			return finishes("c.txt")(w)
 		})
 		h.worker("B", finishes("b.txt"))

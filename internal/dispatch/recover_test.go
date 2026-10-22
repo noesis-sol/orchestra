@@ -12,19 +12,19 @@ import (
 	"github.com/noesis-sol/orchestra/internal/organ"
 )
 
-// panickyMerger merges with git, but dereferences a nil pointer fast-forwarding branch: a panic
-// in a worker while it holds the merge queue and the repository.
+// panickyMerger merges with git, but dereferences a nil pointer fast-forwarding to branch's head: a
+// panic in a worker while it holds the merge queue and the repository.
 type panickyMerger struct {
 	git.Git
 	branch string
 }
 
-func (m panickyMerger) FastForward(ctx context.Context, repo, branch string) (string, error) {
-	if branch == m.branch {
+func (m panickyMerger) FastForward(ctx context.Context, repo, rev string) (string, error) {
+	if at, err := m.Head(ctx, repo, m.branch); err == nil && rev == at {
 		var t *Ticket
 		return t.Title, nil
 	}
-	return m.Git.FastForward(ctx, repo, branch)
+	return m.Git.FastForward(ctx, repo, rev)
 }
 
 // A worker that panics stops the run like any other reason: it holds, the other ticket still

@@ -61,7 +61,7 @@ func TestAnAnsweredTicketWhoseSetupFailsIsTakenAgain(t *testing.T) {
 	})
 }
 
-// answersOnMerge is git whose fast-forward of branch onto the base has the maintainer answer Q and
+// answersOnMerge is git whose fast-forward of the base to branch's head has the maintainer answer Q and
 // file C as it lands. The loop starts the next ticket while a merge is under way: answered before
 // B's merge lands, A could be taken again, and rebased, without B's lockfile (orchestra-v1zw).
 type answersOnMerge struct {
@@ -70,9 +70,10 @@ type answersOnMerge struct {
 	branch string
 }
 
-func (m answersOnMerge) FastForward(ctx context.Context, repo, branch string) (string, error) {
-	out, err := m.fakeGit.FastForward(ctx, repo, branch)
-	if err == nil && branch == m.branch {
+func (m answersOnMerge) FastForward(ctx context.Context, repo, rev string) (string, error) {
+	at := m.head(m.branch)
+	out, err := m.fakeGit.FastForward(ctx, repo, rev)
+	if err == nil && rev == at {
 		m.beads.mu.Lock()
 		defer m.beads.mu.Unlock()
 		m.beads.tickets["Q"].Status = "closed"

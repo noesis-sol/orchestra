@@ -57,6 +57,12 @@ All notable changes to orchestra are documented here. The format follows
   the other talk's questions too, outside its run's scope, and lost its note on
   the deferred tickets. Each talk now has its files in a folder of its own,
   `.orchestra/run/answer-<n>/`.
+- A merge acts on what was looked at and checked. A ticket whose commits change
+  nothing had its worktree reset to Base without a second look, losing edits
+  begun during the merge queue's wait, or moving a branch switched to meanwhile;
+  it is now set aside for those (CLOSED_UNCOMMITTED, OFF_BRANCH). And Base is
+  fast-forwarded to the commit the check passed on, not to wherever the branch
+  is by then: a commit its worker made after the check stays on the branch.
 
 ## [0.9.4] - 2026-10-22
 

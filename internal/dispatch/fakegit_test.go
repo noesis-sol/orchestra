@@ -331,9 +331,20 @@ func (g *fakeGit) RemoveWorktree(ctx context.Context, repo, path string) (string
 	return "", os.RemoveAll(path)
 }
 
+// forceDelete deletes branch, merged or not, as git branch -D does.
+func (g *fakeGit) forceDelete(branch string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.branches, branch)
+}
+
+// DeleteBranch deletes branch, refusing, as git branch -d does, one with commits the base hasn't.
 func (g *fakeGit) DeleteBranch(ctx context.Context, repo, branch string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if _, ok := g.branches[branch]; ok && !g.isAncestor(branch, g.base) {
+		return "error: the branch '" + branch + "' is not fully merged", fmt.Errorf("git branch -d %s: exit status 1", branch)
+	}
 	delete(g.branches, branch)
 	return "", nil
 }
@@ -542,14 +553,14 @@ func (g *fakeGit) ResetBranch(ctx context.Context, worktree, rev string) (string
 	return "", nil
 }
 
-// FastForward moves the base to branch, which must be on top of it.
-func (g *fakeGit) FastForward(ctx context.Context, repo, branch string) (string, error) {
+// FastForward moves the base to rev, a branch or a commit, which must be on top of it.
+func (g *fakeGit) FastForward(ctx context.Context, repo, rev string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if !g.isAncestor(g.base, branch) {
-		return "fatal: Not possible to fast-forward, aborting.", fmt.Errorf("git merge --ff-only %s: exit status 128", branch)
+	if !g.isAncestor(g.base, rev) {
+		return "fatal: Not possible to fast-forward, aborting.", fmt.Errorf("git merge --ff-only %s: exit status 128", rev)
 	}
-	g.branches[g.base] = g.resolve(branch)
+	g.branches[g.base] = g.resolve(rev)
 	return "", nil
 }
 
