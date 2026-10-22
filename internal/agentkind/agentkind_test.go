@@ -1,6 +1,9 @@
 package agentkind
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // A kind is its row of the table: "" the default kind's, Claude Code's, and a kind orchestra doesn't
 // know one of its name that is given nothing; as a terminal names an agent, "" is no kind.
@@ -14,17 +17,17 @@ func TestOfReadsTheKindsRow(t *testing.T) {
 		{"codex", Codex},
 		{"aider", Kind{Name: "aider"}},
 	} {
-		if got := Of(tc.name); got != tc.want {
+		if got := Of(tc.name); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("Of(%q) = %+v, want %+v", tc.name, got, tc.want)
 		}
 	}
-	if got := Named(""); got != (Kind{}) {
+	if got := Named(""); !reflect.DeepEqual(got, Kind{}) {
 		t.Errorf("Named(\"\") = %+v, want no kind", got)
 	}
-	if got := Named("claude"); got != Claude {
+	if got := Named("claude"); !reflect.DeepEqual(got, Claude) {
 		t.Errorf("Named(\"claude\") = %+v, want Claude", got)
 	}
-	if Default != Claude {
+	if !reflect.DeepEqual(Default, Claude) {
 		t.Errorf("Default = %+v, want Claude", Default)
 	}
 }

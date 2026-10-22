@@ -47,6 +47,13 @@ All notable changes to orchestra are documented here. The format follows
   work form puts its answer in brackets, `[Yes]  No`: the buttons differed
   only in colour, which `NO_COLOR` strips, so you couldn't tell which one
   Enter would pick.
+- Workers and organs no longer inherit the markers of a Claude Code session
+  that started their terminal or orchestra (`CLAUDECODE`,
+  `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_CHILD_SESSION`): a tmux server
+  started from Claude Code's Bash tool gave `CLAUDECODE=1` to every worker,
+  which then ran as that session's child. Workers in Herdr now run with
+  orchestra's `PATH`, as those in tmux and cmux do, rather than their shell's.
+  Each agent kind's row says what its launch sets and leaves out.
 - The scout asks claude for its `--help` in a private directory of its own,
   as the organs' calls run, rather than in the temporary directory itself:
   on Linux with `TMPDIR` unset that is the world-writable `/tmp`, where

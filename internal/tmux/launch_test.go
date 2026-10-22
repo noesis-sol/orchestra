@@ -25,17 +25,16 @@ func TestLaunchInPaneRunsTheAgentInPlaceOfTheShell(t *testing.T) {
 		t.Errorf("set-option got:\n%q\nwant:\n%q", got, want)
 	}
 	respawn := f.call("respawn-pane")
-	if len(respawn) != 17 || !slices.Equal(respawn[:6], []string{"respawn-pane", "-k", "-t", "%5", "-e",
-		"PATH=" + os.Getenv("PATH")}) || respawn[6] != "/bin/sh" || respawn[7] != "-c" {
+	if len(respawn) != 15 || !slices.Equal(respawn[:6], []string{"respawn-pane", "-k", "-t", "%5", "/bin/sh", "-c"}) {
 		t.Fatalf("respawn-pane got %q", respawn)
 	}
 	// The pane keeps the process ID of what it launched.
-	if got := respawn[9:]; !slices.Equal(got, []string{";", "set-option", "-p", "-F", "-t", "%5", "@orchestra-pid",
+	if got := respawn[7:]; !slices.Equal(got, []string{";", "set-option", "-p", "-F", "-t", "%5", "@orchestra-pid",
 		"#{pane_pid}"}) {
 		t.Errorf("after respawn-pane got %q", got)
 	}
 	// The command line gives the agent its arguments exactly.
-	script := strings.Replace(respawn[8], "exec 'claude'", `printf '%s\0'`, 1)
+	script := strings.Replace(respawn[6], "exec 'claude'", `printf '%s\0'`, 1)
 	out, err := exec.Command("/bin/sh", "-c", script).Output()
 	if err != nil {
 		t.Fatal(err)

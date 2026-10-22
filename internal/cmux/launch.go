@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
@@ -30,7 +31,8 @@ func (t Terminal) launchPath(surface, ext string) string {
 // shell, which takes no argument with line breaks, and may be any shell, quoting otherwise than
 // /bin/sh, so the command goes in a script beside the book, and the shell is given a line that runs
 // it, quoting nothing (command.ScriptLine). The script goes to the folder the surface started in,
-// sets orchestra's PATH, as orchestra would run the command, writes its process ID, which the
+// gives the command the environment its kind's row gives it (agentkind.Kind.Env: orchestra's PATH,
+// as orchestra would run it, and no Claude Code session's markers), writes its process ID, which the
 // command keeps, and replaces itself with the command. The shell stays, so the surface is still
 // there, with its screen, once the command exits. With a name, the agent is given it.
 //
@@ -54,7 +56,7 @@ func (t Terminal) launch(ctx context.Context, surface, kind, name string, args [
 	if entry.Dir != "" {
 		script.WriteString("cd " + command.ShellQuote(entry.Dir) + " || exit\n")
 	}
-	script.WriteString("PATH=" + command.ShellQuote(command.Getenv(ctx, "PATH")) + "\nexport PATH\n")
+	script.WriteString(command.ShellEnv(agentkind.Named(kind).Env(command.Getenv(ctx, "PATH"))))
 	script.WriteString("CMUX_CLAUDE_HOOKS_DISABLED=1\nexport CMUX_CLAUDE_HOOKS_DISABLED\n")
 	script.WriteString("echo $$ > " + command.ShellQuote(t.launchPath(surface, ".pid")) + "\n")
 	script.WriteString("exec " + command.ShellQuote(kind))

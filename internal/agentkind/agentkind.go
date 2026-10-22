@@ -3,7 +3,11 @@
 // project up for them reads the kind's row (Of) rather than comparing its name.
 package agentkind
 
-import "github.com/noesis-sol/orchestra/internal/claudescreen"
+import (
+	"slices"
+
+	"github.com/noesis-sol/orchestra/internal/claudescreen"
+)
 
 // Kind is one kind of agent, as a row of kinds describes it.
 type Kind struct {
@@ -34,6 +38,10 @@ type Kind struct {
 	LimitNote bool
 	// Subagents says init can write subagents for it, such as the verifier.
 	Subagents bool
+	// Unset names the variables a launch of the kind leaves out of the environment it inherits (see
+	// Env): a launcher's session markers, which a worker started from a Claude Code session, through a
+	// tmux server its Bash tool started say, would otherwise take for its own.
+	Unset []string
 	// Screen reads its screen, as a terminal gives it (see ScreenReader); nil for a kind whose screen
 	// orchestra can't read, which gets no reading of it (Reader).
 	Screen ScreenReader
@@ -59,6 +67,19 @@ func (k Kind) Reader() ScreenReader {
 	return k.Screen
 }
 
+// Env is what a launch of the kind changes in the environment it inherits, in the form of
+// internal/command's env entries: a name alone leaves that variable out (Unset), NAME=value sets it.
+// Every kind runs with path, orchestra's PATH, as orchestra would run it, whatever the PATH of the
+// terminal or shell it is launched in.
+func (k Kind) Env(path string) []string {
+	return append(slices.Clone(k.Unset), "PATH="+path)
+}
+
+// claudeSession are the variables Claude Code sets for the commands it runs, which mark them as run
+// from a session of its own: a Claude Code that inherits CLAUDECODE runs as that session's child (it
+// keeps no prompt history, for one) rather than as a worker of its own.
+var claudeSession = []string{"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION"}
+
 // noScreen is the ScreenReader of a kind whose screen orchestra can't read.
 type noScreen struct{}
 
@@ -78,11 +99,13 @@ var Claude = Kind{
 	CheckTimeNote: true,
 	LimitNote:     true,
 	Subagents:     true,
+	Unset:         claudeSession,
 	Screen:        claudescreen.Reader{},
 }
 
-// Codex is OpenAI's Codex CLI, of which orchestra knows only where it finds a project's skills.
-var Codex = Kind{Name: "codex", SkillsDir: ".agents/skills"}
+// Codex is OpenAI's Codex CLI, of which orchestra knows only where it finds a project's skills, and
+// that a launcher's Claude Code session is none of its own.
+var Codex = Kind{Name: "codex", SkillsDir: ".agents/skills", Unset: claudeSession}
 
 // kinds are the agent kinds orchestra knows: adding one, or giving one a feature, is its row here.
 var kinds = []Kind{Claude, Codex}

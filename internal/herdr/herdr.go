@@ -383,12 +383,15 @@ func (t Terminal) AgentName(id string) string { return AgentName(id) }
 // at once. It refuses while a program other than the shell runs in the pane (shellWaits). The pane's
 // shell may be any, quoting otherwise than /bin/sh (nushell, fish), so the command goes in a script
 // for /bin/sh, which replaces itself with it, and the shell is given a line that runs it, quoting
-// nothing (command.ScriptLine).
+// nothing (command.ScriptLine). The script gives the command the environment its kind's row gives it
+// (agentkind.Kind.Env): orchestra's PATH, as orchestra would run it, rather than the pane's shell's,
+// and no Claude Code session's markers.
 func (t Terminal) LaunchInPane(ctx context.Context, pane, kind string, args []string) error {
 	if err := shellWaits(ctx, pane); err != nil {
 		return err
 	}
 	var script strings.Builder
+	script.WriteString(command.ShellEnv(agentkind.Named(kind).Env(command.Getenv(ctx, "PATH"))))
 	script.WriteString("exec " + command.ShellQuote(kind))
 	for _, a := range args {
 		script.WriteString(" " + command.ShellQuote(a))

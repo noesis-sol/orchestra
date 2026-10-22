@@ -4,12 +4,15 @@ import (
 	"context"
 	"strings"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/command"
 	"github.com/noesis-sol/orchestra/internal/hookterm"
 )
 
 // launch runs kind with args in the pane, in place of what ran there, and returns at once. The
-// command runs with orchestra's PATH, as orchestra would run it, through no shell's line editor, so
+// command runs in the environment its kind's row gives it (agentkind.Kind.Env): orchestra's PATH, as
+// orchestra would run it, and without a Claude Code session's markers, which a tmux server started
+// from Claude Code's Bash tool gives every pane. It runs through no shell's line editor, so
 // an argument may be of any length and span lines. The pane stays open when it exits, for its
 // screen to be read. With a name, the agent is given it. The pane keeps the process ID of what it
 // launched (pidOption), so that state knows the pane's process for its own, which ends dead, never at a
@@ -19,6 +22,7 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 		return missing("respawn-pane", pane, "pane")
 	}
 	var script strings.Builder
+	script.WriteString(command.ShellEnv(agentkind.Named(kind).Env(command.Getenv(ctx, "PATH"))))
 	script.WriteString("exec " + command.ShellQuote(kind))
 	for _, a := range args {
 		script.WriteString(" " + command.ShellQuote(a))
@@ -38,7 +42,7 @@ func (t Terminal) launch(ctx context.Context, pane, kind, name string, args []st
 		}
 	}
 	_, err := t.run(ctx, command.ReadLimit, "respawn-pane", pane,
-		"-k", "-t", pane, "-e", "PATH="+command.Getenv(ctx, "PATH"), "/bin/sh", "-c", script.String(),
+		"-k", "-t", pane, "/bin/sh", "-c", script.String(),
 		";", "set-option", "-p", "-F", "-t", pane, pidOption, "#{pane_pid}")
 	return err
 }

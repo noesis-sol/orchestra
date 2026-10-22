@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/noesis-sol/orchestra/internal/agentkind"
 	"github.com/noesis-sol/orchestra/internal/command"
 )
 
@@ -251,6 +253,11 @@ func (g Client) args(tools, effort, system, schema string) []string {
 // rather than --safe-mode, which an older claude would reject: it ignores a variable it doesn't know.
 var userSetupOff = []string{"CLAUDE_CODE_SAFE_MODE=1"}
 
+// organEnv is what an organ's call changes in orchestra's environment, which gives it orchestra's PATH:
+// userSetupOff, and none of the markers of a Claude Code session orchestra was started from, which would
+// make the organ that session's child (agentkind.Claude's Unset).
+var organEnv = append(slices.Clone(agentkind.Claude.Unset), userSetupOff...)
+
 // spec is one organ: its name, as Spend has it, the time limit after which its call is stopped, its
 // effort when Client.Effort sets none, its system prompt (systemPrompt), the JSON schema of its
 // answer ("" for none) and its read-only tools ("" for none, which every organ but the scout has).
@@ -305,7 +312,7 @@ func privateDir() (dir string, done func(), err error) {
 // others (the scout's confinement and budget).
 func (g Client) askIn(ctx context.Context, s spec, dir string, flags []string, input string) (Result, error) {
 	start := time.Now()
-	out, err := command.OutputWithInput(ctx, s.limit, dir, userSetupOff, input, g.Bin,
+	out, err := command.OutputWithInput(ctx, s.limit, dir, organEnv, input, g.Bin,
 		append(g.args(s.tools, g.effort(s.effort), s.system, s.schema), flags...)...)
 	if err != nil {
 		e, ok := errors.AsType[*command.Error](err)
