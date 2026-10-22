@@ -410,6 +410,10 @@ func (m *mergeRun) commitNaming(at string) string {
 // ticket was set aside instead, or git failed to tell what the rebase turns on (stop says why the run
 // stops then). It is called with repo held, and lets go of it only when done.
 //
+// It rebases onto the commit it read Base at, its onto, not onto Base by name: repo orders only
+// orchestra's own writes, and a commit made on Base by hand in between would land the branch on a
+// newer commit than the one the setup's diff and the resolution check count from.
+//
 // git rebases what the worktree has checked out, which must be the branch, as its worker may have
 // switched since finish looked, resolving a conflict. git won't rebase a worktree with uncommitted
 // changes, as a check that rewrites the files it tracks leaves.
@@ -448,7 +452,7 @@ func (m *mergeRun) rebase() (r rebaseStop, conflicted, done bool, stop *stopReas
 	if err != nil {
 		return failed(fmt.Sprintf("how many commits %s has beyond %s", w.br, c.Base), err)
 	}
-	out, err := o.merger.Rebase(keep, w.wt, c.Base)
+	out, err := o.merger.Rebase(keep, w.wt, r.onto)
 	o.log.Raw(out, err)
 	if err == nil {
 		return r, false, false, nil

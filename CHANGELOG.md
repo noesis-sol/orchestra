@@ -52,6 +52,11 @@ All notable changes to orchestra are documented here. The format follows
   splitting a path after it, so `**/**/**/**/**/*.ts` took a third of a
   second on 200 files 13 folders deep, and each more `**` some three times
   as long, on every pick.
+- A merge rebases the ticket's branch onto the commit it read its base at,
+  not onto the base by name: a commit made on the base by hand in between
+  landed the branch on the newer commit, so the resolution check counted
+  the base's commits as the branch's and refused a valid resolution, and
+  the setup's diff missed the newer commits' lockfile changes.
 - In Herdr and cmux, a worker is launched whatever shell its pane runs: the
   command goes in a script for `/bin/sh`, and the pane's shell is typed a
   line that quotes nothing, ` /bin/sh <script>`. Herdr typed the command

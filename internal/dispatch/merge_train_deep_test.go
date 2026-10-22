@@ -129,10 +129,9 @@ func TestTheTicketBehindIsCheckedInItsTurnWhenTheOneAheadFailsAhead(t *testing.T
 			!strings.Contains(main, "C: add c.txt") {
 			t.Errorf("main should have A and C without B:\n%s", main)
 		}
-		onto := g.rebasedOnto(h.worktree("C"))
-		if len(onto) != 2 || onto[0] == "main" || onto[0] == commitOf(h.mem, "main", "A: add a.txt") ||
-			onto[1] != "main" {
-			t.Errorf("C was rebased onto %v, want onto B's train ahead of its turn, then onto main", onto)
+		onto, a := g.rebasedOnto(h.worktree("C")), commitOf(h.mem, "main", "A: add a.txt")
+		if len(onto) != 2 || onto[0] == "main" || onto[0] == a || onto[1] != a {
+			t.Errorf("C was rebased onto %v, want onto B's train ahead of its turn, then onto main's %s", onto, a)
 		}
 		for _, want := range []string{
 			"checking wt/C ahead of its turn to merge, rebased onto wt/B as it is checked\n",

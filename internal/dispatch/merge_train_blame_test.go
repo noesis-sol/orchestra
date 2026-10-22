@@ -34,8 +34,9 @@ func TestATicketWhoseOwnCheckFailedAheadOfItsTurnSaysSo(t *testing.T) {
 		if got := closedIDs(h); !equal(got, []string{"A", "B"}) {
 			t.Fatalf("merged %v, want A then B\n%s", got, ev)
 		}
-		if onto := g.rebasedOnto(h.worktree("B")); len(onto) != 2 || onto[1] != "main" {
-			t.Errorf("B was rebased onto %v, want onto A's branch ahead of its turn, then onto main", onto)
+		a := commitOf(h.mem, "main", "A: add a.txt")
+		if onto := g.rebasedOnto(h.worktree("B")); len(onto) != 2 || onto[1] != a {
+			t.Errorf("B was rebased onto %v, want onto A's branch ahead of its turn, then onto main's %s", onto, a)
 		}
 		for _, want := range []string{
 			"checking wt/B ahead of its turn to merge, rebased onto wt/A as it is checked\n",

@@ -207,8 +207,8 @@ func TestTheNextTicketIsCheckedAgainWhenTheOneBeforeItFails(t *testing.T) {
 		}
 		onto := g.rebasedOnto(h.worktree("B"))
 		landed := commitOf(h.mem, "main", "landed on main: landed.txt")
-		if len(onto) != 2 || onto[0] == landed || onto[1] != "main" {
-			t.Errorf("B was rebased onto %v, want onto A's branch ahead of its turn, then onto main", onto)
+		if len(onto) != 2 || onto[0] == landed || onto[1] != landed {
+			t.Errorf("B was rebased onto %v, want onto A's branch ahead of its turn, then onto main's %s", onto, landed)
 		}
 		for _, want := range []string{
 			"checking wt/B ahead of its turn to merge, rebased onto wt/A as it is checked\n",
@@ -238,8 +238,9 @@ func TestWithTheTrainOffTheNextTicketIsCheckedInItsTurn(t *testing.T) {
 		if got := closedIDs(h); !equal(got, []string{"A", "B"}) {
 			t.Fatalf("merged %v, want A then B\n%s", got, ev)
 		}
-		if got := g.rebasedOnto(h.worktree("B")); !equal(got, []string{"main"}) {
-			t.Errorf("B was rebased onto %v, want onto main alone", got)
+		a := commitOf(h.mem, "main", "A: add a.txt")
+		if got := g.rebasedOnto(h.worktree("B")); !equal(got, []string{a}) {
+			t.Errorf("B was rebased onto %v, want onto main's %s alone", got, a)
 		}
 		if strings.Contains(ev, "ahead of its turn") {
 			t.Errorf("nothing should be checked ahead of its turn:\n%s", ev)
