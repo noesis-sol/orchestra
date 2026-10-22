@@ -43,10 +43,16 @@ func (r *runState) filingOnly(ready []Ticket) []Ticket {
 }
 
 // filed notes that the scope's filing is over, as Done says once it is closed: from now on all of the
-// scope may start.
+// scope may start. The scope's own ticket, kept open while it was filed (see epicDone), closes now
+// should everything filed under it be merged already, as when the filing added nothing to the first
+// ticket.
 func (r *runState) filed() {
+	o := r.o
 	r.filing = nil
-	r.o.info("  the rest of %s is filed: its tickets join the run", r.o.cfg.Ticket)
+	o.info("  the rest of %s is filed: its tickets join the run", o.cfg.Ticket)
+	for p := o.cfg.Ticket; p != ""; {
+		p = o.epicDone(r.ctx, p, o.cfg.Filing.First, r.inflight)
+	}
 }
 
 // awaitFiling is Run's step once nothing runs while the scope is still being filed: it waits for the

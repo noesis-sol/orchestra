@@ -108,9 +108,11 @@ const epicClosed = "closed"
 
 // epicDone closes epic p if all of its subtickets are closed and merged, last the one that merged
 // last, and returns p's own parent to look at next; "" when p stays open or has no parent. Should
-// bd fail to close it, the log says so and how to close it, and the run goes on.
+// bd fail to close it, the log says so and how to close it, and the run goes on. The scope's own
+// ticket stays open while the scope is being filed (Config.Filing), its tree not all filed yet:
+// filed looks at it again once the filing is over.
 func (o *Loop) epicDone(ctx context.Context, p, last string, running map[string]bool) string {
-	if o.doneSaid.last(p) != "" {
+	if o.doneSaid.last(p) != "" || p == o.cfg.Ticket && o.cfg.filingDone() != nil {
 		return ""
 	}
 	parent, err := o.tickets.Show(ctx, p)

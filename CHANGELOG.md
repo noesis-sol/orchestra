@@ -4,6 +4,17 @@ All notable changes to orchestra are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A spec run keeps the spec's root epic open while the breakdown is still
+  filing its tree. The environment ticket's merge closed the root ("its 1
+  subticket is merged") when it came before the breakdown was over, the rest
+  of the tree was then filed under a closed epic, and the next night's
+  carry-over took it as built. The root now closes once the filing is over
+  and everything filed under it has merged.
+
 ## [0.9.4] - 2026-10-22
 
 ### Fixed
